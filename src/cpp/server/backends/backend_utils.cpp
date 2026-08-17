@@ -1225,6 +1225,8 @@ namespace lemon::backends {
         //   auto    - pip wheels, TheRock tarball fallback (default)
         //   wheel   - pip wheels only (no tarball)
         //   tarball - TheRock tarball only (no Python/pip)
+        // method.txt records "wheel" or "tarball" at install time; when methods
+        // disagree (e.g. user switched knobs), backend_manager triggers reinstall.
         std::string method = "auto";
         if (auto* cfg = RuntimeConfig::global()) {
             method = cfg->rocm_install_method();
@@ -1576,8 +1578,6 @@ namespace lemon::backends {
             progress_cb(p);
         }
 
-        // Write method marker so that method mismatch (e.g. user switched from
-        // wheel to tarball) is detected on the next install attempt.
         {
             std::ofstream mf(fs::path(wheel_dir) / "method.txt");
             mf << "wheel";
@@ -1712,8 +1712,6 @@ namespace lemon::backends {
         vf << version;
         vf.close();
 
-        // Write method marker so that method mismatch (e.g. user switched from
-        // tarball to wheel) is detected on the next install attempt.
         {
             std::ofstream mf(fs::path(install_dir) / "method.txt");
             mf << "tarball";
@@ -1749,8 +1747,6 @@ namespace lemon::backends {
 
         std::string version = config["therock"]["version"].get<std::string>();
 
-        // rocm_install_method=tarball must skip the wheel tree, or the venv keeps
-        // serving backends and the knob does nothing.
         std::string install_method = "auto";
         if (auto* cfg = RuntimeConfig::global()) {
             install_method = cfg->rocm_install_method();

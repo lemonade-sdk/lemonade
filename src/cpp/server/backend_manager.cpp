@@ -268,11 +268,6 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
         return false;
     }
 
-    // If the user has explicitly requested a specific install method, verify
-    // that the installed runtime matches it. method.txt records "wheel" or
-    // "tarball" at install time. When methods disagree, a reinstall is needed
-    // (e.g. user sets rocm_install_method=tarball on a machine where wheels
-    // were previously installed).
     {
         auto* cfg = RuntimeConfig::global();
         std::string requested = cfg ? cfg->rocm_install_method() : "auto";
@@ -337,7 +332,6 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
     std::string rocm_arch = SystemInfo::get_rocm_arch();
     std::string version = backend_versions["therock"]["version"].get<std::string>();
 
-    // Install the ROCm runtime (pip wheels preferred, TheRock tarball fallback)
     backends::BackendUtils::install_rocm_runtime(rocm_arch, version, progress_cb);
 }
 

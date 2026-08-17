@@ -143,16 +143,10 @@ namespace lemon::backends {
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
 
-        /** Install the ROCm runtime for the given architecture, preferring pip
-         *  wheels (into a lemonade-managed venv) and falling back to the TheRock
-         *  tarball when Python/venv/pip is unavailable or the wheel install fails. */
+        /** See backend_utils.cpp:install_rocm_runtime() for install method details */
         static void install_rocm_runtime(const std::string& arch, const std::string& version,
                                          DownloadProgressCallback progress_cb = nullptr);
 
-        /** Attempt to install the ROCm runtime via pip wheels into a managed venv.
-         *  Returns true on success; false (leaving nothing behind) when Python is
-         *  missing, the arch has no device wheel, or any step fails, so the caller
-         *  can fall back to the tarball. */
         static bool install_therock_wheels(const std::string& arch, const std::string& version,
                                            DownloadProgressCallback progress_cb = nullptr);
 

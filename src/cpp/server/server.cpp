@@ -5275,10 +5275,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             std::vector<std::string> therock_dirs;
             if (!rocm_arch.empty()) {
-                // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so
-                // sd-cli can resolve the BLAS DLLs in _rocm_sdk_libraries/bin; a
-                // single-dir PATH makes sd-cli fail at load with STATUS_DLL_NOT_FOUND
-                // (0xC0000135), surfacing as "ESRGAN upscale failed".
                 therock_dirs =
                     lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch);
                 for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
@@ -5292,10 +5288,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
             env_vars.push_back({"PATH", new_path});
 
-            // Copy amdhip64_7.dll from TheRock to sd-cli.exe directory to
-            // override System32 version. Windows DLL search order checks
-            // System32 BEFORE PATH, so PATH-only approach fails when a rogue
-            // DLL is present.
             if (!therock_dirs.empty()) {
                 fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
                 fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";

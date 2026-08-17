@@ -488,7 +488,7 @@ void LlamaCppServer::load(const std::string& model_name,
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so
-                // llama-server can resolve the BLAS DLLs in _rocm_sdk_libraries/bin.
+                // HIP + BLAS DLLs resolve; _rocm_sdk_core/bin alone → STATUS_DLL_NOT_FOUND.
                 std::string therock_dirs = BackendUtils::join_runtime_dirs(
                     BackendUtils::get_therock_lib_paths(rocm_arch));
                 if (!therock_dirs.empty()) {
@@ -505,9 +505,9 @@ void LlamaCppServer::load(const std::string& model_name,
             env_vars.push_back({"PATH", new_path});
         }
 
-        // Copy amdhip64_7.dll from TheRock to llama-server.exe directory to
-        // override System32 version. Windows DLL search order checks System32
-        // BEFORE PATH, so PATH-only approach fails when a rogue DLL is present.
+        // Windows DLL search order checks System32 BEFORE PATH, so a stale
+        // System32 amdhip64_7.dll crashes the runtime even when PATH points at
+        // TheRock. Copying to the exe directory overrides both.
         if (llamacpp_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
