@@ -183,7 +183,7 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
     }
 
     if (resolved_backend == "rocm-stable") {
-        params.repo = "ggml-org/llama.cpp";
+        params.repo = "lemonade-sdk/llama.cpp";
         std::string therock_ver = get_therock_version();
 #ifdef _WIN32
         params.filename = "llama-" + version + "-bin-win-rocm-" + therock_ver + "-x64.zip";

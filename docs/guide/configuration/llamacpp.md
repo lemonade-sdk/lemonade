@@ -76,7 +76,7 @@ The ROCm backend supports three channels to balance stability, performance, and 
   "rocm_channel": "stable"
 }
 ```
-- **Source**: Custom builds from [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)
+- **Source**: Custom builds from [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp)
 - **Binaries**: Common builds for supported architectures
 - **Updates**: Frequent updates with latest optimizations and fixes
 - **Platform**: Windows and Linux
@@ -167,12 +167,10 @@ You can pin `llamacpp.rocm_bin` to a specific release tag instead of using `"bui
 
 | Channel | Repository | Tag format |
 |---|---|---|
-| `stable` *(default)* | [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) | Upstream build tags |
+| `stable` *(default)* | [lemonade-sdk/llama.cpp](https://github.com/lemonade-sdk/llama.cpp) | Lemonade-specific build tags |
 | `nightly` | [lemonade-sdk/llamacpp-rocm](https://github.com/lemonade-sdk/llamacpp-rocm) | Nightly tags, e.g. `b1260` |
 
 > **Always set `rocm_channel` to the correct channel before setting `rocm_bin` to a specific tag.** If the tag does not exist in the current channel's repository, the download will fail with HTTP 404.
-
-> **On the stable channel, prefer `rocm_bin=builtin` over `latest`.** Stable ROCm binaries come from upstream ggml-org, which publishes a ROCm asset only for some builds and only for specific ROCm versions. `latest` resolves to the newest build tag regardless, so its ROCm asset for Lemonade's pinned ROCm version often does not exist and the download fails with HTTP 404. `builtin` uses a version whose assets Lemonade has validated.
 
 Example — pin to a specific nightly build:
 ```bash
