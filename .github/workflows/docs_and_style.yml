@@ -116,6 +116,25 @@ jobs:
             --to-ref HEAD \
             --show-diff-on-failure
 
+  vendored-asset-integrity:
+    # The vendored 3D viewer (src/app/src/renderer/vendor/model-viewer.min.js) is a
+    # pristine upstream bundle with no SRI hash a webpack import can carry. Pin its
+    # SHA-256 and fail on drift — an accidental edit, corrupted download, or tampered
+    # blob. This is a drift guard, not a true SRI replacement (the sidecar checksum
+    # can change alongside the file in the same commit).
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-vendored-asset-integrity-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify vendored asset hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src/app/src/renderer/vendor
+          sha256sum -c model-viewer.min.js.sha256
+
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
