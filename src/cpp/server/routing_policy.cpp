@@ -474,32 +474,17 @@ std::string format_cost(double value) {
     return oss.str();
 }
 
-// The deterministic "cost" classifier / L0(b) on-ramp. Given `labels` = the
-// candidate list, scores each candidate via CostServices::cost_of and reports
-// the cheapest (argmin compute_cost_score) as the winning label (score 1.0) —
-// mirroring the `llm` classifier's single-winner shape so the same
-// identity-rule desugaring works for both `router.type: "llm"` and
-// `router.type: "cost_select"`.
+// The deterministic cost classifier backing `router.type: "cost_select"`
+// (see routing_policy_parser.cpp for how it's desugared alongside `llm`).
+// Scores each candidate via CostServices::cost_of and reports the cheapest
+// (argmin) as the sole winning label.
 //
-// A candidate whose cost_of throws, or whose CostInfo doesn't resolve to a
-// score, is excluded from ranking rather than failing the classifier — same
-// treatment attach_estimated_cost() gives a throwing cost_of. If NO candidate
-// has cost data, the classifier reports an empty Score (ok=true, no labels):
-// no identity rule matches on 0.0 against the required 1.0 band, so the
-// engine falls through to `default_model` — mirroring how the `llm`
-// classifier fails open on a reply it can't use. Only a totally unset
-// cost_services.cost_of (the services object itself wasn't wired) is a
-// classifier-level failure (Score::ok = false), matching how the other
-// classifiers treat their unset service function.
-//
-// The ranking is request-independent: it depends only on `labels` and the
-// injected `cost_services`, both fixed for the classifier's lifetime (one
-// instance per compiled RoutingPolicyEngine, itself swapped wholesale on
-// hot-reload rather than mutated). So the result is computed once, lazily, on
-// the first evaluate() call and reused for every subsequent request —
-// avoiding an O(N) cost_of ranking pass on every routed request. Same
-// lazy-cache-behind-a-mutex shape as SemanticSimilarityClassifier's
-// reference_embeddings() below.
+// A candidate with no usable cost data is excluded from ranking rather than
+// failing the classifier; if none has cost data the classifier reports an
+// empty Score so the engine falls open to default_model. Only a wholly unset
+// cost_services.cost_of is a classifier-level failure. The ranking depends
+// only on `labels` + `cost_services` (fixed for the engine's lifetime), so
+// it's memoized after the first evaluate() call.
 class CostClassifier final : public Classifier {
 public:
     CostClassifier(std::string id, std::string type, OnError on_error,

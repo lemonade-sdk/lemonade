@@ -1,28 +1,14 @@
-// Unit + end-to-end tests for the `cost` classifier and the
-// `routing.router` (L0b) "cost_select" desugaring — Phase B of cost-aware
-// routing. Phase A (merged) only reports cost via
-// Decision::outputs["estimated_cost"]; this classifier is the first thing
-// that actually USES that data to pick route_to.
+// Unit + end-to-end tests for the `cost` classifier and the `cost_select`
+// router-sugar desugaring (see routing_policy_parser.cpp).
 //
-// Covers: the cost classifier reports the cheapest candidate
-// (cost_input_per_million + cost_output_per_million) as label (score 1.0);
-// a candidate missing either price, reporting a negative/non-finite price, or
-// whose cost_of throws, is excluded from ranking rather than failing the
-// classifier; when no candidate has any cost data the classifier reports no
-// winning label so the engine falls open to default_model; the ranking is
-// computed once and memoized across evaluate() calls; only a wholly unset
-// CostServices is a classifier-level failure; the parser desugars
-// routing.router.type "cost_select" into one cost classifier + identity
-// rules (mirroring the "llm" sugar); and the full engine routes a
-// cost_select policy end-to-end, with attach_estimated_cost still reporting
-// the winning candidate's own cost exactly as it would for any other
-// route_to.
+// Covers: cheapest-candidate selection; excluding candidates with missing,
+// invalid, or throwing cost data; falling open to default_model with no
+// cost data; memoized ranking; the parser desugaring; and full end-to-end
+// routing.
 //
-// Compile (standalone):
-//   g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
-//       test/cpp/test_routing_policy_cost_router.cpp \
-//       src/cpp/server/routing_policy.cpp src/cpp/server/routing_policy_parser.cpp \
-//       -o test_routing_policy_cost_router
+// Compile: g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
+//   test/cpp/test_routing_policy_cost_router.cpp src/cpp/server/routing_policy.cpp \
+//   src/cpp/server/routing_policy_parser.cpp -o test_routing_policy_cost_router
 
 #include "fake_classifier_services.h"
 #include "lemon/routing_policy.h"
