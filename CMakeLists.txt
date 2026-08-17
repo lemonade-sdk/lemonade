@@ -1534,6 +1534,10 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
             DESTINATION share/applications
         )
+        # Install MetaInfo file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.webapp.metainfo.xml
+            DESTINATION share/metainfo
+        )
         # Create symlink in standard applications path only if not installing to /usr
         if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
             install(CODE "
@@ -2056,6 +2060,10 @@ if(UNIX AND NOT APPLE)
             # Install .desktop file for the Tauri app
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
+            )
+            # Install MetaInfo file for the Tauri app
+            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.app.metainfo.xml
+                DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -2873,11 +2881,18 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
 endif()
 
+set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DISCOVERY_TEST_SRC}")
+    add_executable(test_config_discovery test/cpp/test_config_discovery.cpp)
+    target_link_libraries(test_config_discovery PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDiscoveryTest CI ON COMMAND test_config_discovery)
+endif()
+
 set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
+    add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
 endif()
 
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC

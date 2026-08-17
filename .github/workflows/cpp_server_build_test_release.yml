@@ -1490,25 +1490,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check gated jobs
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
-          # Fail if any job broke. In the merge queue, also fail if any never ran.
-          echo "$NEEDS"
-          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
-          if [ -n "$broke" ]; then
-            echo "FAILED: $broke"
-            exit 1
-          fi
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
-            if [ -n "$absent" ]; then
-              echo "DID NOT RUN IN MERGE QUEUE: $absent"
-              exit 1
-            fi
-          fi
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/check-gated-jobs
+        with:
+          needs: ${{ toJSON(needs) }}
+          event-name: ${{ github.event_name }}
 
   # Same gate pattern as packaging-gate, for the self-hosted inference rigs
   # that PR pushes skip. The job name below belongs in main's required status
@@ -1520,25 +1506,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check gated jobs
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
-          # Fail if any job broke. In the merge queue, also fail if any never ran.
-          echo "$NEEDS"
-          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
-          if [ -n "$broke" ]; then
-            echo "FAILED: $broke"
-            exit 1
-          fi
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
-            if [ -n "$absent" ]; then
-              echo "DID NOT RUN IN MERGE QUEUE: $absent"
-              exit 1
-            fi
-          fi
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/check-gated-jobs
+        with:
+          needs: ${{ toJSON(needs) }}
+          event-name: ${{ github.event_name }}
 
   # Same gate pattern as packaging-gate, for the macOS jobs that PR pushes skip.
   macos-gate:
@@ -1547,25 +1519,11 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check gated jobs
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
-          # Fail if any job broke. In the merge queue, also fail if any never ran.
-          echo "$NEEDS"
-          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
-          if [ -n "$broke" ]; then
-            echo "FAILED: $broke"
-            exit 1
-          fi
-          if [ "${{ github.event_name }}" = "merge_group" ]; then
-            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
-            if [ -n "$absent" ]; then
-              echo "DID NOT RUN IN MERGE QUEUE: $absent"
-              exit 1
-            fi
-          fi
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/check-gated-jobs
+        with:
+          needs: ${{ toJSON(needs) }}
+          event-name: ${{ github.event_name }}
 
   test-embeddable-posix:
     name: Test Embeddable (${{ matrix.label }})
@@ -2061,6 +2019,13 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu jobs"
           .venv/bin/python test/server_jobs.py --lemond-binary lemond
+
+      - name: Test eviction
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu eviction"
+          .venv/bin/python test/server_eviction.py --wrapped-server llamacpp --backend cpu --cli-binary lemonade
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
