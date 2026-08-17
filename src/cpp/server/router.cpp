@@ -985,6 +985,26 @@ void Router::load_model(const std::string& model_name,
             effective_options.set_option("ctx_size", auto_ctx);
         }
 
+        // NPU models on memory-constrained systems: when auto-tune can only
+        // reserve the fallback ctx_size, the NPU driver's own runtime overhead
+        // will push the system past its memory limit during first inference,
+        // causing the backend to hang. Reject early with a clear error.
+        //
+        // AUTO_CTX_FALLBACK is also returned when memory cannot be determined at
+        // all (get_available_memory_gb() == 0, e.g. some Windows NPU/iGPU
+        // systems), so gate on known-low memory to avoid rejecting large models
+        // on high-memory machines where the driver overhead would fit fine.
+        if (auto_ctx == AUTO_CTX_FALLBACK
+            && (model_info.device & DEVICE_NPU)
+            && model_info.size > 10.0
+            && get_available_memory_gb(model_info.device) > 0) {
+            throw std::runtime_error(
+                "Not enough memory to load " + canonical_model_name
+                + " (" + std::to_string(static_cast<int>(model_info.size))
+                + " GB). The NPU driver needs additional working memory beyond"
+                + " model weights. Free up memory or try a smaller model.");
+        }
+
         LOG(DEBUG, "Router") << "Effective settings: " << effective_options.to_log_string() << std::endl;
 
         // Create new backend server

@@ -1533,6 +1533,10 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
             DESTINATION share/applications
         )
+        # Install MetaInfo file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.webapp.metainfo.xml
+            DESTINATION share/metainfo
+        )
         # Create symlink in standard applications path only if not installing to /usr
         if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
             install(CODE "
@@ -2055,6 +2059,10 @@ if(UNIX AND NOT APPLE)
             # Install .desktop file for the Tauri app
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
+            )
+            # Install MetaInfo file for the Tauri app
+            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.app.metainfo.xml
+                DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
