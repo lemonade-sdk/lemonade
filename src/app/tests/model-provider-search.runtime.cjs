@@ -12,6 +12,7 @@ const remoteCapabilitiesSource = fs.readFileSync(path.join(root, 'src/remoteMode
 const listPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelListPanel.tsx'), 'utf8');
 const detailPanelSource = fs.readFileSync(path.join(root, 'src/components/ModelDetailPanel.tsx'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
+const customModelStoreSource = fs.readFileSync(path.join(root, 'src/features/customModels/customModelStore.ts'), 'utf8');
 const huggingFaceSearchPath = path.join(root, 'src/features/models/huggingFaceSearch.ts');
 
 function loadTypeScriptModule(filename) {
@@ -49,16 +50,44 @@ assert.match(api, /filterHuggingFaceSearchResults\(data\)/);
 // localStorage entries. This keeps them visible through /models after restart.
 assert.match(api, /async registerModelDefinition\(modelName: string/,
   'API client must expose synchronous model-definition registration');
-assert.match(api, /stream: false[\s\S]*subscribe: false[\s\S]*do_not_upgrade: true/,
-  'definition registration must use the non-streaming persistent /pull path');
+assert.match(api, /\/api\/v1\/models\/register/,
+  'definition registration must use the dedicated lemond registration endpoint');
+assert.doesNotMatch(api, /register_only: true/,
+  'definition registration must not tunnel through /pull');
 assert.match(api, /name\.startsWith\('user\.'\)[\s\S]*labels\.includes\('custom'\)/,
   'server-returned user models must be normalized as custom models');
 assert.match(manager, /await api\.registerModelDefinition\(saved\.name/,
   'saved Omni collections must be registered with lemond');
-assert.match(manager, /persistedModels\.data\.some/,
-  'collection save must verify that /models exposes the registered definition');
+assert.match(manager, /const registration = await api\.registerModelDefinition\(saved\.name/,
+  'custom-model save must use the registration response directly');
+assert.match(manager, /registration\.model_name/,
+  'custom-model save must use lemond\'s public model name from the registration response');
+assert.match(manager, /setCustomJsonNotice\(`Saved \${persistedName} to lemond\.`\)/,
+  'successful custom-model saves must surface a confirmation notice');
 assert.match(listPanelSource, /name\.startsWith\('user\.'\)[\s\S]*labels\.includes\('custom'\)/,
   'My Models must include custom definitions restored from lemond');
+assert.match(customModelStoreSource, /if \(!normalizedCheckpoints\.main && checkpoint\) normalizedCheckpoints\.main = checkpoint/,
+  'legacy secondary checkpoint maps must promote the primary checkpoint to checkpoints.main');
+assert.match(customModelStoreSource, /if \(normalizedCheckpoints\.main\) opts\.checkpoints = normalizedCheckpoints/,
+  'the GUI must only send a checkpoints object when main is present');
+assert.doesNotMatch(customModelStoreSource, /Object\.values\(checkpoints \|\| \{\}\)\[0\]/,
+  'import must not reinterpret an arbitrary secondary checkpoint as the main checkpoint');
+assert.doesNotMatch(manager, /loadLegacyCustomModels|clearLegacyCustomModels|legacyCustomMigrationStartedRef/,
+  'GUI3 must not migrate custom-model definitions from browser storage');
+assert.doesNotMatch(customModelStoreSource, /localStorage|CUSTOM_MODELS_KEY|loadLegacyCustomModels|clearLegacyCustomModels/,
+  'customModelStore must contain no browser persistence compatibility layer');
+
+// Registered custom models are pulled by name only. Their persisted definition
+// must not be resent through /pull, because the server then treats a public
+// bare name as a new model definition and rejects it.
+assert.doesNotMatch(manager, /api\.pullModel\(name,\s*callbacks,\s*customRegistrationOptions\(model\)\)/,
+  'registered custom model downloads must not resend their definition through /pull');
+assert.ok((manager.match(/await api\.pullModel\(name, callbacks\);/g) || []).length >= 2,
+  'download and download+load must pull registered models by name only');
+assert.doesNotMatch(manager, /ensureCustomRegistration|ensureCustomCollectionComponentsRegistered/,
+  'server-owned models must not be re-registered during load or download');
+assert.match(manager, /api\.pullModel\(targetModelName, callbacks, \{[\s\S]*?checkpoint,[\s\S]*?recipe,[\s\S]*?source: provider/,
+  'remote registry downloads must retain their explicit register+download payload');
 
 // Server selection remains the prototype's existing contract; ModelScope uses
 // Lemonade's registry endpoint without a browser-side fallback.

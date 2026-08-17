@@ -1084,21 +1084,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }
   }, [chatContainerWidth, chatLogsWidth, railExpanded]);
 
-  const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const cancelSchedule = scheduleIdleWork(() => {
-      void import(/* webpackChunkName: "custom-model-store" */ '../features/customModels/customModelStore')
-        .then(({ loadCustomModels, customModelToModelInfo }) => {
-          if (!cancelled) setCustomModelInfos(loadCustomModels().map(customModelToModelInfo));
-        })
-        .catch(error => console.warn('Failed to hydrate chat custom models:', error));
-    }, 650);
-    return () => {
-      cancelled = true;
-      cancelSchedule();
-    };
-  }, []);
+  const customModelInfos = useMemo(
+    () => serverModels.filter(model => (model as any).custom === true),
+    [serverModels],
+  );
   const knownModelInfos = useMemo(
     () => {
       const seen = new Set<string>();
