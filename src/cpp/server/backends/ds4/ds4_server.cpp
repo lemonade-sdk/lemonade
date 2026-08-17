@@ -108,6 +108,15 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         args.push_back(std::to_string(ctx_size));
     }
 
+    // ds4-server defaults to full residency, which maps the entire model into
+    // the ROCm arena. The only published ds4 model is an 81 GB DeepSeek V4 MoE,
+    // and the only supported device (gfx1151) tops out around a 64 GB VRAM
+    // carveout with a smaller usable arena, so full residency always OOMs
+    // mid-load. Stream experts from disk instead; a user-supplied later flag
+    // (e.g. --ssd-streaming-cache-experts) still wins since ds4-server parses
+    // left-to-right.
+    args.push_back("--ssd-streaming");
+
     if (!ds4_args.empty()) {
         const std::string validation_error =
             validate_custom_args(ds4_args, ds4::reserved_custom_arg_flags());
