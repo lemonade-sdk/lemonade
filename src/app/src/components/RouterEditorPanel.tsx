@@ -36,12 +36,6 @@ import {
   type RouterPullRequest,
 } from '../features/router/routerTypes';
 import {
-  loadRouterRecords,
-  routerRecordToDraft,
-  routerRecordToModelInfo,
-  upsertRouterRecord,
-} from '../features/router/routerStore';
-import {
   describeRouterModelConnection,
   providerEndpointNeedsInsecureOptIn,
   validateProviderEndpoint,
@@ -173,7 +167,7 @@ const CommittedTextInput: React.FC<{
 interface RouterEditorPanelProps {
   models: ModelInfo[];
   initialModel?: ModelInfo | null;
-  onRegister: (request: RouterPullRequest) => Promise<void>;
+  onRegister: (request: RouterPullRequest, displayName?: string) => Promise<void>;
   onSaved?: (model: ModelInfo) => void;
   onDeleted?: (modelName: string) => Promise<string | void> | string | void;
   onClose: () => void;
@@ -206,7 +200,12 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   onClose,
 }) => {
   const [draft, setDraft] = useState<RouterDraft>(() => createEmptyRouterDraft());
-  const [savedRecords, setSavedRecords] = useState(() => loadRouterRecords());
+  const savedRecords = useMemo(
+    () => models
+      .filter(model => isRouterRecipe((model as any).recipe))
+      .sort((a, b) => modelLabel(a).localeCompare(modelLabel(b))),
+    [models],
+  );
   const [candidateSearch, setCandidateSearch] = useState('');
   const [tab, setTab] = useState<'builder' | 'json'>('builder');
   const [saving, setSaving] = useState(false);
@@ -248,7 +247,6 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setConfirmation({ kind: 'discard', title, message, confirmLabel, tone: 'danger' });
   };
 
-  const refreshSaved = () => setSavedRecords(loadRouterRecords());
   const refreshCloudProviders = useCallback(async () => {
     try {
       setCloudProviders(await api.cloudProviders());
@@ -259,7 +257,6 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
   }, []);
 
   useEffect(() => {
-    setSavedRecords(loadRouterRecords());
     void refreshCloudProviders();
   }, [refreshCloudProviders]);
 
@@ -519,21 +516,42 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     resetDraft();
   };
 
-  const applySavedRecord = (record: (typeof savedRecords)[number]) => {
-    try {
-      const nextDraft = routerRecordToDraft(record);
-      markBaseline(nextDraft);
-      // Loading a saved record is a user action and does not mean the parent
-      // `initialModel` prop changed. Preserve the processed prop key so an
-      // unrelated refresh of the opener cannot re-apply itself.
-      setDraft(nextDraft);
-      setSelectedRuleIndex(0);
-      setExpandedRuleIndex(null);
-      setError(null);
-      setNotice(`Loaded ${record.display_name}.`);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load saved router.');
-    }
+  const applySavedRecord = (record: ModelInfo) => {
+    const recordName = modelName(record);
+    if (!recordName) return;
+    const baselineAtStart = draftFingerprintRef.current;
+    void api.modelDetail(recordName)
+      .then(detailedModel => {
+        let nextDraft: RouterDraft;
+        try {
+          nextDraft = routerDraftFromModelInfo(detailedModel);
+        } catch (loadError) {
+          setError(loadError instanceof Error ? loadError.message : 'Could not load saved router.');
+          return;
+        }
+        const commit = () => {
+          markBaseline(nextDraft);
+          initialModelKeyRef.current = recordName;
+          setDraft(nextDraft);
+          setSelectedRuleIndex(0);
+          setExpandedRuleIndex(null);
+          setError(null);
+          setNotice(`Loaded ${modelLabel(record)}.`);
+        };
+        if (draftFingerprintRef.current !== baselineAtStart) {
+          requestDiscard(
+            'Load another router?',
+            'The router finished loading after you started editing. Loading it now will discard those changes.',
+            'Load and discard changes',
+            commit,
+          );
+          return;
+        }
+        commit();
+      })
+      .catch(loadError => {
+        setError(loadError instanceof Error ? loadError.message : 'Could not load saved router.');
+      });
   };
 
   const loadSaved = (modelNameValue: string) => {
@@ -542,7 +560,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       return;
     }
     if (modelNameValue === draft.modelName) return;
-    const record = savedRecords.find(item => item.model_name === modelNameValue);
+    const record = savedRecords.find(item => modelName(item) === modelNameValue);
     if (!record) return;
     if (isDirty) {
       requestDiscard(
@@ -767,23 +785,13 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     }
     setSaving(true);
     try {
-      await onRegister(nextRequest);
+      await onRegister(nextRequest, submittedDraft.name.trim());
 
       const savedDraft: RouterDraft = { ...submittedDraft, modelName: nextRequest.model_name };
       markBaseline(savedDraft);
       initialModelKeyRef.current = nextRequest.model_name;
 
-      let savedModel = routerRequestToModelInfo(nextRequest, savedDraft);
-      let cacheWarning = '';
-      try {
-        const record = upsertRouterRecord(savedDraft);
-        refreshSaved();
-        savedModel = routerRecordToModelInfo(record);
-      } catch (cacheError) {
-        // The server registration already succeeded. A local cache failure must
-        // not be reported as a failed registration or cause a duplicate retry.
-        cacheWarning = cacheError instanceof Error ? cacheError.message : String(cacheError);
-      }
+      const savedModel = routerRequestToModelInfo(nextRequest, savedDraft);
 
       setDraft(current => {
         // If the user edited while /pull was in flight, preserve those newer
@@ -792,10 +800,8 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
         if (routerDraftFingerprint(current) === submittedFingerprint) return savedDraft;
         return { ...current, modelName: current.modelName || nextRequest.model_name };
       });
-      setNotice(cacheWarning
-        ? `Registered ${nextRequest.model_name}. Local recent-router cache could not be updated.`
-        : `Registered ${nextRequest.model_name}.`);
-      onSaved?.(savedModel);
+      setNotice(`Registered ${nextRequest.model_name}.`);
+onSaved?.(savedModel);
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : 'Could not register router.');
     } finally {
@@ -814,20 +820,10 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
     setDeleting(true);
     setError(null);
     try {
-      const deletionWarning = await onDeleted?.(modelNameValue);
-      if (typeof deletionWarning === 'string' && deletionWarning) {
-        // The server delete succeeded but persistent cache cleanup did not. Do
-        // not immediately re-read that stale cache and resurrect the deleted
-        // router in this editor session.
-        setSavedRecords(current => current.filter(record => record.model_name !== modelNameValue));
-      } else {
-        refreshSaved();
-      }
+      await onDeleted(modelNameValue);
       setConfirmation(null);
       resetDraft();
-      setNotice(typeof deletionWarning === 'string' && deletionWarning
-        ? deletionWarning
-        : `Deleted ${modelNameValue}.`);
+      setNotice(`Deleted ${modelNameValue}.`);
     } catch (deleteError) {
       // Close the modal so the persistent editor error is immediately visible;
       // the router remains loaded and the user can retry intentionally.
@@ -932,7 +928,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
               <span className="sr-only">Saved routers</span>
               <RouterSelect
                 value={draft.modelName || ''}
-                options={[{ value: '', label: 'Unsaved router' }, ...savedRecords.map(r => ({ value: r.model_name, label: r.display_name }))]}
+                options={[{ value: '', label: 'Unsaved router' }, ...savedRecords.map(r => ({ value: modelName(r), label: modelLabel(r) }))]}
                 onChange={(val: string) => loadSaved(val)}
                 ariaLabel="Saved routers"
                 disabled={saving || deleting || savingProvider}

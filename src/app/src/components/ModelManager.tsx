@@ -24,8 +24,7 @@ import { remoteResultAsModelInfo } from '../remoteModelCapabilities';
 import {WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, WorkspaceList, WorkspaceListRow, WorkspaceMetadataChip, WorkspacePanelResizer } from './WorkspacePanels';
 import Modal from './inspect/Modal';
 
-import { ROUTER_RECIPE, type RouterPullRequest } from '../features/router/routerTypes';
-import { deleteRouterRecord, loadRouterRecords, routerRecordToModelInfo } from '../features/router/routerStore';
+import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
 import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   automaticUpdateIsDue,
@@ -1114,7 +1113,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [remoteVariantsLoading, setRemoteVariantsLoading] = useState<Record<string, boolean>>({});
   const [hfDetectedRecipes, setHfDetectedRecipes] = useState<Record<string, string | null>>({});
 
-  const [routerModels, setRouterModels] = useState<ModelInfo[]>(() => loadRouterRecords().map(routerRecordToModelInfo));
   const [showRouterEditor, setShowRouterEditor] = useState(false);
   const [routerEditorModel, setRouterEditorModel] = useState<ModelInfo | null>(null);
   const [routerDeleteCandidate, setRouterDeleteCandidate] = useState<ModelInfo | null>(null);
@@ -1161,11 +1159,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     if (fullModelStateReady && fastLocalModels.length > 0) setFastLocalModels(EMPTY_MODELS);
   }, [fastLocalModels.length, fullModelStateReady]);
 
-  const reloadRouterModels = useCallback(() => {
-    setRouterModels(loadRouterRecords().map(routerRecordToModelInfo));
-  }, []);
 
-  useEffect(() => { reloadRouterModels(); }, [reloadRouterModels]);
 
 
   useEffect(() => {
@@ -1650,26 +1644,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     await refresh();
   };
 
-  const handleDeleteRouterDefinition = async (name: string): Promise<string | void> => {
-    const warnings: string[] = [];
-    if (api.isConnected) {
-      await api.deleteModel(name);
-    } else {
-      warnings.push(`Removed the local entry for ${name}, but Lemonade is disconnected so the server definition was not deleted.`);
+  const handleDeleteRouterDefinition = async (name: string): Promise<void> => {
+    if (!api.isConnected) {
+      throw new Error(`Could not delete ${name}: Lemonade is disconnected.`);
     }
-    try {
-      deleteRouterRecord(name);
-      reloadRouterModels();
-    } catch (cacheError) {
-      // A completed server mutation (or an explicitly offline local removal)
-      // must not be turned into a false generic delete failure because only the
-      // recent-router cache cleanup failed.
-      console.warn('Router local cache cleanup failed:', cacheError);
-      setRouterModels(current => current.filter(model => modelName(model) !== name));
-      warnings.push(`The local recent-router cache for ${name} could not be updated.`);
-    }
+    await api.deleteModel(name);
+    await refresh();
     if (selectedDetailModelId === name) setSelectedDetailModelId(null);
-    return warnings.length ? warnings.join(' ') : undefined;
   };
 
   const confirmRouterDefinitionDelete = async () => {
@@ -1679,8 +1660,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setDeletingRouterDefinition(true);
     setRouterDeleteError(null);
     try {
-      const warning = await handleDeleteRouterDefinition(name);
-      if (warning) console.warn(warning);
+      await handleDeleteRouterDefinition(name);
       setRouterDeleteCandidate(null);
     } catch (err) {
       setRouterDeleteError(err instanceof Error ? err.message : 'Could not delete router definition.');
@@ -1959,52 +1939,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setRouterEditorModel(null);
   };
 
-  const pullRegistrationOrThrow = async (
-    modelNameValue: string,
-    options: Record<string, unknown> | undefined,
+  const handleRegisterRouter = async (
+    request: RouterPullRequest,
+    displayName?: string,
   ): Promise<void> => {
-    let failure: unknown = null;
-    await api.pullModel(modelNameValue, {
-      onError: errorValue => { failure = errorValue; },
-    }, options);
-    if (failure) throw failure instanceof Error ? failure : new Error(String(failure));
-  };
-
-  const handleRegisterRouter = async (request: RouterPullRequest): Promise<void> => {
-    const registered = new Set<string>();
-    const registering = new Set<string>();
-    const registerCustomDependency = async (component: ModelInfo): Promise<void> => {
-      const name = modelName(component);
-      const key = name.toLowerCase();
-      if (!name || registered.has(key) || !(component as any).custom) return;
-      if (registering.has(key)) throw new Error(`Circular custom component reference: ${name}`);
-      registering.add(key);
-      if (isCollectionModel(component)) {
-        for (const nestedName of getCollectionComponents(component)) {
-          const nested = findCurrentModel(nestedName);
-          if (nested) await registerCustomDependency(nested);
-        }
-      }
-      await pullRegistrationOrThrow(name, customRegistrationOptions(component));
-      registering.delete(key);
-      registered.add(key);
-    };
-
-    for (const componentName of request.components) {
-      const component = findCurrentModel(componentName);
-      if (component) await registerCustomDependency(component);
-    }
-    await pullRegistrationOrThrow(request.model_name, {
+    if (!api.isConnected) throw new Error('Connect to the Lemonade server before saving a router.');
+    await api.registerModelDefinition(request.model_name, {
       version: request.version,
       recipe: request.recipe,
       components: request.components,
       routing: request.routing,
+      display_name: displayName?.trim() || routerDisplayName(request.model_name),
     });
     await refresh();
   };
 
+
   const handleRouterSaved = (model: ModelInfo) => {
-    reloadRouterModels();
     setRouterEditorModel(model);
     setPrimaryFilter('my-models');
     setSearchQuery('');
@@ -2234,12 +2185,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const allModels = useMemo(() => {
     const seen = new Set<string>();
     const merged: ModelInfo[] = [];
-    for (const m of routerModels) {
-      const name = modelName(m).toLowerCase();
-      if (!name || seen.has(name)) continue;
-      seen.add(name);
-      merged.push(m);
-    }
     const loadedNames = new Set(loadedModels.map(lm => lm.model_name.toLowerCase()));
     for (const m of visibleServerModels) {
       const name = modelName(m).toLowerCase();
@@ -2250,7 +2195,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       merged.push(m);
     }
     return merged;
-  }, [routerModels, visibleServerModels, loadedModels]);
+  }, [visibleServerModels, loadedModels]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {

@@ -92,10 +92,7 @@ export interface ResolvedModelTuning {
 export const DEFAULT_CONTEXT_SIZE = 4096;
 export const MODEL_CONFIGURATION_EVENT = 'lemonade:model-configuration-changed';
 
-const LS_BACKEND_TUNINGS = 'backend_tunings';
 const LS_MODEL_TUNINGS = 'model_tunings';
-const LS_MODEL_TUNINGS_MIGRATION_MARKER = 'model_tunings_migrated_v3';
-const LS_STORAGE_MIGRATION_CONFLICTS = 'storage_migration_conflicts_v1';
 
 const BACKEND_ARGS_FIELD_BY_RECIPE: Partial<Record<RecipeName, keyof RecipeOptions>> = {
   llamacpp: 'llamacpp_args',
@@ -281,211 +278,56 @@ function sanitizeBackendTuning(raw: Partial<BackendTuning> | null | undefined): 
   };
 }
 
+// Backend args are server-owned. These compatibility exports intentionally do
+// not persist anything; BackendManager reads/writes /internal/config instead.
 export function loadBackendTunings(): Record<string, BackendTuning> {
-  try {
-    const raw = localStorage.getItem(scopedStorageKey(LS_BACKEND_TUNINGS));
-    const parsed = raw ? JSON.parse(raw) : {};
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const normalized: Record<string, BackendTuning> = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      const tuning = sanitizeBackendTuning(value as Partial<BackendTuning>);
-      const recipe = key.split(':')[0] || '';
-      if (tuning && backendSupportsArgs(recipe)) normalized[key] = tuning;
-    }
-    return normalized;
-  } catch {
-    return {};
-  }
+  return {};
 }
 
-export function saveBackendTunings(tunings: Record<string, BackendTuning>): void {
-  const normalized: Record<string, BackendTuning> = {};
-  for (const [key, value] of Object.entries(tunings)) {
-    const recipe = key.split(':')[0] || '';
-    const tuning = sanitizeBackendTuning(value);
-    if (tuning && backendSupportsArgs(recipe)) normalized[key] = tuning;
-  }
-  localStorage.setItem(scopedStorageKey(LS_BACKEND_TUNINGS), JSON.stringify(normalized));
+export function saveBackendTunings(_tunings: Record<string, BackendTuning>): void {
   emitModelConfigurationEvent();
 }
 
-export function backendTuningForKey(key: string): BackendTuning | null {
-  return loadBackendTunings()[key] || null;
+export function backendTuningForKey(_key: string): BackendTuning | null {
+  return null;
 }
 
-export function saveBackendTuning(key: string, args: string, source: BackendTuning['source'] = 'user'): void {
-  if (!key) return;
-  const recipe = key.split(':')[0] || '';
-  if (!backendSupportsArgs(recipe)) return;
-  const next = { ...loadBackendTunings() };
-  const trimmed = String(args || '').trim();
-  if (!trimmed) {
-    delete next[key];
-  } else {
-    next[key] = { args: trimmed, source, updated_at: new Date().toISOString() };
-  }
-  saveBackendTunings(next);
+export function saveBackendTuning(
+  _key: string,
+  _args: string,
+  _source: BackendTuning['source'] = 'user',
+): void {
+  emitModelConfigurationEvent();
 }
 
-export function resetBackendTuning(key: string): void {
-  if (!key) return;
-  const next = { ...loadBackendTunings() };
-  delete next[key];
-  saveBackendTunings(next);
+export function resetBackendTuning(_key: string): void {
+  emitModelConfigurationEvent();
 }
 
 function isStorageRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function storageValuesEqual(left: unknown, right: unknown): boolean {
-  try {
-    return JSON.stringify(left) === JSON.stringify(right);
-  } catch {
-    return left === right;
-  }
-}
-
-const LEGACY_DEFAULT_RECORD_SUFFIX_ORDER = ['default', 's_default', 's__default'] as const;
-const LEGACY_DEFAULT_RECORD_SUFFIXES = new Set<string>(LEGACY_DEFAULT_RECORD_SUFFIX_ORDER);
-const LEGACY_RECORD_SEPARATOR = '@@';
-
-function compareStorageKeys(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function migrateLegacyModelConfigurationStorage(): boolean {
-  try {
-    const markerKey = scopedStorageKey(LS_MODEL_TUNINGS_MIGRATION_MARKER);
-    if (localStorage.getItem(markerKey) === 'true') return true;
-
-    const tuningKey = scopedStorageKey(LS_MODEL_TUNINGS);
-    const raw = localStorage.getItem(tuningKey);
-    if (!raw) {
-      localStorage.setItem(markerKey, 'true');
-      return true;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return false;
-    }
-    if (!isStorageRecord(parsed)) return false;
-
-    const next = { ...parsed };
-    const legacyRecordsByModel = new Map<string, { sourceKey: string; suffix: string; value: unknown }[]>();
-    const legacySourceKeys = new Set<string>();
-    let changed = false;
-
-    for (const sourceKey of Object.keys(parsed)) {
-      const separatorIndex = sourceKey.lastIndexOf(LEGACY_RECORD_SEPARATOR);
-      if (separatorIndex <= 0) continue;
-      const modelName = sourceKey.slice(0, separatorIndex);
-      const suffix = sourceKey.slice(separatorIndex + LEGACY_RECORD_SEPARATOR.length).trim().toLowerCase();
-      if (!modelName || !LEGACY_DEFAULT_RECORD_SUFFIXES.has(suffix)) continue;
-
-      const records = legacyRecordsByModel.get(modelName) || [];
-      records.push({ sourceKey, suffix, value: parsed[sourceKey] });
-      legacyRecordsByModel.set(modelName, records);
-      legacySourceKeys.add(sourceKey);
-    }
-
-    const conflicts: Record<string, unknown> = {};
-    for (const [modelName, records] of [...legacyRecordsByModel.entries()].sort(([left], [right]) => compareStorageKeys(left, right))) {
-      records.sort((left, right) => {
-        const suffixOrder = LEGACY_DEFAULT_RECORD_SUFFIX_ORDER.indexOf(left.suffix as typeof LEGACY_DEFAULT_RECORD_SUFFIX_ORDER[number])
-          - LEGACY_DEFAULT_RECORD_SUFFIX_ORDER.indexOf(right.suffix as typeof LEGACY_DEFAULT_RECORD_SUFFIX_ORDER[number]);
-        return suffixOrder || compareStorageKeys(left.sourceKey, right.sourceKey);
-      });
-
-      const hasDirectValue = Object.prototype.hasOwnProperty.call(parsed, modelName) && !legacySourceKeys.has(modelName);
-      const selectedValue = hasDirectValue ? parsed[modelName] : records[0].value;
-      if (!hasDirectValue) next[modelName] = selectedValue;
-
-      for (const record of records) {
-        if (!storageValuesEqual(selectedValue, record.value)) {
-          conflicts[`model_tunings:${encodeURIComponent(modelName)}:${encodeURIComponent(record.sourceKey)}`] = record.value;
-        }
-        delete next[record.sourceKey];
-        changed = true;
-      }
-    }
-
-    if (Object.keys(conflicts).length > 0) {
-      const conflictKey = scopedStorageKey(LS_STORAGE_MIGRATION_CONFLICTS);
-      const existingRaw = localStorage.getItem(conflictKey);
-      let existing: Record<string, unknown> = {};
-      if (existingRaw) {
-        try {
-          const parsedConflicts = JSON.parse(existingRaw);
-          if (!isStorageRecord(parsedConflicts)) return false;
-          existing = parsedConflicts;
-        } catch {
-          return false;
-        }
-      }
-      const merged = { ...existing };
-      for (const [key, value] of Object.entries(conflicts)) {
-        if (Object.prototype.hasOwnProperty.call(merged, key)) {
-          if (storageValuesEqual(merged[key], value)) continue;
-          let collision = 2;
-          let collisionKey = `${key}:${collision}`;
-          while (Object.prototype.hasOwnProperty.call(merged, collisionKey)
-            && !storageValuesEqual(merged[collisionKey], value)) {
-            collisionKey = `${key}:${++collision}`;
-          }
-          merged[collisionKey] = value;
-        } else {
-          merged[key] = value;
-        }
-      }
-      try {
-        localStorage.setItem(conflictKey, JSON.stringify(merged));
-      } catch {
-        return false;
-      }
-    }
-
-    if (changed) {
-      try {
-        localStorage.setItem(tuningKey, JSON.stringify(next));
-      } catch {
-        return false;
-      }
-      for (const sourceKey of legacySourceKeys) localStorage.removeItem(sourceKey);
-    }
-    try {
-      localStorage.setItem(markerKey, 'true');
-    } catch {
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function hasConcreteTuning(tuning: ModelTuning | null | undefined): boolean {
   return !!tuning && (
     Object.keys(tuning.intent_values?.temperature || {}).length > 0
     || Object.keys(tuning.intent_values?.context || {}).length > 0
-    || Object.keys(tuning.recipe_options || {}).length > 0
     || Object.keys(tuning.sampling || {}).length > 0
     || !!tuning.engine_hint
   );
 }
 
 export function loadModelTunings(): Record<string, ModelTuning> {
-  migrateLegacyModelConfigurationStorage();
   try {
     const raw = localStorage.getItem(scopedStorageKey(LS_MODEL_TUNINGS));
     const parsed = raw ? JSON.parse(raw) : {};
     if (!isStorageRecord(parsed)) return {};
     const normalized: Record<string, ModelTuning> = {};
     for (const [storedKey, tuning] of Object.entries(parsed)) {
-      if (isStorageRecord(tuning)) normalized[storedKey] = sanitizeModelTuning(tuning as Partial<ModelTuning>);
+      if (isStorageRecord(tuning)) {
+        const sanitized = sanitizeModelTuning(tuning as Partial<ModelTuning>);
+        normalized[storedKey] = { ...sanitized, recipe_options: {} };
+      }
     }
     return normalized;
   } catch {
@@ -494,8 +336,19 @@ export function loadModelTunings(): Record<string, ModelTuning> {
 }
 
 export function saveModelTunings(tunings: Record<string, ModelTuning>): void {
-  migrateLegacyModelConfigurationStorage();
-  localStorage.setItem(scopedStorageKey(LS_MODEL_TUNINGS), JSON.stringify(tunings));
+  // recipe_options is server-owned. Persist only genuinely client-owned model
+  // tuning fields; stale recipe_options bytes from older GUI3 builds are never
+  // read, copied forward, migrated, or rewritten.
+  const clientOwned: Record<string, Record<string, unknown>> = {};
+  for (const [modelName, tuning] of Object.entries(tunings)) {
+    const sanitized = sanitizeModelTuning(tuning);
+    const localOnly: ModelTuning = { ...sanitized, recipe_options: {} };
+    if (!hasConcreteTuning(localOnly)) continue;
+    const { recipe_options: _serverOwned, ...persisted } = sanitized;
+    clientOwned[modelName] = persisted as Record<string, unknown>;
+  }
+
+  localStorage.setItem(scopedStorageKey(LS_MODEL_TUNINGS), JSON.stringify(clientOwned));
   emitModelConfigurationEvent();
 }
 
@@ -507,8 +360,9 @@ export function loadModelTuning(modelName: string): ModelTuning | null {
 export function saveModelTuning(modelName: string, tuning: Partial<ModelTuning>): void {
   if (!modelName) return;
   const sanitized = sanitizeModelTuning({ ...tuning, source: 'user', updated_at: new Date().toISOString() });
+  const localOnly: ModelTuning = { ...sanitized, recipe_options: {} };
   const next = { ...loadModelTunings() };
-  if (hasConcreteTuning(sanitized)) next[modelName] = sanitized;
+  if (hasConcreteTuning(localOnly)) next[modelName] = localOnly;
   else delete next[modelName];
   saveModelTunings(next);
 }
@@ -931,10 +785,6 @@ export function recipeOptionsForModel(
   const modelOptions = model
     ? recipeOptionsForCapability(directTuning?.recipe_options || {}, capability!)
     : (directTuning?.recipe_options || {});
-  if (modelSupportsContextSize(model) && modelOptions.ctx_size === undefined) {
-    modelOptions.ctx_size = -1;
-  }
-
   const backendTuning = activeBackendTuningForModel(model, {
     explicitOptions,
     modelOptions,
