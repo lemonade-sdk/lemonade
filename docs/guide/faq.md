@@ -1,4 +1,4 @@
-# 🍋 Lemonade Frequently Asked Questions
+# Lemonade Frequently Asked Questions
 
 ## Overview
 
@@ -21,7 +21,7 @@
 
 ### 1. **How do I install Lemonade SDK or Server?**
 
-   Visit https://lemonade-server.ai/install_options.html and click the options that apply to you.
+   Visit https://lemonade-server.ai/docs/guide/install/ and click the options that apply to you.
 
 ### 2. **Which devices are supported?**
 
@@ -33,8 +33,8 @@
 
    Yes, both Linux and macOS are supported!
 
-   - **Linux**: Visit https://lemonade-server.ai/install_options.html#linux for installation instructions.
-   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/install_options.html#macos to download. macOS support uses the llama.cpp backend with Metal acceleration.
+   - **Linux**: Visit https://lemonade-server.ai/docs/guide/install/ for installation instructions.
+   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/docs/guide/install/ to download. macOS support uses the llama.cpp backend with Metal acceleration.
 
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
@@ -193,7 +193,7 @@
 
    No inference engine providers have plans to support NPUs prior to Ryzen AI 300-series, but you can still request this by filing an issue on their respective GitHubs:
       - Ryzen AI SW: https://github.com/amd/ryzenai-sw
-      - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
+      - FastFlowLM: https://github.com/ROCm/FastFlowLM
 
 ### 5. **How do I know what model architectures are supported by the NPU?**
 

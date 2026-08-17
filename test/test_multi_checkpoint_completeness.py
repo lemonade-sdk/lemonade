@@ -183,6 +183,77 @@ class TestMultiCheckpointCompleteness(unittest.TestCase):
         )
         self.assertIn("No", [l for l in res.stdout.splitlines() if hf_model_id in l][0])
 
+    def test_uncommitted_variantless_snapshot_is_not_downloaded(self):
+        model_id = "hf-uncommitted"
+        repo = "org/uncommitted"
+        snapshot_id = "incomplete-snapshot"
+        repo_dir = os.path.join(self.tmp_dir, "hf", "models--org--uncommitted")
+        snapshot_dir = os.path.join(repo_dir, "snapshots", snapshot_id)
+        os.makedirs(snapshot_dir, exist_ok=True)
+
+        # Simulate Lemonade exiting during a large variantless repository pull.
+        # The modern cache tree exists, but refs/main was never committed.
+        manifest = os.path.join(snapshot_dir, ".download_manifest.json")
+        partial = os.path.join(snapshot_dir, "model-00002-of-00004.safetensors.partial")
+        with open(manifest, "w") as f:
+            f.write("{}")
+        with open(partial, "wb") as f:
+            f.write(b"partial")
+
+        user_models = {
+            model_id: {
+                "checkpoint": repo,
+                "recipe": "sd-cpp",
+            }
+        }
+        with open(os.path.join(self.tmp_dir, "user_models.json"), "w") as f:
+            json.dump(user_models, f)
+
+        # The old resolver returned the repository cache directory here and the
+        # server reported Downloaded. It must remain resumable/not downloaded.
+        self.start_server()
+        res = subprocess.run(
+            [self.cli_bin, "--port", str(self.port), "list"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("No", [l for l in res.stdout.splitlines() if model_id in l][0])
+
+        # Finish and commit the snapshot. The same directory checkpoint is now
+        # valid.
+        os.remove(manifest)
+        os.remove(partial)
+        with open(os.path.join(snapshot_dir, "config.json"), "w") as f:
+            f.write("{}")
+        refs_dir = os.path.join(repo_dir, "refs")
+        os.makedirs(refs_dir, exist_ok=True)
+        with open(os.path.join(refs_dir, "main"), "w") as f:
+            f.write(snapshot_id)
+
+        self.start_server()
+        res = subprocess.run(
+            [self.cli_bin, "--port", str(self.port), "list"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("Yes", [l for l in res.stdout.splitlines() if model_id in l][0])
+
+        # A later interrupted update must not hide the still-committed old snapshot.
+        update_dir = os.path.join(repo_dir, "snapshots", "new-incomplete-snapshot")
+        os.makedirs(update_dir, exist_ok=True)
+        with open(os.path.join(update_dir, ".download_manifest.json"), "w") as f:
+            f.write("{}")
+        with open(os.path.join(update_dir, "model.safetensors.partial"), "wb") as f:
+            f.write(b"partial")
+
+        self.start_server()
+        res = subprocess.run(
+            [self.cli_bin, "--port", str(self.port), "list"],
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn("Yes", [l for l in res.stdout.splitlines() if model_id in l][0])
+
     def test_collection_status_with_incomplete_component(self):
         # Status-regression coverage for the collection fan-out skip predicate.
         # If a component is missing an auxiliary checkpoint, it must not be
