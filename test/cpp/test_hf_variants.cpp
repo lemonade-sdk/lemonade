@@ -1,6 +1,7 @@
 #include <lemon/hf_variants.h>
 
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,100 @@ std::string join_names(const lemon::GgufVariantSet& set) {
 
 int main() {
     TestResult result;
+
+    {
+        const nlohmann::json valid = {
+            {"pipeline_tag", "text-generation"},
+            {"gguf", {{"architecture", "llama"}, {"context_length", 4096}}},
+        };
+        result.expect("text GGUF metadata is accepted",
+                      lemon::llamacpp_gguf_incompatibility(valid, "huggingface").empty(),
+                      "known-good metadata was rejected");
+    }
+
+    {
+        const nlohmann::json missing_architecture = {
+            {"gguf", {{"total", 12895570508ULL}, {"totalFileSize", 5544100160ULL}}},
+        };
+        const std::string error = lemon::llamacpp_gguf_incompatibility(
+            missing_architecture, "huggingface");
+        result.expect("GGUF metadata without architecture is rejected",
+                      error.find("architecture") != std::string::npos,
+                      "error was: " + error);
+    }
+
+    {
+        const nlohmann::json image = {
+            {"pipeline_tag", "text-to-image"},
+            {"gguf", {{"architecture", "qwen_image"}}},
+        };
+        const std::string error = lemon::llamacpp_gguf_incompatibility(
+            image, "huggingface");
+        result.expect("provider-declared image GGUF is rejected",
+                      error.find("different backend") != std::string::npos,
+                      "error was: " + error);
+    }
+
+    {
+        const nlohmann::json untagged_image = {
+            {"gguf", {{"architecture", "krea2"}, {"total", 1}}},
+        };
+        const std::string error = lemon::llamacpp_gguf_incompatibility(
+            untagged_image, "huggingface");
+        result.expect("untagged non-text GGUF is rejected",
+                      error.find("context length") != std::string::npos,
+                      "error was: " + error);
+    }
+
+    {
+        const nlohmann::json malformed = {
+            {"gguf", {{"architecture", 7}, {"context_length", "4096"}}},
+        };
+        result.expect("malformed parsed architecture is rejected",
+                      !lemon::llamacpp_gguf_incompatibility(
+                           malformed, "huggingface").empty(),
+                      "malformed metadata was accepted");
+    }
+
+    {
+        const nlohmann::json blank_architecture = {
+            {"gguf", {{"architecture", " \t"}, {"context_length", 4096}}},
+        };
+        result.expect("blank parsed architecture is rejected",
+                      !lemon::llamacpp_gguf_incompatibility(
+                           blank_architecture, "huggingface").empty(),
+                      "blank architecture was accepted");
+
+        const nlohmann::json invalid_context = {
+            {"gguf", {{"architecture", "llama"}, {"context_length", 0}}},
+        };
+        result.expect("zero context length is rejected",
+                      !lemon::llamacpp_gguf_incompatibility(
+                           invalid_context, "huggingface").empty(),
+                      "zero context length was accepted");
+
+        const nlohmann::json large_unsigned_context = {
+            {"gguf", {{"architecture", "llama"},
+                      {"context_length", std::numeric_limits<std::uint64_t>::max()}}},
+        };
+        result.expect("unsigned context metadata is handled without narrowing",
+                      lemon::llamacpp_gguf_incompatibility(
+                          large_unsigned_context, "huggingface").empty(),
+                      "positive unsigned context length was rejected");
+    }
+
+    {
+        const nlohmann::json unavailable = {{"siblings", nlohmann::json::array()}};
+        result.expect("unavailable parsed metadata remains compatible",
+                      lemon::llamacpp_gguf_incompatibility(
+                          unavailable, "huggingface").empty(),
+                      "metadata-unaware mirrors must remain usable");
+        result.expect("ModelScope is unchanged",
+                      lemon::llamacpp_gguf_incompatibility(
+                          nlohmann::json{{"gguf", nlohmann::json::object()}},
+                          "modelscope").empty(),
+                      "Hugging Face metadata policy leaked into ModelScope");
+    }
 
     // Regression for the review on PR #2107: when two files share a quant token
     // their names widen to the full file stem for uniqueness. Sorting used to
