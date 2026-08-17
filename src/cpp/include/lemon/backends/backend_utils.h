@@ -1,9 +1,9 @@
 #pragma once
 
-#include <string>
-#include <functional>
 #include <filesystem>
+#include <functional>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 #include "lemon/backends/backend_descriptor.h"
@@ -169,9 +169,10 @@ namespace lemon::backends {
         static std::string find_external_backend_binary(const std::string& recipe, const std::string& backend);
 
         /**
-         * Returns the raw user-supplied *_bin config value for this (recipe, backend),
+         * Returns the raw user-supplied *_bin value for this (recipe, backend),
          * e.g. "builtin" / "latest" / "b8664" / "/path/to/bin" / "". Empty string when
-         * RuntimeConfig is unavailable or the key is unset. Does not validate or resolve.
+         * the environment override and config key are both unset. Environment takes
+         * precedence over RuntimeConfig. Does not validate or resolve.
          */
         static std::string get_bin_config_value(const std::string& recipe, const std::string& backend);
 

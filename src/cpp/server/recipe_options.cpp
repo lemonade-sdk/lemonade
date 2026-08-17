@@ -93,6 +93,33 @@ static bool is_empty_option(json option) {
            (option.is_string() && (option == "" || option == "auto"));
 }
 
+// ctx_size is the one option whose "auto" state is itself a value: -1 means
+// "size the context from available memory". Storing it has to be possible so a
+// model can be pinned to auto even when a lower layer sets an explicit size.
+// Anything that is not a number is discarded, since every consumer of ctx_size
+// reads it as an integer.
+static bool is_empty_option(const std::string& key, const json& option) {
+    if (key == "ctx_size") {
+        return !option.is_number();
+    }
+    return is_empty_option(option);
+}
+
+std::vector<std::string> RecipeOptions::keys_for_recipe(const std::string& recipe) {
+    return get_keys_for_recipe(recipe);
+}
+
+json RecipeOptions::to_resolved_json() const {
+    json resolved = json::object();
+    for (const auto& key : get_keys_for_recipe(recipe_)) {
+        resolved[key] = get_option(key);
+    }
+    return resolved;
+}
+
+bool RecipeOptions::is_default_sentinel(const std::string& key, const json& value) {
+    return is_empty_option(key, value);
+}
 
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
@@ -148,7 +175,7 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
 
     for (auto key : to_copy) {
-        if (options.contains(key) && !is_empty_option(options[key])) {
+        if (options.contains(key) && !is_empty_option(key, options[key])) {
             options_[key] = options[key];
         }
     }
@@ -183,7 +210,11 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
-    bool merge_args = options_.contains("merge_args") ? options_["merge_args"].get<bool>() : options.get_option("merge_args").get<bool>();
+    // Read defensively: a hand-edited recipe_options.json can hold any type
+    // here, and throwing would take down every read of the model.
+    const json own_merge_args = options_.contains("merge_args") ? options_["merge_args"]
+                                                                : options.get_option("merge_args");
+    bool merge_args = own_merge_args.is_boolean() ? own_merge_args.get<bool>() : true;
 
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
         if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {
@@ -209,7 +240,7 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
                 auto merged_map = lemon::utils::merge_args_maps(target_map, incoming_map);
                 merged[it.key()] = lemon::utils::map_to_args_string(merged_map);
             }
-        } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
+        } else if (!merged.contains(it.key()) && !is_empty_option(it.key(), it.value())) {
             merged[it.key()] = it.value();
         }
     }

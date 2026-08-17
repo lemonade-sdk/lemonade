@@ -7,6 +7,7 @@
 #include <lemon_cli/agent_config_file.h>
 #include <lemon/model_types.h>
 #include <lemon/recipe_options.h>
+#include <lemon/model_registry.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
@@ -49,7 +50,9 @@
 #include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
+    "chat",
     "coding",
+    "dflash",
     "embeddings",
     "hot",
     "mtp",
@@ -145,12 +148,13 @@ struct CliConfig {
     std::string host = "127.0.0.1";
     int port = 13305;
     bool is_ssl = false;
+    bool no_discovery = false;
     std::string api_key;
     std::string model;
     std::string list_filter;
     std::map<std::string, std::string> checkpoints;
     std::string recipe;
-    std::string model_source = "huggingface";
+    std::string model_source;  // empty means defer to lemond's default_model_source
     bool model_source_explicit = false;
     std::vector<std::string> labels;
     std::vector<std::string> components;
@@ -179,6 +183,10 @@ struct CliConfig {
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
+
+    // Alias management options
+    std::string alias_name;
+    std::string alias_target;
 
     // Telemetry toggle options
     std::string telemetry_status;
@@ -331,23 +339,6 @@ static int handle_import_command(lemonade::LemonadeClient& client, const CliConf
                                            config.skip_prompt, config.yes, nullptr, true);
 }
 
-static std::optional<std::string> explicit_registry_source_from_url(const std::string& value) {
-    if (value.rfind("https://huggingface.co/", 0) == 0 ||
-        value.rfind("http://huggingface.co/", 0) == 0) {
-        return "huggingface";
-    }
-    for (const char* prefix : {
-             "https://modelscope.cn/models/",
-             "https://www.modelscope.cn/models/",
-             "http://modelscope.cn/models/",
-             "http://www.modelscope.cn/models/",
-             "https://modelscope.ai/models/",
-             "https://www.modelscope.ai/models/"}) {
-        if (value.rfind(prefix, 0) == 0) return "modelscope";
-    }
-    return std::nullopt;
-}
-
 static int handle_manual_pull_command(lemonade::LemonadeClient& client, const CliConfig& config) {
     nlohmann::json model_data;
 
@@ -362,29 +353,37 @@ static int handle_manual_pull_command(lemonade::LemonadeClient& client, const Cl
             std::string detected_source;
             checkpoints[type] = lemon_cli::normalize_registry_checkpoint_arg(
                 checkpoint, config.model_source, &detected_source);
-
-            if (auto source_from_url = explicit_registry_source_from_url(checkpoint)) {
+            lemon::RemoteRegistrySource detected;
+            std::string repo_id;
+            if (lemon::detect_registry_url(checkpoint, detected, repo_id)) {
+                std::string url_source = lemon::remote_registry_source_name(detected);
                 if (config.model_source_explicit &&
-                    config.model_source != *source_from_url) {
+                    config.model_source != url_source) {
                     std::cerr
-                        << "Error: checkpoint URL uses " << *source_from_url
+                        << "Error: checkpoint URL uses " << url_source
                         << " but --source was set to " << config.model_source
                         << "." << std::endl;
                     return 1;
                 }
-
-                if (explicit_source && *explicit_source != *source_from_url) {
+                if (explicit_source && *explicit_source != url_source) {
                     std::cerr << "Error: all checkpoints in one model must use the same "
                                  "remote registry." << std::endl;
                     return 1;
                 }
-                explicit_source = *source_from_url;
+                explicit_source = url_source;
             }
         }
         model_data["checkpoints"] = std::move(checkpoints);
     }
 
-    model_data["source"] = explicit_source.value_or(config.model_source);
+    // Only pin a registry when one was actually chosen (a checkpoint URL or
+    // --source). Otherwise leave it unset so lemond applies its configured
+    // default_model_source and persists that provenance.
+    if (explicit_source) {
+        model_data["source"] = *explicit_source;
+    } else if (config.model_source_explicit) {
+        model_data["source"] = config.model_source;
+    }
 
     if (!config.components.empty()) {
         model_data["components"] = config.components;
@@ -428,21 +427,41 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
         return handle_manual_pull_command(client, config);
     }
 
+    // Detect the URL source before normalization so we can reject mismatches
+    // with --source before normalize_registry_checkpoint_arg silently converts
+    // the user's value or lets the URL win.
+    lemon::RemoteRegistrySource detected;
+    std::string url_repo_id;
     std::string detected_source;
+    if (lemon::detect_registry_url(config.model, detected, url_repo_id)) {
+        std::string url_source = lemon::remote_registry_source_name(detected);
+        if (config.model_source_explicit && config.model_source != url_source) {
+            std::cerr << "Error: model URL uses " << url_source
+                      << " but --source was set to " << config.model_source << "."
+                      << std::endl;
+            return 1;
+        }
+        detected_source = url_source;
+    }
     std::string normalized_model = lemon_cli::normalize_registry_checkpoint_arg(
         config.model, config.model_source, &detected_source);
 
     // Registry checkpoints use the interactive discovery flow; registered model
     // names remain source-independent because their persisted provenance wins.
+    int res = 0;
     if (normalized_model.find('/') != std::string::npos) {
-        return lemon_cli::registry_pull_flow(
+        res = lemon_cli::registry_pull_flow(
             client, normalized_model, false, detected_source);
+    } else {
+        nlohmann::json model_data;
+        model_data["model_name"] = config.model;
+        res = client.pull_model(model_data, "", /*upgrade=*/true);
     }
 
-    nlohmann::json model_data;
-    model_data["model_name"] = config.model;
-    // Explicit `lemonade pull`: opt into the configured registry update check.
-    return client.pull_model(model_data, "", /*upgrade=*/true);
+    if (res == 0 && !config.alias_name.empty()) {
+        client.alias_add(config.alias_name, config.model);
+    }
+    return res;
 }
 
 static int handle_export_command(lemonade::LemonadeClient& client, const CliConfig& config) {
@@ -588,16 +607,6 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
-    static const std::unordered_set<std::string> non_llm_labels = {
-        "embeddings",
-        "reranking",
-        "transcription",
-        "image",
-        "tts",
-        "upscaling",
-        "edit"
-    };
-
     std::vector<lemon_cli::AgentModelEntry> models;
 
     try {
@@ -614,22 +623,27 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_llm = true;
-            if (model.contains("labels") && model["labels"].is_array()) {
-                for (const auto& label : model["labels"]) {
-                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
-                        is_llm = false;
+            bool is_chat = false;
+            const auto labels = model.find("labels");
+            if (labels != model.end() && labels->is_array()) {
+                for (const auto& label : *labels) {
+                    if (label.is_string() && label.get<std::string>() == "chat") {
+                        is_chat = true;
                         break;
                     }
                 }
             }
-
-            if (!is_llm) {
+            if (!is_chat) {
                 continue;
             }
 
             const std::string model_id = model["id"].get<std::string>();
-            models.push_back({model_id, model_id + " (local)", context_window});
+            int model_context_window = context_window;
+            if (model.contains("recipe_options") && model["recipe_options"].is_object()
+			    && model["recipe_options"].contains("ctx_size")) {
+                model_context_window = model["recipe_options"]["ctx_size"].get<int>();
+            }
+            models.push_back({model_id, model_id + " (local)", model_context_window});
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -1230,6 +1244,7 @@ int main(int argc, char* argv[]) {
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
+    app.add_flag("!--discovery,--no-discovery", config.no_discovery, "Enable or disable auto-discovery of local server via UDP beacon");
 
     // Subcommands
     // Quick start commands
@@ -1321,7 +1336,8 @@ int main(int argc, char* argv[]) {
         ->type_name("MODEL_OR_CHECKPOINT");
     CLI::Option* pull_source_opt =
         pull_cmd->add_option("--source", config.model_source,
-            "Remote registry for checkpoint pulls: huggingface or modelscope")
+            "Remote registry for checkpoint pulls: huggingface or modelscope "
+            "(default: the server's configured default_model_source)")
             ->type_name("SOURCE")
             ->check(CLI::IsMember({"huggingface", "modelscope"}));
     pull_cmd->add_option("--checkpoint", config.checkpoints,
@@ -1345,9 +1361,22 @@ int main(int argc, char* argv[]) {
         ->group("Manual Configuration Options")
         ->type_name("MODEL")
         ->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
+    pull_cmd->add_option("--alias", config.alias_name, "Optional alias to register for the pulled model")
+        ->type_name("ALIAS");
     pull_cmd->footer(
         "Manual Configuration Guide:\n"
         "  https://lemonade-server.ai/docs/guide/configuration/custom-models/");
+
+    // Alias subcommands
+    CLI::App* alias_cmd = app.add_subcommand("alias", "Manage model aliases")->group("Model management");
+    CLI::App* alias_add_cmd = alias_cmd->add_subcommand("add", "Create a model alias")->group("Subcommands");
+    alias_add_cmd->add_option("alias", config.alias_name, "Alias name")->required()->type_name("ALIAS");
+    alias_add_cmd->add_option("target", config.alias_target, "Target model name")->required()->type_name("TARGET");
+
+    CLI::App* alias_remove_cmd = alias_cmd->add_subcommand("remove", "Remove a model alias")->group("Subcommands");
+    alias_remove_cmd->add_option("alias", config.alias_name, "Alias name")->required()->type_name("ALIAS");
+
+    CLI::App* alias_list_cmd = alias_cmd->add_subcommand("list", "List registered model aliases")->group("Subcommands");
 
     // Import options
     import_cmd->add_option("json_file", config.model, "Path to JSON file")->type_name("JSON_FILE");
@@ -1483,10 +1512,10 @@ int main(int argc, char* argv[]) {
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
-    // Skip when: no command given, scan command, or user explicitly set --host/--port
+    // Skip when: no command given, scan command, or user explicitly set --host/--port, or --no-discovery is set
     bool has_command = !app.get_subcommands().empty();
     bool explicit_target = (host_opt->count() > 0 || port_opt->count() > 0);
-    if (has_command && scan_cmd->count() == 0 && !explicit_target) {
+    if (has_command && scan_cmd->count() == 0 && !explicit_target && !config.no_discovery) {
         // Localhost responds in <10ms; use short timeout. Remote hosts need more.
         bool is_local = (config.host.empty() || config.host == "127.0.0.1" ||
                          config.host == "localhost" || config.host == "0.0.0.0");
@@ -1559,6 +1588,17 @@ int main(int argc, char* argv[]) {
         return handle_backends_command(client, config,
                                        backends_install_cmd->count() > 0,
                                        backends_uninstall_cmd->count() > 0);
+    } else if (alias_cmd->count() > 0) {
+        if (alias_add_cmd->count() > 0) {
+            return client.alias_add(config.alias_name, config.alias_target);
+        }
+        if (alias_remove_cmd->count() > 0) {
+            return client.alias_remove(config.alias_name);
+        }
+        if (alias_list_cmd->count() > 0) {
+            return client.alias_list();
+        }
+        return client.alias_list();
     } else if (cloud_cmd->count() > 0) {
         if (cloud_install_cmd->count() > 0) {
             return client.install_cloud_provider(config.cloud_provider,

@@ -264,6 +264,48 @@ class OpenMossTTSTests(ServerTestBase):
         self._assert_wav_response(response, "Voice design")
         print(f"[OK] Voice design produced a clip ({len(response.content)} bytes)")
 
+    def test_011_streaming_wav(self):
+        """A wav-only backend streams its own container instead of being rejected."""
+        model = get_test_model("tts")
+        payload = {
+            "model": model,
+            "input": "Lemonade can stream speech from a wav-only backend.",
+            "stream_format": "audio",
+        }
+
+        print(f"[INFO] Requesting streamed speech from {model}")
+
+        # Headers and body are read off the live response before any assertion:
+        # unittest evaluates a failure message eagerly, so touching response.text
+        # here would consume the stream and leave iter_content replaying a cache.
+        with requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+            stream=True,
+        ) as response:
+            status = response.status_code
+            content_type = response.headers.get("Content-Type", "")
+            body = b"".join(response.iter_content(chunk_size=8192))
+
+        self.assertEqual(
+            status,
+            200,
+            f"Streamed speech failed with status {status}: {body[:1000]!r}",
+        )
+        self.assertIn(
+            "audio/wav",
+            content_type,
+            f"Streamed speech should keep the backend's WAV container, got '{content_type}'",
+        )
+        self.assertTrue(
+            body[:4] == b"RIFF",
+            "Streamed body should be a valid WAV (RIFF) file",
+        )
+        self.assertGreater(len(body), 1000, "Streamed clip should be substantial")
+
+        print(f"[OK] Streamed WAV received ({len(body)} bytes)")
+
 
 if __name__ == "__main__":
     run_server_tests(

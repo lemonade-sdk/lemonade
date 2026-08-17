@@ -45,14 +45,17 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {                           // OS / device families ({} = no local gating)
         {"myrecipe", "cpu", {"linux", "windows"}, {{"cpu", {"x86_64"}}}},
     },
-    /*default_labels*/  {},                 // labels injected when a model omits them
+    /*supported_modes*/ {"chat"},           // every mode you serve, most-default first
     /*required_checkpoints*/ {"main"},      // unconditional files; conditional ones checked in load()
+    /*default_capabilities*/ {},            // non-mode labels stamped on a bare model
 };
 
 }}}  // namespace lemon::backends::myrecipe
 ```
 
 `SlotPolicy` controls accelerator sharing: `Standard` (counts toward LRU slots), `ExclusiveNpu` (evicts all NPU servers first), `CoexistByType` (one per model type), `Unmetered` (never counted, never auto-evicted — cloud).
+
+`supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 
 ## The server class + factory — `<stem>/<stem>_server.{h,cpp}`
 
@@ -67,12 +70,14 @@ The server class is a `WrappedServer` subclass. Implement `load()`, `unload()`, 
 
 namespace lemon { namespace backends {
 
-class MyServer : public WrappedServer, public ICompletionServer {
+class MyServer : public WrappedServer {
     // load(), unload(), the capability methods you serve …
 };
 
 namespace myrecipe {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);  // server-only
+// Lets BackendModeContractTest check supported_modes against the real class.
+constexpr uint32_t capabilities() { return capability_mask_of<MyServer>(); }
 }
 
 }}  // namespace lemon::backends

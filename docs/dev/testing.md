@@ -21,7 +21,7 @@ New endpoints, commands, and backends need at least one test that exercises them
 
 ### A test that isn't in CI doesn't exist
 
-A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be declared with `add_cpp_ci_test(<Name> CI ON COMMAND <target>)` in `CMakeLists.txt` so the `cpp-ci` CTest label picks them up.
+A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be declared with `add_cpp_ci_test(<Name> CI ON COMMAND <target>)` in `CMakeLists.txt` so the `cpp-ci` CTest label picks them up. Guard the block with `if(BUILD_TESTING AND ...)` — distro packaging configures with `BUILD_TESTING=OFF` to avoid building test binaries it discards, and an unguarded declaration fails that build at configure time.
 
 Most suites join the existing endpoint/CLI or hardware-matrix jobs in `cpp_server_build_test_release.yml`. A dedicated workflow is appropriate only when the suite has environment needs the existing jobs can't meet (real network downloads, a container, path-filtered smoke tests).
 
@@ -149,7 +149,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 
 | Group | Gate check | Opt in on a PR with |
 |---|---|---|
-| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
+| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
 | macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |

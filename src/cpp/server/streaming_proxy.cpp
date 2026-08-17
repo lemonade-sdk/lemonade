@@ -25,6 +25,9 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         } else if (usage.contains("input_tokens")) {
             telemetry.input_tokens = usage["input_tokens"].get<int>();
         }
+        if (usage.contains("prompt_tokens") || usage.contains("input_tokens")) {
+            telemetry.prompt_tokens = telemetry.input_tokens;
+        }
         if (usage.contains("completion_tokens")) {
             telemetry.output_tokens = usage["completion_tokens"].get<int>();
         } else if (usage.contains("output_tokens")) {
@@ -35,6 +38,16 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         }
         if (usage.contains("decoding_speed_tps")) {
             telemetry.tokens_per_second = usage["decoding_speed_tps"].get<double>();
+        }
+        if (usage.contains("prompt_tokens_details") && usage["prompt_tokens_details"].is_object() &&
+            usage["prompt_tokens_details"].contains("cached_tokens") &&
+            usage["prompt_tokens_details"]["cached_tokens"].is_number()) {
+            telemetry.cache_tokens = usage["prompt_tokens_details"]["cached_tokens"].get<int>();
+        } else if (usage.contains("input_tokens_details") && usage["input_tokens_details"].is_object() &&
+                   usage["input_tokens_details"].contains("cached_tokens") &&
+                   usage["input_tokens_details"]["cached_tokens"].is_number()) {
+            // Responses API usage shape.
+            telemetry.cache_tokens = usage["input_tokens_details"]["cached_tokens"].get<int>();
         }
     }
 
@@ -57,6 +70,9 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
         }
         if (timings.contains("predicted_per_second")) {
             telemetry.tokens_per_second = timings["predicted_per_second"].get<double>();
+        }
+        if (timings.contains("cache_n") && timings["cache_n"].is_number()) {
+            telemetry.cache_tokens = timings["cache_n"].get<int>();
         }
     }
 }
@@ -144,14 +160,20 @@ void StreamingProxy::forward_sse_stream(
         {},
         timeout_seconds,
         [&backend_status](int status) { backend_status = status; },
-        utils::HttpSecurityPolicy::TrustedLoopback
+        utils::HttpSecurityPolicy::TrustedLoopback,
+        [&sink]() {
+            return sink.is_writable && !sink.is_writable();
+        }
     );
 
+    const bool client_disconnected =
+        result.curl_code == CURLE_WRITE_ERROR ||
+        result.curl_code == CURLE_ABORTED_BY_CALLBACK;
     const bool transport_interrupted =
         result.curl_code == CURLE_PARTIAL_FILE || result.curl_code == CURLE_RECV_ERROR;
 
     if (result.curl_code != CURLE_OK) {
-        if (result.curl_code == CURLE_WRITE_ERROR) {
+        if (client_disconnected) {
             stream_error = true;
             LOG(WARNING, "StreamingProxy") << "Client disconnected during SSE stream (CURL error: " << result.curl_error << ")" << std::endl;
             telemetry.error_message = "Client disconnected during stream";
@@ -172,7 +194,8 @@ void StreamingProxy::forward_sse_stream(
         }
     }
 
-    if (result.status_code != 200 || backend_status != 200) {
+    if (!client_disconnected &&
+        (result.status_code != 200 || backend_status != 200)) {
         stream_error = true;
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << status
@@ -194,7 +217,11 @@ void StreamingProxy::forward_sse_stream(
                 : error_body;
             payload = json{{"error", {{"message", message},
                                       {"type", "backend_error"},
-                                      {"status", status}}}};
+                                      {"status_code", status}}}};
+        } else if (payload["error"].is_object() && !payload["error"].contains("status_code")) {
+            // A backend's own error object carries no transport status, so
+            // adapters downstream would have to guess one.
+            payload["error"]["status_code"] = status;
         }
         const std::string event = "data: " + payload.dump() + "\n\n";
         sink.write(event.data(), event.size());
@@ -325,7 +352,9 @@ void StreamingProxy::forward_byte_stream(
                 : error_body;
             payload = json{{"error", {{"message", message},
                                       {"type", "backend_error"},
-                                      {"status", status}}}};
+                                      {"status_code", status}}}};
+        } else if (payload["error"].is_object() && !payload["error"].contains("status_code")) {
+            payload["error"]["status_code"] = status;
         }
         const std::string out = payload.dump();
         sink.write(out.data(), out.size());
@@ -335,6 +364,12 @@ void StreamingProxy::forward_byte_stream(
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
     }
     sink.done();
+}
+
+StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::json& payload) {
+    TelemetryData telemetry;
+    extract_telemetry_from_chunk(payload, telemetry);
+    return telemetry;
 }
 
 StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string& buffer) {

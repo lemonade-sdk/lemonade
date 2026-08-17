@@ -22,6 +22,7 @@
 #include "runtime_config.h"
 #include "router.h"
 #include "routing_policy.h"
+#include "alias_manager.h"
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -106,10 +107,41 @@ private:
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
+    void handle_model_register(const httplib::Request& req, httplib::Response& res);
+    void validate_model_registration_name(const std::string& model_name,
+                                         bool require_user_namespace);
+    void normalize_model_registration_source(nlohmann::json& request_json,
+                                             bool local_import);
+    void validate_and_canonicalize_collection_registration(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool allow_embedded_models);
+    std::string register_model_definition_internal(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_get(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_post(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_delete(const httplib::Request& req, httplib::Response& res);
+    // Shared body of the three model-options handlers: resolves the model from
+    // the path, applies `mutation` (skipped when null), and writes the
+    // saved/effective/defaults response. The mutation owns updating `info` to
+    // the state the response should describe; one that returns false has
+    // already written its own error response.
+    void respond_with_model_options(
+        const httplib::Request& req, httplib::Response& res,
+        const std::function<bool(const std::string& model_key, ModelInfo& info,
+                                 httplib::Response& res)>& mutation);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
+    // Log and atomically record one non-streaming response's telemetry
+    // (usage/timings, cached tokens) against the serving model.
+    void record_response_telemetry(const nlohmann::json& response,
+                                   const nlohmann::json& request_json);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
                                             const ModelInfo& collection_info,
@@ -150,6 +182,11 @@ private:
     void handle_pin(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_get(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_add(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_remove(const httplib::Request& req, httplib::Response& res);
+    std::string resolve_alias_target(const std::string& model_name) const;
+    void normalize_and_resolve_request_model(nlohmann::json& request_json) const;
 
     // Cloud auth (public, all four prefixes).
     //   POST /v1/cloud/auth   body: {provider, api_key}
@@ -329,6 +366,7 @@ private:
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
+    std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;

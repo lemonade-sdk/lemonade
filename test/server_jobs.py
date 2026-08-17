@@ -66,9 +66,7 @@ class JobEngineTests(unittest.TestCase):
         proc = cls._shared_proc
         if proc is not None and proc.poll() is None:
             try:
-                requests.post(
-                    f"http://{HOST}:{PORT}/internal/shutdown", timeout=5
-                )
+                requests.post(f"http://{HOST}:{PORT}/internal/shutdown", timeout=5)
             except requests.RequestException:
                 proc.terminate()
             try:
@@ -121,7 +119,9 @@ class JobEngineTests(unittest.TestCase):
             r = requests.get(f"{BASE}/jobs", timeout=10)
             r.raise_for_status()
         except requests.RequestException as exc:
-            raise RuntimeError(f"failed to list jobs during test cleanup: {exc}") from exc
+            raise RuntimeError(
+                f"failed to list jobs during test cleanup: {exc}"
+            ) from exc
 
         for job in r.json().get("jobs", []):
             try:

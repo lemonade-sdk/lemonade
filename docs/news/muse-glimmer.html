@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Run Meta's Muse Glimmer 30B locally with Lemonade - Lemonade Server</title>
+  <link rel="icon" href="../assets/favicon.ico">
+  <link rel="stylesheet" href="../assets/website-styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="../assets/navbar.js"></script>
+  <meta name="description" content="Meta Superintelligence Labs released Muse Glimmer 30B under Apache 2.0. Run it locally with Lemonade on AMD, NVIDIA, Intel, and ARM GPUs in three commands.">
+  <meta property="og:title" content="Run Meta's Muse Glimmer 30B locally with Lemonade">
+  <meta property="og:description" content="Meta Superintelligence Labs released Muse Glimmer 30B under Apache 2.0. Run it locally with Lemonade on AMD, NVIDIA, Intel, and ARM GPUs in three commands.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png">
+  <meta property="og:type" content="article">
+  <meta property="article:published_time" content="2026-08-10">
+  <meta property="article:author" content="Lemonade Team">
+  <style>
+    .mg {
+      --mg-ink: #14161A;
+      --mg-on-ink: #E8EAEE;
+      --mg-on-ink-muted: #8A93A2;
+
+      --mg-paper: #FFFDF6;
+      --mg-text: #23262B;
+      --mg-muted: #6A7280;
+      --mg-line: rgba(20, 22, 26, 0.12);
+      --mg-line-soft: rgba(20, 22, 26, 0.07);
+
+      --mg-zest: #FCD846;
+      --mg-moss: #3C6531;
+
+      --mg-display: 'Space Grotesk', 'Plus Jakarta Sans', sans-serif;
+      --mg-body: 'Manrope', 'Segoe UI', sans-serif;
+      --mg-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+      width: 100%;
+      max-width: 940px;
+      margin: 0 auto 4rem;
+      padding: 0 1.5rem;
+      font-family: var(--mg-body);
+      color: var(--mg-text);
+      box-sizing: border-box;
+    }
+
+    .mg *,
+    .mg *::before,
+    .mg *::after { box-sizing: border-box; }
+
+    /* ---------- Header ---------- */
+
+    .mg-hero { padding: 3.5rem 0 2.8rem; }
+
+    .mg-eyebrow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.7rem;
+      font-family: var(--mg-mono);
+      font-size: 0.78rem;
+      color: var(--mg-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .mg-eyebrow span { white-space: nowrap; }
+
+    .mg-eyebrow i {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: var(--mg-zest);
+      flex: none;
+    }
+
+    .mg-title {
+      font-family: var(--mg-display);
+      font-weight: 700;
+      font-size: clamp(2.1rem, 5vw, 3.3rem);
+      line-height: 1.06;
+      letter-spacing: -0.032em;
+      margin: 0 0 1.7rem;
+      max-width: 22ch;
+    }
+
+    .mg-hero-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      gap: 2.5rem;
+      align-items: start;
+    }
+
+    .mg-lede {
+      font-size: 1.1rem;
+      line-height: 1.62;
+      margin: 0;
+    }
+
+    .mg a:not(.mg-btn) {
+      color: var(--mg-text);
+      text-decoration: underline;
+      text-decoration-color: var(--mg-zest);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 0.2em;
+      transition: text-decoration-color 0.15s ease;
+    }
+
+    .mg a:not(.mg-btn):hover { text-decoration-color: var(--mg-text); }
+
+    .mg a:not(.mg-btn):focus-visible {
+      outline: 2px solid var(--mg-text);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    .mg-specs {
+      margin: 0;
+      border-top: 2px solid var(--mg-text);
+    }
+
+    .mg-specs div {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 1rem;
+      padding: 0.62rem 0;
+      border-bottom: 1px solid var(--mg-line-soft);
+    }
+
+    .mg-specs dt {
+      font-family: var(--mg-mono);
+      font-size: 0.78rem;
+      color: var(--mg-muted);
+    }
+
+    .mg-specs dd {
+      margin: 0;
+      font-family: var(--mg-display);
+      font-weight: 600;
+      font-size: 0.95rem;
+      text-align: right;
+    }
+
+    /* ---------- Setup ---------- */
+
+    .mg-setup { padding: 1rem 0; }
+
+    .mg-setup-head { margin-bottom: 2.4rem; }
+
+    .mg-setup-head h2 {
+      font-family: var(--mg-display);
+      font-weight: 700;
+      font-size: clamp(1.5rem, 3vw, 1.95rem);
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      margin: 0 0 0.6rem;
+    }
+
+    .mg-setup-head p {
+      margin: 0;
+      line-height: 1.62;
+      color: var(--mg-muted);
+      max-width: 62ch;
+    }
+
+    .mg-step {
+      display: grid;
+      grid-template-columns: 2rem minmax(0, 1fr);
+      gap: 0 1.6rem;
+      padding-bottom: 2.6rem;
+      position: relative;
+    }
+
+    .mg-step::before {
+      content: "";
+      position: absolute;
+      left: 1rem;
+      top: 2.5rem;
+      bottom: 0;
+      width: 1px;
+      background: var(--mg-line);
+    }
+
+    .mg-step--end::before { display: none; }
+
+    .mg-step-num {
+      grid-row: 1 / span 2;
+      font-family: var(--mg-mono);
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--mg-text);
+      background: var(--mg-zest);
+      width: 2rem;
+      height: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.4rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .mg-step h3 {
+      font-family: var(--mg-display);
+      font-weight: 600;
+      font-size: 1.25rem;
+      letter-spacing: -0.015em;
+      margin: 0.1rem 0 0.5rem;
+    }
+
+    .mg-step > div:last-child { grid-column: 2; }
+
+    .mg-step p {
+      margin: 0 0 1.1rem;
+      line-height: 1.62;
+      color: var(--mg-muted);
+      max-width: 62ch;
+    }
+
+    .mg-step p code,
+    .mg-note code {
+      font-family: var(--mg-mono);
+      font-size: 0.86em;
+      background: rgba(20, 22, 26, 0.06);
+      border: 1px solid var(--mg-line-soft);
+      padding: 0.08em 0.34em;
+      border-radius: 0.25rem;
+      color: var(--mg-text);
+    }
+
+    /* ---------- Substeps ---------- */
+
+    /* Wide gap between substeps, tight gap to their own terminal, so each
+       label reads as bound to the block beneath it. */
+    .mg-sub + .mg-sub { margin-top: 1.9rem; }
+
+    .mg-sub-head { margin-bottom: 0.55rem; }
+
+    .mg-sub-head h4 {
+      font-family: var(--mg-display);
+      font-weight: 600;
+      font-size: 1.05rem;
+      letter-spacing: -0.012em;
+      margin: 0;
+    }
+
+    .mg-sub-note {
+      margin: 0.2rem 0 0;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      color: var(--mg-muted);
+    }
+
+    .mg-sub .mg-term { margin-bottom: 0; }
+
+    /* ---------- Commands ---------- */
+
+    .mg-term {
+      background: var(--mg-ink);
+      border-radius: 0.75rem;
+      overflow: hidden;
+      margin-bottom: 1.1rem;
+    }
+
+    .mg-term-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 1rem;
+      padding: 1rem 1.1rem;
+    }
+
+    .mg-term-row + .mg-term-row { border-top: 1px solid rgba(232, 234, 238, 0.08); }
+
+    .mg-term-cmd {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Rows without a comment are a single line, so the button centers on it
+       rather than bottom-aligning to a two-line block. */
+    .mg-term-row > code {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .mg-term-row:has(> code) { align-items: center; }
+
+    /* The backend/verb is the scannable part, so it carries the accent. */
+    .mg-comment {
+      display: block;
+      font-family: var(--mg-mono);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      color: var(--mg-on-ink-muted);
+      margin-bottom: 0.32rem;
+    }
+
+    .mg-comment b {
+      color: var(--mg-zest);
+      font-weight: 500;
+    }
+
+    .mg-term code {
+      display: block;
+      font-family: var(--mg-mono);
+      font-size: 0.86rem;
+      line-height: 1.6;
+      color: var(--mg-on-ink);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .mg-copy {
+      color: var(--mg-on-ink);
+      background: rgba(232, 234, 238, 0.09);
+      border: 1px solid rgba(232, 234, 238, 0.16);
+      border-radius: 0.35rem;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+      flex: none;
+    }
+
+    /* Both icons share a grid cell so swapping them never reflows the button. */
+    .mg-copy svg {
+      grid-area: 1 / 1;
+      width: 0.95rem;
+      height: 0.95rem;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .mg-copy .mg-icon-done { opacity: 0; }
+    .mg-copy.is-copied .mg-icon-copy { opacity: 0; }
+    .mg-copy.is-copied .mg-icon-done { opacity: 1; }
+
+    .mg-copy:hover {
+      background: rgba(232, 234, 238, 0.18);
+      border-color: rgba(232, 234, 238, 0.3);
+    }
+
+    .mg-copy:focus-visible {
+      outline: 2px solid var(--mg-zest);
+      outline-offset: 2px;
+    }
+
+    .mg-copy.is-copied {
+      background: var(--mg-moss);
+      border-color: var(--mg-moss);
+      color: #fff;
+    }
+
+    /* ---------- Note ---------- */
+
+    /* Selector carries a class more than `.mg-step p` so it wins outright
+       rather than relying on source order. */
+    .mg-step p.mg-note {
+      margin: 0 0 0.55rem;
+      padding: 0.1rem 0 0.1rem 0.9rem;
+      border-left: 2px solid var(--mg-zest);
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: var(--mg-muted);
+      max-width: 70ch;
+    }
+
+    .mg-step p.mg-note:last-child { margin-bottom: 0; }
+
+    .mg-note strong {
+      font-weight: 600;
+      color: var(--mg-text);
+    }
+
+    /* ---------- Close ---------- */
+
+    .mg-close {
+      margin-top: 1.4rem;
+      padding-top: 2.4rem;
+      border-top: 1px solid var(--mg-line);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.4rem;
+    }
+
+    .mg-close p {
+      margin: 0;
+      font-family: var(--mg-display);
+      font-weight: 600;
+      font-size: 1.12rem;
+      letter-spacing: -0.015em;
+      max-width: 36ch;
+    }
+
+    .mg-btn {
+      font-family: var(--mg-display);
+      font-weight: 600;
+      font-size: 0.98rem;
+      background: var(--mg-zest);
+      color: var(--mg-text);
+      text-decoration: none;
+      padding: 0.85rem 1.7rem;
+      border-radius: 0.55rem;
+      white-space: nowrap;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .mg-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 24px rgba(252, 216, 70, 0.42);
+    }
+
+    .mg-btn:focus-visible {
+      outline: 2px solid var(--mg-text);
+      outline-offset: 3px;
+    }
+
+    /* ---------- Responsive ---------- */
+
+    @media (max-width: 860px) {
+      .mg-hero-body {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 2rem;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .mg { padding: 0 1.1rem; }
+      .mg-hero { padding: 2.5rem 0 2rem; }
+
+      .mg-step {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0;
+        padding-bottom: 2.2rem;
+      }
+
+      .mg-step::before { display: none; }
+      .mg-step > div:last-child { grid-column: 1; }
+      .mg-step-num { grid-row: auto; margin-bottom: 0.9rem; }
+      .mg-close { flex-direction: column; align-items: flex-start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .mg-btn:hover { transform: none; }
+      .mg-btn, .mg-copy { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main blog-main">
+    <article class="mg">
+
+      <header class="mg-hero">
+        <div class="mg-eyebrow">
+          <span>New model</span>
+          <i aria-hidden="true"></i>
+          <span>Apache 2.0</span>
+          <i aria-hidden="true"></i>
+          <span>August 10, 2026</span>
+        </div>
+
+        <h1 class="mg-title">Run Meta's Muse Glimmer 30B with Lemonade</h1>
+
+        <div class="mg-hero-body">
+          <p class="mg-lede">Meta Superintelligence Labs released <a href="https://huggingface.co/meta-models/Muse-Glimmer-30B" target="_blank" rel="noopener">Muse Glimmer 30B</a> today: a dense, multimodal, open-weights model trained for agentic work rather than one-shot answers. It reads screenshots and documents, calls tools, and manages its own memory, so a long multi-step task can pick up where it left off instead of starting over. Lemonade runs it locally in three commands, and serves it over the OpenAI-, Ollama-, and Anthropic-compatible APIs your agents already speak.</p>
+
+          <dl class="mg-specs">
+            <div><dt>Parameters</dt><dd>30B dense</dd></div>
+            <div><dt>Input</dt><dd>Text and vision</dd></div>
+            <div><dt>License</dt><dd>Apache 2.0</dd></div>
+            <div><dt>Download at 4-bit</dt><dd>About 20 GB</dd></div>
+            <div><dt>Runs on</dt><dd>32 GB+ GPUs</dd></div>
+          </dl>
+        </div>
+      </header>
+
+      <section class="mg-setup" aria-labelledby="mg-setup-title">
+        <div class="mg-setup-head">
+          <h2 id="mg-setup-title">Setup</h2>
+          <p>Set aside about 20 GB of free disk space for the download.</p>
+        </div>
+
+        <div class="mg-step">
+          <div class="mg-step-num">1</div>
+          <div>
+            <h3>Point llama.cpp at the latest release</h3>
+            <p>Muse Glimmer is a new architecture, so it needs the <a href="https://github.com/ggml-org/llama.cpp" target="_blank" rel="noopener">upstream llama.cpp</a> build that added support for it. Run the one that matches your hardware.</p>
+
+            <div class="mg-term">
+              <div class="mg-term-row">
+                <div class="mg-term-cmd">
+                  <span class="mg-comment"># <b>vulkan</b>: cross-platform, covers AMD, NVIDIA, Intel, and ARM GPUs</span>
+                  <code id="mg-vulkan">lemonade config set llamacpp.vulkan_bin=latest</code>
+                </div>
+                <button class="mg-copy" type="button" data-copy-target="mg-vulkan" aria-label="Copy command" title="Copy">
+                  <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+
+              <div class="mg-term-row">
+                <div class="mg-term-cmd">
+                  <span class="mg-comment"># <b>rocm</b>: optimized for AMD</span>
+                  <code id="mg-rocm">lemonade config set llamacpp.rocm_bin=latest</code>
+                </div>
+                <button class="mg-copy" type="button" data-copy-target="mg-rocm" aria-label="Copy command" title="Copy">
+                  <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+
+              <div class="mg-term-row">
+                <div class="mg-term-cmd">
+                  <span class="mg-comment"># <b>cuda</b>: optimized for NVIDIA</span>
+                  <code id="mg-cuda">lemonade config set llamacpp.cuda_bin=latest</code>
+                </div>
+                <button class="mg-copy" type="button" data-copy-target="mg-cuda" aria-label="Copy command" title="Copy">
+                  <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <p class="mg-note"><strong>Note:</strong> Set Lemonade to use any backend your hardware supports with the <code>llamacpp</code> config, for example <code>lemonade config set llamacpp.backend=rocm</code>.</p>
+
+            <p class="mg-note"><strong>Note:</strong> Set the same key to <code>builtin</code> to return to the llama.cpp version Lemonade ships and tests, for example <code>lemonade config set llamacpp.vulkan_bin=builtin</code>.</p>
+
+            <p class="mg-note"><strong>Note:</strong> Muse Glimmer ships as a built-in model in Lemonade v11.6.0, so this step becomes optional once you update.</p>
+          </div>
+        </div>
+
+        <div class="mg-step">
+          <div class="mg-step-num">2</div>
+          <div>
+            <h3>Pull the weights</h3>
+            <p>We like to recommend the 4-bit Unsloth Dynamic quantization for local use. Other sizes, from 2-bit up to BF16, are available in the same <a href="https://huggingface.co/unsloth/Muse-Glimmer-30B-GGUF" target="_blank" rel="noopener">Unsloth repository</a>. Lemonade picks up the vision projector from that repo automatically.</p>
+
+            <div class="mg-term">
+              <div class="mg-term-row">
+                <div class="mg-term-cmd">
+                  <span class="mg-comment"># <b>pull</b>: downloads about 20 GB, weights plus vision projector</span>
+                  <code id="mg-pull">lemonade pull unsloth/Muse-Glimmer-30B-GGUF:UD-Q4_K_XL</code>
+                </div>
+                <button class="mg-copy" type="button" data-copy-target="mg-pull" aria-label="Copy command" title="Copy">
+                  <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mg-step mg-step--end">
+          <div class="mg-step-num">3</div>
+          <div>
+            <h3>Use the model</h3>
+            <p>Lemonade registers the download as <code>Muse-Glimmer-30B-GGUF-UD-Q4_K_XL</code>, combining the repository name with the quantization you chose. Use that name with whichever of these fits where you want to work.</p>
+
+            <div class="mg-sub">
+              <div class="mg-sub-head">
+                <h4>Serve the endpoint to apps and agents</h4>
+              </div>
+              <div class="mg-term">
+                <div class="mg-term-row">
+                  <code id="mg-load">lemonade load Muse-Glimmer-30B-GGUF-UD-Q4_K_XL</code>
+                  <button class="mg-copy" type="button" data-copy-target="mg-load" aria-label="Copy command" title="Copy">
+                    <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mg-sub">
+              <div class="mg-sub-head">
+                <h4>Open it in the web app</h4>
+              </div>
+              <div class="mg-term">
+                <div class="mg-term-row">
+                  <code id="mg-run">lemonade run Muse-Glimmer-30B-GGUF-UD-Q4_K_XL</code>
+                  <button class="mg-copy" type="button" data-copy-target="mg-run" aria-label="Copy command" title="Copy">
+                    <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mg-sub">
+              <div class="mg-sub-head">
+                <h4>Chat in your terminal</h4>
+              </div>
+              <div class="mg-term">
+                <div class="mg-term-row">
+                  <code id="mg-chat">lemonade chat Muse-Glimmer-30B-GGUF-UD-Q4_K_XL</code>
+                  <button class="mg-copy" type="button" data-copy-target="mg-chat" aria-label="Copy command" title="Copy">
+                    <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mg-sub">
+              <div class="mg-sub-head">
+                <h4>Use it in a coding agent</h4>
+                <p class="mg-sub-note">Claude Code, Codex, and OpenCode work here too.</p>
+              </div>
+              <div class="mg-term">
+                <div class="mg-term-row">
+                  <code id="mg-launch">lemonade launch pi --model Muse-Glimmer-30B-GGUF-UD-Q4_K_XL</code>
+                  <button class="mg-copy" type="button" data-copy-target="mg-launch" aria-label="Copy command" title="Copy">
+                    <svg class="mg-icon-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <svg class="mg-icon-done" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mg-close">
+          <p>Not running Lemonade yet? It installs in about a minute.</p>
+          <a class="mg-btn" href="../docs/guide/install/" target="_blank" rel="noopener">Install Lemonade</a>
+        </div>
+      </section>
+
+    </article>
+  </main>
+
+  <div class="footer-placeholder"></div>
+
+  <script src="../assets/footer.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      initializeNavbar('../');
+      initializeFooter('../');
+
+      document.querySelectorAll('.mg-copy[data-copy-target]').forEach((button) => {
+        button.addEventListener('click', async () => {
+          const codeEl = document.getElementById(button.getAttribute('data-copy-target'));
+          const text = codeEl ? codeEl.textContent.trim() : '';
+          if (!text) return;
+
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch (error) {
+            const helper = document.createElement('textarea');
+            helper.value = text;
+            document.body.appendChild(helper);
+            helper.select();
+            document.execCommand('copy');
+            document.body.removeChild(helper);
+          }
+
+          button.classList.add('is-copied');
+          button.setAttribute('aria-label', 'Copied');
+          setTimeout(() => {
+            button.classList.remove('is-copied');
+            button.setAttribute('aria-label', 'Copy command');
+          }, 1200);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Run Meta's Muse Glimmer 30B locally with Lemonade",
+        url: "https://lemonade-server.ai/news/muse-glimmer.html",
+        date: "August 10, 2026",
+        description: "Meta Superintelligence Labs released Muse Glimmer 30B under Apache 2.0. Run this agentic, multimodal open-weights model locally with Lemonade on AMD, NVIDIA, Intel, and ARM GPUs in three commands.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
         title: "Search ModelScope from Lemonade",
         url: "https://lemonade-server.ai/news/modelscope-search.html",
         date: "July 27, 2026",
