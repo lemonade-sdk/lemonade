@@ -40,15 +40,16 @@ SCENARIOS = ["chat-short", "code-short"]
 WARMUP_RUNS = 1
 MEASUREMENT_RUNS = 5
 THRESHOLDS = {
-    "tps_warn":     -0.05,
+    "tps_warn": -0.05,
     "tps_critical": -0.15,
-    "ttft_warn":    +0.10,
+    "ttft_warn": +0.10,
 }
 
 
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+
 
 def get_therock_ver() -> str:
     """Read therock major.minor from backend_versions.json — mirrors llamacpp_server.cpp."""
@@ -59,8 +60,10 @@ def get_therock_ver() -> str:
 
 def gh_api(path: str, token: str | None = None) -> dict:
     url = f"https://api.github.com/{path.lstrip('/')}"
-    headers = {"Accept": "application/vnd.github+json",
-               "X-GitHub-Api-Version": "2022-11-28"}
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
     if token:
         headers["Authorization"] = f"Bearer {token}"
     req = urllib.request.Request(url, headers=headers)
@@ -68,8 +71,7 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None,
-                           tag_prefix: str = "") -> str:
+def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "") -> str:
     if tag_prefix:
         releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
         for r in releases:
@@ -135,14 +137,19 @@ def find_lemonade_bin() -> str:
     if os.environ.get("LEMONADE_EXE"):
         return os.environ["LEMONADE_EXE"]
     # CI artifacts (build job path)
-    for c in [Path("build/Release/lemonade.exe"),
-              Path("build/lemonade"),
-              Path("build/Release/lemonade")]:
+    for c in [
+        Path("build/Release/lemonade.exe"),
+        Path("build/lemonade"),
+        Path("build/Release/lemonade"),
+    ]:
         if c.exists():
             return str(c)
     # Local dev: lemonade_server install has the C++ CLI
     if IS_WINDOWS:
-        local = Path(os.environ.get("LOCALAPPDATA", "")) / "lemonade_server/bin/lemonade.exe"
+        local = (
+            Path(os.environ.get("LOCALAPPDATA", ""))
+            / "lemonade_server/bin/lemonade.exe"
+        )
         if local.exists():
             return str(local)
     return "lemonade"
@@ -152,14 +159,18 @@ def find_lemonade_bin() -> str:
 # Registry
 # ---------------------------------------------------------------------------
 
+
 def get_models_from_registry(base_url: str) -> list[str]:
     """Mirror validate_llamacpp.py:get_hot_llamacpp_models() — reads live registry."""
     try:
         req = urllib.request.Request(f"{base_url}/api/v1/models?show_all=true")
         with urllib.request.urlopen(req, timeout=30) as r:
             data = json.loads(r.read())
-        models = [m["id"] for m in data.get("data", [])
-                  if m.get("recipe") == "llamacpp" and "hot" in m.get("labels", [])]
+        models = [
+            m["id"]
+            for m in data.get("data", [])
+            if m.get("recipe") == "llamacpp" and "hot" in m.get("labels", [])
+        ]
         return sorted(models)
     except Exception as e:
         print(f"  [WARN] Could not fetch models from registry: {e}")
@@ -170,6 +181,7 @@ def get_models_from_registry(base_url: str) -> list[str]:
 # Binary acquisition
 # ---------------------------------------------------------------------------
 
+
 def resolve_binary_url(fork: dict, version: str) -> str:
     key = "binary_url_windows" if IS_WINDOWS else "binary_url_linux"
     url = fork.get(key, "")
@@ -177,7 +189,9 @@ def resolve_binary_url(fork: dict, version: str) -> str:
         return ""
     arch = fork.get("arch")
     if not arch:
-        raise RuntimeError(f"Fork {fork.get('fork_id')} is missing required 'arch' field in benchmark_forks.json")
+        raise RuntimeError(
+            f"Fork {fork.get('fork_id')} is missing required 'arch' field in benchmark_forks.json"
+        )
     therock_ver = ""
     if "{therock_ver}" in url and BACKEND_VERSIONS_PATH.exists():
         therock_ver = get_therock_ver()
@@ -190,8 +204,9 @@ def resolve_binary_url(fork: dict, version: str) -> str:
     return url
 
 
-def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
-                        token: str | None, dry_run: bool) -> Path | None:
+def install_fork_binary(
+    fork: dict, version: str, binaries_dir: Path, token: str | None, dry_run: bool
+) -> Path | None:
     fork_id = fork["fork_id"]
     exe_name = fork["binary_exe_windows"] if IS_WINDOWS else fork["binary_exe_linux"]
     if not exe_name:
@@ -201,7 +216,9 @@ def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
     # One slot per fork — overwrite on version change, no disk accumulation
     install_dir = binaries_dir / fork_id
     version_file = install_dir / "version.txt"
-    installed_version = version_file.read_text().strip() if version_file.exists() else None
+    installed_version = (
+        version_file.read_text().strip() if version_file.exists() else None
+    )
 
     if installed_version == version:
         binary_path = find_binary(install_dir, exe_name)
@@ -252,16 +269,17 @@ def install_fork_binary(fork: dict, version: str, binaries_dir: Path,
 # Bench runner
 # ---------------------------------------------------------------------------
 
+
 def install_backend(base_url: str, recipe: str, backend: str) -> None:
     """Install backend via POST /install — mirrors validate_llamacpp.py:install_backend()."""
     print(f"  Installing backend {recipe}/{backend} via /install...")
-    data = json.dumps({"recipe": recipe, "backend": backend,
-                       "stream": False}).encode()
+    data = json.dumps({"recipe": recipe, "backend": backend, "stream": False}).encode()
     req = urllib.request.Request(
         f"{base_url}/api/v1/install",
         data=data,
         headers={"Content-Type": "application/json"},
-        method="POST")
+        method="POST",
+    )
     try:
         with urllib.request.urlopen(req, timeout=1800) as r:
             body = json.loads(r.read())
@@ -271,9 +289,16 @@ def install_backend(base_url: str, recipe: str, backend: str) -> None:
         raise RuntimeError(f"Backend install failed ({e.code}): {body}") from e
 
 
-def run_bench(fork: dict, version: str, binary_path: Path, model: str,
-              output_file: Path, compare_file: Path | None,
-              dry_run: bool, lemonade_bin: str) -> dict | None:
+def run_bench(
+    fork: dict,
+    version: str,
+    binary_path: Path,
+    model: str,
+    output_file: Path,
+    compare_file: Path | None,
+    dry_run: bool,
+    lemonade_bin: str,
+) -> dict | None:
     backend = fork["backend"]
     # bench_as: the real llamacpp backend key lemond recognises for --backend.
     # llamacpp exposes {system, cuda, vulkan, rocm, cpu} — "rocm-nightly" and
@@ -284,14 +309,23 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
     # lemond never reads one.
     bench_as = fork.get("install_as", backend)
 
-    cmd = [lemonade_bin, "bench", model,
-           "--backend", bench_as,
-           "--scenarios", *SCENARIOS,
-           "--runs", str(MEASUREMENT_RUNS),
-           "--warmup", str(WARMUP_RUNS),
-           "--auto-pull",
-           "--json",
-           "--output", str(output_file)]
+    cmd = [
+        lemonade_bin,
+        "bench",
+        model,
+        "--backend",
+        bench_as,
+        "--scenarios",
+        *SCENARIOS,
+        "--runs",
+        str(MEASUREMENT_RUNS),
+        "--warmup",
+        str(WARMUP_RUNS),
+        "--auto-pull",
+        "--json",
+        "--output",
+        str(output_file),
+    ]
     if compare_file and compare_file.exists():
         cmd += ["--compare", str(compare_file)]
 
@@ -308,8 +342,9 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
 
     # Stream output live so CI logs show progress (model pulls, scenario runs)
     print("    [running — streaming output below]", flush=True)
-    proc = subprocess.Popen(cmd, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen(
+        cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
     output_lines = []
     for line in proc.stdout:
         print(f"    {line}", end="", flush=True)
@@ -327,14 +362,20 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
     with open(output_file) as f:
         data = json.load(f)
 
-    data.update({"fork_id": fork["fork_id"], "fork_label": fork["label"],
-                 "fork_repo": fork["repo"], "fork_version": version,
-                 "fork_backend": backend})
+    data.update(
+        {
+            "fork_id": fork["fork_id"],
+            "fork_label": fork["label"],
+            "fork_repo": fork["repo"],
+            "fork_version": version,
+            "fork_backend": backend,
+        }
+    )
     # CI provenance so the dashboard can link each number back to its run.
     # These env vars are set by GitHub Actions; absent in local runs (None).
     run_id = os.environ.get("GITHUB_RUN_ID")
     server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
-    repo   = os.environ.get("GITHUB_REPOSITORY", "")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
     if run_id:
         data["run_id"] = run_id
         if repo:
@@ -352,13 +393,16 @@ def run_bench(fork: dict, version: str, binary_path: Path, model: str,
 # Regression detection
 # ---------------------------------------------------------------------------
 
+
 def find_previous_result(results_dir: Path, fork_id: str, model: str) -> Path | None:
     model_dir = results_dir / fork_id / model
     if not model_dir.exists():
         return None
-    runs = sorted([p for p in model_dir.glob("run-*.json")
-                   if "regression" not in p.name],
-                  key=lambda p: p.stat().st_mtime, reverse=True)
+    runs = sorted(
+        [p for p in model_dir.glob("run-*.json") if "regression" not in p.name],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     return runs[1] if len(runs) > 1 else None
 
 
@@ -379,8 +423,9 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
     return data.get("results", [])
 
 
-def check_regression(current: dict, previous: dict,
-                     fork_id: str, model: str) -> list[dict]:
+def check_regression(
+    current: dict, previous: dict, fork_id: str, model: str
+) -> list[dict]:
     alerts = []
     curr_results = {r["backend"]: r for r in backend_results(current, model)}
     prev_results = {r["backend"]: r for r in backend_results(previous, model)}
@@ -390,37 +435,56 @@ def check_regression(current: dict, previous: dict,
             continue
         for curr_sc in curr.get("scenarios", []):
             sc_name = curr_sc["name"]
-            prev_sc = next((s for s in prev.get("scenarios", [])
-                            if s["name"] == sc_name), None)
+            prev_sc = next(
+                (s for s in prev.get("scenarios", []) if s["name"] == sc_name), None
+            )
             if not prev_sc:
                 continue
-            curr_tps  = curr_sc.get("tps", {}).get("mean", 0)
-            prev_tps  = prev_sc.get("tps", {}).get("mean", 0)
+            curr_tps = curr_sc.get("tps", {}).get("mean", 0)
+            prev_tps = prev_sc.get("tps", {}).get("mean", 0)
             curr_ttft = curr_sc.get("ttft_ms", {}).get("mean", 0)
             prev_ttft = prev_sc.get("ttft_ms", {}).get("mean", 0)
             if prev_tps > 0:
                 delta = (curr_tps - prev_tps) / prev_tps
-                sev = ("CRITICAL" if delta <= THRESHOLDS["tps_critical"]
-                       else "WARN" if delta <= THRESHOLDS["tps_warn"] else None)
+                sev = (
+                    "CRITICAL"
+                    if delta <= THRESHOLDS["tps_critical"]
+                    else "WARN" if delta <= THRESHOLDS["tps_warn"] else None
+                )
                 if sev:
-                    alerts.append({"severity": sev, "fork_id": fork_id,
-                                   "model": model, "scenario": sc_name,
-                                   "metric": "tps", "delta_pct": round(delta * 100, 2),
-                                   "prev": round(prev_tps, 2), "curr": round(curr_tps, 2)})
+                    alerts.append(
+                        {
+                            "severity": sev,
+                            "fork_id": fork_id,
+                            "model": model,
+                            "scenario": sc_name,
+                            "metric": "tps",
+                            "delta_pct": round(delta * 100, 2),
+                            "prev": round(prev_tps, 2),
+                            "curr": round(curr_tps, 2),
+                        }
+                    )
             if prev_ttft > 0:
                 delta = (curr_ttft - prev_ttft) / prev_ttft
                 if delta >= THRESHOLDS["ttft_warn"]:
-                    alerts.append({"severity": "WARN", "fork_id": fork_id,
-                                   "model": model, "scenario": sc_name,
-                                   "metric": "ttft_ms",
-                                   "delta_pct": round(delta * 100, 2),
-                                   "prev": round(prev_ttft, 2),
-                                   "curr": round(curr_ttft, 2)})
+                    alerts.append(
+                        {
+                            "severity": "WARN",
+                            "fork_id": fork_id,
+                            "model": model,
+                            "scenario": sc_name,
+                            "metric": "ttft_ms",
+                            "delta_pct": round(delta * 100, 2),
+                            "prev": round(prev_ttft, 2),
+                            "curr": round(curr_ttft, 2),
+                        }
+                    )
     return alerts
 
 
-def update_leaderboard(leaderboard: dict, fork: dict, version: str,
-                       model: str, result: dict) -> None:
+def update_leaderboard(
+    leaderboard: dict, fork: dict, version: str, model: str, result: dict
+) -> None:
     for br in backend_results(result, model):
         for sc in br.get("scenarios", []):
             tps_mean = sc.get("tps", {}).get("mean")
@@ -428,9 +492,12 @@ def update_leaderboard(leaderboard: dict, fork: dict, version: str,
                 continue
             key = f"{model}|{sc['name']}"
             entry = {
-                "model": model, "scenario": sc["name"],
-                "fork_id": fork["fork_id"], "fork_label": fork["label"],
-                "fork_repo": fork["repo"], "fork_version": version,
+                "model": model,
+                "scenario": sc["name"],
+                "fork_id": fork["fork_id"],
+                "fork_label": fork["label"],
+                "fork_repo": fork["repo"],
+                "fork_version": version,
                 "backend": br.get("backend"),
                 "tps_mean": round(tps_mean, 2),
                 "tps_p95": round(sc["tps"].get("p95", 0), 2),
@@ -439,8 +506,9 @@ def update_leaderboard(leaderboard: dict, fork: dict, version: str,
                 "timestamp": result.get("timestamp"),
             }
             leaderboard.setdefault(key, [])
-            leaderboard[key] = [e for e in leaderboard[key]
-                                if e["fork_id"] != fork["fork_id"]]
+            leaderboard[key] = [
+                e for e in leaderboard[key] if e["fork_id"] != fork["fork_id"]
+            ]
             leaderboard[key].append(entry)
             leaderboard[key].sort(key=lambda e: e["tps_mean"], reverse=True)
 
@@ -449,29 +517,40 @@ def update_leaderboard(leaderboard: dict, fork: dict, version: str,
 # Main
 # ---------------------------------------------------------------------------
 
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--forks",        default="src/cpp/resources/benchmark_forks.json")
-    parser.add_argument("--output",       default="ci/results")
-    parser.add_argument("--binaries-dir", default="C:/lemonade-bench-binaries"
-                        if IS_WINDOWS else "/opt/lemonade-bench-binaries")
-    parser.add_argument("--fork-filter",  default="")
+    parser.add_argument("--forks", default="src/cpp/resources/benchmark_forks.json")
+    parser.add_argument("--output", default="ci/results")
+    parser.add_argument(
+        "--binaries-dir",
+        default=(
+            "C:/lemonade-bench-binaries"
+            if IS_WINDOWS
+            else "/opt/lemonade-bench-binaries"
+        ),
+    )
+    parser.add_argument("--fork-filter", default="")
     parser.add_argument("--model-filter", default="")
-    parser.add_argument("--port",         default="",
-                        help="lemond port (informational; bench uses UDP beacon)")
-    parser.add_argument("--dry-run",       action="store_true")
-    parser.add_argument("--download-only", action="store_true",
-                        help="Only download fork binaries, do not run bench (use before lemond starts)")
-    parser.add_argument("--token",        default=os.environ.get("GH_TOKEN"))
+    parser.add_argument(
+        "--port", default="", help="lemond port (informational; bench uses UDP beacon)"
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--download-only",
+        action="store_true",
+        help="Only download fork binaries, do not run bench (use before lemond starts)",
+    )
+    parser.add_argument("--token", default=os.environ.get("GH_TOKEN"))
     args = parser.parse_args()
 
-    forks_path   = Path(args.forks)
-    output_dir   = Path(args.output)
+    forks_path = Path(args.forks)
+    output_dir = Path(args.output)
     binaries_dir = Path(args.binaries_dir)
-    fork_filter  = [f.strip() for f in args.fork_filter.split(",") if f.strip()]
+    fork_filter = [f.strip() for f in args.fork_filter.split(",") if f.strip()]
     model_filter = [m.strip() for m in args.model_filter.split(",") if m.strip()]
     lemonade_bin = find_lemonade_bin()
-    timestamp    = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
     print("=== Lemonade Perf Regression Runner ===")
     print(f"Forks    : {forks_path}")
@@ -485,9 +564,12 @@ def main() -> int:
     with open(forks_path) as f:
         forks_config = json.load(f)
 
-    forks = [fork for fork in forks_config["forks"]
-             if fork.get("tracked", True)
-             and (not fork_filter or fork["fork_id"] in fork_filter)]
+    forks = [
+        fork
+        for fork in forks_config["forks"]
+        if fork.get("tracked", True)
+        and (not fork_filter or fork["fork_id"] in fork_filter)
+    ]
 
     print(f"Forks ({len(forks)}): {[f['fork_id'] for f in forks]}")
 
@@ -500,7 +582,7 @@ def main() -> int:
     print()
 
     leaderboard: dict = {}
-    all_alerts:  list = []
+    all_alerts: list = []
     run_summary: list = []
 
     # --download-only: just fetch binaries, exit before bench (used before lemond starts)
@@ -511,7 +593,9 @@ def main() -> int:
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
                 version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
-                install_fork_binary(fork, version, binaries_dir, args.token, args.dry_run)
+                install_fork_binary(
+                    fork, version, binaries_dir, args.token, args.dry_run
+                )
             except Exception as e:
                 print(f"  [ERROR] {e}")
                 return 1
@@ -539,8 +623,9 @@ def main() -> int:
             continue
 
         try:
-            binary_path = install_fork_binary(fork, version, binaries_dir,
-                                              args.token, args.dry_run)
+            binary_path = install_fork_binary(
+                fork, version, binaries_dir, args.token, args.dry_run
+            )
         except Exception as e:
             print(f"  [ERROR] Binary install failed: {e}")
             continue
@@ -556,7 +641,9 @@ def main() -> int:
             # Skip POST /install when fork provides its own prebuilt binary.
             # The binary is already routed via llamacpp.<backend>_bin config —
             # it has ROCm baked in and doesn't need lemond to install anything.
-            has_own_binary = bool(fork.get("binary_url_linux") or fork.get("binary_url_windows"))
+            has_own_binary = bool(
+                fork.get("binary_url_linux") or fork.get("binary_url_windows")
+            )
             if not has_own_binary:
                 try:
                     install_backend_name = fork.get("install_as", fork["backend"])
@@ -565,7 +652,9 @@ def main() -> int:
                     print(f"  [ERROR] Backend install failed: {e}")
                     continue
             else:
-                print(f"  Skipping POST /install — fork provides its own prebuilt binary")
+                print(
+                    f"  Skipping POST /install — fork provides its own prebuilt binary"
+                )
 
         # Fetch model list from registry now that lemond is confirmed running
         run_models = models
@@ -578,16 +667,27 @@ def main() -> int:
                 continue
 
         for model in run_models:
-            print(f"\n  Model: {model} (--auto-pull enabled, first run may download weights)")
-            run_file    = output_dir / fork_id / model / f"run-{timestamp}.json"
+            print(
+                f"\n  Model: {model} (--auto-pull enabled, first run may download weights)"
+            )
+            run_file = output_dir / fork_id / model / f"run-{timestamp}.json"
             prev_result = find_previous_result(output_dir, fork_id, model)
 
-            result = run_bench(fork, version, binary_path, model,
-                               run_file, prev_result, args.dry_run, lemonade_bin)
+            result = run_bench(
+                fork,
+                version,
+                binary_path,
+                model,
+                run_file,
+                prev_result,
+                args.dry_run,
+                lemonade_bin,
+            )
 
             if result is None:
-                run_summary.append({"fork_id": fork_id, "model": model,
-                                    "status": "FAILED"})
+                run_summary.append(
+                    {"fork_id": fork_id, "model": model, "status": "FAILED"}
+                )
                 continue
 
             alerts = []
@@ -598,47 +698,70 @@ def main() -> int:
                 all_alerts.extend(alerts)
 
             for a in alerts:
-                print(f"    [{a['severity']}] {a['scenario']} {a['metric']}: "
-                      f"{a['prev']} → {a['curr']} ({a['delta_pct']:+.1f}%)")
+                print(
+                    f"    [{a['severity']}] {a['scenario']} {a['metric']}: "
+                    f"{a['prev']} → {a['curr']} ({a['delta_pct']:+.1f}%)"
+                )
 
             update_leaderboard(leaderboard, fork, version, model, result)
-            run_summary.append({
-                "fork_id": fork_id, "model": model, "version": version,
-                "status": ("CRITICAL" if any(a["severity"] == "CRITICAL"
-                           for a in alerts) else "WARN" if alerts else "OK"),
-                "alerts": alerts,
-                "result_file": str(run_file),
-            })
+            run_summary.append(
+                {
+                    "fork_id": fork_id,
+                    "model": model,
+                    "version": version,
+                    "status": (
+                        "CRITICAL"
+                        if any(a["severity"] == "CRITICAL" for a in alerts)
+                        else "WARN" if alerts else "OK"
+                    ),
+                    "alerts": alerts,
+                    "result_file": str(run_file),
+                }
+            )
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not args.dry_run:
         lb_out = output_dir / "leaderboard.json"
-        lb_out.write_text(json.dumps({
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "scenarios": SCENARIOS,
-            "by_model_scenario": leaderboard,
-        }, indent=2))
+        lb_out.write_text(
+            json.dumps(
+                {
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "scenarios": SCENARIOS,
+                    "by_model_scenario": leaderboard,
+                },
+                indent=2,
+            )
+        )
         print(f"\nLeaderboard: {lb_out}")
 
         rr_out = output_dir / "regression_report.json"
-        rr_out.write_text(json.dumps({
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "run_timestamp": timestamp,
-            "summary": run_summary,
-            "alerts": all_alerts,
-            "has_critical": any(a["severity"] == "CRITICAL" for a in all_alerts),
-        }, indent=2))
+        rr_out.write_text(
+            json.dumps(
+                {
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "run_timestamp": timestamp,
+                    "summary": run_summary,
+                    "alerts": all_alerts,
+                    "has_critical": any(
+                        a["severity"] == "CRITICAL" for a in all_alerts
+                    ),
+                },
+                indent=2,
+            )
+        )
         print(f"Regression : {rr_out}")
 
     print(f"\n{'='*60}")
     print("SUMMARY")
     criticals = [a for a in all_alerts if a["severity"] == "CRITICAL"]
-    warns     = [a for a in all_alerts if a["severity"] == "WARN"]
+    warns = [a for a in all_alerts if a["severity"] == "WARN"]
     print(f"  CRITICAL: {len(criticals)}  WARN: {len(warns)}")
     for a in criticals:
-        print(f"  !! {a['fork_id']} / {a['model']} / {a['scenario']} "
-              f"{a['metric']}: {a['delta_pct']:+.1f}%")
+        print(
+            f"  !! {a['fork_id']} / {a['model']} / {a['scenario']} "
+            f"{a['metric']}: {a['delta_pct']:+.1f}%"
+        )
 
     if criticals:
         print("\nCRITICAL regressions detected — exit 1")
