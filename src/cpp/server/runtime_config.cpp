@@ -375,6 +375,29 @@ std::vector<std::string> RuntimeConfig::allowed_origins() const {
             }
         }
     }
+
+    // LEMONADE_ALLOWED_ORIGINS (comma-separated) augments the persisted config so
+    // a deployment can grant remote web origins without editing config.json. A
+    // bare "*" or "null" entry is honored by lemon::utils::is_origin_allowed.
+    if (const char* env = std::getenv("LEMONADE_ALLOWED_ORIGINS"); env && *env) {
+        const std::string value(env);
+        size_t start = 0;
+        while (start <= value.size()) {
+            const size_t comma = value.find(',', start);
+            const size_t len = (comma == std::string::npos) ? std::string::npos : comma - start;
+            std::string item = value.substr(start, len);
+            const size_t begin = item.find_first_not_of(" \t\r\n");
+            if (begin != std::string::npos) {
+                const size_t end = item.find_last_not_of(" \t\r\n");
+                origins.push_back(item.substr(begin, end - begin + 1));
+            }
+            if (comma == std::string::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
+    }
+
     return origins;
 }
 

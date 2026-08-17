@@ -1,6 +1,5 @@
 #include "lemon/utils/origin_utils.h"
 
-#include <algorithm>
 #include <set>
 
 namespace lemon::utils {
@@ -17,6 +16,18 @@ bool is_origin_allowed(const std::string& origin,
     };
     if (app_origins.count(origin)) {
         return true;
+    }
+
+    // Explicitly configured origins (the config `allowed_origins` array and the
+    // LEMONADE_ALLOWED_ORIGINS env var, merged in RuntimeConfig::allowed_origins).
+    // A bare "*" allows any origin; otherwise the Origin must match an entry
+    // exactly. Exact matching also gates the opaque "null" origin, which is only
+    // honored when "null" is explicitly allow-listed and never matches a web
+    // origin whose host happens to be "null" (e.g. http://null).
+    for (const auto& allowed : allowed_origins) {
+        if (allowed == "*" || allowed == origin) {
+            return true;
+        }
     }
 
     auto scheme_end = origin.find("://");
@@ -50,9 +61,7 @@ bool is_origin_allowed(const std::string& origin,
         return true;
     }
 
-    // Configured allowed origins (for non-loopback web-app access, e.g.,
-    // http://192.168.1.50:13305 when bound to --host 0.0.0.0).
-    return std::find(allowed_origins.begin(), allowed_origins.end(), origin) != allowed_origins.end();
+    return false;
 }
 
 } // namespace lemon::utils

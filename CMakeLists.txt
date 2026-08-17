@@ -2958,6 +2958,13 @@ if(BUILD_TESTING AND EXISTS "${_URL_UTILS_TEST_SRC}")
     add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
 endif()
 
+set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
+if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
+    add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
+    target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
+    add_cpp_ci_test(OriginUtilsTest CI ON COMMAND test_origin_utils)
+endif()
+
 set(_GITHUB_API_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_github_api.cpp")
 if(BUILD_TESTING AND EXISTS "${_GITHUB_API_TEST_SRC}")
     add_executable(test_github_api test/cpp/test_github_api.cpp)

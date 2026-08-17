@@ -1775,7 +1775,8 @@ void Server::setup_cors(httplib::Server &web_server) {
                 res.set_header("Vary", "Origin");
                 res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 res.set_header("Access-Control-Allow-Headers",
-                               "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id");
+                               "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, "
+                               "MCP-Protocol-Version, Mcp-Session-Id, traceparent");
             }
         });
 
