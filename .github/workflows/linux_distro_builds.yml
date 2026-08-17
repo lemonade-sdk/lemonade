@@ -87,7 +87,7 @@ jobs:
       - name: Install ccache
         run: |
           if command -v pacman >/dev/null 2>&1; then
-            pacman -Syu --needed --noconfirm ccache mbedtls
+            pacman -Syu --needed --noconfirm ccache
           elif command -v zypper >/dev/null 2>&1; then
             zypper install -y ccache
           elif command -v apt-get >/dev/null 2>&1; then
