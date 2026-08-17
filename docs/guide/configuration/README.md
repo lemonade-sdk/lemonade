@@ -42,9 +42,10 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "auto_check_model_updates": true,
+  "broadcast": true,
   "cloud_providers": [],
-  "config_version": 2,
-  "ctx_size": -1,
+  "config_version": 1,
+  "ctx_size": 4096,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
   "ds4": {
@@ -56,7 +57,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "args": "",
     "prefer_system": false
   },
-  "global_timeout": 600,
+  "global_timeout": 300,
   "host": "localhost",
   "inhibit_suspend": true,
   "kokoro": {
@@ -82,7 +83,6 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "cpu_args": "",
     "cpu_bin": "builtin"
   },
-  "no_broadcast": false,
   "no_fetch_executables": false,
   "offline": false,
   "onnxruntime": {
@@ -97,7 +97,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "port": 13305,
-  "rocm_channel": "stable",
+  "rocm_channel": "preview",
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -140,7 +140,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
   },
   "thenoise": {
     "backend": "auto",
-    "lora_dir": ""
+    "lora_dir": "",
+    "upscaler_dir": ""
   },
   "thinksound": {
     "backend": "auto",
@@ -181,9 +182,9 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
-| `no_broadcast` | bool | false | Disable UDP broadcasting for server discovery |
-| `extra_models_dir` | string | "" | Secondary directory to scan for GGUF model files |
-| `models_dir` | string | "auto" | Directory for cached model files. "auto" follows HF_HUB_CACHE / HF_HOME / platform default |
+| `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
+| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond` |
+| `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
 | `offline` | bool | false | Skip model downloads |
@@ -193,6 +194,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
+
+Both `models_dir` and `extra_models_dir` can be changed at runtime through `POST /internal/set`. Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
 ### Backend Configuration
 
@@ -415,12 +418,13 @@ sudo systemctl restart lemond
 ## lemond CLI
 
 ```
-lemond [cache_dir] [--port PORT] [--host HOST]
+lemond [cache_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 ```
 
 - **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
 - **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
 - **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
 
 ## API Key and Security
 

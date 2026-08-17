@@ -794,11 +794,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
             StreamingProxy::forward_sse_stream(url, request_body, sink,
                 [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {
                     if (telemetry_callback) {
-                        telemetry_callback(telemetry.input_tokens,
-                                           telemetry.output_tokens,
-                                           telemetry.time_to_first_token,
-                                           telemetry.tokens_per_second,
-                                           telemetry.error_message);
+                        telemetry_callback(telemetry);
                     }
                 },
                 timeout_seconds,
@@ -816,7 +812,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) && !streamed_any_bytes;
 
         if (telemetry_callback && !will_retry) {
-            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+            StreamingProxy::TelemetryData error_telemetry;
+            error_telemetry.error_message = e.what();
+            telemetry_callback(error_telemetry);
         }
 
         // Try to send error to client if possible

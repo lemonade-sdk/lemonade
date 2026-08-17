@@ -572,12 +572,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        // If response_format is not json, return it wrapped
-        return json{{"text", res.body}};
-    }
+    return audio::interpret_transcription_body(res.body, response_format);
 }
 
 json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
@@ -666,11 +661,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        return json{{"text", res.body}};
-    }
+    return audio::interpret_transcription_body(res.body, response_format);
 }
 
 // ITranscriptionServer implementation

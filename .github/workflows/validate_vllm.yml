@@ -86,14 +86,15 @@ jobs:
           print(f"vllm.rocm: {old} -> {release}")
           PY
 
-      - name: Build Lemonade server
+      - name: Build lemond and the CLI
         run: |
           set -e
           ./setup.sh
           # Skip the web app; CI only exercises the backend.
           cmake -DBUILD_WEB_APP=OFF --preset default
-          cmake --build --preset default
+          cmake --build --preset default --target lemond lemonade
           test -f build/lemond || { echo "lemond not found!"; exit 1; }
+          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
           echo "Build successful!"
 
       - name: Upload build artifacts

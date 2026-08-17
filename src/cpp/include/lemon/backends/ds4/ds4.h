@@ -53,9 +53,9 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text generation",
+    /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels

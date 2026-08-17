@@ -1645,7 +1645,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["display_name"] = desc->display_name;
         entry["selectable_backend"] = desc->selectable_backend;
         entry["uses_ctx_size"] = desc->uses_ctx_size;
-        entry["modality"] = desc->modality;
+        entry["modality"] = lemon::backends::modality_display_for(*desc);
         entry["experimental"] = desc->experimental;
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);

@@ -3,6 +3,7 @@
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include <cstdint>
 
 namespace lemon {
 namespace backends {
@@ -31,6 +32,7 @@ namespace ds4 {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<Ds4Server>(); }
 }  // namespace ds4
 
 }  // namespace backends
