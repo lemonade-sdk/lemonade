@@ -974,6 +974,18 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         return 1;
     }
 
+    // Fetch version from /health (not present in system-info)
+    std::string lemonade_version;
+    try {
+        std::string resp = client.make_request("/api/v1/health", "GET", "", "", 5000, 5000);
+        json health = json::parse(resp);
+        if (health.contains("version") && health["version"].is_string()) {
+            lemonade_version = health["version"].get<std::string>();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to fetch lemonade version from /health: " << e.what() << std::endl;
+    }
+
     std::unordered_set<std::string> test_recipes, test_backends;
     std::map<std::string, std::vector<BackendDiscovery>> backends_by_model;
     for (const auto& model : unique_models) {
@@ -989,7 +1001,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     json hardware_profile = build_hardware_profile(
         sys_info,
         {test_recipes.begin(), test_recipes.end()},
-        {test_backends.begin(), test_backends.end()});
+        {test_backends.begin(), test_backends.end()},
+        lemonade_version);
 
     // Execute benchmarks for each model
     struct ModelBenchResult {
