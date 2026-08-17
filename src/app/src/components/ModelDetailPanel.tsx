@@ -1234,6 +1234,13 @@ const ModelConfigurationTab: React.FC<{
     setServerEffectiveRecipeOptions({});
     setServerDefaultRecipeOptions({});
     setServerOptionsLoaded(false);
+    // The tab is mounted once for the whole panel, so the previous model's draft
+    // has to go with its server state — otherwise it stays on screen, and in the
+    // load body, until this fetch resolves.
+    setCtxSizeDraft('-1');
+    setRecipeDraft({});
+    setMergeArgsDraft(true);
+    setCustomVoiceMode(false);
     void api.getModelOptions(name)
       .then(result => {
         if (cancelled) return;
@@ -1409,14 +1416,16 @@ const ModelConfigurationTab: React.FC<{
 
   // Published during render rather than from an effect: the Load button lives in
   // the panel header, and a click can land in the same tick as the edit before
-  // it, which an effect would still be one draft behind.
-  if (loadOptionsRef) loadOptionsRef.current = buildLoadOptions;
+  // it, which an effect would still be one draft behind. Until the fetch lands
+  // there is nothing on screen to apply, and an empty draft would read as a
+  // tombstone for every option, so the button falls back to the saved ones.
+  if (loadOptionsRef) loadOptionsRef.current = serverOptionsLoaded ? buildLoadOptions : null;
   useEffect(() => () => {
     if (loadOptionsRef) loadOptionsRef.current = null;
   }, [loadOptionsRef]);
 
   const reloadViaPanel = async () => {
-    if (!loadedModel || !onReloadModel) return;
+    if (!loadedModel || !onReloadModel || !serverOptionsLoaded) return;
     setIsReloading(true);
     try {
       await onReloadModel(loadedModel, buildLoadOptions());
@@ -1806,7 +1815,7 @@ const ModelConfigurationTab: React.FC<{
               type="button"
               className="btn btn--primary btn--sm"
               onClick={reloadViaPanel}
-              disabled={isReloading || isLoadingThis}
+              disabled={isReloading || isLoadingThis || !serverOptionsLoaded}
               aria-busy={isReloading}
             >
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}

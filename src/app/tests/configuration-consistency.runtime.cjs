@@ -87,7 +87,9 @@ assert.ok(autoTunePosition >= 0 && autoTunePosition < contextNumberPosition && c
   'context size controls must render in checkbox, number field, slider order');
 
 // Load must apply the configuration on screen, saved or not.
-assert.match(detailSource, /loadOptionsRef\.current = buildLoadOptions;/);
+// Only once the saved options are in hand: an empty draft would otherwise read
+// as an explicit "ignore everything saved".
+assert.match(detailSource, /loadOptionsRef\.current = serverOptionsLoaded \? buildLoadOptions : null;/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onLoad, model\)\}/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPullAndLoad, model\)\}/);
 // A load states every option the panel shows, sending null where a field is

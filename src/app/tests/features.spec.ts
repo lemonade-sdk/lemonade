@@ -1712,6 +1712,71 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
   });
 
+  test('25c — a pending options fetch never turns an empty draft into overrides', async ({ page }) => {
+    const modelA = 'gate-model-a';
+    const modelB = 'gate-model-b';
+    let loadRequestBody: Record<string, unknown> | null = null;
+    let releaseB: (() => void) | null = null;
+    const heldFetch = new Promise<void>(resolve => { releaseB = resolve; });
+    const savedByModel: ModelOptionsState = new Map([
+      [modelA, { llamacpp_args: '--no-mmap', ctx_size: 16384 }],
+    ]);
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith(`/${modelB}/options`)) await heldFetch;
+      if (await fulfillModelOptionsRoute(route, savedByModel)) return;
+      return route.fulfill({
+        json: {
+          data: [
+            { id: modelA, name: modelA, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+            { id: modelB, name: modelB, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+          ],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel.getByLabel('Backend args')).toHaveValue('--no-mmap');
+    await expect(panel.getByLabel('Context size tokens')).toHaveValue('16384');
+
+    // Model B's options are still in flight: its panel must show nothing of A's,
+    // and must not report unsaved changes it does not have.
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
+    await expect(panel.getByLabel('Backend args')).toHaveValue('');
+    await expect(panel.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+
+    // An empty draft is not a set of tombstones: with nothing loaded to show,
+    // Load carries no options and lemond keeps using what is saved.
+    await page.getByRole('button', { name: `Load ${modelB}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelB);
+    expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
+    expect(loadRequestBody).not.toHaveProperty('ctx_size');
+
+    // Loading switches to Chat, so come back before reading the panel again.
+    releaseB?.();
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    loadRequestBody = null;
+    await page.getByRole('button', { name: `Load ${modelB}` }).click();
+    await expect.poll(() => loadRequestBody?.llamacpp_args).toBeNull();
+  });
+
   test('25b — Reset shows lemond defaults without writing, and merge_args previews the resolved load', async ({ page }) => {
     const modelName = 'merge-args-model';
     const savedArgs = '--no-mmap';
