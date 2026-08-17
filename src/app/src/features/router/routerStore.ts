@@ -1,5 +1,4 @@
 import type { ModelInfo } from '../../api';
-import { storageKey } from '../../storage';
 import {
   ROUTER_RECIPE,
   type RouterDraft,
@@ -9,8 +8,11 @@ import {
   routerDisplayName,
 } from './routerTypes';
 
-const ROUTER_STORE_KEY = 'router_collections';
-
+/**
+ * Router definitions are persisted by lemond. These record helpers remain only
+ * as compatibility shims for callers that construct/export transient records;
+ * they deliberately do not read or write browser storage.
+ */
 export interface RouterRecord {
   model_name: string;
   display_name: string;
@@ -23,47 +25,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isRouterRecord(value: unknown): value is RouterRecord {
-  if (!isRecord(value) || !isRecord(value.request)) return false;
-  return typeof value.model_name === 'string'
-    && typeof value.display_name === 'string'
-    && value.request.recipe === ROUTER_RECIPE;
-}
-
 export function loadRouterRecords(): RouterRecord[] {
-  try {
-    const raw = localStorage.getItem(storageKey(ROUTER_STORE_KEY));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return (Array.isArray(parsed?.routers) ? parsed.routers : []).filter(isRouterRecord);
-  } catch {
-    return [];
-  }
-}
-
-function saveRouterRecords(records: RouterRecord[]): void {
-  localStorage.setItem(storageKey(ROUTER_STORE_KEY), JSON.stringify({ version: 1, routers: records }));
+  return [];
 }
 
 export function upsertRouterRecord(draft: RouterDraft): RouterRecord {
   const request = buildRouterPullRequest(draft);
-  const current = loadRouterRecords();
-  const previous = current.find(item => item.model_name.toLowerCase() === request.model_name.toLowerCase());
   const now = Date.now();
-  const record: RouterRecord = {
+  return {
     model_name: request.model_name,
     display_name: draft.name.trim() || routerDisplayName(request.model_name),
     request,
-    createdAt: previous?.createdAt || now,
+    createdAt: now,
     updatedAt: now,
   };
-  saveRouterRecords([record, ...current.filter(item => item.model_name.toLowerCase() !== request.model_name.toLowerCase())]);
-  return record;
 }
 
-export function deleteRouterRecord(modelName: string): void {
-  saveRouterRecords(loadRouterRecords().filter(item => item.model_name.toLowerCase() !== modelName.toLowerCase()));
-}
+export function deleteRouterRecord(_modelName: string): void {}
 
 export function routerRecordToModelInfo(record: RouterRecord): ModelInfo {
   return {
@@ -89,11 +67,7 @@ export function routerRecordToDraft(record: RouterRecord): RouterDraft {
 }
 
 export function exportRouterRecordsPayload(): Record<string, unknown> {
-  return {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    routers: loadRouterRecords().map(record => record.request),
-  };
+  return { version: 1, exportedAt: new Date().toISOString(), routers: [] };
 }
 
 export function importRouterRecords(payload: unknown): { imported: number; errors: string[] } {
@@ -102,17 +76,16 @@ export function importRouterRecords(payload: unknown): { imported: number; error
     : isRecord(payload) && Array.isArray(payload.routers)
       ? payload.routers
       : [payload];
-  const result = { imported: 0, errors: [] as string[] };
+  const errors: string[] = [];
   for (let index = 0; index < items.length; index += 1) {
     try {
-      const draft = parseRouterPayload(items[index]);
-      upsertRouterRecord(draft);
-      result.imported += 1;
+      parseRouterPayload(items[index]);
+      errors.push(`Entry ${index + 1}: register imported routers with lemond instead of browser storage.`);
     } catch (error) {
-      result.errors.push(`Entry ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+      errors.push(`Entry ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return result;
+  return { imported: 0, errors };
 }
 
 export function routerRegistrationOptions(model: ModelInfo): Record<string, unknown> | undefined {
@@ -120,10 +93,12 @@ export function routerRegistrationOptions(model: ModelInfo): Record<string, unkn
   const routing = (model as any).routing;
   const components = Array.isArray((model as any).components) ? (model as any).components : [];
   if (!isRecord(routing) || components.length === 0) return undefined;
+  const displayName = String((model as any).display_name || '').trim();
   return {
     version: String((model as any).version || '1'),
     recipe: ROUTER_RECIPE,
     components,
     routing,
+    ...(displayName ? { display_name: displayName } : {}),
   };
 }

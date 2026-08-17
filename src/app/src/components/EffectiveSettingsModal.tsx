@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api, { type ModelInfo, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
+import api, { type ModelInfo, type ModelOptions, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
 import {
   type RecipeOptions,
   type SamplingParams,
@@ -125,6 +125,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
 
   const [effective, setEffective] = useState<EffectiveLoadCommand | null>(null);
+  const [serverModelOptions, setServerModelOptions] = useState<ModelOptions | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -164,9 +165,17 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       setEffective(result);
       const committed = argsField ? result.options[argsField] : undefined;
       setDraft(typeof committed === 'string' ? committed : '');
+      try {
+        setServerModelOptions(await api.getModelOptions(modelName));
+      } catch {
+        // The effective load command remains useful even if the auxiliary
+        // saved/default source breakdown cannot be fetched.
+        setServerModelOptions(null);
+      }
     } catch (err) {
       setError(friendlyErrorMessage(err));
       setEffective(null);
+      setServerModelOptions(null);
     } finally {
       setLoading(false);
     }
@@ -296,8 +305,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
   }, [modelName, isModelLoaded, onReload, loadEffective]);
 
-  const resolvedContextRaw = resolved?.tuning.recipe_options?.ctx_size;
-  const autoContextSizeEnabled = isAutoContextSize(loadModelTuning(modelName)?.recipe_options?.ctx_size);
+  const serverContextRaw = serverModelOptions?.effective?.ctx_size ?? effective?.options?.ctx_size;
+  const resolvedContextRaw = serverContextRaw ?? resolved?.tuning.recipe_options?.ctx_size;
+  const autoContextSizeEnabled = isAutoContextSize(serverContextRaw);
 
   const contextSetting = useMemo(() => {
     const runtimeContext = positiveContextSize(loadedContextSize);
@@ -331,19 +341,30 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   }, [autoContextSizeEnabled, effective, loadedContextSize, loadedModel, resolved, resolvedContextRaw, resolvingContextSize]);
 
   const sourceRows = useMemo<SourceRow[]>(() => {
-    if (!resolved) return [];
+    if (!resolved && !serverModelOptions) return [];
     const rows: SourceRow[] = [];
-    for (const [key, value] of Object.entries(resolved.tuning.recipe_options || {})) {
-      if (key === 'merge_args' || key === 'mmproj_enabled' || key === 'ctx_size') continue;
+    const effectiveRecipe = serverModelOptions?.effective || resolved?.tuning.recipe_options || {};
+    const savedRecipe = serverModelOptions?.saved || {};
+    const localRecipe = resolved?.tuning.recipe_options || {};
+    for (const [key, value] of Object.entries(effectiveRecipe)) {
+      if (key === 'model_name' || key === 'recipe' || key === 'save_options'
+        || key === 'pinned' || key === 'merge_args' || key === 'mmproj_enabled' || key === 'ctx_size') continue;
+      const typedKey = key as keyof RecipeOptions;
+      const knownRecipeKey = Object.prototype.hasOwnProperty.call(RECIPE_OPTION_LABELS, typedKey)
+        || Object.prototype.hasOwnProperty.call(localRecipe, key);
+      if (!knownRecipeKey) continue;
       rows.push({
         key: `ro-${key}`,
-        label: RECIPE_OPTION_LABELS[key as keyof RecipeOptions] || key,
+        label: RECIPE_OPTION_LABELS[typedKey] || key,
         value: displayValue(value),
-        source: resolved.sources.recipe_options[key as keyof RecipeOptions],
+        source: Object.prototype.hasOwnProperty.call(savedRecipe, key)
+          ? 'custom'
+          : resolved?.sources.recipe_options[typedKey] || 'built_in',
       });
     }
     return rows;
-  }, [resolved]);
+  }, [resolved, serverModelOptions]);
+
 
   const samplingInputId = (key: keyof SamplingParams) => `effective-sampling-${key}`;
   const stepSamplingInput = (key: keyof SamplingParams, direction: -1 | 1) => {
@@ -363,7 +384,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     const existing = loadModelTuning(modelName);
     saveModelTuning(modelName, {
       ...(existing || {}),
-      recipe_options: existing?.recipe_options || {},
+      recipe_options: {},
       sampling,
     });
     setNotice(Object.keys(sampling).length > 0

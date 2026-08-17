@@ -3268,7 +3268,8 @@ optgroup {
   cursor: pointer;
 }
 
-.backends__toast {
+.backends__toast,
+.manager__toast {
   position: fixed;
   bottom: var(--space-6);
   left: 50%;

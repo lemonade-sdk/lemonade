@@ -228,6 +228,17 @@ export interface LoadedModel {
   recipe_options?: Record<string, unknown>;
 }
 
+/** Response shape of GET/POST/DELETE /api/v1/models/{id}/options. */
+export interface ModelOptions {
+  model_name: string;
+  recipe: string;
+  saved: Record<string, unknown>;
+  effective: Record<string, unknown>;
+  defaults: Record<string, unknown>;
+  resolved_ctx_size: number;
+  load_command: string;
+}
+
 export interface EffectiveLoadCommand {
   model_name: string;
   recipe: string;
@@ -1372,6 +1383,31 @@ class LemonadeAPI {
     }
   }
 
+  private _modelOptionsPath(modelName: string): string {
+    return `/api/v1/models/${encodeURIComponent(modelName)}/options`;
+  }
+
+  async getModelOptions(modelName: string): Promise<ModelOptions> {
+    return this._json<ModelOptions>(this._modelOptionsPath(modelName));
+  }
+
+  async saveModelOptions(modelName: string, changes: Record<string, unknown>): Promise<ModelOptions> {
+    const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), {
+      method: 'POST',
+      body: changes,
+    });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  async resetModelOptions(modelName: string): Promise<ModelOptions> {
+    const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), {
+      method: 'DELETE',
+    });
+    this._notifyModelsChanged();
+    return result;
+  }
+
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
@@ -1384,9 +1420,9 @@ class LemonadeAPI {
     // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {
       model_name: modelName,
-      save_options: false,
       ...(stagedOptions || {}),
       ...recipeOptions,
+      save_options: false,
     };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
@@ -1809,6 +1845,13 @@ class LemonadeAPI {
     return this._json<Record<string, unknown>>('/internal/config');
   }
 
+  async setRuntimeConfig(changes: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this._json<Record<string, unknown>>('/internal/set', {
+      method: 'POST',
+      body: changes,
+    });
+  }
+
   async getDefaultContextSize(): Promise<LemonadeContextDefault | undefined> {
     const data = await this.getRuntimeConfig();
     const n = Number(data.ctx_size);
@@ -2191,34 +2234,17 @@ class LemonadeAPI {
   // ── Model registration / pull ───────────────────────────────────
 
   /**
-   * Persist a user model or collection definition before returning. Unlike the
-   * streaming pull path, this mirrors GUI2's registration flow and guarantees
-   * that a successful save is immediately visible through /api/v1/models and
-   * survives a lemond/UI restart.
+   * Persist a user model or collection definition without downloading weights.
    */
   async registerModelDefinition(modelName: string, opts?: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const resp = await this._fetch('/api/v1/pull', {
+    const result = await this._json<Record<string, unknown>>('/api/v1/models/register', {
       method: 'POST',
       body: {
         ...(opts || {}),
         model_name: modelName,
-        stream: false,
-        subscribe: false,
-        do_not_upgrade: true,
       },
       cache: 'no-store',
     });
-    const text = await resp.text();
-    let result: Record<string, unknown> = {};
-    if (text.trim()) {
-      try {
-        const parsed = JSON.parse(text);
-        if (isObject(parsed)) result = parsed;
-      } catch {
-        // Some lemond builds return an empty/plain acknowledgement for a
-        // non-streaming registration. HTTP success is sufficient here.
-      }
-    }
     this._notifyModelsChanged();
     return result;
   }

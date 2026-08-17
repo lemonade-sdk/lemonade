@@ -48,7 +48,6 @@ import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../fea
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
-import type { ModelTuning } from '../modelConfiguration';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -919,7 +918,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
   const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
-  const [currentModelTuning, setCurrentModelTuning] = useState<ModelTuning | null>(null);
+  const [currentModelRecipeOptions, setCurrentModelRecipeOptions] = useState<Record<string, unknown> | null>(null);
   const chatRootRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1084,21 +1083,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     }
   }, [chatContainerWidth, chatLogsWidth, railExpanded]);
 
-  const [customModelInfos, setCustomModelInfos] = useState<ModelInfo[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const cancelSchedule = scheduleIdleWork(() => {
-      void import(/* webpackChunkName: "custom-model-store" */ '../features/customModels/customModelStore')
-        .then(({ loadCustomModels, customModelToModelInfo }) => {
-          if (!cancelled) setCustomModelInfos(loadCustomModels().map(customModelToModelInfo));
-        })
-        .catch(error => console.warn('Failed to hydrate chat custom models:', error));
-    }, 650);
-    return () => {
-      cancelled = true;
-      cancelSchedule();
-    };
-  }, []);
+  const customModelInfos = useMemo(
+    () => serverModels.filter(model => (model as any).custom === true),
+    [serverModels],
+  );
   const knownModelInfos = useMemo(
     () => {
       const seen = new Set<string>();
@@ -1290,29 +1278,31 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
 
   useEffect(() => {
     let cancelled = false;
-    const needsTuning = !!currentModel && (
+    const needsModelOptions = connectionStatus === 'connected' && !!currentModel && (
       currentCapability === 'image'
       || currentCapability === 'audio-generation'
       || currentCapability === 'tts'
       || isOpenMossTts
     );
-    if (!needsTuning) {
-      setCurrentModelTuning(null);
+    if (!needsModelOptions) {
+      setCurrentModelRecipeOptions(null);
       return () => { cancelled = true; };
     }
-    void import(/* webpackChunkName: "model-configuration" */ '../modelConfiguration')
-      .then(({ loadModelTuning }) => {
-        if (!cancelled) setCurrentModelTuning(loadModelTuning(currentModel || ''));
+    setCurrentModelRecipeOptions(null);
+    void getApiClient()
+      .then(api => api.getModelOptions(currentModel))
+      .then(options => {
+        if (!cancelled) setCurrentModelRecipeOptions(options.effective || {});
       })
       .catch(() => {
-        if (!cancelled) setCurrentModelTuning(null);
+        if (!cancelled) setCurrentModelRecipeOptions(null);
       });
     return () => { cancelled = true; };
-  }, [currentCapability, currentModel, isOpenMossTts]);
+  }, [connectionStatus, currentCapability, currentModel, isOpenMossTts]);
 
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = currentModelTuning?.recipe_options || {};
+    const recipeOptions = currentModelRecipeOptions || {};
     setAudioGenerationSettings(prev => ({
       ...prev,
       duration: isAceStepAudio ? 150 : 10,
@@ -1320,16 +1310,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
       lyrics: '',
     }));
-  }, [currentModel, currentCapability, currentModelTuning, isAceStepAudio]);
+  }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio]);
 
   useEffect(() => {
     if (!isOpenMossTts) return;
     setOpenMossSettings({
       mode: 'plain',
-      voiceDescription: String(currentModelTuning?.recipe_options?.voice || ''),
+      voiceDescription: String(currentModelRecipeOptions?.voice || ''),
     });
     setPendingAudioFiles([]);
-  }, [currentModel, currentModelTuning, isOpenMossTts]);
+  }, [currentModel, currentModelRecipeOptions, isOpenMossTts]);
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
@@ -1371,10 +1361,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       currentLoadedModel,
       currentKnownModelInfo,
       currentCapability === 'image'
-        ? (currentModelTuning?.recipe_options as Record<string, unknown> | undefined)
+        ? (currentModelRecipeOptions || undefined)
         : undefined,
     ),
-    [currentLoadedModel, currentKnownModelInfo, currentModel, currentCapability, currentModelTuning],
+    [currentLoadedModel, currentKnownModelInfo, currentModel, currentCapability, currentModelRecipeOptions],
   );
   const defaultImageSettingsKey = useMemo(() => JSON.stringify(defaultImageSettings), [defaultImageSettings]);
 
@@ -1901,10 +1891,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         (modelInfo as any)?.recipe
         || ((Array.isArray(modelInfo?.recipes) && modelInfo?.recipes?.[0]) ? (modelInfo.recipes[0] as any).recipe : ''),
       ).toLowerCase();
-      const { loadModelTuning } = await import(
-        /* webpackChunkName: "model-configuration" */ '../modelConfiguration'
-      );
-      const directOptions = loadModelTuning(modelName)?.recipe_options || {};
+      const directOptions = (await api.getModelOptions(modelName)).effective || {};
       const voice = modelRecipe.includes('openmoss')
         ? String(directOptions.voice || '')
         : ttsVoiceFromRecipeOptions(directOptions);
@@ -2470,10 +2457,8 @@ ${finalText}`
       } else if (model.capability === 'tts') {
         if (!text) throw new Error('TTS mode needs text to speak.');
         let targetModel = model.name;
-        const { loadModelTuning } = await import(
-          /* webpackChunkName: "model-configuration" */ '../modelConfiguration'
-        );
-        let voice = ttsVoiceFromRecipeOptions(loadModelTuning(model.name)?.recipe_options || {});
+        const directOptions = (await api.getModelOptions(model.name)).effective || {};
+        let voice = ttsVoiceFromRecipeOptions(directOptions);
         let speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
         let reloadTargetAfterVoiceDesign = false;

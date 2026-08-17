@@ -101,10 +101,20 @@ assert.match(detailSource, /knownVoiceOptionsForModel/);
 assert.match(detailSource, /<option value=\{customVoiceSentinel\}>Custom voice…<\/option>/);
 assert.match(detailSource, /placeholder="Enter custom voice ID"/);
 
-assert.match(apiSource, /const body: Record<string, unknown> = \{[\s\S]*model_name: modelName,[\s\S]*save_options: false,[\s\S]*\.\.\.recipeOptions,[\s\S]*\};/);
-const saveDefaultPosition = apiSource.indexOf('save_options: false');
-const callerOverridePosition = apiSource.indexOf('...recipeOptions', saveDefaultPosition);
-assert.ok(saveDefaultPosition >= 0 && callerOverridePosition > saveDefaultPosition,
-  'GUI3 loads must not persist recipe options by default while preserving explicit save_options overrides');
+assert.doesNotMatch(apiSource, /save_options:\s*true/, 'ordinary GUI loads must never persist model options');
+assert.match(apiSource, /\.\.\.recipeOptions,[\s\S]*save_options:\s*false/, 'save_options=false must come after caller options');
+const callerOptionsPosition = apiSource.indexOf('...recipeOptions');
+const noPersistPosition = apiSource.indexOf('save_options: false', callerOptionsPosition);
+assert.ok(callerOptionsPosition >= 0 && noPersistPosition > callerOptionsPosition,
+  'ordinary GUI loads must force non-persistence after caller-provided recipe options');
+
+assert.match(effectiveSource, /api\.getModelOptions\(modelName\)/, 'effective settings must read server-owned model options');
+assert.match(effectiveSource, /serverModelOptions\?\.effective\?\.ctx_size/, 'effective settings must resolve context from the server');
+assert.doesNotMatch(effectiveSource, /loadModelTuning\(modelName\)\?\.recipe_options\?\.ctx_size/, 'effective settings must not read recipe options from browser storage');
+
+assert.match(chatSource, /api\.getModelOptions\(currentModel\)/, 'chat generation defaults must use server-owned model options');
+assert.match(chatSource, /api\.getModelOptions\(modelName\)/, 'pinned TTS must use server-owned model options');
+assert.match(chatSource, /api\.getModelOptions\(model\.name\)/, 'capability TTS must use server-owned model options');
+assert.doesNotMatch(chatSource, /loadModelTuning\s*\([^)]*\)[^;\n]*recipe_options/, 'chat must not read recipe options from browser model tuning state');
 
 console.log('GUI3 configuration consistency contract checks passed.');
