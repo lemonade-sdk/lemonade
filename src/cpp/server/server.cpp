@@ -2048,8 +2048,8 @@ void Server::run() {
         }
 
         if (listener_startup.failed()) {
-            LOG(ERROR, "Server") << "Could not bind every address resolved for host '"
-                                 << host << "'. Server startup aborted." << std::endl;
+            LOG(ERROR, "Server") << "Could not start HTTP listeners for every address resolved for host '"
+                                 << host << "' (bind or listen failure). Server startup aborted." << std::endl;
             stop();
             if (http_v4_thread_.joinable())
                 http_v4_thread_.join();
