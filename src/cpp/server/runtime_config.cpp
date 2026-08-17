@@ -114,6 +114,24 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
         LOG(WARNING) << message << std::endl;
     }
 
+    // Reject conflicting broadcast options
+    if (normalized.contains("broadcast") && normalized.contains("no_broadcast")) {
+        throw std::invalid_argument("Cannot specify both 'broadcast' and 'no_broadcast'");
+    }
+
+    if (normalized.contains("broadcast") && !normalized["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
+
+    // Migrate legacy no_broadcast to broadcast
+    if (normalized.contains("no_broadcast")) {
+        if (!normalized["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        normalized["broadcast"] = !normalized["no_broadcast"].get<bool>();
+        normalized.erase("no_broadcast");
+    }
+
     // Promote flat backend keys (e.g. "vllm_args", "llamacpp_backend") into
     // their nested form ("vllm": {"args": ...}). Backend CLI flags and docs use
     // the flat underscore form, but config.json stores backend options nested.
@@ -241,7 +259,19 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
-    // Config is expected to already have defaults merged in (by ConfigFile::load).
+    if (config_.contains("broadcast") && !config_["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
+    // Migrate legacy no_broadcast if present
+    if (config_.contains("no_broadcast")) {
+        if (!config_["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        if (!config_.contains("broadcast")) {
+            config_["broadcast"] = !config_["no_broadcast"].get<bool>();
+        }
+        config_.erase("no_broadcast");
+    }
 
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
@@ -280,9 +310,23 @@ std::string RuntimeConfig::extra_models_dir() const {
     return config_["extra_models_dir"].get<std::string>();
 }
 
-bool RuntimeConfig::no_broadcast() const {
+bool RuntimeConfig::broadcast() const {
     std::shared_lock lock(mutex_);
-    return config_["no_broadcast"].get<bool>();
+    if (broadcast_override_.has_value()) {
+        return *broadcast_override_;
+    }
+    if (config_.contains("broadcast") && config_["broadcast"].is_boolean()) {
+        return config_["broadcast"].get<bool>();
+    }
+    if (config_.contains("no_broadcast") && config_["no_broadcast"].is_boolean()) {
+        return !config_["no_broadcast"].get<bool>();
+    }
+    return true;
+}
+
+void RuntimeConfig::set_broadcast_override(std::optional<bool> override_val) {
+    std::unique_lock lock(mutex_);
+    broadcast_override_ = override_val;
 }
 
 long RuntimeConfig::global_timeout() const {
@@ -619,7 +663,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
         }
-    } else if (key == "no_broadcast" || key == "offline" ||
+    } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
@@ -859,7 +903,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
     }
-    else if (key == "lora_dir") {
+    else if (key == "lora_dir" || key == "upscaler_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
@@ -916,6 +960,26 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                         applied_diff["telemetry"][t_key] = t_val;
                     }
                 }
+            }
+        } else if (key == "no_broadcast") {
+            bool bcast = !value.get<bool>();
+            bool prev_effective_bcast = (broadcast_override_.has_value())
+                ? *broadcast_override_
+                : (config_.contains("broadcast") && config_["broadcast"].is_boolean() ? config_["broadcast"].get<bool>() : true);
+            config_["broadcast"] = bcast;
+            broadcast_override_ = std::nullopt;
+            if (prev_effective_bcast != bcast) {
+                applied_diff["broadcast"] = bcast;
+            }
+        } else if (key == "broadcast") {
+            bool bcast = value.get<bool>();
+            bool prev_effective_bcast = (broadcast_override_.has_value())
+                ? *broadcast_override_
+                : (config_.contains("broadcast") && config_["broadcast"].is_boolean() ? config_["broadcast"].get<bool>() : true);
+            config_["broadcast"] = bcast;
+            broadcast_override_ = std::nullopt;
+            if (prev_effective_bcast != bcast) {
+                applied_diff["broadcast"] = bcast;
             }
         } else {
             if (!config_.contains(key) || config_[key] != value) {
