@@ -313,14 +313,16 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
 
     // The pip-wheel install records its own version marker in a separate tree.
     // Also require its recorded runtime dirs to still exist, so a deleted venv or
-    // moved cache reinstalls instead of leaving a dead LD_LIBRARY_PATH behind
-    // (get_therock_lib_path filters out non-existent dirs and returns empty).
+    // moved cache reinstalls instead of leaving a dead LD_LIBRARY_PATH behind.
+    // Use the wheel-specific liveness check, not get_therock_lib_path(): the
+    // latter falls back to the tarball layout and would report the venv alive
+    // when only a tarball is present.
     const fs::path wheel_version_file =
         fs::path(backends::BackendUtils::get_therock_wheel_dir(rocm_arch, version)) / "version.txt";
     if (read_version_file(wheel_version_file) != version) {
         return false;
     }
-    return !backends::BackendUtils::get_therock_lib_path(rocm_arch).empty();
+    return backends::BackendUtils::therock_wheel_runtime_alive(rocm_arch, version);
 }
 
 void install_therock_if_needed(const std::string& os, const json& backend_versions,

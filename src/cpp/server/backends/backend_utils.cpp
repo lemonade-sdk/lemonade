@@ -1245,8 +1245,11 @@ namespace lemon::backends {
                 return;
             }
             if (get_therock_wheels_cancelled()) {
+                // Throw rather than return: a silent return lets the caller
+                // report the runtime step as complete ("successfully installed")
+                // and would also fall through to the tarball the user cancelled.
                 LOG(INFO, "BackendUtils") << "ROCm install cancelled by user" << std::endl;
-                return;
+                throw std::runtime_error("ROCm runtime installation cancelled");
             }
             if (method == "wheel") {
                 throw std::runtime_error(
@@ -1418,8 +1421,12 @@ namespace lemon::backends {
                     g_therock_wheels_cancelled = true;
                 }
                 bytes_downloaded += this_size;
-                // Emit updated progress with this wheel completed
-                {
+                // Emit updated byte progress for this wheel. This is NOT a
+                // completion event: pip downloads many wheels and the whole
+                // runtime is only done once install_therock_wheels succeeds, so
+                // complete stays false here to keep the download manager from
+                // reporting the entire install finished after the first wheel.
+                if (keep) {
                     DownloadProgress done;
                     done.file = fname;
                     done.file_index = downloads_seen;
@@ -1429,7 +1436,7 @@ namespace lemon::backends {
                     done.percent = bytes_total > 0
                         ? static_cast<int>((bytes_downloaded * 100) / bytes_total)
                         : 0;
-                    done.complete = true;
+                    done.complete = false;
                     progress_cb(done);
                 }
                 return keep;
@@ -1843,12 +1850,34 @@ namespace lemon::backends {
     }
 
     std::string BackendUtils::get_therock_lib_path(const std::string& rocm_arch) {
-        // Back-compat single-directory accessor. Returns the FIRST runtime dir
-        // (the wheel's _rocm_sdk_core/bin, which holds amdhip64/amd_comgr/
-        // rocm_kpack). Callers that build a loader path should use
-        // get_therock_lib_paths() so the BLAS libraries dir is included too.
         std::vector<std::string> paths = get_therock_lib_paths(rocm_arch);
         return paths.empty() ? std::string() : paths.front();
+    }
+
+    bool BackendUtils::therock_wheel_runtime_alive(const std::string& arch,
+                                                   const std::string& version) {
+        const fs::path paths_file =
+            fs::path(get_therock_wheel_dir(arch, version)) / "runtime_paths.txt";
+        std::error_code ec;
+        if (!fs::exists(paths_file, ec)) {
+            return false;
+        }
+
+        std::ifstream pf(paths_file);
+        std::string line;
+        while (std::getline(pf, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            if (line.empty()) {
+                continue;
+            }
+            std::error_code dir_ec;
+            if (fs::is_directory(utils::path_from_utf8(line), dir_ec)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     std::string BackendUtils::join_runtime_dirs(const std::vector<std::string>& dirs) {

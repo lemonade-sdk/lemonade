@@ -153,6 +153,10 @@ namespace lemon::backends {
         /** Directory holding the lemonade-managed ROCm wheel venv for arch/version. */
         static std::string get_therock_wheel_dir(const std::string& arch, const std::string& version);
 
+        /** True when the pip-wheel runtime for arch/version is still usable. See impl for liveness check vs tarball fallback. */
+        static bool therock_wheel_runtime_alive(const std::string& arch,
+                                                const std::string& version);
+
         /** True for a concrete gfx target (e.g. gfx1151, gfx90a) that maps to a
          *  rocm-sdk-device wheel; false for family placeholders like gfx110X,
          *  which have no device wheel and fall back to the tarball. Exposed for
@@ -176,17 +180,10 @@ namespace lemon::backends {
         /** Clean up stale TheRock versions, keeping only the pinned ones */
         static void cleanup_old_therock_versions();
 
-        /** Get TheRock lib directory path if available, or empty string if not needed.
-         *  Returns only the FIRST runtime dir (_rocm_sdk_core/bin). Use
-         *  get_therock_lib_paths() when building a loader path so the BLAS
-         *  libraries dir (_rocm_sdk_libraries/bin) is included too. */
+        /** Back-compat single-directory accessor. See get_therock_lib_paths() for why multi-dir is needed. */
         static std::string get_therock_lib_path(const std::string& rocm_arch);
 
-        /** Get all TheRock runtime library directories (in loader-path order) if
-         *  available, or an empty vector if not needed. The pip-wheel runtime is
-         *  split across several dirs (recorded in runtime_paths.txt); all must be
-         *  on the loader path for a ROCm consumer to resolve both HIP and BLAS
-         *  DLLs. */
+        /** All TheRock runtime dirs (in loader-path order). The pip-wheel runtime splits HIP and BLAS libs across _rocm_sdk_core/bin and _rocm_sdk_libraries/bin (recorded in runtime_paths.txt); consumers need both on the loader path. */
         static std::vector<std::string> get_therock_lib_paths(const std::string& rocm_arch);
 
         /** Join runtime library directories into a single loader-path string
