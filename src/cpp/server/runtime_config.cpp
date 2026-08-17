@@ -903,7 +903,7 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
     }
-    else if (key == "lora_dir") {
+    else if (key == "lora_dir" || key == "upscaler_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
         }
