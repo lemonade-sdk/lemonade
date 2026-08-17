@@ -37,6 +37,18 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+  # Validates the test-owned inference manifest and generated workflow coverage.
+  check-inference-matrix:
+    name: Check inference matrix metadata
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate inference manifest and generated workflow
+        run: python3 .github/scripts/inference_matrix.py check
+
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
@@ -1000,6 +1012,7 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
+        # BEGIN GENERATED INFERENCE MATRIX: exe
         include:
           - name: llamacpp
             script: server_llm.py
@@ -1076,6 +1089,7 @@ jobs:
             extra_args: "--wrapped-server openmoss"
             backends: "vulkan rocm"
             runner: [Windows, rocm, vulkan, lemon-prod]
+        # END GENERATED INFERENCE MATRIX: exe
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1268,6 +1282,7 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
+        # BEGIN GENERATED INFERENCE MATRIX: deb
         include:
           - name: llamacpp
             script: server_llm.py
@@ -1329,6 +1344,7 @@ jobs:
             extra_args: "--wrapped-server openmoss"
             backends: "vulkan rocm"
             runner: [Linux, vulkan, rocm, lemon-prod]
+        # END GENERATED INFERENCE MATRIX: deb
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1502,7 +1518,7 @@ jobs:
   # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference]
+    needs: [check-inference-matrix, build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1772,6 +1788,7 @@ jobs:
       # All inference tests run in one job against the already-started server so
       # they share a single setup and model cache (issue #2103). Each step runs
       # even if an earlier test failed; the job fails if any failed.
+      # BEGIN GENERATED DMG INFERENCE TESTS
       - name: Test llamacpp-metal
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_llm.py --wrapped-server llamacpp --backend metal --cli-binary "$CLI_BINARY"
@@ -1780,13 +1797,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_whisper.py --wrapped-server whispercpp --backend metal --cli-binary "$CLI_BINARY"
 
-      # Temporarily disabled — sd-cpp metal test is being skipped
-      # - name: Test sd-cpp-metal
-      #   if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
-      #   env:
-      #     LEMONADE_TEST_SD_MODEL: SD-Turbo-GGUF
-      #   run: .venv/bin/python test/server_sd.py --wrapped-server sd-cpp --backend metal --cli-binary "$CLI_BINARY"
-
+      # sd-cpp Metal is temporarily disabled; add it back to platforms.dmg when the test is re-enabled.
       - name: Test moonshine
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_moonshine.py --wrapped-server moonshine --backend cpu --cli-binary "$CLI_BINARY"
@@ -1795,6 +1806,7 @@ jobs:
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         run: .venv/bin/python test/server_tts.py --cli-binary "$CLI_BINARY"
 
+      # END GENERATED DMG INFERENCE TESTS
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs

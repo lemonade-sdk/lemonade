@@ -1,0 +1,482 @@
+{
+  "schema_version": 1,
+  "description": "Canonical inference-test definitions. Tests describe the backends they directly exercise and consume; platforms describe where each test runs.",
+  "tests": {
+    "llamacpp": {
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server llamacpp",
+      "impact": {
+        "direct": [
+          "llamacpp"
+        ],
+        "consumes": []
+      }
+    },
+    "omni": {
+      "script": "server_omni.py",
+      "extra_args": "--wrapped-server llamacpp",
+      "impact": {
+        "direct": [],
+        "consumes": [
+          "llamacpp",
+          "sdcpp",
+          "whispercpp",
+          "kokoro"
+        ],
+        "note": "The Omni collection integration test exercises its llamacpp planner and image, transcription, and speech components."
+      }
+    },
+    "ryzenai": {
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server ryzenai",
+      "impact": {
+        "direct": [
+          "ryzenai"
+        ],
+        "consumes": []
+      }
+    },
+    "flm": {
+      "script": "server_llm.py",
+      "extra_args": "--wrapped-server flm",
+      "impact": {
+        "direct": [
+          "fastflowlm"
+        ],
+        "consumes": []
+      }
+    },
+    "whisper": {
+      "script": "server_whisper.py",
+      "extra_args": "--wrapped-server whispercpp",
+      "impact": {
+        "direct": [
+          "whispercpp"
+        ],
+        "consumes": []
+      }
+    },
+    "flm-whisper": {
+      "script": "server_whisper.py",
+      "extra_args": "--wrapped-server flm",
+      "impact": {
+        "direct": [
+          "fastflowlm"
+        ],
+        "consumes": []
+      }
+    },
+    "moonshine": {
+      "script": "server_moonshine.py",
+      "extra_args": "--wrapped-server moonshine",
+      "impact": {
+        "direct": [
+          "moonshine"
+        ],
+        "consumes": []
+      }
+    },
+    "classify-onnxruntime": {
+      "script": "server_classify.py",
+      "extra_args": "--wrapped-server onnxruntime",
+      "impact": {
+        "direct": [
+          "onnxruntime"
+        ],
+        "consumes": []
+      }
+    },
+    "router-onnxruntime": {
+      "script": "server_router.py",
+      "extra_args": "--wrapped-server onnxruntime",
+      "impact": {
+        "direct": [
+          "onnxruntime"
+        ],
+        "consumes": [
+          "llamacpp",
+          "cloud"
+        ],
+        "note": "The router test directly exercises the onnxruntime classifier, uses llamacpp for local candidates and semantic similarity, and covers a mock cloud-provider route."
+      }
+    },
+    "stable-diffusion": {
+      "script": "server_sd.py",
+      "extra_args": "",
+      "impact": {
+        "direct": [
+          "sdcpp"
+        ],
+        "consumes": []
+      }
+    },
+    "audio-gen-thinksound": {
+      "script": "server_audio_generation.py",
+      "extra_args": "--wrapped-server thinksound",
+      "impact": {
+        "direct": [
+          "thinksound"
+        ],
+        "consumes": []
+      }
+    },
+    "audio-gen-acestep": {
+      "script": "server_audio_generation.py",
+      "extra_args": "--wrapped-server acestep",
+      "impact": {
+        "direct": [
+          "acestep"
+        ],
+        "consumes": []
+      }
+    },
+    "text-to-speech": {
+      "script": "server_tts.py",
+      "extra_args": "",
+      "impact": {
+        "direct": [
+          "kokoro"
+        ],
+        "consumes": []
+      }
+    },
+    "3d-trellis": {
+      "script": "server_3d.py",
+      "extra_args": "--wrapped-server trellis",
+      "impact": {
+        "direct": [
+          "trellis"
+        ],
+        "consumes": []
+      }
+    },
+    "tts-openmoss": {
+      "script": "server_tts_openmoss.py",
+      "extra_args": "--wrapped-server openmoss",
+      "impact": {
+        "direct": [
+          "openmoss"
+        ],
+        "consumes": []
+      }
+    },
+    "thenoise": {
+      "script": "server_thenoise.py",
+      "extra_args": "--wrapped-server thenoise",
+      "impact": {
+        "direct": [
+          "thenoise"
+        ],
+        "consumes": []
+      }
+    }
+  },
+  "platforms": {
+    "exe": [
+      {
+        "test": "llamacpp",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Windows",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "omni",
+        "backends": "vulkan",
+        "runner": [
+          "Windows",
+          "vulkan",
+          "stx-halo",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "ryzenai",
+        "backends": "cpu hybrid npu",
+        "runner": [
+          "Windows",
+          "xdna2",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "flm",
+        "backends": "npu",
+        "runner": [
+          "Windows",
+          "xdna2",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "whisper",
+        "backends": "cpu npu rocm",
+        "runner": [
+          "Windows",
+          "stx-halo",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "flm-whisper",
+        "backends": "npu",
+        "runner": [
+          "Windows",
+          "xdna2",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "moonshine",
+        "backends": "cpu",
+        "runner": [
+          "self-hosted",
+          "Windows",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "classify-onnxruntime",
+        "backends": "cpu",
+        "runner": [
+          "self-hosted",
+          "Windows",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "router-onnxruntime",
+        "backends": "cpu",
+        "runner": [
+          "self-hosted",
+          "Windows",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "stable-diffusion",
+        "backends": "cpu rocm vulkan",
+        "runner": [
+          "Windows",
+          "rocm",
+          "vulkan",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "audio-gen-thinksound",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Windows",
+          "rocm",
+          "vulkan",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "audio-gen-acestep",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Windows",
+          "rocm",
+          "vulkan",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "text-to-speech",
+        "backends": "",
+        "runner": [
+          "self-hosted",
+          "Windows",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "3d-trellis",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Windows",
+          "rocm",
+          "vulkan",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "tts-openmoss",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Windows",
+          "rocm",
+          "vulkan",
+          "lemon-prod"
+        ]
+      }
+    ],
+    "deb": [
+      {
+        "test": "llamacpp",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "omni",
+        "backends": "vulkan",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "stx-halo",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "stable-diffusion",
+        "backends": "cpu rocm vulkan",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "thenoise",
+        "backends": "rocm",
+        "runner": [
+          "Linux",
+          "rocm",
+          "stx-halo",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "audio-gen-thinksound",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "audio-gen-acestep",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "whisper",
+        "backends": "cpu vulkan rocm",
+        "runner": [
+          "Linux",
+          "rocm",
+          "xdna2",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "moonshine",
+        "backends": "cpu",
+        "runner": [
+          "self-hosted",
+          "Linux",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "flm",
+        "backends": "npu",
+        "runner": [
+          "Linux",
+          "xdna2",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "text-to-speech",
+        "backends": "",
+        "runner": [
+          "self-hosted",
+          "Linux",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "3d-trellis",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      },
+      {
+        "test": "tts-openmoss",
+        "backends": "vulkan rocm",
+        "runner": [
+          "Linux",
+          "vulkan",
+          "rocm",
+          "lemon-prod"
+        ]
+      }
+    ],
+    "dmg": [
+      {
+        "test": "llamacpp",
+        "backends": "metal",
+        "runner": [
+          "macos-latest"
+        ],
+        "step_name": "Test llamacpp-metal"
+      },
+      {
+        "test": "whisper",
+        "backends": "metal",
+        "runner": [
+          "macos-latest"
+        ],
+        "step_name": "Test whisper-metal"
+      },
+      {
+        "test": "moonshine",
+        "backends": "cpu",
+        "runner": [
+          "macos-latest"
+        ],
+        "step_name": "Test moonshine",
+        "note": "sd-cpp Metal is temporarily disabled; add it back to platforms.dmg when the test is re-enabled."
+      },
+      {
+        "test": "text-to-speech",
+        "backends": "",
+        "runner": [
+          "macos-latest"
+        ],
+        "step_name": "Test kokoro-metal"
+      }
+    ]
+  },
+  "coverage_exceptions": {
+    "vllm": {
+      "reason": "vLLM is validated by its dedicated workflow, not the packaged inference matrix.",
+      "covered_by": [
+        ".github/workflows/validate_vllm.yml"
+      ]
+    }
+  }
+}
