@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { friendlyErrorMessage } from '../api';
-import {
-  BackendTuning,
-  backendSupportsArgs,
-} from '../modelConfiguration';
+import { BackendTuning } from '../modelConfiguration';
 import { Icon, type IconName } from './Icon';
 import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCatalogLayout';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { recipeCapability } from '../features/backends/recipeMetadata';
 import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { WorkspaceActionButton, WorkspaceActionGroup, WorkspacePaneHeader } from './WorkspacePanels';
 
@@ -41,6 +39,7 @@ interface RecipeInfo {
   experimental?: boolean;
   display_name?: string;
   web_display_name?: string;
+  modality?: string;
 }
 
 interface SystemInfoData {
@@ -115,22 +114,6 @@ const BACKEND_LABELS: Record<string, string> = {
   dml:      'DirectML',
 };
 
-/** Recipe → capability column for the matrix */
-const RECIPE_CAPABILITY: Record<string, string> = {
-  llamacpp:       'LLM',
-  whispercpp:     'Audio',
-  moonshine:      'Audio',
-  'sd-cpp':       'Image',
-  kokoro:         'TTS',
-  flm:            'LLM',
-  'ryzenai-llm':  'LLM',
-  vllm:           'LLM',
-  acestep:         'Audio',
-  thinksound:      'Audio',
-  openmoss:        'TTS',
-  trellis:         '3D',
-};
-
 // Older lemond builds did not expose descriptor.experimental through
 // /system-info yet. Keep a compatibility fallback for the recipes that are
 // declared experimental in the backend descriptor registry. Newer servers
@@ -184,7 +167,7 @@ const BACKEND_DEVICE: Record<string, DeviceKey> = {
 };
 
 /** Capability columns */
-const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D'] as const;
+const CAPABILITY_COLS = ['LLM', 'Audio', 'Image', 'TTS', '3D', 'Other'] as const;
 
 type CapabilityCol = typeof CAPABILITY_COLS[number];
 type CellEntry = { recipe: string; backend: string; info: BackendInfo };
@@ -203,6 +186,7 @@ const CAPABILITY_LABELS: Record<CapabilityCol, string> = {
   Image: 'Image generation',
   TTS: 'Text to speech',
   '3D': '3D generation',
+  Other: 'Other runtimes',
 };
 
 const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
@@ -211,6 +195,7 @@ const CAPABILITY_DESCRIPTIONS: Record<CapabilityCol, string> = {
   Image: 'Image generation and editing runtimes.',
   TTS: 'Text-to-speech runtimes.',
   '3D': '3D asset generation runtimes.',
+  Other: 'Runtimes with a server-defined modality this GUI has not seen before.',
 };
 
 const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]> = [
@@ -1059,7 +1044,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const cells = new Map<string, CellEntry[]>();
 
     for (const [recipe, recipeInfo] of Object.entries(sysInfo.recipes)) {
-      const cap = (RECIPE_CAPABILITY[recipe] || 'LLM') as CapabilityCol;
+      const cap = recipeCapability(sysInfo, recipe) as CapabilityCol;
       for (const [backend, backendInfo] of Object.entries(recipeInfo.backends)) {
         const effectiveInfo: BackendInfo = {
           ...backendInfo,
@@ -1126,7 +1111,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
 
   const renderBackendCard = useCallback(({ recipe, variants }: BackendCatalogEntry) => {
     const engineName = RECIPE_LABELS[recipe] || recipe;
-    const supportsArgs = backendSupportsArgs(recipe);
     const logo = ENGINE_LOGOS[recipe];
 
     return (
@@ -1163,6 +1147,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
           {variants.map(({ backend, info }) => {
             const badge = stateBadge(info.state);
             const cellKey = backendKey(recipe, backend);
+            const canEditArgs = backendArgsTarget(runtimeConfig, cellKey) !== null;
             const isInstalling = installing === cellKey;
             const backendDownload = downloadItems.find(download => backendDownloadMatches(download, recipe, backend));
             const showBackendProgress = Boolean(backendDownload && (isDownloadActive(backendDownload) || backendDownload.status === 'paused'));
@@ -1285,7 +1270,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                         {isInstalling ? 'Working…' : 'Uninstall'}
                       </WorkspaceActionButton>
                     )}
-                    {supportsArgs && info.state !== 'unsupported' && (
+                    {canEditArgs && info.state !== 'unsupported' && (
                       <WorkspaceActionButton
                         type="button"
                         size="toolbar"
@@ -1324,7 +1309,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
         </div>
       </article>
     );
-  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, showLogos, showTech]);
+  }, [backendTunings, downloadItems, handleAction, handleInstall, handleUninstall, installing, runtimeConfig, showLogos, showTech, sysInfo]);
 
 
   const isUpdatesView = viewFilter === 'updates';

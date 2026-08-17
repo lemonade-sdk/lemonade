@@ -27,6 +27,7 @@ import {
   type WorkspaceListRowStatus,
 } from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
+import { recipeBackendOptionName } from '../features/backends/recipeMetadata';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -60,32 +61,9 @@ export interface ModelBackendReadiness {
   state?: string;
 }
 
-const BACKEND_MANAGED_RECIPES = new Set([
-  'llamacpp',
-  'vllm',
-  'flm',
-  'ryzenai-llm',
-  'sd-cpp',
-  'whispercpp',
-  'moonshine',
-  'kokoro',
-  'acestep',
-  'thinksound',
-  'openmoss',
-  'trellis',
-]);
-
-const BACKEND_OPTION_FIELD: Record<string, string> = {
-  llamacpp: 'llamacpp_backend',
-  vllm: 'vllm_backend',
-  'sd-cpp': 'sd-cpp_backend',
-  whispercpp: 'whispercpp_backend',
-  moonshine: 'moonshine_backend',
-  acestep: 'acestep_backend',
-  thinksound: 'thinksound_backend',
-  openmoss: 'openmoss_backend',
-  trellis: 'trellis_backend',
-};
+function needsLocalBackend(recipe: string): boolean {
+  return !recipe.startsWith('cloud') && !recipe.startsWith('collection');
+}
 
 function asRecord(value: unknown): Record<string, any> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -97,11 +75,16 @@ function normalizedBackend(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-function configuredBackendForModel(model: ModelInfo, recipe: string, recipeInfo: Record<string, any>): string {
+function configuredBackendForModel(
+  model: ModelInfo,
+  recipe: string,
+  recipeInfo: Record<string, any>,
+  systemInfo?: Record<string, unknown> | null,
+): string {
   const raw = model as any;
   const recipeOptions = asRecord(raw.recipe_options);
   const options = asRecord(raw.options);
-  const field = BACKEND_OPTION_FIELD[recipe];
+  const field = recipeBackendOptionName(systemInfo, recipe);
   const configured = normalizedBackend(
     (field ? recipeOptions?.[field] : undefined)
       ?? recipeOptions?.backend
@@ -136,7 +119,7 @@ export function modelBackendReadiness(
   }
 
   const recipeInfo = asRecord(recipes[recipe]);
-  if (!recipeInfo && !BACKEND_MANAGED_RECIPES.has(recipe)) {
+  if (!recipeInfo && !needsLocalBackend(recipe)) {
     return { tone: 'ready', label: 'Model downloaded and ready.' };
   }
   if (!recipeInfo) {
@@ -156,7 +139,7 @@ export function modelBackendReadiness(
     };
   }
 
-  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo);
+  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo, systemInfo);
   let backend = configuredBackend;
   let backendInfo: Record<string, any> | null = null;
 
