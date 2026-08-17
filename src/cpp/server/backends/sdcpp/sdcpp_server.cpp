@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <map>
 #include <random>
 #include <sstream>
 #include <set>
@@ -558,14 +559,23 @@ std::string SDServer::build_merged_sdcpp_args(
     // non-boolean-option flags. This preserves user's custom args like
     // --control-net, --upscale-model, etc. Legacy configs spell boolean
     // options directly in sdcpp_args (e.g. "--diffusion-fa"); those spellings
-    // are remembered so they survive the rebuild below.
+    // are remembered so they survive the rebuild below. A spelled boolean
+    // flag is dropped together with its value (e.g. "--diffusion-fa 1") so
+    // the value doesn't survive as a stray argument.
     std::string recipe_args = options.get_option("sdcpp_args");
     auto all_tokens = lemon::utils::parse_custom_args(recipe_args, true);
     std::vector<std::string> other_args;
-    std::set<std::string> spelled_flags;
-    for (const auto& token : all_tokens) {
+    std::map<std::string, bool> spelled_flags;  // flag -> explicitly enabled
+    for (size_t i = 0; i < all_tokens.size(); ++i) {
+        const auto& token = all_tokens[i];
         if (known_flags.find(token) != known_flags.end()) {
-            spelled_flags.insert(token);
+            bool enabled = true;
+            if (i + 1 < all_tokens.size() && all_tokens[i + 1][0] != '-') {
+                const auto& value = all_tokens[i + 1];
+                enabled = value != "0" && value != "false";
+                ++i;
+            }
+            spelled_flags[token] = enabled;
         } else {
             other_args.push_back(token);
         }
@@ -585,7 +595,10 @@ std::string SDServer::build_merged_sdcpp_args(
             enabled = opt_val.is_boolean() && opt_val.get<bool>();
         }
         if (is_backend_forced(bo.cli_flag)) enabled = true;
-        if (spelled_flags.count(bo.cli_flag) > 0) enabled = true;
+        auto spelled_it = spelled_flags.find(bo.cli_flag);
+        if (spelled_it != spelled_flags.end()) {
+            enabled = spelled_it->second;
+        }
         if (enabled) merged_list.push_back(bo.cli_flag);
     }
 

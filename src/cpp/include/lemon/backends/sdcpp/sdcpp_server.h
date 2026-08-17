@@ -78,7 +78,8 @@ private:
     // so new options don't require code changes. Backend-forced flags (e.g.
     // --diffusion-fa for Vulkan, --vae-tiling for Vulkan) are applied
     // regardless of user setting. Boolean flags spelled out in an existing
-    // sdcpp_args string (pre-typed-option configs) are preserved as enabled.
+    // sdcpp_args string (pre-typed-option configs) are preserved as enabled,
+    // unless spelled with an explicit false value (e.g. "--diffusion-fa 0").
     std::string build_merged_sdcpp_args(const RecipeOptions& options,
                                         const std::string& backend) const;
 };
