@@ -430,12 +430,6 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         }
         return fallback;
     };
-    auto resolve_float = [&](const std::string& key, float fallback) -> float {
-        if (request.contains(key) && request[key].is_number()) {
-            return request[key].get<float>();
-        }
-        return fallback;
-    };
     auto resolve_string = [&](const std::string& key, const std::string& fallback) -> std::string {
         if (request.contains(key) && request[key].is_string()) {
             return request[key].get<std::string>();
@@ -444,9 +438,6 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     };
     auto option_int = [&](const std::string& key) -> int {
         return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
-    };
-    auto option_float = [&](const std::string& key) -> float {
-        return recipe_options_.has_option(key) ? static_cast<float>(recipe_options_.get_option(key)) : 0.0f;
     };
     auto option_string = [&](const std::string& key) -> std::string {
         return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
@@ -457,17 +448,26 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
     if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    float cfg_scale = resolve_float("cfg_scale", option_float("cfg_scale"));
-    if (cfg_scale > 0.0f) guidance["txt_cfg"] = cfg_scale;
+    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
+    // when it is absent from every layer so sd-server applies its own default.
+    if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
+        guidance["txt_cfg"] = request["cfg_scale"].get<float>();
+    } else if (recipe_options_.has_option("cfg_scale")) {
+        guidance["txt_cfg"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
+    }
 
     // sample_method -> sample_params.sample_method
     std::string sample_method = resolve_string("sample_method", option_string("sampling_method"));
     if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
+    // Like cfg_scale, 0.0 is a real value here; only omit when unset everywhere.
     if (include_flow_shift) {
-        float flow_shift = resolve_float("flow_shift", option_float("flow_shift"));
-        if (flow_shift > 0.0f) sample_params["flow_shift"] = flow_shift;
+        if (request.contains("flow_shift") && request["flow_shift"].is_number()) {
+            sample_params["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (recipe_options_.has_option("flow_shift")) {
+            sample_params["flow_shift"] = static_cast<float>(recipe_options_.get_option("flow_shift"));
+        }
     }
 
     if (!guidance.empty()) {
