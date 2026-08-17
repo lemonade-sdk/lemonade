@@ -15,6 +15,13 @@ add_device_group() {
         return
     fi
 
+    # Skip nogroup (GID 65534): in rootless containers devices often show as
+    # nobody:nogroup/65534, and adding that group does not grant access inside
+    # unprivileged user namespaces.
+    if [ "$gid" = "65534" ]; then
+        return
+    fi
+
     group_name="$(getent group "$gid" | cut -d: -f1 || true)"
     if [ -z "$group_name" ]; then
         group_name="hostdev_${gid}"
@@ -35,7 +42,10 @@ if [ "$(id -u)" = "0" ]; then
     chown "$TARGET_USER":"$TARGET_USER" /run/lemonade
 
     # Mirror host device group ownership into the container user so non-root
-    # access works for mapped accelerator devices.
+    # access works for mapped accelerator devices.  Devices owned by nogroup
+    # / GID 65534 (common in rootless/unprivileged containers) are intentionally
+    # skipped because adding that group does not grant access in unprivileged
+    # user namespaces: see <https://github.com/lemonade-sdk/lemonade/issues/2742>.
     add_device_group /dev/accel
     add_device_group /dev/dri
     add_device_group /dev/kfd

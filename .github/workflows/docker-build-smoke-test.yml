@@ -61,11 +61,13 @@ jobs:
           docker exec lemonade-test sh -lc 'command -v lemonade && command -v lemond'
           docker exec lemonade-test sh -lc 'lemonade status'
 
-      - name: Unprivileged process + device group injection check
+      - name: Unprivileged process + device access check
         run: |
           # The entrypoint runs as root, maps host device groups onto the
-          # lemonade user, then drops privileges. Verify the server process
-          # ends up as UID 10001 with an injected supplementary device group.
+          # lemonade user, then drops privileges. Create a fake device owned
+          # by a test group, verify the entrypoint adds that group to
+          # lemonade, and confirm the dropped-privilege process can actually
+          # read the device file.
           FAKE_GID=64200
           mkdir -p /tmp/fakedri
           : > /tmp/fakedri/renderD128
@@ -89,6 +91,13 @@ jobs:
           GROUPS_LINE=$(docker exec lemonade-perms grep '^Groups:' /proc/1/status)
           echo "$GROUPS_LINE"
           echo "$GROUPS_LINE" | tr ' \t' '\n' | grep -qx "${FAKE_GID}"
+
+          # Make device group-readable so the dropped-privilege process can
+          # read it via group permissions (simulating real device behaviour).
+          docker exec lemonade-perms chmod g+r /dev/dri/renderD128
+
+          # Verify the non-root process can actually read the device.
+          docker exec lemonade-perms sh -c 'test -r /dev/dri/renderD128'
 
           docker rm -f lemonade-perms
 
