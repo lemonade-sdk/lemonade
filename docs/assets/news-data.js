@@ -1,6 +1,24 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "Make images and audio in Claude Code with the local AI skill!",
+        url: "https://www.youtube.com/watch?v=OmteZN1Wtes",
+        date: "August 17, 2026",
+        description: "See how AMD's local-ai-use skill lets Claude Code—or Codex or Cursor—generate images and audio with local AI through Lemonade.",
+        image: "https://img.youtube.com/vi/OmteZN1Wtes/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
+        title: "Run day0 LLMs locally with Lemonade, feat. Muse Glimmer 30B",
+        url: "https://www.youtube.com/watch?v=0RVUGOHtp6k",
+        date: "August 10, 2026",
+        description: "A walkthrough of running day-0 open-weights models locally with Lemonade, using Meta's Muse Glimmer 30B as the example.",
+        image: "https://img.youtube.com/vi/0RVUGOHtp6k/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
         title: "Run Meta's Muse Glimmer 30B locally with Lemonade",
         url: "https://lemonade-server.ai/news/muse-glimmer.html",
         date: "August 10, 2026",
