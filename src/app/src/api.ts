@@ -228,6 +228,17 @@ export interface LoadedModel {
   recipe_options?: Record<string, unknown>;
 }
 
+/** Response shape of GET/POST/DELETE /api/v1/models/{id}/options. */
+export interface ModelOptions {
+  model_name: string;
+  recipe: string;
+  saved: Record<string, unknown>;
+  effective: Record<string, unknown>;
+  defaults: Record<string, unknown>;
+  resolved_ctx_size: number;
+  load_command: string;
+}
+
 export interface EffectiveLoadCommand {
   model_name: string;
   recipe: string;
@@ -1372,6 +1383,31 @@ class LemonadeAPI {
     }
   }
 
+  private _modelOptionsPath(modelName: string): string {
+    return `/api/v1/models/${encodeURIComponent(modelName)}/options`;
+  }
+
+  async getModelOptions(modelName: string): Promise<ModelOptions> {
+    return this._json<ModelOptions>(this._modelOptionsPath(modelName));
+  }
+
+  async saveModelOptions(modelName: string, changes: Record<string, unknown>): Promise<ModelOptions> {
+    const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), {
+      method: 'POST',
+      body: changes,
+    });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  async resetModelOptions(modelName: string): Promise<ModelOptions> {
+    const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), {
+      method: 'DELETE',
+    });
+    this._notifyModelsChanged();
+    return result;
+  }
+
   async loadModel(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<unknown> {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
@@ -1382,9 +1418,9 @@ class LemonadeAPI {
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
     const body: Record<string, unknown> = {
       model_name: modelName,
-      save_options: true,
       ...(stagedOptions || {}),
       ...recipeOptions,
+      save_options: false,
     };
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
@@ -1805,6 +1841,13 @@ class LemonadeAPI {
 
   async getRuntimeConfig(): Promise<Record<string, unknown>> {
     return this._json<Record<string, unknown>>('/internal/config');
+  }
+
+  async setRuntimeConfig(changes: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this._json<Record<string, unknown>>('/internal/set', {
+      method: 'POST',
+      body: changes,
+    });
   }
 
   async getDefaultContextSize(): Promise<LemonadeContextDefault | undefined> {

@@ -737,6 +737,7 @@ test.describe('Accessibility — Backend Manager refresh lifecycle (#2343)', () 
 // ─── Backend argument tuning dialog ─────────────────────────────────────────
 
 test.describe('Accessibility — backend argument tuning', () => {
+  let runtimeConfig: Record<string, any>;
   const MOCK_SYSTEM_INFO = {
     lemonade_version: '1.0.0',
     os_version: 'Test OS',
@@ -760,12 +761,19 @@ test.describe('Accessibility — backend argument tuning', () => {
   };
 
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      try {
-        for (const key of Object.keys(localStorage)) {
-          if (key.includes('backend_tunings')) localStorage.removeItem(key);
-        }
-      } catch {}
+    runtimeConfig = {
+      llamacpp: { args: '', vulkan_args: '', rocm_args: '', cuda_args: '' },
+    };
+    await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
+    await page.route('**/internal/set**', async route => {
+      const changes = route.request().postDataJSON() as Record<string, unknown>;
+      for (const [flatKey, value] of Object.entries(changes)) {
+        if (flatKey === 'llamacpp_args') runtimeConfig.llamacpp.args = String(value ?? '');
+        else if (flatKey === 'llamacpp_vulkan_args') runtimeConfig.llamacpp.vulkan_args = String(value ?? '');
+        else if (flatKey === 'llamacpp_rocm_args') runtimeConfig.llamacpp.rocm_args = String(value ?? '');
+        else if (flatKey === 'llamacpp_cuda_args') runtimeConfig.llamacpp.cuda_args = String(value ?? '');
+      }
+      await route.fulfill({ json: { status: 'success', updated: changes } });
     });
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0' } }),
@@ -822,15 +830,9 @@ test.describe('Accessibility — backend argument tuning', () => {
     await expect(trigger).toBeFocused();
     await expect(page.locator('[data-cell="llamacpp:cpu"] [data-cell-backend-args="user"]')).toContainText('Args · Manual');
 
-    const stored = await page.evaluate(() => {
-      for (const key of Object.keys(localStorage)) {
-        if (!key.includes('backend_tunings')) continue;
-        const entries = JSON.parse(localStorage.getItem(key) || '{}');
-        if (entries['llamacpp:cpu']) return entries['llamacpp:cpu'];
-      }
-      return null;
-    });
-    expect(stored).toMatchObject({ args: '--threads 8 --ctx-size 65536', source: 'user' });
+    expect(runtimeConfig.llamacpp.args).toBe('--threads 8 --ctx-size 65536');
+    const browserCopy = await page.evaluate(() => Object.keys(localStorage).some(key => key.includes('backend_tunings')));
+    expect(browserCopy).toBe(false);
   });
 
   test('A171 — Escape closes the modal editor and restores focus to its backend action', async ({ page }) => {
@@ -844,12 +846,8 @@ test.describe('Accessibility — backend argument tuning', () => {
   });
 
   test('A172 — saved backend args can be cleared without affecting another backend entry', async ({ page }) => {
-    await page.evaluate(() => {
-      localStorage.setItem('lemonade:backend_tunings', JSON.stringify({
-        'llamacpp:cpu': { args: '--cpu', source: 'user' },
-        'llamacpp:vulkan': { args: '--vulkan', source: 'user' },
-      }));
-    });
+    runtimeConfig.llamacpp.args = '--cpu';
+    runtimeConfig.llamacpp.vulkan_args = '--vulkan';
     await gotoBackends(page);
     await page.locator('[data-backend-args-button="llamacpp:cpu"]').click();
     await page.locator('[data-backend-args-clear]').click();

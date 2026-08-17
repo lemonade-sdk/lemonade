@@ -1,12 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import {
-  MODEL_CONFIGURATION_EVENT,
   BackendTuning,
   backendSupportsArgs,
-  loadBackendTunings,
-  resetBackendTuning,
-  saveBackendTuning,
 } from '../modelConfiguration';
 import { Icon, type IconName } from './Icon';
 import { WorkspaceCatalogLayout, WorkspaceCatalogSection } from './WorkspaceCatalogLayout';
@@ -224,6 +220,90 @@ const BACKEND_VIEW_FILTERS: Array<[BackendViewFilter, string, string, IconName]>
   ['updates', 'Updates', 'Newer runtime available', 'rotate-ccw'],
   ['experimental', 'Experimental', 'Preview integrations', 'flask-conical'],
 ];
+
+type BackendRuntimeConfig = Record<string, unknown>;
+type BackendArgsTarget = { flatKey: string; effectiveValue: unknown };
+
+const BACKEND_CONFIG_SECTION_BY_RECIPE: Record<string, string> = {
+  'sd-cpp': 'sdcpp',
+  'ryzenai-llm': 'ryzenai',
+};
+
+function backendRuntimeRecord(value: unknown): BackendRuntimeConfig | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as BackendRuntimeConfig
+    : null;
+}
+
+function backendConfigSectionForRecipe(recipe: string): string {
+  return BACKEND_CONFIG_SECTION_BY_RECIPE[recipe] || recipe;
+}
+
+function normalizeBackendConfigField(backend: string): string {
+  const name = backend.trim().toLowerCase();
+  if (name === 'rocm' || name.startsWith('rocm-')) return 'rocm';
+  if (name === 'vulkan' || name.startsWith('vulkan-')) return 'vulkan';
+  if (name === 'cuda' || name === 'cuda11' || name === 'cuda12' || name.startsWith('cuda-')) return 'cuda';
+  return name.replace(/[^a-z0-9]+/g, '_');
+}
+
+function backendArgsTarget(config: BackendRuntimeConfig, backendKeyValue: string): BackendArgsTarget | null {
+  const separator = backendKeyValue.indexOf(':');
+  if (separator <= 0) return null;
+  const recipe = backendKeyValue.slice(0, separator).trim().toLowerCase();
+  const backend = backendKeyValue.slice(separator + 1).trim().toLowerCase();
+  if (!recipe || !backend) return null;
+
+  const sectionName = backendConfigSectionForRecipe(recipe);
+  const section = backendRuntimeRecord(config[sectionName]);
+  if (!section) return null;
+
+  const backendField = `${normalizeBackendConfigField(backend)}_args`;
+  const field = Object.prototype.hasOwnProperty.call(section, backendField)
+    ? backendField
+    : Object.prototype.hasOwnProperty.call(section, 'args') ? 'args' : null;
+  if (!field) return null;
+
+  const value = section[field];
+  const effectiveValue = field !== 'args'
+    && (typeof value !== 'string' || value.trim() === '')
+    && typeof section.args === 'string'
+    ? section.args
+    : value;
+  return { flatKey: `${sectionName}_${field}`, effectiveValue };
+}
+
+function backendTuningsFromServerConfig(
+  config: BackendRuntimeConfig,
+  systemInfo: SystemInfoData | null,
+): Record<string, BackendTuning> {
+  const result: Record<string, BackendTuning> = {};
+  for (const [recipe, recipeInfo] of Object.entries(systemInfo?.recipes || {})) {
+    for (const backend of Object.keys(recipeInfo.backends || {})) {
+      const key = `${recipe}:${backend}`;
+      const target = backendArgsTarget(config, key);
+      const args = typeof target?.effectiveValue === 'string' ? target.effectiveValue.trim() : '';
+      if (args) result[key] = { args, source: 'user' };
+    }
+  }
+  return result;
+}
+
+async function saveBackendArgsToServer(
+  backendKeyValue: string,
+  args: string,
+  currentConfig: BackendRuntimeConfig,
+): Promise<BackendRuntimeConfig> {
+  let config = currentConfig;
+  let target = backendArgsTarget(config, backendKeyValue);
+  if (!target) {
+    config = await api.getRuntimeConfig();
+    target = backendArgsTarget(config, backendKeyValue);
+  }
+  if (!target) throw new Error(`No server config args field exists for ${backendKeyValue}`);
+  await api.setRuntimeConfig({ [target.flatKey]: args.trim() });
+  return api.getRuntimeConfig();
+}
 
 function backendKey(recipe: string, backend: string): string {
   return `${recipe}:${backend}`;
@@ -645,7 +725,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   const [viewFilter, setViewFilter] = useState<BackendViewFilter>('all');
   const [installing, setInstalling] = useState<string | null>(null); // "recipe:backend"
   const [toastMsg, setToastMsg] = useState<string | null>(null);
-  const [backendTunings, setBackendTunings] = useState<Record<string, BackendTuning>>(loadBackendTunings);
+  const [runtimeConfig, setRuntimeConfig] = useState<Record<string, unknown>>({});
+  const backendTunings = useMemo<Record<string, BackendTuning>>(
+    () => backendTuningsFromServerConfig(runtimeConfig, sysInfo),
+    [runtimeConfig, sysInfo],
+  );
   const [argsEditorKey, setArgsEditorKey] = useState<string | null>(null);
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
   const terminalBackendRefreshRef = useRef<Set<string>>(new Set());
@@ -659,16 +743,6 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
   useEffect(() => {
     sysInfoRef.current = sysInfo;
   }, [sysInfo]);
-
-  useEffect(() => {
-    const reloadTuningState = () => setBackendTunings(loadBackendTunings());
-    window.addEventListener(MODEL_CONFIGURATION_EVENT, reloadTuningState);
-    return () => window.removeEventListener(MODEL_CONFIGURATION_EVENT, reloadTuningState);
-  }, []);
-
-  useEffect(() => {
-    if (isActive) setBackendTunings(loadBackendTunings());
-  }, [isActive]);
 
   /* ── Fetch system-info ────────────────────────────────── */
 
@@ -697,7 +771,11 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       if (showSpinner) setLoading(true);
       setError(null);
       if (!api.healthData) await api.health().catch(() => null);
-      await loadSystemInfo();
+      const [, config] = await Promise.all([
+        loadSystemInfo(),
+        api.getRuntimeConfig(),
+      ]);
+      setRuntimeConfig(config);
     } catch (err) {
       setError(friendlyErrorMessage(err));
     } finally {
@@ -952,21 +1030,29 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     window.requestAnimationFrame(() => argsTriggerRef.current?.focus());
   }, []);
 
-  const handleSaveBackendArgs = useCallback((key: string, args: string) => {
-    saveBackendTuning(key, args, 'user');
-    setBackendTunings(loadBackendTunings());
-    closeArgsEditor();
-    toast(args.trim()
-      ? `Saved backend arguments for ${key}`
-      : `Cleared backend arguments for ${key}`);
-  }, [closeArgsEditor, toast]);
+  const handleSaveBackendArgs = useCallback(async (key: string, args: string) => {
+    try {
+      const config = await saveBackendArgsToServer(key, args, runtimeConfig);
+      setRuntimeConfig(config);
+      closeArgsEditor();
+      toast(args.trim()
+        ? `Saved backend arguments for ${key}`
+        : `Cleared backend arguments for ${key}`);
+    } catch (err) {
+      toast(`Failed to save backend arguments: ${friendlyErrorMessage(err)}`);
+    }
+  }, [closeArgsEditor, runtimeConfig, toast]);
 
-  const handleClearBackendArgs = useCallback((key: string) => {
-    resetBackendTuning(key);
-    setBackendTunings(loadBackendTunings());
-    closeArgsEditor();
-    toast(`Cleared backend arguments for ${key}`);
-  }, [closeArgsEditor, toast]);
+  const handleClearBackendArgs = useCallback(async (key: string) => {
+    try {
+      const config = await saveBackendArgsToServer(key, '', runtimeConfig);
+      setRuntimeConfig(config);
+      closeArgsEditor();
+      toast(`Cleared backend arguments for ${key}`);
+    } catch (err) {
+      toast(`Failed to clear backend arguments: ${friendlyErrorMessage(err)}`);
+    }
+  }, [closeArgsEditor, runtimeConfig, toast]);
 
   /* ── Build the matrix ─────────────────────────────────── */
 

@@ -1080,38 +1080,68 @@ const ModelConfigurationTab: React.FC<{
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
-  const [ctxSizeDraft, setCtxSizeDraft] = useState(() => {
-    const ctxRaw = loadModelTuning(name)?.recipe_options?.ctx_size;
-    return ctxRaw != null ? String(ctxRaw) : '-1';
-  });
+  const [serverSavedRecipeOptions, setServerSavedRecipeOptions] = useState<RecipeOptions>({});
+  const [serverEffectiveRecipeOptions, setServerEffectiveRecipeOptions] = useState<RecipeOptions>({});
+  const [serverOptionsLoaded, setServerOptionsLoaded] = useState(false);
+  const [ctxSizeDraft, setCtxSizeDraft] = useState('-1');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
 
-  const loadSettingsDraftFromStore = useCallback(() => {
-    const userTuning = loadModelTuning(name);
+  const loadSettingsDraftFromServer = useCallback(() => {
     const nextRecipe: Record<string, string> = {};
-    for (const [key, value] of Object.entries(userTuning?.recipe_options || {})) {
-      if (key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled') nextRecipe[key] = fieldValue(value);
+    const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
+    for (const [key, value] of Object.entries(serverSavedRecipeOptions)) {
+      if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
     }
-    const ctxRaw = userTuning?.recipe_options?.ctx_size;
+    const ctxRaw = serverSavedRecipeOptions.ctx_size ?? serverEffectiveRecipeOptions.ctx_size;
     return {
       ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
       recipe: nextRecipe,
     };
-  }, [name]);
+  }, [recipeKeys, serverEffectiveRecipeOptions.ctx_size, serverSavedRecipeOptions]);
 
-  const loadFromStore = useCallback(() => {
-    const next = loadSettingsDraftFromStore();
+  const loadFromServerState = useCallback(() => {
+    const next = loadSettingsDraftFromServer();
     setCtxSizeDraft(next.ctxSize);
     setRecipeDraft(next.recipe);
     const storedVoice = next.recipe.voice || '';
     setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
-  }, [knownVoiceIds, loadSettingsDraftFromStore]);
+  }, [knownVoiceIds, loadSettingsDraftFromServer]);
 
-  useEffect(() => { loadFromStore(); }, [loadFromStore]);
-  useEffect(() => { setNotice(null); }, [name]);
+  useEffect(() => {
+    let cancelled = false;
+    setNotice(null);
+    setServerSavedRecipeOptions({});
+    setServerEffectiveRecipeOptions({});
+    setServerOptionsLoaded(false);
+    void api.getModelOptions(name)
+      .then(result => {
+        if (cancelled) return;
+        const saved = sanitizeRecipeOptions(result.saved);
+        const effective = sanitizeRecipeOptions(result.effective);
+        const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
+        const nextRecipe: Record<string, string> = {};
+        for (const [key, value] of Object.entries(saved)) {
+          if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
+        }
+        const ctxRaw = saved.ctx_size ?? effective.ctx_size;
+        setServerSavedRecipeOptions(saved);
+        setServerEffectiveRecipeOptions(effective);
+        setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
+        setRecipeDraft(nextRecipe);
+        const storedVoice = nextRecipe.voice || '';
+        setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+        setServerOptionsLoaded(true);
+      })
+      .catch(error => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setNotice(`Could not load saved model options: ${message}`);
+      });
+    return () => { cancelled = true; };
+  }, [knownVoiceIds, name, recipeKeys]);
 
-  const savedLoadSettings = loadSettingsDraftFromStore();
+  const savedLoadSettings = loadSettingsDraftFromServer();
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
     || !stringRecordEqual(recipeDraft, savedLoadSettings.recipe);
 
@@ -1134,6 +1164,7 @@ const ModelConfigurationTab: React.FC<{
   };
   const loadedCtxSize = positiveCtxValue(loadedModel?.recipe_options?.ctx_size);
   const baseCtxSize = loadedCtxSize
+    ?? positiveCtxValue(serverEffectiveRecipeOptions.ctx_size)
     ?? positiveCtxValue(baseTuning.recipe_options.ctx_size)
     ?? positiveCtxValue(serverDefaultCtxSize)
     ?? 4096;
@@ -1177,42 +1208,92 @@ const ModelConfigurationTab: React.FC<{
     return sanitizeRecipeOptions(raw);
   };
 
-  const saveConfig = (showNotice = true) => {
-    const existingTuning = loadModelTuning(name);
-    saveModelTuning(name, {
-      ...(existingTuning || {}),
-      recipe_options: buildConfigOptions(),
-      sampling: existingTuning?.sampling || {},
-    });
-    if (showNotice) setNotice('Saved for future loads');
+  const saveConfig = async (showNotice = true): Promise<boolean> => {
+    if (!serverOptionsLoaded) {
+      if (showNotice) setNotice('Saved model options are still loading from lemond.');
+      return false;
+    }
+
+    const nextOptions = buildConfigOptions();
+    const patch: Record<string, unknown> = {};
+    const baseline = loadSettingsDraftFromServer();
+    const managedKeys = new Set<string>(recipeKeys.map(key => String(key)));
+    for (const key of managedKeys) {
+      if (key === 'ctx_size') continue;
+      const before = baseline.recipe[key] || '';
+      const after = recipeDraft[key] || '';
+      if (before === after) continue;
+      if (Object.prototype.hasOwnProperty.call(nextOptions, key)) {
+        patch[key] = (nextOptions as Record<string, unknown>)[key];
+      } else if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, key)) {
+        patch[key] = null;
+      }
+    }
+    if (supportsContextSize && ctxSizeDraft !== baseline.ctxSize) {
+      if (Object.prototype.hasOwnProperty.call(nextOptions, 'ctx_size')) patch.ctx_size = nextOptions.ctx_size;
+      else if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, 'ctx_size')) patch.ctx_size = null;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      if (showNotice) setNotice('Saved for future loads');
+      return true;
+    }
+    try {
+      const result = await api.saveModelOptions(name, patch);
+      const saved = sanitizeRecipeOptions(result.saved);
+      const effective = sanitizeRecipeOptions(result.effective);
+      const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
+      const nextRecipe: Record<string, string> = {};
+      for (const [key, value] of Object.entries(saved)) {
+        if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
+      }
+      const ctxRaw = saved.ctx_size ?? effective.ctx_size;
+      setServerSavedRecipeOptions(saved);
+      setServerEffectiveRecipeOptions(effective);
+      setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
+      setRecipeDraft(nextRecipe);
+      const storedVoice = nextRecipe.voice || '';
+      setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+      if (showNotice) setNotice('Saved for future loads');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotice(`Could not save model options: ${message}`);
+      return false;
+    }
   };
 
-  const resetConfig = () => {
-    const existingTuning = loadModelTuning(name);
-    if (existingTuning) {
-      saveModelTuning(name, {
-        ...existingTuning,
-        recipe_options: {},
-        sampling: existingTuning.sampling || {},
-      });
-    } else {
-      resetModelTuning(name);
+  const resetConfig = async () => {
+    if (!serverOptionsLoaded) {
+      setNotice('Saved model options are still loading from lemond.');
+      return;
     }
-    setCtxSizeDraft('-1');
-    setRecipeDraft({});
-    setCustomVoiceMode(false);
-    setNotice('Load settings reset to built-in defaults.');
+    try {
+      const result = await api.resetModelOptions(name);
+      const saved = sanitizeRecipeOptions(result.saved);
+      const effective = sanitizeRecipeOptions(result.effective);
+      const ctxRaw = saved.ctx_size ?? effective.ctx_size;
+      setServerSavedRecipeOptions(saved);
+      setServerEffectiveRecipeOptions(effective);
+      setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
+      setRecipeDraft({});
+      setCustomVoiceMode(false);
+      setNotice('Load settings reset to built-in defaults.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNotice(`Could not reset model options: ${message}`);
+    }
   };
 
   const discardConfig = () => {
-    loadFromStore();
+    loadFromServerState();
     onDirtyChange?.(false);
     setNotice('Unsaved load setting changes discarded.');
   };
 
   const reloadViaPanel = async () => {
     if (!loadedModel || !onReloadModel) return;
-    saveConfig(false);
+    if (!(await saveConfig(false))) return;
     setIsReloading(true);
     try {
       await onReloadModel(loadedModel, buildConfigOptions() as Record<string, unknown>);
@@ -1228,7 +1309,7 @@ const ModelConfigurationTab: React.FC<{
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
     const label = TUNING_FIELD_LABELS[key] || String(key);
     const draftValue = recipeDraft[String(key)] || '';
-    const baseValue = baseTuning.recipe_options[key];
+    const baseValue = serverEffectiveRecipeOptions[key] ?? baseTuning.recipe_options[key];
 
     if (BACKEND_TUNING_KEYS.has(key)) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
@@ -1467,7 +1548,10 @@ const ModelConfigurationTab: React.FC<{
                 <input
                   type="checkbox"
                   checked={isAutoTuning}
-                  onChange={e => setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize))}
+                  onChange={e => {
+                    setNotice(current => current === 'Saved for future loads' ? null : current);
+                    setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize));
+                  }}
                 />
                 <span>Auto tune context size</span>
                 <Icon name="info" size={14} aria-hidden="true" />
@@ -1522,11 +1606,11 @@ const ModelConfigurationTab: React.FC<{
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
             </button>
           )}
-          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()}>Save</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>Save</button>
           {hasLoadSettingChanges && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
           )}
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig}>Reset to defaults</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig} disabled={!serverOptionsLoaded}>Reset to defaults</button>
         </div>
 
         {notice && (
