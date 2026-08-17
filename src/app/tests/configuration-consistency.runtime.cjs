@@ -90,8 +90,26 @@ assert.ok(autoTunePosition >= 0 && autoTunePosition < contextNumberPosition && c
 assert.match(detailSource, /loadOptionsRef\.current = buildLoadOptions;/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onLoad, model\)\}/);
 assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPullAndLoad, model\)\}/);
-// A cleared context field falls outside recipeKeys, so it needs the auto sentinel.
-assert.match(detailSource, /if \(supportsContextSize && !\('ctx_size' in options\)\) options\.ctx_size = -1;/);
+// A load states every option the panel shows, sending null where a field is
+// empty so lemond skips the saved value instead of falling back to it.
+assert.match(detailSource, /options\[key\] = Object\.prototype\.hasOwnProperty\.call\(configured, key\) \? configured\[key\] : null;/);
+assert.match(detailSource, /if \(supportsContextSize\) options\.ctx_size = configured\.ctx_size \?\? -1;/);
+assert.match(detailSource, /if \(supportsMergeArgs\) options\.merge_args = mergeArgsDraft;/);
+assert.match(detailSource, /await onReloadModel\(loadedModel, buildLoadOptions\(\)\)/,
+  'reload must apply the settings on screen');
+
+// Save is the only writer: loading, reloading and resetting never persist.
+assert.doesNotMatch(detailSource, /saveConfig\(false\)/, 'reload must not save the draft first');
+assert.doesNotMatch(detailSource, /api\.resetModelOptions/,
+  'reset must restore lemond defaults into the draft, not write them');
+assert.match(detailSource, /api\.saveModelOptions\(name, patch\)/, 'save must send only what changed');
+
+// merge_args is a draft option, and lemond resolves the preview of it.
+assert.match(detailSource, /const supportsMergeArgs = argsKeys\.length > 0;/);
+assert.match(detailSource, /api\.previewModelOptions\(name, body\)/,
+  'the merged preview must come from lemond, not from client-side merging');
+assert.match(apiSource, /body: \{ \.\.\.changes, dry_run: true \}/, 'previews must not persist');
+assert.match(styles, /\.detail-configuration__merge-preview\s*\{/);
 
 // The source chip reads as a link out to the registry.
 assert.match(detailSource, /className="model-detail-panel__source"\s*\n\s*emphasis="low"\s*\n\s*icon="globe"/);

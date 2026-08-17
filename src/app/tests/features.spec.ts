@@ -881,7 +881,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.getByRole('button', { name: 'Load unknown-context-model' }).click();
     await expect.poll(() => loadRequestBody?.model_name).toBe('unknown-context-model');
-    expect(loadRequestBody).not.toHaveProperty('ctx_size');
+    // Auto tune is the explicit -1, not an omission: an omitted ctx_size means
+    // "use whatever is saved", which is not what the panel is showing.
+    expect(loadRequestBody?.ctx_size).toBe(-1);
   });
 
   test('13d — Detail header links the model source and Load applies unsaved settings', async ({ page }) => {
@@ -908,34 +910,38 @@ test.describe('Lemonade UI — Feature Parity', () => {
       loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
       return route.fulfill({ json: { status: 'ok' } });
     });
-    await page.route('**/api/v1/models**', route => route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        data: [{
-          id: 'source-hf-model',
-          name: 'source-hf-model',
-          display_name: 'Source HF Model',
-          labels: ['llm'],
-          recipe: 'llamacpp',
-          checkpoint: 'unsloth/Qwen3-0.6B-GGUF:Q4_0',
-          downloaded: true,
-          max_context_window: 65536,
-        }, {
-          id: 'source-ms-model',
-          name: 'source-ms-model',
-          display_name: 'Source MS Model',
-          labels: ['llm'],
-          recipe: 'llamacpp',
-          source: 'modelscope',
-          checkpoint: 'OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf',
-          downloaded: true,
-        }],
-      }),
-    }));
+    const modelOptionsRouteState13d: ModelOptionsState = new Map();
+    await page.route('**/api/v1/models**', async route => {
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState13d)) return;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [{
+            id: 'source-hf-model',
+            name: 'source-hf-model',
+            display_name: 'Source HF Model',
+            labels: ['chat'],
+            recipe: 'llamacpp',
+            checkpoint: 'unsloth/Qwen3-0.6B-GGUF:Q4_0',
+            downloaded: true,
+            max_context_window: 65536,
+          }, {
+            id: 'source-ms-model',
+            name: 'source-ms-model',
+            display_name: 'Source MS Model',
+            labels: ['chat'],
+            recipe: 'llamacpp',
+            source: 'modelscope',
+            checkpoint: 'OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf',
+            downloaded: true,
+          }],
+        }),
+      });
+    });
 
     await page.goto('/');
     await page.locator('.titlebar__nav').getByText('Models').click();
-    await page.locator('.model-list-item').filter({ hasText: 'Source HF Model' }).click();
+    await page.locator('[data-model-id="source-hf-model"]').click();
 
     // The source is a chip in the metadata row, linking to the model's repo.
     const source = page.locator('.workspace-metadata-chip.model-detail-panel__source');
@@ -944,13 +950,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(source.locator('.model-detail-panel__source-checkpoint')).toHaveText('unsloth/Qwen3-0.6B-GGUF:Q4_0');
 
     // ModelScope models link to their own registry; the quant comes out of the filename.
-    await page.locator('.model-list-item').filter({ hasText: 'Source MS Model' }).click();
+    await page.locator('[data-model-id="source-ms-model"]').click();
     await expect(source).toHaveAttribute('href', 'https://modelscope.cn/models/OpenBMB/MiniCPM5-1B-GGUF');
     await expect(source.locator('.model-detail-panel__source-registry')).toHaveText('ModelScope:');
     await expect(source.locator('.model-detail-panel__source-checkpoint')).toHaveText('OpenBMB/MiniCPM5-1B-GGUF:Q4_K_M');
 
     // Load uses the settings on screen; only Save writes them down.
-    await page.locator('.model-list-item').filter({ hasText: 'Source HF Model' }).click();
+    await page.locator('[data-model-id="source-hf-model"]').click();
     const panel = page.locator('#detail-panel-config');
     await panel.locator('[id$="llamacpp_backend"]').selectOption('vulkan');
     await panel.getByRole('checkbox', { name: 'Auto tune context size' }).uncheck();
@@ -1704,6 +1710,115 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Switch to model B — stale notice must be gone
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
     await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
+  });
+
+  test('25b — Reset shows lemond defaults without writing, and merge_args previews the resolved load', async ({ page }) => {
+    const modelName = 'merge-args-model';
+    const savedArgs = '--no-mmap';
+    const defaultArgs = '--flash-attn on';
+    let optionWrites = 0;
+    let previewBody: Record<string, unknown> | null = null;
+    let loadRequestBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/options')) {
+        const body = route.request().method().toUpperCase() === 'POST'
+          ? route.request().postDataJSON() as Record<string, unknown>
+          : null;
+        // A dry run resolves without persisting; anything else is a write.
+        if (body?.dry_run === true) previewBody = body;
+        else if (body || route.request().method().toUpperCase() === 'DELETE') optionWrites += 1;
+
+        // lemond resolves the merge; null falls through to the defaults, and a
+        // value merges with them unless merge_args is off.
+        const requestedArgs = previewBody?.llamacpp_args;
+        const mergedArgs = !body?.dry_run
+          ? `${savedArgs} ${defaultArgs}`
+          : typeof requestedArgs !== 'string' || !requestedArgs
+            ? defaultArgs
+            : previewBody?.merge_args === false
+              ? requestedArgs
+              : `${requestedArgs} ${defaultArgs}`;
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: { llamacpp_args: savedArgs },
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: mergedArgs, merge_args: true },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs, merge_args: true },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+
+    // The field holds the saved override; the default sits behind it as the
+    // placeholder, so both layers are visible at once.
+    const argsField = panel.getByLabel('Backend args');
+    await expect(argsField).toHaveValue(savedArgs);
+    await expect(argsField).toHaveAttribute('placeholder', defaultArgs);
+
+    // merge_args is on by default and its preview comes from lemond.
+    const mergeArgs = panel.getByRole('checkbox', { name: 'Merge with default args' });
+    await expect(mergeArgs).toBeChecked();
+    const preview = panel.locator('.detail-configuration__merge-preview');
+    await expect(preview).toContainText(`${savedArgs} ${defaultArgs}`);
+    await expect.poll(() => previewBody?.merge_args).toBe(true);
+
+    // Unchecking hides the preview and carries into the next preview request.
+    await mergeArgs.uncheck();
+    await expect(preview).toHaveCount(0);
+    await mergeArgs.check();
+    await expect(preview).toBeVisible();
+
+    // Reset is a draft change: fields fall back to the defaults and nothing is
+    // written, so Discard can still bring the saved values back.
+    await panel.getByRole('button', { name: 'Reset to defaults' }).click();
+    await expect(argsField).toHaveValue('');
+    await expect(preview).toContainText(defaultArgs);
+    expect(optionWrites).toBe(0);
+    await expect(panel.locator('.detail-tuning__notice')).toContainText('Showing lemond defaults');
+
+    // Load applies what is on screen without saving it: the cleared field is an
+    // explicit null so the saved override is skipped for this load only.
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_args).toBeNull();
+    expect(loadRequestBody?.merge_args).toBe(true);
+    expect(loadRequestBody?.save_options).toBe(false);
+    expect(optionWrites).toBe(0);
+
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await panel.getByRole('button', { name: 'Discard changes' }).click();
+    await expect(argsField).toHaveValue(savedArgs);
+    expect(optionWrites).toBe(0);
   });
 
 });

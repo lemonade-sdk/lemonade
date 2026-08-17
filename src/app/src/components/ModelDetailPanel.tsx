@@ -7,12 +7,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
-import api from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions } from '../api';
+import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
 import {
-  modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
+  modelBaseTuningForModel,
   modelSupportsContextSize, sanitizeRecipeOptions,
   type RecipeOptions,
 } from '../modelConfiguration';
@@ -207,17 +207,80 @@ function fieldValue(value: unknown): string {
   return String(value);
 }
 
+interface ResolvedPreviewRow {
+  key: string;
+  label: string;
+  value: string;
+}
+
+function resolvedPreviewRows(
+  preview: ModelOptions,
+  managedKeys: Array<keyof RecipeOptions>,
+  includeContextSize: boolean,
+): ResolvedPreviewRow[] {
+  const effective = preview.effective || {};
+  const row = (key: keyof RecipeOptions): ResolvedPreviewRow => ({
+    key: String(key),
+    label: TUNING_FIELD_LABELS[key] || String(key),
+    value: fieldValue(effective[String(key)]) || '—',
+  });
+  const rows = managedKeys.filter(key => ARGS_TUNING_KEYS.has(key)).map(row);
+  if (includeContextSize) {
+    const resolved = Number(preview.resolved_ctx_size);
+    const isAuto = Number(effective.ctx_size) === -1;
+    rows.push({
+      key: 'ctx_size',
+      label: TUNING_FIELD_LABELS.ctx_size || 'Context size',
+      value: Number.isFinite(resolved) && resolved > 0
+        ? `${resolved.toLocaleString()}${isAuto ? ' (auto)' : ''}`
+        : 'auto',
+    });
+  }
+  rows.push(...managedKeys.filter(key => !ARGS_TUNING_KEYS.has(key)).map(row));
+  return rows;
+}
+
+interface LoadSettingsDraft {
+  ctxSize: string;
+  recipe: Record<string, string>;
+  mergeArgs: boolean;
+}
+
+/** The panel edits lemond's saved layer, so a field holds the saved value and
+    shows the default underneath it as its placeholder. */
+function draftFromSavedOptions(
+  managedKeys: Array<keyof RecipeOptions>,
+  saved: RecipeOptions,
+  effective: RecipeOptions,
+  defaults: RecipeOptions,
+): LoadSettingsDraft {
+  const recipe: Record<string, string> = {};
+  const managed = new Set<string>(managedKeys.map(key => String(key)));
+  for (const [key, value] of Object.entries(saved)) {
+    if (key !== 'ctx_size' && managed.has(key)) recipe[key] = fieldValue(value);
+  }
+  const ctxRaw = saved.ctx_size ?? effective.ctx_size;
+  return {
+    ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
+    recipe,
+    mergeArgs: saved.merge_args ?? defaults.merge_args ?? true,
+  };
+}
+
 function parseNumberOrUndefined(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
 }
 
-function stringRecordEqual(left: Record<string, string>, right: Record<string, string>): boolean {
-  const leftKeys = Object.keys(left).sort();
-  const rightKeys = Object.keys(right).sort();
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+/** Clearing a field leaves an empty string behind, which reads the same as an
+    absent key to everything downstream. */
+function draftFieldsEqual(
+  keys: Array<keyof RecipeOptions>,
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean {
+  return keys.every(key => (left[String(key)] || '') === (right[String(key)] || ''));
 }
 
 const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
@@ -1131,68 +1194,66 @@ const ModelConfigurationTab: React.FC<{
 
   const [serverSavedRecipeOptions, setServerSavedRecipeOptions] = useState<RecipeOptions>({});
   const [serverEffectiveRecipeOptions, setServerEffectiveRecipeOptions] = useState<RecipeOptions>({});
+  const [serverDefaultRecipeOptions, setServerDefaultRecipeOptions] = useState<RecipeOptions>({});
   const [serverOptionsLoaded, setServerOptionsLoaded] = useState(false);
   const [ctxSizeDraft, setCtxSizeDraft] = useState('-1');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
+  const [mergeArgsDraft, setMergeArgsDraft] = useState(true);
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
+  const [mergedPreview, setMergedPreview] = useState<ModelOptions | null>(null);
+  const [mergedPreviewError, setMergedPreviewError] = useState<string | null>(null);
 
-  const loadSettingsDraftFromServer = useCallback(() => {
-    const nextRecipe: Record<string, string> = {};
-    const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
-    for (const [key, value] of Object.entries(serverSavedRecipeOptions)) {
-      if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
-    }
-    const ctxRaw = serverSavedRecipeOptions.ctx_size ?? serverEffectiveRecipeOptions.ctx_size;
-    return {
-      ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
-      recipe: nextRecipe,
-    };
-  }, [recipeKeys, serverEffectiveRecipeOptions.ctx_size, serverSavedRecipeOptions]);
-
-  const loadFromServerState = useCallback(() => {
-    const next = loadSettingsDraftFromServer();
-    setCtxSizeDraft(next.ctxSize);
-    setRecipeDraft(next.recipe);
-    const storedVoice = next.recipe.voice || '';
+  const applyDraft = useCallback((draft: LoadSettingsDraft) => {
+    setCtxSizeDraft(draft.ctxSize);
+    setRecipeDraft(draft.recipe);
+    setMergeArgsDraft(draft.mergeArgs);
+    const storedVoice = draft.recipe.voice || '';
     setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
-  }, [knownVoiceIds, loadSettingsDraftFromServer]);
+  }, [knownVoiceIds]);
+
+  const applyServerOptions = useCallback((result: ModelOptions, syncDraft: boolean) => {
+    const saved = sanitizeRecipeOptions(result.saved);
+    const effective = sanitizeRecipeOptions(result.effective);
+    const defaults = sanitizeRecipeOptions(result.defaults);
+    setServerSavedRecipeOptions(saved);
+    setServerEffectiveRecipeOptions(effective);
+    setServerDefaultRecipeOptions(defaults);
+    if (syncDraft) applyDraft(draftFromSavedOptions(recipeKeys, saved, effective, defaults));
+  }, [applyDraft, recipeKeys]);
+
+  // Read through a ref: a save refreshes the model list, which hands this
+  // component a new model object, and re-running the fetch on that would
+  // overwrite whatever the user is in the middle of editing.
+  const applyServerOptionsRef = useRef(applyServerOptions);
+  applyServerOptionsRef.current = applyServerOptions;
 
   useEffect(() => {
     let cancelled = false;
     setNotice(null);
     setServerSavedRecipeOptions({});
     setServerEffectiveRecipeOptions({});
+    setServerDefaultRecipeOptions({});
     setServerOptionsLoaded(false);
     void api.getModelOptions(name)
       .then(result => {
         if (cancelled) return;
-        const saved = sanitizeRecipeOptions(result.saved);
-        const effective = sanitizeRecipeOptions(result.effective);
-        const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
-        const nextRecipe: Record<string, string> = {};
-        for (const [key, value] of Object.entries(saved)) {
-          if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
-        }
-        const ctxRaw = saved.ctx_size ?? effective.ctx_size;
-        setServerSavedRecipeOptions(saved);
-        setServerEffectiveRecipeOptions(effective);
-        setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
-        setRecipeDraft(nextRecipe);
-        const storedVoice = nextRecipe.voice || '';
-        setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+        applyServerOptionsRef.current(result, true);
         setServerOptionsLoaded(true);
       })
       .catch(error => {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error);
-        setNotice(`Could not load saved model options: ${message}`);
+        setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [knownVoiceIds, name, recipeKeys]);
+  }, [name]);
 
-  const savedLoadSettings = loadSettingsDraftFromServer();
+  const savedLoadSettings = useMemo(
+    () => draftFromSavedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, serverDefaultRecipeOptions),
+    [recipeKeys, serverDefaultRecipeOptions, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
+  );
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
-    || !stringRecordEqual(recipeDraft, savedLoadSettings.recipe);
+    || mergeArgsDraft !== savedLoadSettings.mergeArgs
+    || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
 
   useEffect(() => {
     onDirtyChange?.(hasLoadSettingChanges);
@@ -1238,6 +1299,15 @@ const ModelConfigurationTab: React.FC<{
   const selectorKeys = recipeKeys.filter(key => BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key));
   const argsKeys = recipeKeys.filter(key => ARGS_TUNING_KEYS.has(key));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
+  // merge_args only decides what happens to *_args, so it is offered only where
+  // the model has an args field of its own.
+  const supportsMergeArgs = argsKeys.length > 0;
+  const defaultMergeArgs = serverDefaultRecipeOptions.merge_args ?? true;
+  // Only the options this panel manages count: a reset here cannot claim to
+  // clear a saved key it never shows.
+  const hasSavedOptions = Object.keys(serverSavedRecipeOptions)
+    .some(key => key === 'ctx_size' || key === 'merge_args' || recipeKeys.includes(key as keyof RecipeOptions));
+  const showMergedPreview = supportsMergeArgs && mergeArgsDraft;
 
   const buildConfigOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
@@ -1265,22 +1335,27 @@ const ModelConfigurationTab: React.FC<{
 
     const nextOptions = buildConfigOptions();
     const patch: Record<string, unknown> = {};
-    const baseline = loadSettingsDraftFromServer();
-    const managedKeys = new Set<string>(recipeKeys.map(key => String(key)));
-    for (const key of managedKeys) {
-      if (key === 'ctx_size') continue;
-      const before = baseline.recipe[key] || '';
-      const after = recipeDraft[key] || '';
-      if (before === after) continue;
+    // Save only what the user changed, and clear rather than pin a value that
+    // already matches lemond's default, so the saved entry stays minimal.
+    const clear = (key: string) => {
+      if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, key)) patch[key] = null;
+    };
+    for (const key of recipeKeys.map(recipeKey => String(recipeKey))) {
+      if ((savedLoadSettings.recipe[key] || '') === (recipeDraft[key] || '')) continue;
       if (Object.prototype.hasOwnProperty.call(nextOptions, key)) {
         patch[key] = (nextOptions as Record<string, unknown>)[key];
-      } else if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, key)) {
-        patch[key] = null;
+      } else {
+        clear(key);
       }
     }
-    if (supportsContextSize && ctxSizeDraft !== baseline.ctxSize) {
-      if (Object.prototype.hasOwnProperty.call(nextOptions, 'ctx_size')) patch.ctx_size = nextOptions.ctx_size;
-      else if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, 'ctx_size')) patch.ctx_size = null;
+    if (supportsContextSize && ctxSizeDraft !== savedLoadSettings.ctxSize) {
+      const ctxDraftValue = nextOptions.ctx_size;
+      if (ctxDraftValue === undefined || ctxDraftValue === serverDefaultRecipeOptions.ctx_size) clear('ctx_size');
+      else patch.ctx_size = ctxDraftValue;
+    }
+    if (supportsMergeArgs && mergeArgsDraft !== savedLoadSettings.mergeArgs) {
+      if (mergeArgsDraft === defaultMergeArgs) clear('merge_args');
+      else patch.merge_args = mergeArgsDraft;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -1288,87 +1363,66 @@ const ModelConfigurationTab: React.FC<{
       return true;
     }
     try {
-      const result = await api.saveModelOptions(name, patch);
-      const saved = sanitizeRecipeOptions(result.saved);
-      const effective = sanitizeRecipeOptions(result.effective);
-      const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
-      const nextRecipe: Record<string, string> = {};
-      for (const [key, value] of Object.entries(saved)) {
-        if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
-      }
-      const ctxRaw = saved.ctx_size ?? effective.ctx_size;
-      setServerSavedRecipeOptions(saved);
-      setServerEffectiveRecipeOptions(effective);
-      setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
-      setRecipeDraft(nextRecipe);
-      const storedVoice = nextRecipe.voice || '';
-      setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+      // The draft is what was just sent, so only the server layers move. Syncing
+      // it back would also undo anything typed while the save was in flight.
+      applyServerOptions(await api.saveModelOptions(name, patch), false);
       if (showNotice) setNotice('Saved for future loads');
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setNotice(`Could not save model options: ${message}`);
+      setNotice(`Could not save model options: ${friendlyErrorMessage(error)}`);
       return false;
     }
   };
 
-  const resetConfig = async () => {
-    if (!serverOptionsLoaded) {
-      setNotice('Saved model options are still loading from lemond.');
-      return;
-    }
-    try {
-      const result = await api.resetModelOptions(name);
-      const saved = sanitizeRecipeOptions(result.saved);
-      const effective = sanitizeRecipeOptions(result.effective);
-      const ctxRaw = saved.ctx_size ?? effective.ctx_size;
-      setServerSavedRecipeOptions(saved);
-      setServerEffectiveRecipeOptions(effective);
-      setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
-      setRecipeDraft({});
-      setCustomVoiceMode(false);
-      setNotice('Load settings reset to built-in defaults.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setNotice(`Could not reset model options: ${message}`);
-    }
+  // Defaults are already in hand from lemond, so this only clears the draft:
+  // nothing is written until the user saves, and Discard still goes back.
+  const resetConfig = () => {
+    applyDraft({
+      ctxSize: serverDefaultRecipeOptions.ctx_size != null ? String(serverDefaultRecipeOptions.ctx_size) : '-1',
+      recipe: {},
+      mergeArgs: defaultMergeArgs,
+    });
+    setNotice(hasSavedOptions
+      ? 'Showing lemond defaults. Load uses them now; Save clears your saved settings.'
+      : 'Already using lemond defaults.');
   };
 
   const discardConfig = () => {
-    loadFromServerState();
+    applyDraft(savedLoadSettings);
     onDirtyChange?.(false);
     setNotice('Reverted to your saved load settings.');
   };
 
+  // Every option the panel shows is stated outright: the value on screen, or
+  // null where the field is empty. An omitted option would fall back to the
+  // saved value, which is not what the user is looking at.
   const buildLoadOptions = (): Record<string, unknown> => {
-    const options: Record<string, unknown> = { ...buildConfigOptions() };
-    // A field the user blanked out is sent as undefined, which drops it from
-    // the request body instead of letting the stored value come back.
-    const stored = loadModelTuning(name)?.recipe_options || {};
-    for (const key of recipeKeys) {
-      if (!(key in options) && key in stored) options[key] = undefined;
+    const configured = buildConfigOptions() as Record<string, unknown>;
+    const options: Record<string, unknown> = {};
+    for (const key of recipeKeys.map(recipeKey => String(recipeKey))) {
+      options[key] = Object.prototype.hasOwnProperty.call(configured, key) ? configured[key] : null;
     }
-    // recipeKeys omits ctx_size, so a cleared context field needs its own auto
-    // sentinel to keep a stored size from coming back.
-    if (supportsContextSize && !('ctx_size' in options)) options.ctx_size = -1;
+    if (supportsContextSize) options.ctx_size = configured.ctx_size ?? -1;
+    if (supportsMergeArgs) options.merge_args = mergeArgsDraft;
     return options;
   };
 
-  // No dependency array: the panel's Load button fires outside React's data
-  // flow and must always read the current draft.
-  useEffect(() => {
-    if (!loadOptionsRef) return undefined;
-    loadOptionsRef.current = buildLoadOptions;
-    return () => { loadOptionsRef.current = null; };
-  });
+  // Published during render rather than from an effect: the Load button lives in
+  // the panel header, and a click can land in the same tick as the edit before
+  // it, which an effect would still be one draft behind.
+  if (loadOptionsRef) loadOptionsRef.current = buildLoadOptions;
+  useEffect(() => () => {
+    if (loadOptionsRef) loadOptionsRef.current = null;
+  }, [loadOptionsRef]);
 
   const reloadViaPanel = async () => {
     if (!loadedModel || !onReloadModel) return;
-    if (!(await saveConfig(false))) return;
     setIsReloading(true);
     try {
-      await onReloadModel(loadedModel, buildConfigOptions() as Record<string, unknown>);
-      setNotice('Model reloaded with current configuration.');
+      await onReloadModel(loadedModel, buildLoadOptions());
+      setNotice(hasLoadSettingChanges
+        ? 'Model reloaded with the settings shown here. Save to keep them.'
+        : 'Model reloaded with the settings shown here.');
     } catch {
       setNotice('Reload failed. Check the server logs.');
     } finally {
@@ -1376,11 +1430,47 @@ const ModelConfigurationTab: React.FC<{
     }
   };
 
+  // What these settings resolve to, merging included. lemond does the resolving
+  // so the panel never has to model the precedence chain itself.
+  useEffect(() => {
+    if (!showMergedPreview || !serverOptionsLoaded) {
+      setMergedPreview(null);
+      setMergedPreviewError(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const body = buildLoadOptions();
+    const handle = window.setTimeout(() => {
+      api.previewModelOptions(name, body)
+        .then(result => {
+          if (cancelled) return;
+          // A server that answered with something other than resolved options
+          // has nothing to preview; showing a stale or half-read one would be
+          // worse than saying so.
+          if (!result?.effective || typeof result.effective !== 'object') {
+            setMergedPreview(null);
+            setMergedPreviewError('lemond did not return resolved options for these settings.');
+            return;
+          }
+          setMergedPreview(result);
+          setMergedPreviewError(null);
+        })
+        .catch(error => {
+          if (cancelled) return;
+          setMergedPreview(null);
+          setMergedPreviewError(friendlyErrorMessage(error));
+        });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(handle); };
+    // buildLoadOptions is rebuilt every render; the drafts below are what it reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxSizeDraft, mergeArgsDraft, name, recipeDraft, serverOptionsLoaded, showMergedPreview]);
+
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
     const label = TUNING_FIELD_LABELS[key] || String(key);
     const draftValue = recipeDraft[String(key)] || '';
-    const baseValue = serverEffectiveRecipeOptions[key] ?? baseTuning.recipe_options[key];
+    const baseValue = serverDefaultRecipeOptions[key] ?? baseTuning.recipe_options[key];
 
     if (BACKEND_TUNING_KEYS.has(key)) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
@@ -1484,9 +1574,11 @@ const ModelConfigurationTab: React.FC<{
         flm_args: '--threads 4',
       };
       const draftKey = String(key);
-      const hasDraftValue = Object.prototype.hasOwnProperty.call(recipeDraft, draftKey);
-      const effectiveArgsValue = (hasDraftValue ? draftValue : optionalDisplayValue(baseValue)) || '';
-      const argsPlaceholder = defaultPlaceholders[key] || 'Space-separated CLI flags';
+      // Like every other field: the box holds this model's own args, and the
+      // default shows through as the placeholder when the box is empty.
+      const argsPlaceholder = optionalDisplayValue(baseValue)
+        || defaultPlaceholders[key]
+        || 'Space-separated CLI flags';
       return (
         <label key={String(key)} className="detail-tuning__field detail-tuning__field--wide detail-configuration__field detail-configuration__args-field" htmlFor={fieldId}>
           <span>{label}</span>
@@ -1494,14 +1586,16 @@ const ModelConfigurationTab: React.FC<{
             id={fieldId}
             className="detail-tuning__args"
             rows={4}
-            value={effectiveArgsValue}
+            value={draftValue}
             placeholder={argsPlaceholder}
             onChange={e => setRecipeDraft(prev => ({ ...prev, [draftKey]: e.target.value }))}
           />
           <small>
-            {hasDraftValue && draftValue.trim()
-              ? 'Custom args saved for this model.'
-              : 'Using the current backend args. Edit to customize load/reload flags.'}
+            {draftValue.trim()
+              ? (mergeArgsDraft
+                ? 'Merged with the default args; flags set here win.'
+                : 'Replaces the default args entirely.')
+              : 'Empty means the default args apply.'}
           </small>
         </label>
       );
@@ -1658,6 +1752,50 @@ const ModelConfigurationTab: React.FC<{
           {argsKeys.length > 0 && (
             <div className="detail-configuration__args-grid">
               {argsKeys.map(key => renderConfigRecipeField(key))}
+            </div>
+          )}
+
+          {supportsMergeArgs && (
+            <div className="detail-configuration__merge-args">
+              <label
+                className="detail-configuration__merge-args-toggle"
+                title={mergeArgsDraft
+                  ? 'These args are combined with the ones from the backend and model defaults. Flags set here win.'
+                  : 'These args replace the backend and model defaults entirely.'}
+              >
+                <input
+                  type="checkbox"
+                  checked={mergeArgsDraft}
+                  onChange={e => {
+                    setNotice(current => current === 'Saved for future loads' ? null : current);
+                    setMergeArgsDraft(e.target.checked);
+                  }}
+                />
+                <span>Merge with default args</span>
+                <Icon name="info" size={14} aria-hidden="true" />
+              </label>
+
+              {showMergedPreview && (
+                <div className="detail-configuration__merge-preview">
+                  <span className="detail-configuration__merge-preview-title">Resolved for the next load</span>
+                  {mergedPreviewError && (
+                    <p className="detail-configuration__merge-preview-empty">{mergedPreviewError}</p>
+                  )}
+                  {!mergedPreviewError && !mergedPreview && (
+                    <p className="detail-configuration__merge-preview-empty">Resolving…</p>
+                  )}
+                  {!mergedPreviewError && mergedPreview && (
+                    <dl className="detail-configuration__merge-preview-list">
+                      {resolvedPreviewRows(mergedPreview, recipeKeys, supportsContextSize).map(row => (
+                        <React.Fragment key={row.key}>
+                          <dt>{row.label}</dt>
+                          <dd>{row.value}</dd>
+                        </React.Fragment>
+                      ))}
+                    </dl>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
