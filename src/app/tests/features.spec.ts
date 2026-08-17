@@ -1,6 +1,46 @@
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Page, type Route } from '@playwright/test';
 
 const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
+
+type ModelOptionsState = Map<string, Record<string, unknown>>;
+
+async function fulfillModelOptionsRoute(
+  route: Route,
+  state: ModelOptionsState,
+  respectDryRun = false,
+): Promise<boolean> {
+  const request = route.request();
+  const match = new URL(request.url()).pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
+  if (!match) return false;
+
+  const modelName = decodeURIComponent(match[1]);
+  const method = request.method().toUpperCase();
+  let saved = { ...(state.get(modelName) || {}) };
+  if (method === 'POST') {
+    const patch = request.postDataJSON() as Record<string, unknown>;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) delete saved[key];
+      else if (!respectDryRun || key !== 'dry_run') saved[key] = value;
+    }
+    if (!respectDryRun || !patch.dry_run) state.set(modelName, saved);
+  } else if (method === 'DELETE') {
+    saved = {};
+    state.delete(modelName);
+  }
+
+  await route.fulfill({
+    json: {
+      model_name: modelName,
+      recipe: 'llamacpp',
+      saved,
+      effective: { model_name: modelName, ctx_size: -1, ...saved },
+      defaults: { model_name: modelName, ctx_size: -1 },
+      resolved_ctx_size: 4096,
+      load_command: '',
+    },
+  });
+  return true;
+}
 
 test.beforeEach(async ({ page }, testInfo) => {
   const originalScreenshot = page.screenshot.bind(page);
@@ -19,33 +59,7 @@ test.beforeEach(async ({ page }, testInfo) => {
   if (process.env.LEMONADE_REAL_SERVER !== '1') {
     const modelOptionsByName = new Map<string, Record<string, unknown>>();
     await page.route(/\/api\/v1\/models\/[^/]+\/options(?:\?.*)?$/, async route => {
-      const request = route.request();
-      const match = new URL(request.url()).pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
-      const modelName = decodeURIComponent(match?.[1] || 'unknown-model');
-      const method = request.method().toUpperCase();
-      let saved = { ...(modelOptionsByName.get(modelName) || {}) };
-      if (method === 'POST') {
-        const patch = request.postDataJSON() as Record<string, unknown>;
-        for (const [key, value] of Object.entries(patch)) {
-          if (value === null) delete saved[key];
-          else saved[key] = value;
-        }
-        modelOptionsByName.set(modelName, saved);
-      } else if (method === 'DELETE') {
-        saved = {};
-        modelOptionsByName.delete(modelName);
-      }
-      await route.fulfill({
-        json: {
-          model_name: modelName,
-          recipe: 'llamacpp',
-          saved,
-          effective: { model_name: modelName, ctx_size: -1, ...saved },
-          defaults: { model_name: modelName, ctx_size: -1 },
-          resolved_ctx_size: 4096,
-          load_command: '',
-        },
-      });
+      await fulfillModelOptionsRoute(route, modelOptionsByName);
     });
   }
 });
@@ -759,36 +773,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     });
     const modelOptionsRouteState13c = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
-      const request = route.request();
-      const pathname = new URL(request.url()).pathname;
-      const optionMatch = pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
-      if (optionMatch) {
-        const modelName = decodeURIComponent(optionMatch[1]);
-        const method = request.method().toUpperCase();
-        let saved = { ...(modelOptionsRouteState13c.get(modelName) || {}) };
-        if (method === 'POST') {
-          const patch = request.postDataJSON() as Record<string, unknown>;
-          for (const [key, value] of Object.entries(patch)) {
-            if (value === null) delete saved[key];
-            else if (key !== 'dry_run') saved[key] = value;
-          }
-          if (!patch.dry_run) modelOptionsRouteState13c.set(modelName, saved);
-        } else if (method === 'DELETE') {
-          saved = {};
-          modelOptionsRouteState13c.delete(modelName);
-        }
-        return route.fulfill({
-          json: {
-            model_name: modelName,
-            recipe: 'llamacpp',
-            saved,
-            effective: { model_name: modelName, ctx_size: -1, ...saved },
-            defaults: { model_name: modelName, ctx_size: -1 },
-            resolved_ctx_size: 4096,
-            load_command: '',
-          },
-        });
-      }
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState13c, true)) return;
       return route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -1524,36 +1509,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }));
     const modelOptionsRouteState25 = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
-      const request = route.request();
-      const pathname = new URL(request.url()).pathname;
-      const optionMatch = pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
-      if (optionMatch) {
-        const modelName = decodeURIComponent(optionMatch[1]);
-        const method = request.method().toUpperCase();
-        let saved = { ...(modelOptionsRouteState25.get(modelName) || {}) };
-        if (method === 'POST') {
-          const patch = request.postDataJSON() as Record<string, unknown>;
-          for (const [key, value] of Object.entries(patch)) {
-            if (value === null) delete saved[key];
-            else if (key !== 'dry_run') saved[key] = value;
-          }
-          if (!patch.dry_run) modelOptionsRouteState25.set(modelName, saved);
-        } else if (method === 'DELETE') {
-          saved = {};
-          modelOptionsRouteState25.delete(modelName);
-        }
-        return route.fulfill({
-          json: {
-            model_name: modelName,
-            recipe: 'llamacpp',
-            saved,
-            effective: { model_name: modelName, ctx_size: -1, ...saved },
-            defaults: { model_name: modelName, ctx_size: -1 },
-            resolved_ctx_size: 4096,
-            load_command: '',
-          },
-        });
-      }
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25, true)) return;
       return route.fulfill({
       json: {
         data: [{
@@ -1619,36 +1575,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }));
     const modelOptionsRouteState25a = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
-      const request = route.request();
-      const pathname = new URL(request.url()).pathname;
-      const optionMatch = pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
-      if (optionMatch) {
-        const modelName = decodeURIComponent(optionMatch[1]);
-        const method = request.method().toUpperCase();
-        let saved = { ...(modelOptionsRouteState25a.get(modelName) || {}) };
-        if (method === 'POST') {
-          const patch = request.postDataJSON() as Record<string, unknown>;
-          for (const [key, value] of Object.entries(patch)) {
-            if (value === null) delete saved[key];
-            else if (key !== 'dry_run') saved[key] = value;
-          }
-          if (!patch.dry_run) modelOptionsRouteState25a.set(modelName, saved);
-        } else if (method === 'DELETE') {
-          saved = {};
-          modelOptionsRouteState25a.delete(modelName);
-        }
-        return route.fulfill({
-          json: {
-            model_name: modelName,
-            recipe: 'llamacpp',
-            saved,
-            effective: { model_name: modelName, ctx_size: -1, ...saved },
-            defaults: { model_name: modelName, ctx_size: -1 },
-            resolved_ctx_size: 4096,
-            load_command: '',
-          },
-        });
-      }
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25a, true)) return;
       return route.fulfill({
       json: {
         data: [
