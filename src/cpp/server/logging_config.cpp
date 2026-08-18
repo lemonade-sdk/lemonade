@@ -124,37 +124,45 @@ void RotatingFileSink::rotate_if_needed_nolock() {
 
     std::error_code ec;
     fs::path active_log = utils::path_from_utf8(filename_);
-    if (fs::exists(active_log, ec) && fs::is_directory(active_log, ec)) {
+    if (fs::exists(active_log, ec) && !fs::is_regular_file(active_log, ec)) {
         return;
     }
 
     bool rename_succeeded = false;
     if (max_files_ > 0) {
         fs::path max_backup = utils::path_from_utf8(filename_ + "." + std::to_string(max_files_));
-        if (fs::exists(max_backup, ec)) {
+        if (fs::exists(max_backup, ec) && fs::is_regular_file(max_backup, ec)) {
             fs::remove(max_backup, ec);
         }
 
         for (size_t i = max_files_; i > 1; --i) {
             fs::path dst = utils::path_from_utf8(filename_ + "." + std::to_string(i));
             fs::path src = utils::path_from_utf8(filename_ + "." + std::to_string(i - 1));
-            if (fs::exists(src, ec)) {
+            if (fs::exists(src, ec) && fs::is_regular_file(src, ec)) {
                 if (fs::exists(dst, ec)) {
-                    fs::remove(dst, ec);
+                    if (fs::is_regular_file(dst, ec)) {
+                        fs::remove(dst, ec);
+                    } else {
+                        continue;
+                    }
                 }
                 fs::rename(src, dst, ec);
             }
         }
 
         fs::path backup_1 = utils::path_from_utf8(filename_ + ".1");
-        if (fs::exists(active_log, ec)) {
+        if (fs::exists(active_log, ec) && fs::is_regular_file(active_log, ec)) {
             if (fs::exists(backup_1, ec)) {
-                fs::remove(backup_1, ec);
+                if (fs::is_regular_file(backup_1, ec)) {
+                    fs::remove(backup_1, ec);
+                }
             }
-            ec.clear();
-            fs::rename(active_log, backup_1, ec);
-            if (!ec) {
-                rename_succeeded = true;
+            if (!fs::exists(backup_1, ec)) {
+                ec.clear();
+                fs::rename(active_log, backup_1, ec);
+                if (!ec) {
+                    rename_succeeded = true;
+                }
             }
         }
     }
@@ -166,7 +174,7 @@ void RotatingFileSink::rotate_if_needed_nolock() {
         file_.open(active_log, std::ofstream::out | std::ofstream::app | std::ofstream::binary);
     }
 
-    if (fs::exists(active_log, ec)) {
+    if (fs::exists(active_log, ec) && fs::is_regular_file(active_log, ec)) {
         current_size_ = static_cast<size_t>(fs::file_size(active_log, ec));
     } else {
         current_size_ = 0;

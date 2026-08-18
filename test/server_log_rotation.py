@@ -179,14 +179,15 @@ class TestLogRotation(unittest.TestCase):
         self.assertFalse(os.path.exists(backup_1), "Backup .1 created when max_files=0")
 
     def test_runtime_log_rotation(self):
-        """Verify active server log rotates at runtime when traffic exceeds max_size."""
+        """Verify active server log rotates at runtime when live traffic exceeds max_size."""
         log_dir = os.path.join(self.runtime_dir, "lemonade")
         os.makedirs(log_dir, exist_ok=True)
         active_log = os.path.join(log_dir, "lemonade-server.log")
+        backup_1 = os.path.join(log_dir, "lemonade-server.log.1")
 
-        # Pre-seed active log at 500 bytes below 1MB (not rotated at startup, but easily exceeded by live traffic)
+        # Pre-seed active log at 1020 KB (startup writes ~3KB, so startup alone leaves ~1.5KB headroom)
         with open(active_log, "wb") as f:
-            f.write(b"PRE_SEED_LOG_LINE\n" + b"X" * (1024 * 1024 - 500))
+            f.write(b"PRE_SEED_LOG_LINE\n" + b"X" * (1020 * 1024))
 
         env = os.environ.copy()
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
@@ -226,12 +227,22 @@ class TestLogRotation(unittest.TestCase):
                     time.sleep(0.2)
 
             self.assertTrue(ready, "Server failed to start for runtime rotation test")
+            self.assertFalse(
+                os.path.exists(backup_1),
+                "Backup .1 must NOT exist immediately after startup (proves startup did not rotate)",
+            )
 
             # Send HTTP requests to push total log volume past 1MB and trigger runtime rotation
-            for i in range(50):
+            session = requests.Session()
+            session.trust_env = False
+            for i in range(100):
+                if os.path.exists(backup_1):
+                    break
                 try:
-                    requests.get(
-                        f"http://127.0.0.1:{port}/api/v1/system-info", timeout=1
+                    resp = session.post(
+                        f"http://127.0.0.1:{port}/api/v1/chat/completions",
+                        json={},
+                        timeout=1,
                     )
                 except Exception:
                     pass
@@ -244,12 +255,10 @@ class TestLogRotation(unittest.TestCase):
                 proc.kill()
                 proc.wait(timeout=3)
 
-        active_log = os.path.join(log_dir, "lemonade-server.log")
-        backup_1 = os.path.join(log_dir, "lemonade-server.log.1")
         self.assertTrue(os.path.exists(active_log), "Active log file should exist")
         self.assertTrue(
             os.path.exists(backup_1),
-            "Rotated backup .1 should exist after exceeding 1MB",
+            "Rotated backup .1 should exist after live HTTP traffic exceeded 1MB",
         )
         self.assertGreater(
             os.path.getsize(backup_1),

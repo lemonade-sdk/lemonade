@@ -225,12 +225,16 @@ static void test_validation_rejection() {
 static void test_rotation_rename_failure_preserves_log() {
     fs::path temp_dir = make_temp_dir();
     fs::path log_path = temp_dir / "lemonade.log";
+    fs::path backup_1 = temp_dir / "lemonade.log.1";
 
-    // Write initial data to log_path
+    // Create a directory at the backup_1 path so rotation cannot replace it
+    fs::create_directories(backup_1);
+
+    // Write initial canary data to log_path
     {
         std::ofstream f(log_path, std::ios::binary);
-        std::string chunk(500 * 1024, 'X');
-        f << chunk << "\n";
+        std::string chunk = "INITIAL_CANARY_RECORD\n" + std::string(500 * 1024, 'X') + "\n";
+        f << chunk;
         f.flush();
     }
 
@@ -238,19 +242,22 @@ static void test_rotation_rename_failure_preserves_log() {
     {
         RotatingFileSink sink(filter, log_path.string(), "%m", 1, 2);
 
-        // Make temp_dir read-only so rename(active_log, backup_1) fails due to directory permissions
-        fs::permissions(temp_dir, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-
-        std::string extra_chunk(600 * 1024, 'Y');
+        std::string extra_chunk = "APPENDED_FALLBACK_RECORD\n" + std::string(600 * 1024, 'Y');
+        // This write pushes size over 1MB, triggering rotate_if_needed_nolock()
+        // backup_1 is an existing directory and will not be overwritten; rotation falls back to append.
         sink.log(make_metadata(), extra_chunk);
-
-        // Restore permissions for verification and cleanup
-        fs::permissions(temp_dir, fs::perms::all, fs::perm_options::replace);
     }
 
     std::error_code ec;
+    check("backup destination directory is preserved", fs::is_directory(backup_1, ec));
+
     size_t final_size = fs::file_size(log_path, ec);
-    check("active log is not truncated on rename failure", final_size >= 500 * 1024);
+    check("active log preserved all data without truncation", final_size >= 1000 * 1024);
+
+    std::ifstream in(log_path, std::ios::binary);
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    check("active log contains initial canary after fallback", content.find("INITIAL_CANARY_RECORD") != std::string::npos);
+    check("active log contains appended record after fallback", content.find("APPENDED_FALLBACK_RECORD") != std::string::npos);
 
     fs::remove_all(temp_dir);
 }
