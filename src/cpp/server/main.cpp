@@ -1,16 +1,18 @@
-#include <iostream>
-#include <csignal>
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include <lemon/server.h>
+
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
-#include <lemon/server.h>
 #include <lemon/system_info.h>
-#include <lemon/version.h>
-#include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/path_utils.h>
+#include <lemon/version.h>
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <iostream>
+#include <thread>
 
 #ifndef _WIN32
 #include <unistd.h>
