@@ -66,7 +66,6 @@ import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
   loadWithGlobalModelPolicy,
-  savePinnedModelNames,
 } from '../features/modelSettings/globalModelSettings';
 
 interface Message {
@@ -3530,6 +3529,7 @@ ${finalText}`
               unloadingModel={modelPickerUnloading}
               onChipClick={startLemonadeToolPrompt}
               modelInfos={knownModelInfos}
+              onRefresh={onRefresh}
             />
           ) : (
             <div className="thread">
@@ -4473,6 +4473,7 @@ interface EmptyStateProps {
   unloadingModel: string | null;
   onChipClick: (text: string) => void;
   modelInfos: ModelInfo[];
+  onRefresh: () => void | Promise<void>;
 }
 
 const EmptyState: React.FC<EmptyStateProps> = ({
@@ -4485,27 +4486,12 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   unloadingModel,
   onChipClick,
   modelInfos,
+  onRefresh,
 }) => {
-  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
-  const pinnedNameSet = useMemo(
-    () => new Set(pinnedModels.map(name => name.toLowerCase())),
-    [pinnedModels],
-  );
-
-  useEffect(() => {
-    const reloadPinnedModels = () => setPinnedModels(loadPinnedModelNames());
-    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadPinnedModels);
-    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadPinnedModels);
-  }, []);
-
-  const togglePinnedModel = (modelName: string) => {
-    const key = modelName.toLowerCase();
-    const exists = pinnedModels.some(name => name.toLowerCase() === key);
-    const next = exists
-      ? pinnedModels.filter(name => name.toLowerCase() !== key)
-      : [modelName, ...pinnedModels];
-    setPinnedModels(next);
-    savePinnedModelNames(next);
+  const togglePinnedModel = async (model: LoadedModel) => {
+    const api = await getApiClient();
+    await api.setModelPinned(model.model_name, model.pinned !== true);
+    await Promise.resolve(onRefresh());
   };
 
   return (
@@ -4559,7 +4545,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
               const selectable = canSelectInComposer(model) || isComposerSelectableCapability(capability);
               const isActive = currentModel === model.model_name;
               const isUnloading = unloadingModel === model.model_name;
-              const isPinned = pinnedNameSet.has(model.model_name.toLowerCase());
+              const isPinned = model.pinned === true;
               const sizeLabel = loadedOverviewSizeLabel(modelInfo);
               const deviceLabel = loadedOverviewDeviceLabel(model);
 
@@ -4623,7 +4609,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                     className={`loaded-overview__pin${isPinned ? ' loaded-overview__pin--active' : ''}`}
                     onClick={event => {
                       event.stopPropagation();
-                      togglePinnedModel(model.model_name);
+                      void togglePinnedModel(model);
                     }}
                     aria-label={isPinned ? `Unpin ${model.model_name}` : `Pin ${model.model_name}`}
                     aria-pressed={isPinned}

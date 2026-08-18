@@ -641,7 +641,19 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         key={mId}
         rowId={mId}
         capability={primaryCapability}
-        title={displayName}
+        title={(
+          <span className="model-list-panel__row-title">
+            <span className="model-list-panel__row-title-text">{displayName}</span>
+            {favorited && (
+              <Icon
+                name="star"
+                size={10}
+                className="model-list-panel__favorite-indicator"
+                aria-hidden="true"
+              />
+            )}
+          </span>
+        )}
         meta={meta}
         glyphs={secondaryTags.map(capabilityTagIconTarget)}
         anchor={recipe && !neutralCollectionGuide ? displayedBackend : undefined}

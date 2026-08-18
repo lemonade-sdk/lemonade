@@ -1182,7 +1182,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   useEffect(() => {
     const reloadGlobalSettings = () => {
       setGlobalModelSettings(loadGlobalModelSettings());
-      setPinnedModels(loadPinnedModelNames());
     };
     automaticUpdateStartedRef.current = false;
     reloadGlobalSettings();

@@ -2238,11 +2238,13 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     await action.click();
     await expect(action).not.toHaveClass(/workspace-list-row__action--latched/);
     await expect(action).toHaveClass(/workspace-list-row__action--active/);
+    await expect(row.locator('.model-list-panel__favorite-indicator')).toBeHidden();
     await expect(row).toHaveClass(/workspace-list-row--pinned/);
     await expect(row).toHaveAttribute('aria-label', /favorite/i);
     await page.locator('.model-list-panel__search-input').hover();
     await expect(action).toBeHidden();
     await expect(anchor).toBeVisible();
+    await expect(row.locator('.model-list-panel__favorite-indicator')).toBeVisible();
   });
 
   test('A121 — selected model row is keyboard-operable: "F" toggles Favorite', async ({ page }) => {
@@ -2282,7 +2284,9 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     // Move away before asserting the non-hover state.
     await page.locator('.model-list-panel__search-input').hover();
     await expect(reloadedRow.locator('.workspace-list-row__action')).toBeHidden();
+    await expect(reloadedRow.locator('.model-list-panel__favorite-indicator')).toBeVisible();
     await reloadedRow.hover();
+    await expect(reloadedRow.locator('.model-list-panel__favorite-indicator')).toBeHidden();
     await expect(reloadedRow.locator('.workspace-list-row__action')).toHaveAttribute('title', /remove .* from favorites/i);
     await expect(reloadedRow.locator('.workspace-list-row__action')).toHaveClass(/workspace-list-row__action--active/);
     expect(await page.evaluate(() => localStorage.getItem('lemonade:pinned_models'))).toBeNull();

@@ -15562,6 +15562,45 @@ button.workspace-metadata-chip:hover {
   grid-template-columns: 26px minmax(min-content, 1fr);
 }
 
+/* Compact at-rest Favorite indicator for model rows. */
+.model-list-panel__row-title {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.model-list-panel__row-title-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed at the title row's right edge so model-name length never moves it. */
+.model-list-panel__favorite-indicator {
+  position: absolute;
+  inset-inline-end:
+    calc(var(--space-1) - var(--workspace-list-row-action));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  color: var(--accent-fg);
+  pointer-events: none;
+}
+
+.model-list-panel__favorite-indicator path {
+  fill: none;
+}
+
+/* The full-size Favorite affordance owns the hover state. Keep only one star
+   visible while it temporarily replaces the backend anchor. */
+.workspace-list-row:hover .model-list-panel__favorite-indicator {
+  visibility: hidden;
+}
+
 /* PR3141 V2: loaded models responsive */
 @media (max-width: 768px) {
   .loaded-overview__header { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
