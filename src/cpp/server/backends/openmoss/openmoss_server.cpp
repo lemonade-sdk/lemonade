@@ -8,10 +8,15 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <thread>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -20,6 +25,18 @@
 
 namespace lemon {
 namespace backends {
+
+namespace {
+constexpr const char* kVoiceDesignPhrase =
+    "Hello there. This is a short sample of the voice you described.";
+
+constexpr const char* kVoiceDesignField = "voice_design_description";
+
+std::string string_field(const json& request, const char* key) {
+    const auto it = request.find(key);
+    return (it != request.end() && it->is_string()) ? it->get<std::string>() : std::string();
+}
+}  // namespace
 
 InstallParams OpenMossServer::get_install_params(const std::string& backend, const std::string& version) {
     (void)version;
@@ -76,18 +93,6 @@ void OpenMossServer::load(const std::string& model_name,
     RuntimeConfig::validate_backend_choice("openmoss", backend);
     const std::string exe_path = resolve_binary_path(backend);
 
-    port_ = choose_port();
-    if (port_ == 0) {
-        throw std::runtime_error("Failed to find an available port");
-    }
-
-    std::vector<std::string> args = {
-        "--model", model_path,
-        "--host", "127.0.0.1",
-        "--port", std::to_string(port_),
-        "--no-webui",
-    };
-
     std::vector<std::pair<std::string, std::string>> env_vars;
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
     auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
@@ -120,22 +125,45 @@ void OpenMossServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
     }
 
-    LOG(INFO, "openmoss-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path, args, "", is_debug(), false, env_vars);
-    set_process_handle(started_handle);
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start openmoss-server process");
+    std::lock_guard<std::mutex> lock(design_mutex_);
+    exe_path_ = exe_path;
+    env_vars_ = env_vars;
+    model_path_ = model_path;
+    voicegen_path_ = model_info.resolved_path("voicegen");
+    if (!voicegen_path_.empty() && !std::filesystem::exists(voicegen_path_)) {
+        voicegen_path_.clear();
     }
-    LOG(INFO, "openmoss-server") << "Process started with PID: " << started_handle.pid << std::endl;
+    reference_cache_.clear();
 
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("openmoss-server failed to start or become ready");
-    }
+    start_speech_process();
 }
 
-void OpenMossServer::unload() {
+OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
+    Subprocess proc;
+    proc.port = utils::ProcessManager::find_free_port(8001);
+    if (proc.port <= 0) {
+        throw std::runtime_error("Failed to find an available port");
+    }
+
+    const std::vector<std::string> args = {
+        "--model", model_path,
+        "--host", "127.0.0.1",
+        "--port", std::to_string(proc.port),
+        "--n-ctx", "32768",
+        "--n-batch", "4096",
+        "--no-webui",
+    };
+
+    LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << proc.port << std::endl;
+    proc.handle = utils::ProcessManager::start_process(
+        exe_path_, args, "", is_debug(), false, env_vars_);
+    if (!has_process_handle(proc.handle)) {
+        throw std::runtime_error("Failed to start openmoss-server process");
+    }
+    return proc;
+}
+
+void OpenMossServer::stop_speech_process() {
     stop_backend_watchdog();
     const ProcessHandle handle = consume_process_handle_for_cleanup();
     if (has_process_handle(handle)) {
@@ -144,8 +172,152 @@ void OpenMossServer::unload() {
     }
 }
 
+void OpenMossServer::start_speech_process() {
+    Subprocess proc = spawn(model_path_);
+    port_ = proc.port;
+    set_process_handle(proc.handle);
+    LOG(INFO, "openmoss-server") << "Process started with PID: " << proc.handle.pid << std::endl;
+
+    if (!wait_for_ready("/health")) {
+        stop_speech_process();
+        throw std::runtime_error("openmoss-server failed to start or become ready");
+    }
+}
+
+void OpenMossServer::unload() {
+    std::lock_guard<std::mutex> lock(design_mutex_);
+    stop_speech_process();
+    reference_cache_.clear();
+}
+
+std::string OpenMossServer::design_reference_sample(const std::string& voice_description) {
+    std::lock_guard<std::mutex> lock(design_mutex_);
+    auto cached = reference_cache_.find(voice_description);
+    if (cached != reference_cache_.end()) {
+        return cached->second;
+    }
+
+    LOG(INFO, "openmoss-server") << "Designing reference voice for: " << voice_description << std::endl;
+    stop_speech_process();
+
+    std::string sample;
+    try {
+        sample = render_reference_sample(voice_description);
+    } catch (...) {
+        try {
+            start_speech_process();
+        } catch (const std::exception& e) {
+            LOG(ERROR, "openmoss-server")
+                << "Speech model failed to restart after an unsuccessful voice design: "
+                << e.what() << std::endl;
+        }
+        throw;
+    }
+    start_speech_process();
+
+    reference_cache_[voice_description] = sample;
+    return sample;
+}
+
+std::string OpenMossServer::render_reference_sample(const std::string& voice_description) {
+    Subprocess designer = spawn(voicegen_path_);
+    std::string sample;
+    try {
+        const std::string base = "http://127.0.0.1:" + std::to_string(designer.port);
+        bool ready = false;
+        const int max_attempts = 3000;
+        for (int attempt = 0; attempt < max_attempts && !ready; ++attempt) {
+            if (!utils::ProcessManager::is_running(designer.handle)) {
+                const int exit_code = utils::ProcessManager::reap_process(designer.handle);
+                designer.handle = ProcessHandle{};
+                throw std::runtime_error(
+                    "voice-design backend exited during startup with code "
+                    + std::to_string(exit_code));
+            }
+            try {
+                auto health = utils::HttpClient::get(
+                    base + "/health", {}, 2, utils::HttpSecurityPolicy::TrustedLoopback);
+                ready = (health.status_code == 200);
+            } catch (const std::exception&) {
+                ready = false;
+            }
+            if (!ready) std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        if (!ready) {
+            throw std::runtime_error("voice-design backend failed to become ready");
+        }
+        json body;
+        body["input"] = kVoiceDesignPhrase;
+        body["voice"] = voice_description;
+        body["response_format"] = "wav";
+        auto response = utils::HttpClient::post(
+            base + "/v1/audio/speech", body.dump(),
+            {{"Content-Type", "application/json"}}, 600,
+            utils::HttpSecurityPolicy::TrustedLoopback);
+        if (response.status_code != 200 || response.body.empty()) {
+            throw std::runtime_error("voice design failed: HTTP " + std::to_string(response.status_code));
+        }
+        sample = utils::JsonUtils::base64_encode(response.body);
+    } catch (...) {
+        if (has_process_handle(designer.handle)) {
+            utils::ProcessManager::stop_process(designer.handle);
+        }
+        throw;
+    }
+    utils::ProcessManager::stop_process(designer.handle);
+    LOG(INFO, "openmoss-server") << "Voice-design subprocess released" << std::endl;
+    return sample;
+}
+
+json OpenMossServer::apply_voice_design(const json& request) {
+    json forwarded = request;
+
+    const std::string description = string_field(forwarded, kVoiceDesignField);
+    forwarded.erase(kVoiceDesignField);
+    if (description.empty() || forwarded.contains("reference_wav_b64")) {
+        return forwarded;
+    }
+    if (voicegen_path_.empty()) {
+        throw std::runtime_error(
+            "This model has no voice-design component; attach reference audio instead.");
+    }
+    forwarded["reference_wav_b64"] = design_reference_sample(description);
+    return forwarded;
+}
+
 void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) {
-    forward_streaming_request("/v1/audio/speech", request.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
+    json forwarded = apply_voice_design(request);
+
+    if (!forwarded.contains("max_audio_frames") && !forwarded.contains("token_count")) {
+        const std::string input = string_field(forwarded, "input");
+        if (!input.empty()) {
+            int words = 1;
+            for (char c : input) {
+                if (c == ' ' || c == '\n' || c == '\t') ++words;
+            }
+            const int tokens = std::max(40, std::min(1000, words * 5));
+            forwarded["max_audio_frames"] = std::max(48, tokens * 3 / 2);
+        }
+    }
+
+    forward_streaming_request("/v1/audio/speech", forwarded.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
+}
+
+void OpenMossServer::audio_generations(const json& request, httplib::DataSink& sink) {
+    json body;
+    body["prompt"] = string_field(request, "prompt");
+    for (const char* key : {"seconds", "steps", "cfg_scale", "sigma_shift",
+                            "negative_prompt", "seed", "append_duration_suffix",
+                            "response_format"}) {
+        if (request.contains(key)) body[key] = request[key];
+    }
+    if (!body.contains("seconds") && request.contains("duration")) {
+        body["seconds"] = request["duration"];
+    }
+    if (!body.contains("cfg_scale") && request.contains("cfg")) {
+        body["cfg_scale"] = request["cfg"];
+    }
+    forward_streaming_request("/sfx", body.dump(), sink, /*sse=*/false, /*timeout_seconds=*/900);
 }
 
 }  // namespace backends

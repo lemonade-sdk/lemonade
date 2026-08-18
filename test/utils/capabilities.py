@@ -244,9 +244,10 @@ CAPABILITIES = {
                 "voice_cloning": True,
                 "voice_design": True,
             },
+            # Voice design has no model of its own: the voice generator ships as
+            # a component of the speech model, so `tts` covers both.
             "test_models": {
                 "tts": "OpenMOSS-TTS",
-                "tts_design": "MOSS-VoiceGen",
             },
         },
     },

@@ -194,6 +194,26 @@ Errors from `audio_generations` are written into the response sink as a JSON err
 
 The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (`acestep-5Hz-lm-4B-Q8_0.gguf`, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to `--models` is the directory of GGUFs; `ace-server` scans it by architecture, and `--keep-loaded` keeps models resident across requests.
 
+### OpenMOSS (`openmoss`)
+
+`moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
+
+`design_mutex_` serialises design against `load()` and `unload()`: both take the process down and put it back, and without the lock an unload arriving mid-design races the restart and leaves a live process behind a server that believes it has none. `start_speech_process()` therefore calls `stop_speech_process()` rather than `unload()` on a failed readiness wait, because `unload()` takes the same lock.
+
+The transient design process is polled for readiness through its own `/health` rather than the shared `wait_for_ready()`, since it does not own `port_`; the poll also checks `ProcessManager::is_running()` each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. `spawn()` uses `find_free_port()` instead of `choose_port()` for the same reason — `choose_port()` assigns `port_`, and the caller decides which process `port_` addresses.
+
+Reference-conditioned requests prefill the whole sample as audio tokens (roughly 12.5 frames/s times the number of codebooks), which overruns the server's default 8192 context and 512 batch for anything but a very short clip, so every process is spawned with `--n-ctx 32768 --n-batch 4096`.
+
+The server derives an audio length bound only for `n_vq < 32`. The delay family reports 32 and gets none, so a one-line prompt can run to `max_new_tokens` and emit minutes of audio. `audio_speech()` therefore derives `max_audio_frames` from the input text (about 5 frames per word at ~12.5 frames/s and ~2.5 words/s, clamped to 40-1000 tokens) unless the caller supplied `max_audio_frames` or `token_count`.
+
+Voice design is opt-in through the `voice_design_description` extension and is never inferred from `voice`, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending `"voice": "default"` gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries `reference_wav_b64`. Request fields are read with a type-checking accessor rather than `json::value()`, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.
+
+`MOSS-SoundEffect` uses the same recipe but is an audio-generation model: `audio_generations()` forwards to the backend's `/sfx` endpoint, accepting `duration`/`cfg` as aliases for `seconds`/`cfg_scale`.
+
+### Model downloads
+
+A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
+
 ### Backend auto-selection
 
 When a recipe's backend is not pinned in `config.json` (the `backend` key is absent or `"auto"`), the default backend reported in `system-info` — and used by `RecipeOptions` when resolving `*_backend` options — is chosen as follows: the first supported backend in `RECIPE_DEFS` preference order wins, unless a later supported backend is already locally installed (state `installed`, `update_available`, or `update_required`) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit `backend` value in `config.json` always takes precedence over both rules. The llamacpp `system` variant is never auto-selected unless `prefer_system` is set.

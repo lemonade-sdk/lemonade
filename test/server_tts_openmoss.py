@@ -244,15 +244,17 @@ class OpenMossTTSTests(ServerTestBase):
         )
 
     def test_010_voice_design(self):
-        """Test voice design: a free-text voice description instead of a fixed voice."""
-        model = get_test_model("tts_design")
-        print(f"[INFO] Ensuring {model} is pulled...")
-        pull_model_with_retry(model)
+        """Test voice design: an invented voice from a text description.
 
+        Design is opt-in through `voice_design_description` and needs no separate
+        model: the voice generator is a component of the speech model. Note this
+        request spans two model loads, since the backend swaps the speech model
+        out for the generator and back again.
+        """
         payload = {
-            "model": model,
+            "model": get_test_model("tts"),
             "input": "Designing a brand new voice from a description.",
-            "voice": "a calm, deep male narrator voice",
+            "voice_design_description": "a calm, deep male narrator voice",
         }
 
         response = requests.post(
@@ -305,6 +307,30 @@ class OpenMossTTSTests(ServerTestBase):
         self.assertGreater(len(body), 1000, "Streamed clip should be substantial")
 
         print(f"[OK] Streamed WAV received ({len(body)} bytes)")
+
+    def test_012_voice_field_does_not_trigger_design(self):
+        """A plain `voice` value must speak, not design a voice by that name.
+
+        `voice` keeps its OpenAI-compatible meaning and is forwarded as a style
+        instruction. A client sending "default" must get speech back rather than
+        an attempt to invent a voice literally called "default".
+        """
+        payload = {
+            "model": get_test_model("tts"),
+            "input": "A standard voice field should still just speak.",
+            "voice": "default",
+        }
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self._assert_wav_response(response, "Plain voice field")
+        print(
+            f"[OK] `voice` was treated as an instruction ({len(response.content)} bytes)"
+        )
 
 
 if __name__ == "__main__":
