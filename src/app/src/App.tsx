@@ -689,6 +689,7 @@ const App: React.FC = () => {
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
         if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
+        if (info && (info as any).downloaded) return current;
       }
       const virtualOmni = loadedModels.find(model => {
         const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);

@@ -32,6 +32,7 @@
     "test:default-chat-model": "node tests/default-chat-model.runtime.cjs",
     "test:storage": "node tests/storage.runtime.cjs",
     "test:configuration-consistency": "node tests/configuration-consistency.runtime.cjs",
+    "test:generation-params": "npx playwright test tests/generation-params.spec.ts",
     "test:directory-settings": "node tests/directory-settings.runtime.cjs",
     "test:model-list-backends": "node tests/model-list-backend-layout.runtime.cjs",
     "test:ui-regressions": "node tests/ui-regression-contracts.runtime.cjs && node tests/backend-manager-lifecycle.runtime.cjs",

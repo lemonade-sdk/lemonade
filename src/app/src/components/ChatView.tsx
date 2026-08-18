@@ -67,6 +67,13 @@ import {
   loadPinnedModelNames,
   loadWithGlobalModelPolicy,
 } from '../features/modelSettings/globalModelSettings';
+import {
+  generationParamChoices,
+  generationParamDefault,
+  generationParams,
+  resolveGenerationSeed,
+  type GenerationParamMetadata,
+} from '../features/backends/recipeMetadata';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -537,38 +544,144 @@ const DEFAULT_IMAGE_SETTINGS: ImageGenerationSettings = {
   upscaleModel: '',
 };
 
-interface AudioGenerationSettings {
-  duration: number;
-  steps: number;
-  cfg: number;
-  seed: number | '';
-  lyrics: string;
-  vocalLanguage: string;
+type GenerationParamValues = Record<string, unknown>;
+
+function fallbackParam(
+  name: string,
+  label: string,
+  typeName: string,
+  defaultValue: unknown,
+  min: number | null,
+  max: number | null,
+  step: number | null,
+  randomSentinel: number | null = null,
+): GenerationParamMetadata {
+  return {
+    name, label, typeName, defaultValue, min, max, step,
+    enumValues: [], help: '', group: '', exclusiveGroup: '', accept: '', randomSentinel,
+  };
 }
 
-const DEFAULT_AUDIO_GENERATION_SETTINGS: AudioGenerationSettings = {
-  duration: 10,
-  steps: 50,
-  cfg: 4.5,
-  seed: -1,
-  lyrics: '',
-  vocalLanguage: 'en',
+/**
+ * What the composer offers a server that declares no audio-generation
+ * parameters for the recipe. Every backend that does declare them replaces this
+ * wholesale; see docs/dev/backends-reference.md for the declaration.
+ */
+const GenerationParamField: React.FC<{
+  param: GenerationParamMetadata;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  disabled?: boolean;
+  required?: boolean;
+  className?: string;
+}> = ({ param, value, onChange, disabled, required, className }) => {
+  const text = value === undefined || value === null ? '' : String(value);
+  const label = (
+    <span>
+      {param.label}
+      {param.typeName === 'SEED' || (!required && param.typeName !== 'BOOL')
+        ? <small>{param.typeName === 'SEED' ? 'blank = random' : 'optional'}</small>
+        : null}
+    </span>
+  );
+
+  if (param.typeName === 'MULTILINE') {
+    return (
+      <label className={className || 'composer__audio-lyrics'}>
+        {label}
+        <textarea
+          value={text}
+          onChange={event => onChange(event.target.value)}
+          placeholder={param.help}
+          rows={3}
+          disabled={disabled}
+        />
+      </label>
+    );
+  }
+  if (param.typeName === 'BOOL') {
+    return (
+      <label className={className || 'composer__image-setting'}>
+        {label}
+        <input
+          type="checkbox"
+          checked={value === true}
+          onChange={event => onChange(event.target.checked)}
+          disabled={disabled}
+        />
+      </label>
+    );
+  }
+  if (param.typeName === 'ENUM') {
+    return (
+      <label className={className || 'composer__image-setting'}>
+        {label}
+        <select value={text} onChange={event => onChange(event.target.value)} disabled={disabled}>
+          {param.enumValues.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+        </select>
+      </label>
+    );
+  }
+  if (param.typeName === 'TEXT') {
+    return (
+      <label className={className || 'composer__image-setting composer__image-setting--language'}>
+        {label}
+        <input
+          type="text"
+          value={text}
+          placeholder={param.help}
+          onChange={event => onChange(event.target.value)}
+          disabled={disabled}
+        />
+      </label>
+    );
+  }
+  const integral = param.typeName === 'INT' || param.typeName === 'SEED';
+  return (
+    <label className={className || 'composer__image-setting'}>
+      {label}
+      <input
+        type="number"
+        min={param.min ?? undefined}
+        max={param.max ?? undefined}
+        step={param.step ?? undefined}
+        value={text}
+        onChange={event => {
+          const raw = event.target.value;
+          if (raw === '') { onChange(''); return; }
+          const parsed = integral ? parseInt(raw, 10) : parseFloat(raw);
+          if (Number.isNaN(parsed)) { onChange(''); return; }
+          const low = param.min ?? -Infinity;
+          const high = param.max ?? Infinity;
+          onChange(Math.max(low, Math.min(high, parsed)));
+        }}
+        disabled={disabled}
+      />
+    </label>
+  );
 };
 
-type OpenMossMode = 'plain' | 'describe' | 'clone';
-
-interface OpenMossSettings {
-  mode: OpenMossMode;
-  voiceDescription: string;
+function collectGenerationOptions(
+  params: GenerationParamMetadata[],
+  values: GenerationParamValues,
+): Record<string, unknown> {
+  const options: Record<string, unknown> = {};
+  for (const param of params) {
+    let value = values[param.name];
+    const blank = value === undefined || value === null || String(value).trim() === '';
+    if (param.typeName === 'SEED' && blank) value = resolveGenerationSeed(param);
+    else if (blank) continue;
+    options[param.name] = value;
+  }
+  return options;
 }
 
-const DEFAULT_OPENMOSS_SETTINGS: OpenMossSettings = {
-  mode: 'plain',
-  voiceDescription: '',
-};
-
-const OPENMOSS_VOICE_DESIGN_PHRASE =
-  'Hello there. This is a short sample of the voice you described.';
+const FALLBACK_AUDIO_GENERATION_PARAMS: GenerationParamMetadata[] = [
+  fallbackParam('duration', 'Duration', 'NUMBER', 10, 1, 600, 1),
+  fallbackParam('steps', 'Steps', 'INT', 50, 1, 200, 1),
+  fallbackParam('cfg', 'CFG', 'NUMBER', 4.5, 0, 30, 0.5),
+  fallbackParam('seed', 'Seed', 'SEED', -1, -1, null, 1, -1),
+];
 
 type Model3DSourceMode = 'image' | 'text';
 
@@ -804,12 +917,6 @@ async function audioToInputAudio(file: File): Promise<{ type: 'input_audio'; inp
   return { type: 'input_audio', input_audio: { data: payload, format } };
 }
 
-async function fileToBase64(file: Blob): Promise<string> {
-  const dataUrl = await blobToDataUrl(file);
-  const comma = dataUrl.indexOf(',');
-  return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
-}
-
 async function wavVoiceSampleToBase64(file: File): Promise<string> {
   const maxBytes = 10 * 1024 * 1024;
   if (file.size > maxBytes) {
@@ -862,8 +969,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   const [inputValue, setInputValue] = useState('');
   const [imageMode, setImageMode] = useState<ImageMode>('generate');
   const [imageSettings, setImageSettings] = useState<ImageGenerationSettings>(DEFAULT_IMAGE_SETTINGS);
-  const [audioGenerationSettings, setAudioGenerationSettings] = useState<AudioGenerationSettings>(DEFAULT_AUDIO_GENERATION_SETTINGS);
-  const [openMossSettings, setOpenMossSettings] = useState<OpenMossSettings>(DEFAULT_OPENMOSS_SETTINGS);
+  const [audioGenerationValues, setAudioGenerationValues] = useState<GenerationParamValues>({});
+  const [speechParamValues, setSpeechParamValues] = useState<GenerationParamValues>({});
+  const [voiceChoiceName, setVoiceChoiceName] = useState<string>('');
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(null);
   const [model3dSettings, setModel3dSettings] = useState<Model3DSettings>(DEFAULT_MODEL3D_SETTINGS);
   const imageSettingsModelRef = useRef<string | null>(null);
   const imageSettingsTouchedRef = useRef(false);
@@ -1168,43 +1277,30 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, [currentCapability, currentLoadedModel]);
 
   const currentRecipe = String(currentModelSnapshot?.recipe || currentKnownModelInfo?.recipe || '').toLowerCase();
-  const isAceStepAudio = currentCapability === 'audio-generation'
-    && (currentRecipe.includes('acestep') || currentRecipe.includes('ace-step') || (/ace[-_ ]?step/.test(String(currentModel || '').toLowerCase())));
   const currentLabels = (currentKnownModelInfo?.labels || []).map(label => String(label).toLowerCase());
-  const isOpenMossTts = currentCapability === 'tts'
-    && (currentRecipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(String(currentModel || '')));
-  const currentIsVoiceDesign = currentLabels.includes('voice-design')
-    || /voicegen/i.test(String(currentModel || ''));
-  const openMossModels = useMemo(() => {
-    const loadedNames = new Set(loadedModels.map(model => model.model_name.toLowerCase()));
-    return knownModelInfos
-      .map(info => {
-        const name = String((info as any).model_name || info.name || info.id || '').trim();
-        const recipe = String(
-          (info as any).recipe
-          || ((Array.isArray(info.recipes) && info.recipes[0]) ? (info.recipes[0] as any).recipe : ''),
-        ).toLowerCase();
-        const labels = (info.labels || []).map(label => String(label).toLowerCase());
-        return { name, recipe, labels, downloaded: Boolean((info as any).downloaded) };
-      })
-      .filter(model => model.name
-        && (model.recipe.includes('openmoss') || /moss[-_ ]?(tts|voicegen)/i.test(model.name))
-        && (loadedNames.has(model.name.toLowerCase())
-          || model.name === currentModel
-          || (model.downloaded && !activeDownloadForModel(downloadItems, model.name))));
-  }, [currentModel, downloadItems, knownModelInfos, loadedModels]);
-  const openMossVoiceDesignModel = currentIsVoiceDesign && isOpenMossTts
-    ? currentModel
-    : (openMossModels.find(model => model.labels.includes('voice-design') || /voicegen/i.test(model.name))?.name || '');
-  const openMossCloneModel = isOpenMossTts && !currentIsVoiceDesign
-    ? currentModel
-    : (openMossModels.find(model => !model.labels.includes('voice-design') && !/voicegen/i.test(model.name))?.name || '');
-  const openMossDescribeUnavailable = isOpenMossTts
-    && openMossSettings.mode === 'describe'
-    && !openMossVoiceDesignModel;
-  const openMossCloneUnavailable = isOpenMossTts
-    && openMossSettings.mode === 'clone'
-    && (!openMossCloneModel || pendingAudioFiles.length === 0);
+
+  const audioGenerationParams = useMemo(() => {
+    const declared = generationParams(systemInfo, currentRecipe, 'audio-generation');
+    return declared.length ? declared : FALLBACK_AUDIO_GENERATION_PARAMS;
+  }, [systemInfo, currentRecipe]);
+  const speechParams = useMemo(
+    () => generationParams(systemInfo, currentRecipe, 'tts'),
+    [systemInfo, currentRecipe],
+  );
+  // A recipe offering a lyric sheet is generating music rather than a sound
+  // effect, which is the only thing the composer's wording needs to know.
+  const producesMusic = audioGenerationParams.some(param => param.name === 'lyrics');
+  const voiceChoice = useMemo(() => generationParamChoices(speechParams)[0] || null, [speechParams]);
+  const hasVoiceChoice = currentCapability === 'tts' && !!voiceChoice;
+  const selectedVoiceParam = voiceChoice
+    ? (voiceChoice.members.find(member => member.name === voiceChoiceName) || voiceChoice.members[0])
+    : null;
+  const voiceNeedsAudio = hasVoiceChoice && selectedVoiceParam?.typeName === 'AUDIO_B64';
+  const voiceChoiceUnsatisfied = hasVoiceChoice && !!selectedVoiceParam && (
+    voiceNeedsAudio
+      ? pendingAudioFiles.length === 0
+      : String(speechParamValues[selectedVoiceParam.name] ?? '').trim() === ''
+  );
   const imageGenerationModels = useMemo(() => {
     const names = new Set<string>();
     loadedModels.forEach(model => {
@@ -1277,12 +1373,20 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   useEffect(() => {
+    let alive = true;
+    void getApiClient()
+      .then(api => api.systemInfo())
+      .then(info => { if (alive) setSystemInfo(info); })
+      .catch(() => { });
+    return () => { alive = false; };
+  }, [connectionStatus]);
+
+  useEffect(() => {
     let cancelled = false;
     const needsModelOptions = connectionStatus === 'connected' && !!currentModel && (
       currentCapability === 'image'
       || currentCapability === 'audio-generation'
       || currentCapability === 'tts'
-      || isOpenMossTts
     );
     if (!needsModelOptions) {
       setCurrentModelRecipeOptions(null);
@@ -1298,42 +1402,45 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         if (!cancelled) setCurrentModelRecipeOptions(null);
       });
     return () => { cancelled = true; };
-  }, [connectionStatus, currentCapability, currentModel, isOpenMossTts]);
+  }, [connectionStatus, currentCapability, currentModel]);
 
   useEffect(() => {
     if (currentCapability !== 'audio-generation') return;
-    const recipeOptions = currentModelRecipeOptions || {};
-    setAudioGenerationSettings(prev => ({
-      ...prev,
-      duration: isAceStepAudio ? 150 : 10,
-      steps: typeof recipeOptions.steps === 'number' ? recipeOptions.steps : 50,
-      cfg: typeof recipeOptions.cfg_scale === 'number' ? recipeOptions.cfg_scale : 4.5,
-      lyrics: '',
-    }));
-  }, [currentModel, currentCapability, currentModelRecipeOptions, isAceStepAudio]);
+    const modelDefaults = ((currentKnownModelInfo as any)?.audio_defaults || {}) as Record<string, unknown>;
+    const effective = currentModelRecipeOptions || {};
+    const next: GenerationParamValues = {};
+    for (const param of audioGenerationParams) {
+      next[param.name] = generationParamDefault(param, modelDefaults, effective);
+    }
+    setAudioGenerationValues(next);
+  }, [audioGenerationParams, currentCapability, currentKnownModelInfo, currentModel, currentModelRecipeOptions]);
 
   useEffect(() => {
-    if (!isOpenMossTts) return;
-    setOpenMossSettings({
-      mode: 'plain',
-      voiceDescription: String(currentModelRecipeOptions?.voice || ''),
-    });
+    if (currentCapability !== 'tts' || speechParams.length === 0) return;
+    const modelDefaults = ((currentKnownModelInfo as any)?.speech_defaults || {}) as Record<string, unknown>;
+    const effective = currentModelRecipeOptions || {};
+    const next: GenerationParamValues = {};
+    for (const param of speechParams) {
+      if (param.typeName === 'AUDIO_B64') continue;
+      next[param.name] = generationParamDefault(param, modelDefaults, effective);
+    }
+    setSpeechParamValues(next);
+    setVoiceChoiceName(voiceChoice?.members[0]?.name || '');
     setPendingAudioFiles([]);
-  }, [currentModel, currentModelRecipeOptions, isOpenMossTts]);
+  }, [currentCapability, currentKnownModelInfo, currentModel, currentModelRecipeOptions, speechParams, voiceChoice]);
 
   useEffect(() => {
     const keepsAudioAttachments = currentCapability === 'audio'
       || currentIsOmniCollection
       || modelSupportsChatAudioInput(currentKnownModelInfo, currentLoadedModel);
     if (keepsAudioAttachments) return;
-    if (isOpenMossTts && openMossSettings.mode === 'clone') return;
+    if (voiceNeedsAudio) return;
     setPendingAudioFiles([]);
   }, [
     currentCapability,
     currentKnownModelInfo,
     currentLoadedModel,
-    isOpenMossTts,
-    openMossSettings.mode,
+    voiceNeedsAudio,
   ]);
 
   const hasRealtimeAudio = useMemo(
@@ -1684,9 +1791,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     const selectedStillUsable = selectedModel && loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m));
     const selectedDefault = lemonadeDefaultModel(selectedModel);
     if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
+    if (modelIsDownloaded(findModelInfoByName(knownModelInfos, selectedModel))) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
     if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
-  }, [loadedModels, onModelSelect, selectedModel]);
+  }, [knownModelInfos, loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
@@ -1892,9 +2000,10 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
         || ((Array.isArray(modelInfo?.recipes) && modelInfo?.recipes?.[0]) ? (modelInfo.recipes[0] as any).recipe : ''),
       ).toLowerCase();
       const directOptions = (await api.getModelOptions(modelName)).effective || {};
-      const voice = modelRecipe.includes('openmoss')
-        ? String(directOptions.voice || '')
-        : ttsVoiceFromRecipeOptions(directOptions);
+      const voiceParam = generationParams(systemInfo, modelRecipe, 'tts')
+        .find(param => param.name === 'voice');
+      const voice = String(directOptions.voice || '').trim()
+        || (voiceParam ? String(voiceParam.defaultValue ?? '') : ttsVoiceFromRecipeOptions(directOptions));
       const audio = await api.textToSpeech(modelName, trimmed, voice);
       stopAutoSpeech();
       const player = new Audio(audio.url);
@@ -1909,7 +2018,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [knownModelInfos, loadModelWithPolicy, loadedModels, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadModelWithPolicy, loadedModels, stopAutoSpeech, systemInfo, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -2394,26 +2503,11 @@ ${finalText}`
         });
       } else if (model.capability === 'audio-generation') {
         if (!text) throw new Error('Audio generation needs a prompt.');
-        const isAceStepModel = String(model.recipe || '').toLowerCase().includes('acestep')
-          || /ace[-_ ]?step/.test(String(model.name || '').toLowerCase());
-        const audioOptions: Record<string, unknown> = {
-          duration: audioGenerationSettings.duration,
-          steps: audioGenerationSettings.steps,
-          seed: audioGenerationSettings.seed === '' ? -1 : audioGenerationSettings.seed,
-        };
-        if (isAceStepModel) {
-          const lyrics = audioGenerationSettings.lyrics.trim();
-          if (lyrics) {
-            audioOptions.lyrics = lyrics;
-            audioOptions.vocal_language = audioGenerationSettings.vocalLanguage.trim() || 'en';
-          }
-        } else {
-          audioOptions.cfg = audioGenerationSettings.cfg;
-        }
+        const audioOptions = collectGenerationOptions(audioGenerationParams, audioGenerationValues);
         const audio = await api.audioGeneration(model.name, text, audioOptions);
         appendAssistantMessage(convoId, {
-          content: isAceStepModel
-            ? `Generated ${audioGenerationSettings.lyrics.trim() ? 'a vocal track' : 'an instrumental track'} from your prompt.`
+          content: producesMusic
+            ? `Generated ${String(audioGenerationValues.lyrics ?? '').trim() ? 'a vocal track' : 'an instrumental track'} from your prompt.`
             : 'Generated a sound effect from your prompt.',
           audioUrl: trackGeneratedMediaUrl(audio.url),
           audioName: audio.filename,
@@ -2459,53 +2553,29 @@ ${finalText}`
         let targetModel = model.name;
         const directOptions = (await api.getModelOptions(model.name)).effective || {};
         let voice = ttsVoiceFromRecipeOptions(directOptions);
-        let speechOptions: Record<string, unknown> = {};
+        const speechOptions: Record<string, unknown> = {};
         let content = 'Generated speech audio from your text.';
-        let reloadTargetAfterVoiceDesign = false;
 
-        if (isOpenMossTts) {
-          voice = openMossSettings.voiceDescription.trim();
-          if (openMossSettings.mode === 'describe') {
-            if (!openMossVoiceDesignModel) {
-              throw new Error('Install MOSS-VoiceGen to design a voice from a description.');
-            }
-            targetModel = openMossVoiceDesignModel;
-            if (openMossCloneModel) {
-              if (!loadedModels.some(item => item.model_name.toLowerCase() === openMossVoiceDesignModel.toLowerCase())) {
-                await loadModelWithPolicy(
-                  openMossVoiceDesignModel,
-                  findModelInfoByName(knownModelInfos, openMossVoiceDesignModel) || null,
-                );
-              }
-              const designedSample = await api.textToSpeech(
-                openMossVoiceDesignModel,
-                OPENMOSS_VOICE_DESIGN_PHRASE,
-                voice,
-              );
-              try {
-                speechOptions.reference_wav_b64 = await fileToBase64(designedSample.blob);
-              } finally {
-                URL.revokeObjectURL(designedSample.url);
-              }
-              targetModel = openMossCloneModel;
-              voice = '';
-              reloadTargetAfterVoiceDesign = true;
-              content = 'Designed a voice from your description and generated speech with it.';
-            } else {
-              content = 'Generated speech with the described voice.';
-            }
-          } else if (openMossSettings.mode === 'clone') {
+        for (const param of speechParams) {
+          if (param.exclusiveGroup && param.name !== selectedVoiceParam?.name) continue;
+          if (param.typeName === 'AUDIO_B64') {
             const sample = audioFiles[0];
-            if (!sample) throw new Error('Attach a WAV voice sample to clone.');
-            if (!openMossCloneModel) throw new Error('Install OpenMOSS-TTS to clone a voice sample.');
-            targetModel = openMossCloneModel;
-            speechOptions.reference_wav_b64 = await wavVoiceSampleToBase64(sample);
-            content = 'Generated speech using the attached voice sample.';
+            if (!sample) throw new Error(`Attach a ${param.accept || 'audio'} sample to ${param.label.toLowerCase()}.`);
+            speechOptions[param.name] = await wavVoiceSampleToBase64(sample);
+            content = `Generated speech from the attached sample (${param.label.toLowerCase()}).`;
+            continue;
           }
-
-          if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
-            await loadModelWithPolicy(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
+          const raw = speechParamValues[param.name];
+          if (raw === undefined || raw === null || String(raw).trim() === '') {
+            if (param.exclusiveGroup) throw new Error(`${param.label} needs a value before generating speech.`);
+            continue;
           }
+          if (param.name === 'voice') {
+            voice = String(raw);
+            continue;
+          }
+          speechOptions[param.name] = raw;
+          if (param.exclusiveGroup) content = `${param.label}: generated speech from your description.`;
         }
 
         const audio = await api.textToSpeech(targetModel, text, voice, speechOptions);
@@ -2547,9 +2617,9 @@ ${finalText}`
       });
     }
   }, [
-    appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
-    isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
-    loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    appendAssistantMessage, audioGenerationParams, audioGenerationValues, imageMode, imageSettings,
+    knownModelInfos, loadedModels, model3dSettings, onRefresh, producesMusic,
+    loadModelWithPolicy, selectedVoiceParam, speechParams, speechParamValues,
     speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
@@ -2787,7 +2857,7 @@ ${finalText}`
           : currentCapability === 'model3d'
             ? (model3dSettings.sourceMode === 'image' ? hasImages : (!!text && !!model3dSettings.imageModel))
             : currentCapability === 'tts'
-              ? (!!text && !openMossDescribeUnavailable && !openMossCloneUnavailable)
+              ? (!!text && !voiceChoiceUnsatisfied)
               : (!!text || hasImages || (canUseAudioInput && audioFiles.length > 0));
     if (!canSubmitContent || isBusy || !currentModelSnapshot) return;
 
@@ -2957,11 +3027,10 @@ ${finalText}`
   const acceptsImageAttachments = supportsChatImageInput
     || (currentCapability === 'image' && imageMode === 'edit')
     || (currentCapability === 'model3d' && model3dSettings.sourceMode === 'image');
-  const acceptsAudioAttachments = canUseAudioInput
-    || (isOpenMossTts && openMossSettings.mode === 'clone');
+  const acceptsAudioAttachments = canUseAudioInput || voiceNeedsAudio;
 
   const addAttachments = useCallback(async (files: File[]) => {
-    if (isOpenMossTts && openMossSettings.mode === 'clone') {
+    if (voiceNeedsAudio) {
       const wav = files.find(file => file.type.toLowerCase().includes('wav') || file.name.toLowerCase().endsWith('.wav'));
       if (wav) setPendingAudioFiles([wav]);
       return;
@@ -3007,9 +3076,9 @@ ${finalText}`
     const encoded = await Promise.all(toProcess.map(imageToBase64));
     setPendingImages(prev => [...prev, ...encoded].slice(0, MAX_IMAGES));
   }, [
-    acceptsImageAttachments, canUseAudioInput, currentCapability, imageMode, isOpenMossTts,
+    acceptsImageAttachments, canUseAudioInput, currentCapability, imageMode,
     modeSupportsChatCompletions, model3dSettings.sourceMode,
-    openMossSettings.mode, pendingImages.length,
+    pendingImages.length, voiceNeedsAudio,
   ]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -3150,13 +3219,13 @@ ${finalText}`
   }, []);
 
   const hasMessages = messages.length > 0 || isStreaming || capabilityBusy || modelPreparation !== null;
-  const isOpenMossCloneMode = isOpenMossTts && openMossSettings.mode === 'clone';
+
   const canAttach = acceptsImageAttachments || acceptsAudioAttachments;
   const imageAttachmentLimitReached = acceptsImageAttachments
     && !acceptsAudioAttachments
     && pendingImages.length >= MAX_IMAGES;
-  const fileAccept = isOpenMossCloneMode
-    ? 'audio/wav,audio/x-wav,.wav'
+  const fileAccept = voiceNeedsAudio
+    ? (selectedVoiceParam?.accept || 'audio/*')
     : currentCapability === 'model3d'
       ? 'image/png,image/jpeg,image/bmp,image/gif,.png,.jpg,.jpeg,.bmp,.gif'
       : currentCapability === 'image'
@@ -3177,7 +3246,7 @@ ${finalText}`
         : currentCapability === 'model3d'
           ? (model3dSettings.sourceMode === 'image' ? pendingImages.length > 0 : (!!inputValue.trim() && !!model3dSettings.imageModel))
           : currentCapability === 'tts'
-            ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
+            ? (!!inputValue.trim() && !voiceChoiceUnsatisfied)
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
     ? 'Draft a message. Connect and load a model to send…'
@@ -3194,11 +3263,13 @@ ${finalText}`
       : currentCapability === 'audio'
         ? `Attach audio or use the mic with ${currentModel}…`
         : currentCapability === 'audio-generation'
-          ? (isAceStepAudio ? 'Describe the music style, mood, tempo, instruments, and voice…' : 'Describe the sound effect to generate…')
+          ? (producesMusic ? 'Describe the music style, mood, tempo, instruments, and voice…' : 'Describe the sound effect to generate…')
           : currentCapability === 'model3d'
             ? (model3dSettings.sourceMode === 'image' ? 'Attach a reference image for 3D reconstruction…' : 'Describe the object to render and reconstruct in 3D…')
             : currentCapability === 'tts'
-              ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
+              ? (voiceNeedsAudio
+                ? 'Type text to speak, then attach a WAV voice sample…'
+                : `Text to speak with ${currentModel}…`)
               : `Message ${currentModel}…`;
 
   useEffect(() => {
@@ -3246,7 +3317,7 @@ ${finalText}`
   const hasComposerSettings = currentCapability === 'image'
     || currentCapability === 'audio-generation'
     || currentCapability === 'model3d'
-    || (currentCapability === 'tts' && isOpenMossTts);
+    || (currentCapability === 'tts' && hasVoiceChoice);
 
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
@@ -3263,16 +3334,12 @@ ${finalText}`
     : currentCapability === 'audio'
       ? 'Transcription mode · attach a file for /audio/transcriptions or use live mic via /v1/realtime'
       : currentCapability === 'audio-generation'
-        ? (isAceStepAudio ? 'Music mode · instrumental or optional structured lyrics via /audio/generations' : 'Sound mode · prompt becomes /audio/generations')
+        ? (producesMusic ? 'Music mode · instrumental or optional structured lyrics via /audio/generations' : 'Sound mode · prompt becomes /audio/generations')
         : currentCapability === 'model3d'
           ? (model3dSettings.sourceMode === 'image' ? '3D mode · image becomes /3d/generations · export GLB or geometry-only STL' : '3D mode · image model renders a reference, then TRELLIS reconstructs it')
           : currentCapability === 'tts'
-            ? (isOpenMossTts
-              ? openMossSettings.mode === 'describe'
-                ? 'OpenMOSS · describe a voice; MOSS-VoiceGen creates a reference for speech synthesis'
-                : openMossSettings.mode === 'clone'
-                  ? 'OpenMOSS · attach one WAV sample to clone its voice'
-                  : 'OpenMOSS · optional voice style instruction via /audio/speech'
+            ? (selectedVoiceParam
+              ? `Voice source · ${selectedVoiceParam.label.toLowerCase()} · ${selectedVoiceParam.help || 'sent to /audio/speech'}`
               : 'TTS mode · text becomes /audio/speech')
             : 'Enter to send · Shift+Enter for newline · Paste or drop images';
 
@@ -3840,139 +3907,105 @@ ${finalText}`
         )}
         {currentCapability === 'audio-generation' && (
           <div className="composer__capability-settings composer__audio-generation-settings" aria-label="Audio generation settings">
-            <label className="composer__image-setting">
-              <span>Duration</span>
-              <input
-                type="number"
-                min={1}
-                max={600}
-                value={audioGenerationSettings.duration}
-                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, duration: Math.max(1, Math.min(600, parseInt(e.target.value, 10) || 1)) }))}
+            {audioGenerationParams.filter(param => param.group !== 'advanced').map(param => (
+              <GenerationParamField
+                key={param.name}
+                param={param}
+                value={audioGenerationValues[param.name]}
+                onChange={value => setAudioGenerationValues(prev => ({ ...prev, [param.name]: value }))}
                 disabled={isBusy}
               />
-              <small>s</small>
-            </label>
-            <label className="composer__image-setting">
-              <span>Steps</span>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={audioGenerationSettings.steps}
-                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, steps: Math.max(1, Math.min(200, parseInt(e.target.value, 10) || 1)) }))}
-                disabled={isBusy}
-              />
-            </label>
-            {!isAceStepAudio && (
-              <label className="composer__image-setting">
-                <span>CFG</span>
-                <input
-                  type="number"
-                  min={0}
-                  max={30}
-                  step={0.5}
-                  value={audioGenerationSettings.cfg}
-                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, cfg: Math.max(0, Math.min(30, parseFloat(e.target.value) || 0)) }))}
-                  disabled={isBusy}
-                />
-              </label>
-            )}
-            <label className="composer__image-setting">
-              <span>Seed</span>
-              <input
-                type="number"
-                min={-1}
-                value={audioGenerationSettings.seed}
-                placeholder="-1"
-                onChange={e => setAudioGenerationSettings(prev => ({ ...prev, seed: seedFromInput(e.target.value) }))}
-                disabled={isBusy}
-              />
-            </label>
-            {isAceStepAudio && (
-              <label className="composer__image-setting composer__image-setting--language">
-                <span>Lyrics language</span>
-                <input
-                  type="text"
-                  maxLength={12}
-                  value={audioGenerationSettings.vocalLanguage}
-                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, vocalLanguage: e.target.value }))}
-                  placeholder="en"
-                  disabled={isBusy}
-                />
-              </label>
-            )}
-            {isAceStepAudio && (
-              <label className="composer__audio-lyrics">
-                <span>Lyrics <small>optional · leave empty for instrumental</small></span>
-                <textarea
-                  value={audioGenerationSettings.lyrics}
-                  onChange={e => setAudioGenerationSettings(prev => ({ ...prev, lyrics: e.target.value }))}
-                  placeholder={'[verse]\nMoonlight spills across the floor…\n\n[chorus]\nWe sing until the morning light…'}
-                  rows={3}
-                  disabled={isBusy}
-                />
-              </label>
+            ))}
+            {audioGenerationParams.some(param => param.group === 'advanced') && (
+              <details className="composer__generation-params">
+                <summary>Generation parameters</summary>
+                <div className="composer__generation-params-grid">
+                  {audioGenerationParams.filter(param => param.group === 'advanced').map(param => (
+                    <GenerationParamField
+                      key={param.name}
+                      param={param}
+                      value={audioGenerationValues[param.name]}
+                      onChange={value => setAudioGenerationValues(prev => ({ ...prev, [param.name]: value }))}
+                      disabled={isBusy}
+                    />
+                  ))}
+                </div>
+              </details>
             )}
           </div>
         )}
-        {currentCapability === 'tts' && isOpenMossTts && (
-          <div className="composer__capability-settings composer__openmoss-settings" aria-label="OpenMOSS voice settings">
-            <label className="composer__image-setting composer__image-setting--mode">
-              <span>Voice mode</span>
-              <select
-                value={openMossSettings.mode}
-                onChange={event => {
-                  const mode = event.target.value as OpenMossMode;
-                  setOpenMossSettings(previous => ({ ...previous, mode }));
-                  if (mode !== 'clone') setPendingAudioFiles([]);
-                }}
+        {currentCapability === 'tts' && speechParams.length > 0 && (
+          <div className="composer__capability-settings composer__generation-settings" aria-label="Speech generation settings">
+            {voiceChoice && (
+              <label className="composer__image-setting composer__image-setting--mode">
+                <span>{voiceChoice.label}</span>
+                <select
+                  value={selectedVoiceParam?.name || ''}
+                  onChange={event => {
+                    const next = event.target.value;
+                    setVoiceChoiceName(next);
+                    const picked = voiceChoice.members.find(member => member.name === next);
+                    if (picked?.typeName !== 'AUDIO_B64') setPendingAudioFiles([]);
+                  }}
+                  disabled={isBusy}
+                >
+                  {voiceChoice.members.map(member => (
+                    <option key={member.name} value={member.name}>{member.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {selectedVoiceParam && selectedVoiceParam.typeName !== 'AUDIO_B64' && (
+              <GenerationParamField
+                className="composer__generation-text"
+                param={selectedVoiceParam}
+                value={speechParamValues[selectedVoiceParam.name]}
+                onChange={value => setSpeechParamValues(prev => ({ ...prev, [selectedVoiceParam.name]: value }))}
                 disabled={isBusy}
-              >
-                <option value="plain">Plain</option>
-                <option value="describe">Describe voice</option>
-                <option value="clone">Clone WAV sample</option>
-              </select>
-            </label>
-            <label className="composer__openmoss-description">
-              <span>
-                {openMossSettings.mode === 'describe'
-                  ? 'Voice description'
-                  : openMossSettings.mode === 'clone'
-                    ? 'Style note'
-                    : 'Voice style'}
-                <small>{openMossSettings.mode === 'clone' ? 'optional' : 'optional instruction'}</small>
-              </span>
-              <input
-                type="text"
-                value={openMossSettings.voiceDescription}
-                onChange={event => setOpenMossSettings(previous => ({ ...previous, voiceDescription: event.target.value }))}
-                placeholder={openMossSettings.mode === 'describe'
-                  ? 'Warm low female voice, British accent…'
-                  : openMossSettings.mode === 'clone'
-                    ? 'Calm, conversational delivery…'
-                    : 'Cheerful, whispering, dramatic…'}
+                required
+              />
+            )}
+            {speechParams.filter(param => !param.exclusiveGroup && param.group !== 'advanced').map(param => (
+              <GenerationParamField
+                key={param.name}
+                className="composer__generation-text"
+                param={param}
+                value={speechParamValues[param.name]}
+                onChange={value => setSpeechParamValues(prev => ({ ...prev, [param.name]: value }))}
                 disabled={isBusy}
               />
-            </label>
-            <div
-              className={`composer__openmoss-status${openMossDescribeUnavailable || (openMossSettings.mode === 'clone' && !openMossCloneModel) ? ' composer__openmoss-status--error' : ''}`}
-              role="status"
-              aria-live="polite"
-            >
-              {openMossSettings.mode === 'describe'
-                ? openMossDescribeUnavailable
-                  ? 'Install MOSS-VoiceGen to enable described voices.'
-                  : openMossCloneModel
-                    ? `Voice design: ${openMossVoiceDesignModel} → speech: ${openMossCloneModel}`
-                    : `Using ${openMossVoiceDesignModel} directly for described speech.`
-                : openMossSettings.mode === 'clone'
-                  ? !openMossCloneModel
-                    ? 'Install OpenMOSS-TTS to clone a WAV voice sample.'
-                    : pendingAudioFiles.length > 0
-                      ? `Voice sample ready: ${pendingAudioFiles[0].name}`
-                      : 'Attach one WAV voice sample with the paperclip below.'
-                  : 'The selected OpenMOSS model receives the optional voice style directly.'}
-            </div>
+            ))}
+            {speechParams.some(param => param.group === 'advanced') && (
+              <details className="composer__generation-params">
+                <summary>Generation parameters</summary>
+                <div className="composer__generation-params-grid">
+                  {speechParams.filter(param => param.group === 'advanced').map(param => (
+                    <GenerationParamField
+                      key={param.name}
+                      param={param}
+                      value={speechParamValues[param.name]}
+                      onChange={value => setSpeechParamValues(prev => ({ ...prev, [param.name]: value }))}
+                      disabled={isBusy}
+                    />
+                  ))}
+                </div>
+              </details>
+            )}
+            {selectedVoiceParam && (
+              <div
+                className={`composer__generation-status${voiceChoiceUnsatisfied ? ' composer__generation-status--error' : ''}`}
+                role="status"
+                aria-live="polite"
+              >
+                {voiceNeedsAudio
+                  ? pendingAudioFiles.length > 0
+                    ? `Voice sample ready: ${pendingAudioFiles[0].name}`
+                    : `Attach one ${selectedVoiceParam.accept || 'audio'} sample with the paperclip below.`
+                  : voiceChoiceUnsatisfied
+                    ? `${selectedVoiceParam.label} is required.`
+                    : selectedVoiceParam.help || `${currentModel} speaks your text using this voice source.`}
+              </div>
+            )}
           </div>
         )}
         {currentCapability === 'model3d' && (
@@ -4108,7 +4141,7 @@ ${finalText}`
                   <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
                   <span className="composer__add-text">
                     <strong>Add files</strong>
-                    <small>{isOpenMossCloneMode
+                    <small>{voiceNeedsAudio
                       ? 'WAV audio file'
                       : currentCapability === 'model3d'
                         ? 'PNG, JPEG, BMP, or GIF image'
@@ -4267,7 +4300,7 @@ ${finalText}`
             ref={fileInputRef}
             type="file"
             accept={fileAccept}
-            multiple={!isOpenMossCloneMode && !(currentCapability === 'audio' && !modeSupportsChatCompletions) && !(currentCapability === 'image' && imageMode === 'edit') && currentCapability !== 'model3d'}
+            multiple={!voiceNeedsAudio && !(currentCapability === 'audio' && !modeSupportsChatCompletions) && !(currentCapability === 'image' && imageMode === 'edit') && currentCapability !== 'model3d'}
             style={{ display: 'none' }}
             onChange={handleFileSelect}
           />
