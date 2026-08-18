@@ -1769,14 +1769,24 @@ void Server::setup_cors(httplib::Server &web_server) {
     // send Origin and ignore these headers entirely.
     web_server.set_post_routing_handler(
         [this](const httplib::Request& req, httplib::Response& res) {
+            // Vary: Origin on every response (even disallowed-origin 403s) so a
+            // shared cache never serves an Access-Control-Allow-Origin response
+            // to a different origin. This handler is the only writer of Vary and
+            // runs once per response, so set it unconditionally.
+            res.set_header("Vary", "Origin");
+
             const std::string origin = req.get_header_value("Origin");
             if (is_origin_allowed(origin)) {
                 res.set_header("Access-Control-Allow-Origin", origin);
-                res.set_header("Vary", "Origin");
                 res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
                 res.set_header("Access-Control-Allow-Headers",
                                "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, "
                                "MCP-Protocol-Version, Mcp-Session-Id, traceparent");
+                // Private Network Access preflight: grant only when the request
+                // asks for it and the Origin is already allow-listed.
+                if (req.get_header_value("Access-Control-Request-Private-Network") == "true") {
+                    res.set_header("Access-Control-Allow-Private-Network", "true");
+                }
             }
         });
 
