@@ -164,7 +164,7 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
     } else {
         // CPU build (default)
     #ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-avx2-x64.zip";
+        params.filename = "sd-" + short_version + "-bin-win-cpu-x64.zip";
 #elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64.zip";
 #else
@@ -303,9 +303,10 @@ void SDServer::load(const std::string& model_name,
     if (resolved_backend == "rocm-stable") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
-            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
-            if (!therock_lib.empty()) {
-                lib_path = therock_lib + ":" + lib_path;
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
             }
         }
     }
@@ -326,9 +327,26 @@ void SDServer::load(const std::string& model_name,
         if (resolved_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::string therock_bin = BackendUtils::get_therock_lib_path(rocm_arch);
+                std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
+                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
                 if (!therock_bin.empty()) {
-                    new_path = path_to_utf8(fs::absolute(path_from_utf8(therock_bin))) + ";" + new_path;
+                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                        new_path = *it + ";" + new_path;
+                    }
+
+                    fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
+                    fs::path target_dll = exe_dir / "amdhip64_7.dll";
+                    if (fs::exists(therock_dll)) {
+                        std::error_code ec;
+                        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                        if (!ec) {
+                            LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to " << path_to_utf8(target_dll) << std::endl;
+                        } else {
+                            LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
+                        }
+                    } else {
+                        LOG(DEBUG, "SDServer") << "amdhip64_7.dll not found in TheRock at " << path_to_utf8(therock_dll) << std::endl;
+                    }
                 }
             }
         }

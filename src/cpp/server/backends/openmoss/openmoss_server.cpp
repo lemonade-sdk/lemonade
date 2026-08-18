@@ -103,16 +103,10 @@ void OpenMossServer::load(const std::string& model_name,
     };
     if (backend == "rocm") {
         const std::string arch = SystemInfo::get_rocm_arch();
-        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
         std::string dirs;
-        if (!therock_lib.empty()) {
-#ifdef _WIN32
-            const std::string llvm_bin =
-                (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
-            dirs = therock_lib + ";" + llvm_bin;
-#else
-            dirs = therock_lib + ":" + therock_lib + "/llvm/lib";
-#endif
+        if (!arch.empty()) {
+            dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {
