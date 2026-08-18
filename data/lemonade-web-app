@@ -14,6 +14,13 @@ fi
 
 URL="http://localhost:${LEMONADE_PORT}/lemonade"
 
+# Handle lemonade:// URI passed via desktop file %u
+if [ -n "$1" ] && [[ "$1" == lemonade://* ]]; then
+    # Strip scheme, convert to hash fragment for web SPA routing
+    URI_BODY="${1#lemonade://}"
+    URL="http://localhost:${LEMONADE_PORT}/lemonade/#/${URI_BODY}"
+fi
+
 # Prefer chromium based browsers otherwise xdg-open
 if [ "$(echo "${LEMONADE_PREFER_CHROMIUM:-true}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then
     if command -v google-chrome &> /dev/null; then
