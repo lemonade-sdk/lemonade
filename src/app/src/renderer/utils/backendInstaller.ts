@@ -679,6 +679,11 @@ function extractExplicitBackend(loadBody?: Record<string, unknown>): { recipe: s
  * 4. Check if model is downloaded → re-verify via /models if uncertain
  * 5. If not downloaded, pull model (tracked in Download Manager)
  * 6. POST /load → load model into memory (merge loadBody if provided)
+ *
+ * Collections recurse into their components. Router collections diverge:
+ * candidates share a single /health and /system-info snapshot, run steps 1-5
+ * only (skipLoad - the server loads the routed candidate on demand), and a
+ * failing candidate is non-fatal unless every candidate fails.
  */
 export async function ensureModelReady(
   modelName: string,
