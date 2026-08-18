@@ -551,8 +551,9 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
 std::string llamacpp_gguf_incompatibility(
     const nlohmann::json& repository_metadata,
     const std::string& registry_source) {
-    if (parse_remote_registry_source(registry_source) !=
-        RemoteRegistrySource::HuggingFace) {
+    const std::string normalized_source = to_lower(registry_source);
+    if (!normalized_source.empty() &&
+        normalized_source != "huggingface" && normalized_source != "hf") {
         return {};
     }
 
