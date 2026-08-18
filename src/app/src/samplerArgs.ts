@@ -27,10 +27,13 @@ export interface ArgFieldSpec {
   backendDefault?: string;
 }
 
-/** Every sampler lemond can put in `*_args`, offered on every model so a value
-    it does not set still reads as an explicit "default" rather than an absence.
-    Ranges follow `llama-server --help`; the defaults are its documented ones. */
-export const SAMPLER_ARG_FIELDS: ArgFieldSpec[] = [
+/** Every sampler lemond can put in llama.cpp's `*_args`, offered on every model
+    so a value it does not set still reads as an explicit "default" rather than
+    an absence. These are `llama-server`'s own flag spellings, so they belong to
+    the recipe rather than to LLMs generally — vLLM and FastFlowLM are text
+    generators too and take none of them. Ranges follow `llama-server --help`;
+    the defaults are its documented ones. */
+export const LLAMACPP_SAMPLER_FIELDS: ArgFieldSpec[] = [
   { flag: '--temp', id: 'temp', label: 'Temperature', kind: 'number', min: 0, max: 2, step: 0.05, backendDefault: '0.80' },
   { flag: '--top-k', id: 'top-k', label: 'Top-k', kind: 'number', min: 0, max: 200, step: 1, backendDefault: '40' },
   { flag: '--top-p', id: 'top-p', label: 'Top-p', kind: 'number', min: 0, max: 1, step: 0.05, backendDefault: '0.95' },
@@ -40,7 +43,16 @@ export const SAMPLER_ARG_FIELDS: ArgFieldSpec[] = [
   { flag: '--chat-template-kwargs', id: 'chat-template-kwargs', label: 'Chat template kwargs', kind: 'text' },
 ];
 
-const SAMPLER_FLAGS = new Set(SAMPLER_ARG_FIELDS.map(field => field.flag));
+/** Which flags a recipe's command line spells this way. A recipe with no entry
+    has no typed fields, and its arguments stay whole in the freeform box —
+    the server describes which options exist, not what a flag inside one means. */
+const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec[]> = {
+  llamacpp: LLAMACPP_SAMPLER_FIELDS,
+};
+
+export function samplerFieldsForRecipe(recipe: string): ArgFieldSpec[] {
+  return SAMPLER_FIELDS_BY_RECIPE[recipe] || [];
+}
 
 export function parseCustomArgs(customArgs: string): string[] {
   const result: string[] = [];
@@ -124,14 +136,15 @@ export interface SplitArgs {
  * outright — the two halves must never both emit it, or the last one wins at
  * load time and the field would be showing a value that never applies.
  */
-export function splitSamplerArgs(args: string): SplitArgs {
+export function splitSamplerArgs(specs: ArgFieldSpec[], args: string): SplitArgs {
+  const samplerFlags = new Set(specs.map(spec => spec.flag));
   const tokens = parseCustomArgs(args);
   const fields: Record<string, string> = {};
   const claimedByRest = new Set<string>();
   const extracted = new Set<string>();
 
   for (const [flag, occurrences] of buildArgsMap(tokens)) {
-    if (!SAMPLER_FLAGS.has(flag)) continue;
+    if (!samplerFlags.has(flag)) continue;
     if (occurrences.length === 1 && occurrences[0].length === 1) {
       fields[flag] = occurrences[0][0];
       extracted.add(flag);
@@ -155,9 +168,13 @@ export function splitSamplerArgs(args: string): SplitArgs {
 
 /** Field order is stable and the remainder is appended verbatim, so a value
     typed into either half survives the trip back through `splitSamplerArgs`. */
-export function composeSamplerArgs(fields: Record<string, string>, rest: string): string {
+export function composeSamplerArgs(
+  specs: ArgFieldSpec[],
+  fields: Record<string, string>,
+  rest: string,
+): string {
   const parts: string[] = [];
-  for (const spec of SAMPLER_ARG_FIELDS) {
+  for (const spec of specs) {
     const value = (fields[spec.flag] || '').trim();
     if (value) parts.push(`${spec.flag} ${value}`);
   }

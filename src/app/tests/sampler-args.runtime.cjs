@@ -42,19 +42,35 @@ function loadTypeScriptModule(filename) {
 }
 
 const {
-  SAMPLER_ARG_FIELDS,
+  LLAMACPP_SAMPLER_FIELDS,
+  samplerFieldsForRecipe,
   parseCustomArgs,
   buildArgsMap,
   argsMapToString,
-  splitSamplerArgs,
-  composeSamplerArgs,
+  splitSamplerArgs: splitWithSpecs,
+  composeSamplerArgs: composeWithSpecs,
 } = loadTypeScriptModule(path.join(root, 'src/samplerArgs.ts'));
+
+// Every case below is about llama.cpp's flags, so bind the schema once.
+const SAMPLER_ARG_FIELDS = LLAMACPP_SAMPLER_FIELDS;
+const splitSamplerArgs = args => splitWithSpecs(SAMPLER_ARG_FIELDS, args);
+const composeSamplerArgs = (fields, rest) => composeWithSpecs(SAMPLER_ARG_FIELDS, fields, rest);
 
 const canonical = str => argsMapToString(buildArgsMap(parseCustomArgs(str)));
 const roundTrip = str => {
   const split = splitSamplerArgs(str);
   return composeSamplerArgs(split.fields, split.rest);
 };
+
+// A recipe the form has no flag spellings for keeps its arguments whole, which
+// is what lets one code path serve every backend.
+assert.deepEqual(samplerFieldsForRecipe('llamacpp'), LLAMACPP_SAMPLER_FIELDS);
+assert.deepEqual(samplerFieldsForRecipe('whispercpp'), []);
+assert.deepEqual(samplerFieldsForRecipe('sd-cpp'), []);
+const unspecced = splitWithSpecs([], '--temp 0.6 --no-mmap');
+assert.deepEqual(unspecced.fields, {});
+assert.equal(unspecced.rest, '--temp 0.6 --no-mmap');
+assert.equal(composeWithSpecs([], {}, unspecced.rest), '--temp 0.6 --no-mmap');
 
 // ── The tokeniser must agree with the C++ one ────────────────────────────────
 

@@ -27,7 +27,7 @@ import {
 } from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 import { TTS_VOICES } from '../features/audio/ttsSettings';
-import { SAMPLER_ARG_FIELDS, composeSamplerArgs, splitSamplerArgs } from '../samplerArgs';
+import { composeSamplerArgs, samplerFieldsForRecipe, splitSamplerArgs } from '../samplerArgs';
 import type { ArgFieldSpec } from '../samplerArgs';
 import {
   describeRouterModelConnection,
@@ -1148,8 +1148,9 @@ interface BackendArgsFieldProps {
   fieldId: string;
   label: string;
   value: string;
-  /** Whether to break llama.cpp's samplers out into fields of their own. */
-  showSamplers: boolean;
+  /** The flags this backend's command line spells in a way the form can type.
+      Empty for a backend with none, whose arguments then stay whole below. */
+  specs: ArgFieldSpec[];
   /** What lemond applies when the args key is sent unset. */
   fallbackArgs: string;
   onChange: (next: string) => void;
@@ -1158,20 +1159,20 @@ interface BackendArgsFieldProps {
 /** The args a model loads with, as a field per sampler plus whatever is left.
     Both halves compose back into one string, which is what actually gets sent. */
 const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
-  fieldId, label, value, showSamplers, fallbackArgs, onChange,
+  fieldId, label, value, specs, fallbackArgs, onChange,
 }) => {
-  const split = useMemo(() => splitSamplerArgs(value), [value]);
+  const split = useMemo(() => splitSamplerArgs(specs, value), [specs, value]);
   // A field lemond has a value for cannot be left empty: emptying every one of
   // them would send no args at all, and lemond reads that as "unset" and applies
   // these anyway — so "default" would mean llama.cpp's value in one field and
   // lemond's in the next.
   const flagDefaults = useMemo(
-    () => (showSamplers ? splitSamplerArgs(fallbackArgs).fields : {}),
-    [fallbackArgs, showSamplers],
+    () => splitSamplerArgs(specs, fallbackArgs).fields,
+    [fallbackArgs, specs],
   );
 
   const setSampler = (flag: string, next: string) =>
-    onChange(composeSamplerArgs({ ...split.fields, [flag]: next }, split.rest));
+    onChange(composeSamplerArgs(specs, { ...split.fields, [flag]: next }, split.rest));
 
   // Stepping goes through the input so the browser applies the min/max/step it
   // was already given. An empty field starts from the value llama.cpp would
@@ -1187,9 +1188,9 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
 
   return (
     <div className="detail-configuration__args-block">
-      {showSamplers && (
+      {specs.length > 0 && (
         <div className="detail-configuration__sampler-grid">
-          {SAMPLER_ARG_FIELDS.map(spec => {
+          {specs.map(spec => {
             const samplerId = `${fieldId}-${spec.id}`;
             const owned = split.claimedByRest.has(spec.flag);
             const isText = spec.kind === 'text';
@@ -1249,18 +1250,16 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
         <AutoGrowTextarea
           id={fieldId}
           className="detail-tuning__args"
-          value={showSamplers ? split.rest : value}
+          value={split.rest}
           placeholder="Example: --threads 4"
           /* A wrapping label names the field from its text content, which for a
              textarea includes whatever has been typed into it. */
           aria-label={label}
-          onChange={e => (showSamplers
-            ? onChange(composeSamplerArgs(split.fields, e.target.value))
-            : onChange(e.target.value))}
+          onChange={e => onChange(composeSamplerArgs(specs, split.fields, e.target.value))}
         />
       </label>
 
-      {showSamplers && !value.trim() && Boolean(fallbackArgs) && (
+      {!value.trim() && Boolean(fallbackArgs) && (
         <p className="detail-configuration__args-fallback">
           Every field is on default, so nothing is sent and lemond applies its own
           defaults for this model: <code>{fallbackArgs}</code>
@@ -1650,9 +1649,7 @@ const ModelConfigurationTab: React.FC<{
           fieldId={fieldId}
           label={label}
           value={draftValue}
-          // The samplers lemond tunes are llama.cpp's; the other backends' args
-          // fields have nothing in common with them.
-          showSamplers={key === 'llamacpp_args'}
+          specs={samplerFieldsForRecipe(activeRecipeForModel(model))}
           fallbackArgs={optionalDisplayValue(serverDefaultRecipeOptions[key])}
           onChange={next => setRecipeDraft(prev => ({ ...prev, [draftKey]: next }))}
         />

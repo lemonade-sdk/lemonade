@@ -9,6 +9,7 @@ const chatPath = path.join(root, 'src/components/ChatView.tsx');
 const effectivePath = path.join(root, 'src/components/EffectiveSettingsModal.tsx');
 const detailPath = path.join(root, 'src/components/ModelDetailPanel.tsx');
 const apiPath = path.join(root, 'src/api.ts');
+const samplerPath = path.join(root, 'src/samplerArgs.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
 
 const sources = new Map([
@@ -17,8 +18,10 @@ const sources = new Map([
   [effectivePath, fs.readFileSync(effectivePath, 'utf8')],
   [detailPath, fs.readFileSync(detailPath, 'utf8')],
   [apiPath, fs.readFileSync(apiPath, 'utf8')],
+  [samplerPath, fs.readFileSync(samplerPath, 'utf8')],
 ]);
 const styles = fs.readFileSync(stylesPath, 'utf8');
+const samplerSource = sources.get(samplerPath);
 
 for (const [filename, source] of sources) {
   const compiled = ts.transpileModule(source, {
@@ -126,15 +129,23 @@ assert.doesNotMatch(styles, /detail-configuration__merge-preview/);
 
 // Sampler flags get typed fields of their own, filled from the resolved args, so
 // a value lemond does not set reads as an explicit "default" rather than a gap.
-assert.match(detailSource, /import \{ SAMPLER_ARG_FIELDS, composeSamplerArgs, splitSamplerArgs \} from '\.\.\/samplerArgs';/);
-assert.match(detailSource, /const split = useMemo\(\(\) => splitSamplerArgs\(value\), \[value\]\);/);
+assert.match(detailSource, /import \{ composeSamplerArgs, samplerFieldsForRecipe, splitSamplerArgs \} from '\.\.\/samplerArgs';/);
+assert.match(detailSource, /const split = useMemo\(\(\) => splitSamplerArgs\(specs, value\), \[specs, value\]\);/);
+
+// Which flags a command line spells this way belongs to the recipe, not to the
+// renderer: the panel asks for the schema and draws whatever comes back, so a
+// backend gains typed fields without this file naming it.
+assert.match(detailSource, /specs=\{samplerFieldsForRecipe\(activeRecipeForModel\(model\)\)\}/);
+assert.doesNotMatch(detailSource, /=== 'llamacpp_args'/,
+  'the args renderer must not single out a recipe by name');
+assert.match(samplerSource, /const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec\[\]> = \{/);
 assert.match(detailSource, /placeholder=\{owned \? 'set below' : 'default'\}/);
 // One half owns a flag or the other does; both would send it twice.
 assert.match(detailSource, /const owned = split\.claimedByRest\.has\(spec\.flag\);/);
 // A field lemond resolves a value for cannot be left empty: emptying every one
 // of them would send no args at all, which lemond answers with those same
 // defaults, and "default" would stop meaning one thing across the fields.
-assert.match(detailSource, /showSamplers \? splitSamplerArgs\(fallbackArgs\)\.fields : \{\}/);
+assert.match(detailSource, /\(\) => splitSamplerArgs\(specs, fallbackArgs\)\.fields,/);
 assert.match(detailSource, /if \(fallback && !\(split\.fields\[spec\.flag\] \|\| ''\)\.trim\(\)\) setSampler\(spec\.flag, fallback\);/);
 
 // That leaves the all-default form reachable only where lemond resolves args
