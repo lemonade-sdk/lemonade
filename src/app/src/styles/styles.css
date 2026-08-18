@@ -14330,7 +14330,7 @@ a.backend-card__version:focus-visible {
 /* Hovering hands the right edge to the action. Visibility rather than display,
    so the anchor keeps reserving its own width and the meta line cannot reflow. */
 .workspace-list-row:hover .workspace-list-row__anchor,
-.workspace-list-row:focus-within .workspace-list-row__anchor { visibility: hidden; }
+.workspace-list-row:focus-within:not(.workspace-list-row--pointer-action) .workspace-list-row__anchor { visibility: hidden; }
 
 /* Dot and words are one unit. Split across the grid — dot in the trailing
    column, words in the meta line — the mark sat diagonally away from the thing
@@ -14399,7 +14399,7 @@ a.backend-card__version:focus-visible {
 }
 
 .workspace-list-row:hover .workspace-list-row__action,
-.workspace-list-row:focus-within .workspace-list-row__action,
+.workspace-list-row:focus-within:not(.workspace-list-row--pointer-action) .workspace-list-row__action,
 .workspace-list-row__action--latched { visibility: visible; }
 
 .workspace-list-row__action:hover {
@@ -14407,8 +14407,17 @@ a.backend-card__version:focus-visible {
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
-/* A latched action is the row's standing fact, not a transient affordance. */
-.workspace-list-row__action--latched { color: var(--accent-fg); }
+/* Active state may be transient; only `latched` also controls visibility. */
+.workspace-list-row__action--latched,
+.workspace-list-row__action--active { color: var(--accent-fg); }
+/* A favorited row keeps the normal hover-only affordance, but the visible star
+   uses the same active treatment as the Favorite control in ModelDetailPanel. */
+.workspace-list-row__action--active .app-icon[data-icon='star'] {
+  color: var(--accent-fg);
+}
+.workspace-list-row__action--active .app-icon[data-icon='star'] path {
+  fill: currentColor;
+}
 
 .workspace-list-row__progress {
   position: absolute;

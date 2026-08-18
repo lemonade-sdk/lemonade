@@ -35,10 +35,6 @@ function settingsKey(): string {
   return storageKey('global_model_settings');
 }
 
-function pinnedModelsKey(): string {
-  return storageKey('pinned_models');
-}
-
 function finiteBudget(value: unknown): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return DEFAULT_GLOBAL_MODEL_SETTINGS.resourceBudgetGb;
@@ -84,27 +80,6 @@ export function saveGlobalModelSettings(settings: GlobalModelSettings): GlobalMo
     window.dispatchEvent(new CustomEvent(GLOBAL_MODEL_SETTINGS_EVENT, { detail: { settings: sanitized } }));
   } catch { /* best effort */ }
   return sanitized;
-}
-
-export function loadPinnedModelNames(): string[] {
-  try {
-    const raw = localStorage.getItem(pinnedModelsKey());
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed)
-      ? Array.from(new Set(parsed.map(value => String(value).trim()).filter(Boolean)))
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-export function savePinnedModelNames(names: Iterable<string>): string[] {
-  const normalized = Array.from(new Set([...names].map(name => String(name).trim()).filter(Boolean)));
-  try { localStorage.setItem(pinnedModelsKey(), JSON.stringify(normalized)); } catch { /* best effort */ }
-  try {
-    window.dispatchEvent(new CustomEvent(GLOBAL_MODEL_SETTINGS_EVENT, { detail: { pinnedModelNames: normalized } }));
-  } catch { /* best effort */ }
-  return normalized;
 }
 
 export function automaticUpdateIsDue(settings: GlobalModelSettings, now = Date.now(), intervalMs = 24 * 60 * 60 * 1000): boolean {

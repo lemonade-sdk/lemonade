@@ -2435,7 +2435,7 @@ export interface ModelDetailPanelProps {
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
   serverDefaultCtxSize: number;
-  /** Whether this model is currently pinned in the client-local model list. */
+  /** Whether this loaded model is currently pinned by lemond. */
   isPinned?: boolean;
   /** Toggle this model's pinned state. Receives the model name. */
   onTogglePin?: (name: string) => void;
@@ -2729,7 +2729,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           </WorkspaceActionButton>
         </>
       )}
-      {onTogglePin && (
+      {isLoaded && onTogglePin && (
         <WorkspaceActionButton
           className={`model-detail-panel__fav-btn${isPinned ? ' model-detail-panel__fav-btn--on' : ''}`}
           appearance="quiet"

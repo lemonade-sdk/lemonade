@@ -901,10 +901,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('[id$="llamacpp_backend"]')).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Reset' })).toBeVisible();
 
-    const pin = page.getByRole('button', { name: 'Pin config-beta-model' });
-    await expect(pin).toBeVisible();
-    await pin.click();
-    await expect(page.getByRole('button', { name: 'Unpin config-beta-model' }))
+    // Pin is a server runtime action and must not be offered until the model is loaded.
+    await expect(page.getByRole('button', { name: 'Pin config-beta-model' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Unpin config-beta-model' })).toHaveCount(0);
+    const favorite = page.getByRole('button', { name: 'Add config-beta-model to favorites' });
+    await expect(favorite).toBeVisible();
+    await favorite.click();
+    await expect(page.getByRole('button', { name: 'Remove config-beta-model from favorites' }))
       .toHaveClass(/model-detail-panel__fav-btn--on/);
     await expect(page.getByRole('button', { name: 'Delete downloaded files for config-beta-model' }))
       .toHaveClass(/workspace-action-button--secondary/);

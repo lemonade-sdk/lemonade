@@ -14,6 +14,9 @@ const modelConfigurationPath = path.join(root, 'src/modelConfiguration.ts');
 const recipeMetadataPath = path.join(root, 'src/features/backends/recipeMetadata.ts');
 const apiPath = path.join(root, 'src/api.ts');
 const samplerPath = path.join(root, 'src/samplerArgs.ts');
+const managerPath = path.join(root, 'src/components/ModelManager.tsx');
+const globalSettingsPath = path.join(root, 'src/features/modelSettings/globalModelSettings.ts');
+const storagePath = path.join(root, 'src/storage.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
 
 const sources = new Map([
@@ -27,6 +30,9 @@ const sources = new Map([
   [recipeMetadataPath, fs.readFileSync(recipeMetadataPath, 'utf8')],
   [apiPath, fs.readFileSync(apiPath, 'utf8')],
   [samplerPath, fs.readFileSync(samplerPath, 'utf8')],
+  [managerPath, fs.readFileSync(managerPath, 'utf8')],
+  [globalSettingsPath, fs.readFileSync(globalSettingsPath, 'utf8')],
+  [storagePath, fs.readFileSync(storagePath, 'utf8')],
 ]);
 const styles = fs.readFileSync(stylesPath, 'utf8');
 const samplerSource = sources.get(samplerPath);
@@ -60,6 +66,9 @@ const modelListSource = sources.get(modelListPath);
 const modelConfigurationSource = sources.get(modelConfigurationPath);
 const recipeMetadataSource = sources.get(recipeMetadataPath);
 const apiSource = sources.get(apiPath);
+const managerSource = sources.get(managerPath);
+const globalSettingsSource = sources.get(globalSettingsPath);
+const storageSource = sources.get(storagePath);
 
 assert.match(appSource, /<header className="titlebar" data-tauri-drag-region>/);
 assert.doesNotMatch(appSource, /titlebar--chat/);
@@ -372,5 +381,24 @@ assert.deepEqual(metadata.recipeOptionNames({ recipes: { llamacpp: { backends: {
   'missing descriptor options must not be hidden by a frontend recipe fallback');
 assert.equal(metadata.recipeCapability({ recipes: { strange: { modality: 'New modality' } } }, 'strange'), 'Other',
   'unknown server modalities must not silently fall back to LLM');
+// server-owned pin contract
+assert.match(apiSource, /pinned: typeof model\.pinned === 'boolean'/, 'health normalization must preserve server pin state');
+assert.match(apiSource, /'\/internal\/pin'/, 'pin mutations must use the server endpoint');
+assert.match(managerSource, /loadedModels\.filter\(model => model\.pinned === true\)/, 'GUI pin state must derive from loaded server models');
+assert.match(managerSource, /api\.setModelPinned\(name, loaded\.pinned !== true\)/, 'GUI pin toggles must mutate server state');
+assert.match(managerSource, /onToggleFavorite=\{toggleFavoriteModel\}/, 'model list secondary action must be Favorite');
+assert.match(managerSource, /onTogglePin=\{selectedDetailModelId && displayLoadedModels\.some/, 'detail Pin handler must only be supplied for loaded models');
+assert.match(modelListSource, /ariaKeyShortcuts=\{onToggleFavorite \? 'F'/, 'model list must expose Favorite as its row shortcut');
+assert.match(modelListSource, /icon: 'star'/, 'model list secondary action must render Favorite');
+assert.doesNotMatch(modelListSource, /onTogglePin\?:/, 'model list must not own runtime Pin mutation');
+assert.doesNotMatch(managerSource, /loadPinnedModelNames|savePinnedModelNames/, 'ModelManager must not use browser pin persistence');
+assert.doesNotMatch(globalSettingsSource, /pinnedModelsKey|loadPinnedModelNames|savePinnedModelNames|pinned_models/, 'global model settings must not own pin persistence');
+assert.match(storageSource, /`\$\{STORAGE_PREFIX\}pinned_models`/, 'obsolete client pin storage must be cleaned up');
+
+// favorite hover-only row-action contract
+assert.doesNotMatch(modelListSource, /latched:\s*favorited/, 'Favorite must remain hover-only so backend info is visible at rest');
+assert.match(modelListSource, /active:\s*favorited/, 'favorited row action must keep active-state styling while hovered');
+assert.match(styles, /focus-within:not\(\.workspace-list-row--pointer-action\)\s+\.workspace-list-row__action/, 'pointer-only row action must not remain visible from row focus alone');
+assert.match(styles, /workspace-list-row__action--latched,\s*\n\.workspace-list-row__action--active\s*\{[^}]*color:\s*var\(--accent-fg\)/s, 'active row action must use the accent color without latching visibility');
 
 console.log('GUI3 configuration consistency contract checks passed.');

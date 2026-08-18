@@ -66,6 +66,7 @@ values.set('lemonade:user:b:mcp_server_ids', JSON.stringify(['b']));
   'lemonade:applied_presets',
   'lemonade:backend_presets',
   'lemonade:running_presets',
+  'lemonade:pinned_models',
 ].forEach(key => values.set(key, 'obsolete'));
 
 const storageModule = loadStorageModule();
@@ -96,6 +97,7 @@ assert.equal(values.get('lemonade_storage_migrated_v2'), 'true');
   'lemonade:applied_presets',
   'lemonade:backend_presets',
   'lemonade:running_presets',
+  'lemonade:pinned_models',
 ].forEach(key => assert.equal(localStorage.getItem(key), null));
 
 [
@@ -105,6 +107,7 @@ assert.equal(values.get('lemonade_storage_migrated_v2'), 'true');
   'lemonade:applied_presets',
   'lemonade:backend_presets',
   'lemonade:running_presets',
+  'lemonade:pinned_models',
 ].forEach(key => values.set(key, 'obsolete-again'));
 const rerunStorageModule = loadStorageModule();
 assert.equal(rerunStorageModule.storageKey('rerun_probe'), 'lemonade:rerun_probe');
@@ -115,6 +118,7 @@ assert.equal(rerunStorageModule.storageKey('rerun_probe'), 'lemonade:rerun_probe
   'lemonade:applied_presets',
   'lemonade:backend_presets',
   'lemonade:running_presets',
+  'lemonade:pinned_models',
 ].forEach(key => assert.equal(localStorage.getItem(key), null));
 
 console.log('Client storage migration preserves scoped conversations and merges compatible settings.');

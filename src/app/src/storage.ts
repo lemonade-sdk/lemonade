@@ -18,6 +18,7 @@ const OBSOLETE_LEGACY_CONFIGURATION_KEYS = [
   `${STORAGE_PREFIX}applied_presets`,
   `${STORAGE_PREFIX}backend_presets`,
   `${STORAGE_PREFIX}running_presets`,
+  `${STORAGE_PREFIX}pinned_models`,
 ] as const;
 
 let migrationComplete = false;
