@@ -174,15 +174,24 @@ def set_server_config(config: dict, port=PORT):
     return response.json()
 
 
-def unload_all_models(port=PORT):
+def unload_all_models(port=PORT, attempts=3):
     """POST /api/v1/unload to unload all models for clean state."""
-    response = requests.post(
-        f"http://localhost:{port}/api/v1/unload",
-        json={},
-        headers=_auth_headers(),
-        timeout=30,
-    )
-    # 200 = unloaded, 404 = nothing loaded — both OK
+    response = None
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                f"http://localhost:{port}/api/v1/unload",
+                json={},
+                headers=_auth_headers(),
+                timeout=30,
+            )
+            # 200 = unloaded, 404 = nothing loaded — both OK
+            if response.status_code in [200, 404]:
+                return response
+        except requests.RequestException as exc:
+            if attempt == attempts:
+                raise exc
+            time.sleep(1)
     return response
 
 
