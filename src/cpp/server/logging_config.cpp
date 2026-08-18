@@ -124,7 +124,11 @@ void RotatingFileSink::rotate_if_needed_nolock() {
 
     std::error_code ec;
     fs::path active_log = utils::path_from_utf8(filename_);
+    if (fs::exists(active_log, ec) && fs::is_directory(active_log, ec)) {
+        return;
+    }
 
+    bool rename_succeeded = false;
     if (max_files_ > 0) {
         fs::path max_backup = utils::path_from_utf8(filename_ + "." + std::to_string(max_files_));
         if (fs::exists(max_backup, ec)) {
@@ -147,11 +151,17 @@ void RotatingFileSink::rotate_if_needed_nolock() {
             if (fs::exists(backup_1, ec)) {
                 fs::remove(backup_1, ec);
             }
+            ec.clear();
             fs::rename(active_log, backup_1, ec);
+            if (!ec) {
+                rename_succeeded = true;
+            }
         }
     }
 
-    file_.open(active_log, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+    if (rename_succeeded || max_files_ == 0) {
+        file_.open(active_log, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+    }
     if (!file_.is_open()) {
         file_.open(active_log, std::ofstream::out | std::ofstream::app | std::ofstream::binary);
     }

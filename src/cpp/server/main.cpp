@@ -103,10 +103,10 @@ int main(int argc, char** argv) {
             cli_overrides = true;
         }
 
+        auto config = std::make_shared<RuntimeConfig>(config_json);
         if (cli_overrides) {
             ConfigFile::save(cli_config.cache_dir, config_json);
         }
-        auto config = std::make_shared<RuntimeConfig>(config_json);
         if (cli_config.broadcast.has_value()) {
             config->set_broadcast_override(cli_config.broadcast);
         }

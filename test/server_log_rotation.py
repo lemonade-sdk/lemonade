@@ -10,6 +10,7 @@ Verifies:
 5. Rejection of invalid out-of-bounds CLI range options.
 """
 
+import json
 import os
 import shutil
 import socket
@@ -183,6 +184,10 @@ class TestLogRotation(unittest.TestCase):
         os.makedirs(log_dir, exist_ok=True)
         active_log = os.path.join(log_dir, "lemonade-server.log")
 
+        # Pre-seed active log at 500 bytes below 1MB (not rotated at startup, but easily exceeded by live traffic)
+        with open(active_log, "wb") as f:
+            f.write(b"PRE_SEED_LOG_LINE\n" + b"X" * (1024 * 1024 - 500))
+
         env = os.environ.copy()
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
         env["LEMONADE_CACHE_DIR"] = self.test_dir
@@ -222,11 +227,12 @@ class TestLogRotation(unittest.TestCase):
 
             self.assertTrue(ready, "Server failed to start for runtime rotation test")
 
-            # Generate requests to exceed 1MB in debug log if needed or repeated queries
-            # Send HTTP requests to generate log volume
-            for i in range(120):
+            # Send HTTP requests to push total log volume past 1MB and trigger runtime rotation
+            for i in range(50):
                 try:
-                    requests.get(f"http://127.0.0.1:{port}/health", timeout=1)
+                    requests.get(
+                        f"http://127.0.0.1:{port}/api/v1/system-info", timeout=1
+                    )
                 except Exception:
                     pass
 
@@ -237,6 +243,19 @@ class TestLogRotation(unittest.TestCase):
             except Exception:
                 proc.kill()
                 proc.wait(timeout=3)
+
+        active_log = os.path.join(log_dir, "lemonade-server.log")
+        backup_1 = os.path.join(log_dir, "lemonade-server.log.1")
+        self.assertTrue(os.path.exists(active_log), "Active log file should exist")
+        self.assertTrue(
+            os.path.exists(backup_1),
+            "Rotated backup .1 should exist after exceeding 1MB",
+        )
+        self.assertGreater(
+            os.path.getsize(backup_1),
+            1000 * 1024,
+            "Rotated backup .1 should be >= 1000KB",
+        )
 
     def test_reject_directory_path(self):
         """Verify passing an existing directory as log file path is rejected."""
@@ -284,6 +303,43 @@ class TestLogRotation(unittest.TestCase):
 
         self.assertNotEqual(
             proc.returncode, 0, "lemond accepted invalid --log-max-size-mb 0"
+        )
+
+    def test_invalid_cli_does_not_corrupt_config_json(self):
+        """Verify invalid CLI override failure does not persist corrupt values into config.json."""
+        env = os.environ.copy()
+        env["XDG_RUNTIME_DIR"] = self.runtime_dir
+
+        config_path = os.path.join(self.test_dir, "config.json")
+        initial_config = {"port": 9999}
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(initial_config, f)
+
+        cmd = [
+            self.lemond_bin,
+            self.test_dir,
+            "--log-file",
+            self.runtime_dir,
+        ]
+
+        proc = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        self.assertNotEqual(proc.returncode, 0)
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            persisted = json.load(f)
+
+        self.assertEqual(persisted.get("port"), 9999)
+        self.assertNotEqual(
+            persisted.get("log_file"),
+            self.runtime_dir,
+            "Invalid log_file should not be saved to config.json",
         )
 
 

@@ -222,6 +222,39 @@ static void test_validation_rejection() {
     fs::remove_all(temp_dir);
 }
 
+static void test_rotation_rename_failure_preserves_log() {
+    fs::path temp_dir = make_temp_dir();
+    fs::path log_path = temp_dir / "lemonade.log";
+
+    // Write initial data to log_path
+    {
+        std::ofstream f(log_path, std::ios::binary);
+        std::string chunk(500 * 1024, 'X');
+        f << chunk << "\n";
+        f.flush();
+    }
+
+    AixLog::Filter filter(AixLog::Severity::info);
+    {
+        RotatingFileSink sink(filter, log_path.string(), "%m", 1, 2);
+
+        // Make temp_dir read-only so rename(active_log, backup_1) fails due to directory permissions
+        fs::permissions(temp_dir, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+
+        std::string extra_chunk(600 * 1024, 'Y');
+        sink.log(make_metadata(), extra_chunk);
+
+        // Restore permissions for verification and cleanup
+        fs::permissions(temp_dir, fs::perms::all, fs::perm_options::replace);
+    }
+
+    std::error_code ec;
+    size_t final_size = fs::file_size(log_path, ec);
+    check("active log is not truncated on rename failure", final_size >= 500 * 1024);
+
+    fs::remove_all(temp_dir);
+}
+
 int main() {
     test_incremental_runtime_rotation();
     test_preexisting_oversized_file();
@@ -229,6 +262,7 @@ int main() {
     test_retention_cap_pruning();
     test_max_files_zero_truncation();
     test_validation_rejection();
+    test_rotation_rename_failure_preserves_log();
 
     std::printf("\nSummary: %d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
