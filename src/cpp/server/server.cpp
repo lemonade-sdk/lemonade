@@ -15,6 +15,7 @@
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -6620,6 +6621,20 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Enrich with release_url, download_filename, version from BackendManager config
     if (system_info.contains("recipes")) {
         enrich_recipes(system_info["recipes"]);
+    }
+
+    // Hide backends that have nothing runnable on this host because every one of
+    // their built-in models was filtered out for lack of system memory. Listing
+    // them as installed/available would be misleading. Dynamic-model backends
+    // (cloud, flm) supply models at runtime, so they are never hidden this way.
+    if (system_info.contains("recipes") && model_manager_) {
+        for (const std::string& recipe : model_manager_->recipes_with_all_models_filtered()) {
+            const BackendDescriptor* desc = backends::descriptor_for(recipe);
+            if (desc && desc->dynamic_models) {
+                continue;
+            }
+            system_info["recipes"].erase(recipe);
+        }
     }
 
     // Surface runtime config flags that affect client-side install/download UX.

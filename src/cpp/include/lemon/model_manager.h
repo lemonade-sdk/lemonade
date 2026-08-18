@@ -280,6 +280,21 @@ public:
     // Returns a user-friendly message explaining why the model is not available
     std::string get_model_filter_reason(const std::string& model_name);
 
+    // Real-backend recipes with nothing runnable on this system because every
+    // one of their built-in models was filtered out by the system-memory
+    // heuristic (and no user model fills the gap). Callers use this to hide such
+    // backends from the recipe/backends listing. Recipes filtered for
+    // hardware/OS reasons are excluded (they keep their "unsupported" display).
+    // Builds the cache if needed.
+    std::set<std::string> recipes_with_all_models_filtered();
+
+    // The set difference behind the above: recipes that had a model dropped by
+    // the memory heuristic and kept none visible. Pure and hardware-independent
+    // so it can be unit-tested directly.
+    static std::set<std::string> recipes_missing_all_models(
+        const std::set<std::string>& size_filtered_recipes,
+        const std::set<std::string>& visible_recipes);
+
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);
 
@@ -478,6 +493,9 @@ private:
     mutable std::map<std::string, std::string> public_model_aliases_;  // public name -> canonical name
     mutable std::map<std::string, std::string> canonical_public_names_;  // canonical name -> public name
     mutable std::map<std::string, std::string> filtered_out_models_;  // model_name -> filter reason
+    // Real-backend recipes whose entire built-in model set was size-filtered
+    // with no model left visible. Populated alongside filtered_out_models_.
+    mutable std::set<std::string> recipes_all_models_filtered_;
     mutable bool cache_valid_ = false;
 
     // Refresh user_models.json on-demand when a user.* lookup misses the cache.
