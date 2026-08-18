@@ -1,10 +1,15 @@
 #include "lemon/anthropic_error.h"
+#include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/cloud_provider_registry.h"
 #include "lemon/error_types.h"
 #include "lemon/ollama_api.h"
+#include "lemon/utils/http_client.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
 #include <algorithm>
+#include <map>
+#include <optional>
 #include <vector>
 
 namespace lemon {
@@ -175,6 +180,180 @@ static void set_anthropic_residency_conflict_response(
         }},
     };
     res.set_content(body.dump(), "application/json");
+}
+
+// Everything needed to relay one /v1/messages request to a provider that
+// speaks the Anthropic Messages wire format natively.
+struct AnthropicUpstream {
+    std::string url;
+    std::map<std::string, std::string> headers;
+    utils::HttpSecurityPolicy policy = utils::HttpSecurityPolicy::ExternalHttpsOnly;
+    std::string body;
+};
+
+// `claimed` separates "this model isn't relayed, fall through to conversion"
+// from "it is relayed but the provider is unusable" — the latter must report
+// its own error instead of failing further down as a misleading local-model
+// load failure.
+struct AnthropicUpstreamMatch {
+    bool claimed = false;
+    std::optional<AnthropicUpstream> upstream;
+    int error_status = 0;
+    std::string error_type;
+    std::string error_message;
+};
+
+static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
+                                                         const std::string& model,
+                                                         const json& request_json) {
+    AnthropicUpstreamMatch match;
+    if (model_manager == nullptr) return match;
+    CloudProviderRegistry* registry = model_manager->cloud_registry();
+    if (registry == nullptr) return match;
+
+    ModelInfo info;
+    try {
+        if (!model_manager->model_exists(model)) return match;
+        info = model_manager->get_model_info(model);
+    } catch (const std::exception&) {
+        return match;
+    }
+    if (info.recipe != "cloud" || info.cloud_provider.empty()) return match;
+    if (registry->wire_format_for(info.cloud_provider) != "anthropic") return match;
+
+    match.claimed = true;
+    auto fail = [&match](int status, std::string type, std::string message) {
+        match.error_status = status;
+        match.error_type = std::move(type);
+        match.error_message = std::move(message);
+        return match;
+    };
+
+    const std::string base_url = registry->base_url_for(info.cloud_provider);
+    if (base_url.empty()) {
+        return fail(500, "api_error",
+                    "provider '" + info.cloud_provider + "' has no base URL configured");
+    }
+    const std::string api_key = registry->resolve_key(info.cloud_provider);
+    if (api_key.empty()) {
+        return fail(401, "authentication_error",
+                    "no API key for provider '" + info.cloud_provider + "'; set " +
+                    CloudProviderRegistry::env_var_name(info.cloud_provider) +
+                    " or POST /v1/cloud/auth");
+    }
+    const bool allow_insecure_http =
+        registry->allow_insecure_http_for(info.cloud_provider);
+    if (CloudProviderRegistry::is_http_base_url(base_url) && !allow_insecure_http) {
+        return fail(400, "invalid_request_error",
+                    "provider '" + info.cloud_provider + "' uses an http:// base URL; "
+                    "re-install it with --allow-insecure-http to send the API key in "
+                    "plaintext");
+    }
+
+    // The body passes through byte-for-byte apart from "model", which must name
+    // the provider's own id rather than lemonade's "<provider>.<id>" public one.
+    json forwarded = request_json;
+    forwarded["model"] = info.checkpoint();
+
+    const auto auth_header = registry->auth_header_for(info.cloud_provider);
+    AnthropicUpstream upstream;
+    upstream.url = base_url + "/messages";
+    upstream.headers = {
+        {auth_header.name, auth_header.prefix + api_key},
+        {"Content-Type", "application/json"},
+        {"anthropic-version", "2023-06-01"}
+    };
+    upstream.policy = backends::CloudServer::discovery_policy(base_url, allow_insecure_http);
+    upstream.body = forwarded.dump();
+    match.upstream = std::move(upstream);
+    return match;
+}
+
+static void set_anthropic_error_response(httplib::Response& res, int status,
+                                         const std::string& type,
+                                         const std::string& message) {
+    res.status = status;
+    json error = {
+        {"type", "error"},
+        {"error", {{"type", type}, {"message", message}}}
+    };
+    res.set_content(error.dump(), "application/json");
+}
+
+static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
+                                       bool stream,
+                                       const std::string& model,
+                                       httplib::Response& res) {
+    if (!stream) {
+        try {
+            auto response = utils::HttpClient::post(
+                upstream.url, upstream.body, upstream.headers, 0, upstream.policy);
+            res.status = response.status_code;
+            res.set_content(response.body, "application/json");
+        } catch (const std::exception& e) {
+            set_anthropic_error_response(
+                res, 502, "api_error",
+                "cloud request for '" + model + "' failed: " + e.what());
+        }
+        return;
+    }
+
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [upstream, model](size_t offset, httplib::DataSink& sink) {
+            if (offset > 0) return false;
+            // Both ends speak Anthropic SSE, so a 200 relays unparsed. A
+            // non-200 body is not SSE, so it is diverted and re-emitted as an
+            // error event rather than written into the event stream.
+            static constexpr size_t max_error_body = 64 * 1024;
+            int upstream_status = 200;
+            std::string error_body;
+            auto emit_error = [&sink, &model](const std::string& message) {
+                json err = {{"type", "error"}, {"error", {
+                    {"type", "api_error"},
+                    {"message", "cloud request for '" + model + "' " + message}
+                }}};
+                write_sse_event(sink, "error", err);
+            };
+
+            try {
+                auto result = utils::HttpClient::post_stream(
+                    upstream.url, upstream.body,
+                    [&](const char* data, size_t length) {
+                        if (upstream_status != 200) {
+                            if (error_body.size() < max_error_body) {
+                                error_body.append(
+                                    data,
+                                    std::min(length, max_error_body - error_body.size()));
+                            }
+                            return true;
+                        }
+                        return sink.write(data, length);
+                    },
+                    upstream.headers, 0,
+                    [&upstream_status](int status) { upstream_status = status; },
+                    upstream.policy,
+                    [&sink]() { return sink.is_writable && !sink.is_writable(); });
+                // on_status never fires when the body is empty, so fall back to
+                // the code curl always records after the transfer.
+                const int status =
+                    upstream_status != 200 ? upstream_status : result.status_code;
+                if (status != 200) {
+                    emit_error("failed with status " + std::to_string(status) +
+                               (error_body.empty() ? "" : ": " + error_body));
+                } else if (result.curl_code != 0 && sink.is_writable && sink.is_writable()) {
+                    emit_error("stream ended early: " + result.curl_error);
+                }
+            } catch (const std::exception& e) {
+                emit_error(std::string("failed: ") + e.what());
+            }
+            sink.done();
+            return false;
+        }
+    );
 }
 
 }  // namespace
@@ -936,6 +1115,22 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
             if (beta_value != "true") {
                 add_warning(warnings, "Ignored unsupported beta query value: " + beta_value);
             }
+        }
+
+        // Providers that are already Anthropic-native need no conversion at
+        // all: relay the request verbatim so thinking blocks, tool use, and
+        // cache control survive intact. No router slot is taken — there is no
+        // local resource to hold.
+        auto match = resolve_anthropic_upstream(model_manager_, model, request_json);
+        if (match.claimed) {
+            if (!match.upstream) {
+                set_anthropic_error_response(res, match.error_status, match.error_type,
+                                             match.error_message);
+                return;
+            }
+            forward_anthropic_upstream(*match.upstream,
+                                       request_json.value("stream", false), model, res);
+            return;
         }
 
         auto openai_req = convert_anthropic_to_openai_chat(request_json, warnings);

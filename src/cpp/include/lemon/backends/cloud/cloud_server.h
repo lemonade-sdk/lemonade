@@ -43,9 +43,8 @@ namespace backends {
  * Wire format: OpenAI v1 — chat/completions, completions, models. Auth header
  * name/prefix is configurable per provider (default Authorization: Bearer),
  * to support gateways that front an OpenAI-shaped API with a differently
- * named key header. Streaming via SSE. Providers that diverge from the
- * request/response shape itself (notably Anthropic) need a sibling backend
- * class — they are not handled here.
+ * named key header. Streaming via SSE. Providers registered with a non-openai
+ * wire_format are rejected here and relayed from /v1/messages instead.
  */
 class CloudServer : public WrappedServer {
 public:
@@ -119,6 +118,11 @@ private:
     json post_with_auth(const std::string& path, const json& request,
                         const ResolvedCreds& creds, long timeout_seconds = 0);
     json rewrite_model_field(const json& request) const;
+    // True when this provider is not served over the OpenAI wire format, in
+    // which case the endpoints implemented here are unreachable for it.
+    bool wire_format_mismatch() const;
+    std::string wire_format_message() const;
+    json wire_format_error() const;
     json missing_creds_error() const;
     std::string missing_creds_sse() const;
     json insecure_http_error() const;

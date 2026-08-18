@@ -61,6 +61,23 @@ lemonade cloud install acme \
 
 Both settings persist per provider in `config.json` and apply to discovery and every forwarded request. `lemonade cloud list` prints the header when either value isn't the default. They are sticky: a later `cloud install` for the same provider that omits these flags keeps the configured header rather than reverting to `Authorization: Bearer`.
 
+### Providers that speak the Anthropic Messages format
+
+Some providers serve their models over the Anthropic Messages wire format rather than OpenAI chat completions. Register those with `--wire-format anthropic`:
+
+```bash
+lemonade cloud install acme \
+  --base-url https://gateway.example.com/v1 \
+  --wire-format anthropic
+```
+
+Model discovery is unchanged — it still reads `GET <base_url>/models`, which these providers serve in the OpenAI envelope. Inference differs:
+
+- **`POST /v1/messages`** relays the request to `<base_url>/messages` byte-for-byte, rewriting only the `model` field to the provider's upstream id. Because nothing is converted, thinking blocks, tool use, cache control, and any future Anthropic field pass through intact. Streaming relays the upstream SSE unmodified.
+- **`POST /v1/chat/completions` and `POST /v1/completions`** return `400` for these models, pointing at `/v1/messages`. Those endpoints are OpenAI-shaped and the provider does not serve that shape.
+
+Relayed requests take no router slot — there is no local model to load — so they do not appear in `/v1/stats`.
+
 ## Using cloud models
 
 Cloud-discovered models use a dot-namespaced name: `<provider>.<upstream-id>`. For example, after installing Fireworks you'll see entries like:
@@ -128,6 +145,7 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | `POST /v1/cloud/auth` returns 409 | Env var is set for that provider. Unset it or use the env-var value going forward. |
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
 | Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
+| Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. |
 
 For a structured view of every installed provider's auth state and discovered model count, hit `GET /v1/system-info` — the `cloud.providers[]` block reports `env_var_set`, `runtime_key_set`, and `models_discovered` per provider.
 

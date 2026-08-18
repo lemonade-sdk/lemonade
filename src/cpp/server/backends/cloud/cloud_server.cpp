@@ -399,6 +399,26 @@ std::string CloudServer::missing_creds_sse() const {
     return "data: " + err.dump() + "\n\n";
 }
 
+bool CloudServer::wire_format_mismatch() const {
+    return registry_ != nullptr && registry_->wire_format_for(provider_) != "openai";
+}
+
+std::string CloudServer::wire_format_message() const {
+    const std::string wire_format = registry_->wire_format_for(provider_);
+    return "Cloud provider '" + provider_ + "' speaks the '" + wire_format +
+           "' wire format, which this endpoint does not serve. Send " + wire_format +
+           "-shaped requests to POST /v1/messages instead.";
+}
+
+json CloudServer::wire_format_error() const {
+    return ErrorResponse::create(
+        wire_format_message(),
+        ErrorType::UNSUPPORTED_OPERATION,
+        {{"provider", provider_},
+         {"wire_format", registry_->wire_format_for(provider_)}}
+    );
+}
+
 json CloudServer::insecure_http_error() const {
     const std::string msg =
         "Cloud provider '" + provider_ + "' uses http:// with an API key. "
@@ -477,11 +497,17 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
 }
 
 json CloudServer::chat_completion(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
     json modified = rewrite_model_field(request);
     return post_with_auth("/chat/completions", modified, resolve_creds());
 }
 
 json CloudServer::completion(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
     json modified = rewrite_model_field(request);
     return post_with_auth("/completions", modified, resolve_creds());
 }
@@ -524,6 +550,20 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         sink.done();
         if (telemetry_callback) {
             telemetry_callback(error_telemetry("Cloud model not loaded"));
+        }
+        return;
+    }
+
+    if (wire_format_mismatch()) {
+        const std::string message = wire_format_message();
+        std::string error_msg = sse_error(
+            message, ErrorType::UNSUPPORTED_OPERATION,
+            {{"provider", provider_},
+             {"wire_format", registry_->wire_format_for(provider_)}});
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(error_telemetry(message));
         }
         return;
     }

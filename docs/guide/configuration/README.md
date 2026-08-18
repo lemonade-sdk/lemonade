@@ -255,6 +255,7 @@ Backend-specific settings are nested under their backend name:
 | `allow_insecure_http` | Whether this provider may receive its API key over `http://`. |
 | `auth_header_name` | Header the API key is sent in. Omitted when it is the default `Authorization`. |
 | `auth_header_prefix` | Value prefix before the key. Omitted when it is the default `"Bearer "`. |
+| `wire_format` | `openai` or `anthropic`. Omitted when it is the default `openai`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
