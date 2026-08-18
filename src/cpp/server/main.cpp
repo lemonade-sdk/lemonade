@@ -1,16 +1,18 @@
-#include <iostream>
-#include <csignal>
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include <lemon/server.h>
+
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
-#include <lemon/server.h>
 #include <lemon/system_info.h>
-#include <lemon/version.h>
-#include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/path_utils.h>
+#include <lemon/version.h>
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <iostream>
+#include <thread>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -88,19 +90,34 @@ int main(int argc, char** argv) {
             config_json["host"] = cli_config.host;
             cli_overrides = true;
         }
-
-        if (cli_overrides) {
-            ConfigFile::save(cli_config.cache_dir, config_json);
+        if (!cli_config.log_file.empty()) {
+            config_json["log_file"] = cli_config.log_file;
+            cli_overrides = true;
+        }
+        if (cli_config.log_max_file_size_mb != -1) {
+            config_json["log_max_file_size_mb"] = cli_config.log_max_file_size_mb;
+            cli_overrides = true;
+        }
+        if (cli_config.log_max_files != -1) {
+            config_json["log_max_files"] = cli_config.log_max_files;
+            cli_overrides = true;
         }
 
         auto config = std::make_shared<RuntimeConfig>(config_json);
+        if (cli_overrides) {
+            ConfigFile::save(cli_config.cache_dir, config_json);
+        }
         if (cli_config.broadcast.has_value()) {
             config->set_broadcast_override(cli_config.broadcast);
         }
         RuntimeConfig::set_global(config.get());
 
-        // Initialize logging with the configured level — console + file + log hub
-        configure_application_logging(config->log_level(), LoggingMode::direct_server);
+        // Initialize logging with configured level and rotation limits
+        LogRotationConfig rot_cfg;
+        rot_cfg.file_mode = config->log_file();
+        rot_cfg.max_file_size_mb = config->log_max_file_size_mb();
+        rot_cfg.max_files = config->log_max_files();
+        configure_application_logging(config->log_level(), LoggingMode::direct_server, rot_cfg);
 
         if (cli_overrides) {
             if (cli_config.port != -1) {
@@ -108,6 +125,15 @@ int main(int argc, char** argv) {
             }
             if (!cli_config.host.empty()) {
                 LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
+            }
+            if (!cli_config.log_file.empty()) {
+                LOG(INFO) << "Persisted log_file=" << cli_config.log_file << " to config.json" << std::endl;
+            }
+            if (cli_config.log_max_file_size_mb != -1) {
+                LOG(INFO) << "Persisted log_max_file_size_mb=" << cli_config.log_max_file_size_mb << " to config.json" << std::endl;
+            }
+            if (cli_config.log_max_files != -1) {
+                LOG(INFO) << "Persisted log_max_files=" << cli_config.log_max_files << " to config.json" << std::endl;
             }
         }
 
@@ -119,6 +145,9 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        LOG(INFO) << "  Log file mode: " << config->log_file() << std::endl;
+        LOG(INFO) << "  Log max file size: " << config->log_max_file_size_mb() << " MB" << std::endl;
+        LOG(INFO) << "  Log max files: " << config->log_max_files() << std::endl;
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }

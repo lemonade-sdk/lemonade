@@ -11,6 +11,9 @@ struct ServerConfig {
     int port = -1;                        // -1 = not specified on CLI, use config.json value
     std::string host;                     // Empty = not specified on CLI, use config.json value
     std::optional<bool> broadcast;        // std::nullopt = not specified on CLI, use config.json value
+    std::string log_file;                 // Empty = not specified on CLI, use config.json value
+    int log_max_file_size_mb = -1;        // -1 = not specified on CLI, use config.json value
+    int log_max_files = -1;               // -1 = not specified on CLI, use config.json value
 };
 
 class CLIParser {

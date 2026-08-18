@@ -193,8 +193,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     lemon::utils::set_models_dir(runtime_config->models_dir());
 
     // Initialize logging (file + log hub; SUBSYSTEM:WINDOWS has no console)
+    lemon::LogRotationConfig rot_cfg;
+    rot_cfg.file_mode = runtime_config->log_file();
+    rot_cfg.max_file_size_mb = runtime_config->log_max_file_size_mb();
+    rot_cfg.max_files = runtime_config->log_max_files();
     lemon::configure_application_logging(
-        runtime_config->log_level(), lemon::LoggingMode::embedded_tray_server);
+        runtime_config->log_level(), lemon::LoggingMode::embedded_tray_server, rot_cfg);
 
     // Initialize Winsock (required by httplib)
     WSADATA wsa;

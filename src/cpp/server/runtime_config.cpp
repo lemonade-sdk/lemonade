@@ -273,6 +273,20 @@ RuntimeConfig::RuntimeConfig(const json& config)
         config_.erase("no_broadcast");
     }
 
+    // Validate logging settings on startup
+    if (config_.contains("log_max_file_size_mb")) {
+        validate("log_max_file_size_mb", config_["log_max_file_size_mb"]);
+    }
+    if (config_.contains("log_max_files")) {
+        validate("log_max_files", config_["log_max_files"]);
+    }
+    if (config_.contains("log_file")) {
+        validate("log_file", config_["log_file"]);
+    }
+    if (config_.contains("log_level")) {
+        validate("log_level", config_["log_level"]);
+    }
+
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
     if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||
@@ -303,6 +317,18 @@ int RuntimeConfig::websocket_port() const {
 std::string RuntimeConfig::log_level() const {
     std::shared_lock lock(mutex_);
     return config_["log_level"].get<std::string>();
+}
+
+std::string RuntimeConfig::log_file() const {
+    return get_string_opt(nullptr, {"log_file"}, "auto");
+}
+
+int RuntimeConfig::log_max_file_size_mb() const {
+    return get_int_opt(nullptr, {"log_max_file_size_mb"}, 10);
+}
+
+int RuntimeConfig::log_max_files() const {
+    return get_int_opt(nullptr, {"log_max_files"}, 5);
 }
 
 std::string RuntimeConfig::extra_models_dir() const {
@@ -646,6 +672,34 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             == valid_log_levels_.end()) {
             throw std::invalid_argument(
                 "'log_level' must be one of: trace, debug, info, warning, error, fatal, none");
+        }
+    } else if (key == "log_file") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'log_file' must be a string");
+        }
+        std::string mode = value.get<std::string>();
+        if (mode != "auto" && mode != "enabled" && mode != "disabled" && !mode.empty()) {
+            std::error_code ec;
+            fs::path p = utils::path_from_utf8(mode);
+            if (fs::exists(p, ec) && fs::is_directory(p, ec)) {
+                throw std::invalid_argument("'log_file' path cannot be a directory: " + mode);
+            }
+        }
+    } else if (key == "log_max_file_size_mb") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be an integer");
+        }
+        int sz = value.get<int>();
+        if (sz < 1 || sz > 2048) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be between 1 and 2048");
+        }
+    } else if (key == "log_max_files") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_files' must be an integer");
+        }
+        int n = value.get<int>();
+        if (n < 0 || n > 100) {
+            throw std::invalid_argument("'log_max_files' must be between 0 and 100");
         }
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {

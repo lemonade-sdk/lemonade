@@ -29,6 +29,9 @@ public:
     std::string host() const;
     int websocket_port() const;
     std::string log_level() const;
+    std::string log_file() const;
+    int log_max_file_size_mb() const;
+    int log_max_files() const;
     std::string extra_models_dir() const;
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
