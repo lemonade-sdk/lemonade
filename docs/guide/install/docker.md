@@ -30,9 +30,9 @@ docker run -d \
 > If you're upgrading from an image that ran as root (versions prior to v10.10.1), your existing named volumes may still be owned by root. The new image runs as UID 10001 and will fail to write to root-owned volumes. Fix ownership with helper containers:
 >
 > ```bash
-> docker run --rm -v lemonade-cache:/v ubuntu:24.04 chown -R 10001:10001 /v
-> docker run --rm -v lemonade-llama:/v ubuntu:24.04 chown -R 10001:10001 /v
-> docker run --rm -v lemonade-recipe:/v ubuntu:24.04 chown -R 10001:10001 /v
+> docker run --rm -v lemonade-cache:/v ubuntu:24.04 chown -R 10001:999 /v
+> docker run --rm -v lemonade-llama:/v ubuntu:24.04 chown -R 10001:999 /v
+> docker run --rm -v lemonade-recipe:/v ubuntu:24.04 chown -R 10001:999 /v
 > ```
 >
 > Alternatively, remove the old volumes and let the new container recreate them:
