@@ -42,6 +42,13 @@ static void test_implicit_allowances(TestResult& r) {
             "reject foreign http origin without allow-list");
     r.check(!is_origin_allowed("https://192.168.1.50:13305", none),
             "reject non-loopback LAN origin without allow-list");
+
+    // An uppercase web scheme must not slip past the http/https/ws/wss checks
+    // into the non-web-scheme allow-all branch.
+    r.check(!is_origin_allowed("HTTP://evil.example", none),
+            "reject foreign origin with uppercase scheme");
+    r.check(is_origin_allowed("HTTP://localhost:3000", none),
+            "allow loopback with uppercase scheme");
 }
 
 static void test_configured_allowances(TestResult& r) {

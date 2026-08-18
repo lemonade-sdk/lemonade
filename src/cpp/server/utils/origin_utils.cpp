@@ -1,5 +1,7 @@
 #include "lemon/utils/origin_utils.h"
 
+#include <algorithm>
+#include <cctype>
 #include <set>
 
 namespace lemon::utils {
@@ -34,7 +36,11 @@ bool is_origin_allowed(const std::string& origin,
     if (scheme_end == std::string::npos) {
         return false;
     }
-    const std::string scheme = origin.substr(0, scheme_end);
+    std::string scheme = origin.substr(0, scheme_end);
+    // Browsers lowercase the scheme, but normalize defensively so an uppercase
+    // "HTTP://" can't slip past the web-scheme checks into the allow-all branch.
+    std::transform(scheme.begin(), scheme.end(), scheme.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
 
     // Non-web schemes (file://, app://, jan://, etc.) require local filesystem
     // access or a desktop wrapper, so a remote page can't forge them.
