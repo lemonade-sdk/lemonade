@@ -6702,6 +6702,7 @@ optgroup {
 }
 
 .model-nav-rail__scroll {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   display: flex;
@@ -6946,11 +6947,11 @@ optgroup {
 
 /* 6. Storage meter */
 .model-nav-rail__storage {
-  margin-top: auto;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  padding: var(--space-2) var(--space-2) 0;
+  padding: var(--space-2);
   border-top: 1px solid var(--border-subtle);
 }
 
