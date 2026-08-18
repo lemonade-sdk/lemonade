@@ -14,11 +14,11 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
-#include <string>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <system_error>
@@ -1179,8 +1179,7 @@ namespace lemon::backends {
     }  // namespace
 
     void BackendUtils::cleanup_old_therock_versions() {
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        json config = utils::JsonUtils::load_from_file(config_path);
+        const json& config = backend_versions_config();
 
         if (!config.contains("therock") || !config["therock"].is_object() ||
             !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
@@ -1353,12 +1352,15 @@ namespace lemon::backends {
         const fs::path paths_file = fs::path(wheel_dir) / "runtime_paths.txt";
         const fs::path version_file = fs::path(wheel_dir) / "version.txt";
 
-        // Idempotent: skip when the same version is already installed.
+        // Idempotent: skip when the same version is already installed AND its
+        // recorded runtime dirs still exist. A version marker whose runtime was
+        // deleted or moved (stale absolute paths) must fall through to a fresh
+        // reinstall below, not short-circuit into a dead loader path.
         if (fs::exists(version_file) && fs::exists(paths_file)) {
             std::ifstream vf(version_file);
             std::string installed;
             std::getline(vf, installed);
-            if (installed == version) {
+            if (installed == version && therock_wheel_runtime_alive(arch, version)) {
                 LOG(DEBUG, "BackendUtils")
                     << "ROCm wheels " << arch << "-" << version
                     << " already installed" << std::endl;
@@ -1536,7 +1538,8 @@ namespace lemon::backends {
         std::vector<std::string> runtime_dirs = query_wheel_runtime_dirs(venv_python);
         bool has_hip_runtime = false;
         for (const auto& dir : runtime_dirs) {
-            for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+            for (fs::directory_iterator it(utils::path_from_utf8(dir), ec), end;
+                 it != end && !ec; it.increment(ec)) {
                 const std::string name = it->path().filename().string();
 #ifdef _WIN32
                 if (name.rfind("amdhip64", 0) == 0) {
@@ -1566,6 +1569,13 @@ namespace lemon::backends {
             }
         }
         {
+            std::ofstream mf(fs::path(wheel_dir) / "method.txt");
+            mf << "wheel";
+        }
+        // version.txt is written last: both the idempotency check above and
+        // is_therock_installed_for_current_arch key off it, so once it exists the
+        // other markers (runtime_paths.txt, method.txt) are guaranteed present.
+        {
             std::ofstream vf(version_file);
             vf << version;
         }
@@ -1583,11 +1593,6 @@ namespace lemon::backends {
             p.percent = 100;
             p.complete = true;
             progress_cb(p);
-        }
-
-        {
-            std::ofstream mf(fs::path(wheel_dir) / "method.txt");
-            mf << "wheel";
         }
 
         LOG(INFO, "BackendUtils") << "ROCm wheel installation complete" << std::endl;
@@ -1715,14 +1720,16 @@ namespace lemon::backends {
         LOG(DEBUG, "BackendUtils") << "TheRock lib directory verified at: " << runtime_dir << std::endl;
 #endif
 
-        std::ofstream vf(version_file);
-        vf << version;
-        vf.close();
-
         {
             std::ofstream mf(fs::path(install_dir) / "method.txt");
             mf << "tarball";
         }
+
+        // Write version.txt last for the same reason as the wheel path
+        // (see install_therock_wheels()).
+        std::ofstream vf(version_file);
+        vf << version;
+        vf.close();
 
         fs::remove(tarball_path);
         cleanup_old_therock_versions();
@@ -1745,8 +1752,7 @@ namespace lemon::backends {
     }
 
     std::vector<std::string> BackendUtils::get_therock_lib_paths(const std::string& rocm_arch) {
-        std::string config_path = utils::get_resource_path("resources/backend_versions.json");
-        json config = utils::JsonUtils::load_from_file(config_path);
+        const json& config = backend_versions_config();
 
         if (!config.contains("therock") || !config["therock"].contains("version")) {
             throw std::runtime_error("backend_versions.json is missing 'therock.version'");
