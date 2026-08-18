@@ -47,6 +47,7 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
   const [prompt, setPrompt] = useState('');
   const [lyrics, setLyrics] = useState('');
   const [vocalLanguage, setVocalLanguage] = useState('en');
+  const [negativePrompt, setNegativePrompt] = useState('');
   const [showLyricsHelp, setShowLyricsHelp] = useState(false);
   const [duration, setDuration] = useState(10);
   const [clips, setClips] = useState<GeneratedClip[]>([]);
@@ -56,10 +57,13 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
   useEffect(() => () => { clipsRef.current.forEach(c => URL.revokeObjectURL(c.url)); }, []);
 
   const audioRecipe = modelsData?.[selectedModel]?.recipe || '';
+  const audioDefaults = modelsData?.[selectedModel]?.audio_defaults;
   const isMusic = audioRecipe === 'acestep';
+  const isOpenMossSfx = audioRecipe === 'openmoss';
+  const audioDefaultsKey = JSON.stringify(audioDefaults || {});
   useEffect(() => {
-    setDuration(isMusic ? 150 : 10);
-  }, [audioRecipe]);
+    setDuration(typeof audioDefaults?.seconds === 'number' ? audioDefaults.seconds : (isMusic ? 150 : 10));
+  }, [audioRecipe, audioDefaultsKey]);
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isBusy || !selectedModel) return;
@@ -69,6 +73,7 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
 
     try {
       const trimmedLyrics = lyrics.trim();
+      const trimmedNegative = negativePrompt.trim();
       const response = await serverFetch('/audio/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -76,6 +81,15 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
           model: selectedModel,
           prompt,
           duration,
+          ...(typeof audioDefaults?.steps === 'number' ? { steps: audioDefaults.steps } : {}),
+          ...(typeof audioDefaults?.cfg_scale === 'number' ? { cfg_scale: audioDefaults.cfg_scale } : {}),
+          ...(isOpenMossSfx
+            ? {
+              ...(typeof audioDefaults?.sigma_shift === 'number' ? { sigma_shift: audioDefaults.sigma_shift } : {}),
+              ...(trimmedNegative ? { negative_prompt: trimmedNegative } : {}),
+              seed: Math.floor(Math.random() * 0xffffffff),
+            }
+            : {}),
           ...(isMusic && trimmedLyrics
             ? { lyrics, vocal_language: vocalLanguage.trim() || 'en' }
             : {}),
@@ -162,14 +176,26 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
               </div>
             </>
           ) : (
-            <textarea
-              className="chat-input"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe the music or sound effect to generate..."
-              rows={1}
-            />
+            <>
+              <textarea
+                className="chat-input"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Describe the music or sound effect to generate..."
+                rows={1}
+              />
+              {isOpenMossSfx && (
+                <input
+                  type="text"
+                  className="chat-input"
+                  value={negativePrompt}
+                  onChange={(e) => setNegativePrompt(e.target.value)}
+                  placeholder="Negative prompt (optional) — what the clip should avoid"
+                  disabled={isBusy}
+                />
+              )}
+            </>
           )}
           <InferenceControls
             isBusy={isBusy}
