@@ -137,7 +137,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
   },
   "thenoise": {
     "backend": "auto",
-    "lora_dir": ""
+    "lora_dir": "",
+    "upscaler_dir": ""
   },
   "thinksound": {
     "backend": "auto",

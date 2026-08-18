@@ -406,8 +406,6 @@ void LlamaCppServer::load(const std::string& model_name,
     } else if (uses_mtp) {
         LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
         push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
-        push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
-        push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
     }
 
     // Disable llamacpp webui by default
