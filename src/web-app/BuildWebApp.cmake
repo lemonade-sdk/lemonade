@@ -65,6 +65,30 @@ _stage_dir("${WEB_APP_SOURCE_DIR}" "${STAGED_WEB_APP_DIR}")
 # the staged web-app directory, which now sits at staging/web-app/.
 set(WEB_APP_BUILD_SOURCE_DIR "${STAGED_WEB_APP_DIR}")
 
+# The committed tsconfigs use `moduleResolution: bundler`, correct for the
+# bundled TypeScript (>= 5.3). System TypeScript spans a range where no single
+# value works: Debian trixie ships 4.9 (no `bundler`) while unstable ships 7.0
+# (where `node`/`node10` is removed). `node16` is the one value the whole range
+# accepts, and ts-loader's transpileOnly mode makes its stricter import checks a
+# non-issue. Rewrite the staged copies so committed sources stay on `bundler`
+# for editor/typecheck use. ts-loader validates the on-disk tsconfig regardless
+# of any loader-level compilerOptions override, so the file itself must be fixed.
+#
+# Only rewrite `moduleResolution`, not `module`. The `module` setting controls
+# the emit format (es2020 → ESM, node16 → CJS/ESM hybrid based on package.json
+# "type" field). Since web-app/package.json has no "type": "module", changing
+# `module` to `node16` would switch the emit to CommonJS. We want ESM output for
+# the bundler, so leave `module` at its committed `es2020` value.
+if(USE_SYSTEM_NODEJS_MODULES_ENABLED)
+    function(_pin_staged_module_resolution TSCONFIG)
+        file(READ "${TSCONFIG}" _tsconfig)
+        string(REGEX REPLACE "\"moduleResolution\"[ \t]*:[ \t]*\"[^\"]*\"" "\"moduleResolution\": \"node16\"" _tsconfig "${_tsconfig}")
+        file(WRITE "${TSCONFIG}" "${_tsconfig}")
+    endfunction()
+    _pin_staged_module_resolution("${STAGED_APP_DIR}/tsconfig.json")
+    _pin_staged_module_resolution("${STAGED_WEB_APP_DIR}/tsconfig.json")
+endif()
+
 # System nodejs modules and KaTeX fonts integration
 if(USE_SYSTEM_NODEJS_MODULES_ENABLED)
     set(SYSTEM_NODE_MODULES "/usr/share/nodejs")
