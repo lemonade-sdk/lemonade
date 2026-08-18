@@ -58,10 +58,16 @@ RotatingFileSink::RotatingFileSink(const AixLog::Filter& filter,
 
     std::error_code ec;
     fs::path p = utils::path_from_utf8(filename_);
+    if (fs::exists(p, ec) && fs::is_directory(p, ec)) {
+        throw std::invalid_argument("Log file path cannot be a directory: " + filename_);
+    }
     if (p.has_parent_path()) {
         fs::create_directories(p.parent_path(), ec);
     }
     if (fs::exists(p, ec)) {
+        if (fs::is_directory(p, ec)) {
+            throw std::invalid_argument("Log file path cannot be a directory: " + filename_);
+        }
         current_size_ = static_cast<size_t>(fs::file_size(p, ec));
     }
 

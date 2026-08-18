@@ -238,6 +238,30 @@ class TestLogRotation(unittest.TestCase):
                 proc.kill()
                 proc.wait(timeout=3)
 
+    def test_reject_directory_path(self):
+        """Verify passing an existing directory as log file path is rejected."""
+        env = os.environ.copy()
+        env["XDG_RUNTIME_DIR"] = self.runtime_dir
+
+        cmd = [
+            self.lemond_bin,
+            self.test_dir,
+            "--log-file",
+            self.runtime_dir,
+        ]
+
+        proc = subprocess.run(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        self.assertNotEqual(
+            proc.returncode, 0, "lemond accepted directory path as --log-file"
+        )
+
     def test_invalid_cli_flags(self):
         """Verify out-of-bounds CLI flags are rejected with non-zero exit code."""
         env = os.environ.copy()

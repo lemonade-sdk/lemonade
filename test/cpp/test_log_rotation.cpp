@@ -200,6 +200,26 @@ static void test_validation_rejection() {
         threw = true;
     }
     check("RuntimeConfig rejects log_max_files = -1", threw);
+
+    fs::path temp_dir = make_temp_dir();
+    threw = false;
+    try {
+        RotatingFileSink sink(filter, temp_dir.string(), "%m", 1, 2);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check("RotatingFileSink rejects directory path as log file", threw);
+
+    threw = false;
+    try {
+        nlohmann::json bad_cfg = {{"log_file", temp_dir.string()}};
+        RuntimeConfig cfg(bad_cfg);
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    check("RuntimeConfig rejects directory path as log_file", threw);
+
+    fs::remove_all(temp_dir);
 }
 
 int main() {
