@@ -48,6 +48,19 @@ lemonade cloud install fireworks \
 
 Runtime keys live in `lemond`'s process memory only — they're never written to disk and they vanish on restart. To make them survive a restart, switch to Option A.
 
+### Gateways with a non-standard auth header
+
+By default the key is sent as `Authorization: Bearer <key>`. Some gateways front an OpenAI-shaped API but expect a differently-named header, often with no prefix:
+
+```bash
+lemonade cloud install acme \
+  --base-url https://gateway.example.com/v1 \
+  --auth-header-name X-Api-Key \
+  --auth-header-prefix ""
+```
+
+Both settings persist per provider in `config.json` and apply to discovery and every forwarded request. `lemonade cloud list` prints the header name when it isn't the default.
+
 ## Using cloud models
 
 Cloud-discovered models use a dot-namespaced name: `<provider>.<upstream-id>`. For example, after installing Fireworks you'll see entries like:

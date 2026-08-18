@@ -335,6 +335,9 @@ CloudServer::ResolvedCreds CloudServer::resolve_creds() const {
     }
     creds.api_key = registry_->resolve_key(provider_);
     creds.base_url = registry_->base_url_for(provider_);
+    const auto auth_header = registry_->auth_header_for(provider_);
+    creds.header_name = auth_header.name;
+    creds.header_prefix = auth_header.prefix;
 
     // The registry already normalizes base_url on install, but a defensive
     // strip here keeps the contract local — anyone tracing post_with_auth
@@ -436,7 +439,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     }
     std::string url = creds.base_url + path;
     std::map<std::string, std::string> headers = {
-        {"Authorization", "Bearer " + creds.api_key}
+        {creds.header_name, creds.header_prefix + creds.api_key}
     };
 
     try {
@@ -576,7 +579,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     std::string url = creds.base_url + suffix;
 
     std::map<std::string, std::string> headers = {
-        {"Authorization", "Bearer " + creds.api_key}
+        {creds.header_name, creds.header_prefix + creds.api_key}
     };
 
     try {
@@ -847,7 +850,9 @@ utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_
 std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
-                                                     bool allow_insecure_http) {
+                                                     bool allow_insecure_http,
+                                                     const std::string& auth_header_name,
+                                                     const std::string& auth_header_prefix) {
     std::vector<ModelInfo> models;
     if (api_key.empty()) {
         return models;
@@ -866,7 +871,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
     }
     std::string url = normalized_base + "/models";
     std::map<std::string, std::string> headers = {
-        {"Authorization", "Bearer " + api_key}
+        {auth_header_name, auth_header_prefix + api_key}
     };
 
     const auto policy = discovery_policy(normalized_base, allow_insecure_http);
@@ -1014,7 +1019,9 @@ public:
             }
             try {
                 for (auto& m : CloudServer::discover_models(rec.name, api_key, rec.base_url,
-                                                            rec.allow_insecure_http)) {
+                                                            rec.allow_insecure_http,
+                                                            rec.auth_header_name,
+                                                            rec.auth_header_prefix)) {
                     if (m.recipe == "cloud" && !m.model_name.empty()) {
                         out.push_back(std::move(m));
                     }

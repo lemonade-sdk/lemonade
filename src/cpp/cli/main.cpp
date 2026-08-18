@@ -183,6 +183,10 @@ struct CliConfig {
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
+    // Empty means "let the server apply its Authorization/Bearer default".
+    std::string cloud_auth_header_name;
+    std::string cloud_auth_header_prefix;
+    bool cloud_auth_header_prefix_set = false;
 
     // Alias management options
     std::string alias_name;
@@ -1312,6 +1316,14 @@ int main(int argc, char* argv[]) {
         ->type_name("KEY");
     cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
         "Explicitly allow sending this provider's API key over http://.");
+    cloud_install_cmd->add_option("--auth-header-name", config.cloud_auth_header_name,
+        "Custom auth header name, for gateways that don't use 'Authorization' (default: Authorization)")
+        ->type_name("HEADER");
+    CLI::Option* cloud_auth_header_prefix_opt = cloud_install_cmd->add_option(
+        "--auth-header-prefix", config.cloud_auth_header_prefix,
+        "Custom auth header value prefix; pass an empty string for gateways with no "
+        "'Bearer ' prefix (default: 'Bearer ')")
+        ->type_name("PREFIX");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1483,6 +1495,7 @@ int main(int argc, char* argv[]) {
     }
 
     config.model_source_explicit = pull_source_opt->count() > 0;
+    config.cloud_auth_header_prefix_set = cloud_auth_header_prefix_opt->count() > 0;
 
     // Parse URL scheme and override host, port, is_ssl
     {
@@ -1604,7 +1617,10 @@ int main(int argc, char* argv[]) {
             return client.install_cloud_provider(config.cloud_provider,
                                                   config.cloud_base_url,
                                                   config.cloud_api_key,
-                                                  config.cloud_allow_insecure_http);
+                                                  config.cloud_allow_insecure_http,
+                                                  config.cloud_auth_header_name,
+                                                  config.cloud_auth_header_prefix_set,
+                                                  config.cloud_auth_header_prefix);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);

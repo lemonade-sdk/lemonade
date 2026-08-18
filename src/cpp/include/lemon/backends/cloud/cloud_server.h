@@ -41,9 +41,12 @@ namespace backends {
  * served. discover_models() filters its result to chat-capable ids so the
  * router never sees a cloud model it cannot dispatch.
  *
- * Wire format: OpenAI v1 — chat/completions, completions, models. Bearer
- * auth. Streaming via SSE. Providers that diverge from this shape (notably
- * Anthropic) need a sibling backend class — they are not handled here.
+ * Wire format: OpenAI v1 — chat/completions, completions, models. Auth header
+ * name/prefix is configurable per provider (default Authorization: Bearer),
+ * to support gateways that front an OpenAI-shaped API with a differently
+ * named key header. Streaming via SSE. Providers that diverge from the
+ * request/response shape itself (notably Anthropic) need a sibling backend
+ * class — they are not handled here.
  */
 class CloudServer : public WrappedServer {
 public:
@@ -85,7 +88,9 @@ public:
     static std::vector<ModelInfo> discover_models(const std::string& provider,
                                                    const std::string& api_key,
                                                    const std::string& base_url,
-                                                   bool allow_insecure_http = false);
+                                                   bool allow_insecure_http = false,
+                                                   const std::string& auth_header_name = "Authorization",
+                                                   const std::string& auth_header_prefix = "Bearer ");
 
     /// Trust boundary for a discovery request. The AllowInsecureHttp opt-in
     /// only applies to plaintext http:// providers; an https:// provider stays
@@ -98,6 +103,8 @@ private:
     struct ResolvedCreds {
         std::string api_key;
         std::string base_url;
+        std::string header_name = "Authorization";
+        std::string header_prefix = "Bearer ";
         bool insecure_http_blocked = false;
         utils::HttpSecurityPolicy policy =
             utils::HttpSecurityPolicy::ExternalHttpsOnly;

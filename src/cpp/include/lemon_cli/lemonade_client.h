@@ -114,7 +114,10 @@ public:
     int install_cloud_provider(const std::string& provider,
                                 const std::string& base_url,
                                 const std::string& api_key = "",
-                                bool allow_insecure_http = false);
+                                bool allow_insecure_http = false,
+                                const std::string& auth_header_name = "",
+                                bool auth_header_prefix_set = false,
+                                const std::string& auth_header_prefix = "");
     int uninstall_cloud_provider(const std::string& provider);
     int cloud_auth(const std::string& provider,
                    const std::string& api_key,

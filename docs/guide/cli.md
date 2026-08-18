@@ -681,11 +681,21 @@ lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
 | `PROVIDER` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `--base-url URL` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
 | `--api-key KEY` | No | Optional. Stored in `lemond` process memory only. |
+| `--allow-insecure-http` | No | Explicitly permit sending this provider's API key over `http://`. |
+| `--auth-header-name HEADER` | No | Header carrying the API key. Default `Authorization`. |
+| `--auth-header-prefix PREFIX` | No | Value prefix before the key. Default `Bearer `; pass `""` for none. |
 
 Example:
 
 ```bash
 lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
+```
+
+Some gateways front an OpenAI-shaped API but expect the key in a differently-named header with no prefix:
+
+```bash
+lemonade cloud install acme --base-url https://gateway.example.com/v1 \
+  --auth-header-name X-Api-Key --auth-header-prefix ""
 ```
 
 ### `cloud uninstall`
@@ -721,7 +731,7 @@ lemonade cloud clear PROVIDER
 
 ### `cloud list`
 
-Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered.
+Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered. A non-default auth header name is printed on its own line.
 
 ```bash
 lemonade cloud list

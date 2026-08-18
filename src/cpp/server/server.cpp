@@ -6359,7 +6359,7 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
                 return;
             }
             if (allow_insecure_http && !already_allowed) {
-                cloud_registry_->install(provider, base_url, true);
+                cloud_registry_->set_allow_insecure_http(provider, true);
                 persist_cloud_providers();
             }
         }
@@ -6626,6 +6626,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"name", rec.name},
                 {"base_url", rec.base_url},
                 {"allow_insecure_http", rec.allow_insecure_http},
+                {"auth_header_name", rec.auth_header_name},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -7565,11 +7566,17 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
+        //    auth_header_name: "Authorization",   // optional, default shown
+        //    auth_header_prefix: "Bearer ",       // optional, default shown
         //    api_key: "..."}  // optional
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");
             const std::string api_key = request_json.value("api_key", "");
+            const std::string auth_header_name =
+                request_json.value("auth_header_name", std::string("Authorization"));
+            const std::string auth_header_prefix =
+                request_json.value("auth_header_prefix", std::string("Bearer "));
             bool allow_insecure_http = false;
             if (request_json.contains("allow_insecure_http")) {
                 if (!request_json["allow_insecure_http"].is_boolean()) {
@@ -7622,7 +7629,11 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
             LOG(INFO, "Server") << "Installing cloud provider '" << provider
                                   << "' with base_url " << base_url << std::endl;
-            cloud_registry_->install(provider, base_url, allow_insecure_http);
+            CloudProviderRegistry::InstallOptions install_options;
+            install_options.allow_insecure_http = allow_insecure_http;
+            install_options.auth_header_name = auth_header_name;
+            install_options.auth_header_prefix = auth_header_prefix;
+            cloud_registry_->install(provider, base_url, install_options);
             persist_cloud_providers();
 
             // Best-effort optional auth: if api_key was supplied, treat this
@@ -7646,6 +7657,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"provider", provider},
                 {"base_url", cloud_registry_->base_url_for(provider)},
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
+                {"auth_header_name", cloud_registry_->auth_header_for(provider).name},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},

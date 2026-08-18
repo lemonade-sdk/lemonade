@@ -120,6 +120,12 @@ void CloudProviderRegistry::load_from_config(const json& cloud_providers_array) 
         if (entry.contains("allow_insecure_http") && entry["allow_insecure_http"].is_boolean()) {
             r.allow_insecure_http = entry["allow_insecure_http"].get<bool>();
         }
+        if (entry.contains("auth_header_name") && entry["auth_header_name"].is_string()) {
+            r.auth_header_name = entry["auth_header_name"].get<std::string>();
+        }
+        if (entry.contains("auth_header_prefix") && entry["auth_header_prefix"].is_string()) {
+            r.auth_header_prefix = entry["auth_header_prefix"].get<std::string>();
+        }
         if (r.name.empty() || r.base_url.empty()) continue;
         installed_.push_back(std::move(r));
     }
@@ -129,33 +135,65 @@ json CloudProviderRegistry::to_config_array() const {
     std::shared_lock lock(mu_);
     json arr = json::array();
     for (const auto& r : installed_) {
-        arr.push_back({
+        json entry = {
             {"name", r.name},
             {"base_url", r.base_url},
             {"allow_insecure_http", r.allow_insecure_http}
-        });
+        };
+        // Written only when non-default so an existing config.json is left
+        // byte-identical by a save that changed nothing.
+        const Record defaults;
+        if (r.auth_header_name != defaults.auth_header_name) {
+            entry["auth_header_name"] = r.auth_header_name;
+        }
+        if (r.auth_header_prefix != defaults.auth_header_prefix) {
+            entry["auth_header_prefix"] = r.auth_header_prefix;
+        }
+        arr.push_back(std::move(entry));
     }
     return arr;
 }
 
 bool CloudProviderRegistry::install(const std::string& provider,
                                     const std::string& base_url,
-                                    bool allow_insecure_http) {
+                                    const InstallOptions& options) {
     std::unique_lock lock(mu_);
     std::string normalized = normalize_base_url(base_url);
     for (auto& r : installed_) {
         if (r.name == provider) {
             if (r.base_url == normalized &&
-                r.allow_insecure_http == allow_insecure_http) {
+                r.allow_insecure_http == options.allow_insecure_http &&
+                r.auth_header_name == options.auth_header_name &&
+                r.auth_header_prefix == options.auth_header_prefix) {
                 return false;
             }
             r.base_url = normalized;
-            r.allow_insecure_http = allow_insecure_http;
+            r.allow_insecure_http = options.allow_insecure_http;
+            r.auth_header_name = options.auth_header_name;
+            r.auth_header_prefix = options.auth_header_prefix;
             return true;
         }
     }
-    installed_.push_back({provider, normalized, allow_insecure_http});
+    installed_.push_back({provider, normalized, options.allow_insecure_http,
+                          options.auth_header_name, options.auth_header_prefix});
     return true;
+}
+
+bool CloudProviderRegistry::install(const std::string& provider,
+                                    const std::string& base_url) {
+    return install(provider, base_url, InstallOptions{});
+}
+
+bool CloudProviderRegistry::set_allow_insecure_http(const std::string& provider,
+                                                    bool allow) {
+    std::unique_lock lock(mu_);
+    for (auto& r : installed_) {
+        if (r.name == provider) {
+            r.allow_insecure_http = allow;
+            return true;
+        }
+    }
+    return false;
 }
 
 bool CloudProviderRegistry::uninstall(const std::string& provider) {
@@ -194,6 +232,15 @@ bool CloudProviderRegistry::allow_insecure_http_for(const std::string& provider)
         if (r.name == provider) return r.allow_insecure_http;
     }
     return false;
+}
+
+CloudProviderRegistry::AuthHeader
+CloudProviderRegistry::auth_header_for(const std::string& provider) const {
+    std::shared_lock lock(mu_);
+    for (const auto& r : installed_) {
+        if (r.name == provider) return {r.auth_header_name, r.auth_header_prefix};
+    }
+    return {};
 }
 
 std::string CloudProviderRegistry::resolve_key(const std::string& provider) const {

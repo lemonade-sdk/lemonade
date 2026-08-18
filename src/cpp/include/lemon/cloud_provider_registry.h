@@ -32,6 +32,11 @@ public:
         std::string name;                         // e.g. "fireworks", "openai"
         std::string base_url;                     // normalized: no trailing slash
         bool allow_insecure_http = false;         // explicit opt-in for http:// + API key
+        // Some gateways front an OpenAI-shaped API but authenticate with a
+        // differently-named header and no "Bearer " prefix. Defaults reproduce
+        // the previously hardcoded Authorization/Bearer behavior.
+        std::string auth_header_name = "Authorization";
+        std::string auth_header_prefix = "Bearer ";
     };
 
     struct AuthState {
@@ -50,12 +55,25 @@ public:
     // "cloud_providers" field. Excludes runtime keys by construction.
     nlohmann::json to_config_array() const;
 
+    // Everything install() can set on a record, so callers name each field
+    // instead of passing a run of positional strings.
+    struct InstallOptions {
+        bool allow_insecure_http = false;
+        std::string auth_header_name = "Authorization";
+        std::string auth_header_prefix = "Bearer ";
+    };
+
     // Idempotent. Adds the provider if absent, updates base_url if present.
     // Normalizes base_url (trims trailing slash). Returns true if the stored
     // record changed, false if it was already identical.
     bool install(const std::string& provider,
                  const std::string& base_url,
-                 bool allow_insecure_http = false);
+                 const InstallOptions& options);
+    bool install(const std::string& provider, const std::string& base_url);
+
+    // Opts an already-installed provider into plaintext-HTTP key transmission
+    // without disturbing any other field. Returns false if not installed.
+    bool set_allow_insecure_http(const std::string& provider, bool allow);
 
     // Removes the provider record AND its runtime key. Returns true if a
     // record was removed.
@@ -72,6 +90,15 @@ public:
     // Whether this provider has explicit opt-in to send API keys to an
     // http:// base URL. Irrelevant for https:// providers.
     bool allow_insecure_http_for(const std::string& provider) const;
+
+    // Header name/value-prefix to use when sending this provider's API key.
+    // Defaults to {"Authorization", "Bearer "} for a provider that isn't
+    // installed, matching pre-existing hardcoded behavior.
+    struct AuthHeader {
+        std::string name = "Authorization";
+        std::string prefix = "Bearer ";
+    };
+    AuthHeader auth_header_for(const std::string& provider) const;
 
     // Resolves an API key for a provider:
     //   1. Returns the LEMONADE_<PROVIDER_UPPER>_API_KEY env var if set.
