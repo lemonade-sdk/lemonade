@@ -2268,6 +2268,19 @@ if(BUILD_TESTING AND EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_A
     add_cpp_ci_test(FlmArgResolverTest CI OFF COMMAND test_flm_arg_resolver)
 endif()
 
+# Pure SystemInfo mapping/matching helpers. The production server calls the same
+# header-only implementation, so this replaces the old Python replica tests.
+set(_SYSTEM_INFO_HELPERS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_system_info_helpers.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
+    add_executable(test_system_info_helpers ${_SYSTEM_INFO_HELPERS_TEST_SRC})
+    target_include_directories(test_system_info_helpers PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
+    )
+    add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)
+endif()
+
 # Custom arg parsing helpers (header-only utility shared by all arg resolvers).
 set(_CUSTOM_ARGS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
