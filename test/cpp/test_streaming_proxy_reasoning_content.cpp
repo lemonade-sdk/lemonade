@@ -140,7 +140,7 @@ static void test_multiple_lines() {
         "data: [DONE]\n";
 
     std::string output = lemon::StreamingProxy::normalize_chat_completion_chunk(input);
-    
+
     std::istringstream stream(output);
     std::string line;
     int line_num = 0;
@@ -148,10 +148,10 @@ static void test_multiple_lines() {
         if (line.find("data: ") != 0) continue;
         std::string payload = line.substr(6);
         if (payload == "[DONE]") break;
-        
+
         auto chunk = json::parse(payload);
         auto& delta = chunk["choices"][0]["delta"];
-        
+
         if (line_num == 0) {
             // Role delta — unchanged
             assert(delta["role"] == "assistant");
