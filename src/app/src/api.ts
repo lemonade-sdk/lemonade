@@ -1400,15 +1400,6 @@ class LemonadeAPI {
     return result;
   }
 
-  /** Resolves a set of options exactly as saving them would, without writing
-      them or disturbing the model list. */
-  async previewModelOptions(modelName: string, changes: Record<string, unknown>): Promise<ModelOptions> {
-    return this._json<ModelOptions>(this._modelOptionsPath(modelName), {
-      method: 'POST',
-      body: { ...changes, dry_run: true },
-    });
-  }
-
   async resetModelOptions(modelName: string): Promise<ModelOptions> {
     const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), {
       method: 'DELETE',

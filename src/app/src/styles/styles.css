@@ -582,8 +582,7 @@ input[type="checkbox"]:disabled {
   width: 100%;
 }
 
-.detail-configuration__autotune,
-.detail-configuration__merge-args-toggle {
+.detail-configuration__autotune {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -8195,6 +8194,12 @@ optgroup {
   cursor: pointer;
 }
 
+.detail-configuration__context-slider:disabled,
+.detail-configuration__context-stepper button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
 .detail-configuration__context-stepper button:hover:not(:disabled),
 .detail-configuration__context-stepper button:focus-visible {
   background: var(--surface-2);
@@ -8212,11 +8217,33 @@ optgroup {
   margin-top: var(--space-1);
 }
 
-.detail-configuration__slider-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.detail-configuration__context-row {
+  display: flex;
   align-items: center;
   gap: var(--space-3);
+}
+
+.detail-configuration__slider-row {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.detail-configuration__context-row .detail-configuration__context-number {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .detail-configuration__context-row {
+    flex-wrap: wrap;
+  }
+
+  .detail-configuration__context-row .detail-configuration__context-number {
+    width: 100%;
+  }
 }
 
 .detail-configuration__slider-row span,
@@ -8261,6 +8288,8 @@ optgroup {
   gap: var(--space-3);
 }
 
+/* A value carries no more weight than the other controls' values do; semibold
+   is the field headings' job, and the select was competing with its own. */
 .detail-configuration__select {
   width: 100%;
   min-height: 36px;
@@ -8268,7 +8297,7 @@ optgroup {
   border-color: var(--border-subtle);
   background-color: color-mix(in srgb, var(--surface-base) 92%, var(--surface-2));
   color: var(--text-primary);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-regular);
 }
 
 .detail-configuration__selector-grid .input {
@@ -8293,56 +8322,39 @@ optgroup {
   gap: var(--space-2);
 }
 
+.detail-configuration__args-block {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.detail-configuration__sampler-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.detail-configuration__sampler-field--wide {
+  grid-column: 1 / -1;
+}
+
+.detail-configuration__args-fallback {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.detail-configuration__args-fallback code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
 .detail-configuration__args-field {
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.detail-configuration__merge-args {
-  display: grid;
-  gap: var(--space-2);
-}
-
-.detail-configuration__merge-preview {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-}
-
-.detail-configuration__merge-preview-title {
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-}
-
-.detail-configuration__merge-preview-empty {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-}
-
-.detail-configuration__merge-preview-list {
-  display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
-  gap: var(--space-1) var(--space-3);
-  margin: 0;
-  font-size: var(--text-xs);
-}
-
-.detail-configuration__merge-preview-list dt {
-  color: var(--text-tertiary);
-}
-
-.detail-configuration__merge-preview-list dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--text-primary);
-  font-family: var(--font-mono);
 }
 
 .detail-configuration__args-field > span {
@@ -8358,13 +8370,16 @@ optgroup {
   max-width: 100%;
 }
 
+/* Height is set from the content by AutoGrowTextarea. */
 .detail-configuration .detail-tuning__args {
   width: 100%;
-  min-height: 7rem;
+  min-height: 0;
   padding: var(--space-3);
   border-color: var(--border-strong);
+  overflow-y: hidden;
   background: var(--surface-2);
   color: var(--text-primary);
+  resize: none;
 }
 
 .detail-configuration .detail-tuning__field small {

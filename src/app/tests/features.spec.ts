@@ -7,7 +7,6 @@ type ModelOptionsState = Map<string, Record<string, unknown>>;
 async function fulfillModelOptionsRoute(
   route: Route,
   state: ModelOptionsState,
-  respectDryRun = false,
 ): Promise<boolean> {
   const request = route.request();
   const match = new URL(request.url()).pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
@@ -20,9 +19,9 @@ async function fulfillModelOptionsRoute(
     const patch = request.postDataJSON() as Record<string, unknown>;
     for (const [key, value] of Object.entries(patch)) {
       if (value === null) delete saved[key];
-      else if (!respectDryRun || key !== 'dry_run') saved[key] = value;
+      else saved[key] = value;
     }
-    if (!respectDryRun || !patch.dry_run) state.set(modelName, saved);
+    state.set(modelName, saved);
   } else if (method === 'DELETE') {
     saved = {};
     state.delete(modelName);
@@ -773,7 +772,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     });
     const modelOptionsRouteState13c = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
-      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState13c, true)) return;
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState13c)) return;
       return route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
@@ -828,8 +827,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     );
     await expect(panel.getByText('Estimated at load time', { exact: true })).toHaveCount(0);
     await expect(panel.getByText(/Estimates a safe context size from available memory/)).toHaveCount(0);
-    await expect(panel.getByLabel('Context size tokens')).toHaveCount(0);
-    await expect(panel.locator('.detail-configuration__slider-row')).toHaveCount(0);
+    // Auto tuning disables the controls rather than hiding them, so the size it
+    // resolved stays readable.
+    await expect(panel.getByLabel('Context size tokens')).toBeDisabled();
+    await expect(panel.locator('.detail-configuration__context-slider')).toBeDisabled();
     await expect(panel.getByRole('button', { name: 'Load model' })).toHaveCount(0);
     const loadButton = page.getByRole('button', { name: 'Load config-beta-model' });
     await expect(loadButton).toBeVisible();
@@ -838,8 +839,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const save = panel.getByRole('button', { name: 'Save', exact: true });
     await expect(save).toHaveClass(/btn--ghost/);
     await autoTune.uncheck();
-    await expect(panel.getByLabel('Context size tokens')).toBeVisible();
-    await expect(panel.locator('.detail-configuration__slider-row')).toBeVisible();
+    await expect(panel.getByLabel('Context size tokens')).toBeEnabled();
+    await expect(panel.locator('.detail-configuration__context-slider')).toBeEnabled();
     await expect(autoTuneControl).toHaveAttribute('title', /Context size is fixed at .* tokens.*Check Auto tune context size/);
     await expect(save).toHaveClass(/btn--primary/);
     await save.click();
@@ -847,8 +848,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(panel.locator('.detail-tuning__notice')).toHaveText('Saved for future loads');
     await autoTune.check();
     await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
-    await expect(panel.getByLabel('Context size tokens')).toHaveCount(0);
-    await expect(panel.locator('.detail-configuration__slider-row')).toHaveCount(0);
+    await expect(panel.getByLabel('Context size tokens')).toBeDisabled();
+    await expect(panel.locator('.detail-configuration__context-slider')).toBeDisabled();
     await expect(save).toHaveClass(/btn--primary/);
     await save.click();
     await expect(save).toHaveClass(/btn--ghost/);
@@ -875,8 +876,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const unknownAutoTune = unknownPanel.getByRole('checkbox', { name: 'Auto tune context size' });
     await expect(unknownAutoTune).toBeChecked();
     await unknownAutoTune.uncheck();
-    await expect(unknownPanel.getByLabel('Context size tokens')).toBeVisible();
-    await expect(unknownPanel.locator('.detail-configuration__slider-row')).toBeVisible();
+    await expect(unknownPanel.getByLabel('Context size tokens')).toBeEnabled();
+    await expect(unknownPanel.locator('.detail-configuration__context-slider')).toBeEnabled();
     await unknownAutoTune.check();
 
     await page.getByRole('button', { name: 'Load unknown-context-model' }).click();
@@ -1615,7 +1616,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }));
     const modelOptionsRouteState25 = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
-      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25, true)) return;
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25)) return;
       return route.fulfill({
       json: {
         data: [{
@@ -1640,10 +1641,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     const autoTune = page.getByRole('checkbox', { name: 'Auto tune context size' });
     await expect(autoTune).toBeChecked();
-    await expect(page.getByLabel('Context size tokens')).toHaveCount(0);
-    await expect(page.locator('.detail-configuration__slider-row')).toHaveCount(0);
+    await expect(page.getByLabel('Context size tokens')).toBeDisabled();
+    await expect(page.locator('.detail-configuration__context-slider')).toBeDisabled();
     await autoTune.uncheck();
-    await expect(page.getByLabel('Context size tokens')).toBeVisible();
+    await expect(page.getByLabel('Context size tokens')).toBeEnabled();
     await expect(page.locator('[id$="llamacpp_backend"]')).toBeVisible();
 
     await page.getByLabel('Context size tokens').fill('16384');
@@ -1681,7 +1682,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     }));
     const modelOptionsRouteState25a = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
-      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25a, true)) return;
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25a)) return;
       return route.fulfill({
       json: {
         data: [
@@ -1751,13 +1752,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
     await page.locator('#detail-tab-config').click();
     const panel = page.locator('#detail-panel-config');
-    await expect(panel.getByLabel('Backend args')).toHaveValue('--no-mmap');
+    await expect(panel.getByLabel('Additional backend CLI arguments', { exact: true })).toHaveValue('--no-mmap');
     await expect(panel.getByLabel('Context size tokens')).toHaveValue('16384');
 
     // Model B's options are still in flight: its panel must show nothing of A's,
     // and must not report unsaved changes it does not have.
     await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
-    await expect(panel.getByLabel('Backend args')).toHaveValue('');
+    await expect(panel.getByLabel('Additional backend CLI arguments', { exact: true })).toHaveValue('');
     await expect(panel.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
 
@@ -1777,12 +1778,12 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect.poll(() => loadRequestBody?.llamacpp_args).toBeNull();
   });
 
-  test('25b — Reset shows lemond defaults without writing, and merge_args previews the resolved load', async ({ page }) => {
+  test('25b — the form holds the resolved options and Load sends them verbatim', async ({ page }) => {
     const modelName = 'merge-args-model';
     const savedArgs = '--no-mmap';
     const defaultArgs = '--flash-attn on';
+    const mergedArgs = `${savedArgs} ${defaultArgs}`;
     let optionWrites = 0;
-    let previewBody: Record<string, unknown> | null = null;
     let loadRequestBody: Record<string, unknown> | null = null;
 
     await page.route('**/api/v1/health**', route => route.fulfill({
@@ -1798,23 +1799,8 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/models**', async route => {
       const url = new URL(route.request().url());
       if (url.pathname.endsWith('/options')) {
-        const body = route.request().method().toUpperCase() === 'POST'
-          ? route.request().postDataJSON() as Record<string, unknown>
-          : null;
-        // A dry run resolves without persisting; anything else is a write.
-        if (body?.dry_run === true) previewBody = body;
-        else if (body || route.request().method().toUpperCase() === 'DELETE') optionWrites += 1;
-
-        // lemond resolves the merge; null falls through to the defaults, and a
-        // value merges with them unless merge_args is off.
-        const requestedArgs = previewBody?.llamacpp_args;
-        const mergedArgs = !body?.dry_run
-          ? `${savedArgs} ${defaultArgs}`
-          : typeof requestedArgs !== 'string' || !requestedArgs
-            ? defaultArgs
-            : previewBody?.merge_args === false
-              ? requestedArgs
-              : `${requestedArgs} ${defaultArgs}`;
+        const method = route.request().method().toUpperCase();
+        if (method === 'POST' || method === 'DELETE') optionWrites += 1;
         return route.fulfill({
           json: {
             model_name: modelName,
@@ -1844,46 +1830,145 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('#detail-tab-config').click();
     const panel = page.locator('#detail-panel-config');
 
-    // The field holds the saved override; the default sits behind it as the
-    // placeholder, so both layers are visible at once.
-    const argsField = panel.getByLabel('Backend args');
-    await expect(argsField).toHaveValue(savedArgs);
-    await expect(argsField).toHaveAttribute('placeholder', defaultArgs);
+    // The field is filled with what lemond resolved, defaults included, so there
+    // is nothing to read beside it.
+    const argsField = panel.getByLabel('Additional backend CLI arguments', { exact: true });
+    await expect(argsField).toHaveValue(mergedArgs);
 
-    // merge_args is on by default and its preview comes from lemond.
-    const mergeArgs = panel.getByRole('checkbox', { name: 'Merge with default args' });
-    await expect(mergeArgs).toBeChecked();
-    const preview = panel.locator('.detail-configuration__merge-preview');
-    await expect(preview).toContainText(`${savedArgs} ${defaultArgs}`);
-    await expect.poll(() => previewBody?.merge_args).toBe(true);
-
-    // Unchecking hides the preview and carries into the next preview request.
-    await mergeArgs.uncheck();
-    await expect(preview).toHaveCount(0);
-    await mergeArgs.check();
-    await expect(preview).toBeVisible();
-
-    // Reset is a draft change: fields fall back to the defaults and nothing is
-    // written, so Discard can still bring the saved values back.
+    // Reset fills the form with the defaults themselves rather than emptying it,
+    // and writes nothing, so Discard can still bring the resolved values back.
     await panel.getByRole('button', { name: 'Reset to defaults' }).click();
-    await expect(argsField).toHaveValue('');
-    await expect(preview).toContainText(defaultArgs);
+    await expect(argsField).toHaveValue(defaultArgs);
     expect(optionWrites).toBe(0);
     await expect(panel.locator('.detail-tuning__notice')).toContainText('Showing lemond defaults');
 
-    // Load applies what is on screen without saving it: the cleared field is an
-    // explicit null so the saved override is skipped for this load only.
-    await page.getByRole('button', { name: `Load ${modelName}` }).click();
-    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
-    expect(loadRequestBody?.llamacpp_args).toBeNull();
-    expect(loadRequestBody?.merge_args).toBe(true);
-    expect(loadRequestBody?.save_options).toBe(false);
+    await panel.getByRole('button', { name: 'Discard changes' }).click();
+    await expect(argsField).toHaveValue(mergedArgs);
     expect(optionWrites).toBe(0);
 
-    await page.locator('.titlebar__nav').getByText('Models').click();
-    await panel.getByRole('button', { name: 'Discard changes' }).click();
-    await expect(argsField).toHaveValue(savedArgs);
+    // Deleting a default out of the field sticks, which is only true because
+    // lemond is told not to merge them back in underneath.
+    await argsField.fill(savedArgs);
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_args).toBe(savedArgs);
+    expect(loadRequestBody?.merge_args).toBe(false);
+    expect(loadRequestBody?.save_options).toBe(false);
     expect(optionWrites).toBe(0);
+  });
+
+  test('25d — sampler flags get typed fields that cannot be emptied out from under lemond', async ({ page }) => {
+    const modelName = 'sampler-model';
+    const defaultArgs = '--temp 1.0 --top-k 20';
+    let loadRequestBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: {},
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs, merge_args: true },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs, merge_args: true },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    const field = (name: string) => panel.getByLabel(name, { exact: true });
+
+    // Resolved samplers land in their own typed fields; the ones lemond leaves
+    // alone are offered anyway and read as an explicit default.
+    await expect(field('Temperature')).toHaveValue('1.0');
+    await expect(field('Top-k')).toHaveValue('20');
+    await expect(field('Top-p')).toHaveValue('');
+    await expect(field('Top-p')).toHaveAttribute('placeholder', 'default');
+    await expect(field('Temperature')).toHaveAttribute('type', 'number');
+    await expect(field('Temperature')).toHaveAttribute('min', '0');
+    await expect(field('Temperature')).toHaveAttribute('max', '2');
+    // Nothing is left over, so the freeform field is empty rather than holding
+    // a copy of what the typed fields already show.
+    await expect(field('Additional backend CLI arguments')).toHaveValue('');
+    await expect(panel.locator('.detail-configuration__args-fallback')).toHaveCount(0);
+
+    // Stepping a set field moves it; stepping an unset one starts from the
+    // value llama.cpp itself would have used, not from zero.
+    await panel.getByRole('button', { name: 'Increase Temperature' }).click();
+    await expect(field('Temperature')).toHaveValue('1.05');
+    await panel.getByRole('button', { name: 'Increase Presence penalty' }).click();
+    await expect(field('Presence penalty')).toHaveValue('0.05');
+
+    // An unknown flag stays in the freeform field, in the order it was typed.
+    await field('Additional backend CLI arguments').fill('--zeta 1 --no-mmap');
+    await expect(field('Additional backend CLI arguments')).toHaveValue('--zeta 1 --no-mmap');
+
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_args)
+      .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
+    expect(loadRequestBody?.merge_args).toBe(false);
+
+    // Loading swaps the view, so come back before editing the form again.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(field('Temperature')).toBeVisible();
+
+    // A field lemond has a value for cannot be left empty. Emptying every one of
+    // them would send no args at all, which lemond reads as "unset" and answers
+    // with these same defaults — so "default" would mean llama.cpp's value in
+    // one field and lemond's in the next.
+    await field('Temperature').fill('');
+    await expect(field('Temperature')).toHaveValue('');
+    await field('Temperature').blur();
+    await expect(field('Temperature')).toHaveValue('1.0');
+
+    // A flag lemond does not set stays on default, where it means exactly one
+    // thing: the flag is not sent and llama.cpp uses its own value.
+    await field('Top-p').fill('0.4');
+    await field('Top-p').blur();
+    await expect(field('Top-p')).toHaveValue('0.4');
+    await field('Top-p').fill('');
+    await field('Top-p').blur();
+    await expect(field('Top-p')).toHaveValue('');
+
+    // So the all-default form is unreachable here, and nothing falls back.
+    for (const name of ['Temperature', 'Top-k', 'Top-p', 'Min-p', 'Repeat penalty',
+                        'Presence penalty', 'Chat template kwargs', 'Additional backend CLI arguments']) {
+      await field(name).fill('');
+      await field(name).blur();
+    }
+    await expect(field('Temperature')).toHaveValue('1.0');
+    await expect(field('Top-k')).toHaveValue('20');
+    await expect(panel.locator('.detail-configuration__args-fallback')).toHaveCount(0);
+
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.llamacpp_args).toBe(defaultArgs);
   });
 
 });

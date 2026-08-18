@@ -69,22 +69,28 @@ assert.match(styles, /\.detail-configuration__context-input\s*\{[^}]*padding-inl
 assert.match(styles, /\.input\.detail-configuration__context-input\[type='number'\]\s*\{[^}]*-moz-appearance:\s*textfield\s*!important;[^}]*appearance:\s*textfield\s*!important;/s);
 assert.match(styles, /\.input\.detail-configuration__context-input\[type='number'\]::\-webkit-outer-spin-button,[\s\S]*?\.input\.detail-configuration__context-input\[type='number'\]::\-webkit-inner-spin-button\s*\{[^}]*display:\s*none\s*!important;[^}]*-webkit-appearance:\s*none\s*!important;/s);
 assert.match(styles, /\.detail-configuration__context-stepper\s*\{[^}]*inset-inline-end:\s*5px;[^}]*border-inline-start:/s);
-assert.match(styles, /\.detail-configuration__select\s*\{[^}]*margin-top:\s*0;/s);
+// A control's value is regular weight everywhere in this panel; semibold is
+// what marks the field headings, and a semibold select outweighed its own.
+assert.match(styles, /\.detail-configuration__select\s*\{[^}]*margin-top:\s*0;[^}]*font-weight:\s*var\(--weight-regular\);/s);
 
 assert.match(detailSource, /const loadedCtxSize = positiveCtxValue\(loadedModel\?\.recipe_options\?\.ctx_size\)/);
-assert.match(detailSource, /const baseCtxSize = loadedCtxSize/);
+assert.match(detailSource, /const baseCtxSize = positiveCtxValue\(resolvedCtxSize\)/,
+  'the context field must start from the size lemond resolved for the next load');
 assert.match(detailSource, /const stepContextSize = \(direction: -1 \| 1\) =>/);
 assert.match(detailSource, /className="detail-configuration__context-number"/);
 assert.match(detailSource, /className="detail-configuration__context-stepper"/);
 assert.match(detailSource, /aria-label=\{`Increase context size by \$\{ctxStep\} tokens`\}/);
 assert.match(detailSource, /aria-label=\{`Decrease context size by \$\{ctxStep\} tokens`\}/);
-// Everything auto tune hides sits below the checkbox, so the heading above it
-// cannot shift when the checkbox is toggled.
+// The number box reads as the slider's current value, so it sits after it on
+// the same row rather than stacked above it.
 const autoTunePosition = detailSource.indexOf('className="detail-configuration__autotune"');
+const contextRowPosition = detailSource.indexOf('className="detail-configuration__context-row"');
 const contextNumberPosition = detailSource.indexOf('className="detail-configuration__context-number"');
 const sliderRowPosition = detailSource.indexOf('className="detail-configuration__slider-row"');
-assert.ok(autoTunePosition >= 0 && autoTunePosition < contextNumberPosition && contextNumberPosition < sliderRowPosition,
-  'context size controls must render in checkbox, number field, slider order');
+assert.ok(autoTunePosition >= 0 && autoTunePosition < contextRowPosition
+  && contextRowPosition < sliderRowPosition && sliderRowPosition < contextNumberPosition,
+  'context size controls must render in checkbox, slider, number field order');
+assert.match(styles, /\.detail-configuration__context-row\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;/s);
 
 // Load must apply the configuration on screen, saved or not.
 // Only once the saved options are in hand: an empty draft would otherwise read
@@ -96,7 +102,9 @@ assert.match(detailSource, /onClick=\{\(\) => loadWithShownConfiguration\(onPull
 // empty so lemond skips the saved value instead of falling back to it.
 assert.match(detailSource, /options\[key\] = Object\.prototype\.hasOwnProperty\.call\(configured, key\) \? configured\[key\] : null;/);
 assert.match(detailSource, /if \(supportsContextSize\) options\.ctx_size = configured\.ctx_size \?\? -1;/);
-assert.match(detailSource, /if \(supportsMergeArgs\) options\.merge_args = mergeArgsDraft;/);
+// The form already carries the merged args, so lemond must take them verbatim
+// rather than merging the defaults in a second time underneath them.
+assert.match(detailSource, /if \(sendsArgs\) options\.merge_args = false;/);
 assert.match(detailSource, /await onReloadModel\(loadedModel, buildLoadOptions\(\)\)/,
   'reload must apply the settings on screen');
 
@@ -106,12 +114,38 @@ assert.doesNotMatch(detailSource, /api\.resetModelOptions/,
   'reset must restore lemond defaults into the draft, not write them');
 assert.match(detailSource, /api\.saveModelOptions\(name, patch\)/, 'save must send only what changed');
 
-// merge_args is a draft option, and lemond resolves the preview of it.
-assert.match(detailSource, /const supportsMergeArgs = argsKeys\.length > 0;/);
-assert.match(detailSource, /api\.previewModelOptions\(name, body\)/,
-  'the merged preview must come from lemond, not from client-side merging');
-assert.match(apiSource, /body: \{ \.\.\.changes, dry_run: true \}/, 'previews must not persist');
-assert.match(styles, /\.detail-configuration__merge-preview\s*\{/);
+// Nothing offers to un-apply lemond's defaults, because nothing can: an unset
+// args key resolves back to them, so the control could only ever mislead.
+assert.match(detailSource, /const sendsArgs = argsKeys\.length > 0;/);
+assert.doesNotMatch(detailSource, /mergeArgs/,
+  'the merge_args toggle is gone: the form shows the resolved args outright');
+assert.doesNotMatch(styles, /detail-configuration__merge-args/);
+assert.doesNotMatch(detailSource, /previewModelOptions/,
+  'the form is the preview: there is no separate resolved card to fetch for');
+assert.doesNotMatch(styles, /detail-configuration__merge-preview/);
+
+// Sampler flags get typed fields of their own, filled from the resolved args, so
+// a value lemond does not set reads as an explicit "default" rather than a gap.
+assert.match(detailSource, /import \{ SAMPLER_ARG_FIELDS, composeSamplerArgs, splitSamplerArgs \} from '\.\.\/samplerArgs';/);
+assert.match(detailSource, /const split = useMemo\(\(\) => splitSamplerArgs\(value\), \[value\]\);/);
+assert.match(detailSource, /placeholder=\{owned \? 'set below' : 'default'\}/);
+// One half owns a flag or the other does; both would send it twice.
+assert.match(detailSource, /const owned = split\.claimedByRest\.has\(spec\.flag\);/);
+// A field lemond resolves a value for cannot be left empty: emptying every one
+// of them would send no args at all, which lemond answers with those same
+// defaults, and "default" would stop meaning one thing across the fields.
+assert.match(detailSource, /showSamplers \? splitSamplerArgs\(fallbackArgs\)\.fields : \{\}/);
+assert.match(detailSource, /if \(fallback && !\(split\.fields\[spec\.flag\] \|\| ''\)\.trim\(\)\) setSampler\(spec\.flag, fallback\);/);
+
+// That leaves the all-default form reachable only where lemond resolves args
+// no typed field covers, where it still has to say what will load.
+assert.match(detailSource, /className="detail-configuration__args-fallback"/);
+assert.match(styles, /\.detail-configuration__sampler-grid\s*\{/);
+
+// The context controls stay on screen while auto tuning, showing what it resolved.
+assert.match(detailSource, /value=\{isAutoTuning \? String\(currentCtxSize\) : ctxSizeDraft\}/);
+assert.doesNotMatch(detailSource, /\{!isAutoTuning && \(/,
+  'auto tuning must disable the context controls, not remove them');
 
 // The source chip reads as a link out to the registry.
 assert.match(detailSource, /className="model-detail-panel__source"\s*\n\s*emphasis="low"\s*\n\s*icon="globe"/);
