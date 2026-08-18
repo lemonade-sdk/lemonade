@@ -1,19 +1,6 @@
-// Standalone test for recipe options precedence.
-//
-// Two mechanisms implement the full ladder:
-//
-//   RecipeOptions::merge_precedence_layers() — model-level layers
-//   (ModelManager build path):
-//     user-saved recipe options > model recipe_options > model image_defaults
-//
-//   RecipeOptions::inherit() — server-level layers (Router):
-//     per-request options > model options > architecture defaults > global config
-//
-// Plus per-request fields in the image-generation JSON body, which SDServer
-// checks first at request time.
-//
-// Build with: cmake --build --preset default --target test_recipe_options_precedence
-// Run with: ctest --test-dir build -R '^RecipeOptionsPrecedence$' --output-on-failure
+// Standalone test for RecipeOptions precedence. The full ladder is documented
+// in SDServer::build_extra_args(); these cases pin merge_precedence_layers()
+// (model-level) and inherit() (server-level).
 
 #include <lemon/recipe_options.h>
 

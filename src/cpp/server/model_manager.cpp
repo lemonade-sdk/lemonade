@@ -390,7 +390,8 @@ static DeviceType device_type_for_recipe(const std::string& recipe) {
     return get_device_type_from_recipe(recipe);
 }
 
-// Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
+// Fold the model-level precedence layers (lowest → highest). The full ladder
+// is documented in SDServer::build_extra_args().
 // json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
 // two-phase pattern). Pass a null json if the model JSON should be read directly instead.
 // saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
@@ -400,13 +401,9 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
                                           const json& json_recipe_options,
                                           const std::string& saved_recipe_options_key,
                                           const json& saved_recipe_options) {
-    // image_defaults are the lowest-precedence model-level layer. Folding them
-    // (plus the registry's recipe_options and the user's saved options) happens
-    // here, so the effective options carry the full ladder at load time.
     // Non-sd recipes pass an empty image_defaults layer.
     json image_defaults = json::object();
 
-    // image_defaults as the lowest-precedence model-level layer
     if (info.image_defaults.has_defaults) {
         image_defaults["steps"] = info.image_defaults.steps;
         image_defaults["cfg_scale"] = info.image_defaults.cfg_scale;

@@ -399,27 +399,16 @@ void SDServer::unload() {
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
     // sd-server reads these from inside <sd_cpp_extra_args>{...}</sd_cpp_extra_args>
-    // in the prompt (via SDGenerationParams::from_json_str). Top-level copies on
-    // the HTTP body are ignored for everything except `size` / `n` / `prompt`, so
-    // this is the only channel for step count, cfg scale, etc.
-    //
-    // sd-cpp master nests sample_steps / sample_method / scheduler / flow_shift
-    // under a "sample_params" object, and cfg scale under "sample_params.guidance".
-    // The old flat keys (`steps`, `cfg_scale`) are silently ignored, which is why
-    // setting them at the top level of extra_args has no effect.
-    //
-    // Precedence for each value (highest → lowest):
-    //   1. Per-request settings in the JSON request body
-    //   2. User-saved recipe options (saved via API/CLI)
-    //   3. Model recipe_options (registry entry)
-    //   4. Model image_defaults (from server_models.json)
-    //   5. Architecture defaults
-    //   6. Global config defaults
-    //
-    // The effective RecipeOptions already has layers 2-6 baked in at the
-    // correct precedence level, so we just read from recipe_options_ directly.
-    // A value absent from every layer is omitted, letting sd-server apply its
-    // own native defaults.
+    // in the prompt (via SDGenerationParams::from_json_str); top-level copies on
+    // the HTTP body are ignored except for `size` / `n` / `prompt`. sd-cpp
+    // master nests steps/method/scheduler/flow_shift under "sample_params" and
+    // cfg scale under "sample_params.guidance"; the old flat keys (`steps`,
+    // `cfg_scale`) are silently ignored.
+    // Per-value precedence, highest → lowest: per-request body fields, then the
+    // effective recipe options, which already fold user-saved > model
+    // recipe_options > image_defaults > architecture > global config (via
+    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
+    // every layer is omitted, letting sd-server apply its own defaults.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
@@ -497,9 +486,8 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    // Fall back to the effective recipe options (user/model/image_defaults
-    // layers). When none of them sets a size, return "" so sd-server picks
-    // its own native defaults.
+    // Fall back to the effective recipe options (ladder in build_extra_args()).
+    // Return "" when unset so sd-server picks its own native defaults.
     if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
     int w = static_cast<int>(recipe_options_.get_option("width"));
     int h = static_cast<int>(recipe_options_.get_option("height"));

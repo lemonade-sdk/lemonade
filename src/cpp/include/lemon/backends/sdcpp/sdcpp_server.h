@@ -54,12 +54,9 @@ public:
         bool debug = false);
 
 private:
-    // Build the <sd_cpp_extra_args> JSON. Request fields win; anything missing
-    // falls back to the effective recipe options (which carry user-saved
-    // options and model image_defaults) and is omitted entirely when no layer
-    // sets it, letting sd-server apply its own defaults. `include_flow_shift`
-    // is true for /v1/images/generations and /v1/images/edits; false for
-    // /v1/images/variations.
+    // Precedence and fall-through are documented in build_extra_args().
+    // `include_flow_shift` is true for /v1/images/generations and
+    // /v1/images/edits; false for /v1/images/variations.
     nlohmann::json build_extra_args(const nlohmann::json& request,
                                     bool include_flow_shift = true) const;
 
