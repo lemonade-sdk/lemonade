@@ -41,6 +41,12 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
+    /*generation_params*/ {
+        {"duration", "audio-generation", "Duration", "NUMBER", 10, 1, 300, 1, {}, "", "", "", "", nullptr},
+        {"steps", "audio-generation", "Steps", "INT", 50, 1, 200, 1, {}, "", "", "", "", nullptr},
+        {"cfg", "audio-generation", "CFG", "NUMBER", 4.5, 0.0, 30.0, 0.5, {}, "", "", "", "", nullptr},
+        {"seed", "audio-generation", "Seed", "SEED", -1, -1, nullptr, 1, {}, "", "", "", "", -1},
+    },
 };
 
 }  // namespace thinksound

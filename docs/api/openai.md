@@ -1054,6 +1054,7 @@ curl http://localhost:13305/v1/models?show_all=true
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
+  - `speech_defaults` / `audio_defaults` values are the model's overrides for the parameters its recipe declares in `recipes[<recipe>].generation_params` on [`/v1/system-info`](./lemonade.md#get-v1system-info); that declaration is what tells a client which controls to render and which request field each one belongs to.
   - `speech_defaults` - (Speech models only) Model-declared defaults for the `/v1/audio/speech` generation parameters the model accepts, keyed by parameter name (e.g. `audio_temperature`, `audio_top_p`, `speed`). Clients seed their controls from these instead of guessing. Omitted when the model declares none.
   - `audio_defaults` - (Audio-generation models only) Model-declared defaults for `/v1/audio/generations`, keyed by parameter name (e.g. `steps`, `cfg_scale`, `sigma_shift`, `seconds`). Omitted when the model declares none.
   - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection

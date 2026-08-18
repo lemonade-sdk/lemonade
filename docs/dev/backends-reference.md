@@ -180,6 +180,75 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp_args` | `--whispercpp-args` | ARGS | "" | Custom arguments to pass to whisper-server |
 <!-- END GENERATED: backend-options -->
 
+## Generation parameters
+
+Per-request controls each backend accepts, declared in its descriptor. A client
+renders a control per row and sends the value in the named request field, so a
+backend can add or change a parameter without a client change.
+
+<!-- BEGIN GENERATED: backend-generation-params -->
+#### `acestep` — ACE-Step
+
+`audio-generation`
+
+| Field | Label | Type | Default | Range | Group | Description |
+|-------|-------|------|---------|-------|-------|-------------|
+| `duration` | Duration | NUMBER | 150 | 1…600 | — |  |
+| `steps` | Steps | INT | 50 | 1…200 | — |  |
+| `seed` | Seed | SEED | -1 | -1… | — |  |
+| `vocal_language` | Lyrics language | TEXT | "en" | — | — |  |
+| `lyrics` | Lyrics | MULTILINE | null | — | — | Leave empty for an instrumental track. |
+
+#### `kokoro` — Kokoro
+
+`tts`
+
+| Field | Label | Type | Default | Range | Group | Description |
+|-------|-------|------|---------|-------|-------|-------------|
+| `voice` | Voice | TEXT | null | — | — | Kokoro voice id, e.g. af_heart. |
+| `speed` | Speed | NUMBER | 1.0 | 0.25…4.0 | advanced |  |
+
+#### `openmoss` — OpenMOSS TTS
+
+`audio-generation`
+
+| Field | Label | Type | Default | Range | Group | Description |
+|-------|-------|------|---------|-------|-------|-------------|
+| `seconds` | Duration | NUMBER | 10 | 1…300 | — |  |
+| `steps` | Steps | INT | 100 | 1…200 | — |  |
+| `cfg_scale` | CFG | NUMBER | 4.0 | 0.0…30.0 | — |  |
+| `sigma_shift` | Sigma shift | NUMBER | 5.0 | 0.0…20.0 | — |  |
+| `negative_prompt` | Negative prompt | TEXT | null | — | — |  |
+| `seed` | Seed | SEED | null | 0…4294967295 | — | Unsigned; 0 is a real seed, so a blank box draws a random one. |
+
+`tts`
+
+| Field | Label | Type | Default | Range | Group | Description |
+|-------|-------|------|---------|-------|-------|-------------|
+| `voice_design_description` | Describe voice | TEXT | null | — | voice_mode | Lemonade renders a short sample in the described voice and speaks with it. |
+| `reference_wav_b64` | Clone WAV sample | AUDIO_B64 | null | — | voice_mode | One WAV sample whose voice is cloned. |
+| `voice` | Style note | TEXT | null | — | — | Optional delivery instruction; does not change the timbre. |
+| `audio_temperature` | Audio temp | NUMBER | 1.5 | 0.0…3.0 | advanced |  |
+| `audio_top_p` | Audio top-p | NUMBER | 0.8 | 0.0…1.0 | advanced |  |
+| `audio_top_k` | Audio top-k | INT | 25 | 0…200 | advanced |  |
+| `audio_repetition_penalty` | Repetition | NUMBER | 1.0 | 1.0…2.0 | advanced |  |
+| `text_temperature` | Text temp | NUMBER | 1.5 | 0.0…3.0 | advanced |  |
+| `text_top_p` | Text top-p | NUMBER | 1.0 | 0.0…1.0 | advanced |  |
+| `text_top_k` | Text top-k | INT | 50 | 0…200 | advanced |  |
+| `speed` | Speed | NUMBER | 1.0 | 0.25…4.0 | advanced |  |
+
+#### `thinksound` — ThinkSound
+
+`audio-generation`
+
+| Field | Label | Type | Default | Range | Group | Description |
+|-------|-------|------|---------|-------|-------|-------------|
+| `duration` | Duration | NUMBER | 10 | 1…300 | — |  |
+| `steps` | Steps | INT | 50 | 1…200 | — |  |
+| `cfg` | CFG | NUMBER | 4.5 | 0.0…30.0 | — |  |
+| `seed` | Seed | SEED | -1 | -1… | — |  |
+<!-- END GENERATED: backend-generation-params -->
+
 ## Implementation notes
 
 ### ACE-Step (`acestep`)
