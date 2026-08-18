@@ -4,6 +4,22 @@ const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
 
 type ModelOptionsState = Map<string, Record<string, unknown>>;
 
+/** The recipe descriptor the configuration form discovers its fields from. */
+function llamacppRecipe(backends: Record<string, unknown> = { cpu: { state: 'installed', version: 'test' } }) {
+  return {
+    default_backend: 'cpu',
+    selectable_backend: true,
+    uses_ctx_size: true,
+    modality: 'Text generation',
+    options: [
+      { name: 'llamacpp_backend', cli_flag: '--llamacpp', default: '', type_name: 'BACKEND', help: 'LlamaCpp backend to use', group: 'Llama.cpp Backend Options' },
+      { name: 'llamacpp_device', cli_flag: '--llamacpp-device', default: '', type_name: 'DEVICES', help: 'Accelerator devices to use', group: 'Llama.cpp Backend Options' },
+      { name: 'llamacpp_args', cli_flag: '--llamacpp-args', default: '', type_name: 'ARGS', help: 'Custom arguments to pass to llama-server', group: 'Llama.cpp Backend Options' },
+    ],
+    backends,
+  };
+}
+
 async function fulfillModelOptionsRoute(
   route: Route,
   state: ModelOptionsState,
@@ -761,6 +777,35 @@ test.describe('Lemonade UI — Feature Parity', () => {
         recipes: {
           llamacpp: {
             default_backend: 'cpu',
+            selectable_backend: true,
+            uses_ctx_size: true,
+            modality: 'Text generation',
+            options: [
+              {
+                name: 'llamacpp_backend',
+                cli_flag: '--llamacpp',
+                default: '',
+                type_name: 'BACKEND',
+                help: 'LlamaCpp backend to use',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_device',
+                cli_flag: '--llamacpp-device',
+                default: '',
+                type_name: 'DEVICES',
+                help: 'Comma-separated list of accelerator devices to use (e.g. Vulkan0)',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_args',
+                cli_flag: '--llamacpp-args',
+                default: '',
+                type_name: 'ARGS',
+                help: 'Custom arguments to pass to llama-server',
+                group: 'Llama.cpp Backend Options',
+              },
+            ],
             backends: { cpu: { state: 'installed', version: 'test' } },
           },
         },
@@ -900,10 +945,10 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: {
         recipes: {
-          llamacpp: {
-            default_backend: 'cpu',
-            backends: { cpu: { state: 'installed', version: 'test' }, vulkan: { state: 'installed', version: 'test' } },
-          },
+          llamacpp: llamacppRecipe({
+            cpu: { state: 'installed', version: 'test' },
+            vulkan: { state: 'installed', version: 'test' },
+          }),
         },
       },
     }));
@@ -1609,6 +1654,35 @@ test.describe('Lemonade UI — Feature Parity', () => {
         recipes: {
           llamacpp: {
             default_backend: 'cpu',
+            selectable_backend: true,
+            uses_ctx_size: true,
+            modality: 'Text generation',
+            options: [
+              {
+                name: 'llamacpp_backend',
+                cli_flag: '--llamacpp',
+                default: '',
+                type_name: 'BACKEND',
+                help: 'LlamaCpp backend to use',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_device',
+                cli_flag: '--llamacpp-device',
+                default: '',
+                type_name: 'DEVICES',
+                help: 'Comma-separated list of accelerator devices to use (e.g. Vulkan0)',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_args',
+                cli_flag: '--llamacpp-args',
+                default: '',
+                type_name: 'ARGS',
+                help: 'Custom arguments to pass to llama-server',
+                group: 'Llama.cpp Backend Options',
+              },
+            ],
             backends: { cpu: { state: 'installed', version: 'test' } },
           },
         },
@@ -1678,7 +1752,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
-      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+      json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
     const modelOptionsRouteState25a = new Map<string, Record<string, unknown>>();
     await page.route('**/api/v1/models**', async route => {
@@ -1727,7 +1801,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
-      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+      json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
     await page.route('**/api/v1/load', route => {
       loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
@@ -1790,7 +1864,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
-      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+      json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
     await page.route('**/api/v1/load', route => {
       loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
@@ -1866,7 +1940,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
     }));
     await page.route('**/api/v1/system-info**', route => route.fulfill({
-      json: { recipes: { llamacpp: { default_backend: 'cpu', backends: { cpu: { state: 'installed', version: 'test' } } } } },
+      json: { recipes: { llamacpp: llamacppRecipe() } },
     }));
     await page.route('**/api/v1/load', route => {
       loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;

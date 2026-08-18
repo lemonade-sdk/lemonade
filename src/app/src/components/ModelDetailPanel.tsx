@@ -10,6 +10,17 @@ import DOMPurify from 'dompurify';
 import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions } from '../api';
 import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
+import {
+  recipeBackendOptionName,
+  recipeOptionHint,
+  recipeOptionIsArgs,
+  recipeOptionIsBackend,
+  recipeOptionIsBoolean,
+  recipeOptionIsDevice,
+  recipeOptionIsNumeric,
+  recipeOptionLabel,
+  recipeOptionNames,
+} from '../features/backends/recipeMetadata';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
 import {
   modelBaseTuningForModel,
@@ -214,26 +225,22 @@ interface LoadSettingsDraft {
   recipe: Record<string, string>;
 }
 
-/** Fields that offer the resolved value as a labelled choice of their own, so
-    they already read as resolved without being seeded from the effective layer.
-    Seeding them would select a value their option list deliberately omits. */
-const SELECT_TUNING_KEYS = new Set<keyof RecipeOptions>(['voice']);
-
 /** The form is what will load, so a field carries the value lemond resolved
-    rather than the saved layer with the default hiding behind it. */
+    rather than the saved layer with the default hiding behind it. The exception
+    is a field whose control already offers the resolved value as a labelled
+    choice of its own: seeding those would select a value their option list
+    deliberately omits, so the caller names them. */
 function draftFromResolvedOptions(
   managedKeys: Array<keyof RecipeOptions>,
   saved: RecipeOptions,
   effective: RecipeOptions,
+  offersResolvedValue: (key: keyof RecipeOptions) => boolean,
 ): LoadSettingsDraft {
   const recipe: Record<string, string> = {};
   for (const key of managedKeys) {
     const name = String(key);
     if (name === 'ctx_size') continue;
-    const resolved = BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key) || SELECT_TUNING_KEYS.has(key)
-      ? saved
-      : effective;
-    recipe[name] = fieldValue(resolved[key]);
+    recipe[name] = fieldValue((offersResolvedValue(key) ? saved : effective)[key]);
   }
   const ctxRaw = effective.ctx_size ?? saved.ctx_size;
   return {
@@ -286,33 +293,25 @@ const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   speed: 'Speed',
 };
 
-const NUMERIC_TUNING_KEYS = new Set<keyof RecipeOptions>(['steps', 'cfg_scale', 'width', 'height', 'flow_shift', 'speed']);
-const BOOLEAN_TUNING_KEYS = new Set<keyof RecipeOptions>();
-const BACKEND_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_backend', 'vllm_backend', 'sd-cpp_backend', 'whispercpp_backend', 'moonshine_backend', 'acestep_backend', 'thinksound_backend', 'openmoss_backend', 'trellis_backend']);
-const DEVICE_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_device']);
-const ARGS_TUNING_KEYS = new Set<keyof RecipeOptions>(['llamacpp_args', 'sdcpp_args', 'whispercpp_args', 'moonshine_args', 'vllm_args', 'flm_args']);
-const BACKEND_ARGS_KEY: Partial<Record<keyof RecipeOptions, keyof RecipeOptions>> = {
-  llamacpp_backend: 'llamacpp_args',
-  vllm_backend: 'vllm_args',
-  'sd-cpp_backend': 'sdcpp_args',
-  whispercpp_backend: 'whispercpp_args',
-  moonshine_backend: 'moonshine_args',
+const TUNING_FIELD_HINTS: Partial<Record<keyof RecipeOptions, string>> = {
+  ctx_size: 'Runtime context window for this exact model.',
+  llamacpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  vllm_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  whispercpp_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  moonshine_backend: 'Backend for this model recipe. Switching back restores the last draft args for that backend in this browser session.',
+  acestep_backend: 'ACE-Step accelerator backend for music generation.',
+  thinksound_backend: 'ThinkSound accelerator backend for sound-effect generation.',
+  openmoss_backend: 'OpenMOSS accelerator backend for speech generation.',
+  trellis_backend: 'TRELLIS accelerator backend for 3D reconstruction.',
+  'sd-cpp_backend': 'Stable Diffusion accelerator backend for this image model. Switching back restores the last draft args for that backend in this browser session.',
+  llamacpp_device: 'Optional device selector for the selected backend.',
+  llamacpp_args: 'CLI-style flags for llama-server, applied on Load/Reload. E.g. --gpu-layers 35 --threads 8 --batch-size 512. See llama-server --help for all options.',
+  sdcpp_args: 'Raw backend args for this image model only.',
+  whispercpp_args: 'Raw backend args for this transcription model only.',
+  moonshine_args: 'Raw backend args for this transcription model only.',
+  vllm_args: 'Raw backend args for this model only.',
+  flm_args: 'Raw backend args for this model only.',
 };
-
-const LLAMACPP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['llamacpp_backend', 'llamacpp_device', 'llamacpp_args'];
-const VLLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['vllm_backend', 'vllm_args'];
-const FLM_RECIPE_KEYS: Array<keyof RecipeOptions> = ['flm_args'];
-const RYZENAI_RECIPE_KEYS: Array<keyof RecipeOptions> = [];
-const IMAGE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['sd-cpp_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampling_method', 'flow_shift', 'sdcpp_args'];
-const WHISPER_RECIPE_KEYS: Array<keyof RecipeOptions> = ['whispercpp_backend', 'whispercpp_args'];
-const MOONSHINE_RECIPE_KEYS: Array<keyof RecipeOptions> = ['moonshine_backend', 'moonshine_args'];
-const TTS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['voice', 'speed'];
-const ACESTEP_RECIPE_KEYS: Array<keyof RecipeOptions> = ['acestep_backend'];
-const THINKSOUND_RECIPE_KEYS: Array<keyof RecipeOptions> = ['thinksound_backend'];
-const OPENMOSS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['openmoss_backend', 'voice', 'speed'];
-const TRELLIS_RECIPE_KEYS: Array<keyof RecipeOptions> = ['trellis_backend'];
-
-
 
 function formatContextSize(value: number): string {
   if (!Number.isFinite(value) || value <= 0) return 'auto';
@@ -320,48 +319,22 @@ function formatContextSize(value: number): string {
   return value.toLocaleString();
 }
 
-function recipeKeysForRecipe(recipe: string): Array<keyof RecipeOptions> | null {
-  switch (recipe) {
-    case 'llamacpp': return LLAMACPP_RECIPE_KEYS;
-    case 'vllm': return VLLM_RECIPE_KEYS;
-    case 'flm': return FLM_RECIPE_KEYS;
-    case 'ryzenai-llm': return RYZENAI_RECIPE_KEYS;
-    case 'sd-cpp': return IMAGE_RECIPE_KEYS;
-    case 'whispercpp': return WHISPER_RECIPE_KEYS;
-    case 'moonshine': return MOONSHINE_RECIPE_KEYS;
-    case 'kokoro': return TTS_RECIPE_KEYS;
-    case 'acestep': return ACESTEP_RECIPE_KEYS;
-    case 'thinksound': return THINKSOUND_RECIPE_KEYS;
-    case 'openmoss': return OPENMOSS_RECIPE_KEYS;
-    case 'trellis': return TRELLIS_RECIPE_KEYS;
-    default: return null;
+function tuningKeysForModel(
+  model: ModelInfo,
+  info: SystemInfoLike,
+): Array<keyof RecipeOptions> {
+  const recipe = activeRecipeForModel(model);
+  const keys = recipeOptionNames(info, recipe)
+    .map(key => key as keyof RecipeOptions);
+
+  // voice/speed are model sampling fields rather than backend descriptor
+  // options, so keep this small non-recipe-specific residue for TTS models.
+  if (capabilityFromModelInfo(model) === 'tts') {
+    if (!keys.includes('voice')) keys.push('voice');
+    if (!keys.includes('speed')) keys.push('speed');
   }
-}
 
-function tuningKeysForModel(model: ModelInfo): Array<keyof RecipeOptions> {
-  const cap = capabilityFromModelInfo(model);
-  const recipes = recipesForDisplay(model);
-  const activeRecipe = activeRecipeForModel(model);
-  const set = new Set<keyof RecipeOptions>();
-  const add = (keys: Array<keyof RecipeOptions>) => keys.forEach(key => set.add(key));
-
-  const activeKeys = recipeKeysForRecipe(activeRecipe);
-  if (activeKeys) add(activeKeys);
-  else if (cap === 'chat') add(LLAMACPP_RECIPE_KEYS);
-  else if (cap === 'image') add(IMAGE_RECIPE_KEYS);
-  else if (cap === 'audio') add(recipes.includes('moonshine') ? MOONSHINE_RECIPE_KEYS : WHISPER_RECIPE_KEYS);
-  else if (cap === 'audio-generation') add(recipes.includes('acestep') ? ACESTEP_RECIPE_KEYS : THINKSOUND_RECIPE_KEYS);
-  else if (cap === 'tts') add(recipes.includes('openmoss') ? OPENMOSS_RECIPE_KEYS : TTS_RECIPE_KEYS);
-  else if (cap === 'model3d') add(TRELLIS_RECIPE_KEYS);
-
-  const base = modelBaseTuningForModel(model).recipe_options;
-  Object.keys(base).forEach(key => {
-    if (key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled') set.add(key as keyof RecipeOptions);
-  });
-  set.delete('ctx_size');
-  set.delete('merge_args');
-  set.delete('mmproj_enabled');
-  return [...set];
+  return keys.filter(key => key !== 'ctx_size' && key !== 'merge_args' && key !== 'mmproj_enabled');
 }
 
 type SystemInfoLike = Record<string, unknown> | null | undefined;
@@ -388,60 +361,25 @@ function backendIsSelectable(recipe: string, backend: string, info: unknown): bo
   return true;
 }
 
-function activeRecipeForBackendKey(key: keyof RecipeOptions, model: ModelInfo): string {
-  switch (key) {
-    case 'llamacpp_backend': return 'llamacpp';
-    case 'vllm_backend': return 'vllm';
-    case 'sd-cpp_backend': return 'sd-cpp';
-    case 'whispercpp_backend': return 'whispercpp';
-    case 'moonshine_backend': return 'moonshine';
-    case 'acestep_backend': return 'acestep';
-    case 'thinksound_backend': return 'thinksound';
-    case 'openmoss_backend': return 'openmoss';
-    case 'trellis_backend': return 'trellis';
-    default: return activeRecipeForModel(model);
-  }
-}
-
-function fallbackBackendsForRecipe(recipe: string): string[] {
-  switch (recipe) {
-    case 'vllm': return ['cpu', 'cuda', 'rocm'];
-    case 'whispercpp': return ['cpu', 'cuda', 'vulkan', 'opencl'];
-    case 'moonshine': return ['cpu', 'cuda'];
-    case 'sd-cpp': return ['cpu', 'cuda', 'vulkan', 'rocm'];
-    case 'kokoro': return ['cpu'];
-    case 'acestep':
-    case 'thinksound':
-    case 'openmoss':
-    case 'trellis': return ['cuda', 'rocm', 'vulkan'];
-    case 'llamacpp':
-    default:
-      // Keep fallback conservative: no Metal/NPU unless the server explicitly reports them as selectable.
-      return ['cpu', 'cuda', 'vulkan', 'opencl', 'rocm'];
-  }
-}
-
 function recipeDefaultBackend(info: SystemInfoLike, recipe: string): string {
   return optionalDisplayValue(systemRecipes(info)?.[recipe]?.default_backend);
 }
 
 function backendOptionsForKey(key: keyof RecipeOptions, current: string | undefined, model: ModelInfo, info: SystemInfoLike): string[] {
-  const recipe = activeRecipeForBackendKey(key, model);
+  const recipe = activeRecipeForModel(model);
   const fromServer = Object.entries(backendMapForRecipe(info, recipe) || {})
     .filter(([backend, backendInfo]) => backendIsSelectable(recipe, backend, backendInfo) && backendMatchesDetectedHardware(backend, info))
     .map(([backend]) => backend);
-  const rawBase = fromServer.length ? fromServer : fallbackBackendsForRecipe(recipe);
-  const base = rawBase.filter(backend => backendMatchesDetectedHardware(backend, info));
-  const safeBase = Array.from(new Set(['auto', ...(base.length ? base : ['cpu'])]));
   const normalizedCurrent = optionalDisplayValue(current);
-  const options = normalizedCurrent && !safeBase.includes(normalizedCurrent) ? [normalizedCurrent, ...safeBase] : safeBase;
+  const base = fromServer.length ? ['auto', ...fromServer] : [normalizedCurrent || 'auto'];
+  const options = normalizedCurrent && !base.includes(normalizedCurrent) ? [normalizedCurrent, ...base] : base;
   return Array.from(new Set(options.filter(Boolean)));
 }
 
 function activeBackendValue(key: keyof RecipeOptions, baseValue: unknown, model: ModelInfo, info: SystemInfoLike): string {
   const fromModel = optionalDisplayValue(baseValue);
   if (fromModel) return fromModel;
-  const recipe = activeRecipeForBackendKey(key, model);
+  const recipe = activeRecipeForModel(model);
   return recipeDefaultBackend(info, recipe) || 'auto';
 }
 
@@ -1304,7 +1242,13 @@ const ModelConfigurationTab: React.FC<{
     [model, serverDefaultCtxSize],
   );
   const supportsContextSize = modelSupportsContextSize(model);
-  const recipeKeys = useMemo(() => tuningKeysForModel(model), [model]);
+  const activeRecipe = activeRecipeForModel(model);
+  const recipeKeys = useMemo(() => tuningKeysForModel(model, systemInfo), [model, systemInfo]);
+  // A selector labels its own resolved value, and voice keeps a custom entry
+  // outside the recipe's option list, so both are seeded from the saved layer.
+  const offersResolvedValue = useCallback((key: keyof RecipeOptions) => key === 'voice'
+    || recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
+    || recipeOptionIsDevice(systemInfo, activeRecipe, String(key)), [activeRecipe, systemInfo]);
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
@@ -1333,8 +1277,8 @@ const ModelConfigurationTab: React.FC<{
     setServerDefaultRecipeOptions(defaults);
     const resolved = Number(result.resolved_ctx_size);
     setResolvedCtxSize(Number.isFinite(resolved) && resolved > 0 ? resolved : null);
-    if (syncDraft) applyDraft(draftFromResolvedOptions(recipeKeys, saved, effective));
-  }, [applyDraft, recipeKeys]);
+    if (syncDraft) applyDraft(draftFromResolvedOptions(recipeKeys, saved, effective, offersResolvedValue));
+  }, [applyDraft, offersResolvedValue, recipeKeys]);
 
   // Read through a ref: a save refreshes the model list, which hands this
   // component a new model object, and re-running the fetch on that would
@@ -1370,8 +1314,8 @@ const ModelConfigurationTab: React.FC<{
   }, [name]);
 
   const savedLoadSettings = useMemo(
-    () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions),
-    [recipeKeys, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
+    () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
+    [offersResolvedValue, recipeKeys, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
   );
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
     || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
@@ -1418,8 +1362,11 @@ const ModelConfigurationTab: React.FC<{
     );
     setCtxSizeDraft(String(nextValue));
   };
-  const selectorKeys = recipeKeys.filter(key => BACKEND_TUNING_KEYS.has(key) || DEVICE_TUNING_KEYS.has(key));
-  const argsKeys = recipeKeys.filter(key => ARGS_TUNING_KEYS.has(key));
+  const selectorKeys = recipeKeys.filter(key =>
+    recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
+    || recipeOptionIsDevice(systemInfo, activeRecipe, String(key))
+  );
+  const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
   // merge_args only decides what happens to *_args, so it is only stated for a
   // model that has an args field of its own.
@@ -1433,9 +1380,9 @@ const ModelConfigurationTab: React.FC<{
     const raw: Partial<RecipeOptions> = {};
     for (const [key, value] of Object.entries(recipeDraft) as Array<[keyof RecipeOptions, string]>) {
       if (!value.trim()) continue;
-      if (BOOLEAN_TUNING_KEYS.has(key)) {
+      if (recipeOptionIsBoolean(systemInfo, activeRecipe, String(key))) {
         (raw as Record<string, unknown>)[key] = value === 'true';
-      } else if (NUMERIC_TUNING_KEYS.has(key)) {
+      } else if (recipeOptionIsNumeric(systemInfo, activeRecipe, String(key))) {
         const n = parseNumberOrUndefined(value);
         if (n !== undefined) (raw as Record<string, unknown>)[key] = n;
       } else {
@@ -1493,7 +1440,7 @@ const ModelConfigurationTab: React.FC<{
   // Defaults are already in hand from lemond, so this only refills the form:
   // nothing is written until the user saves, and Discard still goes back.
   const resetConfig = () => {
-    applyDraft(draftFromResolvedOptions(recipeKeys, {}, serverDefaultRecipeOptions));
+    applyDraft(draftFromResolvedOptions(recipeKeys, {}, serverDefaultRecipeOptions, offersResolvedValue));
     setNotice(hasSavedOptions
       ? 'Showing lemond defaults. Load uses them now; Save clears your saved settings.'
       : 'Already using lemond defaults.');
@@ -1546,11 +1493,12 @@ const ModelConfigurationTab: React.FC<{
 
   const renderConfigRecipeField = (key: keyof RecipeOptions) => {
     const fieldId = `config-${name}-${String(key)}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const label = TUNING_FIELD_LABELS[key] || String(key);
+    const label = TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key));
+    const hint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
     const draftValue = recipeDraft[String(key)] || '';
-    const baseValue = serverDefaultRecipeOptions[key] ?? baseTuning.recipe_options[key];
+    const baseValue = serverEffectiveRecipeOptions[key] ?? baseTuning.recipe_options[key];
 
-    if (BACKEND_TUNING_KEYS.has(key)) {
+    if (recipeOptionIsBackend(systemInfo, activeRecipe, String(key))) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
       const options = backendOptionsForKey(key, draftValue || undefined, model, info).filter(opt => opt !== activeBackend);
       return (
@@ -1569,9 +1517,11 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (DEVICE_TUNING_KEYS.has(key)) {
-      const backendKey: keyof RecipeOptions = 'llamacpp_backend';
-      const selectedBackend = recipeDraft[String(backendKey)] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, info);
+    if (recipeOptionIsDevice(systemInfo, activeRecipe, String(key))) {
+      const backendKey = recipeBackendOptionName(systemInfo, activeRecipe) as keyof RecipeOptions | null;
+      const selectedBackend = backendKey
+        ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, info)
+        : 'auto';
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
       return (
@@ -1641,7 +1591,7 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (ARGS_TUNING_KEYS.has(key)) {
+    if (recipeOptionIsArgs(systemInfo, activeRecipe, String(key))) {
       const draftKey = String(key);
       return (
         <BackendArgsField
@@ -1656,7 +1606,27 @@ const ModelConfigurationTab: React.FC<{
       );
     }
 
-    if (NUMERIC_TUNING_KEYS.has(key)) {
+    if (recipeOptionIsBoolean(systemInfo, activeRecipe, String(key))) {
+      return (
+        <div key={String(key)} className="detail-tuning__field detail-configuration__field">
+          <span id={`${fieldId}-label`}>{label}</span>
+          <select
+            id={fieldId}
+            className="select detail-configuration__select"
+            value={draftValue}
+            aria-labelledby={`${fieldId}-label`}
+            onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
+          >
+            <option value="">{baseValue === undefined ? 'Model default' : `Model default (${baseValue ? 'on' : 'off'})`}</option>
+            <option value="true">On</option>
+            <option value="false">Off</option>
+          </select>
+          {hint && <small>{hint}</small>}
+        </div>
+      );
+    }
+
+    if (recipeOptionIsNumeric(systemInfo, activeRecipe, String(key))) {
       const stepNumericInput = (direction: -1 | 1) => {
         const input = document.getElementById(fieldId);
         if (!(input instanceof HTMLInputElement)) return;
@@ -1687,6 +1657,7 @@ const ModelConfigurationTab: React.FC<{
               </button>
             </span>
           </div>
+          {hint && <small>{hint}</small>}
         </div>
       );
     }
@@ -1702,6 +1673,7 @@ const ModelConfigurationTab: React.FC<{
           placeholder={optionalDisplayValue(baseValue) || ''}
           onChange={e => setRecipeDraft(prev => ({ ...prev, [String(key)]: e.target.value }))}
         />
+        {hint && <small>{hint}</small>}
       </label>
     );
   };
