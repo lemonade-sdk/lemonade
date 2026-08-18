@@ -1,0 +1,311 @@
+/* Lemonade GUI design tokens. DESIGN.md defines the roles and usage rules. */
+
+:root {
+  /* ---------- Color roles (dark / Midnight Palette) ---------- */
+  --surface-base:   #0E0E0B;
+  --surface-1:      #1A1813;
+  --surface-2:      #1F1D17;
+  --surface-3:      #25221B;
+  --surface-raised: #2D2922;
+  --surface-glass:  rgba(45, 41, 33, 0.72);
+  --surface-overlay: rgba(14, 14, 11, 0.72);
+  --surface-titlebar: var(--surface-1);
+  --surface-alpha-1: rgba(255, 255, 255, 0.10);
+  --surface-alpha-05: rgba(255, 255, 255, 0.05);
+  --surface-alpha-02: rgba(255, 255, 255, 0.02);
+
+  --text-primary:   #F2EFE5;
+  --text-secondary: #C7C2B5;
+  --text-tertiary:  #A8A39A;
+  --text-disabled:  #7A776E;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23A8A39A' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+
+  --accent:         #FCD846;
+  --accent-hover:   #FAF972;
+  --accent-deep:    #5C4B00;
+  --accent-fg:      var(--accent);
+  --accent-soft:    rgba(252, 216, 70, 0.14);
+  --accent-strong:  rgba(252, 216, 70, 0.24);
+  --accent-surface: var(--accent-soft);
+  --accent-border:  color-mix(in srgb, var(--accent) 28%, transparent);
+  --accent-on:      #000000;
+  --accent-focus:   var(--accent);
+
+  --success:        #78A86B;
+  --success-soft:   rgba(120, 168, 107, 0.15);
+  --warn:           #F2B94F;
+  --warn-soft:      rgba(242, 185, 79, 0.15);
+  --danger:         #EF8D7F;
+  --danger-soft:    rgba(239, 141, 127, 0.15);
+  --danger-on:      #FFFFFF;
+  --info:           #88BDE9;
+  --info-soft:      rgba(136, 189, 233, 0.15);
+
+  --status-ok:      var(--success);
+  --status-success: var(--success);
+  --status-warning: var(--warn);
+  --status-error:   var(--danger);
+
+  --border:         rgba(255, 255, 255, 0.10);
+  --border-subtle:  rgba(255, 255, 255, 0.07);
+  --border-strong:  rgba(252, 216, 70, 0.18);
+
+  /* ---------- Checkbox ---------- */
+  --checkbox-fill:   var(--surface-3);
+  --checkbox-border: color-mix(in srgb, var(--text-tertiary) 55%, transparent);
+  --checkbox-check:  var(--accent-fg);
+
+  --bg-primary: var(--surface-base);
+  --bg-secondary: var(--surface-1);
+  --surface-0: var(--surface-base);
+  --text-muted: var(--text-tertiary);
+  --error: var(--danger);
+  --primary-yellow: var(--accent);
+  --on-primary: var(--accent-on);
+
+  --warning: var(--warn);
+  --warning-soft: var(--warn-soft);
+
+  /* ---------- Capability, provider, backend, and monitoring identity ---------- */
+  /* Task colors are intentionally theme-invariant across dark and light. */
+  --cap-chat:       #A77C00;
+  --cap-omni:       #8064D8;
+  --cap-router:     #3289D1;
+  --cap-vision:     #B58CFF;
+  --cap-code:       #6AD0A3;
+  /* Lifted from #665F59, which measured 2.83:1 on --surface-1 and so failed the
+     3:1 floor WCAG 1.4.11 sets for non-text UI once it began tinting the list
+     row's primary modality glyph. */
+  --cap-embedding: #8A8279;
+  --cap-reranking:  #FF9D6A;
+  --cap-image:      #D8752B;
+  --cap-image-edit: #D8752B;
+  --cap-audio:      #1693A5;
+  --cap-audio-generation: #1693A5;
+  --cap-tts:        #B35A9F;
+  --cap-model3d:   #65758A;
+  --cap-classification: #6A8F3C;
+
+  --provider-hugging-face:    #FF9D00;
+  --provider-hugging-face-fg: #FFB84D;
+  --provider-modelscope:      #4C8DFF;
+  --provider-modelscope-fg:   #7BA9FF;
+
+  --chart-series-1: #E8C66B;
+  --chart-series-2: #7BAED4;
+  --chart-series-3: #7FB38A;
+  --chart-series-4: #B07DF0;
+  --chart-series-5: #E07B7B;
+  --chart-series-6: #7BC8C8;
+  --chart-cache:    #D9A35B;
+
+  /* ---------- Typography ---------- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
+               "Segoe UI", system-ui, "Inter", "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+
+  --text-xs:   11px;
+  --text-sm:   12.5px;
+  --text-md:   13.5px;
+  --text-base: 14px;
+  --text-lg:   15px;
+  --text-xl:   18px;
+  --text-2xl:  24px;
+  --text-3xl:  32px;
+
+  --type-detail-title-size: clamp(22px, 2vw, 28px);
+  --type-pane-title-size:   20px;
+  --type-panel-title-size:  var(--text-base);
+  --type-body-size:         var(--text-base);
+  --type-supporting-size:   var(--text-xs);
+  --type-caption-size:      var(--text-xs);
+  --type-overline-size:     10px;
+
+  --weight-regular:  400;
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight:  -0.01em;
+  --tracking-caps:   0.08em;
+
+  /* ---------- Space (4px grid) ---------- */
+  --space-0:  0;
+  --space-0-5: 2px;
+  --space-1:  4px;
+  --space-1-5: 6px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  24px;
+  --space-6:  32px;
+  --space-8:  48px;
+  --space-10: 64px;
+  --space-12: 80px;
+
+  /* ---------- Radii ---------- */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   14px;
+  --radius-xl:   20px;
+  --radius-pill: 9999px;
+  --control-radius: var(--radius-md);
+
+  /* ---------- Shadows ---------- */
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 1px 1px rgba(0, 0, 0, 0.12);
+  --shadow-md:
+    0 4px 12px rgba(0, 0, 0, 0.22),
+    0 2px 4px rgba(0, 0, 0, 0.14);
+  --shadow-soft: var(--shadow-md);
+  --shadow-lg:
+    0 18px 48px rgba(0, 0, 0, 0.42),
+    0 8px 16px rgba(0, 0, 0, 0.20);
+  --shadow-top: 0 -8px 24px rgba(0, 0, 0, 0.24);
+
+  /* ---------- Motion ---------- */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --duration-fast:  150ms;
+  --duration-base:  220ms;
+  --duration-normal: 220ms;
+  --duration-slow:  380ms;
+
+  /* ---------- Layout constants ---------- */
+  --titlebar-height:    52px;
+  --rail-collapsed:     56px;
+  --rail-expanded:      248px;
+  --workspace-rail:     248px;
+  --workspace-list:     304px;
+  --workspace-header:   72px;
+  --rail-toolbar:       48px;
+  --control-height-xs:  28px;
+  --control-height-sm:  32px;
+  --control-height-md:  36px;
+  --control-height-lg:  44px;
+  --control-height:     var(--control-height-md);
+  --icon-button-size:   34px;
+  --composer-min:       96px;
+  --max-content-width:  860px;
+  --content-form-width: 680px;
+  --slide-over-width:   420px;
+  --panel-padding-inline: var(--space-5);
+  --panel-padding-block:  var(--space-4);
+
+  /* ---------- Responsive breakpoints ----------
+   * Note: CSS custom properties cannot be used inside @media queries.
+   * These values are documented here for reference; use the raw px
+   * values in media query expressions.
+   *   @media (max-width: 480px)  → phone
+   *   @media (max-width: 768px)  → tablet (already used throughout)
+   *   @media (max-width: 1024px) → desktop narrow
+   */
+  --breakpoint-mobile:  480px;
+  --breakpoint-tablet:  768px;
+  --breakpoint-desktop: 1024px;
+}
+
+/* ---------- Light theme overrides ---------- */
+[data-theme="light"] {
+  --surface-base:   #fdfbf6;
+  --surface-1:      #fdfbf6;
+  --surface-2:      #f5f2ec;
+  --surface-3:      #fdfbf6;
+  --surface-raised: #fdfbf6;
+  --surface-glass:  #fdfbf6;
+  --surface-overlay: rgba(45, 47, 47, 0.32);
+  --surface-titlebar: #efebe1;
+
+  --surface-alpha-1: rgba(0, 0, 0, 0.1);
+  --surface-alpha-05: rgba(0, 0, 0, 0.05);
+  --surface-alpha-02: rgba(0, 0, 0, 0.02);
+
+  --text-primary:   #000000;
+  --text-secondary: #2D2F2F;
+  --text-tertiary:  #52525B;
+  --text-disabled:  #767676;
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2352525B' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+
+  --accent:         rgba(252, 216, 70, 0.58);
+  --accent-hover:   rgba(252, 216, 70, 0.58);
+  --accent-deep:    #5C4B00;
+  --accent-fg:      var(--accent-deep);
+  --accent-soft:    rgba(252, 216, 70, 0.18);
+  --accent-strong:  rgba(252, 216, 70, 0.58);
+  --accent-on:      #000000;
+
+  --success:        #4CAF50;
+  --success-soft:   rgba(60, 101, 49, 0.10);
+  --warn:           #ffb74d;
+  --warn-soft:      rgba(252, 216, 70, 0.20);
+  --danger:         #f44336;
+  --danger-soft:    rgba(185, 74, 61, 0.10);
+  --info:           #2196F3;
+  --info-soft:      rgba(48, 110, 168, 0.10);
+
+  --border:         rgba(0, 0, 0, 0.16);
+  --border-subtle:  rgba(92, 75, 0, 0.18);
+  --border-strong:  rgba(92, 75, 0, 0.18);
+
+  --checkbox-fill: color-mix(in srgb, #FCD846 12%, transparent);
+  --checkbox-check: #A98700;
+  /* The dark --accent is opaque; the light one is already 58% alpha, so
+     mixing it again would leave the border barely visible. */
+  --accent-border:  rgba(92, 75, 0, 0.32);
+
+  /* ---------- Non-task identity and monitoring colors, darkened for the light canvas ----------
+   * The dark-theme values are tuned against #16140F and land between 1.5:1 and
+   * 2.9:1 on #fdfbf6. These preserve each hue while clearing the 3:1 floor WCAG
+   * 1.4.11 sets for non-text UI components (glyphs, marks, chart series). */
+  --cap-vision:     #A16DFF;
+  --cap-code:       #2C9E6C;
+  --cap-reranking:  #F95500;
+  --cap-image-edit: #CE752B;
+
+  --provider-hugging-face-fg: #C77800;
+  --provider-modelscope-fg:   #4888FF;
+
+  --backend-llamacpp:          #A98700;
+  --backend-vllm:              #308BFC;
+  --backend-flm:               #1E9D6E;
+  --backend-ryzenai:           #E96103;
+  --backend-sd-cpp:            #B164FD;
+  --backend-whispercpp:        #0093D4;
+  --backend-moonshine:         #089BB1;
+  --backend-kokoro:            #F44AA3;
+  --backend-acestep:           #FD4661;
+  --backend-thinksound:        #C47D04;
+  --backend-trellis:           #727EF8;
+  --backend-collection-omni:   #9876FA;
+  --backend-collection-router: #089BB1;
+  --backend-collection:        #7B8EA8;
+
+  --chart-series-1: #B28612;
+  --chart-series-2: #4A92C8;
+  --chart-series-3: #5A9B68;
+  --chart-series-4: #A86FEF;
+  --chart-series-5: #DD6A6A;
+  --chart-series-6: #3A9999;
+  --chart-cache:    #C07F27;
+
+  --shadow-sm:
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-md:
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-soft: var(--shadow-md);
+  --shadow-lg:
+    0 18px 48px rgba(0, 0, 0, 0.12),
+    0 8px 16px rgba(0, 0, 0, 0.06);
+  --shadow-top: 0 -8px 24px rgba(0, 0, 0, 0.10);
+}

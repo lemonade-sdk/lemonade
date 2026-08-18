@@ -284,10 +284,12 @@ static bool try_lemonade_protocol(const std::string& lemonade_url) {
 }
 
 static void open_url(const std::string& host, int port, const std::string& path = "/", bool is_ssl = false) {
-    // Map web path to lemonade:// route and try the desktop app first
+    // The desktop app and the web app read the same `?view=` query, so the
+    // path's query string carries over to the lemonade:// route verbatim.
     std::string lemonade_url = "lemonade://open";
-    if (path == "/?logs=true") {
-        lemonade_url = "lemonade://open?view=logs";
+    const auto query_start = path.find('?');
+    if (query_start != std::string::npos) {
+        lemonade_url += path.substr(query_start);
     }
 
     if (try_lemonade_protocol(lemonade_url)) {
@@ -1649,7 +1651,7 @@ int main(int argc, char* argv[]) {
     } else if (launch_cmd->count() > 0) {
         return handle_launch_command(client, config);
     } else if (logs_cmd->count() > 0) {
-        open_url(config.host, config.port, "/?logs=true", config.is_ssl);
+        open_url(config.host, config.port, "/?view=dashboard/logs", config.is_ssl);
         return 0;
     } else if (scan_cmd->count() > 0) {
         return handle_scan_command(config);
