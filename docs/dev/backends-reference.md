@@ -205,7 +205,7 @@ backend can add or change a parameter without a client change.
 
 | Field | Label | Type | Default | Range | Group | Description |
 |-------|-------|------|---------|-------|-------|-------------|
-| `voice` | Voice | TEXT | null | — | — | Kokoro voice id, e.g. af_heart. |
+| `voice` | Voice | TEXT | "coral" | — | — | Kokoro voice id; OpenAI voice names are accepted as aliases. |
 | `speed` | Speed | NUMBER | 1.0 | 0.25…4.0 | advanced |  |
 
 #### `openmoss` — OpenMOSS TTS

@@ -42,8 +42,8 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
     /*generation_params*/ {
-        {"voice", "tts", "Voice", "TEXT", nullptr, nullptr, nullptr, nullptr, {},
-         "Kokoro voice id, e.g. af_heart.", "", "", "", nullptr},
+        {"voice", "tts", "Voice", "TEXT", "coral", nullptr, nullptr, nullptr, {},
+         "Kokoro voice id; OpenAI voice names are accepted as aliases.", "", "", "", nullptr},
         {"speed", "tts", "Speed", "NUMBER", 1.0, 0.25, 4.0, 0.05, {}, "", "advanced", "", "", nullptr},
     },
 };
