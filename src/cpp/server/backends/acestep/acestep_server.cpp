@@ -147,6 +147,16 @@ void AceStepServer::load(const std::string& model_name,
             dirs = BackendUtils::join_runtime_dirs(
                 BackendUtils::get_therock_lib_paths(arch));
         }
+        // Hand-installed ROCm (ROCM_PATH) must be loadable too (issue #2722).
+        // TheRock keeps precedence; the external root's dir is appended after it.
+        const std::string external = BackendUtils::get_external_rocm_loader_dir();
+        if (!external.empty()) {
+#ifdef _WIN32
+            dirs = dirs.empty() ? external : (dirs + ";" + external);
+#else
+            dirs = dirs.empty() ? external : (dirs + ":" + external);
+#endif
+        }
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {
         prepend_loader_path("");

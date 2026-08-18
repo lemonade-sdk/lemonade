@@ -300,6 +300,17 @@ void SDServer::load(const std::string& model_name,
 #ifndef _WIN32
     std::string lib_path = exe_dir.string();
 
+    // A hand-installed ROCm (ROCM_PATH) must be loadable too; its lib/ holds
+    // rocsolver/rocblas/hipblaslt that sd-server needs (issue #2722). Prepended
+    // BEFORE the TheRock entry below so TheRock (the pinned runtime) wins when
+    // both are present.
+    if (is_rocm_backend(resolved_backend)) {
+        const std::string external = BackendUtils::get_external_rocm_loader_dir();
+        if (!external.empty()) {
+            lib_path = external + ":" + lib_path;
+        }
+    }
+
     if (resolved_backend == "rocm-stable") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
@@ -323,6 +334,17 @@ void SDServer::load(const std::string& model_name,
     // These DLLs are distributed alongside sd-server.exe but need PATH to be set for loading
     if (is_rocm_backend(resolved_backend)) {
         std::string new_path = path_to_utf8(exe_dir);
+
+        // A hand-installed ROCm (ROCM_PATH) must be loadable too; its bin/
+        // holds rocsolver/rocblas/hipblaslt DLLs that sd-server needs (issue
+        // #2722). Prepended BEFORE the TheRock entry below so TheRock (the
+        // pinned runtime) wins when both are present.
+        {
+            const std::string external = BackendUtils::get_external_rocm_loader_dir();
+            if (!external.empty()) {
+                new_path = path_to_utf8(fs::absolute(path_from_utf8(external))) + ";" + new_path;
+            }
+        }
 
         if (resolved_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();

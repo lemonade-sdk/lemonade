@@ -123,6 +123,29 @@ namespace lemon::backends {
         return archive_platform->extract_tarball(tarball_path, dest_dir, backend_name);
     }
 
+    // Dump the on-disk layout under dir (two levels deep) so a failed install
+    // leaves evidence in the log instead of a silent delete (issue #2722).
+    static void log_install_tree(const fs::path& dir) {
+        std::error_code ec;
+        if (!fs::exists(dir, ec)) {
+            LOG(ERROR, "BackendUtils") << "Install dir " << dir.string() << " does not exist" << std::endl;
+            return;
+        }
+        LOG(ERROR, "BackendUtils") << "Extracted layout under " << dir.string() << ":" << std::endl;
+        for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
+            LOG(ERROR, "BackendUtils") << "  " << it->path().filename().string()
+                                       << (it->is_directory(ec) ? "/" : "") << std::endl;
+            if (it->is_directory(ec)) {
+                for (fs::directory_iterator sub(dir / it->path().filename(), ec), sub_end;
+                     sub != sub_end && !ec; sub.increment(ec)) {
+                    LOG(ERROR, "BackendUtils") << "    " << sub->path().filename().string()
+                                               << (sub->is_directory(ec) ? "/" : "") << std::endl;
+                }
+                ec.clear();
+            }
+        }
+    }
+
     static bool ends_with(const std::string& s, const std::string& suffix) {
         return s.size() >= suffix.size() &&
             s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
@@ -1602,6 +1625,63 @@ namespace lemon::backends {
 #endif
     }
 
+    std::string BackendUtils::normalize_therock_payload_dir(const std::string& install_dir) {
+#if !defined(__linux__) && !defined(_WIN32)
+        return "";
+#else
+        std::error_code ec;
+#ifdef _WIN32
+        const std::string payload_name = "bin";
+#else
+        const std::string payload_name = "lib";
+#endif
+        const fs::path payload = fs::path(install_dir) / payload_name;
+        if (fs::is_directory(payload, ec)) {
+            return payload.string();
+        }
+
+        // Upstream TheRock tarballs sometimes unpack under a wrapper directory
+        // whose name drifts from the URL (e.g. therock-dist-...-7.13.0rc2/),
+        // leaving bin/ or lib/ one level deep. If exactly one top-level
+        // subdirectory holds the payload, move its contents up into
+        // install_dir so every consumer finds bin/ or lib/ where it expects.
+        fs::path wrapper;
+        bool multiple_dirs = false;
+        for (fs::directory_iterator it(install_dir, ec), end; it != end && !ec; it.increment(ec)) {
+            if (!it->is_directory(ec)) {
+                continue;
+            }
+            if (wrapper.empty()) {
+                wrapper = it->path();
+            } else if (wrapper != it->path()) {
+                multiple_dirs = true;
+                break;
+            }
+        }
+        if (!multiple_dirs && !wrapper.empty() &&
+            fs::is_directory(wrapper / payload_name, ec)) {
+            LOG(INFO, "BackendUtils") << "TheRock tarball unpacked under wrapper dir "
+                                      << wrapper.filename().string()
+                                      << "; moving contents into " << install_dir << std::endl;
+            for (fs::directory_iterator it(wrapper, ec), end; it != end && !ec; it.increment(ec)) {
+                const fs::path target = fs::path(install_dir) / it->path().filename();
+                fs::rename(it->path(), target, ec);
+                if (ec) {
+                    LOG(WARNING, "BackendUtils") << "Failed to move " << it->path().string()
+                                                 << " into " << install_dir << ": " << ec.message()
+                                                 << std::endl;
+                }
+                ec.clear();
+            }
+            fs::remove_all(wrapper, ec);
+            if (fs::is_directory(fs::path(install_dir) / payload_name, ec)) {
+                return (fs::path(install_dir) / payload_name).string();
+            }
+        }
+        return "";
+#endif
+    }
+
     void BackendUtils::install_therock(const std::string& arch, const std::string& version,
                                        DownloadProgressCallback progress_cb) {
 #if !defined(__linux__) && !defined(_WIN32)
@@ -1697,30 +1777,30 @@ namespace lemon::backends {
                                     << (file_size / 1024 / 1024) << " MB" << std::endl;
 
         if (!extract_tarball(tarball_path, install_dir, "TheRock")) {
+            log_install_tree(install_dir);
             fs::remove(tarball_path);
             fs::remove_all(install_dir);
             throw std::runtime_error("Failed to extract TheRock tarball: " + tarball_path);
         }
 
+        const std::string runtime_dir =
+            BackendUtils::normalize_therock_payload_dir(install_dir);
+        if (runtime_dir.empty()) {
+            // Dump the actual extracted layout instead of silently deleting
+            // the tree — the silent cleanup is why this failure was so hard
+            // to diagnose (issue #2722).
+            log_install_tree(install_dir);
+            fs::remove(tarball_path);
+            fs::remove_all(install_dir);
 #ifdef _WIN32
-        // On Windows, DLLs are in bin/ (lib/ contains only import .lib files)
-        fs::path runtime_dir = fs::path(install_dir) / "bin";
-        if (!fs::exists(runtime_dir)) {
-            fs::remove(tarball_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("TheRock extraction failed: bin directory not found");
-        }
-        LOG(DEBUG, "BackendUtils") << "TheRock bin directory verified at: " << runtime_dir << std::endl;
+            throw std::runtime_error("TheRock extraction failed: bin directory not found in " +
+                                     install_dir);
 #else
-        // On Linux, shared libraries are in lib/
-        fs::path runtime_dir = fs::path(install_dir) / "lib";
-        if (!fs::exists(runtime_dir)) {
-            fs::remove(tarball_path);
-            fs::remove_all(install_dir);
-            throw std::runtime_error("TheRock extraction failed: lib directory not found");
-        }
-        LOG(DEBUG, "BackendUtils") << "TheRock lib directory verified at: " << runtime_dir << std::endl;
+            throw std::runtime_error("TheRock extraction failed: lib directory not found in " +
+                                     install_dir);
 #endif
+        }
+        LOG(DEBUG, "BackendUtils") << "TheRock runtime directory verified at: " << runtime_dir << std::endl;
 
         {
             std::ofstream mf(fs::path(install_dir) / "method.txt");
@@ -2034,6 +2114,29 @@ namespace lemon::backends {
         }
         LOG(ERROR, "BackendUtils") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
         return false;
+#endif
+    }
+
+    std::string BackendUtils::get_external_rocm_loader_dir() {
+#if !defined(__linux__) && !defined(_WIN32)
+        return "";
+#else
+        std::error_code ec;
+        const auto root = resolve_rocm_root();
+        if (!root) {
+            return "";
+        }
+#ifdef _WIN32
+        const fs::path loader_dir = *root / "bin";
+#else
+        const fs::path loader_dir = *root / "lib";
+#endif
+        if (!fs::is_directory(loader_dir, ec)) {
+            return "";
+        }
+        LOG(DEBUG, "BackendUtils") << "Returning external ROCm loader dir: "
+                                   << loader_dir.string() << std::endl;
+        return loader_dir.string();
 #endif
     }
     void BackendUtils::apply_cuda_env_vars(
