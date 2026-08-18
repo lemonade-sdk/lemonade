@@ -10342,6 +10342,34 @@ optgroup {
   cursor: not-allowed;
 }
 
+.composer__openmoss-params {
+  min-width: 0;
+  flex-basis: 100%;
+}
+
+.composer__openmoss-params > summary {
+  cursor: pointer;
+  font-size: var(--type-overline-size);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: var(--weight-semibold);
+  color: var(--text-tertiary);
+  padding: var(--space-1) 0;
+  user-select: none;
+}
+
+.composer__openmoss-params > summary:hover {
+  color: var(--text-secondary);
+}
+
+.composer__openmoss-params-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-2) var(--space-3);
+  padding-top: var(--space-2);
+}
+
 .composer__openmoss-status {
   grid-column: 1 / -1;
   min-height: 18px;

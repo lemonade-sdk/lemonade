@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import type { LoadedModel, ModelInfo } from './api';
+import { isModelSelectionLocked, onModelSelectionUnlocked } from './features/modelSettings/modelSelectionLock';
 import { Icon } from './components/Icon';
 import ChatView from './components/ChatView';
 import { scheduleIdleWork } from './startupScheduler';
@@ -384,6 +385,7 @@ const App: React.FC = () => {
   const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [modelSelectionNonce, setModelSelectionNonce] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
@@ -685,10 +687,12 @@ const App: React.FC = () => {
       );
     };
     setCurrentModel(current => {
+      if (current && isModelSelectionLocked()) return current;
       if (current && loadedModels.some(m => m.model_name === current && (modelHelpers.canSelectInComposer(m) || infoSelectable(m.model_name)))) return current;
       if (current) {
         const info = modelHelpers.findModelInfoByName(knownInfos, current);
         if (info && modelHelpers.isCollectionModel(info) && modelHelpers.isCollectionFullyLoaded(info, rawLoadedModels)) return current;
+        if (info && (info as any).downloaded) return current;
       }
       const virtualOmni = loadedModels.find(model => {
         const info = modelHelpers.findModelInfoByName(knownInfos, model.model_name);
@@ -699,7 +703,13 @@ const App: React.FC = () => {
         || loadedModels.find(m => infoSelectable(m.model_name))?.model_name
         || null;
     });
-  }, [loadedModelViewState, loadedModels, modelHelpers, rawLoadedModels]);
+  }, [loadedModelViewState, loadedModels, modelHelpers, modelSelectionNonce, rawLoadedModels]);
+
+  useEffect(() => onModelSelectionUnlocked(() => {
+    void Promise.resolve(apiClientRef.current?.refresh())
+      .catch(() => { })
+      .finally(() => setModelSelectionNonce(nonce => nonce + 1));
+  }), []);
 
   const navigateToRoute = useCallback((nextRoute: AppRoute) => {
     if (nextRoute.view === 'dashboard') lastWorkspaceSectionsRef.current.dashboard = nextRoute.section;
