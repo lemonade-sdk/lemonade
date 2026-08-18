@@ -1,4 +1,5 @@
 #include "lemon/system_info.h"
+#include "system_info_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/backend_manager.h"
@@ -79,20 +80,10 @@ const std::vector<std::string> NVIDIA_DISCRETE_GPU_KEYWORDS = {
 };
 
 // CUDA Compute Capability targets that the lemonade-sdk/llama.cpp release pipeline
-// publishes binaries for. Each entry is a literal `sm_XX` token that appears in the
-// release asset filename (e.g. llama-ubuntu-cuda-sm_86-x64.tar.xz).
-// Empty string means "no CUDA binary for this compute capability" — skip for
-// get_cuda_arch / install filenames.
-const std::set<std::string> CUDA_SUPPORTED_ARCHS = {
-    "sm_75",   // Turing       (RTX 20, GTX 16, T4, Quadro RTX)
-    "sm_80",   // Ampere DC    (A100)
-    "sm_86",   // Ampere       (RTX 30, A40, A6000, A4000)
-    "sm_89",   // Ada Lovelace (RTX 40, L40, L4)
-    "sm_90",   // Hopper       (H100, H200)
-    "sm_100",  // Blackwell DC (B100, B200)
-    "sm_120",  // Blackwell    (RTX 50)
-    "sm_121",  // Blackwell    (GB10 / Thor SoC)
-};
+// publishes binaries for. Kept behind the shared helper so production and the
+// unit test use the same source of truth.
+const std::set<std::string>& CUDA_SUPPORTED_ARCHS =
+    system_info_detail::cuda_supported_archs();
 
 #ifdef __linux__
 namespace {
@@ -499,15 +490,17 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
     {"x86_64", "x86-64 processors"},
     {"arm64", "ARM64 processors"},
 
-    // AMD GPU architectures (ROCm)
+    // AMD GPU architectures (ROCm) — gfx9* grouped first (gfx09 < gfx10)
+    {"gfx908", "AMD Instinct MI100 (CDNA1)"},
+    {"gfx90a", "AMD Instinct MI200/MI210/MI250 (CDNA2)"},
+    {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
+    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
+    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
+    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx1150", "Radeon 880M/890M (Strix Point)"},
     {"gfx1151", "Radeon 8050S/8060S (Strix Halo)"},
     {"gfx1152", "Radeon 840M/860M (Krackan Point)"},
-    {"gfx103X", "Radeon RX 6000 series (RDNA2)"},
-    {"gfx110X", "Radeon RX 7000 series (RDNA3)"},
     {"gfx120X", "Radeon RX 9000 series (RDNA4)"},
-    {"gfx942", "AMD Instinct MI300X / MI300A (CDNA3)"},
-    {"gfx950", "AMD Instinct MI350X / MI355X (CDNA4)"},
 
     // NVIDIA GPU compute capabilities (CUDA)
     {"sm_75",  "GeForce RTX 20 / GTX 16 series (Turing)"},
@@ -591,7 +584,7 @@ struct DetectedDevice {
 };
 
 // Get current OS identifier
-static std::string get_current_os() {
+std::string get_current_os() {
     #ifdef _WIN32
     return "windows";
     #elif defined(__APPLE__)
@@ -611,23 +604,11 @@ static std::string get_expected_backend_version(const std::string& recipe, const
 
 // Check if device matches constraints (empty constraint set = all families allowed)
 // A trailing 'X' in an allowed family acts as a wildcard (e.g. "gfx110X" matches "gfx1103").
-static bool device_matches_constraint(const std::string& device_family,
-                                       const std::set<std::string>& allowed_families) {
-    if (allowed_families.empty()) {
-        return true;  // Empty = all families allowed
-    }
-    if (allowed_families.count(device_family) > 0) {
-        return true;
-    }
-    for (const auto& af : allowed_families) {
-        if (af.size() > 1 && af.back() == 'X') {
-            std::string prefix = af.substr(0, af.size() - 1);
-            if (device_family.compare(0, prefix.size(), prefix) == 0) {
-                return true;
-            }
-        }
-    }
-    return false;
+static bool device_matches_constraint(
+    const std::string& device_family,
+    const std::set<std::string>& allowed_families) {
+    return system_info_detail::device_matches_constraint(
+        device_family, allowed_families);
 }
 
 // Find the install gate that applies to `arch` in a support row, honoring the
@@ -1643,7 +1624,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
         entry["display_name"] = desc->display_name;
         entry["selectable_backend"] = desc->selectable_backend;
         entry["uses_ctx_size"] = desc->uses_ctx_size;
-        entry["modality"] = desc->modality;
+        entry["modality"] = lemon::backends::modality_display_for(*desc);
         entry["experimental"] = desc->experimental;
         entry["web_display_name"] = desc->web_display_name.empty() ? desc->display_name : desc->web_display_name;
         entry["slot_policy"] = slot_policy_to_string(desc->slot_policy);
@@ -1808,19 +1789,7 @@ static std::string read_version_file(const fs::path& version_file) {
 // --query-gpu=compute_cap) to the sm_XX token used in llamacpp-cuda release filenames.
 // Returns empty if the value cannot be parsed.
 static std::string compute_cap_to_sm(const std::string& compute_cap) {
-    size_t dot = compute_cap.find('.');
-    if (dot == std::string::npos) return "";
-    std::string major = compute_cap.substr(0, dot);
-    std::string minor = compute_cap.substr(dot + 1);
-    if (major.empty() || minor.empty()) return "";
-    // major*10 + minor, e.g. "8.6" -> "sm_86", "12.0" -> "sm_120"
-    try {
-        int m = std::stoi(major);
-        int n = std::stoi(minor);
-        return "sm_" + std::to_string(m * 10 + n);
-    } catch (...) {
-        return "";
-    }
+    return system_info_detail::compute_cap_to_sm(compute_cap);
 }
 
 // Helper to identify CUDA Compute Capability from a marketing GPU name.
@@ -1832,54 +1801,7 @@ static std::string compute_cap_to_sm(const std::string& compute_cap) {
 // IMPORTANT: nvidia-smi compute_cap is preferred — only extend this table for
 // GPUs that are confirmed to have a supported sm_XX binary.
 std::string identify_cuda_arch_from_name(const std::string& device_name) {
-    std::string n = device_name;
-    std::transform(n.begin(), n.end(), n.begin(), ::tolower);
-
-    // Quick guard: require at least one NVIDIA identifier substring
-    static const std::vector<std::string> NVIDIA_IDS = {
-        "nvidia", "geforce", "rtx", "gtx", "quadro", "tesla", "titan",
-        "a100", "a40", "a30", "a10", "h100", "h200", "b100", "b200", "l40", "gb10",
-    };
-    bool is_nvidia = false;
-    for (const auto& id : NVIDIA_IDS) {
-        if (n.find(id) != std::string::npos) { is_nvidia = true; break; }
-    }
-    if (!is_nvidia) return "";
-
-    // Data-center Blackwell (B100/B200) is compute capability 10.0 (sm_100),
-    // not 12.0 (sm_120) like the consumer/workstation Blackwell parts below.
-    // Resolve it explicitly first so the generic "blackwell" keyword in the
-    // sm_120 row doesn't misclassify a name like "NVIDIA B200 (Blackwell)".
-    if (n.find("b100") != std::string::npos || n.find("b200") != std::string::npos) {
-        return "sm_100";
-    }
-
-    // Compact table: {sm_XX, {substrings that identify the architecture}}.
-    // More-specific entries must come before broader ones; first match wins.
-    // sm_100 is listed first as a belt-and-suspenders fallback (the early guard
-    // above already returns before this table is reached for B100/B200).
-    static const std::vector<std::pair<std::string, std::vector<std::string>>> TABLE = {
-        {"sm_121", {"gb10"}},
-        {"sm_100", {"b100", "b200"}},
-        {"sm_120", {"blackwell", "rtx 50", "rtx50", "5090", "5080", "5070", "5060",
-                    "rtx pro 6000", "rtx pro 5000", "rtx pro 4500", "rtx pro 4000",
-                    "rtx pro 3500", "rtx pro 3000", "rtx pro 2000", "rtx pro 1000"}},
-        {"sm_90",  {"h100", "h200"}},
-        {"sm_89",  {"rtx 40", "rtx40", "4090", "4080", "4070", "4060", "l40", " l4"}},
-        {"sm_80",  {"a100"}},
-        {"sm_86",  {"rtx 30", "rtx30", "3090", "3080", "3070", "3060", "3050",
-                    "a40", "a30", "a10", "a6000", "a5000", "a4000", "a2000"}},
-        {"sm_75",  {"rtx 20", "rtx20", "2080", "2070", "2060",
-                    "gtx 16", "gtx16", "1660", "1650",
-                    "titan rtx", "quadro rtx", " t4"}},
-    };
-
-    for (const auto& [sm, keywords] : TABLE) {
-        for (const auto& kw : keywords) {
-            if (n.find(kw) != std::string::npos) return sm;
-        }
-    }
-    return "";
+    return system_info_detail::identify_cuda_arch_from_name(device_name);
 }
 
 // Helper to identify ROCm architecture from GPU name.

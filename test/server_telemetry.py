@@ -1032,7 +1032,7 @@ class ModelTypeTests(TelemetryTestBase):
             ],
         }
         res = self._auth_post(
-            f"http://localhost:{PORT}/api/v1/reranking", reranking_payload
+            f"http://localhost:{PORT}/api/v1/rerank", reranking_payload
         )
         self.assertEqual(res.status_code, 200, res.text)
 

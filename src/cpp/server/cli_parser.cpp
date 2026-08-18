@@ -24,6 +24,8 @@ CLIParser::CLIParser()
 
     app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
         ->type_name("HOST");
+
+    app_.add_flag("--broadcast,!--no-broadcast", config_.broadcast, "Enable or disable UDP broadcasting for server discovery");
 }
 
 int CLIParser::parse(int argc, char** argv) {

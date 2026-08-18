@@ -1,14 +1,16 @@
 #pragma once
 
 #include <CLI/CLI.hpp>
+#include <optional>
 #include <string>
 
 namespace lemon {
 
 struct ServerConfig {
-    std::string cache_dir;     // Positional arg: lemonade cache dir (optional, platform default)
-    int port = -1;             // -1 = not specified on CLI, use config.json value
-    std::string host;          // Empty = not specified on CLI, use config.json value
+    std::string cache_dir;                // Positional arg: lemonade cache dir (optional, platform default)
+    int port = -1;                        // -1 = not specified on CLI, use config.json value
+    std::string host;                     // Empty = not specified on CLI, use config.json value
+    std::optional<bool> broadcast;        // std::nullopt = not specified on CLI, use config.json value
 };
 
 class CLIParser {

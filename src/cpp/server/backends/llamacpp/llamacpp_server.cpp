@@ -9,6 +9,7 @@
 #include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <regex>
 #include <system_error>
@@ -50,9 +51,6 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-static const int EMBEDDING_BATCH_SIZE = 8192;
-static const int EMBEDDING_UBATCH_SIZE = 8192;
-
 // Helper to push reserved flags and their aliases
 static void push_reserved(std::set<std::string>& reserved,
                     const std::string& key,
@@ -93,7 +91,8 @@ static void push_overridable_arg(std::vector<std::string>& args,
         anti_key = "--no-" + key.substr(2); //remove -- prefix
     }
 
-    if ((custom_args.find(key) == std::string::npos) && (custom_args.find(anti_key) == std::string::npos)) {
+    const std::vector<std::string> tokens = parse_custom_args(custom_args);
+    if (!custom_args_has_flag(tokens, key) && !custom_args_has_flag(tokens, anti_key)) {
         args.push_back(key);
     }
 }
@@ -102,8 +101,17 @@ static void push_overridable_arg(std::vector<std::string>& args,
 static void push_overridable_arg(std::vector<std::string>& args,
                     const std::string& custom_args,
                     const std::string& key,
-                    const std::string& value) {
-    if (custom_args.find(key) == std::string::npos) {
+                    const std::string& value,
+                    const std::vector<std::string>& aliases = {}) {
+    const std::vector<std::string> tokens = parse_custom_args(custom_args);
+
+    for (const auto& alias : aliases) {
+        if (custom_args_has_flag(tokens, alias)) {
+            return;
+        }
+    }
+
+    if (!custom_args_has_flag(tokens, key)) {
         args.push_back(key);
         args.push_back(value);
     }
@@ -127,6 +135,16 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
+}
+
+static bool is_dflash_draft_checkpoint(std::string checkpoint) {
+    std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    size_t separator = checkpoint.find_last_of("/:\\");
+    std::string filename = separator == std::string::npos
+                               ? checkpoint
+                               : checkpoint.substr(separator + 1);
+    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -362,9 +380,16 @@ void LlamaCppServer::load(const std::string& model_name,
             push_arg(args, reserved_flags, "--no-mmproj-offload");
         }
     }
-    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto", "--mmproj-offload", "--no-mmproj-offload"});
+    push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto"});
 
-    if (!draft_path.empty()) {
+    const bool has_dflash_label =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") != model_info.labels.end();
+    const bool is_dflash_draft =
+        !draft_path.empty() && is_dflash_draft_checkpoint(model_info.checkpoint("draft"));
+    const bool use_draft_checkpoint =
+        !draft_path.empty() && (!is_dflash_draft || has_dflash_label);
+
+    if (use_draft_checkpoint) {
         push_arg(args, reserved_flags, "--model-draft", draft_path);
     }
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
@@ -372,19 +397,23 @@ void LlamaCppServer::load(const std::string& model_name,
     // Use legacy reasoning formatting
     push_overridable_arg(args, llamacpp_args, "--reasoning-format", "auto");
 
-    if (std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end()) {
+    const bool uses_mtp =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") != model_info.labels.end();
+
+    if (is_dflash_draft && has_dflash_label) {
+        LOG(INFO, "LlamaCpp") << "Model uses DFlash, adding draft decoding defaults" << std::endl;
+        push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-dflash");
+    } else if (uses_mtp) {
         LOG(INFO, "LlamaCpp") << "Model uses MTP, adding draft decoding defaults" << std::endl;
         push_overridable_arg(args, llamacpp_args, "--spec-type", "draft-mtp");
-        push_overridable_arg(args, llamacpp_args, "--spec-draft-n-max", "3");
-        push_overridable_arg(args, llamacpp_args, "--spec-draft-p-min", "0.75");
     }
 
     // Disable llamacpp webui by default
-    push_overridable_arg(args, llamacpp_args, "--no-webui");
+    push_overridable_arg(args, llamacpp_args, "--no-ui");
 
     // Disable mmap on iGPU
     if (SystemInfo::get_has_igpu()) {
-        push_overridable_arg(args, llamacpp_args, "--no-mmap");
+        push_overridable_arg(args, llamacpp_args, "--load-mode", "none", {"--direct-io", "--no-direct-io", "-dio", "-ndio", "--mmap", "--no-mmap", "--mlock", "-lm"});
     }
 
     // Add embeddings support if the model supports it

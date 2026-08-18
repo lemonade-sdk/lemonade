@@ -167,8 +167,11 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `host` | string | HTTP rebind |
 | `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
-| `no_broadcast` | bool | Stops or starts UDP beacon |
-| `extra_models_dir` | string | Updates model manager search path |
+| `broadcast` | bool | Starts or stops UDP beacon |
+| `models_dir` | string (`"auto"` or path) | Updates the primary model cache location |
+| `extra_models_dir` | string | Validates access and updates the external GGUF search path |
+
+When `extra_models_dir` points to an existing path, `lemond` validates that it is a readable directory before applying the update. A path that does not exist yet is accepted so the directory watcher can pick it up if it is created later. Because `/internal/set` validates all supplied keys before applying any of them, a directory validation error rejects the whole request with `400`.
 
 **Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
 

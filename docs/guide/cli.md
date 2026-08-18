@@ -8,6 +8,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 - [Global Options](#global-options)
 - [Options for list](#options-for-list)
 - [Options for pull](#options-for-pull)
+- [Options for alias](#options-for-alias)
 - [Options for import](#options-for-import)
 - [Options for load](#options-for-load)
 - [Options for run](#options-for-run)
@@ -47,6 +48,9 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 |---------------------|-------------------------------------|
 | `list`              | List all available models. |
 | `pull MODEL_OR_CHECKPOINT` | Download a registered model, pull a Hugging Face or ModelScope checkpoint, or manually register a `user.*` model with `--checkpoint`/`--recipe`. See command options [below](#options-for-pull). |
+| `alias add ALIAS TARGET_MODEL` | Bind an alias to a target model. See command options [below](#options-for-alias). |
+| `alias remove ALIAS` | Remove an existing model alias binding. |
+| `alias list` | List all active model alias bindings. |
 | `import JSON_FILE`  | Import a model from a JSON configuration file. See command options [below](#options-for-import). |
 | `delete MODEL_NAME` | Delete a model and its files from local storage. |
 | `load MODEL_NAME`   | Load a model for inference. See command options [below](#options-for-load). |
@@ -78,6 +82,7 @@ The following options are available for all commands:
 | `--host HOST` | Server host address | `127.0.0.1` |
 | `--port PORT` | Server port number | `13305` |
 | `--api-key KEY` | API key for authentication | None |
+| `--discovery` / `--no-discovery` | Enable or disable auto-discovery of local server via UDP beacon | Enabled |
 
 These options can also be set via environment variables:
 - `LEMONADE_HOST` for `--host`
@@ -171,7 +176,7 @@ The `pull` command downloads and installs models. It can also register a custom 
 Common forms:
 
 ```bash
-lemonade pull MODEL_OR_CHECKPOINT [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
+lemonade pull MODEL_OR_CHECKPOINT [--alias ALIAS] [--checkpoint TYPE CHECKPOINT] [--recipe RECIPE] [--label LABEL] [--components MODEL ...]
 ```
 
 ```bash
@@ -184,18 +189,56 @@ lemonade pull unsloth/Qwen3-8B-GGUF
 # Pull a specific Hugging Face variant
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
-# Register and pull a custom model
-lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp
+# Register and pull a custom model with an alias
+lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --alias my-alias
 ```
 
 | Option | Description | Required |
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
-| `--source` | Remote registry for checkpoint pulls: `huggingface` (default) or `modelscope`; direct hub URLs are auto-detected | No |
+| `--source` | Remote registry for checkpoint pulls: `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. Direct hub URLs are auto-detected | No |
+| `--alias ALIAS` | Add an alias for the model being registered or pulled. | No |
 | `--checkpoint TYPE CHECKPOINT` | Manual registration: add a checkpoint entry. Repeat for multi-component models such as `main` + `mmproj` or `main` + `vae`. | No |
 | `--recipe RECIPE` | Manual registration: recipe to associate with the new `user.*` model (`llamacpp`, `flm`, `ryzenai-llm`, `vllm`, `whispercpp`, `sd-cpp`, `kokoro`, `collection.omni`) | No |
 | `--label LABEL` | Manual registration: add a label to the new model. Repeatable. Valid: `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision` | No |
 | `--components MODEL [MODEL ...]` | Omni-model registration: component names to bundle. Use with `--recipe collection.omni`. Components must already be registered (built-in or previously pulled `user.*`); any not-yet-downloaded components are pulled by the same call. | No |
+
+## Options for alias
+
+The `alias` command family allows you to view, add, and remove model aliases. Aliases provide a Symbolic Routing Layer, letting application code write against a stable identifier while the underlying target model can be updated dynamically.
+
+```bash
+lemonade alias list
+lemonade alias add ALIAS TARGET_MODEL
+lemonade alias remove ALIAS
+```
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `alias list` | List all registered model aliases with their target models and recipes. |
+| `alias add ALIAS TARGET_MODEL` | Bind `ALIAS` to `TARGET_MODEL`. Requests for `ALIAS` will resolve to `TARGET_MODEL`. |
+| `alias remove ALIAS` | Remove the alias binding for `ALIAS`. |
+
+**Examples:**
+
+```bash
+# Bind an alias to a model
+lemonade alias add llama Qwen3-0.6B-GGUF
+
+# Environment-independent naming: map a generic application identifier to a specific model
+lemonade alias add production-llm Qwen2.5-Coder-1.5B-Instruct
+
+# Active-standby failover: instantly swap the alias target to a fallback model without restarting clients
+lemonade alias add production-llm Tiny-Test-Model-GGUF
+
+# List all active aliases
+lemonade alias list
+
+# Remove an alias binding
+lemonade alias remove llama
+```
 
 ## Options for import
 
@@ -379,6 +422,12 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
+#### TheNoise ROCm (experimental) (`thenoise` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |
@@ -402,6 +451,7 @@ The following options are available depending on the recipe being used:
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--trellis BACKEND` | Trellis backend to use | Auto-detected |
+| `--trellis-args ARGS` | Custom arguments to pass to trellis-server | `""` |
 
 #### OpenMOSS TTS (`openmoss` recipe)
 
@@ -810,6 +860,61 @@ Lemonade ships with a bundled set of scenarios (`bench_scenarios.json`) covering
 You can override these with `--scenario-file` or `--scenario-dir`.
 
 **Note:** Long-context scenarios (`context-32k`, `context-64k`, `context-128k`, `context-multi-turn`) are excluded by default because they run very long. Use `--scenarios long-context` to include them. Embedding tests are also excluded by default but can be enabled with `--scenarios embed`. To enable all scenarios, regardless of type, runtime, or resource requirement use `--scenarios all`.
+
+#### Vision Scenarios
+
+Vision scenarios benchmark a multimodal model on image understanding tasks (e.g., transcription, captioning, visual Q&A). They are **not** part of the default scenario set, so you must opt in explicitly with `--scenarios vision` (or filter by a specific scenario name).
+
+A vision scenario differs from a textgen scenario in a few ways:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `category` | string | Must be `"vision"` (required, case-sensitive) |
+| `image_path` | string | Path to the image file, relative to the scenario file (required, non-empty) |
+| `messages` | array | Chat messages in OpenAI format (required) |
+| `max_tokens` | int | Maximum output tokens (default: `1024`) |
+
+Notes on behavior:
+
+- `image_path` is **required** for vision scenarios. A missing or empty value is rejected at parse time.
+- The image path is resolved **relative to the scenario file's directory** and must reside in that same directory. Absolute paths, `../` traversal, and paths into subdirectories beneath the scenario file are rejected.
+- The image is base64-encoded and embedded into the **first `user` message** as an `image_url` data URI. Only a single image is supported; multiple user messages do not receive additional copies.
+- Supported formats are `jpeg`/`jpg`, `png`, `webp`, and `gif`.
+- The model must support vision (i.e., carry the `vision` label).
+- Some models perform better with more tokens. Gemma4, for example, may perform better on text transcription tasks when run with `--image-max-tokens 1120 --image-min-tokens 1120 --ubatch-size 2048`. Consult the model card for additional parameter suggestions.
+
+Here is an example scenario file that mirrors the bundled `bench_scenarios_vision.json`:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "hello-world",
+      "category": "vision",
+      "image_path": "hello_world.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    },
+    {
+      "name": "declaration-of-independence",
+      "category": "vision",
+      "image_path": "declaration.jpg",
+      "messages": [ {"role": "user", "content": "transcribe this image"} ],
+      "max_tokens": 4096
+    }
+  ]
+}
+```
+
+Each entry pairs a descriptive scenario `name` with an `image_path` that points to an image file stored alongside the scenario file. To build your own data set, drop the image files next to the scenario JSON (so `image_path` is a bare filename) and reference them from `image_path`.
+
+Run a vision benchmark against a vision-capable model with:
+
+```
+lemonade bench --scenario-file bench_scenarios_vision.json --scenarios vision Qwen2.5-VL-7B-GGUF
+```
+
+Vision scenarios are excluded by default both because they require a vision-capable model and because embedding and transferring image payloads adds overhead; opt in deliberately when benchmarking a multimodal model.
 
 
 ### Output

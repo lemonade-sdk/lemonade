@@ -39,11 +39,12 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    _auth_headers,
 )
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
-    SECOND_TEST_MODEL_EVICTION,
+    MULTI_MODEL_QUATERNARY,
     MULTI_MODEL_TERTIARY,
     get_default_lemond_binary,
     SHARED_REPO_MODEL_A_NAME,
@@ -178,7 +179,9 @@ class EndpointTests(ServerTestBase):
             "health",
             "stats",
             "system-info",
+            "rerank",
             "reranking",
+            "reranker",
             "audio/transcriptions",
             "images/generations",
             "install",
@@ -203,7 +206,66 @@ class EndpointTests(ServerTestBase):
                     f"Endpoint {endpoint} is not registered on {version}",
                 )
 
+        # POST-only routes should be probed with their actual method. httplib does
+        # not synthesize HEAD responses for POST handlers.
+        for endpoint in ["models/register"]:
+            for version in ["v0", "v1"]:
+                url = f"http://localhost:{PORT}/api/{version}/{endpoint}"
+                response = session.post(url, json={}, timeout=TIMEOUT_DEFAULT)
+                self.assertNotEqual(
+                    response.status_code,
+                    404,
+                    f"POST endpoint {endpoint} is not registered on {version}",
+                )
+
         session.close()
+
+    def test_000a_register_model_definition_without_pull(self):
+        """Register a user model definition without downloading its checkpoint."""
+        canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
+        checkpoint = "example/register-endpoint-test:Q4_K_M"
+        try:
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "llamacpp",
+                    "checkpoint": checkpoint,
+                    "labels": ["test-register-endpoint"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+            body = response.json()
+            self.assertEqual(body.get("status"), "success")
+            self.assertEqual(body.get("canonical_model_name"), canonical_name)
+            public_name = body.get("model_name")
+            self.assertIsInstance(public_name, str)
+            self.assertTrue(public_name)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_response.status_code, 200, models_response.text)
+            entry = next(
+                model
+                for model in models_response.json()["data"]
+                if model["id"] == public_name
+            )
+            self.assertEqual(entry.get("checkpoint"), checkpoint)
+            self.assertEqual(entry.get("recipe"), "llamacpp")
+            self.assertFalse(entry.get("downloaded"))
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": canonical_name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
@@ -487,6 +549,36 @@ class EndpointTests(ServerTestBase):
             "Loaded model should be exposed in lemonade_model_info",
         )
         print("[OK] /metrics returned Prometheus text with loaded model samples")
+
+    def test_002b_cache_and_routing_metrics_series(self):
+        """Cache-effectiveness and route-stability series exist in /metrics and /stats."""
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.text
+        self.assertIn("# HELP lemonade_model_cache_tokens ", body)
+        self.assertIn("# HELP lemonade_model_cache_tokens_total ", body)
+
+        samples = self._parse_prometheus_text(body)
+        for series in (
+            "lemonade_cache_tokens_total",
+            "lemonade_routing_decisions_total",
+            "lemonade_routing_switches_total",
+        ):
+            self.assertIn(series, samples, f"{series} missing from /metrics")
+
+        stats_response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(stats_response.status_code, 200)
+        stats = stats_response.json()
+        for key in (
+            "cache_tokens",
+            "cache_tokens_total",
+            "routing_decisions_total",
+            "routing_switches_total",
+        ):
+            self.assertIn(key, stats, f"{key} missing from /stats")
+        print("[OK] cache and routing telemetry series present in /metrics and /stats")
 
     def test_003_models_list(self):
         """Test listing available models via /models endpoint."""
@@ -791,6 +883,8 @@ class EndpointTests(ServerTestBase):
 
     def test_012_load_uses_saved_options(self):
         """Test that load reads previously saved options from recipe_options.json."""
+        self._snapshot_options()
+
         # First, save options with a specific ctx_size
         custom_ctx_size = 3072
         requests.post(
@@ -981,6 +1075,573 @@ class EndpointTests(ServerTestBase):
             f"[OK] /load after auto-load was a no-op and kept PID "
             f"{loaded_after['pid']}"
         )
+
+    def _options_url(self, model=ENDPOINT_TEST_MODEL):
+        return f"{self.base_url}/models/{model}/options"
+
+    def _reset_options(self, model=ENDPOINT_TEST_MODEL):
+        """Erase the model's recipe_options.json entry and return the response."""
+        return requests.delete(self._options_url(model), timeout=TIMEOUT_DEFAULT)
+
+    def _snapshot_options(self, model=ENDPOINT_TEST_MODEL):
+        """Register a cleanup restoring the model's saved options as they are now.
+
+        Saved options outlive the test that wrote them, and outlive this whole
+        suite: several suites share one server, so a test that persists an
+        option has to put it back.
+        """
+        saved = requests.get(self._options_url(model), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.addCleanup(self._restore_options, saved, model)
+
+    def _restore_options(self, saved, model=ENDPOINT_TEST_MODEL):
+        self._reset_options(model)
+        if saved:
+            requests.post(self._options_url(model), json=saved, timeout=TIMEOUT_DEFAULT)
+
+    def _set_global_ctx_size(self, ctx_size):
+        """Set the server-wide default context size."""
+        response = requests.post(
+            f"{self.internal_url}/set",
+            json={"ctx_size": ctx_size},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def _set_global_llamacpp_args(self, args):
+        """Set the server-wide llama.cpp custom arguments."""
+        response = requests.post(
+            f"{self.internal_url}/set",
+            json={"llamacpp_args": args},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_012la_load_null_transiently_clears_saved_args(self):
+        """Explicit null skips a saved *_args value for one load only."""
+        self._snapshot_options()
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+
+        response = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--threads 1"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": None,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertNotIn("--threads 1", loaded_args)
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
+
+    def test_012lb_load_null_keeps_other_saved_keys(self):
+        """A tombstone masks only its key; unrelated saved settings still apply."""
+        self._snapshot_options()
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+
+        response = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--threads 1", "ctx_size": 3072},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_args": None},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        recipe_options = loaded.get("recipe_options", {})
+        self.assertNotIn("--threads 1", recipe_options.get("llamacpp_args", ""))
+        self.assertEqual(recipe_options.get("ctx_size"), 3072)
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
+        self.assertEqual(saved.get("ctx_size"), 3072)
+
+    def test_012lc_load_request_args_replace_saved_args_layer(self):
+        """Concrete *_args requests replace the saved same-key layer."""
+        self._snapshot_options()
+        config = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()
+        original_global_args = config.get("llamacpp", {}).get("args", "")
+        self.addCleanup(self._set_global_llamacpp_args, original_global_args)
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+        self._set_global_llamacpp_args("")
+
+        response = requests.post(
+            self._options_url(),
+            json={
+                "llamacpp_args": "--threads 1 --threads-batch 1",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--threads 2",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertIn("--threads 2", loaded_args)
+        self.assertNotIn("--threads-batch 1", loaded_args)
+        self.assertNotIn("--threads 1 ", loaded_args + " ")
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(
+            saved.get("llamacpp_args"),
+            "--threads 1 --threads-batch 1",
+            "Transient /load must not rewrite the saved args layer",
+        )
+
+    def test_012ld_load_ctx_size_minus_one_remains_explicit_auto(self):
+        """ctx_size=-1 is a concrete auto value, not a transient tombstone."""
+        self._snapshot_options()
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+
+        response = requests.post(
+            self._options_url(),
+            json={"ctx_size": 3072},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "ctx_size": -1,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        options = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(options["saved"].get("ctx_size"), -1)
+        self.assertEqual(options["effective"].get("ctx_size"), -1)
+
+    def test_012le_load_request_args_still_merge_global_args(self):
+        """Request *_args skips saved same-key but still merges lower global args."""
+        self._snapshot_options()
+        config = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()
+        original_global_args = config.get("llamacpp", {}).get("args", "")
+        self.addCleanup(self._set_global_llamacpp_args, original_global_args)
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+        self._set_global_llamacpp_args("--no-mmap --threads 1")
+
+        response = requests.post(
+            self._options_url(),
+            json={
+                "llamacpp_args": "--threads-batch 1",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--threads 2",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertIn("--threads 2", loaded_args)
+        self.assertIn("--no-mmap", loaded_args)
+        self.assertNotIn("--threads-batch 1", loaded_args)
+        self.assertNotIn("--threads 1 ", loaded_args + " ")
+
+    def test_012m_model_options_save_without_loading(self):
+        """POST /models/{id}/options persists options without loading the model."""
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.addCleanup(self._reset_options)
+        self.assertEqual(self._reset_options().status_code, 200)
+
+        before = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(before.status_code, 200)
+        self.assertEqual(before.json()["saved"], {})
+
+        # model_name mirrors what `effective` reports, so the whole object can
+        # be replayed against /load or back here; it must not be persisted.
+        response = requests.post(
+            self._options_url(),
+            json={"ctx_size": 8192, "model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["saved"], {"ctx_size": 8192})
+        self.assertEqual(data["effective"]["ctx_size"], 8192)
+        self.assertEqual(data["effective"]["model_name"], ENDPOINT_TEST_MODEL)
+
+        # The save must be visible to /models/{id} without a load having happened
+        model_info = requests.get(
+            f"{self.base_url}/models/{ENDPOINT_TEST_MODEL}", timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(model_info["recipe_options"].get("ctx_size"), 8192)
+
+        health = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT).json()
+        loaded = [m["model_name"] for m in health.get("all_models_loaded", [])]
+        self.assertNotIn(
+            ENDPOINT_TEST_MODEL,
+            loaded,
+            "Saving options must not load the model",
+        )
+
+        self._reset_options()
+        print("[OK] Saved recipe options without loading the model")
+
+    def test_012o_model_options_merge_and_delete(self):
+        """POST merges into the saved entry; null clears a key; DELETE erases it all."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+        defaults = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "defaults"
+        ]
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        merged = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--no-mmap"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(merged["saved"].get("ctx_size"), 4096)
+        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
+
+        # Clearing one key leaves the other alone
+        partial = requests.post(
+            self._options_url(), json={"llamacpp_args": ""}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(partial["saved"], {"ctx_size": 4096})
+
+        # null clears a key too, and the model falls back through the chain
+        cleared_key = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(cleared_key["saved"], {})
+        self.assertEqual(
+            cleared_key["effective"]["ctx_size"],
+            defaults["ctx_size"],
+            "Clearing an option should fall back to the default chain",
+        )
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 4096}, timeout=TIMEOUT_DEFAULT
+        )
+        cleared = self._reset_options()
+        self.assertEqual(cleared.status_code, 200)
+        self.assertEqual(cleared.json()["saved"], {})
+        self.assertEqual(cleared.json()["effective"], cleared.json()["defaults"])
+
+        print("[OK] Options merge on POST, clear on null, and are erased by DELETE")
+
+    def test_012p_model_options_rejects_invalid_input(self):
+        """Unknown, wrong-recipe, wrong-typed, and unsettable options are refused."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        reported = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertNotIn(
+            "pinned",
+            reported["effective"],
+            "pinned is live-process state, so this endpoint must not report it",
+        )
+
+        for body in (
+            {"nonsense": 1},  # not an option at all
+            {"steps": 30},  # sd-cpp option on an llamacpp model
+            {"ctx_size": "big"},  # wrong type
+            {"ctx_size": "8192"},  # numeric, but still a string
+            {"ctx_size": ""},  # strings never clear ctx_size; only null does
+            {"ctx_size": "auto"},  # -1 is the one spelling of automatic
+            {"ctx_size": -5},  # out of range: only -1 is a valid negative
+            {"ctx_size": 0},  # only -1 auto-resolves; 0 reaches the backend
+            {"ctx_size": 4096.5},  # not a whole number
+            {"auto_evict": "sometimes"},  # wrong type for a null-default option
+            {"evict_idle_timeout": 600.5},  # fractional value for a whole-number option
+            # Live-process state, owned by /load and /internal/pin
+            {"pinned": True},
+        ):
+            response = requests.post(
+                self._options_url(), json=body, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(response.status_code, 400, f"Expected 400 for body {body}")
+            self.assertIn("error", response.json())
+
+        # Numeric literals no int64 can hold. The first overflows a double,
+        # which the JSON parser reports as a distinct error class; the second
+        # would wrap to -1 and read as "size it automatically".
+        for raw_body in ('{"ctx_size": 1e400}', '{"ctx_size": 18446744073709551615}'):
+            response = requests.post(
+                self._options_url(),
+                data=raw_body,
+                headers={"Content-Type": "application/json"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                response.status_code, 400, f"Expected 400 for body {raw_body}"
+            )
+            self.assertIn("error", response.json())
+
+        # Nothing was persisted by any of the rejected requests
+        self.assertEqual(
+            requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"],
+            {},
+        )
+
+        not_found = requests.get(
+            self._options_url(model="ThisModelDoesNotExist"), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(not_found.status_code, 404)
+
+        print("[OK] Model options endpoint rejects invalid input")
+
+    def test_012r_model_options_explicit_auto_beats_global(self):
+        """ctx_size=-1 is saved as automatic and overrides a global ctx_size.
+
+        Clearing the option is not enough on its own: the model then inherits
+        whatever the server-wide ctx_size is. Saving -1 is what says "size this
+        one model from available memory regardless".
+        """
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self.addCleanup(self._reset_options)
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+        self._reset_options()
+
+        self._set_global_ctx_size(8192)
+
+        inherited = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(
+            inherited["effective"]["ctx_size"],
+            8192,
+            "With nothing saved, the model should inherit the global ctx_size",
+        )
+
+        data = requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(
+            data["saved"].get("ctx_size"),
+            -1,
+            "ctx_size=-1 should persist the auto sentinel",
+        )
+        self.assertEqual(
+            data["effective"]["ctx_size"],
+            -1,
+            "ctx_size=-1 should override the global ctx_size",
+        )
+        self.assertEqual(
+            data["defaults"]["ctx_size"],
+            8192,
+            "Defaults should still show what clearing the option gives",
+        )
+
+        cleared = requests.post(
+            self._options_url(), json={"ctx_size": None}, timeout=TIMEOUT_DEFAULT
+        ).json()
+        self.assertEqual(cleared["saved"], {})
+        self.assertEqual(
+            cleared["effective"]["ctx_size"],
+            8192,
+            "Clearing the option should fall back to the global ctx_size",
+        )
+
+        print("[OK] Saved ctx_size=-1 overrides an explicit global ctx_size")
+
+    def test_012t_effective_replays_as_a_load_command(self):
+        """`effective` is the exact /v1/load body that reproduces the load.
+
+        Load with saved options, erase them, then replay `effective` verbatim:
+        if it fully captures the load command, the router resolves identical
+        options and keeps the backend process; any gap forces a reload.
+
+        An explicit ctx_size and an automatic one take different paths through
+        that check: the running process holds the concrete size auto-tune chose,
+        which no request can spell, so -1 has to be recognized as the size it
+        already resolved to."""
+        self.addCleanup(self._reset_options)
+
+        for ctx_size in (3072, -1):
+            with self.subTest(ctx_size=ctx_size):
+                self._reset_options()
+                requests.post(
+                    self._options_url(),
+                    json={"ctx_size": ctx_size, "llamacpp_args": "--no-mmap"},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                effective = requests.get(
+                    self._options_url(), timeout=TIMEOUT_DEFAULT
+                ).json()["effective"]
+                self.assertEqual(effective["model_name"], ENDPOINT_TEST_MODEL)
+                self.assertEqual(effective["ctx_size"], ctx_size)
+
+                load = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": ENDPOINT_TEST_MODEL},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(load.status_code, 200, load.text)
+                loaded_before = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded_before)
+
+                self._reset_options()
+                replay = requests.post(
+                    f"{self.base_url}/load",
+                    json=effective,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                self.assertEqual(replay.status_code, 200, replay.text)
+                loaded_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+                self._assert_loaded_model_pid(loaded_after)
+                self.assertEqual(
+                    loaded_after["pid"],
+                    loaded_before["pid"],
+                    "Replaying `effective` must resolve to the same load",
+                )
+
+        print("[OK] `effective` replays verbatim as a /v1/load command")
+
+    def test_012u_options_resolve_ctx_size_and_dry_run(self):
+        """resolved_ctx_size is concrete, and dry_run resolves without saving."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        preview = requests.post(
+            self._options_url(),
+            json={"ctx_size": 4096, "dry_run": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(preview.status_code, 200, preview.text)
+        data = preview.json()
+        self.assertEqual(data["effective"]["ctx_size"], 4096)
+        self.assertEqual(data["resolved_ctx_size"], 4096)
+        self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
+
+        after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
+        self.assertGreater(
+            after["resolved_ctx_size"],
+            0,
+            "An automatic ctx_size resolves to a concrete positive size",
+        )
+
+        rejected = requests.post(
+            self._options_url(),
+            json={"ctx_size": 0, "dry_run": True},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(rejected.status_code, 400, "dry_run still validates")
+
+        print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
@@ -2449,6 +3110,86 @@ class EndpointTests(ServerTestBase):
         )
         print(f"[OK] builtin.{ENDPOINT_TEST_MODEL} alias resolves to bare id")
 
+    def test_021aa_internal_aliases_endpoints(self):
+        """Test administrative REST endpoints: POST/GET/DELETE /internal/aliases."""
+        alias_name = "test-endpoint-alias"
+        target_model = ENDPOINT_TEST_MODEL
+
+        get_res = requests.get(
+            f"{self.internal_url}/aliases",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(get_res.status_code, 200)
+        self.assertIn("aliases", get_res.json())
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": target_model},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200)
+            self.assertEqual(add_res.json()["alias"], alias_name)
+            self.assertEqual(add_res.json()["target"], target_model)
+
+            model_res = requests.get(
+                f"{self.base_url}/models/{alias_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(model_res.status_code, 200)
+            self.assertEqual(model_res.json()["id"], alias_name)
+
+            # Test multi-hop chained alias resolution (alias_hop -> test-endpoint-alias -> ENDPOINT_TEST_MODEL)
+            hop_alias = "test-hop-alias"
+            add_hop_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": hop_alias, "target": alias_name},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_hop_res.status_code, 200)
+
+            hop_model_res = requests.get(
+                f"{self.base_url}/models/{hop_alias}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(hop_model_res.status_code, 200)
+            self.assertEqual(hop_model_res.json()["id"], hop_alias)
+
+            del_hop_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(hop_alias)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(del_hop_res.status_code, 200)
+
+            get_res2 = requests.get(
+                f"{self.internal_url}/aliases",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(get_res2.status_code, 200)
+            aliases = get_res2.json()["aliases"]
+            found = any(a["alias"] == alias_name for a in aliases)
+            self.assertTrue(found)
+
+        finally:
+            del_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(del_res.status_code, (200, 404))
+
+        model_res_del = requests.get(
+            f"{self.base_url}/models/{alias_name}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(model_res_del.status_code, 404)
+        print(f"[OK] /internal/aliases POST/GET/DELETE verified")
+
     def test_021e_naming_spec_user_shadows_builtin(self):
         """Naming spec: a user.X registration shadows a built-in X.
 
@@ -3741,7 +4482,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 400, response.text)
         self.assertIn("undeclared-classifier-model", response.json()["error"])
-        print("[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400")
+        print(
+            "[OK] /routing/validate rejected undeclared candidate/classifier-model references with 400"
+        )
 
     def test_021zm_routing_validate_llm_router_fails_open_returns_200(self):
         """The 'llm' router type is fully implemented: the parser desugars
@@ -3792,7 +4535,9 @@ class EndpointTests(ServerTestBase):
             [rule["id"] for rule in normalized_routing["rules"]],
             ["__route_0", "__route_1"],
         )
-        print("[OK] /routing/validate ran an llm router live and failed open to the default model")
+        print(
+            "[OK] /routing/validate ran an llm router live and failed open to the default model"
+        )
 
     def test_021zn_routing_validate_has_images_flag(self):
         """The has_images request flag flows through to a has_images match
@@ -3981,7 +4726,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response_bad_has_tools.status_code, 400)
         self.assertIn("has_tools", response_bad_has_tools.json()["error"])
-        print("[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400")
+        print(
+            "[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400"
+        )
 
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
@@ -4191,7 +4938,7 @@ class EndpointTests(ServerTestBase):
         """
         router_model = MULTI_MODEL_TERTIARY
         candidate_model = ENDPOINT_TEST_MODEL
-        third_model = SECOND_TEST_MODEL_EVICTION
+        third_model = MULTI_MODEL_QUATERNARY
         for model in (router_model, candidate_model, third_model):
             pull_model_with_retry(model)
 
@@ -5322,6 +6069,17 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    def _write_stub_gguf_file(self, path):
+        """Write a tiny valid-enough GGUF file at an exact path."""
+        import struct
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"GGUF")
+            f.write(struct.pack("<I", 3))  # version
+            f.write(struct.pack("<Q", 0))  # tensor_count
+            f.write(struct.pack("<Q", 0))  # kv_count
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -5466,6 +6224,378 @@ class EndpointTests(ServerTestBase):
             )
 
             print(f"[OK] root GGUF emits stem: {bare}")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021t_extra_subdir_multiple_quantization_variants_emit_separate_models(
+        self,
+    ):
+        """A split extra folder lists variants and still accepts the folder name."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_variants_")
+        folder_name = "Qwen3.6-35B-A3B-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        # Q4 comes alphabetically before Q8
+        q4_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q4_K_M.gguf")
+        q8_file = os.path.join(model_dir, "Qwen3.6-35B-A3B-Q8_0.gguf")
+        mmproj_file = os.path.join(model_dir, "mmproj-Qwen3.6-35B-A3B-BF16.gguf")
+        self._write_stub_gguf_file(q4_file)
+        self._write_stub_gguf_file(q8_file)
+        self._write_stub_gguf_file(mmproj_file)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # The model list shows the real choices in the folder.
+            self.assertIn("Qwen3.6-35B-A3B-Q4_K_M", models_by_id)
+            self.assertIn("Qwen3.6-35B-A3B-Q8_0", models_by_id)
+
+            # The old folder name still works in requests, but is not listed as
+            # another model.
+            self.assertNotIn(folder_name, models_by_id)
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M")
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_file)
+
+            canonical_legacy_response = requests.get(
+                f"{self.base_url}/models/extra.{folder_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(canonical_legacy_response.status_code, 200)
+            self.assertEqual(
+                canonical_legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M"
+            )
+            self.assertEqual(canonical_legacy_response.json()["checkpoint"], q4_file)
+
+            self.assertNotIn("mmproj-Qwen3.6-35B-A3B-BF16", models_by_id)
+
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoint"], q4_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoint"], q8_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+
+            print("[OK] split extra folder lists variants and accepts folder name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021x_extra_split_folder_alias_shadows_builtin_without_visible_duplicate(
+        self,
+    ):
+        """A split extra folder name is chosen over a built-in with the same name."""
+        bare = ENDPOINT_TEST_MODEL
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_alias_shadow_")
+        model_dir = os.path.join(extra_dir, bare)
+        q4_file = os.path.join(model_dir, "Local-Compat-Q4_K_M.gguf")
+        q8_file = os.path.join(model_dir, "Local-Compat-Q8_0.gguf")
+        self._write_stub_gguf_file(q4_file)
+        self._write_stub_gguf_file(q8_file)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {model["id"] for model in models_response.json()["data"]}
+
+            self.assertIn("Local-Compat-Q4_K_M", ids)
+            self.assertIn("Local-Compat-Q8_0", ids)
+            self.assertIn(f"builtin.{bare}", ids)
+            self.assertNotIn(
+                bare,
+                ids,
+                "bare folder alias should not be emitted as a duplicate model",
+            )
+
+            alias_response = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(alias_response.status_code, 200)
+            self.assertEqual(alias_response.json()["id"], "Local-Compat-Q4_K_M")
+            self.assertEqual(alias_response.json()["checkpoint"], q4_file)
+
+            builtin_response = requests.get(
+                f"{self.base_url}/models/builtin.{bare}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(builtin_response.status_code, 200)
+            self.assertEqual(builtin_response.json()["id"], f"builtin.{bare}")
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q4_file)
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q8_file)
+
+            print(
+                "[OK] split extra folder name is chosen over builtin without duplicate model"
+            )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021u_extra_subdir_sharded_models_remain_grouped(self):
+        """extra_models_dir folders with sharded GGUFs remain grouped as one model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shards_")
+        folder_name = "Llama-3-70B-Instruct-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Llama-3-70B-Instruct-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Llama-3-70B-Instruct-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Shards should not be listed as standalone models.
+            self.assertNotIn("Llama-3-70B-Instruct-00001-of-00002", models_by_id)
+            self.assertNotIn("Llama-3-70B-Instruct-00002-of-00002", models_by_id)
+
+            self.assertIn(folder_name, models_by_id)
+            # One sharded model stays grouped under the folder name.
+            self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
+
+            print("[OK] extra subdir sharded models remain grouped")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
+        """Issue #2972: a sharded model reports the whole family's size, while
+        /models/{id}/files keeps reporting each file's own size."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shard_size_")
+        folder_name = "Sharded-Size-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        shard1 = os.path.join(model_dir, "Sharded-Size-00001-of-00002.gguf")
+        shard2 = os.path.join(model_dir, "Sharded-Size-00002-of-00002.gguf")
+        self._write_stub_gguf_file(shard1)
+        self._write_stub_gguf_file(shard2)
+
+        # The resolved path is the first shard, which in unsloth-style layouts
+        # is a small stub; the bulk of the weights live in the later shards.
+        shard2_bytes = 200 * 1024 * 1024
+        with open(shard2, "r+b") as f:
+            f.truncate(shard2_bytes)
+        shard1_bytes = os.path.getsize(shard1)
+        expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
+        shard1_only_gb = shard1_bytes / (1024**3)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+            self.assertIn(folder_name, models_by_id)
+            self.assertAlmostEqual(
+                models_by_id[folder_name]["size"],
+                expected_gb,
+                places=2,
+                msg="model size must cover every shard, not just the resolved one",
+            )
+            self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
+
+            files_response = requests.get(
+                f"{self.base_url}/models/{folder_name}/files",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(files_response.status_code, 200)
+            files = files_response.json()["files"]
+            main_files = [f for f in files if f["role"] == "main"]
+            self.assertEqual(len(main_files), 1)
+            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
+            self.assertEqual(
+                main_files[0]["size_bytes"],
+                shard1_bytes,
+                "/files must report the individual file size, not the shard total",
+            )
+
+            print("[OK] sharded size sums shards while /files stays per-file")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
+        """A folder with multiple sharded variants lists one model per variant."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_sharded_variants_")
+        folder_name = "Mixtral-8x7B-Instruct-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        q4_shard1 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002.gguf"
+        )
+        q4_shard2 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q4_K_M-00002-of-00002.gguf"
+        )
+        q8_shard1 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00001-of-00002.gguf"
+        )
+        q8_shard2 = os.path.join(
+            model_dir, "Mixtral-8x7B-Instruct-Q8_0-00002-of-00002.gguf"
+        )
+        for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
+            self._write_stub_gguf_file(shard)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            self.assertIn("Mixtral-8x7B-Instruct-Q4_K_M", models_by_id)
+            self.assertIn("Mixtral-8x7B-Instruct-Q8_0", models_by_id)
+            self.assertNotIn(folder_name, models_by_id)
+            self.assertNotIn(
+                "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002", models_by_id
+            )
+
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q4_K_M"]["checkpoint"],
+                q4_shard1,
+            )
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q8_0"]["checkpoint"],
+                q8_shard1,
+            )
+
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(
+                legacy_response.json()["id"], "Mixtral-8x7B-Instruct-Q4_K_M"
+            )
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_shard1)
+
+            print("[OK] extra folder with multiple sharded variants lists variants")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021w_extra_subdir_multiple_mmproj_files_choose_first_alphabetically(self):
+        """A folder with multiple mmproj files chooses the first name alphabetically."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_mmproj_")
+        folder_name = "Vision-Model-GGUF"
+        model_dir = os.path.join(extra_dir, folder_name)
+        model_file = os.path.join(model_dir, "Vision-Model-Q4_K_M.gguf")
+        first_mmproj = os.path.join(model_dir, "mmproj-a-Vision-Model.gguf")
+        second_mmproj = os.path.join(model_dir, "mmproj-z-Vision-Model.gguf")
+        self._write_stub_gguf_file(model_file)
+        self._write_stub_gguf_file(second_mmproj)
+        self._write_stub_gguf_file(first_mmproj)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            self.assertIn(folder_name, models_by_id)
+            self.assertEqual(
+                models_by_id[folder_name]["checkpoints"]["mmproj"],
+                os.path.basename(first_mmproj),
+            )
+
+            print("[OK] extra folder with multiple mmproj files chooses first name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
+        """Two folders holding the same variant filenames keep every model."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
+        expected = []
+        for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF"):
+            for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf"):
+                path = os.path.join(extra_dir, folder, name)
+                self._write_stub_gguf_file(path)
+                expected.append(path)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            found = {
+                model["id"]: model["checkpoint"]
+                for model in models_response.json()["data"]
+                if model.get("checkpoint") in expected
+            }
+
+            # Four files, four models: no folder may overwrite another's entry.
+            self.assertEqual(
+                len(found), len(expected), f"expected 4 models, got {found}"
+            )
+            self.assertEqual(sorted(found.values()), sorted(expected))
+
+            print("[OK] identical filenames in two extra folders stay distinct")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
+        """An -imatrix file beside the plain one is a second model, not a shard."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_imatrix_")
+        model_dir = os.path.join(extra_dir, "Local-Imatrix-GGUF")
+        plain = os.path.join(model_dir, "Model-Q4_K_M.gguf")
+        imatrix = os.path.join(model_dir, "Model-Q4_K_M-imatrix.gguf")
+        self._write_stub_gguf_file(plain)
+        self._write_stub_gguf_file(imatrix)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+
+            # Sharing a quant token is not enough to make them one sharded model.
+            self.assertIn("Model-Q4_K_M", models_by_id)
+            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
+            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
+            self.assertEqual(
+                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+            )
+
+            print("[OK] same-quant non-shard files remain separate models")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
@@ -6264,14 +7394,281 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
 
+    def test_051_default_model_source_policy(self):
+        """default_model_source validates and drives source-less variant lookups."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        try:
+            # Ships defaulting to Hugging Face.
+            self.assertIn(prior, ("huggingface", "modelscope"))
+
+            # An unsupported registry name is rejected by config validation.
+            bad = requests.post(
+                set_url,
+                json={"default_model_source": "nexus"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(bad.status_code, 400, bad.text)
+
+            # Switching the policy round-trips.
+            resp = requests.post(
+                set_url,
+                json={"default_model_source": "modelscope"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            read_back = (
+                requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+                .json()
+                .get("default_model_source")
+            )
+            self.assertEqual(read_back, "modelscope")
+
+            # A source-less variant lookup now resolves to ModelScope: the 404
+            # message names the registry the server actually contacted, proving
+            # the policy drove the choice without a per-request source.
+            variants = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={"checkpoint": "lemonade/definitely-not-a-real-repo"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(variants.status_code, 404, variants.text)
+            self.assertIn("ModelScope", variants.text)
+
+            # An explicit source always overrides the configured default.
+            override = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": "lemonade/definitely-not-a-real-repo",
+                    "source": "huggingface",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(override.status_code, 404, override.text)
+            self.assertIn("Hugging Face", override.text)
+
+            # A provider URL is detected server-side and beats the configured
+            # policy: even with the default set to ModelScope, a Hugging Face URL
+            # is normalized and contacts Hugging Face.
+            url_lookup = requests.get(
+                f"{self.base_url}/pull/variants",
+                params={
+                    "checkpoint": (
+                        "https://huggingface.co/lemonade/definitely-not-a-real-repo"
+                    )
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(url_lookup.status_code, 404, url_lookup.text)
+            self.assertIn("Hugging Face", url_lookup.text)
+        finally:
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_052_default_source_pull_persistence(self):
+        """A source-less /pull persists the configured default as the model's
+        registry provenance; an explicit source is recorded verbatim."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        prior = (
+            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
+            .json()
+            .get("default_model_source", "huggingface")
+        )
+        default_name = f"user.DefaultSource-{uuid.uuid4().hex[:8]}"
+        explicit_name = f"user.ExplicitSource-{uuid.uuid4().hex[:8]}"
+
+        def persisted_source(model_name):
+            info = requests.get(
+                f"{self.base_url}/models/{model_name}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            return info.get("registry_source") or info.get("source")
+
+        try:
+            # Force the shipped default so the source-less pull resolves to a
+            # registry that actually hosts the tiny test checkpoint.
+            requests.post(
+                set_url,
+                json={"default_model_source": "huggingface"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+            # Source-less pull: persisted provenance is the configured default.
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": default_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertEqual(persisted_source(default_name), "huggingface")
+
+            # Explicit source is recorded even when it matches the default.
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": explicit_name,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(resp2.status_code, 200, resp2.text)
+            self.assertEqual(persisted_source(explicit_name), "huggingface")
+
+            print("[OK] source-less /pull persists default_model_source provenance")
+        finally:
+            for name in (default_name, explicit_name):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+            requests.post(
+                set_url,
+                json={"default_model_source": prior},
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+    def test_053_pull_source_url_conflict_returns_400(self):
+        """A provider URL that contradicts an explicit source/registry_source is
+        rejected up front with 400, matching the CLI, before any download."""
+        name = f"user.Conflict-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "modelscope",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+
+            resp2 = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://modelscope.cn/models/owner/repo",
+                    "recipe": "llamacpp",
+                    "registry_source": "huggingface",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp2.status_code, 400, resp2.text)
+            print("[OK] conflicting /pull source vs provider URL returns 400")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_054_pull_variants_url_source_conflict_returns_400(self):
+        """GET /pull/variants with a --source param that contradicts the
+        detected URL registry is rejected with 400 (matching /pull and CLI)."""
+        # HF URL with --source modelscope should be rejected
+        resp = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/fredmagg/Phi-4-mini-instruct-GGUF",
+                "source": "modelscope",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 400, resp.text)
+        self.assertIn("checkpoint URL uses", resp.json()["error"])
+        self.assertIn("but source was set to", resp.json()["error"])
+
+        # MS URL with --source huggingface should also be rejected
+        resp2 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://modelscope.cn/models/owner/repo",
+                "source": "huggingface",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp2.status_code, 400, resp2.text)
+
+        # An invalid source with a URL should also be rejected
+        resp3 = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={
+                "checkpoint": "https://huggingface.co/owner/repo",
+                "source": "nexus",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp3.status_code, 400, resp3.text)
+        print("[OK] /pull/variants rejects URL vs --source mismatches")
+
+    def test_055_pull_invalid_source_rejected(self):
+        """Invalid source values (not huggingface/modelscope/local_*) are
+        rejected before URL normalization, not silently overwritten."""
+        name = f"user.InvalidSrc-{uuid.uuid4().hex[:8]}"
+        try:
+            resp = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": name,
+                    "checkpoint": "https://huggingface.co/owner/repo",
+                    "recipe": "llamacpp",
+                    "source": "nexus",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 400, resp.text)
+            self.assertIn("Unsupported model source", resp.json()["error"])
+            print("[OK] invalid source rejected before URL normalization")
+        finally:
+            try:
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": name},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
 
     def test_037_model_update_check_lifecycle(self):
-        """A successful re-pull clears a staged per-model update marker.
+        """A staged stale provenance snapshot must not flag a false update.
 
-        The production fix stores the processed upstream snapshot per model
-        selection in .lemonade_registry.json. Staging only that value as stale
-        exercises the regression without moving refs/main or model files that
-        may be shared by sibling variants in the same repository.
+        The processed-at-pull snapshot recorded in .lemonade_registry.json can
+        name a commit whose snapshot was never materialized locally (pull keeps
+        refs/main on an older snapshot when the selected artifacts are
+        unchanged). The update check compares against the on-disk snapshot,
+        never that recorded sha, so staging only it as stale must not report an
+        "Update available". Regression for the false-positive cycle on restart.
         """
         pull_response = requests.post(
             f"{self.base_url}/pull",
@@ -6317,9 +7714,7 @@ class EndpointTests(ServerTestBase):
             processed_models,
             "Pulled model must have a processed snapshot entry",
         )
-        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get(
-            "snapshot_id", ""
-        )
+        original_snapshot = processed_models[ENDPOINT_TEST_MODEL].get("snapshot_id", "")
         self.assertTrue(original_snapshot, "Processed snapshot must not be empty")
 
         stale_snapshot = "0" * 40
@@ -6339,7 +7734,12 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(stale_response.status_code, 200, stale_response.text)
             stale_result = stale_response.json()
             self.assertEqual(stale_result.get("status"), "success")
-            self.assertIn(ENDPOINT_TEST_MODEL, stale_result.get("models", []))
+            self.assertNotIn(
+                ENDPOINT_TEST_MODEL,
+                stale_result.get("models", []),
+                "A stale provenance snapshot must not raise a false update flag "
+                "while the on-disk snapshot is unchanged",
+            )
 
             repull_response = requests.post(
                 f"{self.base_url}/pull",
@@ -6366,7 +7766,7 @@ class EndpointTests(ServerTestBase):
             with open(provenance_path, "w", encoding="utf-8") as provenance_file:
                 provenance_file.write(original_provenance)
 
-        print("[OK] /models/check-updates lifecycle clears after re-pull")
+        print("[OK] /models/check-updates ignores stale provenance snapshots")
 
 
 if __name__ == "__main__":

@@ -16,12 +16,29 @@ PORT = 13401
 HOST = "127.0.0.1"
 BASE = f"http://{HOST}:{PORT}/api/v1"
 
-TEST_MODEL = "Tiny-Test-Model-GGUF"
+TEST_MODEL = "Jobs-TinyLlama-15M-GGUF"
+TEST_MODEL_CANONICAL = f"user.{TEST_MODEL}"
+TEST_MODEL_CHECKPOINT = "ggml-org/tiny-llamas:stories15M-q4_0.gguf"
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _LEMOND_BINARY = None
-_BACKEND_BIN_TEMPLATE = None
 _BACKEND_INSTALL_ATTEMPTED = False
+_LLAMACPP_BACKEND = None
+_TEST_MODEL_PREPARED = False
+
+SHORT_STEP_MS = 500
+QUEUE_GATE_MS = 1000
+TOKENIZE_GATE_MS = 800
+POLL_INTERVAL = 0.05
+
+TEST_CTX_SIZE = 256
+ALT_TEST_CTX_SIZE = 512
+FAST_LLAMACPP_ARGS = "--no-warmup --chat-template chatml"
+DRAIN_TOKENS = 128
+
+
+def _fast_llamacpp_args(extra=""):
+    return f"{FAST_LLAMACPP_ARGS} {extra}".strip()
 
 
 def find_lemond_binary():
@@ -40,20 +57,99 @@ def find_lemond_binary():
 
 
 class JobEngineTests(unittest.TestCase):
+    _shared_cache_dir = None
+    _shared_proc = None
+    _state_dirty = False
+
+    @classmethod
+    def tearDownClass(cls):
+        proc = cls._shared_proc
+        if proc is not None and proc.poll() is None:
+            try:
+                requests.post(f"http://{HOST}:{PORT}/internal/shutdown", timeout=5)
+            except requests.RequestException:
+                proc.terminate()
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.send_signal(signal.SIGKILL)
+                proc.wait(timeout=10)
+        cls._shared_proc = None
+
+        if cls._shared_cache_dir:
+            shutil.rmtree(cls._shared_cache_dir, ignore_errors=True)
+            cls._shared_cache_dir = None
+
     def setUp(self):
-        self.cache_dir = tempfile.mkdtemp(prefix="lemonade-jobs-")
-        if _BACKEND_BIN_TEMPLATE and os.path.isdir(_BACKEND_BIN_TEMPLATE):
-            shutil.copytree(
-                _BACKEND_BIN_TEMPLATE,
-                os.path.join(self.cache_dir, "bin"),
-                symlinks=True,
-            )
-        self.proc = None
-        self.start_server()
+        cls = type(self)
+        if cls._shared_cache_dir is None:
+            cls._shared_cache_dir = tempfile.mkdtemp(prefix="lemonade-jobs-suite-")
+            with open(
+                os.path.join(cls._shared_cache_dir, "config.json"),
+                "w",
+                encoding="utf-8",
+            ) as f:
+                json.dump({"max_loaded_models": 2}, f)
+
+        self.cache_dir = cls._shared_cache_dir
+        self.proc = cls._shared_proc
+        if self.proc is None or self.proc.poll() is not None:
+            self.start_server()
+
+        # Usually tearDown already reset everything. This recovery path matters
+        # when a previous test/setUp aborted before normal cleanup completed.
+        if cls._state_dirty:
+            self._reset_shared_state()
+        cls._state_dirty = True
 
     def tearDown(self):
-        self.stop_server()
-        shutil.rmtree(self.cache_dir, ignore_errors=True)
+        cls = type(self)
+        try:
+            if self.proc is None or self.proc.poll() is not None:
+                self.start_server()
+            self._reset_shared_state()
+        except Exception:
+            cls._state_dirty = True
+            raise
+        else:
+            cls._state_dirty = False
+
+    def _reset_shared_state(self):
+        try:
+            r = requests.get(f"{BASE}/jobs", timeout=10)
+            r.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"failed to list jobs during test cleanup: {exc}"
+            ) from exc
+
+        for job in r.json().get("jobs", []):
+            try:
+                requests.delete(f"{BASE}/jobs/{job['id']}", timeout=10)
+            except requests.RequestException:
+                # The barrier below is authoritative; keep deleting the rest so
+                # cleanup gets the best chance to converge after a failed test.
+                pass
+
+        barrier = self.create_job(
+            "suite-cleanup-barrier", [{"id": "sync", "op": "system_info"}]
+        )
+        self.poll_status(barrier["id"], "completed", timeout=20)
+        requests.delete(f"{BASE}/jobs/{barrier['id']}", timeout=10)
+
+        # /unload with no model_name unloads every resident model while keeping
+        # lemond alive. This also clears pin/residency state left by a test.
+        r = requests.post(f"{BASE}/unload", timeout=120)
+        self.assertEqual(r.status_code, 200, r.text)
+
+        deadline = time.time() + 20
+        last = None
+        while time.time() < deadline:
+            last = requests.get(f"{BASE}/health", timeout=15).json()
+            if not last.get("all_models_loaded") and not last.get("model_loaded"):
+                return
+            time.sleep(POLL_INTERVAL)
+        self.fail(f"models still resident after suite cleanup: {last}")
 
     def start_server(self):
         binary = find_lemond_binary()
@@ -62,6 +158,7 @@ class JobEngineTests(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        type(self)._shared_proc = self.proc
         deadline = time.time() + 40
         while time.time() < deadline:
             if self.proc.poll() is not None:
@@ -72,7 +169,7 @@ class JobEngineTests(unittest.TestCase):
                     return
             except requests.RequestException:
                 pass
-            time.sleep(0.25)
+            time.sleep(POLL_INTERVAL)
         raise RuntimeError("lemond did not become healthy in time")
 
     def stop_server(self, hard=False):
@@ -92,6 +189,7 @@ class JobEngineTests(unittest.TestCase):
                 self.proc.send_signal(signal.SIGKILL)
                 self.proc.wait(timeout=10)
         self.proc = None
+        type(self)._shared_proc = None
 
     def create_job(self, name, steps, inputs=None, expect=202):
         body = {"name": name, "definition": {"steps": steps}}
@@ -116,7 +214,7 @@ class JobEngineTests(unittest.TestCase):
             last = r.json()
             if last["status"] in targets:
                 return last
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
         self.fail(f"job {job_id} did not reach {targets}; last={last}")
 
     def step_by_id(self, job, step_id):
@@ -130,7 +228,7 @@ class JobEngineTests(unittest.TestCase):
         while time.time() < deadline:
             if self.get_job(job_id).status_code == 404:
                 return
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
         self.fail(f"job {job_id} was not erased in time")
 
     def poll_cursor(self, job_id, target_cursor, timeout=30):
@@ -146,7 +244,7 @@ class JobEngineTests(unittest.TestCase):
                     f"job {job_id} reached {body['status']} before cursor "
                     f"'{target_cursor}'"
                 )
-            time.sleep(0.1)
+            time.sleep(POLL_INTERVAL)
         self.fail(f"job {job_id} cursor did not reach '{target_cursor}'")
 
     def installed_llamacpp_backend(self):
@@ -159,20 +257,26 @@ class JobEngineTests(unittest.TestCase):
         return None
 
     def ensure_test_model(self):
+        global _TEST_MODEL_PREPARED
+        if _TEST_MODEL_PREPARED:
+            return
+
         r = requests.post(
             f"{BASE}/pull",
-            json={"model_name": TEST_MODEL},
+            json={
+                "model_name": TEST_MODEL_CANONICAL,
+                "checkpoint": TEST_MODEL_CHECKPOINT,
+                "recipe": "llamacpp",
+                "stream": False,
+            },
             timeout=600,
-            stream=True,
         )
-
-        for _ in r.iter_lines():
-            pass
         self.assertEqual(r.status_code, 200, "failed to pull the test model")
+        _TEST_MODEL_PREPARED = True
 
     def require_real_backend(self):
-        global _BACKEND_BIN_TEMPLATE, _BACKEND_INSTALL_ATTEMPTED
-        backend = self.installed_llamacpp_backend()
+        global _BACKEND_INSTALL_ATTEMPTED, _LLAMACPP_BACKEND
+        backend = _LLAMACPP_BACKEND or self.installed_llamacpp_backend()
         if not backend and not _BACKEND_INSTALL_ATTEMPTED:
             _BACKEND_INSTALL_ATTEMPTED = True
             try:
@@ -185,15 +289,9 @@ class JobEngineTests(unittest.TestCase):
                 r = None
             if r is not None and r.status_code == 200:
                 backend = self.installed_llamacpp_backend()
-                bin_dir = os.path.join(self.cache_dir, "bin")
-                if backend and os.path.isdir(bin_dir):
-                    _BACKEND_BIN_TEMPLATE = tempfile.mkdtemp(
-                        prefix="lemonade-jobs-backend-"
-                    )
-                    shutil.rmtree(_BACKEND_BIN_TEMPLATE)
-                    shutil.copytree(bin_dir, _BACKEND_BIN_TEMPLATE, symlinks=True)
         if not backend:
             self.skipTest("no installed llamacpp backend available")
+        _LLAMACPP_BACKEND = backend
         self.ensure_test_model()
         return backend
 
@@ -280,7 +378,7 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(self.step_by_id(done, "recover")["status"], "completed")
 
     def test_pause_resume(self):
-        steps = [{"id": "wait", "op": "sleep", "params": {"ms": 6000}}]
+        steps = [{"id": "wait", "op": "sleep", "params": {"ms": SHORT_STEP_MS}}]
         job = self.create_job("pause", steps)
         jid = job["id"]
         self.poll_status(jid, "running", timeout=10)
@@ -292,7 +390,7 @@ class JobEngineTests(unittest.TestCase):
         self.poll_status(jid, "completed", timeout=20)
 
     def test_interrupt_resume(self):
-        steps = [{"id": "wait", "op": "sleep", "params": {"ms": 8000}}]
+        steps = [{"id": "wait", "op": "sleep", "params": {"ms": SHORT_STEP_MS}}]
         job = self.create_job("interrupt", steps)
         jid = job["id"]
         self.poll_status(jid, "running", timeout=10)
@@ -323,7 +421,7 @@ class JobEngineTests(unittest.TestCase):
         self.poll_gone(jid2)
 
     def test_persistence_across_restart(self):
-        steps = [{"id": "w", "op": "sleep", "params": {"ms": 8000}}]
+        steps = [{"id": "w", "op": "sleep", "params": {"ms": SHORT_STEP_MS}}]
         job = self.create_job("persist", steps)
         jid = job["id"]
         self.poll_status(jid, "running", timeout=10)
@@ -524,7 +622,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                     "merge_args": False,
                     "save_options": False,
                 },
@@ -536,7 +635,7 @@ class JobEngineTests(unittest.TestCase):
                     "model": TEST_MODEL,
                     "messages": [{"role": "user", "content": "Say hi in one word."}],
                     "temperature": 0,
-                    "max_completion_tokens": 32,
+                    "max_completion_tokens": 4,
                 },
             },
             {"id": "u1", "op": "unload"},
@@ -566,7 +665,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -577,14 +677,14 @@ class JobEngineTests(unittest.TestCase):
                 "model": TEST_MODEL,
                 "messages": [{"role": "user", "content": "hi"}],
                 "temperature": 0,
-                "max_completion_tokens": 8,
+                "max_completion_tokens": 4,
             },
             timeout=60,
         )
         control_latency = time.time() - t0
         self.assertEqual(r.status_code, 200, r.text)
 
-        hold_ms = 6000
+        hold_ms = QUEUE_GATE_MS
         steps = [
             {
                 "id": "ld",
@@ -592,7 +692,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": hold_ms}},
@@ -608,7 +709,7 @@ class JobEngineTests(unittest.TestCase):
                 "model": TEST_MODEL,
                 "messages": [{"role": "user", "content": "hi"}],
                 "temperature": 0,
-                "max_completion_tokens": 8,
+                "max_completion_tokens": 4,
             },
             timeout=60,
         )
@@ -617,7 +718,7 @@ class JobEngineTests(unittest.TestCase):
 
         self.assertGreater(
             queued_latency,
-            max(2.0, control_latency * 5),
+            control_latency + hold_ms / 2000.0,
             f"queued chat was not held behind the job "
             f"(queued={queued_latency:.2f}s, control={control_latency:.2f}s)",
         )
@@ -631,7 +732,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -644,7 +746,7 @@ class JobEngineTests(unittest.TestCase):
         control_latency = time.time() - t0
         self.assertEqual(r.status_code, 200, r.text)
 
-        hold_ms = 5000
+        hold_ms = TOKENIZE_GATE_MS
         steps = [
             {
                 "id": "ld",
@@ -652,7 +754,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": hold_ms}},
@@ -671,7 +774,7 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertGreater(
             gated_latency,
-            max(2.0, control_latency * 5),
+            control_latency + hold_ms / 2000.0,
             f"tokenize was not held behind the exclusive job "
             f"(gated={gated_latency:.2f}s, control={control_latency:.2f}s)",
         )
@@ -684,7 +787,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -704,7 +808,7 @@ class JobEngineTests(unittest.TestCase):
                         }
                     ],
                     "temperature": 0,
-                    "max_completion_tokens": 1800,
+                    "max_completion_tokens": DRAIN_TOKENS,
                     "ignore_eos": True,
                 },
                 timeout=120,
@@ -726,7 +830,8 @@ class JobEngineTests(unittest.TestCase):
                     "params": {
                         "model": TEST_MODEL,
                         "llamacpp_backend": backend,
-                        "ctx_size": 2048,
+                        "ctx_size": TEST_CTX_SIZE,
+                        "llamacpp_args": FAST_LLAMACPP_ARGS,
                     },
                 }
             ],
@@ -739,7 +844,7 @@ class JobEngineTests(unittest.TestCase):
             if status == "completed" and chat_thread.is_alive():
                 overlap_at = time.time()
                 break
-            time.sleep(0.05)
+            time.sleep(POLL_INTERVAL)
         chat_thread.join()
 
         self.assertEqual(
@@ -767,7 +872,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
@@ -789,7 +895,7 @@ class JobEngineTests(unittest.TestCase):
                 is None
             ):
                 break
-            time.sleep(0.25)
+            time.sleep(POLL_INTERVAL)
         self.assertIsNone(
             requests.get(f"{BASE}/health", timeout=15).json().get("model_loaded"),
             "interrupt did not unload the resident model",
@@ -802,7 +908,7 @@ class JobEngineTests(unittest.TestCase):
                 "model": TEST_MODEL,
                 "messages": [{"role": "user", "content": "hi"}],
                 "temperature": 0,
-                "max_completion_tokens": 8,
+                "max_completion_tokens": 4,
             },
             timeout=30,
         )
@@ -821,7 +927,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": 15000}},
@@ -841,7 +948,7 @@ class JobEngineTests(unittest.TestCase):
                 is None
             ):
                 break
-            time.sleep(0.25)
+            time.sleep(POLL_INTERVAL)
         self.assertIsNone(
             requests.get(f"{BASE}/health", timeout=15).json().get("model_loaded"),
             "deleting an active exclusive job did not unload the resident model",
@@ -855,7 +962,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -892,7 +1000,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                     "pinned": True,
                 },
             },
@@ -908,7 +1017,7 @@ class JobEngineTests(unittest.TestCase):
                 is None
             ):
                 return
-            time.sleep(0.25)
+            time.sleep(POLL_INTERVAL)
 
     def test_delete_active_pinned_model_cleans_up(self):
         backend = self.require_real_backend()
@@ -957,7 +1066,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
                 "pinned": True,
             },
             timeout=120,
@@ -1003,7 +1113,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
                 "pinned": True,
             },
             timeout=120,
@@ -1020,7 +1131,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                     "pinned": False,
                 },
             },
@@ -1074,10 +1186,11 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
-            {"id": "hold", "op": "sleep", "params": {"ms": 4000}},
+            {"id": "hold", "op": "sleep", "params": {"ms": SHORT_STEP_MS}},
             {"id": "hold2", "op": "sleep", "params": {"ms": 20000}},
         ]
         job = self.create_job("pause-resume-interrupt", steps)
@@ -1120,10 +1233,11 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
-            {"id": "hold", "op": "sleep", "params": {"ms": 4000}},
+            {"id": "hold", "op": "sleep", "params": {"ms": SHORT_STEP_MS}},
             {"id": "hold2", "op": "sleep", "params": {"ms": 20000}},
         ]
         job = self.create_job("delete-while-paused", steps)
@@ -1150,7 +1264,7 @@ class JobEngineTests(unittest.TestCase):
             )
             if loaded != TEST_MODEL:
                 break
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
         self.assertNotEqual(
             requests.get(f"{BASE}/health", timeout=15).json().get("model_loaded"),
             TEST_MODEL,
@@ -1167,10 +1281,11 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
-            {"id": "hold", "op": "sleep", "params": {"ms": 8000}},
+            {"id": "hold", "op": "sleep", "params": {"ms": SHORT_STEP_MS}},
             {
                 "id": "say",
                 "op": "chat",
@@ -1178,7 +1293,7 @@ class JobEngineTests(unittest.TestCase):
                     "model": TEST_MODEL,
                     "messages": [{"role": "user", "content": "Say hi in one word."}],
                     "temperature": 0,
-                    "max_completion_tokens": 16,
+                    "max_completion_tokens": 4,
                 },
             },
         ]
@@ -1196,7 +1311,7 @@ class JobEngineTests(unittest.TestCase):
             )
             if loaded != TEST_MODEL:
                 break
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
         self.assertNotEqual(
             requests.get(f"{BASE}/health", timeout=15).json().get("model_loaded"),
             TEST_MODEL,
@@ -1215,13 +1330,6 @@ class JobEngineTests(unittest.TestCase):
 
     def test_external_model_survives_job_cleanup(self):
         backend = self.require_real_backend()
-        self.stop_server()
-        with open(
-            os.path.join(self.cache_dir, "config.json"), "w", encoding="utf-8"
-        ) as f:
-            json.dump({"max_loaded_models": 2}, f)
-        self.start_server()
-
         info = requests.get(f"{BASE}/models/{TEST_MODEL}", timeout=10).json()
         checkpoint = info.get("checkpoint")
         if not checkpoint:
@@ -1246,10 +1354,11 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
-            {"id": "hold", "op": "sleep", "params": {"ms": 4000}},
+            {"id": "hold", "op": "sleep", "params": {"ms": SHORT_STEP_MS}},
             {"id": "hold2", "op": "sleep", "params": {"ms": 30000}},
         ]
         job = self.create_job("external-survives", steps)
@@ -1265,7 +1374,8 @@ class JobEngineTests(unittest.TestCase):
             json={
                 "model_name": clone,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -1294,7 +1404,7 @@ class JobEngineTests(unittest.TestCase):
             }
             if TEST_MODEL not in loaded:
                 break
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
         self.assertNotIn(
             TEST_MODEL,
             loaded,
@@ -1315,7 +1425,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": 30000}},
@@ -1332,14 +1443,15 @@ class JobEngineTests(unittest.TestCase):
             health = requests.get(f"{BASE}/health", timeout=15).json()
             if health.get("model_loaded") != TEST_MODEL:
                 break
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
 
         r = requests.post(
             f"{BASE}/load",
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 2048,
+                "ctx_size": TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -1350,7 +1462,13 @@ class JobEngineTests(unittest.TestCase):
         r = requests.delete(f"{BASE}/jobs/{jid}", timeout=10)
         self.assertEqual(r.status_code, 200, r.text)
         self.poll_gone(jid)
-        time.sleep(1.0)
+        # Deleting an interrupted job queues reconcile on the single job worker.
+        # A later trivial job is therefore a deterministic cleanup barrier.
+        barrier = self.create_job(
+            "stale-ownership-cleanup-barrier",
+            [{"id": "sync", "op": "system_info"}],
+        )
+        self.poll_status(barrier["id"], "completed", timeout=10)
 
         after = self.loaded_model_entry(TEST_MODEL)
         self.assertEqual(
@@ -1369,10 +1487,11 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
-            {"id": "hold", "op": "sleep", "params": {"ms": 8000}},
+            {"id": "hold", "op": "sleep", "params": {"ms": SHORT_STEP_MS}},
             {
                 "id": "say",
                 "op": "chat",
@@ -1380,7 +1499,7 @@ class JobEngineTests(unittest.TestCase):
                     "model": TEST_MODEL,
                     "messages": [{"role": "user", "content": "Say hi in one word."}],
                     "temperature": 0,
-                    "max_completion_tokens": 16,
+                    "max_completion_tokens": 4,
                 },
             },
         ]
@@ -1396,14 +1515,15 @@ class JobEngineTests(unittest.TestCase):
             health = requests.get(f"{BASE}/health", timeout=15).json()
             if health.get("model_loaded") != TEST_MODEL:
                 break
-            time.sleep(0.2)
+            time.sleep(POLL_INTERVAL)
 
         r = requests.post(
             f"{BASE}/load",
             json={
                 "model_name": TEST_MODEL,
                 "llamacpp_backend": backend,
-                "ctx_size": 4096,
+                "ctx_size": ALT_TEST_CTX_SIZE,
+                "llamacpp_args": FAST_LLAMACPP_ARGS,
             },
             timeout=120,
         )
@@ -1448,7 +1568,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": alias,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": 8000}},
@@ -1471,7 +1592,7 @@ class JobEngineTests(unittest.TestCase):
             while time.time() < deadline:
                 if not ({alias, clone} & loaded_names()):
                     return True
-                time.sleep(0.2)
+                time.sleep(POLL_INTERVAL)
             return False
 
         r = requests.post(f"{BASE}/jobs/{jid}/interrupt", timeout=10)
@@ -1503,7 +1624,8 @@ class JobEngineTests(unittest.TestCase):
                 "params": {
                     "model": TEST_MODEL,
                     "llamacpp_backend": backend,
-                    "ctx_size": 2048,
+                    "ctx_size": TEST_CTX_SIZE,
+                    "llamacpp_args": FAST_LLAMACPP_ARGS,
                 },
             },
             {"id": "hold", "op": "sleep", "params": {"ms": 30000}},
@@ -1514,7 +1636,7 @@ class JobEngineTests(unittest.TestCase):
                     "model": TEST_MODEL,
                     "messages": [{"role": "user", "content": "Say hi in one word."}],
                     "temperature": 0,
-                    "max_completion_tokens": 16,
+                    "max_completion_tokens": 4,
                 },
             },
         ]
@@ -1555,8 +1677,8 @@ class JobEngineTests(unittest.TestCase):
                     "params": {
                         "model": TEST_MODEL,
                         "llamacpp_backend": backend,
-                        "ctx_size": 2048,
-                        "llamacpp_args": args,
+                        "ctx_size": TEST_CTX_SIZE,
+                        "llamacpp_args": _fast_llamacpp_args(args),
                         "merge_args": False,
                         "save_options": False,
                     },
@@ -1568,7 +1690,7 @@ class JobEngineTests(unittest.TestCase):
                         "model": TEST_MODEL,
                         "messages": [{"role": "user", "content": "Count to five."}],
                         "temperature": 0,
-                        "max_completion_tokens": 24,
+                        "max_completion_tokens": 4,
                     },
                     "extract": {
                         f"{tag}_tps": "timings.predicted_per_second",

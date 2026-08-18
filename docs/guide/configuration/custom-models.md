@@ -6,7 +6,7 @@ This guide explains every supported way to add a custom model to Lemonade Server
 
 ### Pull from Hugging Face or ModelScope
 
-Hugging Face remains the default registry, so existing commands keep working unchanged:
+A source-less pull uses the server's configured `default_model_source` (shipped default: Hugging Face), so existing commands keep working unchanged:
 
 ```bash
 lemonade pull org/repo
@@ -32,7 +32,7 @@ For supported repository layouts, Lemonade lists GGUF quantizations and sharded 
 Examples:
 
 ```bash
-# Hugging Face (default)
+# Hugging Face (shipped default source)
 lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 
 # ModelScope
@@ -85,10 +85,10 @@ Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
-| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` (default) or `modelscope`. |
+| `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
-| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `coding`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
+| `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
 ### Register an omni collection
@@ -195,7 +195,7 @@ Example collection file:
 
 ### Register via API
 
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` (the default) or `modelscope`; the server canonicalizes and persists it for later update checks. Use this when integrating Lemonade into another app or script:
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
 
 ```bash
 curl -X POST http://localhost:13305/v1/pull \
@@ -297,6 +297,56 @@ The CLI (`lemonade list`) prints the API `id` verbatim. That means the Name colu
 
 The Tauri desktop app and the web app apply a display transformation on top of the API id: bare ids render as `NAME`, and canonical-prefixed ids render as `NAME (registered)` / `NAME (imported)` / `NAME (builtin)`. The suffix appears only for shadowed sources.
 
+### Model Aliases (`aliases.json`)
+
+You can define custom **aliases for model names** in `aliases.json` — alternative high-level names that resolve to any target model name. The target model does not define or need to be aware of being aliased:
+
+1. **Standalone Alias Management**: Model aliases live in a dedicated `aliases.json` file in the Lemonade cache directory (`<cache_dir>/aliases.json`). They are managed via the CLI (`lemonade alias add ALIAS TARGET_MODEL`) or administrative REST API (`POST /internal/aliases`).
+2. **Persistence**: `aliases.json` is automatically loaded on server startup and saved on every alias mutation.
+3. **Decoupled Architecture**: Aliases function purely at the symbolic routing layer. They do not pollute model definition files (`user_models.json` or `server_models.json`).
+
+### Conceptual: Definition Layer vs. Symbolic Routing Layer
+
+Lemonade separates model definition from model routing to provide stable API endpoints for client applications.
+
+* **Definition Layer (User Models and Recipes)**: Defines concrete models and execution parameters (checkpoints, hardware targets, context sizes, and backend engines). Use this layer to introduce new models, adjust inference parameters, or support new hardware.
+* **Symbolic Routing Layer (Model Aliases)**: Defines client addressing. Aliases function as symbolic links, decoupling client SDKs from underlying model definitions.
+
+Use Model Aliases to abstract model identity from application code. This enables:
+
+1. **Environment-independent naming**: An application can request an alias like `default-llm`. Developers can map `default-llm` to a lightweight local model, while production servers map it to a larger model. The application code remains unchanged.
+2. **Active-standby failover**: Administrators can redirect an alias to a fallback model if a local hardware model degrades.
+3. **Capability preservation**: Aliases inherit all capabilities of their target models. You can alias a speech-to-text model to `system-stt` or an image generator to `system-image-gen` without losing functionality or LRU pool classification.
+
+#### OpenAI SDK & LiteLLM Integration Example
+
+When using the OpenAI SDK or LiteLLM, target the alias instead of the concrete model:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:13305/v1", api_key="dummy")
+
+# The client requests the alias "production-llm"
+response = client.chat.completions.create(
+    model="production-llm",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+If the underlying target model changes, update the alias on the server using `lemonade alias add production-llm new-target` or `POST /internal/aliases`. Client application code requires no updates.
+
+#### Alias Resolution & Target Model Independence
+
+When an alias is specified in any API request (e.g., `/v1/chat/completions`, `/v1/embeddings`, `/v1/load`) or CLI command, Lemonade resolves the alias to its underlying target model ID (e.g., `user.MyCustomModel` or `Qwen3-0.6B-GGUF`).
+
+* **Primary Model Precedence**: Concrete model names (`user.*`, `extra.*`, `builtin.*`) always take precedence over aliases. Creation of an alias that collides with an existing primary model ID is rejected.
+* **Target Independence**: Aliases function as symbolic links and can target any model ID or Hugging Face repository, even before the target model is pulled or registered locally.
+
+#### Independent Listing in `/v1/models`
+
+Every registered alias is exposed as an independent model entry in `/v1/models`, `/v1/models/{id}`, and `lemonade list`. Alias entries set `id` to the alias name while sharing the target model's recipe, downloaded status, and backend configuration.
+
 ### Five reference cases
 
 | Sources                                         | `/v1/models` ids                                      | Resolution                                                                 |
@@ -328,7 +378,7 @@ This file contains a JSON object where each key is a model name and each value d
 
 | Field | Required | Type | Description |
 |-------|----------|------|-------------|
-| `source` | No | String | Remote registry: `huggingface` (default) or `modelscope`. Persisted and used for variants, downloads, cache paths, links, and update checks. |
+| `source` | No | String | Remote registry: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. Persisted and used for variants, downloads, cache paths, links, and update checks. A `source`/`registry_source` that conflicts with a provider URL in the checkpoint is rejected with 400. |
 | `checkpoint` | Yes* | String | Registry checkpoint in `org/repo` or `org/repo:variant` format. Use `org/repo:filename.gguf` for GGUF models. |
 | `checkpoints` | Yes* | Object | Alternative to `checkpoint` for models with multiple files. See [Multi-file models](#multi-file-models). |
 | `recipe` | Yes | String | Backend engine to use. One of: `llamacpp`, `whispercpp`, `moonshine`, `sd-cpp`, `kokoro`, `ryzenai-llm`, `flm`, `collection.omni`. |
@@ -416,7 +466,7 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
 
 - In `user_models.json`, store model names **without** the `user.` prefix (e.g., `MyCustomModel`).
 - When referencing the model in API calls, CLI commands, or `recipe_options.json`, use the **full prefixed name** (e.g., `user.MyCustomModel`).
-- Labels like `custom` are added automatically. Additional labels (`reasoning`, `vision`, `embeddings`, `reranking`) can be set via the `pull` CLI/API flags, or by including a `labels` array in the JSON entry.
+- Labels like `custom` are added automatically, as is the recipe's default deployment label when the entry names none of its own (`chat` for a `llamacpp` entry, `image` for an `sd-cpp` one). Additional labels (`reasoning`, `vision`, `embeddings`, `reranking`) can be set via the `pull` CLI/API flags, or by including a `labels` array in the JSON entry.
 
 ## `recipe_options.json` Reference
 
@@ -440,6 +490,8 @@ This file configures per-model runtime settings. Each key is a **canonical model
 > **Migration:** Older Lemonade versions stored built-in entries under their bare name (e.g. `"Qwen2.5-Coder-1.5B-Instruct"` with no prefix). On first load with the current version, any bare key matching a known built-in is rewritten to `builtin.<name>` in place. An INFO log line reports the number of migrated keys. Bare keys that don't match a built-in are preserved unchanged.
 
 > **Note:** Per-model options can also be configured through the Lemonade desktop app's model settings, or via the `save_options` parameter in the [`/api/v1/load` endpoint](../../api/lemonade.md#post-v1load).
+
+> **Editing options without loading:** [`POST /api/v1/models/{id}/options`](../../api/lemonade.md#post-v1modelsidoptions) writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and `"ctx_size": -1` saves automatic context sizing even when the server-wide `ctx_size` is an explicit number. [`DELETE`](../../api/lemonade.md#delete-v1modelsidoptions) on the same path resets the model by removing its entry entirely.
 
 ## Complete Examples
 

@@ -13,6 +13,7 @@ const RECIPE_PRIORITY = [
   'openmoss',
   'ryzenai-llm',
   'sd-cpp',
+  'thenoise',
   'thinksound',
   'trellis',
   'vllm',
@@ -26,6 +27,7 @@ const RECIPE_DISPLAY_NAMES = {
   flm: 'FastFlowLM NPU',
   'ryzenai-llm': 'Ryzen AI SW NPU',
   vllm: 'vLLM ROCm (experimental)',
+  thenoise: 'thenoise',
   thinksound: 'ThinkSound',
   acestep: 'ACE-Step',
   onnxruntime: 'ONNX Runtime',
@@ -188,7 +190,15 @@ function renderLabelButtons() {
 
 function buildModelTableRows(name, details) {
   const rows = [];
-  const checkpoint = parseCheckpoint(name, details);
+  const singleCheckpoint = parseCheckpoint(name, details);
+  const checkpoints = details.checkpoints && typeof details.checkpoints === 'object'
+    ? details.checkpoints
+    : null;
+
+  let checkpoint = singleCheckpoint;
+  if (!checkpoint.repo && checkpoints && typeof checkpoints.main === 'string') {
+    checkpoint = parseCheckpoint(name, { ...details, checkpoint: checkpoints.main });
+  }
 
   if (checkpoint.repo) {
     const registrySource = details.registry_source
@@ -210,8 +220,23 @@ function buildModelTableRows(name, details) {
     rows.push({ key: 'Checkpoint', value: escapeHtml(details.checkpoint) });
   }
 
+  if (checkpoints) {
+    for (const [checkpointKey, checkpointValue] of Object.entries(checkpoints)) {
+      if (checkpointKey === 'main') {
+        continue;
+      }
+
+      const parsed = typeof checkpointValue === 'string'
+        ? parseCheckpoint(name, { ...details, checkpoint: checkpointValue })
+        : { repo: null, variant: null, display: String(checkpointValue) };
+
+      const displayValue = parsed.variant || parsed.display || String(checkpointValue);
+      rows.push({ key: toTitle(checkpointKey), value: escapeHtml(displayValue) });
+    }
+  }
+
   for (const [key, value] of Object.entries(details)) {
-    if (['checkpoint', 'max_prompt_length', 'suggested', 'labels'].includes(key)) {
+    if (['checkpoint', 'checkpoints', 'max_prompt_length', 'suggested', 'labels'].includes(key)) {
       continue;
     }
     if (key === 'image_defaults' && value && typeof value === 'object') {

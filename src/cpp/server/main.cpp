@@ -88,14 +88,21 @@ int main(int argc, char** argv) {
             config_json["host"] = cli_config.host;
             cli_overrides = true;
         }
+
+        if (cli_overrides) {
+            ConfigFile::save(cli_config.cache_dir, config_json);
+        }
+
         auto config = std::make_shared<RuntimeConfig>(config_json);
+        if (cli_config.broadcast.has_value()) {
+            config->set_broadcast_override(cli_config.broadcast);
+        }
         RuntimeConfig::set_global(config.get());
 
         // Initialize logging with the configured level — console + file + log hub
         configure_application_logging(config->log_level(), LoggingMode::direct_server);
 
         if (cli_overrides) {
-            ConfigFile::save(cli_config.cache_dir, config_json);
             if (cli_config.port != -1) {
                 LOG(INFO) << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
             }
