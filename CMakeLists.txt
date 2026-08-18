@@ -3110,7 +3110,5 @@ if(EXISTS "${_STREAMING_REASONING_TEST_SRC}")
         lemonade-server-core
         nlohmann_json::nlohmann_json
     )
-
-    include(CTest)
-    add_test(NAME StreamingProxyReasoningContentTest COMMAND test_streaming_proxy_reasoning_content)
+    add_cpp_ci_test(StreamingProxyReasoningContentTest CI ON COMMAND test_streaming_proxy_reasoning_content)
 endif()
