@@ -2,20 +2,7 @@ import type { ModelInfo } from './api';
 import { capabilityFromModelInfo, type ModelCapability } from './modelCapabilities';
 import { storageKey } from './storage';
 
-export type RecipeName =
-  | 'llamacpp'
-  | 'sd-cpp'
-  | 'whispercpp'
-  | 'moonshine'
-  | 'flm'
-  | 'ryzenai-llm'
-  | 'vllm'
-  | 'kokoro'
-  | 'acestep'
-  | 'thinksound'
-  | 'openmoss'
-  | 'trellis'
-  | 'auto';
+export type RecipeName = string;
 
 export type ThinkingMode = 'none' | 'normal' | 'smart' | 'smart_extra';
 export type TuningValueSource = 'custom' | 'built_in' | 'generic' | 'optimized';
@@ -94,26 +81,6 @@ export const MODEL_CONFIGURATION_EVENT = 'lemonade:model-configuration-changed';
 
 const LS_MODEL_TUNINGS = 'model_tunings';
 
-const BACKEND_ARGS_FIELD_BY_RECIPE: Partial<Record<RecipeName, keyof RecipeOptions>> = {
-  llamacpp: 'llamacpp_args',
-  'sd-cpp': 'sdcpp_args',
-  whispercpp: 'whispercpp_args',
-  moonshine: 'moonshine_args',
-  flm: 'flm_args',
-  vllm: 'vllm_args',
-};
-
-const BACKEND_FIELD_BY_RECIPE: Record<string, keyof RecipeOptions> = {
-  llamacpp: 'llamacpp_backend',
-  vllm: 'vllm_backend',
-  whispercpp: 'whispercpp_backend',
-  moonshine: 'moonshine_backend',
-  acestep: 'acestep_backend',
-  thinksound: 'thinksound_backend',
-  openmoss: 'openmoss_backend',
-  trellis: 'trellis_backend',
-};
-
 export const THINKING_MODE_LABELS: Record<ThinkingMode, string> = {
   none: 'None',
   normal: 'Normal',
@@ -131,13 +98,43 @@ function emitModelConfigurationEvent(): void {
   } catch {}
 }
 
-export function backendArgsFieldForRecipe(recipe: string): keyof RecipeOptions | null {
-  const recipeName = normalizeRecipeName(recipe);
-  return recipeName ? BACKEND_ARGS_FIELD_BY_RECIPE[recipeName] || null : null;
+function recipeOptionFieldFromSystemInfo(
+  systemInfo: Record<string, unknown> | null | undefined,
+  recipe: string,
+  predicate: (option: Record<string, unknown>) => boolean,
+): keyof RecipeOptions | undefined {
+  const recipes = (systemInfo?.recipes ?? null) as Record<string, { options?: unknown }> | null;
+  const options = recipes?.[String(recipe || '').trim().toLowerCase()]?.options;
+  if (!Array.isArray(options)) return undefined;
+  for (const entry of options) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const option = entry as Record<string, unknown>;
+    if (!predicate(option)) continue;
+    if (typeof option.name === 'string' && option.name.trim()) {
+      return option.name.trim() as keyof RecipeOptions;
+    }
+  }
+  return undefined;
 }
 
-export function backendSupportsArgs(recipe: string): boolean {
-  return backendArgsFieldForRecipe(recipe) !== null;
+export function backendArgsFieldForRecipe(
+  recipe: string,
+  systemInfo?: Record<string, unknown> | null,
+): keyof RecipeOptions | null {
+  return recipeOptionFieldFromSystemInfo(
+    systemInfo,
+    recipe,
+    option => option.type_name === 'ARGS'
+      && typeof option.name === 'string'
+      && option.name.endsWith('_args'),
+  ) ?? null;
+}
+
+export function backendSupportsArgs(
+  recipe: string,
+  systemInfo?: Record<string, unknown> | null,
+): boolean {
+  return backendArgsFieldForRecipe(recipe, systemInfo) !== null;
 }
 
 export interface SessionArgsOverride {
@@ -246,10 +243,7 @@ function sanitizeTuningValues(raw: TuningValues | null | undefined): TuningValue
 function normalizeRecipeName(value: unknown): RecipeName | undefined {
   const rawName = String(value || '').trim().toLowerCase();
   const name = rawName === 'sd_cpp' ? 'sd-cpp' : rawName === 'ryzenai_llm' ? 'ryzenai-llm' : rawName;
-  return [
-    'auto', 'llamacpp', 'sd-cpp', 'whispercpp', 'moonshine', 'flm',
-    'ryzenai-llm', 'vllm', 'kokoro', 'acestep', 'thinksound', 'openmoss', 'trellis',
-  ].includes(name) ? name as RecipeName : undefined;
+  return name || undefined;
 }
 
 export function sanitizeModelTuning(raw: Partial<ModelTuning> | null | undefined): ModelTuning {
@@ -544,43 +538,44 @@ export function modelDefaultRecipeOptions(model: ModelInfo | null | undefined, f
   }
   if (recipe === 'ryzenai-llm') out.ctx_size = ctx;
 
-  if (capability === 'image' || recipe === 'sd-cpp') {
-    out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [
-      ['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend'],
-    ]) ?? backend;
+  if (capability === 'image') {
     out.steps = readNumberFromModelOrRecipe(model, [['recipe_options', 'steps'], ['sample_params', 'steps'], ['sample_steps'], ['steps']]);
     out.cfg_scale = readNumberFromModelOrRecipe(model, [['recipe_options', 'cfg_scale'], ['sample_params', 'cfg_scale'], ['sample_params', 'guidance', 'txt_cfg'], ['txt_cfg'], ['cfg_scale']]);
     out.width = readNumberFromModelOrRecipe(model, [['recipe_options', 'width'], ['sample_params', 'width'], ['width']]);
     out.height = readNumberFromModelOrRecipe(model, [['recipe_options', 'height'], ['sample_params', 'height'], ['height']]);
+  }
+  if (recipe === 'sd-cpp') {
+    out['sd-cpp_backend'] = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'sd-cpp_backend'], ['options', 'sd-cpp_backend'], ['sd-cpp_backend'],
+    ]) ?? backend;
     out.sampling_method = readStringFromModelOrRecipe(model, [['recipe_options', 'sampling_method'], ['sample_params', 'sampling_method'], ['sampling_method']]);
     out.flow_shift = readNumberFromModelOrRecipe(model, [['recipe_options', 'flow_shift'], ['sample_params', 'flow_shift'], ['flow_shift']]);
     out.sdcpp_args = readStringFromModelOrRecipe(model, [['recipe_options', 'sdcpp_args'], ['options', 'sdcpp_args'], ['sdcpp_args'], ['args']]);
   }
 
-  if (capability === 'audio' || recipe === 'whispercpp' || recipe === 'moonshine') {
-    if (recipe === 'moonshine') {
-      out.moonshine_backend = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'moonshine_backend'], ['options', 'moonshine_backend'], ['moonshine_backend'],
-      ]) ?? backend;
-      out.moonshine_args = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'moonshine_args'], ['options', 'moonshine_args'], ['moonshine_args'], ['args'],
-      ]);
-    } else {
-      out.whispercpp_backend = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'whispercpp_backend'], ['options', 'whispercpp_backend'], ['whispercpp_backend'],
-      ]) ?? backend;
-      out.whispercpp_args = readStringFromModelOrRecipe(model, [
-        ['recipe_options', 'whispercpp_args'], ['options', 'whispercpp_args'], ['whispercpp_args'], ['args'],
-      ]);
-    }
+  if (recipe === 'moonshine') {
+    out.moonshine_backend = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'moonshine_backend'], ['options', 'moonshine_backend'], ['moonshine_backend'],
+    ]) ?? backend;
+    out.moonshine_args = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'moonshine_args'], ['options', 'moonshine_args'], ['moonshine_args'], ['args'],
+    ]);
+  }
+  if (recipe === 'whispercpp') {
+    out.whispercpp_backend = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'whispercpp_backend'], ['options', 'whispercpp_backend'], ['whispercpp_backend'],
+    ]) ?? backend;
+    out.whispercpp_args = readStringFromModelOrRecipe(model, [
+      ['recipe_options', 'whispercpp_args'], ['options', 'whispercpp_args'], ['whispercpp_args'], ['args'],
+    ]);
   }
 
-  if (capability === 'audio-generation' || recipe === 'acestep' || recipe === 'thinksound') {
+  if (recipe === 'acestep' || recipe === 'thinksound') {
     if (recipe === 'acestep') out.acestep_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'acestep_backend'], ['options', 'acestep_backend'], ['acestep_backend']]) ?? backend;
     if (recipe === 'thinksound') out.thinksound_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'thinksound_backend'], ['options', 'thinksound_backend'], ['thinksound_backend']]) ?? backend;
   }
 
-  if (capability === 'model3d' || recipe === 'trellis') {
+  if (recipe === 'trellis') {
     out.trellis_backend = readStringFromModelOrRecipe(model, [['recipe_options', 'trellis_backend'], ['options', 'trellis_backend'], ['trellis_backend']]) ?? backend;
   }
 
@@ -735,13 +730,30 @@ function recipeDefaultBackend(systemInfo: Record<string, unknown> | null | undef
   return normalizeBackendValue(recipes?.[recipe]?.default_backend);
 }
 
+function backendFieldFromSystemInfo(
+  systemInfo: Record<string, unknown> | null | undefined,
+  recipe: string,
+): keyof RecipeOptions | undefined {
+  const explicit = recipeOptionFieldFromSystemInfo(
+    systemInfo,
+    recipe,
+    option => option.type_name === 'BACKEND',
+  );
+  if (explicit) return explicit;
+  const recipes = (systemInfo?.recipes ?? null) as Record<string, { selectable_backend?: unknown }> | null;
+  const normalizedRecipe = String(recipe || '').trim().toLowerCase();
+  return recipes?.[normalizedRecipe]?.selectable_backend === true
+    ? `${normalizedRecipe}_backend` as keyof RecipeOptions
+    : undefined;
+}
+
 function concreteBackendForRecipe(
   recipe: string,
   explicitOptions: RecipeOptions | null | undefined,
   modelOptions: RecipeOptions | null | undefined,
   systemInfo: Record<string, unknown> | null | undefined,
 ): string | undefined {
-  const field = BACKEND_FIELD_BY_RECIPE[recipe];
+  const field = backendFieldFromSystemInfo(systemInfo, recipe);
   return (field ? normalizeBackendValue(explicitOptions?.[field]) : undefined)
     ?? (field ? normalizeBackendValue(modelOptions?.[field]) : undefined)
     ?? recipeDefaultBackend(systemInfo, recipe);
@@ -764,7 +776,7 @@ export function activeBackendTuningForModel(
   }
 
   for (const recipe of recipes) {
-    if (!backendSupportsArgs(recipe)) continue;
+    if (!backendSupportsArgs(recipe, ctx?.systemInfo)) continue;
     const backend = concreteBackendForRecipe(recipe, ctx?.explicitOptions, ctx?.modelOptions, ctx?.systemInfo);
     if (!backend) continue;
     const key = `${recipe}:${backend}`;
@@ -792,14 +804,14 @@ export function recipeOptionsForModel(
   });
   const backendOptions: RecipeOptions = {};
   if (backendTuning) {
-    const field = backendArgsFieldForRecipe(backendTuning.recipe);
+    const field = backendArgsFieldForRecipe(backendTuning.recipe, systemInfo);
     if (field) (backendOptions as Record<string, unknown>)[field] = backendTuning.tuning.args;
   }
 
   const merged: RecipeOptions = { ...backendOptions, ...modelOptions };
   const sessionOverride = getSessionArgsOverride(modelName);
   if (sessionOverride) {
-    const field = backendArgsFieldForRecipe(sessionOverride.recipe);
+    const field = backendArgsFieldForRecipe(sessionOverride.recipe, systemInfo);
     if (field) {
       (merged as Record<string, unknown>)[field] = sessionOverride.args;
       merged.merge_args = false;

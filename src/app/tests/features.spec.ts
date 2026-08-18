@@ -762,6 +762,35 @@ test.describe('Lemonade UI — Feature Parity', () => {
         recipes: {
           llamacpp: {
             default_backend: 'cpu',
+            selectable_backend: true,
+            uses_ctx_size: true,
+            modality: 'Text generation',
+            options: [
+              {
+                name: 'llamacpp_backend',
+                cli_flag: '--llamacpp',
+                default: '',
+                type_name: 'BACKEND',
+                help: 'LlamaCpp backend to use',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_device',
+                cli_flag: '--llamacpp-device',
+                default: '',
+                type_name: 'DEVICES',
+                help: 'Comma-separated list of accelerator devices to use (e.g. Vulkan0)',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_args',
+                cli_flag: '--llamacpp-args',
+                default: '',
+                type_name: 'ARGS',
+                help: 'Custom arguments to pass to llama-server',
+                group: 'Llama.cpp Backend Options',
+              },
+            ],
             backends: { cpu: { state: 'installed', version: 'test' } },
           },
         },
@@ -1502,6 +1531,35 @@ test.describe('Lemonade UI — Feature Parity', () => {
         recipes: {
           llamacpp: {
             default_backend: 'cpu',
+            selectable_backend: true,
+            uses_ctx_size: true,
+            modality: 'Text generation',
+            options: [
+              {
+                name: 'llamacpp_backend',
+                cli_flag: '--llamacpp',
+                default: '',
+                type_name: 'BACKEND',
+                help: 'LlamaCpp backend to use',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_device',
+                cli_flag: '--llamacpp-device',
+                default: '',
+                type_name: 'DEVICES',
+                help: 'Comma-separated list of accelerator devices to use (e.g. Vulkan0)',
+                group: 'Llama.cpp Backend Options',
+              },
+              {
+                name: 'llamacpp_args',
+                cli_flag: '--llamacpp-args',
+                default: '',
+                type_name: 'ARGS',
+                help: 'Custom arguments to pass to llama-server',
+                group: 'Llama.cpp Backend Options',
+              },
+            ],
             backends: { cpu: { state: 'installed', version: 'test' } },
           },
         },
