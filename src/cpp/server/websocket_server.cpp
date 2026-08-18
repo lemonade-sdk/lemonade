@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/process_manager.h"
@@ -10,6 +11,7 @@
 #include <cstring>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -71,11 +73,17 @@ int WebSocketServer::ws_callback(struct lws* wsi,
         case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION: {
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
-                std::string origin = *origin_opt;
-                const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-                std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+                const std::string& origin = *origin_opt;
 
-                if (!utils::is_websocket_origin_allowed(origin, allowed_origins)) {
+                // Share the HTTP allow-list rather than matching Origin against
+                // the Host header: a rebound attacker hostname sends a matching
+                // Host, so that check would wrongly pass.
+                std::vector<std::string> allowed_origins;
+                if (auto* cfg = RuntimeConfig::global()) {
+                    allowed_origins = cfg->allowed_origins();
+                }
+
+                if (!lemon::utils::is_origin_allowed(origin, allowed_origins)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }

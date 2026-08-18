@@ -76,6 +76,8 @@ private:
     void setup_routes(httplib::Server &web_server);
     void setup_static_files(httplib::Server &web_server);
     void setup_cors(httplib::Server &web_server);
+    // Delegates to lemon::utils::is_origin_allowed (see origin_utils.h).
+    bool is_origin_allowed(const std::string& origin) const;
     void setup_http_logger(httplib::Server &web_server);
     void log_request(const httplib::Request& req);
     httplib::Server::HandlerResponse authenticate_request(const httplib::Request& req, httplib::Response& res);

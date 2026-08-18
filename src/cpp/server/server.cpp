@@ -926,6 +926,19 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
+    // Reject cross-origin requests from disallowed origins before dispatching to
+    // handlers. Without this server-side check, a malicious web page could still
+    // send a state-changing request with a safelisted content-type (text/plain +
+    // JSON body); the browser hides the response, but the server-side handler runs.
+    if (req.method != "OPTIONS" && req.has_header("Origin")) {
+        const std::string origin = req.get_header_value("Origin");
+        if (!is_origin_allowed(origin)) {
+            res.status = 403;
+            res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+    }
+
     const bool is_mcp_internal_route =
         req.path == "/internal/mcp" ||
         req.path.rfind("/internal/mcp/", 0) == 0;
@@ -969,37 +982,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
-
-        // Unconditionally set Vary: Origin to prevent caching issues, preserving existing values
-        std::string vary = "Origin";
-        if (res.has_header("Vary")) {
-            std::string existing = res.get_header_value("Vary");
-            if (existing.find("Origin") == std::string::npos) {
-                vary = existing + ", Origin";
-            } else {
-                vary = existing;
-            }
-        }
-        res.set_header("Vary", vary);
-
-        if (req.has_header("Origin")) {
-            std::string origin = req.get_header_value("Origin");
-            const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-            std::string allowed_origins = env_origins ? std::string(env_origins) : "";
-
-            if (utils::is_origin_allowed(origin, allowed_origins)) {
-                res.set_header("Access-Control-Allow-Origin", origin);
-                if (req.has_header("Access-Control-Request-Private-Network") &&
-                    req.get_header_value("Access-Control-Request-Private-Network") == "true") {
-                    res.set_header("Access-Control-Allow-Private-Network", "true");
-                }
-            } else {
-                res.status = 403;
-                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
-                return httplib::Server::HandlerResponse::Handled;
-            }
-        }
-
         return authenticate_request(req, res);
     });
 
@@ -1771,15 +1753,54 @@ window.api = {
     });
 }
 
-void Server::setup_cors(httplib::Server &web_server) {
-    // Set CORS headers for all responses
-    web_server.set_default_headers({
-        {"Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS"},
-        {"Access-Control-Allow-Headers", "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, mcp-protocol-version, traceparent, Mcp-Session-Id"}
-    });
+bool Server::is_origin_allowed(const std::string& origin) const {
+    // Delegates to the shared allow-list implementation in
+    // lemon::utils::is_origin_allowed so the HTTP and WebSocket paths can never
+    // drift apart.
+    return lemon::utils::is_origin_allowed(origin, config_->allowed_origins());
+}
 
-    // Handle preflight OPTIONS requests
-    web_server.Options(".*", [](const httplib::Request&, httplib::Response& res) {
+void Server::setup_cors(httplib::Server &web_server) {
+    // Reflect the request Origin only when it is on the allow-list. A wildcard
+    // Access-Control-Allow-Origin, combined with the no-auth default config, let
+    // any web page drive the state-changing API cross-origin.
+    // Same-origin callers (the bundled web-app, served from this host:port) are
+    // not subject to CORS and keep working; non-browser clients (CLI, SDKs) never
+    // send Origin and ignore these headers entirely.
+    web_server.set_post_routing_handler(
+        [this](const httplib::Request& req, httplib::Response& res) {
+            // Vary: Origin on every response (even disallowed-origin 403s) so a
+            // shared cache never serves an Access-Control-Allow-Origin response
+            // to a different origin. This handler is the only writer of Vary and
+            // runs once per response, so set it unconditionally.
+            res.set_header("Vary", "Origin");
+
+            const std::string origin = req.get_header_value("Origin");
+            if (is_origin_allowed(origin)) {
+                res.set_header("Access-Control-Allow-Origin", origin);
+                res.set_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+                res.set_header("Access-Control-Allow-Headers",
+                               "Content-Type, Authorization, X-Client-Session-Id, X-Account-Session-Id, "
+                               "MCP-Protocol-Version, Mcp-Session-Id, traceparent");
+                // Private Network Access preflight: grant only when the request
+                // asks for it and the Origin is already allow-listed.
+                if (req.get_header_value("Access-Control-Request-Private-Network") == "true") {
+                    res.set_header("Access-Control-Allow-Private-Network", "true");
+                }
+            }
+        });
+
+    // Handle preflight OPTIONS requests. The post-routing handler above attaches
+    // the CORS headers when (and only when) the Origin is allowed.
+    web_server.Options(".*", [this](const httplib::Request& req, httplib::Response& res) {
+        if (req.has_header("Origin")) {
+            const std::string origin = req.get_header_value("Origin");
+            if (!is_origin_allowed(origin)) {
+                res.status = 403;
+                res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
+                return;
+            }
+        }
         res.status = 204;
     });
 
@@ -6431,10 +6452,11 @@ void Server::handle_params(const httplib::Request& req, httplib::Response& res) 
     try {
         auto body = nlohmann::json::parse(req.body);
 
-        // Delegate to RuntimeConfig — accepts all known recipe option keys
+        // Delegate to RuntimeConfig with allow_privileged_keys=false (see
+        // runtime_config.h).
         auto result = config_->set(body, [this](const json& applied) {
             apply_config_side_effects(applied);
-        });
+        }, /*allow_privileged_keys=*/false);
         res.set_content(result.dump(), "application/json");
     } catch (const nlohmann::json::parse_error& e) {
         LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
