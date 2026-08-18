@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/network_utils.h"
 #include "lemon/utils/origin_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/websocket_server.h"
@@ -101,7 +102,16 @@ int WebSocketServer::ws_callback(struct lws* wsi,
         }
 
         case LWS_CALLBACK_ESTABLISHED: {
-            std::snprintf(pss->connection_id, sizeof(pss->connection_id), "%d", static_cast<int>(lws_get_socket_fd(wsi)));
+            auto sock = static_cast<socket_t>(lws_get_socket_fd(wsi));
+#ifdef _WIN32
+            if (sock != INVALID_SOCKET) {
+#else
+            if (sock >= 0) {
+#endif
+                lemon::utils::configure_tcp_keepalive(sock);
+            }
+
+            std::snprintf(pss->connection_id, sizeof(pss->connection_id), "%d", static_cast<int>(sock));
 
             char ip[128] = {0};
             lws_get_peer_simple(wsi, ip, sizeof(ip));
