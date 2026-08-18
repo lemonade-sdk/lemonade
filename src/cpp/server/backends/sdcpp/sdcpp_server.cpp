@@ -594,11 +594,11 @@ std::string SDServer::build_merged_sdcpp_args(
             auto opt_val = options.get_option(bo.name);
             enabled = opt_val.is_boolean() && opt_val.get<bool>();
         }
-        if (is_backend_forced(bo.cli_flag)) enabled = true;
         auto spelled_it = spelled_flags.find(bo.cli_flag);
         if (spelled_it != spelled_flags.end()) {
             enabled = spelled_it->second;
         }
+        if (is_backend_forced(bo.cli_flag)) enabled = true;
         if (enabled) merged_list.push_back(bo.cli_flag);
     }
 
