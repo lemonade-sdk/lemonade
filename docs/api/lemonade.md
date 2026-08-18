@@ -971,6 +971,7 @@ Recipe option fields on `/v1/load` have three-state semantics. Omitting a field 
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
+| `upscale_model` | No | sd-cpp | ESRGAN upscaler model name to apply after generation. When set, the generated image is automatically upscaled before returning. The upscaler model must be an `sd-cpp` recipe model with the `upscaling` label. Note: this is a convenience layer for OpenAI-compatible callers; for staged two-step upscaling with side-by-side comparison, use `/images/upscale` directly. The original-resolution image is unrecoverable on the auto-upscale path. |
 | `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
 
 **Setting Priority:**
