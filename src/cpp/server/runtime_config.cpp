@@ -273,6 +273,20 @@ RuntimeConfig::RuntimeConfig(const json& config)
         config_.erase("no_broadcast");
     }
 
+    // Validate logging settings on startup
+    if (config_.contains("log_max_file_size_mb")) {
+        validate("log_max_file_size_mb", config_["log_max_file_size_mb"]);
+    }
+    if (config_.contains("log_max_files")) {
+        validate("log_max_files", config_["log_max_files"]);
+    }
+    if (config_.contains("log_file")) {
+        validate("log_file", config_["log_file"]);
+    }
+    if (config_.contains("log_level")) {
+        validate("log_level", config_["log_level"]);
+    }
+
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
     if (ci_mode && (std::string(ci_mode) == "1" || std::string(ci_mode) == "true" ||

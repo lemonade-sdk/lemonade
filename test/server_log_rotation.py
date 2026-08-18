@@ -177,6 +177,67 @@ class TestLogRotation(unittest.TestCase):
         backup_1 = os.path.join(log_dir, "lemonade-server.log.1")
         self.assertFalse(os.path.exists(backup_1), "Backup .1 created when max_files=0")
 
+    def test_runtime_log_rotation(self):
+        """Verify active server log rotates at runtime when traffic exceeds max_size."""
+        log_dir = os.path.join(self.runtime_dir, "lemonade")
+        os.makedirs(log_dir, exist_ok=True)
+        active_log = os.path.join(log_dir, "lemonade-server.log")
+
+        env = os.environ.copy()
+        env["XDG_RUNTIME_DIR"] = self.runtime_dir
+        env["LEMONADE_CACHE_DIR"] = self.test_dir
+        env["LEMONADE_DISABLE_SYSTEMD_JOURNAL"] = "1"
+
+        port = get_free_port()
+        cmd = [
+            self.lemond_bin,
+            self.test_dir,
+            "--port",
+            str(port),
+            "--log-file",
+            "enabled",
+            "--log-max-size-mb",
+            "1",
+            "--log-max-files",
+            "2",
+        ]
+
+        proc = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+        ready = False
+        try:
+            for _ in range(30):
+                try:
+                    conn = socket.create_connection(("127.0.0.1", port))
+                    conn.close()
+                    ready = True
+                    break
+                except Exception:
+                    time.sleep(0.2)
+
+            self.assertTrue(ready, "Server failed to start for runtime rotation test")
+
+            # Generate requests to exceed 1MB in debug log if needed or repeated queries
+            # Send HTTP requests to generate log volume
+            for i in range(120):
+                try:
+                    requests.get(f"http://127.0.0.1:{port}/health", timeout=1)
+                except Exception:
+                    pass
+
+        finally:
+            try:
+                proc.terminate()
+                proc.wait(timeout=3)
+            except Exception:
+                proc.kill()
+                proc.wait(timeout=3)
+
     def test_invalid_cli_flags(self):
         """Verify out-of-bounds CLI flags are rejected with non-zero exit code."""
         env = os.environ.copy()

@@ -38,119 +38,126 @@ public:
     }
 };
 
-class RotatingFileSink : public AixLog::SinkFormat {
-public:
-    RotatingFileSink(const AixLog::Filter& filter,
-                     const std::string& filename,
-                     const std::string& format,
-                     size_t max_file_size_mb,
-                     size_t max_files)
-        : AixLog::SinkFormat(filter, format),
-          filename_(filename),
-          max_file_size_bytes_(std::clamp(max_file_size_mb, static_cast<size_t>(1), static_cast<size_t>(2048)) * 1024 * 1024),
-          max_files_(std::min(max_files, static_cast<size_t>(100))) {
-        std::error_code ec;
-        fs::path p = utils::path_from_utf8(filename_);
-        if (fs::exists(p, ec)) {
-            current_size_ = static_cast<size_t>(fs::file_size(p, ec));
-        }
+} // namespace
 
+RotatingFileSink::RotatingFileSink(const AixLog::Filter& filter,
+                                   const std::string& filename,
+                                   const std::string& format,
+                                   size_t max_file_size_mb,
+                                   size_t max_files)
+    : AixLog::SinkFormat(filter, format),
+      filename_(filename),
+      max_file_size_bytes_(max_file_size_mb * 1024 * 1024),
+      max_files_(max_files) {
+    if (max_file_size_mb < 1 || max_file_size_mb > 2048) {
+        throw std::invalid_argument("'log_max_file_size_mb' must be between 1 and 2048");
+    }
+    if (max_files > 100) {
+        throw std::invalid_argument("'log_max_files' must be between 0 and 100");
+    }
+
+    std::error_code ec;
+    fs::path p = utils::path_from_utf8(filename_);
+    if (p.has_parent_path()) {
+        fs::create_directories(p.parent_path(), ec);
+    }
+    if (fs::exists(p, ec)) {
+        current_size_ = static_cast<size_t>(fs::file_size(p, ec));
+    }
+
+    if (max_file_size_bytes_ > 0 && current_size_ >= max_file_size_bytes_) {
+        rotate_if_needed_nolock();
+    } else {
         file_.open(p, std::ofstream::out | std::ofstream::app | std::ofstream::binary);
-
-        if (max_file_size_bytes_ > 0 && current_size_ >= max_file_size_bytes_) {
-            rotate_if_needed_nolock();
-        }
     }
+}
 
-    ~RotatingFileSink() override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (file_.is_open()) {
-            file_.flush();
-            file_.close();
-        }
-    }
-
-    void log(const AixLog::Metadata& metadata, const std::string& message) override {
-        std::ostringstream stream;
-        do_log(stream, metadata, message);
-
-        std::string formatted = stream.str();
-        if (!formatted.empty() && formatted.back() == '\n') {
-            formatted.pop_back();
-        }
-
-        size_t line_len = formatted.size() + 1; // +1 for newline
-
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (!file_.is_open()) {
-            return;
-        }
-
-        if (max_file_size_bytes_ > 0 && current_size_ > 0 && (current_size_ + line_len) >= max_file_size_bytes_) {
-            rotate_if_needed_nolock();
-        }
-
-        file_ << formatted << '\n';
+RotatingFileSink::~RotatingFileSink() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (file_.is_open()) {
         file_.flush();
-        current_size_ += line_len;
+        file_.close();
+    }
+}
+
+void RotatingFileSink::log(const AixLog::Metadata& metadata, const std::string& message) {
+    std::ostringstream stream;
+    do_log(stream, metadata, message);
+
+    std::string formatted = stream.str();
+    if (!formatted.empty() && formatted.back() == '\n') {
+        formatted.pop_back();
     }
 
-private:
-    void rotate_if_needed_nolock() {
-        if (file_.is_open()) {
-            file_.flush();
-            file_.close();
+    size_t line_len = formatted.size() + 1; // +1 for newline
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!file_.is_open()) {
+        return;
+    }
+
+    if (max_file_size_bytes_ > 0 && current_size_ > 0 && (current_size_ + line_len) >= max_file_size_bytes_) {
+        rotate_if_needed_nolock();
+    }
+
+    file_ << formatted << '\n';
+    file_.flush();
+    current_size_ += line_len;
+}
+
+size_t RotatingFileSink::current_size() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return current_size_;
+}
+
+void RotatingFileSink::rotate_if_needed_nolock() {
+    if (file_.is_open()) {
+        file_.flush();
+        file_.close();
+    }
+
+    std::error_code ec;
+    fs::path active_log = utils::path_from_utf8(filename_);
+
+    if (max_files_ > 0) {
+        fs::path max_backup = utils::path_from_utf8(filename_ + "." + std::to_string(max_files_));
+        if (fs::exists(max_backup, ec)) {
+            fs::remove(max_backup, ec);
         }
 
-        if (max_files_ > 0) {
-            std::error_code ec;
-            fs::path max_backup = utils::path_from_utf8(filename_ + "." + std::to_string(max_files_));
-            if (fs::exists(max_backup, ec)) {
-                fs::remove(max_backup, ec);
-            }
-
-            for (size_t i = max_files_; i > 1; --i) {
-                fs::path dst = utils::path_from_utf8(filename_ + "." + std::to_string(i));
-                fs::path src = utils::path_from_utf8(filename_ + "." + std::to_string(i - 1));
-                if (fs::exists(src, ec)) {
-                    if (fs::exists(dst, ec)) {
-                        fs::remove(dst, ec);
-                    }
-                    fs::rename(src, dst, ec);
+        for (size_t i = max_files_; i > 1; --i) {
+            fs::path dst = utils::path_from_utf8(filename_ + "." + std::to_string(i));
+            fs::path src = utils::path_from_utf8(filename_ + "." + std::to_string(i - 1));
+            if (fs::exists(src, ec)) {
+                if (fs::exists(dst, ec)) {
+                    fs::remove(dst, ec);
                 }
-            }
-
-            fs::path active_log = utils::path_from_utf8(filename_);
-            fs::path backup_1 = utils::path_from_utf8(filename_ + ".1");
-            if (fs::exists(active_log, ec)) {
-                if (fs::exists(backup_1, ec)) {
-                    fs::remove(backup_1, ec);
-                }
-                fs::rename(active_log, backup_1, ec);
+                fs::rename(src, dst, ec);
             }
         }
 
-        fs::path p = utils::path_from_utf8(filename_);
-        file_.open(p, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
-        if (!file_.is_open()) {
-            file_.open(p, std::ofstream::out | std::ofstream::app | std::ofstream::binary);
-        }
-
-        std::error_code ec;
-        if (fs::exists(p, ec)) {
-            current_size_ = static_cast<size_t>(fs::file_size(p, ec));
-        } else {
-            current_size_ = 0;
+        fs::path backup_1 = utils::path_from_utf8(filename_ + ".1");
+        if (fs::exists(active_log, ec)) {
+            if (fs::exists(backup_1, ec)) {
+                fs::remove(backup_1, ec);
+            }
+            fs::rename(active_log, backup_1, ec);
         }
     }
 
-    std::string filename_;
-    size_t max_file_size_bytes_;
-    size_t max_files_;
-    size_t current_size_{0};
-    std::ofstream file_;
-    std::mutex mutex_;
-};
+    file_.open(active_log, std::ofstream::out | std::ofstream::trunc | std::ofstream::binary);
+    if (!file_.is_open()) {
+        file_.open(active_log, std::ofstream::out | std::ofstream::app | std::ofstream::binary);
+    }
+
+    if (fs::exists(active_log, ec)) {
+        current_size_ = static_cast<size_t>(fs::file_size(active_log, ec));
+    } else {
+        current_size_ = 0;
+    }
+}
+
+namespace {
 
 std::vector<std::shared_ptr<AixLog::Sink>> build_logging_sinks(
     const std::string& log_level,
