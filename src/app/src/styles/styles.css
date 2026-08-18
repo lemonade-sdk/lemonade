@@ -10289,18 +10289,18 @@ optgroup {
   grid-template-columns: minmax(150px, 1.1fr) minmax(180px, 1.5fr) repeat(3, minmax(112px, 0.8fr));
 }
 
-.composer__openmoss-settings {
+.composer__generation-settings {
   grid-template-columns: minmax(150px, 0.8fr) minmax(260px, 2fr);
 }
 
-.composer__openmoss-description {
+.composer__generation-text {
   display: flex;
   flex-direction: column;
   gap: var(--space-1-5);
   min-width: 0;
 }
 
-.composer__openmoss-description > span {
+.composer__generation-text > span {
   display: flex;
   align-items: baseline;
   gap: var(--space-1-5);
@@ -10312,13 +10312,13 @@ optgroup {
   font-weight: var(--weight-semibold);
 }
 
-.composer__openmoss-description > span small {
+.composer__generation-text > span small {
   text-transform: none;
   letter-spacing: 0;
   font-weight: var(--weight-normal);
 }
 
-.composer__openmoss-description input {
+.composer__generation-text input {
   width: 100%;
   min-width: 0;
   height: 36px;
@@ -10332,22 +10332,22 @@ optgroup {
   outline: none;
 }
 
-.composer__openmoss-description input:focus {
+.composer__generation-text input:focus {
   border-color: var(--accent-fg);
   background: var(--surface-2);
 }
 
-.composer__openmoss-description input:disabled {
+.composer__generation-text input:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.composer__openmoss-params {
+.composer__generation-params {
   min-width: 0;
   flex-basis: 100%;
 }
 
-.composer__openmoss-params > summary {
+.composer__generation-params > summary {
   cursor: pointer;
   font-size: var(--type-overline-size);
   line-height: 1;
@@ -10359,18 +10359,18 @@ optgroup {
   user-select: none;
 }
 
-.composer__openmoss-params > summary:hover {
+.composer__generation-params > summary:hover {
   color: var(--text-secondary);
 }
 
-.composer__openmoss-params-grid {
+.composer__generation-params-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: var(--space-2) var(--space-3);
   padding-top: var(--space-2);
 }
 
-.composer__openmoss-status {
+.composer__generation-status {
   grid-column: 1 / -1;
   min-height: 18px;
   color: var(--text-tertiary);
@@ -10378,7 +10378,7 @@ optgroup {
   line-height: var(--leading-normal);
 }
 
-.composer__openmoss-status--error { color: var(--danger); }
+.composer__generation-status--error { color: var(--danger); }
 
 .composer__image-setting small {
   position: absolute;
@@ -10497,7 +10497,7 @@ optgroup {
 @media (max-width: 1100px) {
   .composer__capability-settings,
   .composer__audio-generation-settings,
-  .composer__openmoss-settings,
+  .composer__generation-settings,
   .composer__model3d-settings {
     grid-template-columns: repeat(3, minmax(110px, 1fr));
   }
@@ -10506,12 +10506,12 @@ optgroup {
 @media (max-width: 720px) {
   .composer__capability-settings,
   .composer__audio-generation-settings,
-  .composer__openmoss-settings,
+  .composer__generation-settings,
   .composer__model3d-settings {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .composer__image-setting--model,
-  .composer__openmoss-description,
+  .composer__generation-text,
   .composer__audio-lyrics { grid-column: 1 / -1; }
   .model3d-viewer { height: 320px; min-height: 320px; }
   .model3d-viewer canvas { min-height: 320px; }
@@ -10529,7 +10529,7 @@ optgroup {
     padding: var(--space-2);
   }
 
-  .composer__openmoss-settings {
+  .composer__generation-settings {
     grid-template-columns: minmax(120px, 0.8fr) minmax(0, 2fr);
     gap: var(--space-1-5);
     padding: var(--space-2);
@@ -10539,24 +10539,24 @@ optgroup {
 @container composer-settings (max-width: 500px) {
   .composer__capability-settings,
   .composer__audio-generation-settings,
-  .composer__openmoss-settings,
+  .composer__generation-settings,
   .composer__model3d-settings {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .composer__image-setting--model,
-  .composer__openmoss-description,
+  .composer__generation-text,
   .composer__audio-lyrics {
     grid-column: 1 / -1;
   }
 }
 
 @container composer-settings (max-width: 360px) {
-  .composer__openmoss-settings {
+  .composer__generation-settings {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .composer__openmoss-description {
+  .composer__generation-text {
     grid-column: 1;
   }
 }

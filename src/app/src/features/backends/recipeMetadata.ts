@@ -126,3 +126,101 @@ export function recipeOptionIsNumeric(systemInfo: unknown, recipe: string, key: 
 export function recipeOptionIsBoolean(systemInfo: unknown, recipe: string, key: string): boolean {
   return recipeOption(systemInfo, recipe, key)?.typeName === 'BOOL';
 }
+
+export interface GenerationParamMetadata {
+  name: string;
+  label: string;
+  typeName: string;
+  defaultValue: unknown;
+  min: number | null;
+  max: number | null;
+  step: number | null;
+  enumValues: string[];
+  help: string;
+  group: string;
+  exclusiveGroup: string;
+  accept: string;
+  randomSentinel: number | null;
+}
+
+export interface GenerationParamChoice {
+  id: string;
+  label: string;
+  members: GenerationParamMetadata[];
+}
+
+function asNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function generationParams(
+  systemInfo: unknown,
+  recipe: string,
+  mode: string,
+): GenerationParamMetadata[] {
+  const byMode = asRecord(recipeRecord(systemInfo, recipe).generation_params);
+  const raw = byMode[mode];
+  if (!Array.isArray(raw)) return [];
+  return raw.map(entry => {
+    const param = asRecord(entry);
+    return {
+      name: asString(param.name),
+      label: asString(param.label),
+      typeName: asString(param.type_name),
+      defaultValue: param.default,
+      min: asNumberOrNull(param.min),
+      max: asNumberOrNull(param.max),
+      step: asNumberOrNull(param.step),
+      enumValues: Array.isArray(param.enum_values) ? param.enum_values.map(asString) : [],
+      help: asString(param.help),
+      group: asString(param.group),
+      exclusiveGroup: asString(param.exclusive_group),
+      accept: asString(param.accept),
+      randomSentinel: asNumberOrNull(param.random_sentinel),
+    };
+  }).filter(param => param.name !== '' && param.typeName !== '');
+}
+
+export function generationParamChoices(
+  params: GenerationParamMetadata[],
+): GenerationParamChoice[] {
+  const order: string[] = [];
+  const byGroup = new Map<string, GenerationParamMetadata[]>();
+  for (const param of params) {
+    if (!param.exclusiveGroup) continue;
+    if (!byGroup.has(param.exclusiveGroup)) {
+      byGroup.set(param.exclusiveGroup, []);
+      order.push(param.exclusiveGroup);
+    }
+    byGroup.get(param.exclusiveGroup)!.push(param);
+  }
+  return order.map(id => ({
+    id,
+    label: id.charAt(0).toUpperCase() + id.slice(1).replace(/_/g, ' '),
+    members: byGroup.get(id)!,
+  }));
+}
+
+export function generationParamDefault(
+  param: GenerationParamMetadata,
+  modelDefaults: Record<string, unknown>,
+  effectiveOptions: Record<string, unknown>,
+): unknown {
+  const effective = effectiveOptions[param.name];
+  if (effective !== undefined && effective !== null) return effective;
+  const declared = modelDefaults[param.name];
+  if (declared !== undefined && declared !== null) return declared;
+  return param.defaultValue ?? '';
+}
+
+/**
+ * A blank seed box means "surprise me". Backends that read a sentinel get it;
+ * backends whose seed is unsigned have none, so a value is drawn here instead
+ * of sending something they would take literally.
+ */
+export function resolveGenerationSeed(param: GenerationParamMetadata): number {
+  if (param.randomSentinel !== null) return param.randomSentinel;
+  const low = param.min !== null ? param.min : 0;
+  const high = param.max !== null ? param.max : 0xffffffff;
+  return low + Math.floor(Math.random() * Math.max(1, high - low));
+}

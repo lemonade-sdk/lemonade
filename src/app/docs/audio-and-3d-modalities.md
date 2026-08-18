@@ -11,26 +11,35 @@ GUI3 treats speech input, speech output, generated audio, and 3D as distinct cap
 
 ## ACE-Step and ThinkSound
 
-ACE-Step exposes music duration, steps, seed, optional structured lyrics, and a vocal language. Empty lyrics generate an instrumental track. ThinkSound exposes duration, steps, CFG, and seed for sound-effect generation. Both return downloadable WAV output.
+ACE-Step declares music duration, steps, seed, optional structured lyrics, and a vocal language; empty lyrics generate an instrumental track. ThinkSound declares duration, steps, CFG, and seed. Both return downloadable WAV output. A recipe offering a lyric sheet is the composer's only cue that it is generating music rather than a sound effect, which it uses for wording alone.
+
+## Generation controls
+
+The composer does not know which backend it is talking to. Every control under the prompt for `tts` and `audio-generation` is rendered from `recipes[<recipe>].generation_params[<mode>]` on `/v1/system-info`, and each value is sent in the request field the declaration names. A backend that adds a knob gets a control here without a client change; see "Generation parameters" in `docs/dev/backends-reference.md` for the declaration and its types.
+
+Control values are seeded from the effective recipe options first, then the model's own `speech_defaults` / `audio_defaults`, then the parameter's declared default. A model shipping its own step count and CFG is therefore honoured rather than overwritten by a generic number.
+
+Two declarations mean more than "render an input":
+
+- **`exclusive_group`** marks alternatives. Members become a selector — a `voice_mode` group renders as a Voice mode dropdown — and only the chosen member is sent. A member typed `AUDIO_B64` turns on the attachment affordance with its declared `accept` filter and travels as base64 in its own field.
+- **`random_sentinel`** settles what a blank seed box means. A backend that reads a sentinel is sent it; a backend whose seed is unsigned declares none, and the composer draws a seed inside the declared range instead of sending a value the backend would take literally.
+
+When a server declares nothing for a recipe, the composer falls back to a generic duration/steps/CFG/seed set so it keeps working against an older `lemond`.
+
+Model selection is independent of residency: a downloaded model the user picked stays picked even while it is not in `all_models_loaded`. Loading a backend can take minutes, eviction is a resource decision rather than a user one, and a backend that unloads and reloads itself mid-request — OpenMOSS designs a voice that way — is not something the composer should react to at all.
 
 ## OpenMOSS
 
-OpenMOSS speech has two composer modes, both against a single loaded model:
+OpenMOSS speech offers two voice sources against a single loaded model, both declared by the backend rather than built into the composer:
 
-- **Describe voice:** send the description as `voice_design_description`. The backend invents a voice matching it and speaks the text in that voice.
-- **Clone WAV sample:** attach one validated WAV sample, sent as `reference_wav_b64`. The optional style note travels as `voice`, so delivery can be directed without changing the timbre.
+- **Describe voice:** the description travels as `voice_design_description`. The backend invents a matching voice and speaks the text in it.
+- **Clone WAV sample:** one validated WAV sample travels as `reference_wav_b64`.
 
-Voice design is no longer a second model the GUI switches to. The voice generator ships as a component of the speech model, and the backend now drives the sequence the GUI used to drive by hand: it takes the speech model down, brings the voice generator up to render one reference sample, tears it down, and brings the speech model back. Only ever one model at a time, so any card that can run the speech model can design a voice for it. The sample is cached per description, so repeating a description costs nothing.
+`voice` is a separate optional field in both cases, carrying a style note that directs delivery without changing the timbre. It keeps its OpenAI-compatible meaning: nothing the composer sends turns an ordinary `voice` value into a design request.
 
-`MOSS-SoundEffect` is an audio-generation model rather than a speech one, exposing steps, CFG, sigma shift, a negative prompt, and a seed. Its seed is unsigned with no random sentinel — `0` is a real seed — so the composer draws a random one whenever the seed box is left blank. Leaving the generic `-1` in place would fall through to that `0` and render an identical clip on every generation.
+Voice design is not a second model the GUI switches to. The voice generator ships as a component of the speech model, and the backend drives the sequence the GUI used to drive by hand: it takes the speech model down, brings the voice generator up to render one reference sample, tears it down, and brings the speech model back. Only ever one model at a time, so any card that can run the speech model can design a voice for it, and the sample is cached per description.
 
-`voice` keeps its OpenAI-compatible meaning throughout: in describe mode the description travels as the `voice_design_description` extension and `voice` is left empty, and in clone mode `voice` carries only the style note. Nothing the composer sends turns an ordinary `voice` value into a design request.
-
-Audio-generation controls initialize from the effective recipe options first, then from the model's declared `audio_defaults`, then from the composer's generic fallbacks, so a model that ships its own step count and CFG is honoured without the composer overwriting it.
-
-### Model selection during a request
-
-The backend cascade unloads and reloads models mid-request, so the composer holds a model-selection lock for the duration of a speech request and pins the current selection while it is held; releasing the lock refreshes and re-runs the selection. Independently, a downloaded model the user picked stays picked while it is still being prepared — loading a backend can take minutes, and eviction is a resource decision rather than a user one, so neither should silently retarget the composer.
+`MOSS-SoundEffect` is an audio-generation model rather than a speech one. Its parameters — steps, CFG, sigma shift, a negative prompt, and an unsigned seed — arrive with the rest of the declaration.
 
 ## TRELLIS
 
