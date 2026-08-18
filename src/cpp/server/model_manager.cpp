@@ -2509,7 +2509,7 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
-        if (info.downloaded) {
+        if (info.downloaded && !backend_self_manages_downloads(info.recipe)) {
             refresh_on_disk_size(info);
         }
         models_cache_[name] = info;
@@ -3318,7 +3318,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
         : model_name;
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
-        if (it->second.downloaded) {
+        if (it->second.downloaded && !backend_self_manages_downloads(it->second.recipe)) {
             bool still_complete = are_required_checkpoints_complete(it->second);
             if (!still_complete) {
                 it->second.downloaded = false;

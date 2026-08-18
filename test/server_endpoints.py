@@ -1109,6 +1109,249 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200, response.text)
 
+    def _set_global_llamacpp_args(self, args):
+        """Set the server-wide llama.cpp custom arguments."""
+        response = requests.post(
+            f"{self.internal_url}/set",
+            json={"llamacpp_args": args},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def test_012la_load_null_transiently_clears_saved_args(self):
+        """Explicit null skips a saved *_args value for one load only."""
+        self._snapshot_options()
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+
+        response = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--threads 1"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": None,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertNotIn("--threads 1", loaded_args)
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
+
+    def test_012lb_load_null_keeps_other_saved_keys(self):
+        """A tombstone masks only its key; unrelated saved settings still apply."""
+        self._snapshot_options()
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+
+        response = requests.post(
+            self._options_url(),
+            json={"llamacpp_args": "--threads 1", "ctx_size": 3072},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_args": None},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        recipe_options = loaded.get("recipe_options", {})
+        self.assertNotIn("--threads 1", recipe_options.get("llamacpp_args", ""))
+        self.assertEqual(recipe_options.get("ctx_size"), 3072)
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
+        self.assertEqual(saved.get("ctx_size"), 3072)
+
+    def test_012lc_load_request_args_replace_saved_args_layer(self):
+        """Concrete *_args requests replace the saved same-key layer."""
+        self._snapshot_options()
+        config = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()
+        original_global_args = config.get("llamacpp", {}).get("args", "")
+        self.addCleanup(self._set_global_llamacpp_args, original_global_args)
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+        self._set_global_llamacpp_args("")
+
+        response = requests.post(
+            self._options_url(),
+            json={
+                "llamacpp_args": "--threads 1 --threads-batch 1",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--threads 2",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertIn("--threads 2", loaded_args)
+        self.assertNotIn("--threads-batch 1", loaded_args)
+        self.assertNotIn("--threads 1 ", loaded_args + " ")
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(
+            saved.get("llamacpp_args"),
+            "--threads 1 --threads-batch 1",
+            "Transient /load must not rewrite the saved args layer",
+        )
+
+    def test_012ld_load_ctx_size_minus_one_remains_explicit_auto(self):
+        """ctx_size=-1 is a concrete auto value, not a transient tombstone."""
+        self._snapshot_options()
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+
+        response = requests.post(
+            self._options_url(),
+            json={"ctx_size": 3072},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "ctx_size": -1,
+                "save_options": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        options = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(options["saved"].get("ctx_size"), -1)
+        self.assertEqual(options["effective"].get("ctx_size"), -1)
+
+    def test_012le_load_request_args_still_merge_global_args(self):
+        """Request *_args skips saved same-key but still merges lower global args."""
+        self._snapshot_options()
+        config = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()
+        original_global_args = config.get("llamacpp", {}).get("args", "")
+        self.addCleanup(self._set_global_llamacpp_args, original_global_args)
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+        self._set_global_llamacpp_args("--no-mmap --threads 1")
+
+        response = requests.post(
+            self._options_url(),
+            json={
+                "llamacpp_args": "--threads-batch 1",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--threads 2",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertIn("--threads 2", loaded_args)
+        self.assertIn("--no-mmap", loaded_args)
+        self.assertNotIn("--threads-batch 1", loaded_args)
+        self.assertNotIn("--threads 1 ", loaded_args + " ")
+
     def test_012m_model_options_save_without_loading(self):
         """POST /models/{id}/options persists options without loading the model."""
         requests.post(
@@ -1383,16 +1626,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["resolved_ctx_size"], 4096)
         self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
 
-        # load_command is effective posted to /v1/load, with the base URL left
-        # to the caller: lemond only ever listens over plain HTTP, so it cannot
-        # know the scheme a client reached it through.
-        command = data["load_command"]
-        self.assertTrue(
-            command.startswith("curl -X POST $LEMONADE_BASE_URL/v1/load"), command
-        )
-        self.assertIn('"ctx_size":4096', command)
-        self.assertIn(f'"model_name":"{ENDPOINT_TEST_MODEL}"', command)
-
         after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
         self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
         self.assertGreater(
@@ -1409,96 +1642,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(rejected.status_code, 400, "dry_run still validates")
 
         print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
-
-    def test_012v_load_command_omits_client_supplied_host(self):
-        """The command is built from what the server knows, not what it is told.
-
-        `Host` is the caller's own claim about where it sent the request, and
-        the command is meant to be run, so none of it may reach the string.
-        """
-        forged = "evil.example.com; touch /tmp/lemonade-load-command"
-        response = requests.get(
-            self._options_url(),
-            headers={"Host": forged},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-        command = response.json()["load_command"]
-        self.assertIn("$LEMONADE_BASE_URL/v1/load", command)
-        self.assertNotIn("evil.example.com", command)
-        self.assertNotIn("touch", command)
-
-        print("[OK] load_command never repeats the caller's Host header")
-
-    def test_012w_load_command_carries_auth_when_a_key_is_required(self):
-        """A key-protected server renders the header its own /v1/load demands.
-
-        Without it the command reports a load that would come back 401. The key
-        itself stays out of the response: only the variable holding it is named.
-        """
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        api_key = "options-load-command-key"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        port = _pick_free_port()
-        cache_dir = tempfile.mkdtemp(prefix="lemond_optauth_")
-        log_path = os.path.join(cache_dir, "lemond.log")
-        env = os.environ.copy()
-        env["LEMONADE_API_KEY"] = api_key
-        env.pop("LEMONADE_ADMIN_API_KEY", None)
-
-        server = None
-        try:
-            with open(log_path, "w", encoding="utf-8") as log_file:
-                server = subprocess.Popen(
-                    [lemond_binary, cache_dir, "--port", str(port)],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                )
-
-            deadline = time.time() + 60
-            healthy = False
-            while time.time() < deadline:
-                if server.poll() is not None:
-                    break  # exited early; surface the log below
-                if _lemond_health_ok(port, headers):
-                    healthy = True
-                    break
-                time.sleep(1)
-
-            if not healthy:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    log = f.read()
-                self.fail(
-                    f"lemond never became healthy on port {port}.\n"
-                    f"=== lemond log ===\n{log}"
-                )
-
-            response = requests.get(
-                f"http://localhost:{port}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
-                headers=headers,
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(response.status_code, 200, response.text)
-
-            command = response.json()["load_command"]
-            self.assertIn('-H "Authorization: Bearer $LEMONADE_API_KEY"', command)
-            self.assertNotIn(api_key, command)
-
-            print("[OK] load_command carries the Authorization header /load requires")
-        finally:
-            if server is not None and server.poll() is None:
-                server.terminate()
-                try:
-                    server.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=10)
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak

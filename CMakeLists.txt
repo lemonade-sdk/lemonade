@@ -1533,6 +1533,10 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
             DESTINATION share/applications
         )
+        # Install MetaInfo file for web app
+        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.webapp.metainfo.xml
+            DESTINATION share/metainfo
+        )
         # Create symlink in standard applications path only if not installing to /usr
         if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
             install(CODE "
@@ -2056,6 +2060,10 @@ if(UNIX AND NOT APPLE)
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
             )
+            # Install MetaInfo file for the Tauri app
+            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.app.metainfo.xml
+                DESTINATION share/metainfo
+            )
             # Create symlink in standard applications path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
                 install(CODE "
@@ -2258,6 +2266,19 @@ if(BUILD_TESTING AND EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_A
     )
 
     add_cpp_ci_test(FlmArgResolverTest CI OFF COMMAND test_flm_arg_resolver)
+endif()
+
+# Pure SystemInfo mapping/matching helpers. The production server calls the same
+# header-only implementation, so this replaces the old Python replica tests.
+set(_SYSTEM_INFO_HELPERS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_system_info_helpers.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
+    add_executable(test_system_info_helpers ${_SYSTEM_INFO_HELPERS_TEST_SRC})
+    target_include_directories(test_system_info_helpers PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
+    )
+    add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)
 endif()
 
 # Custom arg parsing helpers (header-only utility shared by all arg resolvers).
@@ -2872,11 +2893,18 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
 endif()
 
+set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DISCOVERY_TEST_SRC}")
+    add_executable(test_config_discovery test/cpp/test_config_discovery.cpp)
+    target_link_libraries(test_config_discovery PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDiscoveryTest CI ON COMMAND test_config_discovery)
+endif()
+
 set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
+    add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
 endif()
 
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC

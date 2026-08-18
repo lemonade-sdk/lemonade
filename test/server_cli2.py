@@ -702,6 +702,69 @@ sys.exit(0)
         self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
         self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
 
+    def test_045_config_set_broadcast(self):
+        """Verify that CLI config set can modify broadcast setting, and client CLI works with --discovery / --no-discovery."""
+        try:
+            # 1. Set broadcast to false using the CLI config set
+            result = self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "config",
+                    "set",
+                    "broadcast=false",
+                ]
+            )
+            print(f"Config set broadcast=false output: {result.stdout}")
+
+            # Verify it is set to false on the server
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/params",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json().get("broadcast"), False)
+
+            # 2. Set broadcast back to true
+            result = self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "config",
+                    "set",
+                    "broadcast=true",
+                ]
+            )
+            response = requests.get(
+                f"http://localhost:{PORT}/api/v1/params",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json().get("broadcast"), True)
+
+            # 3. Test that the client works with --no-discovery and --discovery flags
+            self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "--no-discovery",
+                    "status",
+                ]
+            )
+            self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "--discovery",
+                    "status",
+                ]
+            )
+        finally:
+            # Restore default
+            run_cli_command(["--port", str(PORT), "config", "set", "broadcast=true"])
+
     # =============================================================================
     # Pull Tests
     # =============================================================================

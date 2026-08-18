@@ -17,6 +17,7 @@ using json = nlohmann::json;
 // `recipes` and `backends` filter which backend versions to include (empty = all).
 json build_hardware_profile(const json& sys_info,
                             const std::vector<std::string>& recipes,
-                            const std::vector<std::string>& backends);
+                            const std::vector<std::string>& backends,
+                            const std::string& lemonade_version);
 
 } // namespace lemon_cli

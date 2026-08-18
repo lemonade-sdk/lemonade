@@ -148,6 +148,7 @@ struct CliConfig {
     std::string host = "127.0.0.1";
     int port = 13305;
     bool is_ssl = false;
+    bool no_discovery = false;
     std::string api_key;
     std::string model;
     std::string list_filter;
@@ -1243,6 +1244,7 @@ int main(int argc, char* argv[]) {
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
+    app.add_flag("!--discovery,--no-discovery", config.no_discovery, "Enable or disable auto-discovery of local server via UDP beacon");
 
     // Subcommands
     // Quick start commands
@@ -1510,10 +1512,10 @@ int main(int argc, char* argv[]) {
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
-    // Skip when: no command given, scan command, or user explicitly set --host/--port
+    // Skip when: no command given, scan command, or user explicitly set --host/--port, or --no-discovery is set
     bool has_command = !app.get_subcommands().empty();
     bool explicit_target = (host_opt->count() > 0 || port_opt->count() > 0);
-    if (has_command && scan_cmd->count() == 0 && !explicit_target) {
+    if (has_command && scan_cmd->count() == 0 && !explicit_target && !config.no_discovery) {
         // Localhost responds in <10ms; use short timeout. Remote hosts need more.
         bool is_local = (config.host.empty() || config.host == "127.0.0.1" ||
                          config.host == "localhost" || config.host == "0.0.0.0");

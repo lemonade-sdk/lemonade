@@ -21,6 +21,17 @@ repos:
     hooks:
       - id: check-jsonschema
         files: .*\.json$
+        exclude: ^(\.vscode/launch\.json|\.devcontainer/devcontainer\.json)$
         args: ["--schemafile", "schemas/any.json"]
       - id: check-github-actions
       - id: check-github-workflows
+
+  - repo: local
+    hooks:
+      - id: comment-slop
+        name: comment slop (repeated explanations, oversized blocks)
+        entry: python tools/check_comment_slop.py
+        language: python
+        pass_filenames: false
+        require_serial: true
+        types_or: [c, c++, python]

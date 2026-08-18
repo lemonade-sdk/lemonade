@@ -2043,8 +2043,8 @@ void Server::run() {
         // Enumerate all RFC1918 interfaces to determine if we can broadcast.
         // The beacon will send per-interface with the correct IP in the payload.
         auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
-        bool no_bcast = config_->no_broadcast();
-        if (!rfc1918Interfaces.empty() && !no_bcast) {
+        bool bcast = config_->broadcast();
+        if (!rfc1918Interfaces.empty() && bcast) {
             std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
                       << " RFC1918 interface(s):";
             for (const auto& iface : rfc1918Interfaces) {
@@ -2056,8 +2056,8 @@ void Server::run() {
                 port_,
                 2
             );
-        } else if (!rfc1918Interfaces.empty() && no_bcast) {
-            LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
+        } else if (!rfc1918Interfaces.empty() && !bcast) {
+            LOG(INFO, "Server") << "Broadcasting disabled by configuration or CLI option" << std::endl;
         } else {
             LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
                         << "or hostname that resolves to RFC1918 IPv4." << std::endl;
@@ -3022,18 +3022,6 @@ static bool is_live_process_option(const std::string& key) {
     return key == "pinned";
 }
 
-static std::string shell_single_quote(const std::string& s) {
-    std::string quoted = "'";
-    for (char c : s) {
-        if (c == '\'') {
-            quoted += "'\\''";
-        } else {
-            quoted += c;
-        }
-    }
-    return quoted + "'";
-}
-
 // Fill in every option the recipe accepts, resolving unset keys through the
 // default chain, so a client can render a complete form from one response.
 static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
@@ -3128,26 +3116,13 @@ void Server::respond_with_model_options(
         const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
             : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
 
-        // The load command, with the two things only the caller knows left as
-        // environment references. lemond always listens in the clear, so a
-        // client that reached it through a TLS-terminating proxy is on https
-        // and this process cannot tell; the Host header is a guess of the same
-        // kind, supplied by the caller.
-        std::string load_command =
-            "curl -X POST $LEMONADE_BASE_URL/v1/load -H \"Content-Type: application/json\"";
-        if (!api_key_.empty()) {
-            load_command += " -H \"Authorization: Bearer $LEMONADE_API_KEY\"";
-        }
-        load_command += " -d " + shell_single_quote(effective_json.dump());
-
         nlohmann::json response = {
             {"model_name", model_id},
             {"recipe", info.recipe},
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", effective_json},
             {"defaults", defaults_json},
-            {"resolved_ctx_size", resolved_ctx},
-            {"load_command", load_command}
+            {"resolved_ctx_size", resolved_ctx}
         };
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
@@ -5793,10 +5768,30 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-        // Extract optional per-model settings. An omitted or empty option falls
-        // through to the Router defaults; an explicit ctx_size of -1 requests
-        // automatic sizing for this load.
+        // Extract optional per-model settings. Omitted options keep saved values;
+        // explicit *_args keys mask them for this load, and null acts as a tombstone.
+        // ctx_size=-1 explicitly requests automatic sizing.
+        // ctx_size=-1 remains an explicit request for automatic sizing.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        std::set<std::string> transient_saved_option_tombstones;
+        std::set<std::string> transient_saved_option_masks;
+        for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
+            if (!request_json.contains(key)) {
+                continue;
+            }
+
+            if (request_json[key].is_null()) {
+                transient_saved_option_tombstones.insert(key);
+                transient_saved_option_masks.insert(key);
+                continue;
+            }
+
+            if (key.size() >= 5 &&
+                key.compare(key.size() - 5, 5, "_args") == 0) {
+                transient_saved_option_masks.insert(key);
+            }
+        }
+
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
         if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
@@ -5807,22 +5802,48 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested. Re-read so this
-        // load still sees the model's own registry-level options rather than
-        // just the request's.
+        // Persist concrete request options if requested. A null tombstone is
+        // load-scoped, so preserve the existing saved value for that key.
         if (save_options) {
-            model_manager_->set_saved_model_options(model_name, options.to_json());
+            json saved_for_write = options.to_json();
+            if (!transient_saved_option_tombstones.empty()) {
+                const json existing_saved = model_manager_->get_saved_model_options(model_name);
+                for (const auto& key : transient_saved_option_tombstones) {
+                    auto it = existing_saved.find(key);
+                    if (it != existing_saved.end()) {
+                        saved_for_write[key] = *it;
+                    }
+                }
+            }
+            model_manager_->set_saved_model_options(model_name, saved_for_write);
             info = model_manager_->get_model_info(model_name);
         }
 
-        // Download model if needed (first-time use or missing files). Collections have no
-        // checkpoint of their own, so skip the generic HF download path here
-        // and let the per-component branch below cascade any missing pieces.
         if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
+
+        // ModelInfo::recipe_options contains the model-level defaults plus the
+        // recipe_options.json overlay. Rebuild that local copy with request-masked
+        // saved keys removed. Concrete *_args then override the saved same-key
+        // layer while merge_args can still combine model defaults and the lower
+        // architecture/backend/global layers. This load does not alter the
+        // persistent recipe_options.json entry.
+        if (!transient_saved_option_masks.empty()) {
+            json per_model_options = model_manager_->get_model_default_options(info).to_json();
+            const json saved = model_manager_->get_saved_model_options(model_name);
+            if (saved.is_object()) {
+                for (const auto& [key, value] : saved.items()) {
+                    if (transient_saved_option_masks.count(key) == 0) {
+                        per_model_options[key] = value;
+                    }
+                }
+            }
+            info.recipe_options = RecipeOptions(info.recipe, per_model_options);
+        }
+
 
         // Collection models: load each component instead
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
@@ -7004,10 +7025,10 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
-        } else if (key == "no_broadcast") {
-            bool nb = config_->no_broadcast();
-            LOG(INFO, "Server") << "Broadcast " << (nb ? "disabled" : "enabled") << std::endl;
-            if (nb) {
+        } else if (key == "broadcast" || key == "no_broadcast") {
+            bool bcast = config_->broadcast();
+            LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
+            if (!bcast) {
                 udp_beacon_.stopBroadcasting();
             } else {
                 auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
