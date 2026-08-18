@@ -132,6 +132,11 @@ int main() {
                           nlohmann::json{{"gguf", nlohmann::json::object()}},
                           "modelscope").empty(),
                       "Hugging Face metadata policy leaked into ModelScope");
+        result.expect("unknown registries are unchanged",
+                      lemon::llamacpp_gguf_incompatibility(
+                          nlohmann::json{{"gguf", nlohmann::json::object()}},
+                          "custom-registry").empty(),
+                      "Hugging Face metadata policy leaked into an unknown registry");
     }
 
     // Regression for the review on PR #2107: when two files share a quant token
