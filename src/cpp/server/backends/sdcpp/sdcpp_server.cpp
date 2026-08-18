@@ -202,9 +202,6 @@ void SDServer::load(const std::string& model_name,
     }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
-    // Merge boolean recipe options (diffusion_fa, diffusion_conv_direct, etc.)
-    // into sdcpp_args from the fully-resolved effective_options. This ensures
-    // saved model options, arch defaults, and config defaults are all reflected.
     std::string sdcpp_args = build_merged_sdcpp_args(options, backend);
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
@@ -519,7 +516,6 @@ std::string SDServer::build_merged_sdcpp_args(
     const auto* desc = backends::descriptor_for("sd-cpp");
     if (!desc) return options.get_option("sdcpp_args");
 
-    // Discover BOOL options with CLI flags from the descriptor
     struct BoolOption {
         std::string name;
         std::string cli_flag;
@@ -534,13 +530,11 @@ std::string SDServer::build_merged_sdcpp_args(
         return options.get_option("sdcpp_args");
     }
 
-    // Build a set of known boolean CLI flags for filtering
     std::set<std::string> known_flags;
     for (const auto& bo : bool_opts) {
         known_flags.insert(bo.cli_flag);
     }
 
-    // Determine which flags are forced by the backend
     auto is_backend_forced = [&](const std::string& flag) {
         if (flag == "--diffusion-fa" && backend == "vulkan") return true;
         if (flag == "--vae-tiling" && backend == "vulkan") return true;
@@ -555,17 +549,14 @@ std::string SDServer::build_merged_sdcpp_args(
         known_flags.insert("--vae-tiling");
     }
 
-    // Parse existing args (from recipe_options / config), keeping only
-    // non-boolean-option flags. This preserves user's custom args like
-    // --control-net, --upscale-model, etc. Legacy configs spell boolean
-    // options directly in sdcpp_args (e.g. "--diffusion-fa"); those spellings
-    // are remembered so they survive the rebuild below. A spelled boolean
-    // flag is dropped together with its value (e.g. "--diffusion-fa 1") so
-    // the value doesn't survive as a stray argument.
+    // Legacy configs spell boolean options directly in sdcpp_args
+    // (e.g. "--diffusion-fa"); remember them so they survive the rebuild.
+    // A spelled boolean flag is dropped together with its value so the value
+    // doesn't survive as a stray argument.
     std::string recipe_args = options.get_option("sdcpp_args");
     auto all_tokens = lemon::utils::parse_custom_args(recipe_args, true);
     std::vector<std::string> other_args;
-    std::map<std::string, bool> spelled_flags;  // flag -> explicitly enabled
+    std::map<std::string, bool> spelled_flags;
     for (size_t i = 0; i < all_tokens.size(); ++i) {
         const auto& token = all_tokens[i];
         if (known_flags.find(token) != known_flags.end()) {
@@ -581,10 +572,7 @@ std::string SDServer::build_merged_sdcpp_args(
         }
     }
 
-    // Rebuild: other args first, then enabled boolean flags. A flag that was
-    // spelled out in the existing args string stays enabled (backward
-    // compatibility for pre-typed-option configs); the typed options add flags
-    // that weren't already requested.
+    // A spelled-out flag overrides the typed option for backward compatibility.
     std::vector<std::string> merged_list = other_args;
     for (const auto& bo : effective_bool_opts) {
         bool enabled = false;
@@ -602,7 +590,6 @@ std::string SDServer::build_merged_sdcpp_args(
         if (enabled) merged_list.push_back(bo.cli_flag);
     }
 
-    // Rejoin into a string
     std::string merged;
     for (size_t i = 0; i < merged_list.size(); ++i) {
         if (i > 0) merged += " ";

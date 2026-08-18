@@ -71,15 +71,9 @@ private:
     // Returns "" if no size can be resolved.
     std::string resolve_size(const nlohmann::json& request) const;
 
-    // Merge boolean recipe options into the sdcpp_args string. Reads from the
-    // already-resolved RecipeOptions (effective_options from the Router), so
-    // saved model options, arch defaults, and config defaults are all visible.
-    // Discovers which BOOL options have CLI flags from the backend descriptor,
-    // so new options don't require code changes. Backend-forced flags (e.g.
-    // --diffusion-fa for Vulkan, --vae-tiling for Vulkan) are applied
-    // regardless of user setting. Boolean flags spelled out in an existing
-    // sdcpp_args string (pre-typed-option configs) are preserved as enabled,
-    // unless spelled with an explicit false value (e.g. "--diffusion-fa 0").
+    // Merge boolean recipe options into sdcpp_args. Legacy sdcpp_args spellings
+    // of BOOL flags are preserved (unless given an explicit false value), and
+    // backend-forced flags (--diffusion-fa, --vae-tiling for Vulkan) always win.
     std::string build_merged_sdcpp_args(const RecipeOptions& options,
                                         const std::string& backend) const;
 };
