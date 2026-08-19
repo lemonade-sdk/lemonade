@@ -112,9 +112,13 @@ void RyzenAISDServer::load(const std::string& model_name,
         LOG(INFO, "RyzenAISDServer") << "Process already running — hot-swapping model via /v1/internal/load" << std::endl;
         std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/v1/internal/load";
         json body = {{"model_path", model_path}};
+        // TrustedLoopback is required here: HttpClient::post()'s default policy
+        // (ExternalHttpsOnly) restricts curl to the "https" scheme only, which
+        // rejects this plain-http loopback URL with CURLE_UNSUPPORTED_PROTOCOL.
         HttpResponse resp = HttpClient::post(url, body.dump(),
                                              {{"Content-Type", "application/json"}},
-                                             /*timeout_seconds=*/300);
+                                             /*timeout_seconds=*/300,
+                                             utils::HttpSecurityPolicy::TrustedLoopback);
         if (resp.status_code != 200) {
             throw std::runtime_error("Failed to hot-swap model: " + resp.body);
         }
@@ -314,12 +318,21 @@ json RyzenAISDServer::image_generations(const json& request) {
     }
 
     // steps/cfg_scale/seed are only honored via the <sd_cpp_extra_args> tag
-    // embedded in the prompt -- the server ignores top-level JSON fields other
-    // than prompt/size/n.
+    // embedded in the prompt -- the server's hand-rolled JSON parser for this
+    // endpoint only reads "prompt" and "size", ignoring every other top-level
+    // field (including "n" -- unlike /v1/images/edits and /v1/images/variations,
+    // this endpoint always returns exactly one image).
     json extra_args = build_extra_args(request);
     std::string prompt = sd_request.value("prompt", "");
     prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
     sd_request["prompt"] = prompt;
+
+    if (request.contains("n") && request["n"].is_number_integer() && request["n"].get<int>() > 1) {
+        LOG(WARNING, "RyzenAISDServer")
+            << "ryzenai-sd-server's /v1/images/generations does not support n>1; "
+            << "requested n=" << request["n"].get<int>() << " but only 1 image will be returned"
+            << std::endl;
+    }
 
     LOG(DEBUG, "RyzenAISDServer") << "Forwarding image generation request" << std::endl;
     // Image generation can be slow; use no timeout.
