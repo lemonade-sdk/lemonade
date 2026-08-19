@@ -104,7 +104,7 @@ assert.match(component, /const meta = model\.size/,
    headings stay true under every sort, not just the status-ranked default. */
 assert.match(component, /const listSections = useMemo/,
   'the catalog groups its rows into labelled sections');
-for (const label of ['Pinned', 'Downloaded', 'Not downloaded']) {
+for (const label of ['Pinned', 'Downloaded', 'Local Catalog']) {
   assert.ok(component.includes(`label: '${label}'`), `missing catalog section: ${label}`);
 }
 assert.match(panels, /<li role="group" aria-label=\{label\}/,

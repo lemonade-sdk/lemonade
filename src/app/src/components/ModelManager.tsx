@@ -479,12 +479,12 @@ const providerSearchCacheKey = (provider: ModelRegistryProvider, query: string):
 const PROVIDER_META: Record<ModelRegistryProvider, { label: string; compactLabel: string; url: (id: string) => string }> = {
   huggingface: {
     label: 'Hugging Face',
-    compactLabel: 'HuggingFace',
+    compactLabel: 'Online Catalog: Hugging Face',
     url: id => `https://huggingface.co/${id}`,
   },
   modelscope: {
     label: 'ModelScope',
-    compactLabel: 'ModelScope',
+    compactLabel: 'Online Catalog: ModelScope',
     url: id => `https://modelscope.cn/models/${id}`,
   },
 };
@@ -1957,7 +1957,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const handleRouterSaved = (model: ModelInfo) => {
     setRouterEditorModel(model);
-    setPrimaryFilter('my-models');
+    setPrimaryFilter('all');
     setSearchQuery('');
     setSelectedDetailModelId(modelName(model));
   };
@@ -2168,7 +2168,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
       setShowCustomForm(false);
       setEditingCustomModelName(null);
-      setPrimaryFilter('my-models');
+      setPrimaryFilter('all');
       setSearchQuery('');
       setSelectedDetailModelId(persistedName);
       setMobileDetailOpen(true);
@@ -2412,8 +2412,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const selectedDetailModel = selectedDetailModelId
     ? (allModels.find(m => modelName(m) === selectedDetailModelId) ?? null)
     : null;
-  const selectedDetailIsCustom = Boolean(selectedDetailModel && modelIsCustom(selectedDetailModel));
-  const showCustomEditor = showCustomForm || (primaryFilter === 'my-models' && !selectedDetailIsCustom);
+  const showCustomEditor = showCustomForm;
 
   useEffect(() => {
     const requested = openModelRequest?.modelName?.trim();
@@ -2435,11 +2434,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const handlePrimaryFilterChange = (next: PrimaryFilter) => {
     setPrimaryFilter(next);
     mobileRail.close();
-    if (next === 'my-models') {
-      if (!selectedDetailIsCustom) openCustomForm('model');
-      else closeCustomForm();
-      return;
-    }
     closeCustomForm();
   };
 
