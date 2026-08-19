@@ -141,7 +141,7 @@ void TrellisServer::load(const std::string& model_name,
     LOG(INFO, "trellis-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path, args, "", is_debug(), true, env_vars);
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start trellis-server process");
     }

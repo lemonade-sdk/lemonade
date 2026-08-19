@@ -177,9 +177,19 @@ ProcessHandle WrappedServer::get_process_handle_snapshot() const {
     return process_handle_;
 }
 
-void WrappedServer::set_process_handle(ProcessHandle handle) {
+void WrappedServer::set_process_handle(ProcessHandle handle,
+                                       const std::string& executable,
+                                       const std::vector<std::string>& args) {
     std::lock_guard<std::mutex> lock(process_mutex_);
     process_handle_ = handle;
+    launch_command_.clear();
+    launch_command_.push_back(executable);
+    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
+}
+
+std::vector<std::string> WrappedServer::get_launch_command() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return launch_command_;
 }
 
 int WrappedServer::get_backend_port() const {
@@ -192,6 +202,7 @@ ProcessHandle WrappedServer::consume_process_handle_for_cleanup() {
     ProcessHandle handle = process_handle_;
     process_handle_ = {nullptr, 0};
     port_ = 0;
+    launch_command_.clear();
     return handle;
 }
 

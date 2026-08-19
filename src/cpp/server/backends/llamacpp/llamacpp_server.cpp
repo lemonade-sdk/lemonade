@@ -617,7 +617,8 @@ void LlamaCppServer::load(const std::string& model_name,
 
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
     set_process_handle(ProcessManager::start_process(
-        process_executable, args, working_dir, inherit_llama_output, true, env_vars));
+        process_executable, args, working_dir, inherit_llama_output, true, env_vars),
+        process_executable, args);
 
     if (!wait_for_ready("/health")) {
         const ProcessHandle handle = consume_process_handle_for_cleanup();

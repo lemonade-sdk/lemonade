@@ -406,6 +406,7 @@ public:
         return ctx_size_auto_;
     }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
+    std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
 
     // Cheap liveness gate used by the router. On POSIX this relies on
@@ -570,7 +571,9 @@ protected:
 
     static bool has_process_handle(const ProcessHandle& handle);
     ProcessHandle get_process_handle_snapshot() const;
-    void set_process_handle(ProcessHandle handle);
+    void set_process_handle(ProcessHandle handle,
+                            const std::string& executable,
+                            const std::vector<std::string>& args);
     ProcessHandle consume_process_handle_for_cleanup();
 
     // Choose an available port
@@ -610,6 +613,7 @@ protected:
     std::string server_name_;
     int port_;
     ProcessHandle process_handle_;
+    std::vector<std::string> launch_command_;
     mutable std::mutex process_mutex_;
     Telemetry telemetry_;
     std::string log_level_;
