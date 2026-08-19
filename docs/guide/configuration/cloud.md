@@ -73,14 +73,14 @@ lemonade cloud install acme \
   --auth-header-prefix ""
 ```
 
-The auth header flags are separate from the wire format, and the two usually go together: the Anthropic API authenticates with `x-api-key: <key>`, not `Authorization: Bearer <key>`. Leaving them at their defaults against such a provider returns `401`. A gateway that fronts the Anthropic format behind bearer auth is the exception — omit the two flags there.
+The wire format and the auth header are independent settings, but usually go together: the Anthropic API authenticates with `x-api-key`, so leaving the header at its default returns `401`. Omit the auth flags only for a gateway that fronts the Anthropic format behind bearer auth.
 
-Every request Lemonade sends to an `anthropic` provider, discovery included, carries `anthropic-version: 2023-06-01`.
+Every request to an `anthropic` provider, discovery included, carries `anthropic-version: 2023-06-01`.
 
-Model discovery is unchanged — it still reads `GET <base_url>/models`, which these providers serve in the OpenAI envelope. Inference differs:
+Discovery is unchanged — `GET <base_url>/models`, which these providers serve in the OpenAI envelope. Inference differs:
 
-- **`POST /v1/messages`** relays the request to `<base_url>/messages` byte-for-byte, rewriting only the `model` field to the provider's upstream id. Because nothing is converted, thinking blocks, tool use, cache control, and any future Anthropic field pass through intact. Streaming relays the upstream SSE unmodified.
-- **`POST /v1/chat/completions` and `POST /v1/completions`** return `400` for these models, pointing at `/v1/messages`. Those endpoints are OpenAI-shaped and the provider does not serve that shape.
+- **`POST /v1/messages`** relays to `<base_url>/messages` byte-for-byte, rewriting only the `model` field. Nothing is converted, so thinking blocks, tool use, cache control, and future Anthropic fields pass through intact. Streaming relays the upstream SSE unmodified.
+- **`POST /v1/chat/completions` and `POST /v1/completions`** return `400` pointing at `/v1/messages`, since the provider does not serve the OpenAI shape.
 
 Relayed requests take no router slot — there is no local model to load — so they do not appear in `/v1/stats`.
 
