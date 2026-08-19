@@ -49,8 +49,8 @@ function summarizeResult(toolName: string, data: Record<string, unknown>): strin
       return 'Model inventory retrieved';
     }
     case 'get_model_info': return `${(data as any).display_name || (data as any).name || (data as any).id || 'model'}: ${((data as any).recipes || []).length} recipe(s)`;
-    case 'load_model': return 'Model loaded';
-    case 'unload_model': return 'Model unloaded';
+    case 'load_model': return (data as any).mode === 'router' ? 'Router ready' : 'Model loaded';
+    case 'unload_model': return (data as any).mode === 'router' ? 'Router has no runtime to unload' : 'Model unloaded';
     case 'get_loaded_models': {
       const loaded = (data as any).loaded;
       return Array.isArray(loaded) ? `${loaded.length} model(s) loaded` : JSON.stringify(data).slice(0, 80);

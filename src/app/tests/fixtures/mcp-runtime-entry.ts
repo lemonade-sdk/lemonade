@@ -47,13 +47,39 @@ async function main(): Promise<void> {
     { id: 'image-edit-model', name: 'image-edit-model', downloaded: true, labels: ['image', 'image-edit'], recipe: 'sd-cpp' },
     { id: 'remote-image-model', name: 'remote-image-model', downloaded: false, labels: ['image'], recipe: 'sd-cpp' },
     { id: '3d-model', name: '3d-model', downloaded: true, labels: ['3d'], recipe: 'trellis' },
+    { id: 'fast-chat', name: 'fast-chat', downloaded: true, labels: ['chat'], recipe: 'llamacpp', type: 'chat' },
+    { id: 'smart-chat', name: 'smart-chat', downloaded: true, labels: ['chat'], recipe: 'llamacpp', type: 'chat' },
+    {
+      id: 'user.router', name: 'user.router', display_name: 'Test Router', downloaded: true, labels: ['custom', 'router', 'chat'],
+      recipe: 'collection.router', type: 'chat', components: ['fast-chat', 'smart-chat'],
+      routing: {
+        candidates: ['fast-chat', 'smart-chat'],
+        default_model: 'smart-chat',
+        rules: [{ route_to: 'fast-chat', match: { max_chars: 300 } }],
+      },
+    },
   ];
   Object.defineProperty(api, 'loadedModels', { configurable: true, get: () => [] });
   Object.defineProperty(api, 'allModels', { configurable: true, get: () => modelInfos });
-  (api as any).health = async () => ({ status: 'ok', version: 'test', all_models_loaded: [] });
+  (api as any).health = async () => ({ status: 'ok', version: 'test', all_models_loaded: [{ model_name: 'image-model', recipe: 'sd-cpp', type: 'image', device: 'gpu' }] });
   (api as any).models = async () => ({ data: modelInfos });
+  (api as any).modelDetail = async (name: string) => modelInfos.find(model => model.id === name || model.name === name) || { id: name, name };
   const calls: string[] = [];
-  (api as any).loadModel = async (name: string) => { calls.push(`load:${name}`); };
+  const loadRequests: Array<{ name: string; options?: Record<string, unknown> }> = [];
+  const unloadRequests: string[] = [];
+  const registrationRequests: Array<{ name: string; options?: Record<string, unknown> }> = [];
+  (api as any).loadModel = async (name: string, options?: Record<string, unknown>) => {
+    calls.push(`load:${name}`);
+    loadRequests.push({ name, options });
+  };
+  (api as any).unloadModel = async (name?: string) => {
+    unloadRequests.push(name || '');
+    return { unloaded: name };
+  };
+  (api as any).registerModelDefinition = async (name: string, options?: Record<string, unknown>) => {
+    registrationRequests.push({ name, options });
+    return { registered: name };
+  };
   (api as any).imageGeneration = async (name: string, prompt: string) => {
     calls.push(`image:${name}`);
     assert.match(prompt, /studio lighting/);
@@ -67,10 +93,93 @@ async function main(): Promise<void> {
 
   const lemonade = await buildSelectedMcpRuntime(['lemonade']);
   assert.ok(lemonade);
+  assert.match(lemonade!.systemPrompt || '', /collection\.router/, 'builtin Lemonade guidance must explain Router semantics');
+
+  const routerList = await lemonade!.execute({
+    id: 'call-router-list', type: 'function',
+    function: { name: 'list_models', arguments: JSON.stringify({ capability: 'router', status: 'local' }) },
+  });
+  assert.notEqual(routerList.error, true);
+  const routerListData = JSON.parse(routerList.content);
+  assert.deepEqual(routerListData.loaded, []);
+  assert.deepEqual(routerListData.downloaded.map((model: any) => model.id), ['user.router']);
+  assert.equal(routerListData.downloaded[0].capability, 'router');
+  assert.equal(routerListData.downloaded[0].deployment_capability, 'chat');
+  assert.equal(routerListData.downloaded[0].mode, 'router');
+
+  const chatList = await lemonade!.execute({
+    id: 'call-chat-list', type: 'function',
+    function: { name: 'list_models', arguments: JSON.stringify({ capability: 'chat', status: 'local' }) },
+  });
+  const chatListData = JSON.parse(chatList.content);
+  assert.deepEqual(chatListData.loaded, [], 'loaded models from other capabilities must not leak through the filter');
+  const routerInChat = chatListData.downloaded.find((model: any) => model.id === 'user.router');
+  assert.equal(routerInChat?.deployment_capability, 'chat', 'Router must remain deployable through chat while retaining Router identity');
+  assert.ok(chatListData.downloaded.filter((model: any) => model.id !== 'user.router').every((model: any) => model.capability === 'chat'), 'chat filtering must not leak unrelated modes');
+
+  const routerInfo = await lemonade!.execute({
+    id: 'call-router-info', type: 'function',
+    function: { name: 'get_model_info', arguments: JSON.stringify({ model_name: 'user.router' }) },
+  });
+  const routerInfoData = JSON.parse(routerInfo.content);
+  assert.equal(routerInfoData.is_router, true);
+  assert.equal(routerInfoData.capability, 'router');
+  assert.equal(routerInfoData.deployment_capability, 'chat');
+  assert.equal(routerInfoData.mode, 'router');
+  assert.equal(routerInfoData.router.mode, 'rules');
+  assert.equal(routerInfoData.router.default_model, 'smart-chat');
+  assert.deepEqual(routerInfoData.router.candidates, ['fast-chat', 'smart-chat']);
+
+  const routerLoad = await lemonade!.execute({
+    id: 'call-router-load', type: 'function',
+    function: { name: 'load_model', arguments: JSON.stringify({ model_name: 'user.router', recipe: 'llamacpp-cpu', backend: 'cpu', n_ctx: 8192 }) },
+  });
+  const routerLoadData = JSON.parse(routerLoad.content);
+  assert.notEqual(routerLoad.error, true);
+  assert.equal(routerLoadData.mode, 'router');
+  assert.equal(routerLoadData.status, 'ready');
+  assert.equal(routerLoadData.virtual, true);
+  assert.equal(loadRequests.some(request => request.name === 'user.router'), false, 'Router readiness must never POST /load for collection.router');
+  assert.equal(routerLoadData.ignored_router_options.backend, 'cpu');
+  assert.ok(Array.isArray(routerLoadData.dependencies));
+  assert.ok(routerLoadData.dependencies.some((dependency: any) => dependency.name === 'fast-chat' && dependency.present));
+
+  const routerUnload = await lemonade!.execute({
+    id: 'call-router-unload', type: 'function',
+    function: { name: 'unload_model', arguments: JSON.stringify({ model_name: 'user.router' }) },
+  });
+  const routerUnloadData = JSON.parse(routerUnload.content);
+  assert.notEqual(routerUnload.error, true);
+  assert.equal(routerUnloadData.status, 'not_applicable');
+  assert.equal(routerUnloadData.mode, 'router');
+  assert.equal(unloadRequests.length, 0, 'Router unload must not call the runtime unload endpoint');
+
+  const routerPull = await lemonade!.execute({
+    id: 'call-router-pull', type: 'function',
+    function: { name: 'pull_model', arguments: JSON.stringify({ model_name: 'user.router' }) },
+  });
+  assert.equal(routerPull.error, true);
+  assert.match(routerPull.content, /registered Router definition/);
+
+  let deletedModel = '';
+  (api as any).deleteModel = async (name: string) => {
+    deletedModel = name;
+    return { deleted: name };
+  };
+  const routerDelete = await lemonade!.execute({
+    id: 'call-router-delete', type: 'function',
+    function: { name: 'delete_model', arguments: JSON.stringify({ model_name: 'user.router' }) },
+  });
+  const routerDeleteData = JSON.parse(routerDelete.content);
+  assert.notEqual(routerDelete.error, true);
+  assert.equal(routerDeleteData.mode, 'router');
+  assert.equal(deletedModel, 'user.router', 'Router deletion must call the server definition delete endpoint');
+
   const generate3d = lemonade!.tools.find(tool => (tool as any).function?.name === 'generate_3d');
   assert.ok(generate3d);
+  calls.length = 0;
   const generated = await lemonade!.execute({ id: 'call-3d', type: 'function', function: { name: 'generate_3d', arguments: JSON.stringify({ prompt: 'a small turbine' }) } });
-  assert.equal(generated.error, undefined);
+  assert.notEqual(generated.error, true);
   assert.deepEqual(generated.artifacts?.map(item => item.type), ['image', 'model3d']);
   assert.deepEqual(calls, ['load:image-model', 'image:image-model', 'load:3d-model', '3d:3d-model']);
 
@@ -88,7 +197,7 @@ async function main(): Promise<void> {
     type: 'function',
     function: { name: 'edit_image', arguments: JSON.stringify({ prompt: 'make it blue' }) },
   });
-  assert.equal(edited.error, undefined);
+  assert.notEqual(edited.error, true);
   assert.equal(edited.artifacts?.[0]?.url, 'data:image/png;base64,ZWRpdGVk');
 
   const wrongCapability = await lemonade!.execute({

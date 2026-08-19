@@ -48,6 +48,7 @@ import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../fea
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
 import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
+import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
 import {
   LEMONADE_DEFAULT_CHAT_MODELS,
@@ -862,11 +863,36 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelSelectionEpoch, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
-  const [showLoadedOverview, setShowLoadedOverview] = useState(() => modelSelectionEpoch === 0);
+function friendlyRouterChatError(message: string): string {
+  const base = friendlyChatError(message);
+  const lower = message.toLowerCase();
+  const selected = /\(Router selected (.+)\.\)\s*$/i.exec(message)?.[1]?.trim();
+  const hint = selected
+    ? `The Router policy resolved successfully and selected ${selected}. The failure is in that candidate/helper path rather than in the Router policy itself.`
+    : /collection\.router|route[_ -]?policy|unresolv|no backend|unroutable/.test(lower)
+      ? 'The server did not resolve the Router policy. Check that every candidate/classifier/helper is registered and supported on this hardware; the Router itself has no backend process to load.'
+      : 'The Router itself has no backend process to load. Check the server error above for the selected candidate/classifier/helper, and verify every referenced component is registered and available.';
+  return `${base}\n\nRouter diagnostic: ${hint}`;
+}
+
+const ChatView: React.FC<ChatViewProps> = ({
+  currentModel: selectedModel,
+  modelSelectionEpoch,
+  loadedModels,
+  serverModels,
+  connectionStatus,
+  onModelSelect,
+  onOpenModelDetails,
+  onRefresh,
+}) => {
+  const [showLoadedOverview, setShowLoadedOverview] = useState(
+    () => modelSelectionEpoch === 0,
+  );
+
   useEffect(() => {
     if (modelSelectionEpoch > 0) setShowLoadedOverview(false);
   }, [modelSelectionEpoch]);
+
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
@@ -1368,12 +1394,13 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
     [currentKnownModelInfo, currentLoadedModel],
   );
   const supportsChatImageInput = useMemo(() => {
+    if (isRouterRecipe(currentRecipe)) return true;
     if (currentIsOmniCollection) {
       return Boolean(getVisionChatComponent(currentKnownModelInfo, knownModelInfos));
     }
     return currentCapability === 'chat'
       && modelSupportsChatImageInput(currentKnownModelInfo, currentLoadedModel);
-  }, [currentCapability, currentKnownModelInfo, currentLoadedModel, knownModelInfos]);
+  }, [currentCapability, currentKnownModelInfo, currentLoadedModel, currentRecipe, knownModelInfos]);
 
   const defaultImageSettings = useMemo(
     () => imageDefaultsForModel(
@@ -1484,7 +1511,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
     knownModelInfos.forEach(info => {
       const name = String((info as any).model_name || info.name || info.id || '').trim();
       const capability = capabilityFromModelInfo(info);
-      if (!modelIsDownloaded(info) || activeDownloadForModel(downloadItems, name)) return;
+      if ((!modelIsDownloaded(info) && !isRouterModelInfo(info)) || activeDownloadForModel(downloadItems, name)) return;
       const configuredDefault = lemonadeDefaultModel(name);
       addOption({
         name,
@@ -1494,8 +1521,8 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
         downloaded: true,
         audioInput: modelSupportsChatAudioInput(info, null),
         info,
-        detail: configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load',
-        deferredUntilSend: Boolean(configuredDefault),
+        detail: isRouterModelInfo(info) ? 'Router · routes when you send' : (configuredDefault ? 'Downloaded · loads when you send' : 'Downloaded · click to load'),
+        deferredUntilSend: isRouterModelInfo(info) || Boolean(configuredDefault),
       });
     });
 
@@ -1700,12 +1727,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
   }, [modelPickerOpen]);
 
   useEffect(() => {
-    const selectedStillUsable = selectedModel && loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m));
+    const selectedInfo = selectedModel ? findModelInfoByName(knownModelInfos, selectedModel) : null;
+    const selectedStillUsable = Boolean(selectedModel) && (
+      loadedModels.some(m => m.model_name === selectedModel && canSelectInComposer(m))
+      || isRouterModelInfo(selectedInfo)
+    );
     const selectedDefault = lemonadeDefaultModel(selectedModel);
     if (selectedStillUsable || selectedDefault || !selectedModel || loadedModels.length === 0) return;
     const preferred = selectPreferredLoadedModel(loadedModels);
     if (preferred && canSelectInComposer(preferred)) onModelSelect(preferred.model_name);
-  }, [loadedModels, onModelSelect, selectedModel]);
+  }, [knownModelInfos, loadedModels, onModelSelect, selectedModel]);
 
   const updateConversation = useCallback((id: string, updater: (c: Conversation) => Conversation) => {
     setConversations(prev => prev.map(c => c.id === id ? updater(c) : c));
@@ -1744,6 +1775,16 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
       // available (for example during a short reconnect window).
     }
     const target = info || findModelInfoByName(knownModelInfos, modelName) || null;
+    if (isRouterModelInfo(target)) {
+      const fresh = await api.models(true).catch(() => ({ data: knownModelInfos }));
+      const available = [...fresh.data, ...knownModelInfos].filter((item, index, list) => {
+        const name = modelInfoName(item).toLowerCase();
+        return !!name && list.findIndex(candidate => modelInfoName(candidate).toLowerCase() === name) === index;
+      });
+      const preflight = preflightRouter(target, available, currentLoaded);
+      if (!preflight.ok) throw new Error(routerPreflightError(preflight));
+      return { mode: 'router', status: 'ready', virtual: true };
+    }
     return loadWithGlobalModelPolicy({
       loadedModels: currentLoaded,
       allModels: knownModelInfos,
@@ -1825,6 +1866,21 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
 
     let freshModels = await api.models(true).catch(() => ({ data: knownModelInfos }));
     let info = findModelInfoByName(freshModels.data, modelName) || initialInfo;
+
+    if (isRouterModelInfo(info)) {
+      const available = [...freshModels.data, ...knownModelInfos].filter((item, index, list) => {
+        const name = modelInfoName(item).toLowerCase();
+        return !!name && list.findIndex(candidate => modelInfoName(candidate).toLowerCase() === name) === index;
+      });
+      const preflight = preflightRouter(info, available, health.all_models_loaded || []);
+      if (!preflight.ok) throw new Error(routerPreflightError(preflight));
+      saveLastReadyModelName(modelName);
+      setLastReadyModelName(modelName);
+      setFallbackModelOverride(null);
+      onModelSelect(modelName);
+      return snapshotFromModelInfo(info) || snapshotFromName(modelName, health.all_models_loaded || [])!;
+    }
+
     const existingFinished = await waitForExistingModelDownload(modelName, convoId);
     if (existingFinished) {
       freshModels = await api.models(true).catch(() => freshModels);
@@ -1972,7 +2028,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelS
     const model = streamModelsRef.current[convoId] || null;
     delete streamModelsRef.current[convoId];
     appendAssistantMessage(convoId, {
-      content: friendlyChatError(message),
+      content: isRouterModelInfo(model as any) ? friendlyRouterChatError(message) : friendlyChatError(message),
       model,
       isError: true,
     });
@@ -2881,8 +2937,9 @@ ${finalText}`
         false,
       );
     } catch (error) {
+      const errorMessage = friendlyErrorMessage(error);
       appendAssistantMessage(convoId, {
-        content: friendlyChatError(friendlyErrorMessage(error)),
+        content: isRouterModelInfo(initialSnapshot as any) ? friendlyRouterChatError(errorMessage) : friendlyChatError(errorMessage),
         model: initialSnapshot,
         isError: true,
       });
@@ -4828,6 +4885,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             <span>{message.stats.tps} tok/s</span>
             {message.stats.ttft && <span>{(Number(message.stats.ttft) / 1000).toFixed(2)}s TTFT</span>}
             <span>{message.stats.tokens} tokens</span>
+            {message.stats.route && String((message.stats.route as any).route_to || '').trim() && (
+              <span title={`Router route: ${String((message.stats.route as any).matched_rule || 'default')}`}>
+                Routed → {String((message.stats.route as any).route_to)}
+              </span>
+            )}
           </div>
         )}
         <div className="message__actions" aria-label="Message actions">

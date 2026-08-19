@@ -40,6 +40,7 @@ import {
   providerEndpointNeedsInsecureOptIn,
   validateProviderEndpoint,
 } from '../features/router/routerConnections';
+import { preflightRouter } from '../features/router/routerRuntime';
 
 function modelName(model: ModelInfo | null | undefined): string {
   if (!model) return '';
@@ -783,6 +784,11 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       setError(buildError instanceof Error ? buildError.message : 'Router validation failed.');
       return;
     }
+    const dependencyPreflight = preflightRouter(nextRequest as any, models, []);
+    if (!dependencyPreflight.ok) {
+      setError(dependencyPreflight.errors.join(' '));
+      return;
+    }
     setSaving(true);
     try {
       await onRegister(nextRequest, submittedDraft.name.trim());
@@ -794,7 +800,7 @@ export const RouterEditorPanel: React.FC<RouterEditorPanelProps> = ({
       const savedModel = routerRequestToModelInfo(nextRequest, savedDraft);
 
       setDraft(current => {
-        // If the user edited while /pull was in flight, preserve those newer
+        // If the user edited while server registration was in flight, preserve those newer
         // edits. Only attach the now-authoritative model ID. If nothing changed,
         // commit the exact submitted snapshot as the clean baseline.
         if (routerDraftFingerprint(current) === submittedFingerprint) return savedDraft;
