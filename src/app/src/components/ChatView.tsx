@@ -508,6 +508,7 @@ function timeAgo(ts: number): string {
 
 interface ChatViewProps {
   currentModel: string | null;
+  modelSelectionEpoch: number;
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
@@ -861,7 +862,11 @@ function friendlyChatError(message: string): string {
   return `I couldn't complete that request.\n\n${cleaned}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
+const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, modelSelectionEpoch, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
+  const [showLoadedOverview, setShowLoadedOverview] = useState(() => modelSelectionEpoch === 0);
+  useEffect(() => {
+    if (modelSelectionEpoch > 0) setShowLoadedOverview(false);
+  }, [modelSelectionEpoch]);
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
@@ -2117,6 +2122,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   const handleNewChat = useCallback(() => {
+    setShowLoadedOverview(true);
     setActiveId(null);
     inputRef.current?.focus();
   }, []);
@@ -3459,6 +3465,7 @@ ${finalText}`
             <EmptyState
               loadedModels={loadedModels}
               currentModel={currentModel}
+              showLoadedOverview={showLoadedOverview}
               onModelSelect={onModelSelect}
               onOpenModelDetails={onOpenModelDetails}
               onUnloadModel={handleLoadedCardUnload}
@@ -4401,6 +4408,7 @@ ${finalText}`
 interface EmptyStateProps {
   loadedModels: LoadedModel[];
   currentModel: string | null;
+  showLoadedOverview: boolean;
   onModelSelect: (model: string) => void;
   onOpenModelDetails: (model: string) => void;
   onUnloadModel: (model: string) => void;
@@ -4412,6 +4420,7 @@ interface EmptyStateProps {
 const EmptyState: React.FC<EmptyStateProps> = ({
   loadedModels,
   currentModel,
+  showLoadedOverview,
   onModelSelect,
   onOpenModelDetails,
   onUnloadModel,
@@ -4443,6 +4452,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
 
   return (
     <>
+      {!(showLoadedOverview && loadedModels.length > 0) && (
       <div className="hero">
         <h1 className="hero__title">Get to know Lemonade</h1>
         <p className="hero__subtitle">
@@ -4470,8 +4480,9 @@ const EmptyState: React.FC<EmptyStateProps> = ({
           </button>
         </div>
       </div>
+      )}
 
-      {loadedModels.length > 0 && (
+      {showLoadedOverview && loadedModels.length > 0 && (
         <section className="loaded-overview" aria-labelledby="loaded-overview-title">
           <header className="loaded-overview__header">
             <h2 id="loaded-overview-title" className="loaded-overview__title">Loaded now</h2>
