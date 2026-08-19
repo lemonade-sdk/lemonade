@@ -27,6 +27,7 @@ import {
   type WorkspaceListRowStatus,
 } from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
+import { recipeBackendOptionName } from '../features/backends/recipeMetadata';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -60,32 +61,9 @@ export interface ModelBackendReadiness {
   state?: string;
 }
 
-const BACKEND_MANAGED_RECIPES = new Set([
-  'llamacpp',
-  'vllm',
-  'flm',
-  'ryzenai-llm',
-  'sd-cpp',
-  'whispercpp',
-  'moonshine',
-  'kokoro',
-  'acestep',
-  'thinksound',
-  'openmoss',
-  'trellis',
-]);
-
-const BACKEND_OPTION_FIELD: Record<string, string> = {
-  llamacpp: 'llamacpp_backend',
-  vllm: 'vllm_backend',
-  'sd-cpp': 'sd-cpp_backend',
-  whispercpp: 'whispercpp_backend',
-  moonshine: 'moonshine_backend',
-  acestep: 'acestep_backend',
-  thinksound: 'thinksound_backend',
-  openmoss: 'openmoss_backend',
-  trellis: 'trellis_backend',
-};
+function needsLocalBackend(recipe: string): boolean {
+  return !recipe.startsWith('cloud') && !recipe.startsWith('collection');
+}
 
 function asRecord(value: unknown): Record<string, any> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -97,11 +75,16 @@ function normalizedBackend(value: unknown): string {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
-function configuredBackendForModel(model: ModelInfo, recipe: string, recipeInfo: Record<string, any>): string {
+function configuredBackendForModel(
+  model: ModelInfo,
+  recipe: string,
+  recipeInfo: Record<string, any>,
+  systemInfo?: Record<string, unknown> | null,
+): string {
   const raw = model as any;
   const recipeOptions = asRecord(raw.recipe_options);
   const options = asRecord(raw.options);
-  const field = BACKEND_OPTION_FIELD[recipe];
+  const field = recipeBackendOptionName(systemInfo, recipe);
   const configured = normalizedBackend(
     (field ? recipeOptions?.[field] : undefined)
       ?? recipeOptions?.backend
@@ -136,7 +119,7 @@ export function modelBackendReadiness(
   }
 
   const recipeInfo = asRecord(recipes[recipe]);
-  if (!recipeInfo && !BACKEND_MANAGED_RECIPES.has(recipe)) {
+  if (!recipeInfo && !needsLocalBackend(recipe)) {
     return { tone: 'ready', label: 'Model downloaded and ready.' };
   }
   if (!recipeInfo) {
@@ -156,7 +139,7 @@ export function modelBackendReadiness(
     };
   }
 
-  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo);
+  const configuredBackend = configuredBackendForModel(model, recipe, recipeInfo, systemInfo);
   let backend = configuredBackend;
   let backendInfo: Record<string, any> | null = null;
 
@@ -309,7 +292,7 @@ export function modelMatchesTasks(m: ModelInfo, tasks?: ReadonlySet<FilterTab>):
    the model list the prototype already loads — no lemond calls. */
 
 /** Primary nav buckets in the left rail. */
-export type PrimaryFilter = 'all' | 'downloaded' | 'my-models' | 'favorites';
+export type PrimaryFilter = 'all' | 'downloaded' | 'favorites';
 
 /** A model counts as "downloaded" if it is locally present or running. */
 export function modelIsDownloaded(m: ModelInfo, loadedNames: Set<string>): boolean {
@@ -338,7 +321,6 @@ export function modelMatchesPrimary(
 ): boolean {
   switch (primary) {
     case 'downloaded': return modelIsDownloaded(m, loadedNames);
-    case 'my-models': return modelIsCustom(m);
     case 'favorites': return favoriteNames?.has(listModelName(m).toLowerCase()) ?? false;
     case 'all':
     default: return true;
@@ -368,7 +350,7 @@ export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
 }
 
 /** Curated tag chips (model families + size hints) shown in the left rail. */
-export const TAG_CHIPS: string[] = ['Recommended', 'Hot', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+export const TAG_CHIPS: string[] = ['Recommended', 'Hot', 'Custom', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
 
 export function modelIsRecommended(m: ModelInfo): boolean {
   const raw = m as any;
@@ -403,6 +385,7 @@ export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
   if (!t) return true;
   if (t === 'recommended') return modelIsRecommended(m);
   if (t === 'hot') return modelIsHot(m);
+  if (t === 'custom') return modelIsCustom(m);
   const labels = [
     ...(Array.isArray(m.labels) ? m.labels : []),
     ...(Array.isArray((m as any).tags) ? (m as any).tags : []),
@@ -589,7 +572,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     const sections: { key: string; label: string; entries: FlatModelEntry[] }[] = [
       { key: 'pinned', label: 'Pinned', entries: [] },
       { key: 'downloaded', label: 'Downloaded', entries: [] },
-      { key: 'available', label: 'Not downloaded', entries: [] },
+      { key: 'available', label: 'Local Catalog', entries: [] },
     ];
     const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
     for (const entry of flatList) {
@@ -743,7 +726,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             role="searchbox"
             type="text"
               className="model-list-panel__search-input manager__search-input"
-            placeholder={onlineSearchEnabled ? 'Search built-in and online catalogs…' : 'Search built-in catalogs…'}
+            placeholder={onlineSearchEnabled ? 'Search local and online catalogs…' : 'Search local catalogs…'}
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
             aria-label="Search models"

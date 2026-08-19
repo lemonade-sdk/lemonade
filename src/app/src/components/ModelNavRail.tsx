@@ -8,7 +8,7 @@
  *   └──────────────┴──────────────────┴─────────────────────────┘
  *
  * The rail surfaces filter dimensions that drive the middle list:
- *   1. Primary nav: All Models / Downloaded / My Models / Favorites.
+ *   1. Primary nav: All Models / Downloaded / Favorites.
  *   2. TASK (collapsible multi-select): Chat / Omni / Router / media tasks.
  *   3. BACKENDS (collapsible multi-select): filter by concrete runtime recipe.
  *   4. TAGS (collapsible multi-select): built-in and user-defined chips.
@@ -41,7 +41,6 @@ import {
 const PRIMARY_ITEMS: Array<{ key: PrimaryFilter; label: string; iconName: IconName }> = [
   { key: 'all', label: 'All Models', iconName: 'library' },
   { key: 'downloaded', label: 'Downloaded', iconName: 'download' },
-  { key: 'my-models', label: 'My Models', iconName: 'box' },
   // Favorites is a DISTINCT concept from Pinned (#2424): star icon, own store.
   { key: 'favorites', label: 'Favorites', iconName: 'star' },
 ];
@@ -173,12 +172,11 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
 
   // ── Client-side derived counts ──────────────────────────────
   const primaryCounts = useMemo<Record<PrimaryFilter, number>>(() => {
-    const counts: Record<PrimaryFilter, number> = { all: 0, downloaded: 0, 'my-models': 0, favorites: 0 };
+    const counts: Record<PrimaryFilter, number> = { all: 0, downloaded: 0, favorites: 0 };
     for (const m of allModels) {
       if (!listModelName(m)) continue;
       counts.all += 1;
       if (modelMatchesPrimary(m, 'downloaded', loadedNames, favoriteNames)) counts.downloaded += 1;
-      if (modelMatchesPrimary(m, 'my-models', loadedNames, favoriteNames)) counts['my-models'] += 1;
       if (modelMatchesPrimary(m, 'favorites', loadedNames, favoriteNames)) counts.favorites += 1;
     }
     return counts;
