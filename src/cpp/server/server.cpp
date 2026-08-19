@@ -7584,13 +7584,14 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    auth_header_name: "Authorization",   // optional, default shown
-        //    auth_header_prefix: "Bearer ",       // optional, default shown
-        //    api_key: "..."}  // optional
+        //    auth_header_name / auth_header_prefix: see
+        //      CloudProviderRegistry::Record,
+        //    api_key: "..."}
         //
-        // Every optional field is applied only when present, so a re-install
-        // that omits it (the desktop add-provider form posts just backend /
-        // provider / base_url / api_key) keeps the stored value.
+        // Every field after base_url is optional and applied only when
+        // present, so a re-install that omits one (the desktop add-provider
+        // form posts just backend / provider / base_url / api_key) keeps the
+        // stored value.
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");

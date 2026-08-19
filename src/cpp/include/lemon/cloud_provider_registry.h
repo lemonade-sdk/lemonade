@@ -103,9 +103,8 @@ public:
     // http:// base URL. Irrelevant for https:// providers.
     bool allow_insecure_http_for(const std::string& provider) const;
 
-    // Header name/value-prefix to use when sending this provider's API key.
-    // Defaults to {"Authorization", "Bearer "} for a provider that isn't
-    // installed, matching pre-existing hardcoded behavior.
+    // A provider that isn't installed yields the Record defaults rather than
+    // an error, so callers can send a request without a prior existence check.
     struct AuthHeader {
         std::string name = "Authorization";
         std::string prefix = "Bearer ";
