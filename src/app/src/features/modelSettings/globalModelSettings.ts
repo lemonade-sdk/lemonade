@@ -101,6 +101,9 @@ export function loadPinnedModelNames(): string[] {
 export function savePinnedModelNames(names: Iterable<string>): string[] {
   const normalized = Array.from(new Set([...names].map(name => String(name).trim()).filter(Boolean)));
   try { localStorage.setItem(pinnedModelsKey(), JSON.stringify(normalized)); } catch { /* best effort */ }
+  try {
+    window.dispatchEvent(new CustomEvent(GLOBAL_MODEL_SETTINGS_EVENT, { detail: { pinnedModelNames: normalized } }));
+  } catch { /* best effort */ }
   return normalized;
 }
 

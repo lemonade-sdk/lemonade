@@ -384,6 +384,7 @@ const App: React.FC = () => {
   const customModelInfos = useMemo(() => serverModels.filter(model => (model as any).custom === true), [serverModels]);
   const rawLoadedModels = serverModelState.health?.all_models_loaded ?? EMPTY_LOADED_MODELS;
   const [currentModel, setCurrentModel] = useState<string | null>(null);
+  const [modelSelectionEpoch, setModelSelectionEpoch] = useState(0);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [clientDataResetNonce, setClientDataResetNonce] = useState(0);
   const [modelHelpers, setModelHelpers] = useState<ModelHelpers | null>(null);
@@ -948,6 +949,7 @@ const App: React.FC = () => {
 
   const handleModelSelect = useCallback((modelName: string) => {
     setCurrentModel(modelName);
+    setModelSelectionEpoch(epoch => epoch + 1);
     setView('chat');
   }, [setView]);
 
@@ -1192,6 +1194,7 @@ const App: React.FC = () => {
               <ChatView
                 key={clientDataResetNonce}
                 currentModel={currentModel}
+                modelSelectionEpoch={modelSelectionEpoch}
                 loadedModels={loadedModels}
                 serverModels={serverModels}
                 connectionStatus={status}

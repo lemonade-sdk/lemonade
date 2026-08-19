@@ -10,6 +10,7 @@ export interface LocalIconDefinition {
   viewBox: string;
   body: string;
   brand?: boolean;
+  strokeWidth?: number;
 }
 
 // Vendored at build time from lucide-react 1.25.0 and react-icons 5.7.0.
@@ -95,6 +96,11 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
   "model": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M12 20v2\"></path><path d=\"M12 2v2\"></path><path d=\"M17 20v2\"></path><path d=\"M17 2v2\"></path><path d=\"M2 12h2\"></path><path d=\"M2 17h2\"></path><path d=\"M2 7h2\"></path><path d=\"M20 12h2\"></path><path d=\"M20 17h2\"></path><path d=\"M20 7h2\"></path><path d=\"M7 20v2\"></path><path d=\"M7 2v2\"></path><rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"2\"></rect><rect x=\"8\" y=\"8\" width=\"8\" height=\"8\" rx=\"1\"></rect>"
+  },
+  "model-details": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"M11 22H5.5a1 1 0 0 1 0-5H10\"></path><path d=\"M3 19.5v-15A2.5 2.5 0 0 1 5.5 2H18a1 1 0 0 1 1 1v4\"></path><path d=\"M16.5 10h6\"></path><path d=\"m20.5 8 2 2-2 2\"></path><circle cx=\"17\" cy=\"18\" r=\"3\"></circle><path d=\"m21 22-1.88-1.88\"></path>",
+    "strokeWidth": 1.5
   },
   "download": {
     "viewBox": "0 0 24 24",
@@ -367,7 +373,7 @@ export const LocalIcon: React.FC<LocalIconProps & { definition: LocalIconDefinit
     viewBox={definition.viewBox}
     fill={definition.brand ? 'currentColor' : 'none'}
     stroke={definition.brand ? undefined : 'currentColor'}
-    strokeWidth={definition.brand ? undefined : 1}
+    strokeWidth={definition.brand ? undefined : (definition.strokeWidth ?? 1)}
     strokeLinecap={definition.brand ? undefined : 'round'}
     strokeLinejoin={definition.brand ? undefined : 'round'}
     className={className}

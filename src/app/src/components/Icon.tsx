@@ -20,7 +20,8 @@ export type IconName =
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
   | 'thermometer' | 'gem' | 'gauge' | 'timer' | 'hard-drive' | 'library' | 'scan-eye' | 'minimize-2'
   | 'panel-left-close' | 'panel-left-open' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
-  | 'menu' | 'flask-conical' | 'external-link';
+  | 'menu' | 'flask-conical' | 'external-link'
+  | 'model-details';
 
 interface IconProps {
   name: IconName;
