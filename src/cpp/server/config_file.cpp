@@ -28,6 +28,23 @@ static json load_json_file(const fs::path& path) {
     }
 }
 
+static json normalize_legacy_keys(json obj) {
+    if (!obj.is_object()) return obj;
+    if (obj.contains("no_broadcast")) {
+        if (!obj["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        if (!obj.contains("broadcast")) {
+            obj["broadcast"] = !obj["no_broadcast"].get<bool>();
+        }
+        obj.erase("no_broadcast");
+    }
+    if (obj.contains("broadcast") && !obj["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
+    return obj;
+}
+
 json ConfigFile::base_defaults() {
     json defaults = load_json_file(utils::path_from_utf8(
         utils::get_resource_path("resources/defaults.json")));
@@ -51,14 +68,16 @@ json ConfigFile::get_defaults() {
 #ifndef _WIN32
     fs::path distro_defaults = "/usr/share/lemonade/defaults.json";
     if (fs::exists(distro_defaults)) {
-        defaults = utils::JsonUtils::merge(defaults, load_json_file(distro_defaults));
+        json distro = normalize_legacy_keys(load_json_file(distro_defaults));
+        defaults = utils::JsonUtils::merge(defaults, distro);
     }
 #endif
 
     // Packagers on non-FHS distros (Nix, Guix) can't write the /usr/share
     // file above; this seeds the same defaults from any path.
     if (const char* env = std::getenv("LEMONADE_DEFAULTS_PATH"); env && *env && fs::exists(env)) {
-        defaults = utils::JsonUtils::merge(defaults, load_json_file(env));
+        json env_defaults = normalize_legacy_keys(load_json_file(env));
+        defaults = utils::JsonUtils::merge(defaults, env_defaults);
     }
 
     return defaults;
@@ -124,16 +143,26 @@ json ConfigFile::load(const std::string& cache_dir) {
         return defaults;
     }
 
-    // Deep-merge: user values override defaults, missing fields filled from defaults.
-    json merged = utils::JsonUtils::merge(defaults, loaded);
-
     // Capture the original config version BEFORE merge, so that migration
     // can see past the defaults-injected version number.
     int original_version = config_get_version(loaded);
 
+    bool had_legacy_no_broadcast = loaded.contains("no_broadcast");
+    json normalized_loaded = normalize_legacy_keys(loaded);
+
+    // Deep-merge: user values override defaults, missing fields filled from defaults.
+    json merged = utils::JsonUtils::merge(defaults, normalized_loaded);
+
     // Apply migrations if the config is older than the current version.
     // The inline config_migrate() handles version bumping and field removal.
     bool migrated = config_migrate(merged, defaults, original_version);
+
+    if (had_legacy_no_broadcast) {
+        LOG(INFO) << "Migrating config: no_broadcast=" << loaded["no_broadcast"]
+                  << " -> broadcast=" << merged["broadcast"] << std::endl;
+        migrated = true;
+    }
+
     if (migrated) {
         // Log migration details for user visibility.
         if (original_version < config_get_version(defaults)) {

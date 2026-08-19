@@ -28,19 +28,17 @@ inline const BackendDescriptor descriptor = {
         {"height", "", 512, "SIZE", "Output image height", "TheNoise Options"},
         {"sampler", "", "", "ARGS", "Denoising solver (euler | er_sde)", "TheNoise Options"},
         {"negative_prompt", "", "", "ARGS", "Negative prompt", "TheNoise Options"},
-        {"upscale", "", false, "BOOL", "2x latent upscale with refine denoise", "TheNoise Options"},
         {"qwen_vae_enhance", "", false, "BOOL", "Nyquist notch post-filter (removes 2px grid artifacts)", "TheNoise Options"},
         {"film_grain", "", 0.0, "SIZE", "Film grain strength (0.0-10.0)", "TheNoise Options"},
         {"sharpening", "", 0.0, "SIZE", "RCAS sharpening strength (0.0-1.0)", "TheNoise Options"},
         {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
-        {"lora_dir", "", "", "ARGS", "Directory containing LoRA .safetensors files (subdirectories allowed)", "TheNoise Options"},
     },
     /*support*/ {
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm iGPU families"},
     },
-    /*default_labels*/  {"image"},
+    /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
-    /*modality*/        "Image generation",
+    /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "thenoise",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
@@ -51,7 +49,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      false,
     /*arg_variants*/    {},
     /*bin_variants*/    {},
-    /*config_extra*/    {{"lora_dir", ""}},
+    /*config_extra*/    {{"lora_dir", ""}, {"upscaler_dir", ""}},
 };
 
 }  // namespace thenoise

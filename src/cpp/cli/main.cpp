@@ -50,6 +50,7 @@
 #include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
+    "chat",
     "coding",
     "dflash",
     "embeddings",
@@ -147,6 +148,7 @@ struct CliConfig {
     std::string host = "127.0.0.1";
     int port = 13305;
     bool is_ssl = false;
+    bool no_discovery = false;
     std::string api_key;
     std::string model;
     std::string list_filter;
@@ -605,16 +607,6 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
-    static const std::unordered_set<std::string> non_llm_labels = {
-        "embeddings",
-        "reranking",
-        "transcription",
-        "image",
-        "tts",
-        "upscaling",
-        "edit"
-    };
-
     std::vector<lemon_cli::AgentModelEntry> models;
 
     try {
@@ -631,22 +623,27 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_llm = true;
-            if (model.contains("labels") && model["labels"].is_array()) {
-                for (const auto& label : model["labels"]) {
-                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
-                        is_llm = false;
+            bool is_chat = false;
+            const auto labels = model.find("labels");
+            if (labels != model.end() && labels->is_array()) {
+                for (const auto& label : *labels) {
+                    if (label.is_string() && label.get<std::string>() == "chat") {
+                        is_chat = true;
                         break;
                     }
                 }
             }
-
-            if (!is_llm) {
+            if (!is_chat) {
                 continue;
             }
 
             const std::string model_id = model["id"].get<std::string>();
-            models.push_back({model_id, model_id + " (local)", context_window});
+            int model_context_window = context_window;
+            if (model.contains("recipe_options") && model["recipe_options"].is_object()
+			    && model["recipe_options"].contains("ctx_size")) {
+                model_context_window = model["recipe_options"]["ctx_size"].get<int>();
+            }
+            models.push_back({model_id, model_id + " (local)", model_context_window});
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -1247,6 +1244,7 @@ int main(int argc, char* argv[]) {
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
+    app.add_flag("!--discovery,--no-discovery", config.no_discovery, "Enable or disable auto-discovery of local server via UDP beacon");
 
     // Subcommands
     // Quick start commands
@@ -1514,10 +1512,10 @@ int main(int argc, char* argv[]) {
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
-    // Skip when: no command given, scan command, or user explicitly set --host/--port
+    // Skip when: no command given, scan command, or user explicitly set --host/--port, or --no-discovery is set
     bool has_command = !app.get_subcommands().empty();
     bool explicit_target = (host_opt->count() > 0 || port_opt->count() > 0);
-    if (has_command && scan_cmd->count() == 0 && !explicit_target) {
+    if (has_command && scan_cmd->count() == 0 && !explicit_target && !config.no_discovery) {
         // Localhost responds in <10ms; use short timeout. Remote hosts need more.
         bool is_local = (config.host.empty() || config.host == "127.0.0.1" ||
                          config.host == "localhost" || config.host == "0.0.0.0");

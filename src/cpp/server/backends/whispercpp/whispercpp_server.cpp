@@ -303,9 +303,10 @@ void WhisperServer::load(const std::string& model_name,
     if (whispercpp_backend == "rocm") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
-            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
-            if (!therock_lib.empty()) {
-                lib_path = therock_lib + ":" + lib_path;
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
             }
         }
     }
@@ -572,12 +573,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        // If response_format is not json, return it wrapped
-        return json{{"text", res.body}};
-    }
+    return audio::interpret_transcription_body(res.body, response_format);
 }
 
 json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
@@ -666,11 +662,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        return json{{"text", res.body}};
-    }
+    return audio::interpret_transcription_body(res.body, response_format);
 }
 
 // ITranscriptionServer implementation

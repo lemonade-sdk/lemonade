@@ -10,6 +10,7 @@ runtime configuration via POST /internal/set.
 """
 
 import unittest
+import contextlib
 import socket
 import time
 import sys
@@ -173,15 +174,24 @@ def set_server_config(config: dict, port=PORT):
     return response.json()
 
 
-def unload_all_models(port=PORT):
+def unload_all_models(port=PORT, attempts=3):
     """POST /api/v1/unload to unload all models for clean state."""
-    response = requests.post(
-        f"http://localhost:{port}/api/v1/unload",
-        json={},
-        headers=_auth_headers(),
-        timeout=30,
-    )
-    # 200 = unloaded, 404 = nothing loaded — both OK
+    response = None
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                f"http://localhost:{port}/api/v1/unload",
+                json={},
+                headers=_auth_headers(),
+                timeout=30,
+            )
+            # 200 = unloaded, 404 = nothing loaded — both OK
+            if response.status_code in [200, 404]:
+                return response
+        except requests.RequestException as exc:
+            if attempt == attempts:
+                raise exc
+            time.sleep(1)
     return response
 
 
@@ -196,6 +206,52 @@ def load_model(model_name, port=PORT, timeout=TIMEOUT_MODEL_OPERATION, **options
         timeout=timeout,
     )
     return response
+
+
+def get_model_options(model_name, port=PORT):
+    """GET /api/v1/models/{id}/options — saved, effective, and default options."""
+    response = requests.get(
+        f"http://localhost:{port}/api/v1/models/{model_name}/options",
+        headers=_auth_headers(),
+        timeout=TIMEOUT_DEFAULT,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+@contextlib.contextmanager
+def model_recipe_options(model_name, port=PORT, **options):
+    """Apply recipe options to one model for the duration of the block.
+
+    Snapshots the model's saved options, applies `options`, and restores the
+    snapshot on exit. A test that needs a particular option must set it itself
+    rather than inherit whatever an earlier test happened to leave behind, and
+    must not leave it behind in turn — several suites share one long-lived
+    server, and options persist across all of them.
+
+    The model is unloaded on both edges so the next load builds a backend
+    process from the options in force rather than reusing the previous one.
+    """
+    saved = get_model_options(model_name, port=port)["saved"]
+    url = f"http://localhost:{port}/api/v1/models/{model_name}/options"
+
+    def restore():
+        requests.delete(url, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT)
+        if saved:
+            requests.post(
+                url, json=saved, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+            )
+        unload_model(model_name, port=port)
+
+    try:
+        response = requests.post(
+            url, json=options, headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+        )
+        response.raise_for_status()
+        unload_model(model_name, port=port)
+        yield response.json()
+    finally:
+        restore()
 
 
 def unload_model(model_name, port=PORT):
