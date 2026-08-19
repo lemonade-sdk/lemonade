@@ -214,9 +214,12 @@ public:
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
 
-    // Filter models by available backends
+    // Filter models by available backends. Set track_recipe_availability only on
+    // the full-cache build: the single-model temp maps used by incremental
+    // updates must not overwrite the whole-registry availability side table.
     std::map<std::string, ModelInfo> filter_models_by_backend(
-        const std::map<std::string, ModelInfo>& models);
+        const std::map<std::string, ModelInfo>& models,
+        bool track_recipe_availability = false);
 
     // Register a user model
     void register_user_model(const std::string& model_name,
@@ -294,6 +297,10 @@ public:
     static std::set<std::string> recipes_missing_all_models(
         const std::set<std::string>& size_filtered_recipes,
         const std::set<std::string>& visible_recipes);
+
+    // Test-only raw view of the side table without a cache rebuild; prefer
+    // recipes_with_all_models_filtered() everywhere else.
+    std::set<std::string> recipes_all_models_filtered_snapshot() const;
 
     // Check if model is downloaded
     bool is_model_downloaded(const std::string& model_name);

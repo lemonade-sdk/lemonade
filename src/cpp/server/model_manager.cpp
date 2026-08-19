@@ -2481,8 +2481,10 @@ void ModelManager::build_cache() {
         info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
     }
 
-    // Step 2: Filter by backend availability
-    all_models = filter_models_by_backend(all_models);
+    // Step 2: Filter by backend availability. This is the full-registry pass, so
+    // it also refreshes the recipe availability side table used to hide backends
+    // that have nothing runnable on this host.
+    all_models = filter_models_by_backend(all_models, /*track_recipe_availability=*/true);
 
     // Step 3: Check download status for all models. Dynamic-discovery backends
     // (flm, cloud) already set downloaded during discovery; everyone else asks
@@ -2858,7 +2860,8 @@ bool parse_TF_env_var(const char* env_var_name) {
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
-    const std::map<std::string, ModelInfo>& models) {
+    const std::map<std::string, ModelInfo>& models,
+    bool track_recipe_availability) {
 
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
@@ -2871,6 +2874,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (disable_filtering) {
         filtered_out_models_.clear();
+        if (track_recipe_availability) {
+            recipes_all_models_filtered_.clear();
+        }
         return models;
     }
 
@@ -2884,11 +2890,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     std::map<std::string, ModelInfo> filtered;
 
     filtered_out_models_.clear();
-    recipes_all_models_filtered_.clear();
 
-    // Recipes whose models were dropped by the system-memory heuristic vs.
-    // recipes that kept at least one runnable (built-in or user) model. A recipe
-    // in the first set but not the second has nothing runnable on this host.
     std::set<std::string> size_filtered_recipes;
     std::set<std::string> visible_recipes;
 
@@ -3045,10 +3047,19 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         filtered[name] = info;
     }
 
-    recipes_all_models_filtered_ =
-        recipes_missing_all_models(size_filtered_recipes, visible_recipes);
+    // Only the full-registry pass may commit the availability side table;
+    // incremental single-model passes would otherwise reduce it to one model.
+    if (track_recipe_availability) {
+        recipes_all_models_filtered_ =
+            recipes_missing_all_models(size_filtered_recipes, visible_recipes);
+    }
 
     return filtered;
+}
+
+std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return recipes_all_models_filtered_;
 }
 
 std::set<std::string> ModelManager::recipes_missing_all_models(
@@ -5698,7 +5709,6 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 }
 
 std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
-    // Ensure cache is built (this populates recipes_all_models_filtered_).
     build_cache();
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
     return recipes_all_models_filtered_;

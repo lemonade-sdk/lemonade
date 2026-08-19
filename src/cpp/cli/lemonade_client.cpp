@@ -968,7 +968,20 @@ int LemonadeClient::list_recipes(bool show_all) const {
             return 0;
         }
 
+        // Hidden unless --all (see /system-info's unavailable_recipes).
+        std::set<std::string> unavailable_recipes;
+        if (json_response.contains("unavailable_recipes") &&
+            json_response["unavailable_recipes"].is_array()) {
+            for (const auto& r : json_response["unavailable_recipes"]) {
+                if (r.is_string()) unavailable_recipes.insert(r.get<std::string>());
+            }
+        }
+
         for (const auto& [recipe_name, recipe_data] : json_response["recipes"].items()) {
+            if (!show_all && unavailable_recipes.count(recipe_name)) {
+                continue;
+            }
+
             RecipeStatus status;
             status.name = recipe_name;
 
