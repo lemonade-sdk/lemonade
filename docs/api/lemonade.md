@@ -1673,6 +1673,8 @@ curl "http://localhost:13305/v1/system-info"
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
     - `base_url` - Persisted base URL from `config.json`.
+    - `auth_header_name` - Header this provider's API key is sent in (default `Authorization`).
+    - `auth_header_prefix` - Value prefix placed before the key (default `Bearer `).
     - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
@@ -1729,6 +1731,11 @@ Registers an OpenAI-compatible chat provider. The base URL is persisted to `conf
 | `provider` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `base_url` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
 | `api_key` | No | Optional. If set, stored in process memory; honors env-wins precedence (see `/v1/cloud/auth`). |
+| `allow_insecure_http` | No | Default `false`. Must be `true` to send an API key to an `http://` base URL. |
+| `auth_header_name` | No | Header carrying the API key. Must be a valid HTTP header name. Default `"Authorization"`. |
+| `auth_header_prefix` | No | Value prefix before the key. Default `"Bearer "`; pass `""` for gateways that expect the bare key. |
+
+Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
 Example request:
 
@@ -1750,6 +1757,8 @@ Response format:
   "backend": "cloud",
   "provider": "fireworks",
   "base_url": "https://api.fireworks.ai/inference/v1",
+  "auth_header_name": "Authorization",
+  "auth_header_prefix": "Bearer ",
   "models_discovered": 12,
   "auth_state": {
     "env_var_set": true,

@@ -111,10 +111,16 @@ public:
     // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,
     // uninstall} request. api_key is optional on install — when omitted the
     // server relies on env var or a later /v1/cloud/auth POST.
+    // Unset auth header fields are omitted from the request so the server
+    // keeps whatever the provider already had. An empty prefix is a real
+    // value (gateways that expect the bare key), hence std::optional rather
+    // than an empty-means-absent string.
     int install_cloud_provider(const std::string& provider,
                                 const std::string& base_url,
                                 const std::string& api_key = "",
-                                bool allow_insecure_http = false);
+                                bool allow_insecure_http = false,
+                                const std::optional<std::string>& auth_header_name = std::nullopt,
+                                const std::optional<std::string>& auth_header_prefix = std::nullopt);
     int uninstall_cloud_provider(const std::string& provider);
     int cloud_auth(const std::string& provider,
                    const std::string& api_key,
