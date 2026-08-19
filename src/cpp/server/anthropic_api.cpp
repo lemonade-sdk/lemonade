@@ -199,9 +199,16 @@ struct AnthropicUpstreamMatch {
     bool claimed = false;
     std::optional<AnthropicUpstream> upstream;
     int error_status = 0;
-    std::string error_type;
     std::string error_message;
 };
+
+static void set_anthropic_error_response(httplib::Response& res, int status,
+                                         const std::string& message) {
+    res.status = status;
+    res.set_content(
+        anthropic::build_anthropic_error(json{{"message", message}}, status).dump(),
+        "application/json");
+}
 
 static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
                                                          const std::string& model,
@@ -222,32 +229,29 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     if (registry->wire_format_for(info.cloud_provider) != "anthropic") return match;
 
     match.claimed = true;
-    auto fail = [&match](int status, std::string type, std::string message) {
+    auto fail = [&match](int status, std::string message) {
         match.error_status = status;
-        match.error_type = std::move(type);
         match.error_message = std::move(message);
         return match;
     };
 
     const std::string base_url = registry->base_url_for(info.cloud_provider);
     if (base_url.empty()) {
-        return fail(500, "api_error",
-                    "provider '" + info.cloud_provider + "' has no base URL configured");
+        return fail(500, "provider '" + info.cloud_provider +
+                         "' has no base URL configured");
     }
     const std::string api_key = registry->resolve_key(info.cloud_provider);
     if (api_key.empty()) {
-        return fail(401, "authentication_error",
-                    "no API key for provider '" + info.cloud_provider + "'; set " +
-                    CloudProviderRegistry::env_var_name(info.cloud_provider) +
-                    " or POST /v1/cloud/auth");
+        return fail(401, "no API key for provider '" + info.cloud_provider + "'; set " +
+                         CloudProviderRegistry::env_var_name(info.cloud_provider) +
+                         " or POST /v1/cloud/auth");
     }
     const bool allow_insecure_http =
         registry->allow_insecure_http_for(info.cloud_provider);
     if (CloudProviderRegistry::is_http_base_url(base_url) && !allow_insecure_http) {
-        return fail(400, "invalid_request_error",
-                    "provider '" + info.cloud_provider + "' uses an http:// base URL; "
-                    "re-install it with --allow-insecure-http to send the API key in "
-                    "plaintext");
+        return fail(400, "provider '" + info.cloud_provider +
+                         "' uses an http:// base URL; re-install it with "
+                         "--allow-insecure-http to send the API key in plaintext");
     }
 
     // The body passes through byte-for-byte apart from "model", which must name
@@ -267,17 +271,6 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     return match;
 }
 
-static void set_anthropic_error_response(httplib::Response& res, int status,
-                                         const std::string& type,
-                                         const std::string& message) {
-    res.status = status;
-    json error = {
-        {"type", "error"},
-        {"error", {{"type", type}, {"message", message}}}
-    };
-    res.set_content(error.dump(), "application/json");
-}
-
 static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
                                        bool stream,
                                        const std::string& model,
@@ -290,8 +283,7 @@ static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
             res.set_content(response.body, "application/json");
         } catch (const std::exception& e) {
             set_anthropic_error_response(
-                res, 502, "api_error",
-                "cloud request for '" + model + "' failed: " + e.what());
+                res, 502, "cloud request for '" + model + "' failed: " + e.what());
         }
         return;
     }
@@ -309,12 +301,10 @@ static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
             static constexpr size_t max_error_body = 64 * 1024;
             int upstream_status = 200;
             std::string error_body;
-            auto emit_error = [&sink, &model](const std::string& message) {
-                json err = {{"type", "error"}, {"error", {
-                    {"type", "api_error"},
-                    {"message", "cloud request for '" + model + "' " + message}
-                }}};
-                write_sse_event(sink, "error", err);
+            auto emit_error = [&sink, &model](int status, const std::string& message) {
+                write_sse_event(sink, "error", anthropic::build_anthropic_error(
+                    json{{"message", "cloud request for '" + model + "' " + message}},
+                    status));
             };
 
             try {
@@ -340,13 +330,13 @@ static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
                 const int status =
                     upstream_status != 200 ? upstream_status : result.status_code;
                 if (status != 200) {
-                    emit_error("failed with status " + std::to_string(status) +
-                               (error_body.empty() ? "" : ": " + error_body));
+                    emit_error(status, "failed with status " + std::to_string(status) +
+                                       (error_body.empty() ? "" : ": " + error_body));
                 } else if (result.curl_code != 0 && sink.is_writable && sink.is_writable()) {
-                    emit_error("stream ended early: " + result.curl_error);
+                    emit_error(502, "stream ended early: " + result.curl_error);
                 }
             } catch (const std::exception& e) {
-                emit_error(std::string("failed: ") + e.what());
+                emit_error(502, std::string("failed: ") + e.what());
             }
             sink.done();
             return false;
@@ -1120,7 +1110,7 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         auto match = resolve_anthropic_upstream(model_manager_, model, request_json);
         if (match.claimed) {
             if (!match.upstream) {
-                set_anthropic_error_response(res, match.error_status, match.error_type,
+                set_anthropic_error_response(res, match.error_status,
                                              match.error_message);
                 return;
             }
