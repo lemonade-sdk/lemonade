@@ -33,7 +33,7 @@ inline const BackendDescriptor descriptor = {
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
         {"rocm", {"windows", "linux"},
-         {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
+         {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
     /*supported_modes*/ {"transcription"},
