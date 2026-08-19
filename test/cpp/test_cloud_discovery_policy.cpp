@@ -135,6 +135,10 @@ int main() {
                                           "/models") ==
                     "https://gw.example.com/OpenAI/models",
                 "discovery path without /v1 -> joined unchanged");
+
+        r.check(CloudServer::upstream_url("https://api.example.com", "/v1x/foo") ==
+                    "https://api.example.com/v1x/foo",
+                "/v1 is matched as a whole segment, not a byte prefix");
     }
 
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);

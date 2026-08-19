@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <map>
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace lemon {
@@ -271,7 +272,7 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     return match;
 }
 
-static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
+static void forward_anthropic_upstream(AnthropicUpstream upstream,
                                        bool stream,
                                        const std::string& model,
                                        httplib::Response& res) {
@@ -293,7 +294,7 @@ static void forward_anthropic_upstream(const AnthropicUpstream& upstream,
     res.set_header("X-Accel-Buffering", "no");
     res.set_chunked_content_provider(
         "text/event-stream",
-        [upstream, model](size_t offset, httplib::DataSink& sink) {
+        [upstream = std::move(upstream), model](size_t offset, httplib::DataSink& sink) {
             if (offset > 0) return false;
             // Both ends speak Anthropic SSE, so a 200 relays unparsed. A
             // non-200 body is not SSE, so it is diverted and re-emitted as an
@@ -1114,7 +1115,7 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
                                              match.error_message);
                 return;
             }
-            forward_anthropic_upstream(*match.upstream,
+            forward_anthropic_upstream(std::move(*match.upstream),
                                        request_json.value("stream", false), model, res);
             return;
         }

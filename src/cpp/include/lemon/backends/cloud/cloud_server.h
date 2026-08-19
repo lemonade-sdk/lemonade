@@ -137,8 +137,8 @@ private:
     json post_with_auth(const std::string& path, const json& request,
                         const ResolvedCreds& creds, long timeout_seconds = 0);
     json rewrite_model_field(const json& request) const;
-    // True when this provider is not served over the OpenAI wire format, in
-    // which case the endpoints implemented here are unreachable for it.
+    // When true, the endpoints implemented here are unreachable for this
+    // provider — it is served from /v1/messages instead.
     bool wire_format_mismatch() const;
     std::string wire_format_message() const;
     json wire_format_error() const;

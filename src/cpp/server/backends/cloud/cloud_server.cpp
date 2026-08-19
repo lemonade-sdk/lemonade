@@ -890,12 +890,13 @@ std::string CloudServer::upstream_url(const std::string& base_url,
     while (!normalized.empty() && normalized.back() == '/') {
         normalized.pop_back();
     }
-    std::string suffix = endpoint;
+    // Match on the whole segment: "/v1x" is a different endpoint, not "/v1"
+    // followed by a path.
     const std::string v1_prefix = "/v1";
-    if (suffix.rfind(v1_prefix, 0) == 0) {
-        suffix = suffix.substr(v1_prefix.size());
-    }
-    return normalized + suffix;
+    const bool strip = endpoint.rfind(v1_prefix, 0) == 0 &&
+                       (endpoint.size() == v1_prefix.size() ||
+                        endpoint[v1_prefix.size()] == '/');
+    return normalized + (strip ? endpoint.substr(v1_prefix.size()) : endpoint);
 }
 
 utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_url,
@@ -925,14 +926,10 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    std::string normalized_base = base_url;
-    while (!normalized_base.empty() && normalized_base.back() == '/') {
-        normalized_base.pop_back();
-    }
-    std::string url = upstream_url(normalized_base, "/models");
+    std::string url = upstream_url(base_url, "/models");
     const auto headers = upstream_headers(auth_header, api_key, wire_format);
 
-    const auto policy = discovery_policy(normalized_base, allow_insecure_http);
+    const auto policy = discovery_policy(base_url, allow_insecure_http);
 
     utils::HttpResponse response;
     try {
