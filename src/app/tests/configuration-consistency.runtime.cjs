@@ -141,7 +141,8 @@ assert.doesNotMatch(styles, /detail-configuration__merge-preview/);
 
 // Sampler flags get typed fields of their own, filled from the resolved args, so
 // a value lemond does not set reads as an explicit "default" rather than a gap.
-assert.match(detailSource, /import \{ composeSamplerArgs, samplerFieldsForRecipe, splitSamplerArgs \} from '\.\.\/samplerArgs';/);
+assert.match(detailSource, /^\s+composeSamplerArgs,$/m);
+assert.match(detailSource, /\} from '\.\.\/samplerArgs';/);
 assert.match(detailSource, /const split = useMemo\(\(\) => splitSamplerArgs\(specs, value\), \[specs, value\]\);/);
 
 // Which flags a command line spells this way belongs to the recipe, not to the
@@ -164,6 +165,65 @@ assert.match(detailSource, /if \(fallback && !\(split\.fields\[spec\.flag\] \|\|
 // no typed field covers, where it still has to say what will load.
 assert.match(detailSource, /className="detail-configuration__args-fallback"/);
 assert.match(styles, /\.detail-configuration__sampler-grid\s*\{/);
+
+// A sampler people set by feel is drawn along that feeling. Which one that is
+// belongs to the recipe's schema, so the renderer asks rather than names it.
+assert.doesNotMatch(detailSource, /'--temp'/,
+  'the axis renderer must not single out a flag by name');
+assert.match(samplerSource, /axis: \{/);
+assert.match(samplerSource, /advisedMin: 0\.2,/);
+assert.match(samplerSource, /advisedMax: 1\.3,/);
+assert.match(detailSource, /const axisSpecs = useMemo\(\(\) => axisSamplerFields\(specs\), \[specs\]\);/);
+assert.match(detailSource, /const detailSpecs = useMemo\(\(\) => detailSamplerFields\(specs\), \[specs\]\);/);
+assert.match(detailSource, /'--axis-advised-start': `\$\{\(\(axis\.advisedMin - min\) \/ span\) \* 100\}%`/);
+// Colour alone would carry the advisory; the shoulders are hatched as well.
+assert.match(styles, /\.detail-configuration__axis-slider\s*\{[^}]*repeating-linear-gradient/s);
+assert.match(styles, /\.detail-configuration__axis-slider\s*\{[^}]*var\(--axis-advised-start\)[^}]*var\(--axis-advised-end\)/s);
+
+// The rest fold away, but never silently: the closed row states the flags it
+// holds, and the browser remembers an expert's choice to keep it open.
+assert.match(detailSource, /aria-expanded=\{detailsOpen\}/);
+assert.match(detailSource, /storageKey\(SAMPLER_DETAILS_OPEN_KEY\)/);
+assert.match(detailSource, /\{foldedFlags \|\| 'All on default'\}/);
+assert.match(styles, /\.detail-configuration__sampler-grid\[hidden\]\s*\{[^}]*display:\s*none;/s);
+
+// The detail pane narrows with the splitter, not with the window, so this
+// panel's breakpoints read the pane. A window-width media query fires at sizes
+// where the pane is at its widest.
+assert.match(styles, /\.detail-configuration\s*\{[^}]*container-type:\s*inline-size;[^}]*container-name:\s*model-configuration;/s);
+assert.match(styles, /\.detail-configuration__section\s*\{[^}]*max-width:\s*var\(--max-content-width\);/s,
+  'load settings must stop where the rest of the app stops, not stretch across a wide screen');
+assert.match(styles, /@container model-configuration \(max-width: 520px\)/);
+assert.match(styles, /@container model-configuration \(max-width: 340px\)/);
+assert.doesNotMatch(styles, /@media[^{]*\{\s*\.detail-configuration__(selector-grid|sampler-grid|context-row|axis)/s,
+  'load settings breakpoints must answer to the pane, not the window');
+
+// An unbounded string of flags in the folded summary must not widen the panel:
+// grid items default to a min-content floor, and `flex-basis: auto` keeps the
+// summary's own max-content in that floor.
+assert.match(styles, /\.detail-configuration__sampler-folded\s*\{[^}]*flex:\s*1 1 0;[^}]*min-width:\s*0;/s);
+assert.match(styles, /\.detail-configuration__sampler-toggle\s*\{[^}]*min-width:\s*0;/s);
+assert.match(styles, /\.detail-configuration__args-block\s*\{[^}]*min-width:\s*0;/s);
+
+// An empty field lands on lemond's defaults at load time, not on the effective
+// value the form was seeded from, so that is what its label has to name.
+assert.match(detailSource, /const baseValue = defaultOptionValue\(key\);/);
+assert.match(detailSource, /serverDefaultRecipeOptions\[key\] \?\? baseTuning\.recipe_options\[key\]/);
+assert.doesNotMatch(detailSource, /const baseValue = serverEffectiveRecipeOptions/,
+  'Reset must not label an emptied selector with the value it just cleared');
+
+// The draft is seeded once, into the fields the recipe's option list names, so
+// the options fetch waits for the system-info that carries that list.
+assert.match(detailSource, /if \(!systemInfoSettled\) return;/);
+assert.match(detailSource, /\}, \[name, systemInfoSettled\]\);/);
+assert.match(detailSource, /\.finally\(\(\) => \{ if \(alive\) setSystemInfoSettled\(true\); \}\);/);
+assert.doesNotMatch(detailSource, /seededRef/,
+  'a late option list must not be reconciled into a draft that was seeded without it');
+
+// Reload restarts the backend, so it is offered only where it would change it.
+assert.match(detailSource, /const reloadWouldChange = recipeKeys\.some\(key => \{/);
+assert.match(detailSource, /loadedModel && onReloadModel && \(reloadWouldChange \? \(/);
+assert.match(detailSource, /className="detail-configuration__running-state"/);
 
 // The context controls stay on screen while auto tuning, showing what it resolved.
 assert.match(detailSource, /value=\{isAutoTuning \? String\(currentCtxSize\) : ctxSizeDraft\}/);
@@ -225,8 +285,8 @@ assert.match(detailSource, /TUNING_FIELD_LABELS\[key\] \|\| recipeOptionLabel\(s
   'known labels must win while unknown fields still render from server metadata');
 assert.match(detailSource, /api\.getModelOptions\(name\)/,
   'Model Configuration must keep reading model-specific defaults from lemond');
-assert.match(detailSource, /const baseValue = serverEffectiveRecipeOptions\[key\] \?\? baseTuning\.recipe_options\[key\];/,
-  'server-effective model defaults must win over frontend fallback values');
+assert.match(detailSource, /serverDefaultRecipeOptions\[key\] \?\? baseTuning\.recipe_options\[key\]/,
+  'server-owned model defaults must win over frontend fallback values');
 
 assert.doesNotMatch(modelListSource, /BACKEND_MANAGED_RECIPES|BACKEND_OPTION_FIELD/,
   'model readiness must not enumerate recipe ids or backend option names');

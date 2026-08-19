@@ -1977,6 +1977,17 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.locator('#detail-tab-config').click();
     const panel = page.locator('#detail-panel-config');
     const field = (name: string) => panel.getByLabel(name, { exact: true });
+    const details = panel.getByRole('button', { name: /Detailed sampling parameters/ });
+
+    // Temperature leads on its own axis; the rest fold away behind a summary of
+    // the flags they are holding, which the browser remembers the state of.
+    await expect(field('Temperature')).toBeVisible();
+    await expect(field('Top-k')).toBeHidden();
+    await expect(details).toHaveAttribute('aria-expanded', 'false');
+    await expect(details).toContainText('--top-k 20');
+    await details.click();
+    await expect(details).toHaveAttribute('aria-expanded', 'true');
+    await expect(field('Top-k')).toBeVisible();
 
     // Resolved samplers land in their own typed fields; the ones lemond leaves
     // alone are offered anyway and read as an explicit default.
@@ -2009,9 +2020,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
       .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
     expect(loadRequestBody?.merge_args).toBe(false);
 
-    // Loading swaps the view, so come back before editing the form again.
+    // Loading swaps the view, so come back before editing the form again. The
+    // section stays open across the trip, which is the point of remembering it.
     await page.locator('.titlebar__nav').getByText('Models').click();
     await expect(field('Temperature')).toBeVisible();
+    await expect(details).toHaveAttribute('aria-expanded', 'true');
 
     // A field lemond has a value for cannot be left empty. Emptying every one of
     // them would send no args at all, which lemond reads as "unset" and answers
@@ -2043,6 +2056,224 @@ test.describe('Lemonade UI — Feature Parity', () => {
 
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
     await expect.poll(() => loadRequestBody?.llamacpp_args).toBe(defaultArgs);
+
+    // The axis says where the advised range ends, so a value outside it reads as
+    // a choice rather than a surprise.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(panel.locator('.detail-configuration__axis-caution')).toHaveCount(0);
+    await field('Temperature').fill('1.6');
+    await expect(panel.locator('.detail-configuration__axis-caution'))
+      .toHaveText('Above 1.3 the model tends to lose the thread.');
+    await field('Temperature').fill('0.1');
+    await expect(panel.locator('.detail-configuration__axis-caution'))
+      .toHaveText('Below 0.2 the model tends to repeat itself.');
+  });
+
+  test('25e — Reset names the backend Load will use, and Reload is only offered when it would change one', async ({ page }) => {
+    const modelName = 'live-model';
+    let loadRequestBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: {
+        status: 'ok',
+        version: 'test',
+        all_models_loaded: [{
+          model_name: modelName,
+          checkpoint: 'test/checkpoint',
+          recipe: 'llamacpp',
+          device: 'cpu',
+          backend_url: 'http://127.0.0.1:8081',
+          pid: 4242,
+          type: 'llm',
+          recipe_options: { ctx_size: 8192, llamacpp_backend: 'vulkan', llamacpp_args: '--temp 0.7' },
+        }],
+      },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: llamacppRecipe({
+            cpu: { state: 'installed', version: 'test' },
+            vulkan: { state: 'installed', version: 'test' },
+          }),
+        },
+        devices: { cpu: { available: true }, amd_gpu: [{ available: true, name: 'gfx1151' }] },
+      },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: { llamacpp_backend: 'vulkan' },
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_backend: 'vulkan', llamacpp_args: '--temp 0.7' },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_backend: 'cpu', llamacpp_args: '--temp 0.7' },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+
+    // The running model already has what the form shows, so the panel says so
+    // instead of offering a restart that would rebuild it exactly as it is.
+    await expect(panel.locator('.detail-configuration__running-state'))
+      .toHaveText('Running with these settings');
+    await expect(panel.getByRole('button', { name: 'Reload model' })).toHaveCount(0);
+
+    await panel.getByLabel('Temperature', { exact: true }).fill('1.2');
+    await expect(panel.getByRole('button', { name: 'Reload model' })).toBeVisible();
+    await expect(panel.locator('.detail-configuration__running-state')).toHaveCount(0);
+
+    // Reset empties the backend selector, and Load then skips the saved layer —
+    // so the empty option has to name the default, not the value it just cleared.
+    const backend = panel.locator('#config-live-model-llamacpp_backend');
+    await expect(backend).toHaveValue('vulkan');
+    await panel.getByRole('button', { name: 'Reset to defaults' }).click();
+    await expect(backend).toHaveValue('');
+    await expect(backend.locator('option[value=""]')).toHaveText('cpu');
+
+    await page.route('**/api/v1/unload', route => route.fulfill({ json: { status: 'ok' } }));
+    await panel.getByRole('button', { name: 'Reload model' }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_backend).toBeNull();
+  });
+
+  test('25f — recipe metadata that lands after the options fetch still fills the form', async ({ page }) => {
+    const modelName = 'late-metadata-model';
+    const savedArgs = '--no-mmap';
+    let releaseSystemInfo: (() => void) | null = null;
+    const heldSystemInfo = new Promise<void>(resolve => { releaseSystemInfo = resolve; });
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: { llamacpp_args: savedArgs },
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: savedArgs },
+            defaults: { model_name: modelName, ctx_size: -1 },
+            resolved_ctx_size: 4096,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    // system-info names the fields the draft is seeded into, so hold it until
+    // after the options that fill them have already been answered.
+    await page.route('**/api/v1/system-info**', async route => {
+      await heldSystemInfo;
+      return route.fulfill({ json: { recipes: { llamacpp: llamacppRecipe() } } });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+
+    const argsField = panel.getByLabel('Additional backend CLI arguments', { exact: true });
+    await expect(argsField).toHaveCount(0);
+    releaseSystemInfo?.();
+
+    await expect(argsField).toHaveValue(savedArgs);
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    // A form that filled itself from the saved layer has nothing to discard.
+    await expect(panel.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
+  });
+
+  test('25g — a long resolved args string never widens the load settings panel', async ({ page }) => {
+    const modelName = 'wide-args-model';
+    const defaultArgs = '--temp 1.0 --top-k 20 --top-p 0.95 --min-p 0.00 --repeat-penalty 1.0'
+      + ' --presence-penalty 0.0 --flash-attn on';
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: {},
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 131072,
+          }],
+        },
+      });
+    });
+
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel.getByLabel('Temperature', { exact: true })).toBeVisible();
+
+    // The detail pane narrows with the window while the list keeps its width, so
+    // the folded summary is the widest thing on screen at exactly the sizes the
+    // panel has least room. Nothing here may push the pane into a sideways scroll.
+    const overflow = () => panel.locator('.detail-configuration').evaluate(
+      (el: HTMLElement) => el.scrollWidth - el.clientWidth,
+    );
+    for (const open of [false, true]) {
+      if (open) await panel.getByRole('button', { name: /Detailed sampling parameters/ }).click();
+      for (const width of [1200, 1000, 900, 800]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await expect.poll(overflow, { message: `pane overflows at ${width}px, open=${open}` })
+          .toBeLessThanOrEqual(1);
+      }
+    }
   });
 
 });

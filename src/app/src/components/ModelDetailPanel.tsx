@@ -38,8 +38,18 @@ import {
 } from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 import { TTS_VOICES } from '../features/audio/ttsSettings';
-import { composeSamplerArgs, samplerFieldsForRecipe, splitSamplerArgs } from '../samplerArgs';
+import {
+  argsMapToString,
+  axisSamplerFields,
+  buildArgsMap,
+  composeSamplerArgs,
+  detailSamplerFields,
+  parseCustomArgs,
+  samplerFieldsForRecipe,
+  splitSamplerArgs,
+} from '../samplerArgs';
 import type { ArgFieldSpec } from '../samplerArgs';
+import { storageKey } from '../storage';
 import {
   describeRouterModelConnection,
   providerEndpointNeedsInsecureOptIn,
@@ -1082,6 +1092,129 @@ const AutoGrowTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElemen
 };
 
 
+const SAMPLER_DETAILS_OPEN_KEY = 'model_config_sampler_details_open';
+
+function readSamplerDetailsOpen(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(storageKey(SAMPLER_DETAILS_OPEN_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeSamplerDetailsOpen(open: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(storageKey(SAMPLER_DETAILS_OPEN_KEY), open ? 'true' : 'false');
+  } catch {
+    // Browser storage is best-effort; the section still opens for this session.
+  }
+}
+
+interface SamplerAxisFieldProps {
+  fieldId: string;
+  spec: ArgFieldSpec;
+  value: string;
+  /** lemond's own value for this flag, restored when the field is emptied. */
+  fallback: string;
+  owned: boolean;
+  onChange: (next: string) => void;
+  onStep: (spec: ArgFieldSpec, direction: -1 | 1) => void;
+}
+
+/** A sampler people set by feel, drawn along the axis they feel it on. The
+    track states where the advised range ends, so a value outside it is a choice
+    rather than a surprise. */
+const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
+  fieldId, spec, value, fallback, owned, onChange, onStep,
+}) => {
+  const axis = spec.axis!;
+  const min = spec.min ?? 0;
+  const max = spec.max ?? 2;
+  const typed = Number(value);
+  // An empty field sends no flag, so the axis shows where the backend's own
+  // value sits rather than collapsing to the left end.
+  const applied = value.trim() !== '' && Number.isFinite(typed) ? typed : Number(spec.backendDefault ?? min);
+  const position = Math.min(max, Math.max(min, Number.isFinite(applied) ? applied : min));
+  const span = max - min || 1;
+  const caution = position < axis.advisedMin
+    ? axis.belowAdvised
+    : position > axis.advisedMax ? axis.aboveAdvised : '';
+  const cautionId = `${fieldId}-caution`;
+
+  return (
+    <div className="detail-configuration__axis">
+      <div className="detail-configuration__control-head">
+        <label htmlFor={fieldId}>{spec.label}</label>
+        {caution && (
+          <span className="detail-configuration__axis-caution" id={cautionId} role="status">
+            {caution}
+          </span>
+        )}
+      </div>
+      <div className="detail-configuration__axis-row">
+        <div className="detail-configuration__axis-scale">
+          <span className="detail-configuration__axis-pole">{axis.low}</span>
+          <input
+            className="slider detail-configuration__axis-slider"
+            type="range"
+            min={min}
+            max={max}
+            step={spec.step}
+            value={position}
+            disabled={owned}
+            aria-label={`${spec.label}, ${axis.low} to ${axis.high}`}
+            aria-describedby={caution ? cautionId : undefined}
+            style={{
+              '--axis-advised-start': `${((axis.advisedMin - min) / span) * 100}%`,
+              '--axis-advised-end': `${((axis.advisedMax - min) / span) * 100}%`,
+            } as React.CSSProperties}
+            onChange={event => onChange(event.target.value)}
+          />
+          <span className="detail-configuration__axis-pole">{axis.high}</span>
+        </div>
+        <div className="detail-configuration__axis-number">
+          <input
+            id={fieldId}
+            className="input detail-configuration__number-input detail-configuration__axis-input"
+            type="number"
+            min={min}
+            max={max}
+            step={spec.step}
+            value={value}
+            disabled={owned}
+            placeholder={owned ? 'set below' : 'default'}
+            aria-describedby={caution ? cautionId : undefined}
+            onChange={event => onChange(event.target.value)}
+            onBlur={() => {
+              if (fallback && !value.trim()) onChange(fallback);
+            }}
+          />
+          <span className="detail-configuration__context-stepper">
+            <button
+              type="button"
+              onClick={() => onStep(spec, 1)}
+              disabled={owned}
+              aria-label={`Increase ${spec.label}`}
+            >
+              <Icon name="chevron-up" size={11} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onStep(spec, -1)}
+              disabled={owned}
+              aria-label={`Decrease ${spec.label}`}
+            >
+              <Icon name="chevron-down" size={11} aria-hidden="true" />
+            </button>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 interface BackendArgsFieldProps {
   fieldId: string;
   label: string;
@@ -1108,6 +1241,10 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
     () => splitSamplerArgs(specs, fallbackArgs).fields,
     [fallbackArgs, specs],
   );
+  const axisSpecs = useMemo(() => axisSamplerFields(specs), [specs]);
+  const detailSpecs = useMemo(() => detailSamplerFields(specs), [specs]);
+  const [detailsOpen, setDetailsOpen] = useState(readSamplerDetailsOpen);
+  const detailsId = `${fieldId}-detailed`;
 
   const setSampler = (flag: string, next: string) =>
     onChange(composeSamplerArgs(specs, { ...split.fields, [flag]: next }, split.rest));
@@ -1124,62 +1261,106 @@ const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
     setSampler(spec.flag, input.value);
   };
 
+  // Folding the rest away must not fold away what they will do, so the closed
+  // section states the flags it is holding.
+  const foldedFlags = detailSpecs
+    .map(spec => {
+      const held = (split.fields[spec.flag] || '').trim();
+      return held ? `${spec.flag} ${held}` : '';
+    })
+    .filter(Boolean)
+    .join('  ');
+
   return (
     <div className="detail-configuration__args-block">
-      {specs.length > 0 && (
-        <div className="detail-configuration__sampler-grid">
-          {specs.map(spec => {
-            const samplerId = `${fieldId}-${spec.id}`;
-            const owned = split.claimedByRest.has(spec.flag);
-            const isText = spec.kind === 'text';
-            return (
-              <div
-                key={spec.flag}
-                className={`detail-tuning__field detail-configuration__field${isText ? ' detail-configuration__sampler-field--wide' : ''}`}
-              >
-                <span id={`${samplerId}-label`}>{spec.label}</span>
-                <div className="detail-configuration__number-control">
-                  <input
-                    id={samplerId}
-                    className={isText ? 'input' : 'input detail-configuration__number-input'}
-                    type={isText ? 'text' : 'number'}
-                    min={spec.min}
-                    max={spec.max}
-                    step={spec.step}
-                    value={split.fields[spec.flag] ?? ''}
-                    disabled={owned}
-                    placeholder={owned ? 'set below' : 'default'}
-                    aria-labelledby={`${samplerId}-label`}
-                    onChange={e => setSampler(spec.flag, e.target.value)}
-                    onBlur={() => {
-                      const fallback = flagDefaults[spec.flag];
-                      if (fallback && !(split.fields[spec.flag] || '').trim()) setSampler(spec.flag, fallback);
-                    }}
-                  />
-                  {!isText && (
-                    <span className="detail-configuration__context-stepper">
-                      <button
-                        type="button"
-                        onClick={() => stepSampler(spec, 1)}
-                        disabled={owned}
-                        aria-label={`Increase ${spec.label}`}
-                      >
-                        <Icon name="chevron-up" size={11} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => stepSampler(spec, -1)}
-                        disabled={owned}
-                        aria-label={`Decrease ${spec.label}`}
-                      >
-                        <Icon name="chevron-down" size={11} aria-hidden="true" />
-                      </button>
-                    </span>
-                  )}
+      {axisSpecs.map(spec => (
+        <SamplerAxisField
+          key={spec.flag}
+          fieldId={`${fieldId}-${spec.id}`}
+          spec={spec}
+          value={split.fields[spec.flag] ?? ''}
+          fallback={flagDefaults[spec.flag] || ''}
+          owned={split.claimedByRest.has(spec.flag)}
+          onChange={next => setSampler(spec.flag, next)}
+          onStep={stepSampler}
+        />
+      ))}
+
+      {detailSpecs.length > 0 && (
+        <div className="detail-configuration__sampler-details">
+          <button
+            type="button"
+            className="detail-configuration__sampler-toggle"
+            aria-expanded={detailsOpen}
+            aria-controls={detailsId}
+            onClick={() => {
+              const next = !detailsOpen;
+              setDetailsOpen(next);
+              writeSamplerDetailsOpen(next);
+            }}
+          >
+            <Icon name="chevron-right" size={12} className="detail-configuration__sampler-caret" aria-hidden="true" />
+            <span className="detail-configuration__sampler-toggle-label">Detailed sampling parameters</span>
+            {!detailsOpen && (
+              <span className="detail-configuration__sampler-folded">
+                {foldedFlags || 'All on default'}
+              </span>
+            )}
+          </button>
+          <div className="detail-configuration__sampler-grid" id={detailsId} hidden={!detailsOpen}>
+            {detailSpecs.map(spec => {
+              const samplerId = `${fieldId}-${spec.id}`;
+              const owned = split.claimedByRest.has(spec.flag);
+              const isText = spec.kind === 'text';
+              return (
+                <div
+                  key={spec.flag}
+                  className={`detail-tuning__field detail-configuration__field${isText ? ' detail-configuration__sampler-field--wide' : ''}`}
+                >
+                  <span id={`${samplerId}-label`}>{spec.label}</span>
+                  <div className="detail-configuration__number-control">
+                    <input
+                      id={samplerId}
+                      className={isText ? 'input' : 'input detail-configuration__number-input'}
+                      type={isText ? 'text' : 'number'}
+                      min={spec.min}
+                      max={spec.max}
+                      step={spec.step}
+                      value={split.fields[spec.flag] ?? ''}
+                      disabled={owned}
+                      placeholder={owned ? 'set below' : 'default'}
+                      aria-labelledby={`${samplerId}-label`}
+                      onChange={e => setSampler(spec.flag, e.target.value)}
+                      onBlur={() => {
+                        const fallback = flagDefaults[spec.flag];
+                        if (fallback && !(split.fields[spec.flag] || '').trim()) setSampler(spec.flag, fallback);
+                      }}
+                    />
+                    {!isText && (
+                      <span className="detail-configuration__context-stepper">
+                        <button
+                          type="button"
+                          onClick={() => stepSampler(spec, 1)}
+                          disabled={owned}
+                          aria-label={`Increase ${spec.label}`}
+                        >
+                          <Icon name="chevron-up" size={11} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => stepSampler(spec, -1)}
+                          disabled={owned}
+                          aria-label={`Decrease ${spec.label}`}
+                        >
+                          <Icon name="chevron-down" size={11} aria-hidden="true" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -1224,7 +1405,7 @@ const ModelConfigurationTab: React.FC<{
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
-
+  const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
 
   useEffect(() => {
     if (!isActive) return;
@@ -1233,7 +1414,8 @@ const ModelConfigurationTab: React.FC<{
     if (cached) setSystemInfo(cached);
     api.systemInfo()
       .then(info => { if (alive) setSystemInfo(info); })
-      .catch(() => { if (alive) setSystemInfo(api.systemInfoData); });
+      .catch(() => { if (alive) setSystemInfo(api.systemInfoData); })
+      .finally(() => { if (alive) setSystemInfoSettled(true); });
     return () => { alive = false; };
   }, [isActive]);
 
@@ -1287,6 +1469,9 @@ const ModelConfigurationTab: React.FC<{
   applyServerOptionsRef.current = applyServerOptions;
 
   useEffect(() => {
+    // The draft is seeded once, from what this fetch returns, into the fields
+    // the recipe's option list names — so that list has to be in hand first.
+    if (!systemInfoSettled) return;
     let cancelled = false;
     setNotice(null);
     setServerSavedRecipeOptions({});
@@ -1311,7 +1496,7 @@ const ModelConfigurationTab: React.FC<{
         setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [name]);
+  }, [name, systemInfoSettled]);
 
   const savedLoadSettings = useMemo(
     () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
@@ -1362,6 +1547,13 @@ const ModelConfigurationTab: React.FC<{
     );
     setCtxSizeDraft(String(nextValue));
   };
+  // What an empty field resolves to at load time. /load reads an explicit null
+  // as "skip the saved layer for this load", so a field left empty lands on
+  // lemond's defaults — not on the effective value the form was seeded from,
+  // which is what Reset to defaults would otherwise keep showing.
+  const defaultOptionValue = (key: keyof RecipeOptions): unknown =>
+    serverDefaultRecipeOptions[key] ?? baseTuning.recipe_options[key];
+
   const selectorKeys = recipeKeys.filter(key =>
     recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
     || recipeOptionIsDevice(systemInfo, activeRecipe, String(key))
@@ -1375,6 +1567,24 @@ const ModelConfigurationTab: React.FC<{
   // clear a saved key it never shows.
   const hasSavedOptions = Object.keys(serverSavedRecipeOptions)
     .some(key => key === 'ctx_size' || key === 'merge_args' || recipeKeys.includes(key as keyof RecipeOptions));
+
+  // Both sides of the comparison drop "auto" and the empty string, and an args
+  // string is compared by what it sets rather than by how it was typed.
+  const argsKeyNames = new Set(argsKeys.map(String));
+  const canonicalOptionValue = (key: string, value: unknown): string => {
+    const text = String(value ?? '').trim();
+    if (!text || text.toLowerCase() === 'auto') return '';
+    return argsKeyNames.has(key) ? argsMapToString(buildArgsMap(parseCustomArgs(text))) : text;
+  };
+  const runningOptions = loadedModel?.recipe_options || {};
+  const runningCtxSize = positiveCtxValue(runningOptions.ctx_size);
+  // Reload restarts the backend process, so it is offered only where it would
+  // land somewhere other than where the running model already is.
+  const reloadWouldChange = recipeKeys.some(key => {
+    const option = String(key);
+    const shown = (recipeDraft[option] || '').trim() || String(defaultOptionValue(key) ?? '');
+    return canonicalOptionValue(option, shown) !== canonicalOptionValue(option, runningOptions[option]);
+  }) || (supportsContextSize && runningCtxSize !== undefined && currentCtxSize !== runningCtxSize);
 
   const buildConfigOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
@@ -1496,7 +1706,7 @@ const ModelConfigurationTab: React.FC<{
     const label = TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key));
     const hint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
     const draftValue = recipeDraft[String(key)] || '';
-    const baseValue = serverEffectiveRecipeOptions[key] ?? baseTuning.recipe_options[key];
+    const baseValue = defaultOptionValue(key);
 
     if (recipeOptionIsBackend(systemInfo, activeRecipe, String(key))) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
@@ -1520,7 +1730,7 @@ const ModelConfigurationTab: React.FC<{
     if (recipeOptionIsDevice(systemInfo, activeRecipe, String(key))) {
       const backendKey = recipeBackendOptionName(systemInfo, activeRecipe) as keyof RecipeOptions | null;
       const selectedBackend = backendKey
-        ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, info)
+        ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
         : 'auto';
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
@@ -1784,7 +1994,7 @@ const ModelConfigurationTab: React.FC<{
         </div>
 
         <div className="detail-tuning__actions detail-configuration__actions">
-          {loadedModel && onReloadModel && (
+          {loadedModel && onReloadModel && (reloadWouldChange ? (
             <button
               type="button"
               className="btn btn--primary btn--sm"
@@ -1794,7 +2004,11 @@ const ModelConfigurationTab: React.FC<{
             >
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
             </button>
-          )}
+          ) : (
+            <span className="detail-configuration__running-state">
+              <Icon name="check" size={13} aria-hidden="true" /> Running with these settings
+            </span>
+          ))}
           <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>Save</button>
           {hasLoadSettingChanges && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>

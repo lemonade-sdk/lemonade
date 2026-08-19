@@ -13,6 +13,19 @@
 
 export type ArgFieldKind = 'number' | 'text';
 
+/** Poles and the range between them worth staying inside, for a value people
+    reason about by feel rather than by number. A spec that carries one is drawn
+    as an axis instead of a box, and is shown ahead of the rest. */
+export interface ArgFieldAxis {
+  low: string;
+  high: string;
+  advisedMin: number;
+  advisedMax: number;
+  /** Why each end of the advised range is where it is, shown when crossed. */
+  belowAdvised: string;
+  aboveAdvised: string;
+}
+
 export interface ArgFieldSpec {
   flag: string;
   /** The flag without its dashes, for element ids. */
@@ -25,6 +38,7 @@ export interface ArgFieldSpec {
   /** llama.cpp's own value, so stepping an empty field starts where the backend
       would have. Absent where the field holds something other than a number. */
   backendDefault?: string;
+  axis?: ArgFieldAxis;
 }
 
 /** Every sampler lemond can put in llama.cpp's `*_args`, offered on every model
@@ -34,7 +48,18 @@ export interface ArgFieldSpec {
     generators too and take none of them. Ranges follow `llama-server --help`;
     the defaults are its documented ones. */
 export const LLAMACPP_SAMPLER_FIELDS: ArgFieldSpec[] = [
-  { flag: '--temp', id: 'temp', label: 'Temperature', kind: 'number', min: 0, max: 2, step: 0.05, backendDefault: '0.80' },
+  {
+    flag: '--temp', id: 'temp', label: 'Temperature', kind: 'number',
+    min: 0, max: 2, step: 0.05, backendDefault: '0.80',
+    axis: {
+      low: 'Deterministic',
+      high: 'Exploratory',
+      advisedMin: 0.2,
+      advisedMax: 1.3,
+      belowAdvised: 'Below 0.2 the model tends to repeat itself.',
+      aboveAdvised: 'Above 1.3 the model tends to lose the thread.',
+    },
+  },
   { flag: '--top-k', id: 'top-k', label: 'Top-k', kind: 'number', min: 0, max: 200, step: 1, backendDefault: '40' },
   { flag: '--top-p', id: 'top-p', label: 'Top-p', kind: 'number', min: 0, max: 1, step: 0.05, backendDefault: '0.95' },
   { flag: '--min-p', id: 'min-p', label: 'Min-p', kind: 'number', min: 0, max: 1, step: 0.01, backendDefault: '0.05' },
@@ -52,6 +77,14 @@ const SAMPLER_FIELDS_BY_RECIPE: Record<string, ArgFieldSpec[]> = {
 
 export function samplerFieldsForRecipe(recipe: string): ArgFieldSpec[] {
   return SAMPLER_FIELDS_BY_RECIPE[recipe] || [];
+}
+
+export function axisSamplerFields(specs: ArgFieldSpec[]): ArgFieldSpec[] {
+  return specs.filter(spec => spec.axis);
+}
+
+export function detailSamplerFields(specs: ArgFieldSpec[]): ArgFieldSpec[] {
+  return specs.filter(spec => !spec.axis);
 }
 
 export function parseCustomArgs(customArgs: string): string[] {
