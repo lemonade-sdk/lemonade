@@ -1115,10 +1115,8 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
             }
         }
 
-        // Providers that are already Anthropic-native need no conversion at
-        // all: relay the request verbatim so thinking blocks, tool use, and
-        // cache control survive intact. No router slot is taken — there is no
-        // local resource to hold.
+        // Relaying verbatim keeps thinking blocks, tool use, and cache control
+        // intact. No router slot is taken — there is no local resource to hold.
         auto match = resolve_anthropic_upstream(model_manager_, model, request_json);
         if (match.claimed) {
             if (!match.upstream) {

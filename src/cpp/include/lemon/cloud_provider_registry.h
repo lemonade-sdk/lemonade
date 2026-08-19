@@ -39,9 +39,8 @@ public:
         std::string auth_header_name = "Authorization";
         std::string auth_header_prefix = "Bearer ";
         // Request/response shape this provider speaks. "openai" (the default)
-        // is the OpenAI v1 chat/completions shape CloudServer implements.
-        // "anthropic" marks a provider served over the Anthropic Messages wire
-        // format instead; those are relayed from lemond's /v1/messages.
+        // is what CloudServer implements; "anthropic" providers are relayed
+        // from lemond's /v1/messages instead.
         std::string wire_format = "openai";
 
         bool operator==(const Record& other) const {
