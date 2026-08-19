@@ -8364,27 +8364,32 @@ optgroup {
 }
 
 /* The advised range is just the track; only the shoulders are marked, so the
-   accent thumb stays the brightest thing on the axis. Two classes to outrank
-   the light theme's `.slider` background, which would otherwise erase these. */
+   accent thumb stays the brightest thing on the axis. The hatch runs the whole
+   width and the advised range is veiled back over it in the track's own colour,
+   so the caution gathers rather than switching on at a line. Two classes to
+   outrank the light theme's `.slider` background, which would erase these. */
 .slider.detail-configuration__axis-slider {
   --axis-advised-start: 10%;
   --axis-advised-end: 65%;
+  --axis-fade: 7%;
+  --axis-track: var(--surface-3);
   --axis-caution-tint: color-mix(in srgb, var(--danger) 20%, transparent);
   --axis-caution-line: color-mix(in srgb, var(--danger) 40%, transparent);
   height: 8px;
   background-image:
-    repeating-linear-gradient(135deg,
-      var(--axis-caution-line) 0 2px, var(--axis-caution-tint) 2px 6px),
+    linear-gradient(to right,
+      transparent 0,
+      transparent calc(var(--axis-advised-start) - var(--axis-fade)),
+      var(--axis-track) var(--axis-advised-start),
+      var(--axis-track) var(--axis-advised-end),
+      transparent calc(var(--axis-advised-end) + var(--axis-fade)),
+      transparent 100%),
     repeating-linear-gradient(135deg,
       var(--axis-caution-line) 0 2px, var(--axis-caution-tint) 2px 6px);
-  background-repeat: no-repeat;
-  background-size:
-    var(--axis-advised-start) 100%,
-    calc(100% - var(--axis-advised-end)) 100%;
-  background-position: left center, right center;
 }
 
 [data-theme="light"] .slider.detail-configuration__axis-slider {
+  --axis-track: var(--surface-2);
   --axis-caution-tint: color-mix(in srgb, var(--danger) 12%, transparent);
   --axis-caution-line: color-mix(in srgb, var(--danger) 26%, transparent);
 }
