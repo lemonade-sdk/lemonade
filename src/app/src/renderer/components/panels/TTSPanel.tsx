@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
-import { ModelInfo, ModelsData, SpeechDefaults } from '../../utils/modelData';
+import { useSystem } from '../../hooks/useSystem';
+import {
+  generationParamDefault,
+  generationParams,
+  GenerationParamMetadata,
+} from '../../utils/generationParams';
+import { ModelsData } from '../../utils/modelData';
 import { AppSettings } from '../../utils/appSettings';
 import { readWavFileAsBase64, WAV_FILE_ACCEPT } from '../../utils/wav';
 import { useTTS } from '../../hooks/useTTS';
@@ -14,25 +20,16 @@ import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import Combobox from '../Combobox';
 
-type MossMode = 'describe' | 'clone';
+type VoiceMode = 'describe' | 'clone';
 
-const MOSS_SPEECH_PARAMS: { key: keyof SpeechDefaults; label: string; min: number; max: number; step: number }[] = [
-  { key: 'audio_temperature', label: 'Audio temp', min: 0, max: 3, step: 0.05 },
-  { key: 'audio_top_p', label: 'Audio top-p', min: 0, max: 1, step: 0.05 },
-  { key: 'audio_top_k', label: 'Audio top-k', min: 0, max: 200, step: 1 },
-  { key: 'audio_repetition_penalty', label: 'Repetition', min: 1, max: 2, step: 0.05 },
-  { key: 'text_temperature', label: 'Text temp', min: 0, max: 3, step: 0.05 },
-  { key: 'text_top_p', label: 'Text top-p', min: 0, max: 1, step: 0.05 },
-  { key: 'text_top_k', label: 'Text top-k', min: 0, max: 200, step: 1 },
-  { key: 'speed', label: 'Speed', min: 0.25, max: 4, step: 0.05 },
-];
-
-const speechDefaultsForModel = (info?: ModelInfo | null): Record<string, number> => {
-  const declared = info?.speech_defaults || {};
+const speechDefaultsForModel = (
+  params: GenerationParamMetadata[],
+  declared: object,
+): Record<string, number> => {
   const defaults: Record<string, number> = {};
-  for (const param of MOSS_SPEECH_PARAMS) {
-    const value = declared[param.key];
-    if (typeof value === 'number') defaults[param.key] = value;
+  for (const param of params) {
+    const value = generationParamDefault(param, declared);
+    if (typeof value === 'number') defaults[param.name] = value;
   }
   return defaults;
 };
@@ -53,6 +50,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   runPreFlight, reset, showError, appSettings,
 }) => {
   const { selectedModel, modelsData } = useModels();
+  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
   const tts = useTTS(appSettings, modelsData);
 
   interface TTSClip {
@@ -68,7 +66,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const [ttsMessageHistory, setTTSMessageHistory] = useState<TTSClip[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
-  const [mossMode, setMossMode] = useState<MossMode>('describe');
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>('describe');
   const [voiceDescription, setVoiceDescription] = useState('');
   const [cloneWav, setCloneWav] = useState<{ b64: string; name: string } | null>(null);
   const [speechParams, setSpeechParams] = useState<Record<string, number>>({});
@@ -81,17 +79,39 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
   const selectedIsTts = (modelsData?.[selectedModel || '']?.labels || []).includes('tts');
   const ttsModel = (selectedIsTts ? selectedModel : '') || appSettings?.tts.model.value || '';
-  const isOpenMoss = (modelsData?.[ttsModel]?.recipe || '') === 'openmoss';
+  const ttsRecipe = modelsData?.[ttsModel]?.recipe || '';
+  const ttsParams = React.useMemo(
+    () => generationParams(systemInfo, ttsRecipe, 'tts'),
+    [systemInfo, ttsRecipe],
+  );
+  const cloneSampleParam = ttsParams.find(param => (
+    param.typeName === 'AUDIO_B64' && param.exclusiveGroup
+  ));
+  const voiceDesignParam = ttsParams.find(param => (
+    param.typeName === 'TEXT'
+    && param.exclusiveGroup
+    && param.exclusiveGroup === cloneSampleParam?.exclusiveGroup
+  ));
+  const supportsVoiceDesign = Boolean(voiceDesignParam && cloneSampleParam);
+  const advancedSpeechParams = ttsParams.filter(param => (
+    param.group === 'advanced' && (param.typeName === 'NUMBER' || param.typeName === 'INT')
+  ));
 
-  const cloneMissing = isOpenMoss && mossMode === 'clone' && !cloneWav;
-  const describeMissing = isOpenMoss && mossMode === 'describe' && !voiceDescription.trim();
+  const cloneMissing = supportsVoiceDesign && voiceMode === 'clone' && !cloneWav;
+  const describeMissing = supportsVoiceDesign && voiceMode === 'describe' && !voiceDescription.trim();
 
   const busy = isBusy;
 
   const speechDefaultsKey = JSON.stringify(modelsData?.[ttsModel]?.speech_defaults || {});
+  const speechParamsKey = JSON.stringify(advancedSpeechParams);
   useEffect(() => {
-    setSpeechParams(speechDefaultsForModel(modelsData?.[ttsModel]));
-  }, [ttsModel, speechDefaultsKey]);
+    void ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
+
+  useEffect(() => {
+    const declared = modelsData?.[ttsModel]?.speech_defaults || {};
+    setSpeechParams(speechDefaultsForModel(advancedSpeechParams, declared));
+  }, [ttsModel, speechDefaultsKey, speechParamsKey]);
 
   const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
     textarea.style.height = 'auto';
@@ -131,17 +151,17 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
     const text = inputValue;
 
     try {
-      if (isOpenMoss) {
+      const extra: Record<string, unknown> = { ...speechParams };
+      if (supportsVoiceDesign && voiceDesignParam) {
         const styleNote = voiceDescription.trim();
-        const extra: Record<string, unknown> = { ...speechParams };
-        if (mossMode === 'describe') {
-          extra.voice_design_description = styleNote;
+        if (voiceMode === 'describe') {
+          extra[voiceDesignParam.name] = styleNote;
           await synthAndRecord(text, ttsModel, '', undefined, extra);
         } else {
           await synthAndRecord(text, ttsModel, styleNote, cloneWav?.b64, extra);
         }
       } else {
-        await synthAndRecord(text, ttsModel, tts.currentVoice);
+        await synthAndRecord(text, ttsModel, tts.currentVoice, undefined, extra);
       }
     } catch (error: any) {
       console.error('Failed to process message:', error);
@@ -270,7 +290,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
         {isInferring && activeModality === 'speech' && (
           <div className="model-loading-indicator">
             <span className="model-loading-text">
-              {isOpenMoss && mossMode === 'describe'
+              {supportsVoiceDesign && voiceMode === 'describe'
                 ? 'Designing the voice, then converting text to speech...'
                 : 'Converting text to speech...'}
             </span>
@@ -287,69 +307,80 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
       <div className="chat-input-container">
         <div className="chat-input-voice-selector">
-          {isOpenMoss ? (
-            <div className="tts-openmoss-panel">
-            <div className="tts-openmoss-controls">
-              <div className="tts-mode-toggle">
-                <button
-                  className={`toggle-button${mossMode === 'describe' ? ' active' : ''}`}
-                  onClick={() => setMossMode('describe')}
-                  disabled={busy}
-                >Describe</button>
-                <button
-                  className={`toggle-button${mossMode === 'clone' ? ' active' : ''}`}
-                  onClick={() => setMossMode('clone')}
-                  disabled={busy}
-                >Clone</button>
-              </div>
-              {mossMode === 'describe' ? (
-                <input
-                  className="form-input"
-                  value={voiceDescription}
-                  onChange={(e) => setVoiceDescription(e.target.value)}
-                  placeholder="Describe the voice (e.g. warm low female, British accent)"
-                  disabled={busy}
-                />
-              ) : (
-                <div className="tts-clone-row">
-                  <input ref={sampleInputRef} type="file" accept={WAV_FILE_ACCEPT} onChange={handlePickSample} style={{ display: 'none' }} />
-                  <button className="tts-clone-upload" onClick={() => sampleInputRef.current?.click()} disabled={busy}>
-                    {cloneWav ? 'Change sample' : 'Upload voice sample'}
-                  </button>
-                  {cloneWav && (
-                    <span className="tts-clone-file">
-                      <span className="tts-clone-name" title={cloneWav.name}>{cloneWav.name}</span>
-                      <button className="tts-clone-remove" onClick={() => setCloneWav(null)} disabled={busy} title="Remove sample">×</button>
-                    </span>
-                  )}
+          {supportsVoiceDesign ? (
+            <div className="tts-generation-panel">
+              <div className="tts-generation-controls">
+                <div className="tts-mode-toggle">
+                  <button
+                    className={`toggle-button${voiceMode === 'describe' ? ' active' : ''}`}
+                    onClick={() => setVoiceMode('describe')}
+                    disabled={busy}
+                  >Describe</button>
+                  <button
+                    className={`toggle-button${voiceMode === 'clone' ? ' active' : ''}`}
+                    onClick={() => setVoiceMode('clone')}
+                    disabled={busy}
+                  >Clone</button>
+                </div>
+                {voiceMode === 'describe' ? (
                   <input
                     className="form-input"
                     value={voiceDescription}
                     onChange={(e) => setVoiceDescription(e.target.value)}
-                    placeholder="Optional style note"
+                    placeholder="Describe the voice (e.g. warm low female, British accent)"
                     disabled={busy}
                   />
-                </div>
-              )}
+                ) : (
+                  <div className="tts-clone-row">
+                    <input
+                      ref={sampleInputRef}
+                      type="file"
+                      accept={cloneSampleParam?.accept || WAV_FILE_ACCEPT}
+                      onChange={handlePickSample}
+                      style={{ display: 'none' }}
+                    />
+                    <button className="tts-clone-upload" onClick={() => sampleInputRef.current?.click()} disabled={busy}>
+                      {cloneWav ? 'Change sample' : 'Upload voice sample'}
+                    </button>
+                    {cloneWav && (
+                      <span className="tts-clone-file">
+                        <span className="tts-clone-name" title={cloneWav.name}>{cloneWav.name}</span>
+                        <button className="tts-clone-remove" onClick={() => setCloneWav(null)} disabled={busy} title="Remove sample">×</button>
+                      </span>
+                    )}
+                    <input
+                      className="form-input"
+                      value={voiceDescription}
+                      onChange={(e) => setVoiceDescription(e.target.value)}
+                      placeholder="Optional style note"
+                      disabled={busy}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
+          ) : (
+            <Combobox defaultValue={tts.currentVoice} optionsList={voiceOptions} onChangeFunc={tts.setVoice} position='top' placeholder='Select a voice...'/>
+          )}
+          {advancedSpeechParams.length > 0 && (
             <details className="tts-speech-params">
               <summary>Generation parameters</summary>
               <div className="tts-speech-params-grid">
-                {MOSS_SPEECH_PARAMS.map(param => (
-                  <label key={param.key} className="tts-speech-param">
+                {advancedSpeechParams.map(param => (
+                  <label key={param.name} className="tts-speech-param" title={param.help || undefined}>
                     <span>{param.label}</span>
                     <input
                       type="number"
-                      min={param.min}
-                      max={param.max}
-                      step={param.step}
-                      value={speechParams[param.key] ?? ''}
+                      min={param.min ?? undefined}
+                      max={param.max ?? undefined}
+                      step={param.step ?? undefined}
+                      value={speechParams[param.name] ?? ''}
                       onChange={(e) => {
                         const raw = e.target.value;
                         setSpeechParams(previous => {
                           const next = { ...previous };
-                          if (raw === '') delete next[param.key];
-                          else next[param.key] = Number(raw);
+                          if (raw === '') delete next[param.name];
+                          else next[param.name] = Number(raw);
                           return next;
                         });
                       }}
@@ -359,9 +390,6 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                 ))}
               </div>
             </details>
-            </div>
-          ) : (
-            <Combobox defaultValue={tts.currentVoice} optionsList={voiceOptions} onChangeFunc={tts.setVoice} position='top' placeholder='Select a voice...'/>
           )}
         </div>
         <div className="chat-input-wrapper">

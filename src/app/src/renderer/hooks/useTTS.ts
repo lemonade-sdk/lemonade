@@ -3,8 +3,10 @@ import { LOADING, PAUSED, PLAYING } from '../AudioButton';
 import { AppSettings } from '../utils/appSettings';
 import { serverFetch } from '../utils/serverConfig';
 import { ensureModelReady, DownloadAbortError } from '../utils/backendInstaller';
-import { ModelsData, getTtsVoiceMode } from '../utils/modelData';
+import { getTtsVoiceMode } from '../utils/generationParams';
+import { ModelsData } from '../utils/modelData';
 import { MessageContent } from '../utils/chatTypes';
+import { useSystem } from './useSystem';
 
 export interface SpeechOptions {
   model?: string;
@@ -13,10 +15,15 @@ export interface SpeechOptions {
 }
 
 export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) {
+  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
   const [currentVoice, setVoice] = useState('');
   const [audioState, setAudioState] = useState<number>(0);
   const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    void ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
 
   // Sync voice with settings
   useEffect(() => {
@@ -155,7 +162,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     }
 
     if (role && appSettings) {
-      if (getTtsVoiceMode(modelsData?.[appSettings.tts.model.value]) === 'clone') {
+      if (getTtsVoiceMode(systemInfo, modelsData?.[appSettings.tts.model.value]) === 'clone') {
         referenceWavB64 = (role === 'assistant')
           ? appSettings.tts.assistantVoiceSample.value
           : appSettings.tts.userVoiceSample.value;

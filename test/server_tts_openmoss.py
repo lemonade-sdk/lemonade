@@ -10,9 +10,11 @@ Usage:
 """
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import io
 import math
 import struct
+import threading
 import wave
 
 import requests
@@ -266,7 +268,41 @@ class OpenMossTTSTests(ServerTestBase):
         self._assert_wav_response(response, "Voice design")
         print(f"[OK] Voice design produced a clip ({len(response.content)} bytes)")
 
-    def test_011_streaming_wav(self):
+    def test_011_concurrent_speech_and_voice_design(self):
+        """A voice-design swap waits for an in-flight speech request."""
+        model = get_test_model("tts")
+        barrier = threading.Barrier(2)
+        payloads = [
+            {
+                "model": model,
+                "input": "A concurrent speech request must survive the voice model swap. "
+                * 20,
+                "max_audio_frames": 300,
+            },
+            {
+                "model": model,
+                "input": "This request designs a voice without interrupting its neighbor.",
+                "voice_design_description": (
+                    "a bright, precise documentary narrator with a gentle cadence"
+                ),
+            },
+        ]
+
+        def send(payload):
+            barrier.wait(timeout=TIMEOUT_DEFAULT)
+            return requests.post(
+                f"{self.base_url}/audio/speech",
+                json=payload,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(send, payloads))
+
+        self._assert_wav_response(responses[0], "Concurrent plain speech")
+        self._assert_wav_response(responses[1], "Concurrent voice design")
+
+    def test_012_streaming_wav(self):
         """A wav-only backend streams its own container instead of being rejected."""
         model = get_test_model("tts")
         payload = {
@@ -308,7 +344,7 @@ class OpenMossTTSTests(ServerTestBase):
 
         print(f"[OK] Streamed WAV received ({len(body)} bytes)")
 
-    def test_012_voice_field_does_not_trigger_design(self):
+    def test_013_voice_field_does_not_trigger_design(self):
         """A plain `voice` value must speak, not design a voice by that name.
 
         `voice` keeps its OpenAI-compatible meaning and is forwarded as a style

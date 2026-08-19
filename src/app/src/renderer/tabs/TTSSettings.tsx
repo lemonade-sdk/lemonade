@@ -2,7 +2,8 @@ import React from 'react';
 import { AppSettings, DEFAULT_TTS_SETTINGS } from '../utils/appSettings';
 import Combobox from '../components/Combobox';
 import { useModels } from '../hooks/useModels';
-import { getTtsVoiceMode } from '../utils/modelData';
+import { useSystem } from '../hooks/useSystem';
+import { getTtsVoiceMode } from '../utils/generationParams';
 import { readWavFileAsBase64, WAV_FILE_ACCEPT } from '../utils/wav';
 
 interface TTSSettingsProps {
@@ -29,10 +30,15 @@ export const voiceOptions: string[] = [
 
 const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, onResetFunc }) => {
   const { downloadedModels, modelsData } = useModels();
+  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
   const [userVoice, setUserVoice] = React.useState<string>(settings.tts['userVoice'].value);
   const [assistantVoice, setAssistantVoice] = React.useState<string>(settings.tts['assistantVoice'].value);
   const userSampleRef = React.useRef<HTMLInputElement>(null);
   const assistantSampleRef = React.useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    void ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
 
   const ttsModelOptions = React.useMemo(() => {
     const ids = downloadedModels
@@ -42,7 +48,7 @@ const TTSSettings: React.FC<TTSSettingsProps> = ({ settings, onValueChangeFunc, 
     return current && !ids.includes(current) ? [current, ...ids] : ids;
   }, [downloadedModels, settings.tts.model.value]);
 
-  const voiceMode = getTtsVoiceMode(modelsData?.[settings.tts.model.value]);
+  const voiceMode = getTtsVoiceMode(systemInfo, modelsData?.[settings.tts.model.value]);
 
   const [sampleError, setSampleError] = React.useState<string>('');
 

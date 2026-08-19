@@ -3485,7 +3485,7 @@ input::-webkit-calendar-picker-indicator {
     box-sizing: border-box;
 }
 
-.tts-openmoss-panel {
+.tts-generation-panel {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -3493,7 +3493,7 @@ input::-webkit-calendar-picker-indicator {
     min-width: 0;
 }
 
-.tts-openmoss-controls {
+.tts-generation-controls {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -3529,7 +3529,7 @@ input::-webkit-calendar-picker-indicator {
     min-width: 0;
 }
 
-.tts-openmoss-controls .form-input {
+.tts-generation-controls .form-input {
     flex: 1;
     min-width: 0;
 }

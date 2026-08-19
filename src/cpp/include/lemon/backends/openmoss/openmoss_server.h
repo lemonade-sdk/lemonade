@@ -2,11 +2,12 @@
 
 #include "lemon/backends/backend_registry.h"
 
-#include "lemon/wrapped_server.h"
-#include "lemon/server_capabilities.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/server_capabilities.h"
+#include "lemon/wrapped_server.h"
 #include <map>
 #include <mutex>
+#include <shared_mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -56,7 +57,7 @@ private:
     std::string voicegen_path_;
     std::map<std::string, std::string> reference_cache_;
     std::vector<std::pair<std::string, std::string>> env_vars_;
-    std::mutex design_mutex_;
+    std::shared_mutex process_mutex_;
 };
 
 namespace openmoss {

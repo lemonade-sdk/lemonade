@@ -67,14 +67,6 @@ export interface ModelsData {
   [key: string]: ModelInfo;
 }
 
-export type TtsVoiceMode = 'fixed' | 'clone';
-
-export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
-  if (!info) return 'fixed';
-  if (info.recipe === 'openmoss') return 'clone';
-  return 'fixed';
-};
-
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 };

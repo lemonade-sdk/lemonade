@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
+import { useSystem } from '../../hooks/useSystem';
+import {
+  generationParamDefault,
+  generationParams,
+  resolveGenerationSeed,
+} from '../../utils/generationParams';
 import { ModelsData } from '../../utils/modelData';
 import { AppSettings } from '../../utils/appSettings';
 import { serverFetch } from '../../utils/serverConfig';
@@ -43,6 +49,7 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality, runPreFlight, reset, showError,
 }) => {
   const { selectedModel, modelsData } = useModels();
+  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
 
   const [prompt, setPrompt] = useState('');
   const [lyrics, setLyrics] = useState('');
@@ -55,15 +62,39 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
   clipsRef.current = clips;
 
   useEffect(() => () => { clipsRef.current.forEach(c => URL.revokeObjectURL(c.url)); }, []);
+  useEffect(() => {
+    void ensureSystemInfoLoaded();
+  }, [ensureSystemInfoLoaded]);
 
   const audioRecipe = modelsData?.[selectedModel]?.recipe || '';
   const audioDefaults = modelsData?.[selectedModel]?.audio_defaults;
-  const isMusic = audioRecipe === 'acestep';
-  const isOpenMossSfx = audioRecipe === 'openmoss';
+  const audioParams = React.useMemo(
+    () => generationParams(systemInfo, audioRecipe, 'audio-generation'),
+    [systemInfo, audioRecipe],
+  );
+  const durationParam = audioParams.find(param => param.name === 'duration' || param.name === 'seconds');
+  const lyricsParam = audioParams.find(param => param.name === 'lyrics');
+  const vocalLanguageParam = audioParams.find(param => param.name === 'vocal_language');
+  const negativePromptParam = audioParams.find(param => param.name === 'negative_prompt');
+  const seedParam = audioParams.find(param => param.typeName === 'SEED');
+  const isMusic = Boolean(lyricsParam);
+  const durationMin = durationParam?.min ?? 1;
+  const durationMax = durationParam?.max ?? 600;
+  const durationStep = durationParam?.step ?? 1;
   const audioDefaultsKey = JSON.stringify(audioDefaults || {});
+  const audioParamsKey = JSON.stringify(audioParams);
   useEffect(() => {
-    setDuration(typeof audioDefaults?.seconds === 'number' ? audioDefaults.seconds : (isMusic ? 150 : 10));
-  }, [audioRecipe, audioDefaultsKey]);
+    const modelDefaults = audioDefaults || {};
+    const declaredDuration = durationParam
+      ? generationParamDefault(durationParam, modelDefaults)
+      : undefined;
+    setDuration(typeof declaredDuration === 'number' ? declaredDuration : 10);
+
+    if (vocalLanguageParam) {
+      const declaredLanguage = generationParamDefault(vocalLanguageParam, modelDefaults);
+      setVocalLanguage(typeof declaredLanguage === 'string' ? declaredLanguage : 'en');
+    }
+  }, [audioRecipe, audioDefaultsKey, audioParamsKey]);
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isBusy || !selectedModel) return;
@@ -74,25 +105,34 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
     try {
       const trimmedLyrics = lyrics.trim();
       const trimmedNegative = negativePrompt.trim();
+      const modelDefaults = audioDefaults || {};
+      const generationOptions: Record<string, unknown> = {};
+      for (const param of audioParams) {
+        if (param === durationParam || (param.typeName !== 'NUMBER' && param.typeName !== 'INT')) continue;
+        const value = generationParamDefault(param, modelDefaults);
+        if (typeof value === 'number') generationOptions[param.name] = value;
+      }
+      if (negativePromptParam && trimmedNegative) {
+        generationOptions[negativePromptParam.name] = trimmedNegative;
+      }
+      if (seedParam) {
+        generationOptions[seedParam.name] = resolveGenerationSeed(seedParam);
+      }
+      if (lyricsParam && trimmedLyrics) {
+        generationOptions[lyricsParam.name] = lyrics;
+        if (vocalLanguageParam) {
+          generationOptions[vocalLanguageParam.name] = vocalLanguage.trim() || 'en';
+        }
+      }
+
       const response = await serverFetch('/audio/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: selectedModel,
           prompt,
-          duration,
-          ...(typeof audioDefaults?.steps === 'number' ? { steps: audioDefaults.steps } : {}),
-          ...(typeof audioDefaults?.cfg_scale === 'number' ? { cfg_scale: audioDefaults.cfg_scale } : {}),
-          ...(isOpenMossSfx
-            ? {
-              ...(typeof audioDefaults?.sigma_shift === 'number' ? { sigma_shift: audioDefaults.sigma_shift } : {}),
-              ...(trimmedNegative ? { negative_prompt: trimmedNegative } : {}),
-              seed: Math.floor(Math.random() * 0xffffffff),
-            }
-            : {}),
-          ...(isMusic && trimmedLyrics
-            ? { lyrics, vocal_language: vocalLanguage.trim() || 'en' }
-            : {}),
+          [durationParam?.name || 'duration']: duration,
+          ...generationOptions,
         }),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -185,7 +225,7 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
                 placeholder="Describe the music or sound effect to generate..."
                 rows={1}
               />
-              {isOpenMossSfx && (
+              {negativePromptParam && (
                 <input
                   type="text"
                   className="chat-input"
@@ -210,10 +250,14 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
                 Duration
                 <input
                   type="number"
-                  min={1}
-                  max={600}
+                  min={durationMin}
+                  max={durationMax}
+                  step={durationStep}
                   value={duration}
-                  onChange={(e) => setDuration(Math.max(1, Math.min(600, Number(e.target.value) || 1)))}
+                  onChange={(e) => setDuration(Math.max(
+                    durationMin,
+                    Math.min(durationMax, Number(e.target.value) || durationMin),
+                  ))}
                   disabled={isBusy}
                 /> s
               </label>

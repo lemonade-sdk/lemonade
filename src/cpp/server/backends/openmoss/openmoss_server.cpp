@@ -1,5 +1,6 @@
 #include "lemon/backends/openmoss/openmoss_server.h"
 #include "lemon/backends/openmoss/openmoss.h"
+#include "lemon/backends/openmoss/openmoss_text.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -119,7 +120,7 @@ void OpenMossServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
     }
 
-    std::lock_guard<std::mutex> lock(design_mutex_);
+    std::unique_lock<std::shared_mutex> lock(process_mutex_);
     exe_path_ = exe_path;
     env_vars_ = env_vars;
     model_path_ = model_path;
@@ -179,13 +180,12 @@ void OpenMossServer::start_speech_process() {
 }
 
 void OpenMossServer::unload() {
-    std::lock_guard<std::mutex> lock(design_mutex_);
+    std::unique_lock<std::shared_mutex> lock(process_mutex_);
     stop_speech_process();
     reference_cache_.clear();
 }
 
 std::string OpenMossServer::design_reference_sample(const std::string& voice_description) {
-    std::lock_guard<std::mutex> lock(design_mutex_);
     auto cached = reference_cache_.find(voice_description);
     if (cached != reference_cache_.end()) {
         return cached->second;
@@ -280,24 +280,34 @@ json OpenMossServer::apply_voice_design(const json& request) {
 }
 
 void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) {
-    json forwarded = apply_voice_design(request);
+    const std::string description = string_field(request, kVoiceDesignField);
+    const bool needs_voice_design = !description.empty() && !request.contains("reference_wav_b64");
+    auto forward = [&]() {
+        json forwarded = apply_voice_design(request);
 
-    if (!forwarded.contains("max_audio_frames") && !forwarded.contains("token_count")) {
-        const std::string input = string_field(forwarded, "input");
-        if (!input.empty()) {
-            int words = 1;
-            for (char c : input) {
-                if (c == ' ' || c == '\n' || c == '\t') ++words;
+        if (!forwarded.contains("max_audio_frames") && !forwarded.contains("token_count")) {
+            const std::string input = string_field(forwarded, "input");
+            if (!input.empty()) {
+                forwarded["max_audio_frames"] = openmoss::detail::estimate_max_audio_frames(input);
             }
-            const int tokens = std::max(40, std::min(1000, words * 5));
-            forwarded["max_audio_frames"] = std::max(48, tokens * 3 / 2);
         }
+
+        forward_streaming_request(
+            "/v1/audio/speech", forwarded.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
+    };
+
+    if (needs_voice_design) {
+        std::unique_lock<std::shared_mutex> lock(process_mutex_);
+        forward();
+        return;
     }
 
-    forward_streaming_request("/v1/audio/speech", forwarded.dump(), sink, /*sse=*/false, /*timeout_seconds=*/600);
+    std::shared_lock<std::shared_mutex> lock(process_mutex_);
+    forward();
 }
 
 void OpenMossServer::audio_generations(const json& request, httplib::DataSink& sink) {
+    std::shared_lock<std::shared_mutex> lock(process_mutex_);
     json body;
     body["prompt"] = string_field(request, "prompt");
     for (const char* key : {"seconds", "steps", "cfg_scale", "sigma_shift",

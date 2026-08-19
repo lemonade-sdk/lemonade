@@ -49,6 +49,22 @@ export interface RecipeOptionSchema {
   group: string;
 }
 
+export interface GenerationParamSchema {
+  name: string;
+  label: string;
+  type_name: string;
+  default: unknown;
+  min: unknown;
+  max: unknown;
+  step: unknown;
+  enum_values: unknown;
+  help: string;
+  group: string;
+  exclusive_group: string;
+  accept: string;
+  random_sentinel: unknown;
+}
+
 export interface Recipe {
   default_backend?: string;
   // Descriptor metadata (generated from the C++ backend descriptors).
@@ -56,6 +72,7 @@ export interface Recipe {
   selectable_backend?: boolean;
   uses_ctx_size?: boolean;
   options?: RecipeOptionSchema[];
+  generation_params?: Record<string, GenerationParamSchema[]>;
   backends: {
     [backendName: string]: BackendInfo;
   };
