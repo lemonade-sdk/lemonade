@@ -133,6 +133,70 @@ int main() {
     }
 
     {
+        // The clobbering case: a re-install that doesn't repeat the auth flags
+        // (the desktop add-provider form, or a base-url-only CLI re-install)
+        // must leave the configured header alone rather than resetting it to
+        // Authorization/Bearer and silently 401ing against the gateway.
+        CloudProviderRegistry::InstallOptions options;
+        options.auth_header_name = "X-Api-Key";
+        options.auth_header_prefix = "";
+        options.allow_insecure_http = true;
+
+        CloudProviderRegistry registry;
+        registry.install("acme", "http://gateway.example.com/v1", options);
+
+        r.check(registry.install("acme", "http://gateway.example.com/v2"),
+                "re-install with only a new base_url -> reports a change");
+        const auto header = registry.auth_header_for("acme");
+        r.check(header.name == "X-Api-Key" && header.prefix.empty(),
+                "re-install without auth options -> custom header preserved");
+        r.check(registry.allow_insecure_http_for("acme"),
+                "re-install without allow_insecure_http -> flag preserved");
+        r.check(registry.base_url_for("acme") == "http://gateway.example.com/v2",
+                "re-install without auth options -> base_url still updated");
+    }
+
+    {
+        // Header values reach libcurl as a header line, so anything that could
+        // terminate that line or blank out the name has to be refused at the
+        // boundary rather than sanitized on the way out.
+        r.check(CloudProviderRegistry::validate_auth_header_name("X-Api-Key").empty(),
+                "validate_auth_header_name() accepts a token");
+        r.check(!CloudProviderRegistry::validate_auth_header_name("").empty(),
+                "validate_auth_header_name() rejects empty");
+        r.check(!CloudProviderRegistry::validate_auth_header_name("X-Api-Key\r\nX: y").empty(),
+                "validate_auth_header_name() rejects CRLF injection");
+        r.check(!CloudProviderRegistry::validate_auth_header_name("X Api Key").empty(),
+                "validate_auth_header_name() rejects spaces");
+        r.check(!CloudProviderRegistry::validate_auth_header_name("X:Api").empty(),
+                "validate_auth_header_name() rejects a colon");
+
+        r.check(CloudProviderRegistry::validate_auth_header_prefix("Bearer ").empty(),
+                "validate_auth_header_prefix() accepts the default");
+        r.check(CloudProviderRegistry::validate_auth_header_prefix("").empty(),
+                "validate_auth_header_prefix() accepts empty");
+        r.check(!CloudProviderRegistry::validate_auth_header_prefix("a\r\nX: y").empty(),
+                "validate_auth_header_prefix() rejects CRLF injection");
+        r.check(!CloudProviderRegistry::validate_auth_header_prefix("a\nb").empty(),
+                "validate_auth_header_prefix() rejects a bare newline");
+    }
+
+    {
+        // config.json is hand-editable, so a malformed value on disk must fall
+        // back to the default instead of reaching curl.
+        CloudProviderRegistry registry;
+        registry.load_from_config(json::array({
+            {{"name", "acme"},
+             {"base_url", "https://gateway.example.com/v1"},
+             {"auth_header_name", "X-Bad\r\nInjected: 1"},
+             {"auth_header_prefix", "Bad\r\n"}}
+        }));
+        const auto header = registry.auth_header_for("acme");
+        r.check(header.name == "Authorization" && header.prefix == "Bearer ",
+                "load_from_config() rejects injected header values -> defaults");
+    }
+
+    {
         // The insecure-http opt-in path must not disturb the auth header: it
         // is a separate setter precisely so a partial update cannot silently
         // reset unrelated fields back to their defaults.

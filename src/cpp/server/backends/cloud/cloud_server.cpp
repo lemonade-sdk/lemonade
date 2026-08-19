@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <curl/curl.h>
+#include <map>
 #include <string_view>
 #include <utility>
 #include <lemon/utils/aixlog.hpp>
@@ -23,6 +24,11 @@ namespace {
 
 bool id_contains(const std::string& id, const std::string& needle) {
     return id.find(needle) != std::string::npos;
+}
+
+std::map<std::string, std::string>
+auth_headers(const CloudProviderRegistry::AuthHeader& header, const std::string& api_key) {
+    return {{header.name, header.prefix + api_key}};
 }
 
 // Id-pattern fallback for /v1/models entries that don't publish capability
@@ -335,9 +341,7 @@ CloudServer::ResolvedCreds CloudServer::resolve_creds() const {
     }
     creds.api_key = registry_->resolve_key(provider_);
     creds.base_url = registry_->base_url_for(provider_);
-    const auto auth_header = registry_->auth_header_for(provider_);
-    creds.header_name = auth_header.name;
-    creds.header_prefix = auth_header.prefix;
+    creds.auth_header = registry_->auth_header_for(provider_);
 
     // The registry already normalizes base_url on install, but a defensive
     // strip here keeps the contract local — anyone tracing post_with_auth
@@ -438,9 +442,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
         return missing_creds_error();
     }
     std::string url = creds.base_url + path;
-    std::map<std::string, std::string> headers = {
-        {creds.header_name, creds.header_prefix + creds.api_key}
-    };
+    const auto headers = auth_headers(creds.auth_header, creds.api_key);
 
     try {
         auto response = utils::HttpClient::post(
@@ -578,9 +580,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     std::string url = creds.base_url + suffix;
 
-    std::map<std::string, std::string> headers = {
-        {creds.header_name, creds.header_prefix + creds.api_key}
-    };
+    const auto headers = auth_headers(creds.auth_header, creds.api_key);
 
     try {
         if (sse) {
@@ -851,8 +851,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
                                                      bool allow_insecure_http,
-                                                     const std::string& auth_header_name,
-                                                     const std::string& auth_header_prefix) {
+                                                     const CloudProviderRegistry::AuthHeader& auth_header) {
     std::vector<ModelInfo> models;
     if (api_key.empty()) {
         return models;
@@ -870,9 +869,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         normalized_base.pop_back();
     }
     std::string url = normalized_base + "/models";
-    std::map<std::string, std::string> headers = {
-        {auth_header_name, auth_header_prefix + api_key}
-    };
+    const auto headers = auth_headers(auth_header, api_key);
 
     const auto policy = discovery_policy(normalized_base, allow_insecure_http);
 
@@ -1018,10 +1015,9 @@ public:
                 continue;
             }
             try {
-                for (auto& m : CloudServer::discover_models(rec.name, api_key, rec.base_url,
-                                                            rec.allow_insecure_http,
-                                                            rec.auth_header_name,
-                                                            rec.auth_header_prefix)) {
+                for (auto& m : CloudServer::discover_models(
+                         rec.name, api_key, rec.base_url, rec.allow_insecure_http,
+                         {rec.auth_header_name, rec.auth_header_prefix})) {
                     if (m.recipe == "cloud" && !m.model_name.empty()) {
                         out.push_back(std::move(m));
                     }

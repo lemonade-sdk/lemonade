@@ -183,10 +183,10 @@ struct CliConfig {
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
-    // Empty means "let the server apply its Authorization/Bearer default".
-    std::string cloud_auth_header_name;
-    std::string cloud_auth_header_prefix;
-    bool cloud_auth_header_prefix_set = false;
+    // Unset means "don't send the field", so the server keeps the provider's
+    // current value instead of resetting it to the Authorization/Bearer default.
+    std::optional<std::string> cloud_auth_header_name;
+    std::optional<std::string> cloud_auth_header_prefix;
 
     // Alias management options
     std::string alias_name;
@@ -1319,8 +1319,7 @@ int main(int argc, char* argv[]) {
     cloud_install_cmd->add_option("--auth-header-name", config.cloud_auth_header_name,
         "Custom auth header name, for gateways that don't use 'Authorization' (default: Authorization)")
         ->type_name("HEADER");
-    CLI::Option* cloud_auth_header_prefix_opt = cloud_install_cmd->add_option(
-        "--auth-header-prefix", config.cloud_auth_header_prefix,
+    cloud_install_cmd->add_option("--auth-header-prefix", config.cloud_auth_header_prefix,
         "Custom auth header value prefix; pass an empty string for gateways with no "
         "'Bearer ' prefix (default: 'Bearer ')")
         ->type_name("PREFIX");
@@ -1495,7 +1494,6 @@ int main(int argc, char* argv[]) {
     }
 
     config.model_source_explicit = pull_source_opt->count() > 0;
-    config.cloud_auth_header_prefix_set = cloud_auth_header_prefix_opt->count() > 0;
 
     // Parse URL scheme and override host, port, is_ssl
     {
@@ -1619,7 +1617,6 @@ int main(int argc, char* argv[]) {
                                                   config.cloud_api_key,
                                                   config.cloud_allow_insecure_http,
                                                   config.cloud_auth_header_name,
-                                                  config.cloud_auth_header_prefix_set,
                                                   config.cloud_auth_header_prefix);
         }
         if (cloud_uninstall_cmd->count() > 0) {

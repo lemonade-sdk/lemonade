@@ -2,6 +2,7 @@
 
 #include "lemon/backends/backend_registry.h"
 
+#include "lemon/cloud_provider_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
@@ -9,8 +10,6 @@
 #include <vector>
 
 namespace lemon {
-
-class CloudProviderRegistry;
 
 namespace backends {
 
@@ -85,12 +84,15 @@ public:
     /// labels, downloaded=true. Empty on any failure (network, auth,
     /// parse) — failures are logged but never thrown so cache build
     /// can continue with other providers.
-    static std::vector<ModelInfo> discover_models(const std::string& provider,
-                                                   const std::string& api_key,
-                                                   const std::string& base_url,
-                                                   bool allow_insecure_http = false,
-                                                   const std::string& auth_header_name = "Authorization",
-                                                   const std::string& auth_header_prefix = "Bearer ");
+    /// `auth_header` is expected to come from CloudProviderRegistry, which
+    /// validates both fields on the way in — that is what keeps a configured
+    /// value from injecting extra lines into the outgoing request.
+    static std::vector<ModelInfo> discover_models(
+        const std::string& provider,
+        const std::string& api_key,
+        const std::string& base_url,
+        bool allow_insecure_http = false,
+        const CloudProviderRegistry::AuthHeader& auth_header = {});
 
     /// Trust boundary for a discovery request. The AllowInsecureHttp opt-in
     /// only applies to plaintext http:// providers; an https:// provider stays
@@ -103,8 +105,7 @@ private:
     struct ResolvedCreds {
         std::string api_key;
         std::string base_url;
-        std::string header_name = "Authorization";
-        std::string header_prefix = "Bearer ";
+        CloudProviderRegistry::AuthHeader auth_header;
         bool insecure_http_blocked = false;
         utils::HttpSecurityPolicy policy =
             utils::HttpSecurityPolicy::ExternalHttpsOnly;

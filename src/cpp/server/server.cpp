@@ -6627,6 +6627,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"base_url", rec.base_url},
                 {"allow_insecure_http", rec.allow_insecure_http},
                 {"auth_header_name", rec.auth_header_name},
+                {"auth_header_prefix", rec.auth_header_prefix},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -7569,50 +7570,74 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //    auth_header_name: "Authorization",   // optional, default shown
         //    auth_header_prefix: "Bearer ",       // optional, default shown
         //    api_key: "..."}  // optional
+        //
+        // Every optional field is applied only when present, so a re-install
+        // that omits it (the desktop add-provider form posts just backend /
+        // provider / base_url / api_key) keeps the stored value.
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");
             const std::string api_key = request_json.value("api_key", "");
-            const std::string auth_header_name =
-                request_json.value("auth_header_name", std::string("Authorization"));
-            const std::string auth_header_prefix =
-                request_json.value("auth_header_prefix", std::string("Bearer "));
-            bool allow_insecure_http = false;
-            if (request_json.contains("allow_insecure_http")) {
-                if (!request_json["allow_insecure_http"].is_boolean()) {
-                    res.status = 400;
-                    nlohmann::json error = {{"error", {
-                        {"message", "allow_insecure_http must be a boolean when provided"},
-                        {"type", "invalid_request_error"}}}};
-                    res.set_content(error.dump(), "application/json");
-                    return;
-                }
-                allow_insecure_http = request_json["allow_insecure_http"].get<bool>();
-            }
-            if (provider.empty() || base_url.empty()) {
+
+            auto reject = [&](const std::string& message) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"message", message},
                     {"type", "invalid_request_error"}}}};
                 res.set_content(error.dump(), "application/json");
+            };
+            if (provider.empty() || base_url.empty()) {
+                reject("Cloud install requires 'provider' and 'base_url' string fields");
                 return;
             }
             if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", err},
-                    {"type", "invalid_request_error"}}}};
-                res.set_content(error.dump(), "application/json");
+                reject(err);
                 return;
             }
             if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", err},
-                    {"type", "invalid_request_error"}}}};
-                res.set_content(error.dump(), "application/json");
+                reject(err);
                 return;
             }
+
+            CloudProviderRegistry::InstallOptions install_options;
+            auto read_header_field = [&](const char* field,
+                                         std::string (*validate)(const std::string&),
+                                         std::optional<std::string>& out) {
+                if (!request_json.contains(field)) return true;
+                if (!request_json[field].is_string()) {
+                    reject(std::string(field) + " must be a string when provided");
+                    return false;
+                }
+                auto value = request_json[field].get<std::string>();
+                if (auto err = validate(value); !err.empty()) {
+                    reject(err);
+                    return false;
+                }
+                out = std::move(value);
+                return true;
+            };
+            if (!read_header_field("auth_header_name",
+                                   CloudProviderRegistry::validate_auth_header_name,
+                                   install_options.auth_header_name) ||
+                !read_header_field("auth_header_prefix",
+                                   CloudProviderRegistry::validate_auth_header_prefix,
+                                   install_options.auth_header_prefix)) {
+                return;
+            }
+            if (request_json.contains("allow_insecure_http")) {
+                if (!request_json["allow_insecure_http"].is_boolean()) {
+                    reject("allow_insecure_http must be a boolean when provided");
+                    return;
+                }
+                install_options.allow_insecure_http =
+                    request_json["allow_insecure_http"].get<bool>();
+            }
+            // The http:// opt-in gate below reflects the effective state: an
+            // omitted flag on a re-install keeps whatever was stored.
+            const bool allow_insecure_http =
+                install_options.allow_insecure_http.value_or(
+                    cloud_registry_->allow_insecure_http_for(provider));
+
             const auto env_state = cloud_registry_->auth_state(provider);
             if (CloudProviderRegistry::is_http_base_url(base_url) &&
                 !allow_insecure_http &&
@@ -7629,10 +7654,6 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
             LOG(INFO, "Server") << "Installing cloud provider '" << provider
                                   << "' with base_url " << base_url << std::endl;
-            CloudProviderRegistry::InstallOptions install_options;
-            install_options.allow_insecure_http = allow_insecure_http;
-            install_options.auth_header_name = auth_header_name;
-            install_options.auth_header_prefix = auth_header_prefix;
             cloud_registry_->install(provider, base_url, install_options);
             persist_cloud_providers();
 
@@ -7650,6 +7671,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             // call /v1/system-info later to see how many models showed up.
             size_t models_after = model_manager_->refresh_cloud_models(provider);
             const auto state = cloud_registry_->auth_state(provider);
+            const auto auth_header = cloud_registry_->auth_header_for(provider);
 
             nlohmann::json response = {
                 {"status", "success"},
@@ -7657,7 +7679,8 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"provider", provider},
                 {"base_url", cloud_registry_->base_url_for(provider)},
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
-                {"auth_header_name", cloud_registry_->auth_header_for(provider).name},
+                {"auth_header_name", auth_header.name},
+                {"auth_header_prefix", auth_header.prefix},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},

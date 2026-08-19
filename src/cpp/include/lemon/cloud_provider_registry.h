@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -37,6 +38,13 @@ public:
         // the previously hardcoded Authorization/Bearer behavior.
         std::string auth_header_name = "Authorization";
         std::string auth_header_prefix = "Bearer ";
+
+        bool operator==(const Record& other) const {
+            return name == other.name && base_url == other.base_url &&
+                   allow_insecure_http == other.allow_insecure_http &&
+                   auth_header_name == other.auth_header_name &&
+                   auth_header_prefix == other.auth_header_prefix;
+        }
     };
 
     struct AuthState {
@@ -55,21 +63,25 @@ public:
     // "cloud_providers" field. Excludes runtime keys by construction.
     nlohmann::json to_config_array() const;
 
-    // Everything install() can set on a record, so callers name each field
-    // instead of passing a run of positional strings.
+    // Everything install() can set on a record. An unset field means "leave
+    // this alone": callers that only know about base_url (the desktop app's
+    // add-provider form, a re-install that doesn't repeat the auth flags) must
+    // not clobber settings they never asked about.
     struct InstallOptions {
-        bool allow_insecure_http = false;
-        std::string auth_header_name = "Authorization";
-        std::string auth_header_prefix = "Bearer ";
+        std::optional<bool> allow_insecure_http;
+        std::optional<std::string> auth_header_name;
+        std::optional<std::string> auth_header_prefix;
     };
 
     // Idempotent. Adds the provider if absent, updates base_url if present.
-    // Normalizes base_url (trims trailing slash). Returns true if the stored
-    // record changed, false if it was already identical.
+    // Normalizes base_url (trims trailing slash). Unset options keep the
+    // existing record's value, or the Record default for a new record.
+    // Returns true if the stored record changed, false if it was already
+    // identical. Invalid auth header values are rejected by the caller-facing
+    // validators below; passing one here stores it unchecked.
     bool install(const std::string& provider,
                  const std::string& base_url,
-                 const InstallOptions& options);
-    bool install(const std::string& provider, const std::string& base_url);
+                 const InstallOptions& options = {});
 
     // Opts an already-installed provider into plaintext-HTTP key transmission
     // without disturbing any other field. Returns false if not installed.
@@ -133,6 +145,20 @@ public:
     // spaces / dots also break dot-namespaced model ids. Returns empty
     // string on OK, a human-readable error message otherwise.
     static std::string validate_provider_name(const std::string& provider);
+
+    // Validates a candidate auth header name: a non-empty RFC 7230 token.
+    // Rejecting separators and CTLs (notably CR/LF) is what keeps a
+    // configured value from injecting extra header lines into every forwarded
+    // request, and rejecting empty keeps a malformed ": Bearer <key>" line —
+    // which sends the request out effectively unauthenticated — off the wire.
+    // Returns empty string on OK, a human-readable error message otherwise.
+    static std::string validate_auth_header_name(const std::string& name);
+
+    // Validates a candidate auth header value prefix. Empty is valid and
+    // meaningful (gateways that expect the bare key); only characters a header
+    // value cannot carry are rejected.
+    // Returns empty string on OK, a human-readable error message otherwise.
+    static std::string validate_auth_header_prefix(const std::string& prefix);
 
     // Validates a candidate base URL: must be https:// or http://. Plain HTTP
     // is allowed because custom backends can legitimately live on a trusted LAN,

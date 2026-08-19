@@ -25,6 +25,21 @@ bool starts_with_scheme(const std::string& value, const std::string& scheme) {
     return to_lower_copy(value).compare(0, scheme.size(), scheme) == 0;
 }
 
+// RFC 7230 tchar.
+bool is_token_char(unsigned char c) {
+    return std::isalnum(c) != 0 ||
+           std::string("!#$%&'*+-.^_`|~").find(static_cast<char>(c)) != std::string::npos;
+}
+
+CloudProviderRegistry::Record
+apply_options(CloudProviderRegistry::Record record,
+              const CloudProviderRegistry::InstallOptions& options) {
+    if (options.allow_insecure_http) record.allow_insecure_http = *options.allow_insecure_http;
+    if (options.auth_header_name) record.auth_header_name = *options.auth_header_name;
+    if (options.auth_header_prefix) record.auth_header_prefix = *options.auth_header_prefix;
+    return record;
+}
+
 } // namespace
 
 std::string CloudProviderRegistry::env_var_name(const std::string& provider) {
@@ -49,6 +64,36 @@ std::string CloudProviderRegistry::validate_provider_name(const std::string& pro
         if (!ok) {
             return "Provider name must match [a-z0-9_-]+ (lowercase, no spaces, slashes, or dots)";
         }
+    }
+    return "";
+}
+
+std::string CloudProviderRegistry::validate_auth_header_name(const std::string& name) {
+    if (name.empty()) {
+        return "Auth header name must not be empty";
+    }
+    if (name.size() > 128) {
+        return "Auth header name must be 128 characters or fewer";
+    }
+    if (!std::all_of(name.begin(), name.end(), is_token_char)) {
+        return "Auth header name must be a valid HTTP header name "
+               "(letters, digits, and !#$%&'*+-.^_`|~)";
+    }
+    return "";
+}
+
+std::string CloudProviderRegistry::validate_auth_header_prefix(const std::string& prefix) {
+    if (prefix.size() > 128) {
+        return "Auth header prefix must be 128 characters or fewer";
+    }
+    // Space and horizontal tab are the only CTL-adjacent characters a header
+    // value may carry, and "Bearer " needs the space.
+    const bool ok = std::all_of(prefix.begin(), prefix.end(), [](unsigned char c) {
+        return c == '\t' || (c >= 0x20 && c != 0x7F);
+    });
+    if (!ok) {
+        return "Auth header prefix must not contain control characters "
+               "(including carriage return or line feed)";
     }
     return "";
 }
@@ -120,11 +165,20 @@ void CloudProviderRegistry::load_from_config(const json& cloud_providers_array) 
         if (entry.contains("allow_insecure_http") && entry["allow_insecure_http"].is_boolean()) {
             r.allow_insecure_http = entry["allow_insecure_http"].get<bool>();
         }
+        // A value that fails validation falls back to the default rather than
+        // disabling the provider: config.json is hand-editable, and a typo'd
+        // header should not silently put a malformed line on the wire.
         if (entry.contains("auth_header_name") && entry["auth_header_name"].is_string()) {
-            r.auth_header_name = entry["auth_header_name"].get<std::string>();
+            auto name = entry["auth_header_name"].get<std::string>();
+            if (validate_auth_header_name(name).empty()) {
+                r.auth_header_name = std::move(name);
+            }
         }
         if (entry.contains("auth_header_prefix") && entry["auth_header_prefix"].is_string()) {
-            r.auth_header_prefix = entry["auth_header_prefix"].get<std::string>();
+            auto prefix = entry["auth_header_prefix"].get<std::string>();
+            if (validate_auth_header_prefix(prefix).empty()) {
+                r.auth_header_prefix = std::move(prefix);
+            }
         }
         if (r.name.empty() || r.base_url.empty()) continue;
         installed_.push_back(std::move(r));
@@ -158,30 +212,20 @@ bool CloudProviderRegistry::install(const std::string& provider,
                                     const std::string& base_url,
                                     const InstallOptions& options) {
     std::unique_lock lock(mu_);
-    std::string normalized = normalize_base_url(base_url);
-    for (auto& r : installed_) {
-        if (r.name == provider) {
-            if (r.base_url == normalized &&
-                r.allow_insecure_http == options.allow_insecure_http &&
-                r.auth_header_name == options.auth_header_name &&
-                r.auth_header_prefix == options.auth_header_prefix) {
-                return false;
-            }
-            r.base_url = normalized;
-            r.allow_insecure_http = options.allow_insecure_http;
-            r.auth_header_name = options.auth_header_name;
-            r.auth_header_prefix = options.auth_header_prefix;
-            return true;
-        }
+    auto it = std::find_if(installed_.begin(), installed_.end(),
+                           [&](const Record& r) { return r.name == provider; });
+    if (it == installed_.end()) {
+        installed_.push_back(apply_options(Record{provider, normalize_base_url(base_url)},
+                                           options));
+        return true;
     }
-    installed_.push_back({provider, normalized, options.allow_insecure_http,
-                          options.auth_header_name, options.auth_header_prefix});
+    Record updated = apply_options(*it, options);
+    updated.base_url = normalize_base_url(base_url);
+    if (updated == *it) {
+        return false;
+    }
+    *it = std::move(updated);
     return true;
-}
-
-bool CloudProviderRegistry::install(const std::string& provider,
-                                    const std::string& base_url) {
-    return install(provider, base_url, InstallOptions{});
 }
 
 bool CloudProviderRegistry::set_allow_insecure_http(const std::string& provider,

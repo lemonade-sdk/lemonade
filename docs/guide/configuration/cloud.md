@@ -59,7 +59,7 @@ lemonade cloud install acme \
   --auth-header-prefix ""
 ```
 
-Both settings persist per provider in `config.json` and apply to discovery and every forwarded request. `lemonade cloud list` prints the header name when it isn't the default.
+Both settings persist per provider in `config.json` and apply to discovery and every forwarded request. `lemonade cloud list` prints the header when either value isn't the default. They are sticky: a later `cloud install` for the same provider that omits these flags keeps the configured header rather than reverting to `Authorization: Bearer`.
 
 ## Using cloud models
 
