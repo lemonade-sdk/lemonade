@@ -4,11 +4,11 @@
  *
  * Part of the master-detail layout introduced in #2355 Slice 1.
  */
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import MarkdownIt from 'markdown-it';
 import DOMPurify from 'dompurify';
-import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow } from '../api';
-import api from '../api';
+import type { ModelInfo, LoadedModel, ModelFileInfo, HFModelResult, ModelRegistryProvider, PullVariantsResult, CloudProviderRow, ModelOptions } from '../api';
+import api, { friendlyErrorMessage } from '../api';
 import { copyTextToClipboard } from '../clipboard';
 import {
   recipeBackendOptionName,
@@ -23,7 +23,7 @@ import {
 } from '../features/backends/recipeMetadata';
 import { capabilityFromModelInfo, capabilityLabel, identityFromModelInfo } from '../modelCapabilities';
 import {
-  modelBaseTuningForModel, loadModelTuning, saveModelTuning, resetModelTuning,
+  modelBaseTuningForModel,
   modelSupportsContextSize, sanitizeRecipeOptions,
   type RecipeOptions,
 } from '../modelConfiguration';
@@ -38,6 +38,18 @@ import {
 } from './WorkspacePanels';
 import { getCollectionComponents, isCollectionModel } from '../features/collections/collectionModels';
 import { TTS_VOICES } from '../features/audio/ttsSettings';
+import {
+  argsMapToString,
+  axisSamplerFields,
+  buildArgsMap,
+  composeSamplerArgs,
+  detailSamplerFields,
+  parseCustomArgs,
+  samplerFieldsForRecipe,
+  splitSamplerArgs,
+} from '../samplerArgs';
+import type { ArgFieldSpec } from '../samplerArgs';
+import { storageKey } from '../storage';
 import {
   describeRouterModelConnection,
   providerEndpointNeedsInsecureOptIn,
@@ -218,24 +230,56 @@ function fieldValue(value: unknown): string {
   return String(value);
 }
 
+interface LoadSettingsDraft {
+  ctxSize: string;
+  recipe: Record<string, string>;
+}
+
+/** The form is what will load, so a field carries the value lemond resolved
+    rather than the saved layer with the default hiding behind it. The exception
+    is a field whose control already offers the resolved value as a labelled
+    choice of its own: seeding those would select a value their option list
+    deliberately omits, so the caller names them. */
+function draftFromResolvedOptions(
+  managedKeys: Array<keyof RecipeOptions>,
+  saved: RecipeOptions,
+  effective: RecipeOptions,
+  offersResolvedValue: (key: keyof RecipeOptions) => boolean,
+): LoadSettingsDraft {
+  const recipe: Record<string, string> = {};
+  for (const key of managedKeys) {
+    const name = String(key);
+    if (name === 'ctx_size') continue;
+    recipe[name] = fieldValue((offersResolvedValue(key) ? saved : effective)[key]);
+  }
+  const ctxRaw = effective.ctx_size ?? saved.ctx_size;
+  return {
+    ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
+    recipe,
+  };
+}
+
 function parseNumberOrUndefined(value: string): number | undefined {
   if (!value.trim()) return undefined;
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
 }
 
-function stringRecordEqual(left: Record<string, string>, right: Record<string, string>): boolean {
-  const leftKeys = Object.keys(left).sort();
-  const rightKeys = Object.keys(right).sort();
-  if (leftKeys.length !== rightKeys.length) return false;
-  return leftKeys.every((key, index) => key === rightKeys[index] && left[key] === right[key]);
+/** Clearing a field leaves an empty string behind, which reads the same as an
+    absent key to everything downstream. */
+function draftFieldsEqual(
+  keys: Array<keyof RecipeOptions>,
+  left: Record<string, string>,
+  right: Record<string, string>,
+): boolean {
+  return keys.every(key => (left[String(key)] || '') === (right[String(key)] || ''));
 }
 
 const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   ctx_size: 'Context size',
   llamacpp_backend: 'Backend',
   llamacpp_device: 'Device',
-  llamacpp_args: 'Backend args',
+  llamacpp_args: 'Additional backend CLI arguments',
   steps: 'Steps',
   cfg_scale: 'CFG scale',
   width: 'Width',
@@ -243,18 +287,18 @@ const TUNING_FIELD_LABELS: Partial<Record<keyof RecipeOptions, string>> = {
   sampling_method: 'Sampling method',
   flow_shift: 'Flow shift',
   'sd-cpp_backend': 'Backend',
-  sdcpp_args: 'Backend args',
+  sdcpp_args: 'Additional backend CLI arguments',
   whispercpp_backend: 'Backend',
-  whispercpp_args: 'Backend args',
+  whispercpp_args: 'Additional backend CLI arguments',
   moonshine_backend: 'Backend',
-  moonshine_args: 'Backend args',
+  moonshine_args: 'Additional backend CLI arguments',
   acestep_backend: 'Backend',
   thinksound_backend: 'Backend',
   openmoss_backend: 'Backend',
   trellis_backend: 'Backend',
   vllm_backend: 'Backend',
-  vllm_args: 'Backend args',
-  flm_args: 'Backend args',
+  vllm_args: 'Additional backend CLI arguments',
+  flm_args: 'Additional backend CLI arguments',
   voice: 'Voice',
   speed: 'Speed',
 };
@@ -428,6 +472,57 @@ function deriveHFRepo(
     if (!c) continue;
     const repo = c.split(':')[0].trim();
     if (HF_REPO_RE.test(repo)) return repo;
+  }
+  return null;
+}
+
+const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: (id: string) => string }> = {
+  huggingface: { label: 'Hugging Face', url: id => `https://huggingface.co/${id}` },
+  modelscope: { label: 'ModelScope', url: id => `https://modelscope.cn/models/${id}` },
+};
+
+const QUANT_RE = /(?:^|[-_.])((?:UD-)?(?:IQ|Q)\d+(?:_[A-Za-z0-9]+)*|BF16|F16|F32|FP8|MXFP4|INT4|INT8)(?=$|[-_.])/gi;
+
+function quantFromVariant(variant: string): string | null {
+  const value = variant.trim();
+  if (!value) return null;
+  const matches = [...value.matchAll(QUANT_RE)];
+  if (matches.length > 0) return matches[matches.length - 1][1].toUpperCase();
+  return /\.[a-z0-9]+$/i.test(value) ? null : value;
+}
+
+interface ModelSourceRef {
+  provider: ModelRegistryProvider;
+  providerLabel: string;
+  repo: string;
+  quant: string | null;
+  url: string;
+}
+
+/** Where a model's weights come from: registry, `owner/repo`, and quant. */
+function modelSourceRef(model: ModelInfo | null | undefined): ModelSourceRef | null {
+  if (!model) return null;
+  const checkpoints = (model as any).checkpoints as Record<string, string> | null ?? null;
+  const candidates: Array<string | undefined> = [
+    String((model as any).checkpoint || '') || undefined,
+    checkpoints?.main,
+    ...(checkpoints ? Object.values(checkpoints) : []),
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const separator = candidate.indexOf(':');
+    const repo = (separator >= 0 ? candidate.slice(0, separator) : candidate).trim();
+    if (!HF_REPO_RE.test(repo)) continue;
+    const source = String((model as any).registry_source || (model as any).source || '').trim().toLowerCase();
+    const provider: ModelRegistryProvider = source === 'modelscope' || source === 'ms' ? 'modelscope' : 'huggingface';
+    const meta = REMOTE_PROVIDER_META[provider];
+    return {
+      provider,
+      providerLabel: meta.label,
+      repo,
+      quant: separator >= 0 ? quantFromVariant(candidate.slice(separator + 1)) : null,
+      url: meta.url(repo),
+    };
   }
   return null;
 }
@@ -798,11 +893,6 @@ const HF_DETAIL_TABS: Array<{ id: HfDetailTab; label: string }> = [
   { id: 'readme', label: 'README' },
 ];
 
-const REMOTE_PROVIDER_META: Record<ModelRegistryProvider, { label: string; url: (id: string) => string }> = {
-  huggingface: { label: 'Hugging Face', url: id => `https://huggingface.co/${id}` },
-  modelscope: { label: 'ModelScope', url: id => `https://modelscope.cn/models/${id}` },
-};
-
 const HfDetailView: React.FC<{
   hfModel: HFModelResult;
   provider: ModelRegistryProvider;
@@ -966,6 +1056,338 @@ const HfDetailView: React.FC<{
 };
 
 
+/** One row tall until the text needs more, so a short flag list does not sit in
+    a box sized for a paragraph. */
+const AutoGrowTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> = props => {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const { value } = props;
+
+  const fit = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  useLayoutEffect(fit, [fit, value]);
+
+  // The panel is drag-resizable, so the text can rewrap without a render. Only
+  // a width change can do that; reacting to the height the effect above just
+  // set would feed the observer its own output.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    let lastWidth = el.clientWidth;
+    const observer = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fit]);
+
+  return <textarea {...props} ref={ref} rows={1} />;
+};
+
+
+const SAMPLER_DETAILS_OPEN_KEY = 'model_config_sampler_details_open';
+
+function readSamplerDetailsOpen(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(storageKey(SAMPLER_DETAILS_OPEN_KEY)) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeSamplerDetailsOpen(open: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(storageKey(SAMPLER_DETAILS_OPEN_KEY), open ? 'true' : 'false');
+  } catch {
+    // Browser storage is best-effort; the section still opens for this session.
+  }
+}
+
+interface SamplerAxisFieldProps {
+  fieldId: string;
+  spec: ArgFieldSpec;
+  value: string;
+  /** lemond's own value for this flag, restored when the field is emptied. */
+  fallback: string;
+  owned: boolean;
+  onChange: (next: string) => void;
+  onStep: (spec: ArgFieldSpec, direction: -1 | 1) => void;
+}
+
+/** A sampler people set by feel, drawn along the axis they feel it on. The
+    track states where the advised range ends, so a value outside it is a choice
+    rather than a surprise. */
+const SamplerAxisField: React.FC<SamplerAxisFieldProps> = ({
+  fieldId, spec, value, fallback, owned, onChange, onStep,
+}) => {
+  const axis = spec.axis!;
+  const min = spec.min ?? 0;
+  const max = spec.max ?? 2;
+  const typed = Number(value);
+  // An empty field sends no flag, so the axis shows where the backend's own
+  // value sits rather than collapsing to the left end.
+  const applied = value.trim() !== '' && Number.isFinite(typed) ? typed : Number(spec.backendDefault ?? min);
+  const position = Math.min(max, Math.max(min, Number.isFinite(applied) ? applied : min));
+  const span = max - min || 1;
+  const caution = position < axis.advisedMin
+    ? axis.belowAdvised
+    : position > axis.advisedMax ? axis.aboveAdvised : '';
+  const cautionId = `${fieldId}-caution`;
+
+  return (
+    <div className="detail-configuration__axis">
+      <div className="detail-configuration__control-head">
+        <label htmlFor={fieldId}>{spec.label}</label>
+        {caution && (
+          <span className="detail-configuration__axis-caution" id={cautionId} role="status">
+            {caution}
+          </span>
+        )}
+      </div>
+      <div className="detail-configuration__axis-row">
+        <div className="detail-configuration__axis-scale">
+          <span className="detail-configuration__axis-pole">{axis.low}</span>
+          <input
+            className="slider detail-configuration__axis-slider"
+            type="range"
+            min={min}
+            max={max}
+            step={spec.step}
+            value={position}
+            disabled={owned}
+            aria-label={`${spec.label}, ${axis.low} to ${axis.high}`}
+            aria-describedby={caution ? cautionId : undefined}
+            style={{
+              '--axis-advised-start': `${((axis.advisedMin - min) / span) * 100}%`,
+              '--axis-advised-end': `${((axis.advisedMax - min) / span) * 100}%`,
+            } as React.CSSProperties}
+            onChange={event => onChange(event.target.value)}
+          />
+          <span className="detail-configuration__axis-pole">{axis.high}</span>
+        </div>
+        <div className="detail-configuration__axis-number">
+          <input
+            id={fieldId}
+            className="input detail-configuration__number-input detail-configuration__axis-input"
+            type="number"
+            min={min}
+            max={max}
+            step={spec.step}
+            value={value}
+            disabled={owned}
+            placeholder={owned ? 'set below' : 'default'}
+            aria-describedby={caution ? cautionId : undefined}
+            onChange={event => onChange(event.target.value)}
+            onBlur={() => {
+              if (fallback && !value.trim()) onChange(fallback);
+            }}
+          />
+          <span className="detail-configuration__context-stepper">
+            <button
+              type="button"
+              onClick={() => onStep(spec, 1)}
+              disabled={owned}
+              aria-label={`Increase ${spec.label}`}
+            >
+              <Icon name="chevron-up" size={11} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onStep(spec, -1)}
+              disabled={owned}
+              aria-label={`Decrease ${spec.label}`}
+            >
+              <Icon name="chevron-down" size={11} aria-hidden="true" />
+            </button>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+interface BackendArgsFieldProps {
+  fieldId: string;
+  label: string;
+  value: string;
+  /** The flags this backend's command line spells in a way the form can type.
+      Empty for a backend with none, whose arguments then stay whole below. */
+  specs: ArgFieldSpec[];
+  /** What lemond applies when the args key is sent unset. */
+  fallbackArgs: string;
+  onChange: (next: string) => void;
+}
+
+/** The args a model loads with, as a field per sampler plus whatever is left.
+    Both halves compose back into one string, which is what actually gets sent. */
+const BackendArgsField: React.FC<BackendArgsFieldProps> = ({
+  fieldId, label, value, specs, fallbackArgs, onChange,
+}) => {
+  const split = useMemo(() => splitSamplerArgs(specs, value), [specs, value]);
+  // A field lemond has a value for cannot be left empty: emptying every one of
+  // them would send no args at all, and lemond reads that as "unset" and applies
+  // these anyway — so "default" would mean llama.cpp's value in one field and
+  // lemond's in the next.
+  const flagDefaults = useMemo(
+    () => splitSamplerArgs(specs, fallbackArgs).fields,
+    [fallbackArgs, specs],
+  );
+  const axisSpecs = useMemo(() => axisSamplerFields(specs), [specs]);
+  const detailSpecs = useMemo(() => detailSamplerFields(specs), [specs]);
+  const [detailsOpen, setDetailsOpen] = useState(readSamplerDetailsOpen);
+  const detailsId = `${fieldId}-detailed`;
+
+  const setSampler = (flag: string, next: string) =>
+    onChange(composeSamplerArgs(specs, { ...split.fields, [flag]: next }, split.rest));
+
+  // Stepping goes through the input so the browser applies the min/max/step it
+  // was already given. An empty field starts from the value llama.cpp would
+  // have used rather than from zero.
+  const stepSampler = (spec: ArgFieldSpec, direction: -1 | 1) => {
+    const input = document.getElementById(`${fieldId}-${spec.id}`);
+    if (!(input instanceof HTMLInputElement)) return;
+    if (!input.value) input.value = spec.backendDefault ?? '';
+    if (direction > 0) input.stepUp();
+    else input.stepDown();
+    setSampler(spec.flag, input.value);
+  };
+
+  // Folding the rest away must not fold away what they will do, so the closed
+  // section states the flags it is holding.
+  const foldedFlags = detailSpecs
+    .map(spec => {
+      const held = (split.fields[spec.flag] || '').trim();
+      return held ? `${spec.flag} ${held}` : '';
+    })
+    .filter(Boolean)
+    .join('  ');
+
+  return (
+    <div className="detail-configuration__args-block">
+      {axisSpecs.map(spec => (
+        <SamplerAxisField
+          key={spec.flag}
+          fieldId={`${fieldId}-${spec.id}`}
+          spec={spec}
+          value={split.fields[spec.flag] ?? ''}
+          fallback={flagDefaults[spec.flag] || ''}
+          owned={split.claimedByRest.has(spec.flag)}
+          onChange={next => setSampler(spec.flag, next)}
+          onStep={stepSampler}
+        />
+      ))}
+
+      {detailSpecs.length > 0 && (
+        <div className="detail-configuration__sampler-details">
+          <button
+            type="button"
+            className="detail-configuration__sampler-toggle"
+            aria-expanded={detailsOpen}
+            aria-controls={detailsId}
+            onClick={() => {
+              const next = !detailsOpen;
+              setDetailsOpen(next);
+              writeSamplerDetailsOpen(next);
+            }}
+          >
+            <Icon name="chevron-right" size={12} className="detail-configuration__sampler-caret" aria-hidden="true" />
+            <span className="detail-configuration__sampler-toggle-label">Detailed sampling parameters</span>
+            {!detailsOpen && (
+              <span className="detail-configuration__sampler-folded">
+                {foldedFlags || 'All on default'}
+              </span>
+            )}
+          </button>
+          <div className="detail-configuration__sampler-grid" id={detailsId} hidden={!detailsOpen}>
+            {detailSpecs.map(spec => {
+              const samplerId = `${fieldId}-${spec.id}`;
+              const owned = split.claimedByRest.has(spec.flag);
+              const isText = spec.kind === 'text';
+              return (
+                <div
+                  key={spec.flag}
+                  className={`detail-tuning__field detail-configuration__field${isText ? ' detail-configuration__sampler-field--wide' : ''}`}
+                >
+                  <span id={`${samplerId}-label`}>{spec.label}</span>
+                  <div className="detail-configuration__number-control">
+                    <input
+                      id={samplerId}
+                      className={isText ? 'input' : 'input detail-configuration__number-input'}
+                      type={isText ? 'text' : 'number'}
+                      min={spec.min}
+                      max={spec.max}
+                      step={spec.step}
+                      value={split.fields[spec.flag] ?? ''}
+                      disabled={owned}
+                      placeholder={owned ? 'set below' : 'default'}
+                      aria-labelledby={`${samplerId}-label`}
+                      onChange={e => setSampler(spec.flag, e.target.value)}
+                      onBlur={() => {
+                        const fallback = flagDefaults[spec.flag];
+                        if (fallback && !(split.fields[spec.flag] || '').trim()) setSampler(spec.flag, fallback);
+                      }}
+                    />
+                    {!isText && (
+                      <span className="detail-configuration__context-stepper">
+                        <button
+                          type="button"
+                          onClick={() => stepSampler(spec, 1)}
+                          disabled={owned}
+                          aria-label={`Increase ${spec.label}`}
+                        >
+                          <Icon name="chevron-up" size={11} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => stepSampler(spec, -1)}
+                          disabled={owned}
+                          aria-label={`Decrease ${spec.label}`}
+                        >
+                          <Icon name="chevron-down" size={11} aria-hidden="true" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <label className="detail-tuning__field detail-tuning__field--wide detail-configuration__field detail-configuration__args-field" htmlFor={fieldId}>
+        <span>{label}</span>
+        <AutoGrowTextarea
+          id={fieldId}
+          className="detail-tuning__args"
+          value={split.rest}
+          placeholder="Example: --threads 4"
+          /* A wrapping label names the field from its text content, which for a
+             textarea includes whatever has been typed into it. */
+          aria-label={label}
+          onChange={e => onChange(composeSamplerArgs(specs, split.fields, e.target.value))}
+        />
+      </label>
+
+      {!value.trim() && Boolean(fallbackArgs) && (
+        <p className="detail-configuration__args-fallback">
+          Every field is on default, so nothing is sent and lemond applies its own
+          defaults for this model: <code>{fallbackArgs}</code>
+        </p>
+      )}
+    </div>
+  );
+};
+
 
 const ModelConfigurationTab: React.FC<{
   model: ModelInfo;
@@ -975,12 +1397,15 @@ const ModelConfigurationTab: React.FC<{
   isLoadingThis?: boolean;
   onReloadModel?: (model: LoadedModel, recipeOptions?: Record<string, unknown>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
-}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange }) => {
+  /** Filled with a getter for the load settings as shown, so the panel's Load
+      action can apply them without saving them. */
+  loadOptionsRef?: React.MutableRefObject<(() => Record<string, unknown>) | null>;
+}> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange, loadOptionsRef }) => {
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
-
+  const [systemInfoSettled, setSystemInfoSettled] = useState(() => api.systemInfoData !== null);
 
   useEffect(() => {
     if (!isActive) return;
@@ -989,7 +1414,8 @@ const ModelConfigurationTab: React.FC<{
     if (cached) setSystemInfo(cached);
     api.systemInfo()
       .then(info => { if (alive) setSystemInfo(info); })
-      .catch(() => { if (alive) setSystemInfo(api.systemInfoData); });
+      .catch(() => { if (alive) setSystemInfo(api.systemInfoData); })
+      .finally(() => { if (alive) setSystemInfoSettled(true); });
     return () => { alive = false; };
   }, [isActive]);
 
@@ -1000,73 +1426,84 @@ const ModelConfigurationTab: React.FC<{
   const supportsContextSize = modelSupportsContextSize(model);
   const activeRecipe = activeRecipeForModel(model);
   const recipeKeys = useMemo(() => tuningKeysForModel(model, systemInfo), [model, systemInfo]);
+  // A selector labels its own resolved value, and voice keeps a custom entry
+  // outside the recipe's option list, so both are seeded from the saved layer.
+  const offersResolvedValue = useCallback((key: keyof RecipeOptions) => key === 'voice'
+    || recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
+    || recipeOptionIsDevice(systemInfo, activeRecipe, String(key)), [activeRecipe, systemInfo]);
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
   const [serverSavedRecipeOptions, setServerSavedRecipeOptions] = useState<RecipeOptions>({});
   const [serverEffectiveRecipeOptions, setServerEffectiveRecipeOptions] = useState<RecipeOptions>({});
+  const [serverDefaultRecipeOptions, setServerDefaultRecipeOptions] = useState<RecipeOptions>({});
   const [serverOptionsLoaded, setServerOptionsLoaded] = useState(false);
   const [ctxSizeDraft, setCtxSizeDraft] = useState('-1');
   const [recipeDraft, setRecipeDraft] = useState<Record<string, string>>({});
   const [customVoiceMode, setCustomVoiceMode] = useState(false);
+  const [resolvedCtxSize, setResolvedCtxSize] = useState<number | null>(null);
 
-  const loadSettingsDraftFromServer = useCallback(() => {
-    const nextRecipe: Record<string, string> = {};
-    const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
-    for (const [key, value] of Object.entries(serverSavedRecipeOptions)) {
-      if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
-    }
-    const ctxRaw = serverSavedRecipeOptions.ctx_size ?? serverEffectiveRecipeOptions.ctx_size;
-    return {
-      ctxSize: ctxRaw != null ? String(ctxRaw) : '-1',
-      recipe: nextRecipe,
-    };
-  }, [recipeKeys, serverEffectiveRecipeOptions.ctx_size, serverSavedRecipeOptions]);
-
-  const loadFromServerState = useCallback(() => {
-    const next = loadSettingsDraftFromServer();
-    setCtxSizeDraft(next.ctxSize);
-    setRecipeDraft(next.recipe);
-    const storedVoice = next.recipe.voice || '';
+  const applyDraft = useCallback((draft: LoadSettingsDraft) => {
+    setCtxSizeDraft(draft.ctxSize);
+    setRecipeDraft(draft.recipe);
+    const storedVoice = draft.recipe.voice || '';
     setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
-  }, [knownVoiceIds, loadSettingsDraftFromServer]);
+  }, [knownVoiceIds]);
+
+  const applyServerOptions = useCallback((result: ModelOptions, syncDraft: boolean) => {
+    const saved = sanitizeRecipeOptions(result.saved);
+    const effective = sanitizeRecipeOptions(result.effective);
+    const defaults = sanitizeRecipeOptions(result.defaults);
+    setServerSavedRecipeOptions(saved);
+    setServerEffectiveRecipeOptions(effective);
+    setServerDefaultRecipeOptions(defaults);
+    const resolved = Number(result.resolved_ctx_size);
+    setResolvedCtxSize(Number.isFinite(resolved) && resolved > 0 ? resolved : null);
+    if (syncDraft) applyDraft(draftFromResolvedOptions(recipeKeys, saved, effective, offersResolvedValue));
+  }, [applyDraft, offersResolvedValue, recipeKeys]);
+
+  // Read through a ref: a save refreshes the model list, which hands this
+  // component a new model object, and re-running the fetch on that would
+  // overwrite whatever the user is in the middle of editing.
+  const applyServerOptionsRef = useRef(applyServerOptions);
+  applyServerOptionsRef.current = applyServerOptions;
 
   useEffect(() => {
+    // The draft is seeded once, from what this fetch returns, into the fields
+    // the recipe's option list names — so that list has to be in hand first.
+    if (!systemInfoSettled) return;
     let cancelled = false;
     setNotice(null);
     setServerSavedRecipeOptions({});
     setServerEffectiveRecipeOptions({});
+    setServerDefaultRecipeOptions({});
+    setResolvedCtxSize(null);
     setServerOptionsLoaded(false);
+    // The tab is mounted once for the whole panel, so the previous model's draft
+    // has to go with its server state — otherwise it stays on screen, and in the
+    // load body, until this fetch resolves.
+    setCtxSizeDraft('-1');
+    setRecipeDraft({});
+    setCustomVoiceMode(false);
     void api.getModelOptions(name)
       .then(result => {
         if (cancelled) return;
-        const saved = sanitizeRecipeOptions(result.saved);
-        const effective = sanitizeRecipeOptions(result.effective);
-        const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
-        const nextRecipe: Record<string, string> = {};
-        for (const [key, value] of Object.entries(saved)) {
-          if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
-        }
-        const ctxRaw = saved.ctx_size ?? effective.ctx_size;
-        setServerSavedRecipeOptions(saved);
-        setServerEffectiveRecipeOptions(effective);
-        setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
-        setRecipeDraft(nextRecipe);
-        const storedVoice = nextRecipe.voice || '';
-        setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+        applyServerOptionsRef.current(result, true);
         setServerOptionsLoaded(true);
       })
       .catch(error => {
         if (cancelled) return;
-        const message = error instanceof Error ? error.message : String(error);
-        setNotice(`Could not load saved model options: ${message}`);
+        setNotice(`Could not load saved model options: ${friendlyErrorMessage(error)}`);
       });
     return () => { cancelled = true; };
-  }, [knownVoiceIds, name, recipeKeys]);
+  }, [name, systemInfoSettled]);
 
-  const savedLoadSettings = loadSettingsDraftFromServer();
+  const savedLoadSettings = useMemo(
+    () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
+    [offersResolvedValue, recipeKeys, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
+  );
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
-    || !stringRecordEqual(recipeDraft, savedLoadSettings.recipe);
+    || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
 
   useEffect(() => {
     onDirtyChange?.(hasLoadSettingChanges);
@@ -1086,12 +1523,14 @@ const ModelConfigurationTab: React.FC<{
     return n !== undefined && n >= ctxMin ? n : undefined;
   };
   const loadedCtxSize = positiveCtxValue(loadedModel?.recipe_options?.ctx_size);
-  const baseCtxSize = loadedCtxSize
+  const baseCtxSize = positiveCtxValue(resolvedCtxSize)
+    ?? loadedCtxSize
     ?? positiveCtxValue(serverEffectiveRecipeOptions.ctx_size)
     ?? positiveCtxValue(baseTuning.recipe_options.ctx_size)
     ?? positiveCtxValue(serverDefaultCtxSize)
     ?? 4096;
   const isAutoTuning = ctxSizeDraft === '-1';
+  // Auto tuning still shows a number: the one lemond resolved for the next load.
   const currentCtxSize = positiveCtxValue(ctxSizeDraft) ?? baseCtxSize;
   const autoTuneTooltip = isAutoTuning
     ? 'Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.'
@@ -1102,19 +1541,50 @@ const ModelConfigurationTab: React.FC<{
     Number(model?.max_context_window) || 131072,
   );
   const stepContextSize = (direction: -1 | 1) => {
-    if (isAutoTuning) return;
     const nextValue = Math.min(
       ctxMax,
       Math.max(ctxMin, currentCtxSize + direction * ctxStep),
     );
     setCtxSizeDraft(String(nextValue));
   };
+  // What an empty field resolves to at load time. /load reads an explicit null
+  // as "skip the saved layer for this load", so a field left empty lands on
+  // lemond's defaults — not on the effective value the form was seeded from,
+  // which is what Reset to defaults would otherwise keep showing.
+  const defaultOptionValue = (key: keyof RecipeOptions): unknown =>
+    serverDefaultRecipeOptions[key] ?? baseTuning.recipe_options[key];
+
   const selectorKeys = recipeKeys.filter(key =>
     recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
     || recipeOptionIsDevice(systemInfo, activeRecipe, String(key))
   );
   const argsKeys = recipeKeys.filter(key => recipeOptionIsArgs(systemInfo, activeRecipe, String(key)));
   const otherRecipeKeys = recipeKeys.filter(key => !selectorKeys.includes(key) && !argsKeys.includes(key));
+  // merge_args only decides what happens to *_args, so it is only stated for a
+  // model that has an args field of its own.
+  const sendsArgs = argsKeys.length > 0;
+  // Only the options this panel manages count: a reset here cannot claim to
+  // clear a saved key it never shows.
+  const hasSavedOptions = Object.keys(serverSavedRecipeOptions)
+    .some(key => key === 'ctx_size' || key === 'merge_args' || recipeKeys.includes(key as keyof RecipeOptions));
+
+  // Both sides of the comparison drop "auto" and the empty string, and an args
+  // string is compared by what it sets rather than by how it was typed.
+  const argsKeyNames = new Set(argsKeys.map(String));
+  const canonicalOptionValue = (key: string, value: unknown): string => {
+    const text = String(value ?? '').trim();
+    if (!text || text.toLowerCase() === 'auto') return '';
+    return argsKeyNames.has(key) ? argsMapToString(buildArgsMap(parseCustomArgs(text))) : text;
+  };
+  const runningOptions = loadedModel?.recipe_options || {};
+  const runningCtxSize = positiveCtxValue(runningOptions.ctx_size);
+  // Reload restarts the backend process, so it is offered only where it would
+  // land somewhere other than where the running model already is.
+  const reloadWouldChange = recipeKeys.some(key => {
+    const option = String(key);
+    const shown = (recipeDraft[option] || '').trim() || String(defaultOptionValue(key) ?? '');
+    return canonicalOptionValue(option, shown) !== canonicalOptionValue(option, runningOptions[option]);
+  }) || (supportsContextSize && runningCtxSize !== undefined && currentCtxSize !== runningCtxSize);
 
   const buildConfigOptions = (): RecipeOptions => {
     const raw: Partial<RecipeOptions> = {};
@@ -1142,22 +1612,23 @@ const ModelConfigurationTab: React.FC<{
 
     const nextOptions = buildConfigOptions();
     const patch: Record<string, unknown> = {};
-    const baseline = loadSettingsDraftFromServer();
-    const managedKeys = new Set<string>(recipeKeys.map(key => String(key)));
-    for (const key of managedKeys) {
-      if (key === 'ctx_size') continue;
-      const before = baseline.recipe[key] || '';
-      const after = recipeDraft[key] || '';
-      if (before === after) continue;
+    // Save only what the user changed, and clear rather than pin a value that
+    // already matches lemond's default, so the saved entry stays minimal.
+    const clear = (key: string) => {
+      if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, key)) patch[key] = null;
+    };
+    for (const key of recipeKeys.map(recipeKey => String(recipeKey))) {
+      if ((savedLoadSettings.recipe[key] || '') === (recipeDraft[key] || '')) continue;
       if (Object.prototype.hasOwnProperty.call(nextOptions, key)) {
         patch[key] = (nextOptions as Record<string, unknown>)[key];
-      } else if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, key)) {
-        patch[key] = null;
+      } else {
+        clear(key);
       }
     }
-    if (supportsContextSize && ctxSizeDraft !== baseline.ctxSize) {
-      if (Object.prototype.hasOwnProperty.call(nextOptions, 'ctx_size')) patch.ctx_size = nextOptions.ctx_size;
-      else if (Object.prototype.hasOwnProperty.call(serverSavedRecipeOptions, 'ctx_size')) patch.ctx_size = null;
+    if (supportsContextSize && ctxSizeDraft !== savedLoadSettings.ctxSize) {
+      const ctxDraftValue = nextOptions.ctx_size;
+      if (ctxDraftValue === undefined || ctxDraftValue === serverDefaultRecipeOptions.ctx_size) clear('ctx_size');
+      else patch.ctx_size = ctxDraftValue;
     }
 
     if (Object.keys(patch).length === 0) {
@@ -1165,65 +1636,64 @@ const ModelConfigurationTab: React.FC<{
       return true;
     }
     try {
-      const result = await api.saveModelOptions(name, patch);
-      const saved = sanitizeRecipeOptions(result.saved);
-      const effective = sanitizeRecipeOptions(result.effective);
-      const managedRecipeKeys = new Set<string>(recipeKeys.map(key => String(key)));
-      const nextRecipe: Record<string, string> = {};
-      for (const [key, value] of Object.entries(saved)) {
-        if (key !== 'ctx_size' && managedRecipeKeys.has(key)) nextRecipe[key] = fieldValue(value);
-      }
-      const ctxRaw = saved.ctx_size ?? effective.ctx_size;
-      setServerSavedRecipeOptions(saved);
-      setServerEffectiveRecipeOptions(effective);
-      setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
-      setRecipeDraft(nextRecipe);
-      const storedVoice = nextRecipe.voice || '';
-      setCustomVoiceMode(Boolean(storedVoice && !knownVoiceIds.has(storedVoice.toLowerCase())));
+      // The draft is what was just sent, so only the server layers move. Syncing
+      // it back would also undo anything typed while the save was in flight.
+      applyServerOptions(await api.saveModelOptions(name, patch), false);
       if (showNotice) setNotice('Saved for future loads');
       return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setNotice(`Could not save model options: ${message}`);
+      setNotice(`Could not save model options: ${friendlyErrorMessage(error)}`);
       return false;
     }
   };
 
-  const resetConfig = async () => {
-    if (!serverOptionsLoaded) {
-      setNotice('Saved model options are still loading from lemond.');
-      return;
-    }
-    try {
-      const result = await api.resetModelOptions(name);
-      const saved = sanitizeRecipeOptions(result.saved);
-      const effective = sanitizeRecipeOptions(result.effective);
-      const ctxRaw = saved.ctx_size ?? effective.ctx_size;
-      setServerSavedRecipeOptions(saved);
-      setServerEffectiveRecipeOptions(effective);
-      setCtxSizeDraft(ctxRaw != null ? String(ctxRaw) : '-1');
-      setRecipeDraft({});
-      setCustomVoiceMode(false);
-      setNotice('Load settings reset to built-in defaults.');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setNotice(`Could not reset model options: ${message}`);
-    }
+  // Defaults are already in hand from lemond, so this only refills the form:
+  // nothing is written until the user saves, and Discard still goes back.
+  const resetConfig = () => {
+    applyDraft(draftFromResolvedOptions(recipeKeys, {}, serverDefaultRecipeOptions, offersResolvedValue));
+    setNotice(hasSavedOptions
+      ? 'Showing lemond defaults. Load uses them now; Save clears your saved settings.'
+      : 'Already using lemond defaults.');
   };
 
   const discardConfig = () => {
-    loadFromServerState();
+    applyDraft(savedLoadSettings);
     onDirtyChange?.(false);
-    setNotice('Unsaved load setting changes discarded.');
+    setNotice('Reverted to your saved load settings.');
   };
 
+  // Every option the panel shows is stated outright: the value on screen, or
+  // null where the field is empty. An omitted option would fall back to the
+  // saved value, which is not what the user is looking at.
+  const buildLoadOptions = (): Record<string, unknown> => {
+    const configured = buildConfigOptions() as Record<string, unknown>;
+    const options: Record<string, unknown> = {};
+    for (const key of recipeKeys.map(recipeKey => String(recipeKey))) {
+      options[key] = Object.prototype.hasOwnProperty.call(configured, key) ? configured[key] : null;
+    }
+    if (supportsContextSize) options.ctx_size = configured.ctx_size ?? -1;
+    if (sendsArgs) options.merge_args = false;
+    return options;
+  };
+
+  // Published during render rather than from an effect: the Load button lives in
+  // the panel header, and a click can land in the same tick as the edit before
+  // it, which an effect would still be one draft behind. Until the fetch lands
+  // there is nothing on screen to apply, and an empty draft would read as a
+  // tombstone for every option, so the button falls back to the saved ones.
+  if (loadOptionsRef) loadOptionsRef.current = serverOptionsLoaded ? buildLoadOptions : null;
+  useEffect(() => () => {
+    if (loadOptionsRef) loadOptionsRef.current = null;
+  }, [loadOptionsRef]);
+
   const reloadViaPanel = async () => {
-    if (!loadedModel || !onReloadModel) return;
-    if (!(await saveConfig(false))) return;
+    if (!loadedModel || !onReloadModel || !serverOptionsLoaded) return;
     setIsReloading(true);
     try {
-      await onReloadModel(loadedModel, buildConfigOptions() as Record<string, unknown>);
-      setNotice('Model reloaded with current configuration.');
+      await onReloadModel(loadedModel, buildLoadOptions());
+      setNotice(hasLoadSettingChanges
+        ? 'Model reloaded with the settings shown here. Save to keep them.'
+        : 'Model reloaded with the settings shown here.');
     } catch {
       setNotice('Reload failed. Check the server logs.');
     } finally {
@@ -1236,7 +1706,7 @@ const ModelConfigurationTab: React.FC<{
     const label = TUNING_FIELD_LABELS[key] || recipeOptionLabel(systemInfo, activeRecipe, String(key));
     const hint = TUNING_FIELD_HINTS[key] || recipeOptionHint(systemInfo, activeRecipe, String(key));
     const draftValue = recipeDraft[String(key)] || '';
-    const baseValue = serverEffectiveRecipeOptions[key] ?? baseTuning.recipe_options[key];
+    const baseValue = defaultOptionValue(key);
 
     if (recipeOptionIsBackend(systemInfo, activeRecipe, String(key))) {
       const activeBackend = activeBackendValue(key, baseValue, model, info);
@@ -1260,7 +1730,7 @@ const ModelConfigurationTab: React.FC<{
     if (recipeOptionIsDevice(systemInfo, activeRecipe, String(key))) {
       const backendKey = recipeBackendOptionName(systemInfo, activeRecipe) as keyof RecipeOptions | null;
       const selectedBackend = backendKey
-        ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, baseTuning.recipe_options[backendKey], model, info)
+        ? recipeDraft[String(backendKey)] || activeBackendValue(backendKey, defaultOptionValue(backendKey), model, info)
         : 'auto';
       const activeDevice = optionalDisplayValue(baseValue) || 'auto';
       const options = deviceOptionsForKey(key, draftValue || undefined, selectedBackend, model, info).filter(opt => opt !== activeDevice);
@@ -1332,35 +1802,17 @@ const ModelConfigurationTab: React.FC<{
     }
 
     if (recipeOptionIsArgs(systemInfo, activeRecipe, String(key))) {
-      const defaultPlaceholders: Partial<Record<keyof RecipeOptions, string>> = {
-        llamacpp_args: '--gpu-layers 35 --threads 8 --batch-size 512',
-        vllm_args: '--tensor-parallel-size 1 --max-model-len 8192',
-        sdcpp_args: '--steps 20 --cfg-scale 7.5',
-        whispercpp_args: '--threads 4 --beam-size 5',
-        moonshine_args: '--threads 4',
-        flm_args: '--threads 4',
-      };
       const draftKey = String(key);
-      const hasDraftValue = Object.prototype.hasOwnProperty.call(recipeDraft, draftKey);
-      const effectiveArgsValue = (hasDraftValue ? draftValue : optionalDisplayValue(baseValue)) || '';
-      const argsPlaceholder = defaultPlaceholders[key] || 'Space-separated CLI flags';
       return (
-        <label key={String(key)} className="detail-tuning__field detail-tuning__field--wide detail-configuration__field detail-configuration__args-field" htmlFor={fieldId}>
-          <span>{label}</span>
-          <textarea
-            id={fieldId}
-            className="detail-tuning__args"
-            rows={4}
-            value={effectiveArgsValue}
-            placeholder={argsPlaceholder}
-            onChange={e => setRecipeDraft(prev => ({ ...prev, [draftKey]: e.target.value }))}
-          />
-          <small>
-            {hasDraftValue && draftValue.trim()
-              ? 'Custom args saved for this model.'
-              : 'Using the current backend args. Edit to customize load/reload flags.'}
-          </small>
-        </label>
+        <BackendArgsField
+          key={draftKey}
+          fieldId={fieldId}
+          label={label}
+          value={draftValue}
+          specs={samplerFieldsForRecipe(activeRecipeForModel(model))}
+          fallbackArgs={optionalDisplayValue(serverDefaultRecipeOptions[key])}
+          onChange={next => setRecipeDraft(prev => ({ ...prev, [draftKey]: next }))}
+        />
       );
     }
 
@@ -1446,9 +1898,6 @@ const ModelConfigurationTab: React.FC<{
               Settings used when this model loads or reloads.
             </p>
           </div>
-          {loadedModel && (
-            <span className="detail-configuration__status is-loaded">Loaded now</span>
-          )}
         </div>
 
         <div className="detail-configuration__load-controls">
@@ -1456,40 +1905,6 @@ const ModelConfigurationTab: React.FC<{
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
                 <label htmlFor={ctxSliderId}>Context size</label>
-                {!isAutoTuning && (
-                  <div className="detail-configuration__context-number">
-                    <input
-                      id={ctxSizeId}
-                      className="input detail-configuration__context-input"
-                      type="number"
-                      min={ctxMin}
-                      max={ctxMax}
-                      step={ctxStep}
-                      value={ctxSizeDraft}
-                      placeholder={String(baseCtxSize)}
-                      onChange={e => setCtxSizeDraft(e.target.value)}
-                      aria-label="Context size tokens"
-                    />
-                    <span className="detail-configuration__context-stepper">
-                      <button
-                        type="button"
-                        onClick={() => stepContextSize(1)}
-                        disabled={currentCtxSize >= ctxMax}
-                        aria-label={`Increase context size by ${ctxStep} tokens`}
-                      >
-                        <Icon name="chevron-up" size={11} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => stepContextSize(-1)}
-                        disabled={currentCtxSize <= ctxMin}
-                        aria-label={`Decrease context size by ${ctxStep} tokens`}
-                      >
-                        <Icon name="chevron-down" size={11} aria-hidden="true" />
-                      </button>
-                    </span>
-                  </div>
-                )}
               </div>
               <label
                 className="detail-configuration__autotune"
@@ -1506,7 +1921,7 @@ const ModelConfigurationTab: React.FC<{
                 <span>Auto tune context size</span>
                 <Icon name="info" size={14} aria-hidden="true" />
               </label>
-              {!isAutoTuning && (
+              <div className="detail-configuration__context-row">
                 <div className="detail-configuration__slider-row">
                   <span>{formatContextSize(ctxMin)}</span>
                   <input
@@ -1517,11 +1932,44 @@ const ModelConfigurationTab: React.FC<{
                     max={ctxMax}
                     step={ctxStep}
                     value={currentCtxSize}
+                    disabled={isAutoTuning}
                     onChange={e => setCtxSizeDraft(e.target.value)}
                   />
                   <span>{formatContextSize(ctxMax)}</span>
                 </div>
-              )}
+                <div className="detail-configuration__context-number">
+                  <input
+                    id={ctxSizeId}
+                    className="input detail-configuration__context-input"
+                    type="number"
+                    min={ctxMin}
+                    max={ctxMax}
+                    step={ctxStep}
+                    value={isAutoTuning ? String(currentCtxSize) : ctxSizeDraft}
+                    disabled={isAutoTuning}
+                    onChange={e => setCtxSizeDraft(e.target.value)}
+                    aria-label="Context size tokens"
+                  />
+                  <span className="detail-configuration__context-stepper">
+                    <button
+                      type="button"
+                      onClick={() => stepContextSize(1)}
+                      disabled={isAutoTuning || currentCtxSize >= ctxMax}
+                      aria-label={`Increase context size by ${ctxStep} tokens`}
+                    >
+                      <Icon name="chevron-up" size={11} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => stepContextSize(-1)}
+                      disabled={isAutoTuning || currentCtxSize <= ctxMin}
+                      aria-label={`Decrease context size by ${ctxStep} tokens`}
+                    >
+                      <Icon name="chevron-down" size={11} aria-hidden="true" />
+                    </button>
+                  </span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1542,20 +1990,25 @@ const ModelConfigurationTab: React.FC<{
               {argsKeys.map(key => renderConfigRecipeField(key))}
             </div>
           )}
+
         </div>
 
         <div className="detail-tuning__actions detail-configuration__actions">
-          {loadedModel && onReloadModel && (
+          {loadedModel && onReloadModel && (reloadWouldChange ? (
             <button
               type="button"
               className="btn btn--primary btn--sm"
               onClick={reloadViaPanel}
-              disabled={isReloading || isLoadingThis}
+              disabled={isReloading || isLoadingThis || !serverOptionsLoaded}
               aria-busy={isReloading}
             >
               <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
             </button>
-          )}
+          ) : (
+            <span className="detail-configuration__running-state">
+              <Icon name="check" size={13} aria-hidden="true" /> Running with these settings
+            </span>
+          ))}
           <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>Save</button>
           {hasLoadSettingChanges && (
             <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
@@ -1969,7 +2422,8 @@ export interface ModelDetailPanelProps {
   loadingModel: string | null;
   pulling: Record<string, number>;
   loadError: { modelName: string; message: string } | null;
-  onLoad: (model: ModelInfo) => void;
+  /** Load a model, optionally with load settings that override the stored ones. */
+  onLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onUnload: (model: LoadedModel) => void;
   /** Reload an already-loaded model with updated load-time configuration. */
   onReloadModel?: (
@@ -1977,7 +2431,7 @@ export interface ModelDetailPanelProps {
     recipeOptions?: Record<string, unknown>,
   ) => Promise<void>;
   onPull: (model: ModelInfo) => void;
-  onPullAndLoad: (model: ModelInfo) => void;
+  onPullAndLoad: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void;
   onDelete: (model: ModelInfo) => void;
   onCancelPull: (name: string) => void;
   serverDefaultCtxSize: number;
@@ -2064,6 +2518,14 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
   const [configHasUnsavedChanges, setConfigHasUnsavedChanges] = useState(false);
+  const configLoadOptionsRef = useRef<(() => Record<string, unknown>) | null>(null);
+
+  const loadWithShownConfiguration = useCallback((
+    start: (model: ModelInfo, recipeOptions?: Record<string, unknown>) => void,
+    target: ModelInfo,
+  ) => {
+    start(target, configLoadOptionsRef.current?.());
+  }, []);
 
   const detailName = model ? mdName(model) : '';
   const isRouterCollection = Boolean(model && activeRecipeForModel(model) === 'collection.router');
@@ -2145,9 +2607,10 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   const name = mdName(model);
   const recipe = String((model as any).recipe || '');
-  const checkpoint = String((model as any).checkpoint || '');
-  const checkpoints = (model as any).checkpoints as Record<string, string> | null ?? null;
-  const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
+  const sourceRef = modelSourceRef(model);
+  const sourceLinkLabel = sourceRef
+    ? `Open ${sourceRef.repo}${sourceRef.quant ? ` (${sourceRef.quant})` : ''} on ${sourceRef.providerLabel} (opens in new tab)`
+    : '';
   const isLoaded = !!loadedModel;
   const isLoadingThis = loadingModel === name;
   const isPulling = pulling[name] !== undefined;
@@ -2178,16 +2641,21 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       {isDownloaded && !isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
       )}
-      {hfRepo && (
+      {sourceRef && (
         <WorkspaceMetadataChip
+          className="model-detail-panel__source"
           emphasis="low"
           icon="globe"
-          href={`https://huggingface.co/${hfRepo}`}
+          href={sourceRef.url}
           target="_blank"
           rel="noopener noreferrer"
-          title={`View ${name} on Hugging Face`}
+          title={sourceLinkLabel}
         >
-          Hugging Face
+          <span className="model-detail-panel__source-registry">{sourceRef.providerLabel}:</span>
+          <span className="model-detail-panel__source-checkpoint">
+            {sourceRef.repo}{sourceRef.quant ? `:${sourceRef.quant}` : ''}
+          </span>
+          <Icon name="external-link" size={11} aria-hidden="true" />
         </WorkspaceMetadataChip>
       )}
     </>
@@ -2223,7 +2691,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         <WorkspaceActionButton
           appearance="primary"
           icon="play"
-          onClick={() => onLoad(model)}
+          onClick={() => loadWithShownConfiguration(onLoad, model)}
           disabled={isLoadingThis}
           aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
         >
@@ -2231,7 +2699,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
         </WorkspaceActionButton>
       ) : (
         <>
-          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => onPullAndLoad(model)} aria-label={`Get and load ${name}`}>
+          <WorkspaceActionButton appearance="primary" icon="download" onClick={() => loadWithShownConfiguration(onPullAndLoad, model)} aria-label={`Get and load ${name}`}>
             Get & Load
           </WorkspaceActionButton>
           <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
@@ -2362,6 +2830,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
                         isLoadingThis={isLoadingThis}
                         onReloadModel={onReloadModel}
                         onDirtyChange={setConfigHasUnsavedChanges}
+                        loadOptionsRef={configLoadOptionsRef}
                       />
                     )}
                     {tab.id === 'files' && (

@@ -1578,8 +1578,11 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       return;
     }
 
-    // overrideOptions (direct configuration) wins over stored custom options for ordinary models.
-    await api.loadModel(name, overrideOptions ?? (info ? customLoadOptions(info) : undefined), info);
+    // overrideOptions (the settings shown in the detail panel) win over the
+    // custom model's own load options, which still supply everything else.
+    const custom = info ? customLoadOptions(info) : undefined;
+    const options = overrideOptions || custom ? { ...custom, ...overrideOptions } : undefined;
+    await api.loadModel(name, options, info);
     visited.delete(key);
   };
 
@@ -1595,7 +1598,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     });
   };
 
-  const handleLoad = async (model: ModelInfo) => {
+  const handleLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
     if (loadingModel) return;
     const name = modelName(model);
     if (activeDownloadForModel(downloadStore.snapshot(), name)) {
@@ -1606,7 +1609,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setLoadError(null);
     setLoadingModel(name);
     try {
-      await loadWithGlobalPolicy(model);
+      await loadWithGlobalPolicy(model, overrideOptions);
       await refresh();
       onModelSelect(name);
     } catch (err) {
@@ -1753,7 +1756,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setPulling(p => { const next = { ...p }; delete next[name]; return next; });
   };
 
-  const handlePullAndLoad = async (model: ModelInfo) => {
+  const handlePullAndLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
     const name = modelName(model);
     if (pulling[name] !== undefined || activeDownloadForModel(downloadStore.snapshot(), name)) return;
     const ac = new AbortController();
@@ -1773,7 +1776,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         await refresh();
         setLoadingModel(name);
         try {
-          await loadModelRuntime(model, new Set<string>());
+          await loadModelRuntime(model, new Set<string>(), overrideOptions);
           await refresh();
           onModelSelect(name);
         } catch (err) {
