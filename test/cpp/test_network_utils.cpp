@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <string>
+#include <thread>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -185,6 +186,80 @@ static void test_active_port(TestResult& r) {
     }
 }
 
+static void test_listener_startup_state(TestResult& r) {
+    {
+        lemon::utils::ListenerStartupState state(1);
+        if (!state.bind_attempts_complete() && !state.failed()) {
+            r.ok("single listener starts pending");
+        } else {
+            r.fail("single listener starts pending");
+        }
+        state.record_bind_success();
+        if (state.bind_attempts_complete() && !state.failed()) {
+            r.ok("single listener bind succeeds");
+        } else {
+            r.fail("single listener bind succeeds");
+        }
+    }
+
+    {
+        lemon::utils::ListenerStartupState state(1);
+        state.record_bind_failure();
+        if (state.bind_attempts_complete() && state.failed()) {
+            r.ok("single listener bind fails");
+        } else {
+            r.fail("single listener bind fails");
+        }
+    }
+
+    {
+        lemon::utils::ListenerStartupState state(2);
+        state.record_bind_success();
+        state.record_bind_failure();
+        if (state.bind_attempts_complete() && state.failed()) {
+            r.ok("dual listener success then failure is fatal");
+        } else {
+            r.fail("dual listener success then failure is fatal");
+        }
+    }
+
+    {
+        lemon::utils::ListenerStartupState state(2);
+        state.record_bind_failure();
+        state.record_bind_success();
+        if (state.bind_attempts_complete() && state.failed()) {
+            r.ok("dual listener failure then success is fatal");
+        } else {
+            r.fail("dual listener failure then success is fatal");
+        }
+    }
+
+    {
+        lemon::utils::ListenerStartupState state(2);
+        std::thread first([&state]() { state.record_bind_success(); });
+        std::thread second([&state]() { state.record_bind_failure(); });
+        first.join();
+        second.join();
+        if (state.bind_attempts_complete() && state.failed()) {
+            r.ok("concurrent listener results are recorded");
+        } else {
+            r.fail("concurrent listener results are recorded");
+        }
+    }
+
+    {
+        lemon::utils::ListenerStartupState state(2);
+        state.record_bind_success();
+        state.record_bind_success();
+        state.record_listen_failure();
+        if (state.bind_attempts_complete() && state.failed()) {
+            r.ok("listen failure after successful binds is fatal");
+        } else {
+            r.fail("listen failure after successful binds is fatal");
+        }
+    }
+}
+
 int main() {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -197,6 +272,7 @@ int main() {
 
     test_inactive_port(r);
     test_active_port(r);
+    test_listener_startup_state(r);
 
     printf("\n%d/%d tests passed\n", r.passed, r.passed + r.failed);
 

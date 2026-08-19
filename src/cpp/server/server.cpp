@@ -1994,50 +1994,69 @@ void Server::run() {
             break;
         }
 
-        std::atomic<bool> listener_started(false);
-        std::atomic<bool> listener_start_failed(false);
+        const std::size_t listener_count =
+            static_cast<std::size_t>(!ipv4.empty()) +
+            static_cast<std::size_t>(!ipv6.empty());
+        utils::ListenerStartupState listener_startup(listener_count);
 
         if (!ipv4.empty()) {
             // setup ipv4 thread
             setup_http_logger(*http_server_);
-            http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
+            http_v4_thread_ = std::thread([this, ipv4, &listener_startup]() {
                 LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
                 int result = http_front_->bind_to_port(ipv4, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_bind_failure();
                     return;
                 }
                 // The routed server's keep-alive loop runs only while it sees
                 // a valid listen socket
                 http_server_->set_listen_socket(http_front_->listen_socket());
                 LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
-                listener_started = true;
+                listener_startup.record_bind_success();
                 if (!http_front_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_listen_failure();
                 }
             });
         }
         if (!ipv6.empty()) {
             // setup ipv6 thread
             setup_http_logger(*http_server_v6_);
-            http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
+            http_v6_thread_ = std::thread([this, ipv6, &listener_startup]() {
                 LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
                 int result = http_front_v6_->bind_to_port(ipv6, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_bind_failure();
                     return;
                 }
                 http_server_v6_->set_listen_socket(http_front_v6_->listen_socket());
                 LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
-                listener_started = true;
+                listener_startup.record_bind_success();
                 if (!http_front_v6_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_listen_failure();
                 }
             });
+        }
+
+        while (!listener_startup.bind_attempts_complete() &&
+               !shutdown_requested_.load() && !rebind_requested_.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (listener_startup.failed()) {
+            LOG(ERROR, "Server") << "Could not start HTTP listeners for every address resolved for host '"
+                                 << host << "' (bind or listen failure). Server startup aborted." << std::endl;
+            stop();
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+            startup_failed_ = true;
+            break;
         }
 
         // Enumerate all RFC1918 interfaces to determine if we can broadcast.
@@ -2067,7 +2086,8 @@ void Server::run() {
         // The threads are blocked in listen_after_bind(), which only returns when
         // the server is stopped or an error occurs.
         while ((http_v4_thread_.joinable() || http_v6_thread_.joinable()) &&
-               !shutdown_requested_.load() && !rebind_requested_.load()) {
+               !shutdown_requested_.load() && !rebind_requested_.load() &&
+               !listener_startup.failed()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
@@ -2082,6 +2102,17 @@ void Server::run() {
             if (http_v6_thread_.joinable())
                 http_v6_thread_.join();
             break;  // Exit the main loop
+        }
+
+        if (listener_startup.failed()) {
+            LOG(ERROR, "Server") << "An HTTP listener stopped unexpectedly. Server exiting." << std::endl;
+            stop();
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+            startup_failed_ = true;
+            break;
         }
 
         // If rebind was requested, stop() has already been called by apply_config_side_effects().
@@ -2100,20 +2131,6 @@ void Server::run() {
                 http_v4_thread_.join();
             if (http_v6_thread_.joinable())
                 http_v6_thread_.join();
-        }
-
-        if (!listener_started && listener_start_failed) {
-            if (rebind_requested_) {
-                // Port rebind failed (e.g. port in use) — restore old port and retry
-                LOG(ERROR, "Server") << "Failed to bind to new port " << port_
-                            << ", will not retry" << std::endl;
-                rebind_requested_ = false;
-                break;
-            }
-            std::cerr << "[Server] Another Lemonade router/server instance is already running on "
-                      << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
-            stop();
-            break;
         }
 
         if (!rebind_requested_) {
