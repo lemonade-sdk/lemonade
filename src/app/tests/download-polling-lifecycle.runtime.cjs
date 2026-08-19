@@ -35,6 +35,13 @@ assert.doesNotMatch(
   /if \(!api\.isConnected\)/,
   'an authoritative /downloads refresh must not depend on the global connection flag',
 );
+assert.doesNotMatch(
+  source,
+  /lemonade_download_manager_items_v1/,
+  'download rows must never be persisted client-side',
+);
+assert.match(source, /visibleSnapshot\(\): DownloadListItem\[\]/);
+assert.match(source, /isDismissedTerminal\(download, dismissed\)/);
 
 const originalTsLoader = require.extensions['.ts'];
 const originalApiCache = require.cache[apiPath];
@@ -136,12 +143,17 @@ async function waitFor(predicate, timeoutMs = 1500) {
       percent: 10,
     }];
     downloadStore.markLocal('test-model', 'downloading', 'model');
-    await waitFor(() => downloadRequests === 3, 1600);
+    await waitFor(
+      () => downloadRequests >= 3 && downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
+      1600,
+    );
     assert.ok(
       downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
       'an active download must remain represented after polling',
     );
 
+    // Pull callbacks may wake the store, but they may not author download state.
+    // The server still says active, so a local-looking terminal callback must be ignored.
     downloadStore.upsertFromPull('test-model', {
       id: 'model:test-model',
       status: 'completed',
@@ -149,23 +161,68 @@ async function waitFor(predicate, timeoutMs = 1500) {
       running: false,
       percent: 100,
     }, 'model');
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, 4);
+    assert.ok(
+      downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
+      'callback data must not override the authoritative /downloads snapshot',
+    );
+
     serverDownloads = [];
+    const requestsBeforeEmptySnapshot = downloadRequests;
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforeEmptySnapshot + 1);
+    assert.equal(downloadStore.snapshot().length, 0, 'an empty server snapshot must remove the active row immediately');
     const requestsAtCompletion = downloadRequests;
     await sleep(1200);
     assert.equal(
       downloadRequests,
       requestsAtCompletion,
-      'the last terminal download event must cancel the already-scheduled next poll',
+      'an idle authoritative snapshot must stop polling',
     );
+
+    // Dismissed state is presentation-only: canonical state remains intact, and
+    // non-terminal rows can never be hidden by a client-owned dismissed id.
+    serverDownloads = [{
+      id: 'model:completed-model',
+      type: 'model',
+      model_name: 'completed-model',
+      status: 'completed',
+      complete: true,
+      running: false,
+      percent: 100,
+    }];
+    const requestsBeforeCompletedSnapshot = downloadRequests;
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforeCompletedSnapshot + 1);
+    downloadStore.removeMany(['model:completed-model']);
+    assert.equal(downloadStore.snapshot().length, 1, 'dismiss must not mutate canonical server state');
+    assert.equal(downloadStore.visibleSnapshot().length, 0, 'dismiss may hide terminal history visually');
+
+    serverDownloads = [{
+      id: 'model:paused-model',
+      type: 'model',
+      model_name: 'paused-model',
+      status: 'paused',
+      running: false,
+      percent: 25,
+    }];
+    const requestsBeforePausedSnapshot = downloadRequests;
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforePausedSnapshot + 1);
+    downloadStore.removeMany(['model:paused-model']);
+    assert.equal(downloadStore.snapshot().length, 1);
+    assert.equal(downloadStore.visibleSnapshot().length, 1, 'paused server state must remain visible and blocking');
 
     const focusListeners = windowListeners.get('focus') || [];
     assert.equal(focusListeners.length, 1);
+    const requestsBeforeFocus = downloadRequests;
     focusListeners[0]();
-    await waitFor(() => downloadRequests === requestsAtCompletion + 1);
+    await waitFor(() => downloadRequests === requestsBeforeFocus + 1);
     await sleep(1150);
     assert.equal(
       downloadRequests,
-      requestsAtCompletion + 1,
+      requestsBeforeFocus + 1,
       'focus may refresh idle state once but must not restart perpetual polling',
     );
 

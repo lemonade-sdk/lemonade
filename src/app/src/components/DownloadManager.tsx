@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import { Icon } from './Icon';
-import { DownloadListItem, DownloadStatus, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 interface DownloadManagerProps {
   isVisible: boolean;
@@ -61,32 +61,19 @@ function isFinalizing(download: DownloadListItem): boolean {
     && download.bytesDownloaded >= download.bytesTotal;
 }
 
-function applyControlSnapshot(
-  download: DownloadListItem,
-  result: unknown,
-  fallbackStatus: DownloadStatus,
-): void {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) return;
-  const snapshot = result as Record<string, unknown>;
-  downloadStore.upsertFromPull(download.modelName, {
-    ...snapshot,
-    status: snapshot.status || fallbackStatus,
-  }, download.downloadType);
-}
-
 async function removeDownload(download: DownloadListItem): Promise<void> {
   downloadStore.remove(download.id);
   await api.controlDownload(download.id, 'remove').catch(() => undefined);
 }
 
 const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose }) => {
-  const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.visibleSnapshot());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
   const prevStatusRef = useRef<Map<string, Pick<DownloadListItem, 'status' | 'running'>> | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
 
-  useEffect(() => downloadStore.subscribe(setDownloads), []);
+  useEffect(() => downloadStore.subscribeVisible(setDownloads), []);
 
   // Announce status transitions (start/complete/error/pause/resume) to screen readers.
   // Runs on every downloads change but only emits announcements on status transitions,
@@ -182,15 +169,13 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
 
   const handlePause = (download: DownloadListItem) => withBusy(download.id, async () => {
     downloadStore.markLocal(download.modelName, 'paused', download.downloadType);
-    const result = await api.controlDownload(download.id, 'pause').catch(() => undefined);
-    applyControlSnapshot(download, result, 'paused');
+    await api.controlDownload(download.id, 'pause').catch(() => undefined);
     await downloadStore.refresh();
   });
 
   const handleCancel = (download: DownloadListItem) => withBusy(download.id, async () => {
     downloadStore.markLocal(download.modelName, 'cancelled', download.downloadType);
-    const result = await api.controlDownload(download.id, 'cancel').catch(() => undefined);
-    applyControlSnapshot(download, result, 'cancelled');
+    await api.controlDownload(download.id, 'cancel').catch(() => undefined);
     await downloadStore.refresh();
   });
 
