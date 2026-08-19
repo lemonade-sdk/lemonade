@@ -2297,7 +2297,7 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
 // fl0rianr (2026-06-25) posted a canonical 3-pane target: a NEW left NAVIGATION
 // rail (ModelNavRail) + the existing ModelListPanel (middle) + ModelDetailPanel
 // (right). The left rail surfaces filter dimensions — primary nav (All/
-// Downloaded/My Models/Favorites), collapsible Task chips, multi-select Backend chips,
+// Downloaded/Favorites), collapsible Task chips, multi-select Backend chips,
 // collapsible Tags, and a Storage meter — all derived CLIENT-SIDE from the model
 // list (no lemond). Selecting any of them filters the middle list.
 // Range: A124–A136.
@@ -2799,7 +2799,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     await goToModelsRefined(page);
   }
 
-  test('A152 — HuggingFace results appear inline in the model list panel on search and clear when search is cleared', async ({ page }) => {
+  test('A152 — Hugging Face online catalog results appear inline in the model list panel on search and clear when search is cleared', async ({ page }) => {
     await goToModelsRefinedWithHf(page);
     const search = page.locator('#model-list-search');
     await search.fill('mistral');
@@ -2812,7 +2812,7 @@ test.describe('Accessibility — model view refinements (#2424)', () => {
     // HF zone is visible (elevated at top since no local models match "mistral").
     const hfZone = page.locator('.zone--hf');
     await expect(hfZone).toBeVisible();
-    await expect(hfZone).toContainText('HuggingFace');
+    await expect(hfZone).toContainText('Online Catalog: Hugging Face');
 
     // GUI2's compatibility filters remove both excluded pipeline categories and
     // incompatible backends discovered from repository metadata.

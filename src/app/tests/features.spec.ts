@@ -732,7 +732,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
         tab: 'Models',
         trigger: 'Open model filters',
         dialog: 'Model filters',
-        visibleControls: ['All Models', 'Downloaded', 'My Models', 'Favorites'],
+        visibleControls: ['All Models', 'Downloaded', 'Favorites'],
       },
       { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
       { tab: 'Apps', trigger: 'Open app categories', dialog: 'App categories', visibleControls: ['All Apps'] },
@@ -1408,9 +1408,9 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const hasLoadedModels = allTitles.some(t => t.includes('Loaded Models'));
     const hasDownloaded = allTitles.some(t => t === 'Downloaded');
     const hasRegistry = allTitles.some(t => t.includes('Lemonade Registry'));
-    const hasHuggingFace = allTitles.some(t => t === 'HuggingFace');
+    const hasHuggingFace = allTitles.some(t => t === 'Online Catalog: Hugging Face');
 
-    // HuggingFace should always be there
+    // The Hugging Face online catalog should always be there
     expect(hasHuggingFace).toBeTruthy();
 
     console.log(`Loaded Models: ${hasLoadedModels}, Downloaded: ${hasDownloaded}, Registry: ${hasRegistry}, HF: ${hasHuggingFace}`);

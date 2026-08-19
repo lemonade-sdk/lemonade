@@ -35,6 +35,7 @@ assert.match(nav, /\{backends\.map\(backend => \{/, 'the rail must render every 
 assert.doesNotMatch(nav, /model-nav-rail__backend-more/, 'the "+N" reveal pill must not return');
 assert.doesNotMatch(nav, /model-nav-rail__backend-remove/, 'backend chips must not carry a per-chip hide control');
 assert.match(nav, /model-nav-rail__tag-chip/);
+assert.doesNotMatch(nav, /key: 'my-models'/, 'My Models must not remain as a primary filter');
 assert.match(nav, /aria-pressed=\{active\}/);
 assert.match(nav, /onTaskFiltersChange\(next\)/);
 assert.match(nav, /onBackendFiltersChange\(next\)/);
@@ -51,7 +52,9 @@ assert.match(list, /export function modelMatchesBackends/);
 assert.match(list, /export function modelMatchesTags/);
 assert.match(list, /export function modelMatchesFilter/);
 assert.match(list, /raw\.recommended === true \|\| raw\.is_recommended === true \|\| raw\.featured === true \|\| raw\.suggested === true/);
-assert.match(list, /TAG_CHIPS: string\[\] = \['Recommended', 'Hot'/);
+assert.match(list, /TAG_CHIPS: string\[\] = \['Recommended', 'Hot', 'Custom'/);
+assert.match(list, /if \(t === 'custom'\) return modelIsCustom\(m\);/,
+  'the built-in Custom tag must reuse the canonical custom-model predicate');
 assert.match(list, /if \(t === 'hot'\) return modelIsHot\(m\);/);
 assert.match(list, /Array\.isArray\(raw\.capabilities\)/);
 assert.match(list, /const FILTER_TABS:[\s\S]*?key: 'llm', label: 'Chat'[\s\S]*?key: 'embedding', label: 'Embed'/,
@@ -163,6 +166,7 @@ const hotCapabilityModel = { id: 'Future-Hot', name: 'Future-Model', capabilitie
 const hotNameOnlyModel = { id: 'Hotpot-Model', name: 'Hotpot-Model', labels: ['chat'], recipe: 'llamacpp' };
 const routerModel = { id: 'user.router', name: 'user.router', labels: ['custom'], recipe: 'collection.router' };
 const omniModel = { id: 'user.omni', name: 'user.omni', labels: ['custom'], recipe: 'collection.omni' };
+const sourceOnlyCustomModel = { id: 'registered-custom', name: 'registered-custom', source: 'user', labels: ['chat'], recipe: 'llamacpp' };
 
 assert.doesNotThrow(() => helpers.ModelListPanel({
   allModels: [chatModel, audioModel, routerModel, omniModel],
@@ -200,6 +204,7 @@ assert.equal(helpers.modelMatchesTags(audioModel, new Set(['Recommended', 'Llama
 assert.equal(helpers.modelMatchesTags(hotLabelModel, new Set(['Hot'])), true, 'server hot labels must match the built-in Hot filter');
 assert.equal(helpers.modelMatchesTags(hotCapabilityModel, new Set(['Hot'])), true, 'capability hot must match the built-in Hot filter');
 assert.equal(helpers.modelMatchesTags(hotNameOnlyModel, new Set(['Hot'])), false, 'Hot is exact metadata, not a fuzzy name match');
+assert.equal(helpers.modelMatchesTags(sourceOnlyCustomModel, new Set(['Custom'])), true, 'Custom must match server-owned user models even without a custom label');
 assert.equal(helpers.__modelCapabilities.modelCapabilityTags(hotLabelModel).includes('hot'), true, 'hot server metadata must be recognized as a first-class capability tag');
 
 console.log('Model nav filter behavior checks passed.');
