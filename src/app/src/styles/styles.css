@@ -693,7 +693,7 @@ input[type="checkbox"]:disabled {
 
 .chip__icon { font-size: var(--text-base); line-height: 1; }
 
-/* PR3141 rescue: loaded models overview */
+/* PR3141 V2: loaded models overview */
 .loaded-overview {
   padding: var(--space-5) 0 var(--space-4);
 }
@@ -775,7 +775,6 @@ input[type="checkbox"]:disabled {
   color: var(--loaded-task-color);
 }
 
-/* Deliberately unframed: the capability glyph itself is the affordance. */
 .loaded-overview__task-icon {
   width: 38px;
   height: 34px;
@@ -829,8 +828,6 @@ input[type="checkbox"]:disabled {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__details-link:hover,
@@ -874,7 +871,6 @@ input[type="checkbox"]:disabled {
   white-space: nowrap;
 }
 
-/* Same compact target size as the app's inline copy affordance. */
 .loaded-overview__pin {
   grid-column: 4;
   width: 22px;
@@ -888,8 +884,6 @@ input[type="checkbox"]:disabled {
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__pin:hover,
@@ -929,9 +923,6 @@ input[type="checkbox"]:disabled {
   background: var(--accent);
   color: var(--accent-on);
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out),
-              border-color var(--duration-fast) var(--ease-out),
-              transform var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__selection-pill--use:hover:not(:disabled),
@@ -940,7 +931,6 @@ input[type="checkbox"]:disabled {
   background: var(--accent-hover);
 }
 
-.loaded-overview__selection-pill--use:active:not(:disabled) { transform: translateY(1px); }
 .loaded-overview__selection-pill--use:disabled { cursor: progress; opacity: 0.55; }
 
 .loaded-overview__selection-pill--selected {
@@ -950,7 +940,6 @@ input[type="checkbox"]:disabled {
   cursor: default;
 }
 
-/* Mirrors WorkspaceListRow's latched action, with a larger 56 px hit target. */
 .loaded-overview__unload {
   position: absolute;
   inset-block: 0;
@@ -966,8 +955,6 @@ input[type="checkbox"]:disabled {
   color: var(--accent-fg);
   cursor: pointer;
   visibility: visible;
-  transition: color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__unload:hover:not(:disabled),
@@ -3788,15 +3775,7 @@ optgroup {
   .hero__subtitle { font-size: var(--text-base); }
   .chips { gap: var(--space-1); }
   .chip { padding: 8px var(--space-3); font-size: var(--text-xs); }
-  .loaded-overview { padding-top: var(--space-5); }
-  .loaded-overview__title { font-size: var(--text-2xl); }
-  .loaded-overview__subtitle { font-size: var(--text-base); }
-  .loaded-overview__row {
-    grid-template-columns: 66px minmax(0, 1fr) 78px 44px;
-    column-gap: var(--space-3);
-  }
-  .loaded-overview__resource { display: none; }
-  .loaded-overview__selection { grid-column: 3; }
+  .active-models { grid-template-columns: 1fr; }
   .applied-row { grid-template-columns: 1fr; gap: var(--space-2); }
   .backends__head { padding: var(--space-5) var(--space-4) var(--space-3); }
   .matrix { margin: var(--space-3) var(--space-4); }
@@ -3909,33 +3888,15 @@ optgroup {
   .chat__inner { padding: var(--space-4) var(--space-3); }
 
   /* ── Active-model cards in hero: more compact on phone ── */
+  .active-card { padding: var(--space-3); gap: var(--space-2); }
+  .active-card__name { font-size: var(--text-sm); }
 
   /* ── Hero title/subtitle: tighten for mobile ── */
   .hero__title { font-size: var(--text-xl); }
   .hero__subtitle { font-size: var(--text-sm); }
 
-  .loaded-overview { padding-top: var(--space-3); }
-  .loaded-overview__header { margin-bottom: var(--space-4); }
-  .loaded-overview__title { font-size: var(--text-xl); }
-  .loaded-overview__subtitle { font-size: var(--text-sm); }
-  .loaded-overview__row {
-    grid-template-columns: 58px minmax(0, 1fr) 44px;
-    grid-template-rows: auto auto;
-    column-gap: var(--space-2);
-    row-gap: var(--space-2);
-    min-height: 104px;
-    padding-inline-start: var(--space-3);
-  }
-  .loaded-overview__task { grid-row: 1 / span 2; }
-  .loaded-overview__task-icon { width: 46px; height: 46px; }
-  .loaded-overview__task-label { max-width: 58px; font-size: 10px; }
-  .loaded-overview__identity { grid-row: 1; align-self: end; }
-  .loaded-overview__name { font-size: var(--text-base); }
-  .loaded-overview__status-line { margin-top: var(--space-1-5); }
-  .loaded-overview__running { font-size: var(--text-xs); }
-  .loaded-overview__device-badge { max-width: 96px; padding-inline: 6px; }
-  .loaded-overview__selection { grid-column: 2; grid-row: 2; justify-content: flex-start; align-self: start; }
-  .loaded-overview__selection-pill { min-width: 70px; height: 30px; font-size: var(--text-xs); }
+  /* ── Section labels (e.g. "LOADED RIGHT NOW"): smaller ── */
+  .section-label { font-size: var(--type-overline-size); margin-bottom: var(--space-2); }
 
   /* ── Composer pills row: smaller font + tighter padding to reduce chrome ── */
   .composer__toolbar .btn,
@@ -5194,6 +5155,11 @@ optgroup {
   max-height: 512px;
 }
 
+.active-card__status--muted {
+  background: var(--surface-3);
+  color: var(--text-tertiary);
+}
+
 .form-field__hint {
   font-size: var(--text-xs);
   color: var(--text-tertiary);
@@ -5345,6 +5311,7 @@ optgroup {
 }
 
 .message__author-row,
+.active-card__name-row,
 .row__name-wrap,
 .applied-row__model-name-wrap {
   display: inline-flex;
@@ -5360,6 +5327,7 @@ optgroup {
 }
 
 .row__name-wrap .row__name,
+.active-card__name-row .active-card__name,
 .applied-row__model-name-wrap .applied-row__model-name {
   min-width: 0;
   overflow: hidden;
@@ -5367,6 +5335,12 @@ optgroup {
   white-space: nowrap;
 }
 
+.active-card__name-row .active-card__name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 .copy-inline {
   width: 22px;
@@ -15316,7 +15290,7 @@ button.workspace-metadata-chip:hover {
   grid-template-columns: 26px minmax(min-content, 1fr);
 }
 
-/* PR3141 rescue: loaded models responsive layout */
+/* PR3141 V2: loaded models responsive */
 @media (max-width: 768px) {
   .loaded-overview__header { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .loaded-overview__row { grid-template-columns: 52px minmax(0, 1fr) 24px 76px 52px; column-gap: var(--space-2); }

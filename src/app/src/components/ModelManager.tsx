@@ -1179,7 +1179,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   }, [visibleServerModels.length]);
 
   useEffect(() => {
-    const reloadGlobalSettings = () => setGlobalModelSettings(loadGlobalModelSettings());
+    const reloadGlobalSettings = () => {
+      setGlobalModelSettings(loadGlobalModelSettings());
+      setPinnedModels(loadPinnedModelNames());
+    };
     automaticUpdateStartedRef.current = false;
     reloadGlobalSettings();
     window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);

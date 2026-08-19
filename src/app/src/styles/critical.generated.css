@@ -863,7 +863,7 @@
   color: var(--text-primary);
 }.chip:active { transform: scale(0.97); }.chip__icon { font-size: var(--text-base); line-height: 1; }
 
-/* PR3141 rescue: loaded models overview */
+/* PR3141 V2: loaded models overview */
 .loaded-overview {
   padding: var(--space-5) 0 var(--space-4);
 }
@@ -945,7 +945,6 @@
   color: var(--loaded-task-color);
 }
 
-/* Deliberately unframed: the capability glyph itself is the affordance. */
 .loaded-overview__task-icon {
   width: 38px;
   height: 34px;
@@ -999,8 +998,6 @@
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__details-link:hover,
@@ -1044,7 +1041,6 @@
   white-space: nowrap;
 }
 
-/* Same compact target size as the app's inline copy affordance. */
 .loaded-overview__pin {
   grid-column: 4;
   width: 22px;
@@ -1058,8 +1054,6 @@
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__pin:hover,
@@ -1099,9 +1093,6 @@
   background: var(--accent);
   color: var(--accent-on);
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out),
-              border-color var(--duration-fast) var(--ease-out),
-              transform var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__selection-pill--use:hover:not(:disabled),
@@ -1110,7 +1101,6 @@
   background: var(--accent-hover);
 }
 
-.loaded-overview__selection-pill--use:active:not(:disabled) { transform: translateY(1px); }
 .loaded-overview__selection-pill--use:disabled { cursor: progress; opacity: 0.55; }
 
 .loaded-overview__selection-pill--selected {
@@ -1120,7 +1110,6 @@
   cursor: default;
 }
 
-/* Mirrors WorkspaceListRow's latched action, with a larger 56 px hit target. */
 .loaded-overview__unload {
   position: absolute;
   inset-block: 0;
@@ -1136,8 +1125,6 @@
   color: var(--accent-fg);
   cursor: pointer;
   visibility: visible;
-  transition: color var(--duration-fast) var(--ease-out),
-              background var(--duration-fast) var(--ease-out);
 }
 
 .loaded-overview__unload:hover:not(:disabled),
@@ -1852,7 +1839,7 @@ option:checked {
     grid-template-areas:
       "main"
       "composer";
-  }.rail { display: none; }.chat__inner { padding: var(--space-5) var(--space-4); overflow-x: hidden; }.composer { padding: var(--space-3) var(--space-4); }.manager__custom-actions .btn { flex: 1; justify-content: center; }.hero { padding: var(--space-8) 0 var(--space-6); }.hero__title { font-size: var(--text-2xl); }.hero__subtitle { font-size: var(--text-base); }.chips { gap: var(--space-1); }.chip { padding: 8px var(--space-3); font-size: var(--text-xs); }.loaded-overview { padding-top: var(--space-5); }.loaded-overview__title { font-size: var(--text-2xl); }.loaded-overview__subtitle { font-size: var(--text-base); }.loaded-overview__row { grid-template-columns: 66px minmax(0, 1fr) 78px 44px; column-gap: var(--space-3); }.loaded-overview__resource { display: none; }.loaded-overview__selection { grid-column: 3; }}@media (max-width: 480px) {.composer__send,
+  }.rail { display: none; }.chat__inner { padding: var(--space-5) var(--space-4); overflow-x: hidden; }.composer { padding: var(--space-3) var(--space-4); }.manager__custom-actions .btn { flex: 1; justify-content: center; }.hero { padding: var(--space-8) 0 var(--space-6); }.hero__title { font-size: var(--text-2xl); }.hero__subtitle { font-size: var(--text-base); }.chips { gap: var(--space-1); }.chip { padding: 8px var(--space-3); font-size: var(--text-xs); }.active-models { grid-template-columns: 1fr; }}@media (max-width: 480px) {.composer__send,
   .composer__stop {
     width: 44px;
     height: 44px;
@@ -1879,7 +1866,7 @@ option:checked {
     grid-template-areas:
       "main"
       "composer";
-  }.rail { display: none; }.chat__inner { padding: var(--space-4) var(--space-3); }.hero__title { font-size: var(--text-xl); }.hero__subtitle { font-size: var(--text-sm); }.loaded-overview { padding-top: var(--space-3); }.loaded-overview__header { margin-bottom: var(--space-4); }.loaded-overview__title { font-size: var(--text-xl); }.loaded-overview__subtitle { font-size: var(--text-sm); }.loaded-overview__row { grid-template-columns: 58px minmax(0, 1fr) 44px; grid-template-rows: auto auto; column-gap: var(--space-2); row-gap: var(--space-2); min-height: 104px; padding-inline-start: var(--space-3); }.loaded-overview__task { grid-row: 1 / span 2; }.loaded-overview__task-icon { width: 46px; height: 46px; }.loaded-overview__task-label { max-width: 58px; font-size: 10px; }.loaded-overview__identity { grid-row: 1; align-self: end; }.loaded-overview__name { font-size: var(--text-base); }.loaded-overview__status-line { margin-top: var(--space-1-5); }.loaded-overview__running { font-size: var(--text-xs); }.loaded-overview__device-badge { max-width: 96px; padding-inline: 6px; }.loaded-overview__selection { grid-column: 2; grid-row: 2; justify-content: flex-start; align-self: start; }.loaded-overview__selection-pill { min-width: 70px; height: 30px; font-size: var(--text-xs); }.composer__toolbar .btn,
+  }.rail { display: none; }.chat__inner { padding: var(--space-4) var(--space-3); }.active-card { padding: var(--space-3); gap: var(--space-2); }.active-card__name { font-size: var(--text-sm); }.hero__title { font-size: var(--text-xl); }.hero__subtitle { font-size: var(--text-sm); }.section-label { font-size: var(--type-overline-size); margin-bottom: var(--space-2); }.composer__toolbar .btn,
   .composer__toolbar .chip,
   .composer__toolbar button {
     font-size: var(--text-xs);
@@ -2134,6 +2121,9 @@ option:checked {
 }.message__image--generated {
   max-width: min(100%, 512px);
   max-height: 512px;
+}.active-card__status--muted {
+  background: var(--surface-3);
+  color: var(--text-tertiary);
 }.composer__mode-badge--omni, .cap-badge--omni, .cap-chip--omni, .rail__model-badge--omni { color: var(--cap-omni); background: color-mix(in srgb, var(--cap-omni) 18%, transparent); }.rail__model-badge--router { color: var(--cap-router); background: color-mix(in srgb, var(--cap-router) 18%, transparent); }.custom-model-form__grid .input, .custom-model-form__grid .select { width: 100%; }.custom-model-form__grid .textarea { min-height: 192px; font-family: var(--font-mono); font-size: var(--text-xs); line-height: var(--leading-relaxed); }.chat:not(.rail-expanded) .rail__list,
 .chat:not(.rail-expanded) .rail__privacy {
   display: none;
@@ -2145,6 +2135,7 @@ option:checked {
 }.chat:not(.rail-expanded) .rail__new-wrap {
   display: flex;
 }.message__author-row,
+.active-card__name-row,
 .row__name-wrap,
 .applied-row__model-name-wrap {
   display: inline-flex;
@@ -2153,11 +2144,17 @@ option:checked {
   min-width: 0;
   max-width: 100%;
 }.row__name-wrap .row__name,
+.active-card__name-row .active-card__name,
 .applied-row__model-name-wrap .applied-row__model-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}.active-card__name-row .active-card__name {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }.copy-inline {
   width: 22px;
   height: 22px;
@@ -3559,7 +3556,7 @@ option:checked {
   min-height: 1em;
 }
 
-/* PR3141 rescue: loaded models responsive layout */
+/* PR3141 V2: loaded models responsive */
 @media (max-width: 768px) {
   .loaded-overview__header { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
   .loaded-overview__row { grid-template-columns: 52px minmax(0, 1fr) 24px 76px 52px; column-gap: var(--space-2); }

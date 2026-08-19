@@ -420,6 +420,9 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
     .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
 }
 
+function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
+  return capabilityBadge(identityFor(capability, recipe));
+}
 
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
@@ -4422,16 +4425,20 @@ const EmptyState: React.FC<EmptyStateProps> = ({
     [pinnedModels],
   );
 
+  useEffect(() => {
+    const reloadPinnedModels = () => setPinnedModels(loadPinnedModelNames());
+    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadPinnedModels);
+    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadPinnedModels);
+  }, []);
+
   const togglePinnedModel = (modelName: string) => {
-    setPinnedModels(previous => {
-      const key = modelName.toLowerCase();
-      const exists = previous.some(name => name.toLowerCase() === key);
-      const next = exists
-        ? previous.filter(name => name.toLowerCase() !== key)
-        : [modelName, ...previous];
-      savePinnedModelNames(next);
-      return next;
-    });
+    const key = modelName.toLowerCase();
+    const exists = pinnedModels.some(name => name.toLowerCase() === key);
+    const next = exists
+      ? pinnedModels.filter(name => name.toLowerCase() !== key)
+      : [modelName, ...pinnedModels];
+    setPinnedModels(next);
+    savePinnedModelNames(next);
   };
 
   return (
