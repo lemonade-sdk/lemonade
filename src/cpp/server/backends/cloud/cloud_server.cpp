@@ -26,11 +26,6 @@ bool id_contains(const std::string& id, const std::string& needle) {
     return id.find(needle) != std::string::npos;
 }
 
-std::map<std::string, std::string>
-auth_headers(const CloudProviderRegistry::AuthHeader& header, const std::string& api_key) {
-    return {{header.name, header.prefix + api_key}};
-}
-
 // Id-pattern fallback for /v1/models entries that don't publish capability
 // metadata (notably OpenAI). Anything unmatched falls through to LLM.
 ModelType infer_type(const std::string& id) {
@@ -462,7 +457,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
         return missing_creds_error();
     }
     std::string url = creds.base_url + path;
-    const auto headers = auth_headers(creds.auth_header, creds.api_key);
+    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
 
     try {
         auto response = utils::HttpClient::post(
@@ -620,7 +615,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     std::string url = creds.base_url + suffix;
 
-    const auto headers = auth_headers(creds.auth_header, creds.api_key);
+    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
 
     try {
         if (sse) {
@@ -876,6 +871,19 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     }
 }
 
+std::map<std::string, std::string> CloudServer::upstream_headers(
+    const CloudProviderRegistry::AuthHeader& auth_header,
+    const std::string& api_key,
+    const std::string& wire_format) {
+    std::map<std::string, std::string> headers = {
+        {auth_header.name, auth_header.prefix + api_key}
+    };
+    if (wire_format == "anthropic") {
+        headers["anthropic-version"] = kAnthropicVersion;
+    }
+    return headers;
+}
+
 utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_url,
                                                         bool allow_insecure_http) {
     // The AllowInsecureHttp opt-in only applies to plaintext http:// providers.
@@ -891,7 +899,8 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
                                                      bool allow_insecure_http,
-                                                     const CloudProviderRegistry::AuthHeader& auth_header) {
+                                                     const CloudProviderRegistry::AuthHeader& auth_header,
+                                                     const std::string& wire_format) {
     std::vector<ModelInfo> models;
     if (api_key.empty()) {
         return models;
@@ -909,7 +918,7 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         normalized_base.pop_back();
     }
     std::string url = normalized_base + "/models";
-    const auto headers = auth_headers(auth_header, api_key);
+    const auto headers = upstream_headers(auth_header, api_key, wire_format);
 
     const auto policy = discovery_policy(normalized_base, allow_insecure_http);
 
@@ -1057,7 +1066,8 @@ public:
             try {
                 for (auto& m : CloudServer::discover_models(
                          rec.name, api_key, rec.base_url, rec.allow_insecure_http,
-                         {rec.auth_header_name, rec.auth_header_prefix})) {
+                         {rec.auth_header_name, rec.auth_header_prefix},
+                         rec.wire_format)) {
                     if (m.recipe == "cloud" && !m.model_name.empty()) {
                         out.push_back(std::move(m));
                     }

@@ -256,6 +256,34 @@ int main() {
     }
 
     {
+        // Same clobbering case as the auth header, and worse in effect: a
+        // re-install that drops back to "openai" stops /v1/messages relaying
+        // and starts /v1/chat/completions forwarding an OpenAI-shaped body to
+        // a provider that doesn't serve one.
+        CloudProviderRegistry::InstallOptions options;
+        options.wire_format = "anthropic";
+        options.auth_header_name = "x-api-key";
+        options.auth_header_prefix = "";
+
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1", options);
+
+        r.check(registry.install("acme", "https://gateway.example.com/v2"),
+                "re-install with only a new base_url -> reports a change");
+        r.check(registry.wire_format_for("acme") == "anthropic",
+                "re-install without wire_format -> anthropic preserved");
+        r.check(registry.base_url_for("acme") == "https://gateway.example.com/v2",
+                "re-install without wire_format -> base_url still updated");
+
+        CloudProviderRegistry::InstallOptions to_openai;
+        to_openai.wire_format = "openai";
+        r.check(registry.install("acme", "https://gateway.example.com/v2", to_openai),
+                "re-install with an explicit wire_format -> reports a change");
+        r.check(registry.wire_format_for("acme") == "openai",
+                "re-install with an explicit wire_format -> new value stored");
+    }
+
+    {
         // An unrecognized persisted value would leave the provider
         // undispatchable, so it must not survive a load.
         json bad_array = json::array({

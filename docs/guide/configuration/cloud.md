@@ -68,8 +68,14 @@ Some providers serve their models over the Anthropic Messages wire format rather
 ```bash
 lemonade cloud install acme \
   --base-url https://gateway.example.com/v1 \
-  --wire-format anthropic
+  --wire-format anthropic \
+  --auth-header-name x-api-key \
+  --auth-header-prefix ""
 ```
+
+The auth header flags are separate from the wire format, and the two usually go together: the Anthropic API authenticates with `x-api-key: <key>`, not `Authorization: Bearer <key>`. Leaving them at their defaults against such a provider returns `401`. A gateway that fronts the Anthropic format behind bearer auth is the exception — omit the two flags there.
+
+Every request Lemonade sends to an `anthropic` provider, discovery included, carries `anthropic-version: 2023-06-01`.
 
 Model discovery is unchanged — it still reads `GET <base_url>/models`, which these providers serve in the OpenAI envelope. Inference differs:
 
@@ -146,6 +152,7 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
 | Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
 | Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. |
+| An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. |
 
 For a structured view of every installed provider's auth state and discovered model count, hit `GET /v1/system-info` — the `cloud.providers[]` block reports `env_var_set`, `runtime_key_set`, and `models_discovered` per provider.
 

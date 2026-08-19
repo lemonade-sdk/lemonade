@@ -6,6 +6,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/wrapped_server.h"
+#include <map>
 #include <string>
 #include <vector>
 
@@ -91,7 +92,20 @@ public:
         const std::string& api_key,
         const std::string& base_url,
         bool allow_insecure_http = false,
-        const CloudProviderRegistry::AuthHeader& auth_header = {});
+        const CloudProviderRegistry::AuthHeader& auth_header = {},
+        const std::string& wire_format = "openai");
+
+    /// Version an Anthropic-wire-format provider is addressed with. Required
+    /// by the Messages API and by strict gateways on every request, discovery
+    /// included, so both paths must send the same value.
+    static constexpr const char* kAnthropicVersion = "2023-06-01";
+
+    /// Outbound headers for a request to `provider`: the configured auth
+    /// header, plus anything the wire format mandates.
+    static std::map<std::string, std::string> upstream_headers(
+        const CloudProviderRegistry::AuthHeader& auth_header,
+        const std::string& api_key,
+        const std::string& wire_format);
 
     /// Trust boundary for a discovery request. The AllowInsecureHttp opt-in
     /// only applies to plaintext http:// providers; an https:// provider stays
