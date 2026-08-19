@@ -2971,6 +2971,13 @@ if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
+set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
+if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
+    add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
+    target_link_libraries(test_backend_utils_dll_version PRIVATE lemonade-server-core)
+    add_cpp_ci_test(BackendUtilsDllVersionTest CI ON COMMAND test_backend_utils_dll_version)
+endif()
+
 set(_PIP_DL_PARSER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pip_download_parser.cpp")
 if(BUILD_TESTING AND EXISTS "${_PIP_DL_PARSER_TEST_SRC}")
     add_executable(test_pip_download_parser test/cpp/test_pip_download_parser.cpp)
