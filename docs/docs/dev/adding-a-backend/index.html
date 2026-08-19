@@ -2558,54 +2558,58 @@
 <h2 id="the-descriptor-stemstemh">The descriptor — <code>&lt;stem&gt;/&lt;stem&gt;.h</code></h2>
 <p>Plain data. The single object the registry, CLI, <code>/system-info</code>, and docs all read.</p>
 <div class="highlight"><pre><span></span><code><span class="cp">#pragma once</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;lemon/backends/backend_descriptor.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">"lemon/backends/backend_descriptor.h"</span>
 
 <span class="k">namespace</span><span class="w"> </span><span class="nn">lemon</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">backends</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">myrecipe</span><span class="w"> </span><span class="p">{</span>
 
 <span class="kr">inline</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">BackendDescriptor</span><span class="w"> </span><span class="n">descriptor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="cm">/*recipe*/</span><span class="w">          </span><span class="s">&quot;myrecipe&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="cm">/*display_name*/</span><span class="w">    </span><span class="s">&quot;My Backend&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="cm">/*binary*/</span><span class="w">          </span><span class="s">&quot;my-server&quot;</span><span class="p">,</span><span class="w">        </span><span class="c1">// &quot;&quot; = no subprocess (e.g. cloud)</span>
-<span class="w">    </span><span class="cm">/*config_section*/</span><span class="w">  </span><span class="s">&quot;myrecipe&quot;</span><span class="p">,</span><span class="w">         </span><span class="c1">// defaults to recipe</span>
+<span class="w">    </span><span class="cm">/*recipe*/</span><span class="w">          </span><span class="s">"myrecipe"</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/*display_name*/</span><span class="w">    </span><span class="s">"My Backend"</span><span class="p">,</span>
+<span class="w">    </span><span class="cm">/*binary*/</span><span class="w">          </span><span class="s">"my-server"</span><span class="p">,</span><span class="w">        </span><span class="c1">// "" = no subprocess (e.g. cloud)</span>
+<span class="w">    </span><span class="cm">/*config_section*/</span><span class="w">  </span><span class="s">"myrecipe"</span><span class="p">,</span><span class="w">         </span><span class="c1">// defaults to recipe</span>
 <span class="w">    </span><span class="cm">/*default_device*/</span><span class="w">  </span><span class="n">DEVICE_GPU</span><span class="p">,</span>
 <span class="w">    </span><span class="cm">/*slot_policy*/</span><span class="w">     </span><span class="n">SlotPolicy</span><span class="o">::</span><span class="n">Standard</span><span class="p">,</span>
-<span class="w">    </span><span class="cm">/*selectable_backend*/</span><span class="w"> </span><span class="nb">false</span><span class="p">,</span><span class="w">           </span><span class="c1">// true auto-exposes &quot;&lt;recipe&gt;_backend&quot; + &quot;--&lt;recipe&gt;&quot;</span>
+<span class="w">    </span><span class="cm">/*selectable_backend*/</span><span class="w"> </span><span class="nb">false</span><span class="p">,</span><span class="w">           </span><span class="c1">// true auto-exposes "&lt;recipe&gt;_backend" + "--&lt;recipe&gt;"</span>
 <span class="w">    </span><span class="cm">/*uses_ctx_size*/</span><span class="w">   </span><span class="nb">true</span><span class="p">,</span><span class="w">               </span><span class="c1">// opt in to the shared ctx_size option</span>
 <span class="w">    </span><span class="cm">/*dynamic_models*/</span><span class="w">  </span><span class="nb">false</span><span class="p">,</span><span class="w">              </span><span class="c1">// true = models discovered at runtime (cloud)</span>
 <span class="w">    </span><span class="cm">/*options*/</span><span class="w"> </span><span class="p">{</span><span class="w">                           </span><span class="c1">// backend-specific knobs (common ones are automatic)</span>
-<span class="w">        </span><span class="p">{</span><span class="s">&quot;myrecipe_args&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;--myrecipe-args&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;ARGS&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Custom args to pass&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;My Options&quot;</span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span><span class="s">"myrecipe_args"</span><span class="p">,</span><span class="w"> </span><span class="s">"--myrecipe-args"</span><span class="p">,</span><span class="w"> </span><span class="s">""</span><span class="p">,</span><span class="w"> </span><span class="s">"ARGS"</span><span class="p">,</span><span class="w"> </span><span class="s">"Custom args to pass"</span><span class="p">,</span><span class="w"> </span><span class="s">"My Options"</span><span class="p">},</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="cm">/*support*/</span><span class="w"> </span><span class="p">{</span><span class="w">                           </span><span class="c1">// OS / device families ({} = no local gating)</span>
-<span class="w">        </span><span class="p">{</span><span class="s">&quot;myrecipe&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;cpu&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;linux&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;windows&quot;</span><span class="p">},</span><span class="w"> </span><span class="p">{{</span><span class="s">&quot;cpu&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;x86_64&quot;</span><span class="p">}}}},</span>
+<span class="w">        </span><span class="p">{</span><span class="s">"myrecipe"</span><span class="p">,</span><span class="w"> </span><span class="s">"cpu"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"linux"</span><span class="p">,</span><span class="w"> </span><span class="s">"windows"</span><span class="p">},</span><span class="w"> </span><span class="p">{{</span><span class="s">"cpu"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span><span class="s">"x86_64"</span><span class="p">}}}},</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="cm">/*default_labels*/</span><span class="w">  </span><span class="p">{},</span><span class="w">                 </span><span class="c1">// labels injected when a model omits them</span>
-<span class="w">    </span><span class="cm">/*required_checkpoints*/</span><span class="w"> </span><span class="p">{</span><span class="s">&quot;main&quot;</span><span class="p">},</span><span class="w">      </span><span class="c1">// unconditional files; conditional ones checked in load()</span>
+<span class="w">    </span><span class="cm">/*supported_modes*/</span><span class="w"> </span><span class="p">{</span><span class="s">"chat"</span><span class="p">},</span><span class="w">           </span><span class="c1">// every mode you serve, most-default first</span>
+<span class="w">    </span><span class="cm">/*required_checkpoints*/</span><span class="w"> </span><span class="p">{</span><span class="s">"main"</span><span class="p">},</span><span class="w">      </span><span class="c1">// unconditional files; conditional ones checked in load()</span>
+<span class="w">    </span><span class="cm">/*default_capabilities*/</span><span class="w"> </span><span class="p">{},</span><span class="w">            </span><span class="c1">// non-mode labels stamped on a bare model</span>
 <span class="p">};</span>
 
 <span class="p">}}}</span><span class="w">  </span><span class="c1">// namespace lemon::backends::myrecipe</span>
 </code></pre></div>
 <p><code>SlotPolicy</code> controls accelerator sharing: <code>Standard</code> (counts toward LRU slots), <code>ExclusiveNpu</code> (evicts all NPU servers first), <code>CoexistByType</code> (one per model type), <code>Unmetered</code> (never counted, never auto-evicted — cloud).</p>
+<p><code>supported_modes</code> is the backend's contract with the model registry. A model whose labels name no mode is stamped with <code>supported_modes[0]</code>; a model whose labels name a mode absent from the list is refused by <code>POST /pull</code> with a 400 rather than failing later at inference time. <code>BackendModeContractTest</code> fails the build if this list disagrees with the capability interfaces your server class implements.</p>
 <h2 id="the-server-class-factory-stemstem_serverhcpp">The server class + factory — <code>&lt;stem&gt;/&lt;stem&gt;_server.{h,cpp}</code></h2>
 <p>The server class is a <code>WrappedServer</code> subclass. Implement <code>load()</code>, <code>unload()</code>, and only the capability interfaces you serve (<code>ITranscriptionServer</code>, <code>IImageServer</code>, <code>ITextToSpeechServer</code>, …). <code>WrappedServer</code> provides default "unsupported" <code>chat_completion</code>/<code>completion</code>/<code>responses</code>, so a non-chat backend does not stub them. Alongside it, a free <code>create()</code> builds the instance.</p>
 <p><code>&lt;stem&gt;_server.h</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="cp">#pragma once</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;lemon/backends/backend_registry.h&quot;</span><span class="c1">   // BackendContext</span>
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;lemon/wrapped_server.h&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">"lemon/backends/backend_registry.h"</span><span class="w">   </span><span class="c1">// BackendContext</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">"lemon/wrapped_server.h"</span>
 
 <span class="k">namespace</span><span class="w"> </span><span class="nn">lemon</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">backends</span><span class="w"> </span><span class="p">{</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">MyServer</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">WrappedServer</span><span class="p">,</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">ICompletionServer</span><span class="w"> </span><span class="p">{</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">MyServer</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">WrappedServer</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="c1">// load(), unload(), the capability methods you serve …</span>
 <span class="p">};</span>
 
 <span class="k">namespace</span><span class="w"> </span><span class="nn">myrecipe</span><span class="w"> </span><span class="p">{</span>
 <span class="n">std</span><span class="o">::</span><span class="n">unique_ptr</span><span class="o">&lt;</span><span class="n">WrappedServer</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">BackendContext</span><span class="o">&amp;</span><span class="w"> </span><span class="n">ctx</span><span class="p">);</span><span class="w">  </span><span class="c1">// server-only</span>
+<span class="c1">// Lets BackendModeContractTest check supported_modes against the real class.</span>
+<span class="k">constexpr</span><span class="w"> </span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">capabilities</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">capability_mask_of</span><span class="o">&lt;</span><span class="n">MyServer</span><span class="o">&gt;</span><span class="p">();</span><span class="w"> </span><span class="p">}</span>
 <span class="p">}</span>
 
 <span class="p">}}</span><span class="w">  </span><span class="c1">// namespace lemon::backends</span>
 </code></pre></div>
 <p><code>&lt;stem&gt;_server.cpp</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;lemon/backends/myrecipe/myrecipe_server.h&quot;</span>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">"lemon/backends/myrecipe/myrecipe_server.h"</span>
 <span class="c1">// … MyServer method definitions …</span>
 
 <span class="k">namespace</span><span class="w"> </span><span class="nn">lemon</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">backends</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">myrecipe</span><span class="w"> </span><span class="p">{</span>
@@ -2617,7 +2621,7 @@
 <h2 id="register-it-one-line">Register it: one line</h2>
 <div class="highlight"><pre><span></span><code><span class="nb">set</span><span class="p">(</span><span class="s">LEMON_BACKENDS</span>
 <span class="w">    </span><span class="s">...</span>
-<span class="w">    </span><span class="s2">&quot;myrecipe|myrecipe&quot;</span><span class="w">   </span><span class="c"># &quot;&lt;recipe&gt;|&lt;stem&gt;&quot;</span>
+<span class="w">    </span><span class="s2">"myrecipe|myrecipe"</span><span class="w">   </span><span class="c"># "&lt;recipe&gt;|&lt;stem&gt;"</span>
 <span class="p">)</span>
 </code></pre></div>
 <p>The <code>foreach</code> in <code>CMakeLists.txt</code> compiles <code>&lt;stem&gt;/&lt;stem&gt;_server.cpp</code> and regenerates the registry headers, binding <code>&lt;stem&gt;::descriptor</code> to <code>&lt;stem&gt;::create</code>.</p>
@@ -2638,8 +2642,8 @@
 <p>Add the test to CI in both matrices of <code>.github/workflows/cpp_server_build_test_release.yml</code>, the Windows block and the Linux block, with one row per backend variant. These matrices run in the merge queue, not on PR pushes — label your PR <code>ci:backends</code> so the new rows execute before merge instead of failing for the first time in the queue (see <a href=".././testing/#what-defers-to-the-merge-queue">the testing guide</a>):</p>
 <div class="highlight"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;modality&gt;-&lt;recipe&gt;</span>
 <span class="w">  </span><span class="nt">script</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">server_&lt;modality&gt;.py</span>
-<span class="w">  </span><span class="nt">extra_args</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;--wrapped-server</span><span class="nv"> </span><span class="s">&lt;recipe&gt;&quot;</span>
-<span class="w">  </span><span class="nt">backends</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;vulkan</span><span class="nv"> </span><span class="s">rocm&quot;</span>
+<span class="w">  </span><span class="nt">extra_args</span><span class="p">:</span><span class="w"> </span><span class="s">"--wrapped-server</span><span class="nv"> </span><span class="s">&lt;recipe&gt;"</span>
+<span class="w">  </span><span class="nt">backends</span><span class="p">:</span><span class="w"> </span><span class="s">"vulkan</span><span class="nv"> </span><span class="s">rocm"</span>
 <span class="w">  </span><span class="nt">runner</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">vulkan</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rocm</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lemon-prod</span><span class="p p-Indicator">]</span>
 </code></pre></div>
 <p>If your backend uses ROCm via TheRock, add its recipe to <code>_THEROCK_RECIPES</code> in <code>test/utils/server_base.py</code>. Otherwise a cold runner folds the one-time TheRock download into the first request's timeout instead of <code>TIMEOUT_ROCM_INSTALL</code>, and the ROCm job flakes.</p>

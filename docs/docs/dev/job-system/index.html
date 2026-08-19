@@ -2477,14 +2477,14 @@ This is the current set, not a fixed one; ops for other modalities are additive 
 see <a href="#extending-with-new-ops-any-modality">Extending with new ops</a>.</p>
 <h2 id="recipe-steps">Recipe: steps</h2>
 <div class="highlight"><pre><span></span><code>{
-  &quot;id&quot;: &quot;run_a&quot;,                 // unique within the job
-  &quot;op&quot;: &quot;chat&quot;,
-  &quot;params&quot;: { &quot;...&quot;: &quot;${refs allowed}&quot; },
-  &quot;when&quot;: &quot;boolean expression&quot;,  // optional; skip the step if false
-  &quot;extract&quot;: { &quot;a_tps&quot;: &quot;timings.predicted_per_second&quot; },  // output path -&gt; context key
-  &quot;branch&quot;: [ { &quot;when&quot;: &quot;expr&quot;, &quot;goto&quot;: &quot;later_step_id&quot; } ],
-  &quot;on_done&quot;: &quot;later_step_id&quot;,    // where to go on success (default: next in list)
-  &quot;on_fail&quot;: &quot;abort&quot;             // abort (default) | continue | &lt;later step id&gt;
+  "id": "run_a",                 // unique within the job
+  "op": "chat",
+  "params": { "...": "${refs allowed}" },
+  "when": "boolean expression",  // optional; skip the step if false
+  "extract": { "a_tps": "timings.predicted_per_second" },  // output path -&gt; context key
+  "branch": [ { "when": "expr", "goto": "later_step_id" } ],
+  "on_done": "later_step_id",    // where to go on success (default: next in list)
+  "on_fail": "abort"             // abort (default) | continue | &lt;later step id&gt;
 }
 </code></pre></div>
 <p>References (<code>${path}</code>) and the <code>when</code>/<code>branch</code> expression grammar are documented
@@ -2655,22 +2655,22 @@ reports full progress even though one of its steps is marked <code>failed</code>
 <p>Two configs, each timed, then a branch on the measured throughput — the shape a
 benchmark/AutoOpt client posts (it reads <code>context</code> afterward and synthesizes the
 recommendation itself):</p>
-<div class="highlight"><pre><span></span><code>{ &quot;name&quot;: &quot;bench&quot;,
-  &quot;inputs&quot;: { &quot;model&quot;: &quot;Qwen3-0.6B&quot;, &quot;backend&quot;: &quot;vulkan&quot; },
-  &quot;steps&quot;: [
-    { &quot;id&quot;: &quot;u0&quot;, &quot;op&quot;: &quot;unload&quot; },
-    { &quot;id&quot;: &quot;load_a&quot;, &quot;op&quot;: &quot;load&quot;,
-      &quot;params&quot;: { &quot;model&quot;: &quot;${inputs.model}&quot;, &quot;llamacpp_backend&quot;: &quot;${inputs.backend}&quot;,
-                  &quot;ctx_size&quot;: 4096, &quot;llamacpp_args&quot;: &quot;&quot; },
-      &quot;on_fail&quot;: &quot;load_a_lo&quot; },
-    { &quot;id&quot;: &quot;run_a&quot;, &quot;op&quot;: &quot;chat&quot;,
-      &quot;params&quot;: { &quot;model&quot;: &quot;${inputs.model}&quot;, &quot;messages&quot;: [{&quot;role&quot;:&quot;user&quot;,&quot;content&quot;:&quot;hi&quot;}],
-                  &quot;temperature&quot;: 0, &quot;max_completion_tokens&quot;: 32 },
-      &quot;extract&quot;: { &quot;a_tps&quot;: &quot;timings.predicted_per_second&quot; } },
-    { &quot;id&quot;: &quot;u_a&quot;, &quot;op&quot;: &quot;unload&quot; },
-    { &quot;id&quot;: &quot;load_a_lo&quot;, &quot;op&quot;: &quot;load&quot;,
-      &quot;params&quot;: { &quot;model&quot;: &quot;${inputs.model}&quot;, &quot;llamacpp_backend&quot;: &quot;${inputs.backend}&quot;,
-                  &quot;ctx_size&quot;: 2048 }, &quot;on_fail&quot;: &quot;abort&quot; },
+<div class="highlight"><pre><span></span><code>{ "name": "bench",
+  "inputs": { "model": "Qwen3-0.6B", "backend": "vulkan" },
+  "steps": [
+    { "id": "u0", "op": "unload" },
+    { "id": "load_a", "op": "load",
+      "params": { "model": "${inputs.model}", "llamacpp_backend": "${inputs.backend}",
+                  "ctx_size": 4096, "llamacpp_args": "" },
+      "on_fail": "load_a_lo" },
+    { "id": "run_a", "op": "chat",
+      "params": { "model": "${inputs.model}", "messages": [{"role":"user","content":"hi"}],
+                  "temperature": 0, "max_completion_tokens": 32 },
+      "extract": { "a_tps": "timings.predicted_per_second" } },
+    { "id": "u_a", "op": "unload" },
+    { "id": "load_a_lo", "op": "load",
+      "params": { "model": "${inputs.model}", "llamacpp_backend": "${inputs.backend}",
+                  "ctx_size": 2048 }, "on_fail": "abort" },
     /* …second config, then a `decide` step branching on ${a_tps} &gt;= ${b_tps}… */
   ] }
 </code></pre></div>
@@ -2694,14 +2694,14 @@ a pipeline needs.</p>
 already-existing Router backend (<code>SdServer</code>, <code>KokoroServer</code>, <code>WhisperServer</code>, …)
 and <code>register_op</code> it. A <code>text → LLM enhancer → image → 3D</code> pipeline is then just
 three registered ops passing data through the context:</p>
-<div class="highlight"><pre><span></span><code>{ &quot;steps&quot;: [
-    { &quot;id&quot;: &quot;enhance&quot;, &quot;op&quot;: &quot;chat&quot;, &quot;params&quot;: { &quot;...&quot;: &quot;...&quot; },
-      &quot;extract&quot;: { &quot;prompt&quot;: &quot;choices.0.message.content&quot; } },
-    { &quot;id&quot;: &quot;image&quot;,   &quot;op&quot;: &quot;generate_image&quot;,
-      &quot;params&quot;: { &quot;prompt&quot;: &quot;${enhance.prompt}&quot; },
-      &quot;extract&quot;: { &quot;path&quot;: &quot;data.0.path&quot; } },
-    { &quot;id&quot;: &quot;model3d&quot;, &quot;op&quot;: &quot;generate_3d&quot;,
-      &quot;params&quot;: { &quot;image&quot;: &quot;${image.path}&quot; } }
+<div class="highlight"><pre><span></span><code>{ "steps": [
+    { "id": "enhance", "op": "chat", "params": { "...": "..." },
+      "extract": { "prompt": "choices.0.message.content" } },
+    { "id": "image",   "op": "generate_image",
+      "params": { "prompt": "${enhance.prompt}" },
+      "extract": { "path": "data.0.path" } },
+    { "id": "model3d", "op": "generate_3d",
+      "params": { "image": "${image.path}" } }
   ] }
 </code></pre></div>
 

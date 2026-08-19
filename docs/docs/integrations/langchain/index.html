@@ -2612,15 +2612,15 @@
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">ChatOpenAI</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
-    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>           <span class="c1"># required by LangChain but unused by Lemonade</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span><span class="p">,</span>  <span class="c1"># any model you have pulled</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">"lemonade"</span><span class="p">,</span>           <span class="c1"># required by LangChain but unused by Lemonade</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">"Llama-3.2-3B-Instruct-Hybrid"</span><span class="p">,</span>  <span class="c1"># any model you have pulled</span>
 <span class="p">)</span>
 </code></pre></div>
 <h3 id="step-3-send-your-first-message">Step 3 — Send your first message</h3>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">HumanMessage</span>
 
-<span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">invoke</span><span class="p">([</span><span class="n">HumanMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">&quot;What is the capital of France?&quot;</span><span class="p">)])</span>
+<span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">invoke</span><span class="p">([</span><span class="n">HumanMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">"What is the capital of France?"</span><span class="p">)])</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>
 <span class="c1"># Paris</span>
 </code></pre></div>
@@ -2630,14 +2630,14 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.messages</span><span class="w"> </span><span class="kn">import</span> <span class="n">HumanMessage</span><span class="p">,</span> <span class="n">SystemMessage</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
-    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">"lemonade"</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">"Llama-3.2-3B-Instruct-Hybrid"</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="n">SystemMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">&quot;You are a helpful assistant. Be concise.&quot;</span><span class="p">),</span>
-    <span class="n">HumanMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">&quot;Explain what a vector database is in one sentence.&quot;</span><span class="p">),</span>
+    <span class="n">SystemMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">"You are a helpful assistant. Be concise."</span><span class="p">),</span>
+    <span class="n">HumanMessage</span><span class="p">(</span><span class="n">content</span><span class="o">=</span><span class="s2">"Explain what a vector database is in one sentence."</span><span class="p">),</span>
 <span class="p">]</span>
 
 <span class="n">response</span> <span class="o">=</span> <span class="n">llm</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="n">messages</span><span class="p">)</span>
@@ -2660,10 +2660,10 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.runnables</span><span class="w"> </span><span class="kn">import</span> <span class="n">RunnablePassthrough</span>
 
 <span class="c1"># ── Connect to Lemonade ──────────────────────────────────</span>
-<span class="n">LEMONADE_BASE_URL</span>   <span class="o">=</span> <span class="s2">&quot;http://localhost:13305/api/v1&quot;</span>
-<span class="n">LEMONADE_API_KEY</span>    <span class="o">=</span> <span class="s2">&quot;lemonade&quot;</span>
-<span class="n">MODEL_NAME</span>          <span class="o">=</span> <span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span>
-<span class="n">EMBEDDING_MODEL</span>     <span class="o">=</span> <span class="s2">&quot;nomic-embed-text-v1-GGUF&quot;</span>
+<span class="n">LEMONADE_BASE_URL</span>   <span class="o">=</span> <span class="s2">"http://localhost:13305/api/v1"</span>
+<span class="n">LEMONADE_API_KEY</span>    <span class="o">=</span> <span class="s2">"lemonade"</span>
+<span class="n">MODEL_NAME</span>          <span class="o">=</span> <span class="s2">"Llama-3.2-3B-Instruct-Hybrid"</span>
+<span class="n">EMBEDDING_MODEL</span>     <span class="o">=</span> <span class="s2">"nomic-embed-text-v1-GGUF"</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
     <span class="n">base_url</span><span class="o">=</span><span class="n">LEMONADE_BASE_URL</span><span class="p">,</span>
@@ -2673,7 +2673,7 @@
 
 <span class="c1"># Requires the embedding model to be pulled first:</span>
 <span class="c1">#   lemonade pull nomic-embed-text-v1-GGUF</span>
-<span class="c1"># check_embedding_ctx_length=False disables LangChain&#39;s OpenAI-specific</span>
+<span class="c1"># check_embedding_ctx_length=False disables LangChain's OpenAI-specific</span>
 <span class="c1"># tokenizer check, which fails against non-OpenAI providers.</span>
 <span class="n">embeddings</span> <span class="o">=</span> <span class="n">OpenAIEmbeddings</span><span class="p">(</span>
     <span class="n">base_url</span><span class="o">=</span><span class="n">LEMONADE_BASE_URL</span><span class="p">,</span>
@@ -2683,7 +2683,7 @@
 <span class="p">)</span>
 
 <span class="c1"># ── Load and chunk your PDF ──────────────────────────────</span>
-<span class="n">loader</span> <span class="o">=</span> <span class="n">PyPDFLoader</span><span class="p">(</span><span class="s2">&quot;your_document.pdf&quot;</span><span class="p">)</span>
+<span class="n">loader</span> <span class="o">=</span> <span class="n">PyPDFLoader</span><span class="p">(</span><span class="s2">"your_document.pdf"</span><span class="p">)</span>
 <span class="n">docs</span>   <span class="o">=</span> <span class="n">loader</span><span class="o">.</span><span class="n">load</span><span class="p">()</span>
 
 <span class="n">splitter</span> <span class="o">=</span> <span class="n">RecursiveCharacterTextSplitter</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="mi">500</span><span class="p">,</span> <span class="n">chunk_overlap</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
@@ -2691,30 +2691,30 @@
 
 <span class="c1"># ── Store in ChromaDB ────────────────────────────────────</span>
 <span class="n">vectorstore</span> <span class="o">=</span> <span class="n">Chroma</span><span class="o">.</span><span class="n">from_documents</span><span class="p">(</span><span class="n">chunks</span><span class="p">,</span> <span class="n">embeddings</span><span class="p">)</span>
-<span class="n">retriever</span>   <span class="o">=</span> <span class="n">vectorstore</span><span class="o">.</span><span class="n">as_retriever</span><span class="p">(</span><span class="n">search_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;k&quot;</span><span class="p">:</span> <span class="mi">3</span><span class="p">})</span>
+<span class="n">retriever</span>   <span class="o">=</span> <span class="n">vectorstore</span><span class="o">.</span><span class="n">as_retriever</span><span class="p">(</span><span class="n">search_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">"k"</span><span class="p">:</span> <span class="mi">3</span><span class="p">})</span>
 
 <span class="c1"># ── Build RAG chain ──────────────────────────────────────</span>
-<span class="n">prompt</span> <span class="o">=</span> <span class="n">PromptTemplate</span><span class="o">.</span><span class="n">from_template</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="n">prompt</span> <span class="o">=</span> <span class="n">PromptTemplate</span><span class="o">.</span><span class="n">from_template</span><span class="p">(</span><span class="s2">"""</span>
 <span class="s2">Answer the question using ONLY the context below.</span>
-<span class="s2">If unsure, say &quot;I don&#39;t know based on this document.&quot;</span>
+<span class="s2">If unsure, say "I don't know based on this document."</span>
 
 <span class="s2">Context: </span><span class="si">{context}</span>
 <span class="s2">Question: </span><span class="si">{question}</span>
 <span class="s2">Answer:</span>
-<span class="s2">&quot;&quot;&quot;</span><span class="p">)</span>
+<span class="s2">"""</span><span class="p">)</span>
 
 <span class="k">def</span><span class="w"> </span><span class="nf">format_docs</span><span class="p">(</span><span class="n">docs</span><span class="p">):</span>
-    <span class="k">return</span> <span class="s2">&quot;</span><span class="se">\n\n</span><span class="s2">&quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">page_content</span> <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">)</span>
+    <span class="k">return</span> <span class="s2">"</span><span class="se">\n\n</span><span class="s2">"</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">doc</span><span class="o">.</span><span class="n">page_content</span> <span class="k">for</span> <span class="n">doc</span> <span class="ow">in</span> <span class="n">docs</span><span class="p">)</span>
 
 <span class="n">rag_chain</span> <span class="o">=</span> <span class="p">(</span>
-    <span class="p">{</span><span class="s2">&quot;context&quot;</span><span class="p">:</span> <span class="n">retriever</span> <span class="o">|</span> <span class="n">format_docs</span><span class="p">,</span> <span class="s2">&quot;question&quot;</span><span class="p">:</span> <span class="n">RunnablePassthrough</span><span class="p">()}</span>
+    <span class="p">{</span><span class="s2">"context"</span><span class="p">:</span> <span class="n">retriever</span> <span class="o">|</span> <span class="n">format_docs</span><span class="p">,</span> <span class="s2">"question"</span><span class="p">:</span> <span class="n">RunnablePassthrough</span><span class="p">()}</span>
     <span class="o">|</span> <span class="n">prompt</span>
     <span class="o">|</span> <span class="n">llm</span>
     <span class="o">|</span> <span class="n">StrOutputParser</span><span class="p">()</span>
 <span class="p">)</span>
 
 <span class="c1"># ── Ask questions ────────────────────────────────────────</span>
-<span class="n">answer</span> <span class="o">=</span> <span class="n">rag_chain</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="s2">&quot;What is the main topic of this document?&quot;</span><span class="p">)</span>
+<span class="n">answer</span> <span class="o">=</span> <span class="n">rag_chain</span><span class="o">.</span><span class="n">invoke</span><span class="p">(</span><span class="s2">"What is the main topic of this document?"</span><span class="p">)</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">answer</span><span class="p">)</span>
 </code></pre></div>
 <hr />
@@ -2724,18 +2724,18 @@
 <span class="kn">from</span><span class="w"> </span><span class="nn">langchain_core.output_parsers</span><span class="w"> </span><span class="kn">import</span> <span class="n">StrOutputParser</span>
 
 <span class="n">llm</span> <span class="o">=</span> <span class="n">ChatOpenAI</span><span class="p">(</span>
-    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.2-3B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">"lemonade"</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">"Llama-3.2-3B-Instruct-Hybrid"</span><span class="p">,</span>
 <span class="p">)</span>
 
 <span class="n">prompt</span> <span class="o">=</span> <span class="n">ChatPromptTemplate</span><span class="o">.</span><span class="n">from_template</span><span class="p">(</span>
-    <span class="s2">&quot;Summarize the following text in 3 bullet points:</span><span class="se">\n\n</span><span class="si">{text}</span><span class="s2">&quot;</span>
+    <span class="s2">"Summarize the following text in 3 bullet points:</span><span class="se">\n\n</span><span class="si">{text}</span><span class="s2">"</span>
 <span class="p">)</span>
 
 <span class="n">chain</span> <span class="o">=</span> <span class="n">prompt</span> <span class="o">|</span> <span class="n">llm</span> <span class="o">|</span> <span class="n">StrOutputParser</span><span class="p">()</span>
 
-<span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">invoke</span><span class="p">({</span><span class="s2">&quot;text&quot;</span><span class="p">:</span> <span class="s2">&quot;Your long text goes here...&quot;</span><span class="p">})</span>
+<span class="n">result</span> <span class="o">=</span> <span class="n">chain</span><span class="o">.</span><span class="n">invoke</span><span class="p">({</span><span class="s2">"text"</span><span class="p">:</span> <span class="s2">"Your long text goes here..."</span><span class="p">})</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
 </code></pre></div>
 <hr />

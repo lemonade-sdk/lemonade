@@ -2569,11 +2569,11 @@ lemonade<span class="w"> </span>run<span class="w"> </span>fireworks.kimi-k2p5
 </code></pre></div>
 <p>Standard OpenAI chat completions:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;fireworks.kimi-k2p5&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;hi&quot;}]</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "fireworks.kimi-k2p5",</span>
+<span class="s1">    "messages": [{"role": "user", "content": "hi"}]</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <p>No special headers, no per-request credentials — <code>lemond</code> resolves the key from its registry and forwards the request transparently.</p>
 <h2 id="authentication-precedence">Authentication precedence</h2>

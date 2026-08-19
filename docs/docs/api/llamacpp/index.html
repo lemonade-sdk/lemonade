@@ -3057,57 +3057,57 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/rerank&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/rerank"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;bge-reranker-v2-m3-GGUF&quot;,</span>
-<span class="s1">    &quot;query&quot;: &quot;What is the capital of France?&quot;,</span>
-<span class="s1">    &quot;documents&quot;: [</span>
-<span class="s1">      &quot;Paris is the capital of France.&quot;,</span>
-<span class="s1">      &quot;Berlin is the capital of Germany.&quot;,</span>
-<span class="s1">      &quot;Madrid is the capital of Spain.&quot;</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{</span>
+<span class="s1">    "model": "bge-reranker-v2-m3-GGUF",</span>
+<span class="s1">    "query": "What is the capital of France?",</span>
+<span class="s1">    "documents": [</span>
+<span class="s1">      "Paris is the capital of France.",</span>
+<span class="s1">      "Berlin is the capital of Germany.",</span>
+<span class="s1">      "Madrid is the capital of Spain."</span>
 <span class="s1">    ]</span>
-<span class="s1">  }&#39;</span> <span class="n">-UseBasicParsing</span>
+<span class="s1">  }'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/rerank<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;bge-reranker-v2-m3-GGUF&quot;,</span>
-<span class="s1">        &quot;query&quot;: &quot;What is the capital of France?&quot;,</span>
-<span class="s1">        &quot;documents&quot;: [</span>
-<span class="s1">          &quot;Paris is the capital of France.&quot;,</span>
-<span class="s1">          &quot;Berlin is the capital of Germany.&quot;,</span>
-<span class="s1">          &quot;Madrid is the capital of Spain.&quot;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "bge-reranker-v2-m3-GGUF",</span>
+<span class="s1">        "query": "What is the capital of France?",</span>
+<span class="s1">        "documents": [</span>
+<span class="s1">          "Paris is the capital of France.",</span>
+<span class="s1">          "Berlin is the capital of Germany.",</span>
+<span class="s1">          "Madrid is the capital of Spain."</span>
 <span class="s1">        ]</span>
-<span class="s1">      }&#39;</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bge-reranker-v2-m3-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"bge-reranker-v2-m3-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"results"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;relevance_score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">8.60673713684082</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"relevance_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">8.60673713684082</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;relevance_score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-5.3886260986328125</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"relevance_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">-5.3886260986328125</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;relevance_score&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">-3.555561065673828</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"relevance_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">-3.555561065673828</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;usage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;prompt_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">51</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;total_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">51</span>
+<span class="w">  </span><span class="nt">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">51</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">51</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -3140,7 +3140,7 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/slots&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/slots"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">GET</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
@@ -3153,26 +3153,26 @@
 <h3 id="response-format_1">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">[</span>
 <span class="w">  </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;idle&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;next_token&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;has_next_token&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;n_remain&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;n_decoded&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"idle"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"next_token"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"has_next_token"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"n_remain"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"n_decoded"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;cache_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1024</span>
+<span class="w">    </span><span class="nt">"task_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"cache_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">1024</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;processing&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;next_token&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;has_next_token&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;n_remain&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;n_decoded&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"processing"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"next_token"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"has_next_token"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"n_remain"</span><span class="p">:</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"n_decoded"</span><span class="p">:</span><span class="w"> </span><span class="mi">15</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;task_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;cache_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
+<span class="w">    </span><span class="nt">"task_id"</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"cache_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">]</span>
 </code></pre></div>
@@ -3194,7 +3194,7 @@
 <p><strong>Note:</strong> This endpoint is part of Lemonade's llama.cpp compatibility layer. Internally, Lemonade forwards the request to llama.cpp's <code>/slots/{id}?action=save</code> endpoint.</p>
 <p><strong>Note:</strong> The llama.cpp server must be started with the <code>--slot-save-path</code> argument for save operations to work. See <a href="../../guide/configuration/">Server Configuration</a> for details on configuring backend arguments.</p>
 <p>Example configuration:
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.args<span class="o">=</span><span class="s2">&quot;--slot-save-path /path/to/slot/saves&quot;</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>llamacpp.args<span class="o">=</span><span class="s2">"--slot-save-path /path/to/slot/saves"</span>
 </code></pre></div></p>
 <p><strong>Note:</strong> This endpoint supports all four path prefixes: <code>/api/v0/slots/{id}</code>, <code>/api/v1/slots/{id}</code>, <code>/v0/slots/{id}</code>, and <code>/v1/slots/{id}</code>.</p>
 </blockquote>
@@ -3228,33 +3228,33 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/slots/0?action=save&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/slots/0?action=save"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{&quot;filename&quot;: &quot;my_conversation_cache.bin&quot;}&#39;</span> <span class="n">-UseBasicParsing</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{"filename": "my_conversation_cache.bin"}'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/api/v1/slots/0?action=save&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/api/v1/slots/0?action=save"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{&quot;filename&quot;: &quot;my_conversation_cache.bin&quot;}&#39;</span> <span class="n">-UseBasicParsing</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{"filename": "my_conversation_cache.bin"}'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:13305/v1/slots/0?action=save&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;filename&quot;: &quot;my_conversation_cache.bin&quot;}&#39;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"http://localhost:13305/v1/slots/0?action=save"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"filename": "my_conversation_cache.bin"}'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format_2">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id_slot&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;filename&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_conversation_cache.bin&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;n_saved&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1024</span>
+<span class="w">  </span><span class="nt">"id_slot"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"filename"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my_conversation_cache.bin"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"n_saved"</span><span class="p">:</span><span class="w"> </span><span class="mi">1024</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Field Descriptions:</strong></p>
@@ -3301,33 +3301,33 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/slots/0?action=restore&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/slots/0?action=restore"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{&quot;filename&quot;: &quot;my_conversation_cache.bin&quot;}&#39;</span> <span class="n">-UseBasicParsing</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{"filename": "my_conversation_cache.bin"}'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/api/v1/slots/0?action=restore&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/api/v1/slots/0?action=restore"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{&quot;filename&quot;: &quot;my_conversation_cache.bin&quot;}&#39;</span> <span class="n">-UseBasicParsing</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{"filename": "my_conversation_cache.bin"}'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:13305/v1/slots/0?action=restore&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;filename&quot;: &quot;my_conversation_cache.bin&quot;}&#39;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"http://localhost:13305/v1/slots/0?action=restore"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"filename": "my_conversation_cache.bin"}'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format_3">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id_slot&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;filename&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;my_conversation_cache.bin&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;n_restored&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1024</span>
+<span class="w">  </span><span class="nt">"id_slot"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"filename"</span><span class="p">:</span><span class="w"> </span><span class="s2">"my_conversation_cache.bin"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"n_restored"</span><span class="p">:</span><span class="w"> </span><span class="mi">1024</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Field Descriptions:</strong></p>
@@ -3367,25 +3367,25 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/slots/0?action=erase&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/slots/0?action=erase"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/api/v1/slots/0?action=erase&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/api/v1/slots/0?action=erase"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:13305/v1/slots/0?action=erase&quot;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"http://localhost:13305/v1/slots/0?action=erase"</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format_4">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id_slot&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">  </span><span class="nt">"id_slot"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Field Descriptions:</strong></p>
@@ -3445,39 +3445,39 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/tokenize&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/tokenize"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{&quot;content&quot;: &quot;This is a string to tokenize&quot;}&#39;</span> <span class="n">-UseBasicParsing</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{"content": "This is a string to tokenize"}'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/api/v1/tokenize&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/api/v1/tokenize"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{&quot;content&quot;: &quot;This is a string to tokenize&quot;}&#39;</span> <span class="n">-UseBasicParsing</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{"content": "This is a string to tokenize"}'</span> <span class="n">-UseBasicParsing</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">&quot;http://localhost:13305/v1/tokenize&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;content&quot;: &quot;This is a string to tokenize&quot;}&#39;</span>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span><span class="s2">"http://localhost:13305/v1/tokenize"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"content": "This is a string to tokenize"}'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format_5">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1919</span><span class="p">,</span><span class="mi">369</span><span class="p">,</span><span class="mi">264</span><span class="p">,</span><span class="mi">886</span><span class="p">,</span><span class="mi">310</span><span class="p">,</span><span class="mi">74995</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"tokens"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mi">1919</span><span class="p">,</span><span class="mi">369</span><span class="p">,</span><span class="mi">264</span><span class="p">,</span><span class="mi">886</span><span class="p">,</span><span class="mi">310</span><span class="p">,</span><span class="mi">74995</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>If <code>with_pieces</code> is <code>true</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">    </span><span class="p">{</span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;piece&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello&quot;</span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">456</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;piece&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot; world&quot;</span><span class="p">},</span>
-<span class="w">    </span><span class="p">{</span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">789</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;piece&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;!&quot;</span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"tokens"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span><span class="w"> </span><span class="nt">"piece"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">456</span><span class="p">,</span><span class="w"> </span><span class="nt">"piece"</span><span class="p">:</span><span class="w"> </span><span class="s2">" world"</span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="mi">789</span><span class="p">,</span><span class="w"> </span><span class="nt">"piece"</span><span class="p">:</span><span class="w"> </span><span class="s2">"!"</span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div>

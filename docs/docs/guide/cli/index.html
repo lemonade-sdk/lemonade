@@ -3847,6 +3847,11 @@
 <td>API key for authentication</td>
 <td>None</td>
 </tr>
+<tr>
+<td><code>--discovery</code> / <code>--no-discovery</code></td>
+<td>Enable or disable auto-discovery of local server via UDP beacon</td>
+<td>Enabled</td>
+</tr>
 </tbody>
 </table>
 <p>These options can also be set via environment variables:
@@ -3867,9 +3872,9 @@ set LEMONADE_API_KEY=your-api-key-here
 lemonade list
 </code></pre></div></p>
 <p>On Windows (PowerShell):
-<div class="highlight"><pre><span></span><code><span class="nv">$env:LEMONADE_HOST</span><span class="p">=</span><span class="s2">&quot;192.168.1.100&quot;</span>
-<span class="nv">$env:LEMONADE_PORT</span><span class="p">=</span><span class="s2">&quot;13305&quot;</span>
-<span class="nv">$env:LEMONADE_API_KEY</span><span class="p">=</span><span class="s2">&quot;your-api-key-here&quot;</span>
+<div class="highlight"><pre><span></span><code><span class="nv">$env:LEMONADE_HOST</span><span class="p">=</span><span class="s2">"192.168.1.100"</span>
+<span class="nv">$env:LEMONADE_PORT</span><span class="p">=</span><span class="s2">"13305"</span>
+<span class="nv">$env:LEMONADE_API_KEY</span><span class="p">=</span><span class="s2">"your-api-key-here"</span>
 <span class="n">lemonade</span> <span class="n">list</span>
 </code></pre></div></p>
 <p><strong>Admin API Key Example:</strong></p>
@@ -3883,7 +3888,7 @@ lemonade<span class="w"> </span>list
 lemonade list
 </code></pre></div></p>
 <p>On Windows (PowerShell):
-<div class="highlight"><pre><span></span><code><span class="nv">$env:LEMONADE_ADMIN_API_KEY</span><span class="p">=</span><span class="s2">&quot;admin-secret-key&quot;</span>
+<div class="highlight"><pre><span></span><code><span class="nv">$env:LEMONADE_ADMIN_API_KEY</span><span class="p">=</span><span class="s2">"admin-secret-key"</span>
 <span class="n">lemonade</span> <span class="n">list</span>
 </code></pre></div></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># List all available models</span>
@@ -4155,10 +4160,10 @@ lemonade<span class="w"> </span><span class="nb">alias</span><span class="w"> </
 <p><strong>Examples:</strong></p>
 <p><code>model.json</code>:
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MyModel&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-8B-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MyModel"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsloth/Qwen3-8B-GGUF:Q4_K_M"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"reasoning"</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Import a model from a JSON file</span>
@@ -4172,13 +4177,13 @@ lemonade<span class="w"> </span>import<span class="w"> </span>--directory<span c
 </code></pre></div>
 <p><code>model-with-multiple-checkpoints.json</code>:
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MyMultimodalModel&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;checkpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;main&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;mmproj&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf&quot;</span>
+<span class="w">  </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MyMultimodalModel"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"checkpoints"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"main"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ggml-org/gemma-3-4b-it-GGUF:Q4_K_M"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"mmproj"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"</span>
 <span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;vision&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
+<span class="w">  </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"vision"</span><span class="p">,</span><span class="w"> </span><span class="s2">"reasoning"</span><span class="p">]</span>
 <span class="p">}</span>
 </code></pre></div></p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Import a model with multiple checkpoints</span>
@@ -4186,12 +4191,12 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-multipl
 </code></pre></div>
 <p><code>model-with-id-alias.json</code>:
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;MyModel&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-8B-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MyModel"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsloth/Qwen3-8B-GGUF:Q4_K_M"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span>
 <span class="p">}</span>
 </code></pre></div></p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Import using &#39;id&#39; as alias for model_name</span>
+<div class="highlight"><pre><span></span><code><span class="c1"># Import using 'id' as alias for model_name</span>
 lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alias.json
 </code></pre></div>
 <h2 id="options-for-load">Options for load</h2>
@@ -4513,10 +4518,10 @@ lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span
 lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp<span class="w"> </span>vulkan
 
 <span class="c1"># Load a llama.cpp model with custom arguments</span>
-lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on --no-mmap&quot;</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">"--flash-attn on --no-mmap"</span>
 
 <span class="c1"># Load a model without merging global args (per-model args replace global entirely)</span>
-lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--no-merge-args<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;--flash-attn on&quot;</span>
+lemonade<span class="w"> </span>load<span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--no-merge-args<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">"--flash-attn on"</span>
 
 <span class="c1"># Load an image generation model with custom settings</span>
 lemonade<span class="w"> </span>load<span class="w"> </span>Z-Image-Turbo<span class="w"> </span>--sdcpp<span class="w"> </span>rocm<span class="w"> </span>--steps<span class="w"> </span><span class="m">8</span><span class="w"> </span>--cfg-scale<span class="w"> </span><span class="m">1</span><span class="w"> </span>--width<span class="w"> </span><span class="m">1024</span><span class="w"> </span>--height<span class="w"> </span><span class="m">1024</span>
@@ -4720,12 +4725,12 @@ lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="
 lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--provider<span class="w"> </span>my-provider
 
 <span class="c1"># Pass additional arguments directly to the agent</span>
-lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">&quot;--approval-mode never&quot;</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"--approval-mode never"</span>
 
 <span class="c1"># Resume from previous session</span>
-lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">&quot;resume SESSION_ID&quot;</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>codex<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"resume SESSION_ID"</span>
 
-lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">&quot;--resume SESSION_ID&quot;</span>
+lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-0.8B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"--resume SESSION_ID"</span>
 
 <span class="c1"># Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--directory<span class="w"> </span>coding-agents<span class="w"> </span>--recipe-file<span class="w"> </span>Qwen3.5-35B-A3B-NoThinking.json
@@ -5119,20 +5124,20 @@ lemonade<span class="w"> </span>telemetry<span class="w"> </span>off
 </ul>
 <p>Here is an example scenario file that mirrors the bundled <code>bench_scenarios_vision.json</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;scenarios&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"scenarios"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hello-world&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;image_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hello_world.jpg&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;transcribe this image&quot;</span><span class="p">}</span><span class="w"> </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hello-world"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"category"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vision"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"image_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hello_world.jpg"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"transcribe this image"</span><span class="p">}</span><span class="w"> </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"max_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;declaration-of-independence&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;image_path&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;declaration.jpg&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;transcribe this image&quot;</span><span class="p">}</span><span class="w"> </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"declaration-of-independence"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"category"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vision"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"image_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"declaration.jpg"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="p">{</span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"transcribe this image"</span><span class="p">}</span><span class="w"> </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"max_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
@@ -5208,7 +5213,7 @@ lemonade<span class="w"> </span>bench<span class="w"> </span>--scenarios<span cl
 lemonade<span class="w"> </span>bench<span class="w"> </span>--scenarios<span class="w"> </span>all<span class="w"> </span>Qwen3-0.6B-GGUF
 
 <span class="c1"># Benchmark with custom backend arguments (e.g., different batch sizes)</span>
-lemonade<span class="w"> </span>bench<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">&quot;-b 1024&quot;</span><span class="w"> </span><span class="s2">&quot;-b 2048&quot;</span><span class="w"> </span>Qwen3-0.6B-GGUF
+lemonade<span class="w"> </span>bench<span class="w"> </span>--llamacpp-args<span class="w"> </span><span class="s2">"-b 1024"</span><span class="w"> </span><span class="s2">"-b 2048"</span><span class="w"> </span>Qwen3-0.6B-GGUF
 
 <span class="c1"># Save results as JSON</span>
 lemonade<span class="w"> </span>bench<span class="w"> </span>--json<span class="w"> </span>--output<span class="w"> </span>results.json<span class="w"> </span>Qwen3-0.6B-GGUF
@@ -5222,37 +5227,37 @@ lemonade<span class="w"> </span>bench<span class="w"> </span>--runs<span class="
 <h3 id="example-custom-scenario-file">Example Custom Scenario File</h3>
 <p>This is an example of a scenario which can be passed <code>--scenario-file</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;scenarios&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"scenarios"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;hello-world&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;system&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;What is 2 + 2?&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"hello-world"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"category"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chat"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"system"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"You are a helpful assistant."</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"What is 2 + 2?"</span><span class="w"> </span><span class="p">}</span>
 <span class="w">      </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span>
+<span class="w">      </span><span class="nt">"max_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;write-function&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;coding&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;system&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;You are a coding assistant.&quot;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Write a Python function to reverse a string.&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"write-function"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"category"</span><span class="p">:</span><span class="w"> </span><span class="s2">"coding"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"system"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"You are a coding assistant."</span><span class="w"> </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Write a Python function to reverse a string."</span><span class="w"> </span><span class="p">}</span>
 <span class="w">      </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span>
+<span class="w">      </span><span class="nt">"max_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;needle-16k&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;category&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;long-context&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;context&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;filler&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;The project codename for the secret mission is Bluefin. This is a long filler text that will be repeated to build up a large context window for benchmarking. &quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;target_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16000</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;position&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;middle&quot;</span>
+<span class="w">      </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"needle-16k"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"category"</span><span class="p">:</span><span class="w"> </span><span class="s2">"long-context"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"context"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"filler"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The project codename for the secret mission is Bluefin. This is a long filler text that will be repeated to build up a large context window for benchmarking. "</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"target_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">16000</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"position"</span><span class="p">:</span><span class="w"> </span><span class="s2">"middle"</span>
 <span class="w">      </span><span class="p">},</span>
-<span class="w">      </span><span class="nt">&quot;messages&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;What is the project codename mentioned in this text?&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">      </span><span class="nt">"messages"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user"</span><span class="p">,</span><span class="w"> </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"What is the project codename mentioned in this text?"</span><span class="w"> </span><span class="p">}</span>
 <span class="w">      </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;max_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span>
+<span class="w">      </span><span class="nt">"max_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>

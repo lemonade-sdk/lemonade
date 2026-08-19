@@ -2570,12 +2570,12 @@ lemonade.exe backends install llamacpp:vulkan
 </div>
 <p>If the response shows ROCm support:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;recipes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;backends&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;rocm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;devices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;amd_igpu&quot;</span><span class="p">],</span>
-<span class="w">          </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;installable&quot;</span>
+<span class="w">  </span><span class="nt">"recipes"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"backends"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"rocm"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">"devices"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"amd_igpu"</span><span class="p">],</span>
+<span class="w">          </span><span class="nt">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"installable"</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
@@ -2587,18 +2587,18 @@ lemonade.exe backends install llamacpp:vulkan
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/v1/install ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;recipe\&quot;: \&quot;llamacpp\&quot;, \&quot;backend\&quot;: \&quot;rocm\&quot;, \&quot;stream\&quot;: false}&quot;
+  -H "Content-Type: application/json" ^
+  -d "{\"recipe\": \"llamacpp\", \"backend\": \"rocm\", \"stream\": false}"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/v1/install<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
-<span class="s1">    &quot;backend&quot;: &quot;rocm&quot;,</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "recipe": "llamacpp",</span>
+<span class="s1">    "backend": "rocm",</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 </div>
 </div>
@@ -2608,18 +2608,18 @@ lemonade.exe backends install llamacpp:vulkan
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/v1/install ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;recipe\&quot;: \&quot;llamacpp\&quot;, \&quot;backend\&quot;: \&quot;vulkan\&quot;, \&quot;stream\&quot;: false}&quot;
+  -H "Content-Type: application/json" ^
+  -d "{\"recipe\": \"llamacpp\", \"backend\": \"vulkan\", \"stream\": false}"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/v1/install<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
-<span class="s1">    &quot;backend&quot;: &quot;vulkan&quot;,</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "recipe": "llamacpp",</span>
+<span class="s1">    "backend": "vulkan",</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 </div>
 </div>

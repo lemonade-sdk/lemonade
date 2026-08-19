@@ -4134,31 +4134,31 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/chat/completions&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/chat/completions"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{</span>
+<span class="s1">    "model": "Qwen3-0.6B-GGUF",</span>
+<span class="s1">    "messages": [</span>
 <span class="s1">      {</span>
-<span class="s1">        &quot;role&quot;: &quot;user&quot;,</span>
-<span class="s1">        &quot;content&quot;: &quot;What is the population of Paris?&quot;</span>
+<span class="s1">        "role": "user",</span>
+<span class="s1">        "content": "What is the population of Paris?"</span>
 <span class="s1">      }</span>
 <span class="s1">    ],</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
-<span class="s1">        &quot;messages&quot;: [</span>
-<span class="s1">          {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What is the population of Paris?&quot;}</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "Qwen3-0.6B-GGUF",</span>
+<span class="s1">        "messages": [</span>
+<span class="s1">          {"role": "user", "content": "What is the population of Paris?"}</span>
 <span class="s1">        ],</span>
-<span class="s1">        &quot;stream&quot;: false</span>
-<span class="s1">      }&#39;</span>
+<span class="s1">        "stream": false</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
@@ -4168,17 +4168,17 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chat.completion"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"choices"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Paris has a population of approximately 2.2 million people in the city proper."</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">    </span><span class="nt">"finish_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stop"</span>
 <span class="w">  </span><span class="p">}]</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4186,15 +4186,15 @@
 <div class="tabbed-block">
 <p>For streaming responses, the API returns a stream of server-sent events (however, Open AI recommends using their streaming libraries for parsing streaming responses):</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion.chunk&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;delta&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chat.completion.chunk"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"choices"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"delta"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Paris"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}]</span>
 <span class="p">}</span>
@@ -4206,34 +4206,34 @@
 <p>To send images to <code>chat/completions</code>, pass a <code>messages[*].content</code> array that mixes <code>text</code> and <code>image_url</code> items. The image can be provided as a base64 data URL (for example, from <code>FileReader.readAsDataURL(...)</code> in web apps).</p>
 <h4 id="example-request_1">Example request</h4>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;Qwen2.5-VL-7B-Instruct&quot;,</span>
-<span class="s1">        &quot;messages&quot;: [</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "Qwen2.5-VL-7B-Instruct",</span>
+<span class="s1">        "messages": [</span>
 <span class="s1">          {</span>
-<span class="s1">            &quot;role&quot;: &quot;user&quot;,</span>
-<span class="s1">            &quot;content&quot;: [</span>
-<span class="s1">              {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;What is in this image?&quot;},</span>
-<span class="s1">              {&quot;type&quot;: &quot;image_url&quot;, &quot;image_url&quot;: {&quot;url&quot;: &quot;data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD...&quot;}}</span>
+<span class="s1">            "role": "user",</span>
+<span class="s1">            "content": [</span>
+<span class="s1">              {"type": "text", "text": "What is in this image?"},</span>
+<span class="s1">              {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD..."}}</span>
 <span class="s1">            ]</span>
 <span class="s1">          }</span>
 <span class="s1">        ],</span>
-<span class="s1">        &quot;stream&quot;: false</span>
-<span class="s1">      }&#39;</span>
+<span class="s1">        "stream": false</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 <h4 id="example-response">Example response</h4>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen2.5-VL-7B-Instruct&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;The image shows a red apple resting on a wooden table.&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chat.completion"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen2.5-VL-7B-Instruct"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"choices"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"The image shows a red apple resting on a wooden table."</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">    </span><span class="nt">"finish_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stop"</span>
 <span class="w">  </span><span class="p">}]</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4250,27 +4250,27 @@
 <p><strong>Merge semantics.</strong> A client-provided system prompt is prepended by the built-in omni system prompt. Client-provided <code>tools</code> are merged with the built-in omni tools. The server resolves omni tool calls internally; calls to client-provided tools are returned in a <code>finish_reason: "tool_calls"</code> response for the client to execute and resume. Targeting a collection name invokes the server-side loop; targeting a component LLM name bypasses it and returns a plain completion. See <a href="../../dev/lemonade-omni/">Lemonade Omni Models</a> for details.</p>
 <h4 id="example-request_2">Example request</h4>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;LMX-Omni-52B-Halo&quot;,</span>
-<span class="s1">        &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Draw a red apple on a table.&quot;}],</span>
-<span class="s1">        &quot;stream&quot;: false</span>
-<span class="s1">      }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "LMX-Omni-52B-Halo",</span>
+<span class="s1">        "messages": [{"role": "user", "content": "Draw a red apple on a table."}],</span>
+<span class="s1">        "stream": false</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 <h4 id="example-response_1">Example response</h4>
 <p>The image tool runs during the loop and its output is embedded as a markdown image in the assistant <code>content</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;chat.completion&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;LMX-Omni-52B-Halo&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;role&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;assistant&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"chat.completion"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"LMX-Omni-52B-Halo"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"choices"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"role"</span><span class="p">:</span><span class="w"> </span><span class="s2">"assistant"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Here is a red apple on a table.\n\n![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...)"</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">    </span><span class="nt">"finish_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stop"</span>
 <span class="w">  </span><span class="p">}]</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4360,24 +4360,24 @@
 <div class="tabbed-set tabbed-alternate" data-tabs="3:2"><input checked="checked" id="__tabbed_3_1" name="__tabbed_3" type="radio" /><input id="__tabbed_3_2" name="__tabbed_3" type="radio" /><div class="tabbed-labels"><label for="__tabbed_3_1">PowerShell</label><label for="__tabbed_3_2">Bash</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/completions&quot;</span> <span class="p">`</span>
+<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/completions"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
-<span class="s1">    &quot;prompt&quot;: &quot;What is the population of Paris?&quot;,</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{</span>
+<span class="s1">    "model": "Qwen3-0.6B-GGUF",</span>
+<span class="s1">    "prompt": "What is the population of Paris?",</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;Qwen3-0.6B-GGUF&quot;,</span>
-<span class="s1">        &quot;prompt&quot;: &quot;What is the population of Paris?&quot;,</span>
-<span class="s1">        &quot;stream&quot;: false</span>
-<span class="s1">      }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "Qwen3-0.6B-GGUF",</span>
+<span class="s1">        "prompt": "What is the population of Paris?",</span>
+<span class="s1">        "stream": false</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
@@ -4385,14 +4385,14 @@
 <h3 id="response-format_1">Response format</h3>
 <p>The following format is used for both streaming and non-streaming responses:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;text_completion&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;choices&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;finish_reason&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stop&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"text_completion"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"choices"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Paris has a population of approximately 2.2 million people in the city proper."</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"finish_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stop"</span>
 <span class="w">  </span><span class="p">}],</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4438,47 +4438,47 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/embeddings&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/embeddings"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;nomic-embed-text-v1-GGUF&quot;,</span>
-<span class="s1">    &quot;input&quot;: [&quot;Hello, world!&quot;, &quot;How are you?&quot;],</span>
-<span class="s1">    &quot;encoding_format&quot;: &quot;float&quot;</span>
-<span class="s1">  }&#39;</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{</span>
+<span class="s1">    "model": "nomic-embed-text-v1-GGUF",</span>
+<span class="s1">    "input": ["Hello, world!", "How are you?"],</span>
+<span class="s1">    "encoding_format": "float"</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/embeddings<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;nomic-embed-text-v1-GGUF&quot;,</span>
-<span class="s1">        &quot;input&quot;: [&quot;Hello, world!&quot;, &quot;How are you?&quot;],</span>
-<span class="s1">        &quot;encoding_format&quot;: &quot;float&quot;</span>
-<span class="s1">      }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "nomic-embed-text-v1-GGUF",</span>
+<span class="s1">        "input": ["Hello, world!", "How are you?"],</span>
+<span class="s1">        "encoding_format": "float"</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format_2">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;embedding&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;embedding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.0234</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.0567</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0891</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"embedding"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"embedding"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.0234</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.0567</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0891</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;embedding&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;embedding&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.0456</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.0678</span><span class="p">,</span><span class="w"> </span><span class="mf">0.1234</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"embedding"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"embedding"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="mf">0.0456</span><span class="p">,</span><span class="w"> </span><span class="mf">-0.0678</span><span class="p">,</span><span class="w"> </span><span class="mf">0.1234</span><span class="p">,</span><span class="w"> </span><span class="err">...</span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nomic-embed-text-v1-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;usage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;prompt_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;total_tokens&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nomic-embed-text-v1-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"usage"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"prompt_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"total_tokens"</span><span class="p">:</span><span class="w"> </span><span class="mi">12</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4570,24 +4570,24 @@
 <div class="tabbed-set tabbed-alternate" data-tabs="5:2"><input checked="checked" id="__tabbed_5_1" name="__tabbed_5" type="radio" /><input id="__tabbed_5_2" name="__tabbed_5" type="radio" /><div class="tabbed-labels"><label for="__tabbed_5_1">PowerShell</label><label for="__tabbed_5_2">Bash</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/responses&quot;</span> <span class="p">`</span>
+<div class="highlight"><pre><span></span><code><span class="nb">Invoke-WebRequest</span> <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/responses"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
-<span class="s1">    &quot;input&quot;: &quot;What is the population of Paris?&quot;,</span>
-<span class="s1">    &quot;stream&quot;: false</span>
-<span class="s1">  }&#39;</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{</span>
+<span class="s1">    "model": "Llama-3.2-1B-Instruct-Hybrid",</span>
+<span class="s1">    "input": "What is the population of Paris?",</span>
+<span class="s1">    "stream": false</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/responses<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;Llama-3.2-1B-Instruct-Hybrid&quot;,</span>
-<span class="s1">        &quot;input&quot;: &quot;What is the population of Paris?&quot;,</span>
-<span class="s1">        &quot;stream&quot;: false</span>
-<span class="s1">      }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "Llama-3.2-1B-Instruct-Hybrid",</span>
+<span class="s1">        "input": "What is the population of Paris?",</span>
+<span class="s1">        "stream": false</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
@@ -4597,15 +4597,15 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1746225832.0</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Llama-3.2-1B-Instruct-Hybrid&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;response&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;output&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">    </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;0&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;content&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
-<span class="w">      </span><span class="nt">&quot;annotations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
-<span class="w">      </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Paris has a population of approximately 2.2 million people in the city proper.&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1746225832.0</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Llama-3.2-1B-Instruct-Hybrid"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"response"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"output"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">    </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"content"</span><span class="p">:</span><span class="w"> </span><span class="p">[{</span>
+<span class="w">      </span><span class="nt">"annotations"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">      </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Paris has a population of approximately 2.2 million people in the city proper."</span>
 <span class="w">    </span><span class="p">}]</span>
 <span class="w">  </span><span class="p">}]</span>
 <span class="p">}</span>
@@ -4621,7 +4621,7 @@
 <p>Audio Transcription API. You provide an audio file and receive a text transcription. This API will also load the model if it is not already loaded.</p>
 <blockquote>
 <p><strong>Note:</strong> This endpoint uses <a href="https://github.com/ggerganov/whisper.cpp">whisper.cpp</a> as the backend. Whisper models are automatically downloaded when first used.</p>
-<p><strong>Limitations:</strong> Only <code>wav</code> audio format and <code>json</code> response format are currently supported.</p>
+<p><strong>Limitations:</strong> Only <code>wav</code> audio input is currently supported. The <code>response_format</code> field supports <code>json</code>, <code>verbose_json</code>, <code>text</code>, <code>srt</code>, and <code>vtt</code>. On the FastFlowLM (FLM) backend, <code>srt</code> and <code>vtt</code> are rejected with a <code>400</code> because FLM returns no segment timestamps, and <code>verbose_json</code> returns the compact shape without a <code>segments</code> field.</p>
 </blockquote>
 <h3 id="parameters_4">Parameters</h3>
 <table>
@@ -4655,7 +4655,7 @@
 <tr>
 <td><code>response_format</code></td>
 <td>No</td>
-<td>The format of the response. Currently only <code>json</code> is supported.</td>
+<td>The response format. Supported values: <code>json</code>, <code>verbose_json</code>, <code>text</code>, <code>srt</code>, <code>vtt</code>. <code>srt</code> and <code>vtt</code> require a backend that reports segment timestamps (whisper.cpp).</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 </tbody>
@@ -4665,21 +4665,21 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/audio/transcriptions<span class="w"> </span>^
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;file=@C:\path\to\audio.wav&quot;</span><span class="w"> </span>^
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Whisper-Tiny&quot;</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"file=@C:\path\to\audio.wav"</span><span class="w"> </span>^
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"model=Whisper-Tiny"</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/audio/transcriptions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;file=@/path/to/audio.wav&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Whisper-Tiny&quot;</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"file=@/path/to/audio.wav"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"model=Whisper-Tiny"</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <h3 id="response-format_4">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;text&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello, this is a sample transcription of the audio file.&quot;</span>
+<span class="w">  </span><span class="nt">"text"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello, this is a sample transcription of the audio file."</span>
 <span class="p">}</span>
 </code></pre></div>
 <p><strong>Field Descriptions:</strong></p>
@@ -4777,16 +4777,16 @@
 </table>
 <h3 id="example-configure-session">Example: Configure Session</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"session.update"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"session"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Whisper-Tiny"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="example-send-audio">Example: Send Audio</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;input_audio_buffer.append&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;audio&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64-encoded PCM16 audio&gt;&quot;</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"input_audio_buffer.append"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"audio"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;base64-encoded PCM16 audio&gt;"</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>Audio should be:
@@ -4797,20 +4797,20 @@
 - Sent in chunks (~85ms recommended)</p>
 <h3 id="example-transcription-result">Example: Transcription Result</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;conversation.item.input_audio_transcription.completed&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;transcript&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Hello, this is a test transcription.&quot;</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"conversation.item.input_audio_transcription.completed"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"transcript"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Hello, this is a test transcription."</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="vad-configuration">VAD Configuration</h3>
 <p>VAD settings can be configured via <code>session.update</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;turn_detection&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;threshold&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;silence_duration_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">800</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;prefix_padding_ms&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">250</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"session.update"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"session"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Whisper-Tiny"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"turn_detection"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"threshold"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"silence_duration_ms"</span><span class="p">:</span><span class="w"> </span><span class="mi">800</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"prefix_padding_ms"</span><span class="p">:</span><span class="w"> </span><span class="mi">250</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -4843,10 +4843,10 @@
 </table>
 <p>Set <code>turn_detection</code> to <code>null</code> to disable server-side VAD and use explicit commits instead:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;session.update&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;session&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;model&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;turn_detection&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">  </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"session.update"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"session"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"model"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Whisper-Tiny"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"turn_detection"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -4941,14 +4941,14 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/generations<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;SD-Turbo&quot;,</span>
-<span class="s1">        &quot;prompt&quot;: &quot;A serene mountain landscape at sunset&quot;,</span>
-<span class="s1">        &quot;size&quot;: &quot;512x512&quot;,</span>
-<span class="s1">        &quot;steps&quot;: 4,</span>
-<span class="s1">        &quot;response_format&quot;: &quot;b64_json&quot;</span>
-<span class="s1">      }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "SD-Turbo",</span>
+<span class="s1">        "prompt": "A serene mountain landscape at sunset",</span>
+<span class="s1">        "size": "512x512",</span>
+<span class="s1">        "steps": 4,</span>
+<span class="s1">        "response_format": "b64_json"</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
@@ -5068,27 +5068,27 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/edits<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Flux-2-Klein-4B&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;prompt=Add a red barn and mountains in the background, photorealistic&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;size=512x512&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;n=1&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;response_format=b64_json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;image=@/path/to/source_image.png&quot;</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"model=Flux-2-Klein-4B"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"prompt=Add a red barn and mountains in the background, photorealistic"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"size=512x512"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"n=1"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"response_format=b64_json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"image=@/path/to/source_image.png"</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;not-needed&quot;</span><span class="p">)</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;source_image.png&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">image_file</span><span class="p">:</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">"not-needed"</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"source_image.png"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">image_file</span><span class="p">:</span>
     <span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">images</span><span class="o">.</span><span class="n">edit</span><span class="p">(</span>
-        <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Flux-2-Klein-4B&quot;</span><span class="p">,</span>
+        <span class="n">model</span><span class="o">=</span><span class="s2">"Flux-2-Klein-4B"</span><span class="p">,</span>
         <span class="n">image</span><span class="o">=</span><span class="n">image_file</span><span class="p">,</span>
-        <span class="n">prompt</span><span class="o">=</span><span class="s2">&quot;Add a red barn and mountains in the background, photorealistic&quot;</span><span class="p">,</span>
-        <span class="n">size</span><span class="o">=</span><span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
+        <span class="n">prompt</span><span class="o">=</span><span class="s2">"Add a red barn and mountains in the background, photorealistic"</span><span class="p">,</span>
+        <span class="n">size</span><span class="o">=</span><span class="s2">"512x512"</span><span class="p">,</span>
     <span class="p">)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
 <span class="n">image_data</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">b64_json</span><span class="p">)</span>
-<span class="nb">open</span><span class="p">(</span><span class="s2">&quot;edited_image.png&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">image_data</span><span class="p">)</span>
+<span class="nb">open</span><span class="p">(</span><span class="s2">"edited_image.png"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">image_data</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -5155,26 +5155,26 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/variations<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;model=Flux-2-Klein-4B&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;size=512x512&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;n=1&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;response_format=b64_json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-F<span class="w"> </span><span class="s2">&quot;image=@/path/to/source_image.png&quot;</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"model=Flux-2-Klein-4B"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"size=512x512"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"n=1"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"response_format=b64_json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-F<span class="w"> </span><span class="s2">"image=@/path/to/source_image.png"</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
-<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;not-needed&quot;</span><span class="p">)</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;source_image.png&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">image_file</span><span class="p">:</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">"not-needed"</span><span class="p">)</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"source_image.png"</span><span class="p">,</span> <span class="s2">"rb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">image_file</span><span class="p">:</span>
     <span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">images</span><span class="o">.</span><span class="n">create_variation</span><span class="p">(</span>
-        <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Flux-2-Klein-4B&quot;</span><span class="p">,</span>
+        <span class="n">model</span><span class="o">=</span><span class="s2">"Flux-2-Klein-4B"</span><span class="p">,</span>
         <span class="n">image</span><span class="o">=</span><span class="n">image_file</span><span class="p">,</span>
-        <span class="n">size</span><span class="o">=</span><span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
+        <span class="n">size</span><span class="o">=</span><span class="s2">"512x512"</span><span class="p">,</span>
         <span class="n">n</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span>
     <span class="p">)</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
 <span class="n">image_data</span> <span class="o">=</span> <span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">response</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">b64_json</span><span class="p">)</span>
-<span class="nb">open</span><span class="p">(</span><span class="s2">&quot;variation.png&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">image_data</span><span class="p">)</span>
+<span class="nb">open</span><span class="p">(</span><span class="s2">"variation.png"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">image_data</span><span class="p">)</span>
 </code></pre></div>
 </div>
 </div>
@@ -5219,49 +5219,49 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="c1"># Step 1: Generate an image and save the base64 response</span>
 <span class="nv">RESPONSE</span><span class="o">=</span><span class="k">$(</span>curl<span class="w"> </span>-s<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/generations<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;SD-Turbo&quot;,</span>
-<span class="s1">        &quot;prompt&quot;: &quot;A serene mountain landscape at sunset&quot;,</span>
-<span class="s1">        &quot;size&quot;: &quot;512x512&quot;,</span>
-<span class="s1">        &quot;steps&quot;: 4,</span>
-<span class="s1">        &quot;response_format&quot;: &quot;b64_json&quot;</span>
-<span class="s1">      }&#39;</span><span class="k">)</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "SD-Turbo",</span>
+<span class="s1">        "prompt": "A serene mountain landscape at sunset",</span>
+<span class="s1">        "size": "512x512",</span>
+<span class="s1">        "steps": 4,</span>
+<span class="s1">        "response_format": "b64_json"</span>
+<span class="s1">      }'</span><span class="k">)</span>
 
 <span class="c1"># Step 2: Build the upscale JSON payload and pipe it to curl via stdin</span>
 <span class="c1"># (base64 images are too large for command-line interpolation)</span>
-<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;</span><span class="nv">$RESPONSE</span><span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">"</span><span class="nv">$RESPONSE</span><span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"</span>
 <span class="s2">import sys, json</span>
-<span class="s2">b64 = json.load(sys.stdin)[&#39;data&#39;][0][&#39;b64_json&#39;]</span>
-<span class="s2">print(json.dumps({&#39;image&#39;: b64, &#39;model&#39;: &#39;RealESRGAN-x4plus&#39;}))</span>
-<span class="s2">&quot;</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/upscale<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="s2">b64 = json.load(sys.stdin)['data'][0]['b64_json']</span>
+<span class="s2">print(json.dumps({'image': b64, 'model': 'RealESRGAN-x4plus'}))</span>
+<span class="s2">"</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/images/upscale<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-d<span class="w"> </span>@-
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><span class="c"># Step 1: Generate an image</span>
 <span class="nv">$genResponse</span> <span class="p">=</span> <span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/images/generations&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/images/generations"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
-  <span class="n">-Body</span> <span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;SD-Turbo&quot;,</span>
-<span class="s1">    &quot;prompt&quot;: &quot;A serene mountain landscape at sunset&quot;,</span>
-<span class="s1">    &quot;size&quot;: &quot;512x512&quot;,</span>
-<span class="s1">    &quot;steps&quot;: 4,</span>
-<span class="s1">    &quot;response_format&quot;: &quot;b64_json&quot;</span>
-<span class="s1">  }&#39;</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Body</span> <span class="s1">'{</span>
+<span class="s1">    "model": "SD-Turbo",</span>
+<span class="s1">    "prompt": "A serene mountain landscape at sunset",</span>
+<span class="s1">    "size": "512x512",</span>
+<span class="s1">    "steps": 4,</span>
+<span class="s1">    "response_format": "b64_json"</span>
+<span class="s1">  }'</span>
 
 <span class="c"># Step 2: Extract the base64 image</span>
 <span class="nv">$imageB64</span> <span class="p">=</span> <span class="p">(</span><span class="nv">$genResponse</span><span class="p">.</span><span class="n">Content</span> <span class="p">|</span> <span class="nb">ConvertFrom-Json</span><span class="p">).</span><span class="n">data</span><span class="p">[</span><span class="n">0</span><span class="p">].</span><span class="n">b64_json</span>
 
 <span class="c"># Step 3: Upscale the image with Real-ESRGAN</span>
-<span class="nv">$body</span> <span class="p">=</span> <span class="p">@{</span> <span class="n">image</span> <span class="p">=</span> <span class="nv">$imageB64</span><span class="p">;</span> <span class="n">model</span> <span class="p">=</span> <span class="s2">&quot;RealESRGAN-x4plus&quot;</span> <span class="p">}</span> <span class="p">|</span> <span class="nb">ConvertTo-Json</span>
+<span class="nv">$body</span> <span class="p">=</span> <span class="p">@{</span> <span class="n">image</span> <span class="p">=</span> <span class="nv">$imageB64</span><span class="p">;</span> <span class="n">model</span> <span class="p">=</span> <span class="s2">"RealESRGAN-x4plus"</span> <span class="p">}</span> <span class="p">|</span> <span class="nb">ConvertTo-Json</span>
 <span class="nb">Invoke-WebRequest</span> <span class="p">`</span>
-  <span class="n">-Uri</span> <span class="s2">&quot;http://localhost:13305/v1/images/upscale&quot;</span> <span class="p">`</span>
+  <span class="n">-Uri</span> <span class="s2">"http://localhost:13305/v1/images/upscale"</span> <span class="p">`</span>
   <span class="n">-Method</span> <span class="n">POST</span> <span class="p">`</span>
-  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">&quot;Content-Type&quot;</span> <span class="p">=</span> <span class="s2">&quot;application/json&quot;</span> <span class="p">}</span> <span class="p">`</span>
+  <span class="n">-Headers</span> <span class="p">@{</span> <span class="s2">"Content-Type"</span> <span class="p">=</span> <span class="s2">"application/json"</span> <span class="p">}</span> <span class="p">`</span>
   <span class="n">-Body</span> <span class="nv">$body</span>
 </code></pre></div>
 </div>
@@ -5269,27 +5269,27 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">base64</span>
 
-<span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">&quot;http://localhost:13305/api/v1&quot;</span>
+<span class="n">BASE_URL</span> <span class="o">=</span> <span class="s2">"http://localhost:13305/api/v1"</span>
 
 <span class="c1"># Step 1: Generate an image</span>
-<span class="n">gen_response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/images/generations&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;SD-Turbo&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;prompt&quot;</span><span class="p">:</span> <span class="s2">&quot;A serene mountain landscape at sunset&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;size&quot;</span><span class="p">:</span> <span class="s2">&quot;512x512&quot;</span><span class="p">,</span>
-    <span class="s2">&quot;steps&quot;</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
-    <span class="s2">&quot;response_format&quot;</span><span class="p">:</span> <span class="s2">&quot;b64_json&quot;</span><span class="p">,</span>
+<span class="n">gen_response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/images/generations"</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"SD-Turbo"</span><span class="p">,</span>
+    <span class="s2">"prompt"</span><span class="p">:</span> <span class="s2">"A serene mountain landscape at sunset"</span><span class="p">,</span>
+    <span class="s2">"size"</span><span class="p">:</span> <span class="s2">"512x512"</span><span class="p">,</span>
+    <span class="s2">"steps"</span><span class="p">:</span> <span class="mi">4</span><span class="p">,</span>
+    <span class="s2">"response_format"</span><span class="p">:</span> <span class="s2">"b64_json"</span><span class="p">,</span>
 <span class="p">})</span>
-<span class="n">image_b64</span> <span class="o">=</span> <span class="n">gen_response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">&quot;data&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;b64_json&quot;</span><span class="p">]</span>
+<span class="n">image_b64</span> <span class="o">=</span> <span class="n">gen_response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">"data"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"b64_json"</span><span class="p">]</span>
 
 <span class="c1"># Step 2: Upscale the image with Real-ESRGAN (512x512 -&gt; 2048x2048)</span>
-<span class="n">upscale_response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/images/upscale&quot;</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="p">{</span>
-    <span class="s2">&quot;image&quot;</span><span class="p">:</span> <span class="n">image_b64</span><span class="p">,</span>
-    <span class="s2">&quot;model&quot;</span><span class="p">:</span> <span class="s2">&quot;RealESRGAN-x4plus&quot;</span><span class="p">,</span>
+<span class="n">upscale_response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">post</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">BASE_URL</span><span class="si">}</span><span class="s2">/images/upscale"</span><span class="p">,</span> <span class="n">json</span><span class="o">=</span><span class="p">{</span>
+    <span class="s2">"image"</span><span class="p">:</span> <span class="n">image_b64</span><span class="p">,</span>
+    <span class="s2">"model"</span><span class="p">:</span> <span class="s2">"RealESRGAN-x4plus"</span><span class="p">,</span>
 <span class="p">})</span>
 
 <span class="c1"># Step 3: Save the upscaled image to a file</span>
-<span class="n">upscaled_b64</span> <span class="o">=</span> <span class="n">upscale_response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">&quot;data&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">&quot;b64_json&quot;</span><span class="p">]</span>
-<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">&quot;upscaled.png&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<span class="n">upscaled_b64</span> <span class="o">=</span> <span class="n">upscale_response</span><span class="o">.</span><span class="n">json</span><span class="p">()[</span><span class="s2">"data"</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s2">"b64_json"</span><span class="p">]</span>
+<span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s2">"upscaled.png"</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
     <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">base64</span><span class="o">.</span><span class="n">b64decode</span><span class="p">(</span><span class="n">upscaled_b64</span><span class="p">))</span>
 </code></pre></div>
 </div>
@@ -5297,10 +5297,10 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 </div>
 <h3 id="response-format_5">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1742927481</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;b64_json&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&lt;base64-encoded upscaled PNG&gt;&quot;</span>
+<span class="w">      </span><span class="nt">"b64_json"</span><span class="p">:</span><span class="w"> </span><span class="s2">"&lt;base64-encoded upscaled PNG&gt;"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
 <span class="p">}</span>
@@ -5417,14 +5417,14 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/audio/speech<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model&quot;: &quot;kokoro-v1&quot;,</span>
-<span class="s1">        &quot;input&quot;: &quot;Lemonade can speak!&quot;,</span>
-<span class="s1">        &quot;speed&quot;: 1.0,</span>
-<span class="s1">        &quot;steps&quot;: 4,</span>
-<span class="s1">        &quot;response_format&quot;: &quot;mp3&quot;</span>
-<span class="s1">      }&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model": "kokoro-v1",</span>
+<span class="s1">        "input": "Lemonade can speak!",</span>
+<span class="s1">        "speed": 1.0,</span>
+<span class="s1">        "steps": 4,</span>
+<span class="s1">        "response_format": "mp3"</span>
+<span class="s1">      }'</span>
 </code></pre></div>
 </div>
 </div>
@@ -5462,50 +5462,50 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </code></pre></div>
 <h3 id="response-format_7">Response format</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;list&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"list"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;max_context_window&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;update_available&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">]</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsloth/Qwen3-0.6B-GGUF:Q4_0"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"max_context_window"</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"downloaded"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"update_available"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"reasoning"</span><span class="p">]</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Gemma-3-4b-it-GGUF&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.61</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;hot&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;vision&quot;</span><span class="p">]</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Gemma-3-4b-it-GGUF"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ggml-org/gemma-3-4b-it-GGUF:Q4_K_M"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.61</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"downloaded"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"hot"</span><span class="p">,</span><span class="w"> </span><span class="s2">"vision"</span><span class="p">]</span>
 <span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;SD-Turbo&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stabilityai/sd-turbo:sd_turbo.safetensors&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sd-cpp&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;image&quot;</span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;image_defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;cfg_scale&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
+<span class="w">      </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"SD-Turbo"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stabilityai/sd-turbo:sd_turbo.safetensors"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sd-cpp"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"downloaded"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"image"</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"image_defaults"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"cfg_scale"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"width"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"height"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">]</span>
@@ -5539,7 +5539,9 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </ul>
 <h3 id="model-labels">Model Labels</h3>
 <p>Labels describe what a model can do. A model may carry multiple labels.</p>
-<p><strong>Deployment labels</strong> — determine which backend endpoint the model is routed to:</p>
+<p><strong>Deployment labels</strong> — determine which backend endpoint the model is routed to.
+Every model names exactly one deployment mode, and a model is never given two
+labels that name different modes:</p>
 <table>
 <thead>
 <tr>
@@ -5550,14 +5552,19 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </thead>
 <tbody>
 <tr>
+<td><code>chat</code></td>
+<td><code>/chat/completions</code>, <code>/completions</code>, <code>/responses</code></td>
+<td>Text-generating LLM. This label is what makes a model an LLM — it is not inferred from <code>reasoning</code>/<code>vision</code>/<code>tool-calling</code>/<code>chat-transcription</code>, which are characteristics rather than deployment modes.</td>
+</tr>
+<tr>
 <td><code>transcription</code></td>
 <td><code>/audio/transcriptions</code></td>
-<td>Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment.</td>
+<td>Speech-to-text transcription model (e.g. Whisper). An omni LLM that accepts audio in a chat turn is not one of these — it carries <code>chat</code> and the <code>chat-transcription</code> capability below.</td>
 </tr>
 <tr>
 <td><code>embeddings</code></td>
 <td><code>/embeddings</code></td>
-<td>Produces text embedding vectors.</td>
+<td>Produces text embedding vectors. Also accepted as <code>embedding</code>.</td>
 </tr>
 <tr>
 <td><code>reranking</code></td>
@@ -5566,22 +5573,52 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </tr>
 <tr>
 <td><code>image</code></td>
-<td><code>/images/generations</code></td>
+<td><code>/images/generations</code>, <code>/images/edits</code>, <code>/images/variations</code></td>
 <td>Text-to-image generation model.</td>
-</tr>
-<tr>
-<td><code>edit</code></td>
-<td>Image editing model; supports the <code>/images/edits</code> endpoint.</td>
-<td></td>
 </tr>
 <tr>
 <td><code>tts</code></td>
 <td><code>/audio/speech</code></td>
 <td>Text-to-speech synthesis model.</td>
 </tr>
+<tr>
+<td><code>audio-generation</code></td>
+<td><code>/audio/generations</code></td>
+<td>Text-to-audio generation model (e.g. music, sound effects).</td>
+</tr>
+<tr>
+<td><code>classification</code></td>
+<td><code>/classify</code></td>
+<td>Text classification model. Also accepted as <code>classifier</code>.</td>
+</tr>
+<tr>
+<td><code>3d</code></td>
+<td><code>/3d/generations</code></td>
+<td>Text- or image-to-3D mesh generation model.</td>
+</tr>
 </tbody>
 </table>
-<p><strong>Input-modality labels</strong> — the model is deployed as an LLM but accepts additional input types in <code>/chat/completions</code>:</p>
+<p>When a model declares no deployment label at all, it inherits its recipe's
+default — <code>chat</code> for <code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code> and <code>cloud</code>,
+<code>transcription</code> for <code>whispercpp</code>, <code>image</code> for <code>sd-cpp</code>, <code>tts</code> for <code>kokoro</code>, and
+so on.</p>
+<p>Two label sets describe a model that cannot exist, and are refused rather than
+repaired:</p>
+<ul>
+<li><strong>A mode the recipe's backend does not serve.</strong> <code>/classify</code> is served only by
+  <code>onnxruntime</code>, so <code>labels: ["classification"]</code> on a <code>llamacpp</code> model is an
+  error — register it as the chat model it is.</li>
+<li><strong>Two different modes.</strong> <code>labels: ["chat", "embeddings"]</code> on a <code>llamacpp</code> model
+  is an error even though llama.cpp serves both: the subprocess is launched for
+  one mode, so the second would name an endpoint it was never configured to
+  answer. Register one model per mode. The legacy <code>embedding</code> and <code>reranking</code>
+  booleans count as mode claims here, exactly as the labels do.</li>
+</ul>
+<p><a href=".././lemonade/#post-v1pull"><code>POST /v1/pull</code></a> answers <code>400</code> and registers nothing.
+An entry already stored in <code>user_models.json</code> — written before these rules — is
+skipped at startup with an error naming it, and the file is left untouched so it
+can be corrected by hand.</p>
+<p><strong>Input-modality labels</strong> — the model accepts additional input types in <code>/chat/completions</code>:</p>
 <table>
 <thead>
 <tr>
@@ -5596,7 +5633,7 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </tr>
 <tr>
 <td><code>chat-transcription</code></td>
-<td>Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni).</td>
+<td>Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like <code>vision</code>, this is something a chat model can do, not a deployment mode of its own — a model carrying it also carries <code>chat</code>. It is distinct from <code>transcription</code>, which deploys a dedicated ASR model on <code>/audio/transcriptions</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -5630,6 +5667,25 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 </tr>
 </tbody>
 </table>
+<p><strong>Image capability labels</strong> — carried alongside <code>image</code>; they refine what the model is offered for without changing its deployment mode:</p>
+<table>
+<thead>
+<tr>
+<th>Label</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>edit</code></td>
+<td>Tuned for editing an input image (<code>/images/edits</code>). Also selects the model for the <code>edit_image</code> role in an omni collection.</td>
+</tr>
+<tr>
+<td><code>upscaling</code></td>
+<td>Image upscaling model (e.g. Real-ESRGAN, <code>/images/upscale</code>). Used as a component in image pipelines rather than offered on its own.</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Characteristic labels</strong> — informational, do not affect routing:</p>
 <table>
 <thead>
@@ -5654,10 +5710,6 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 <tr>
 <td><code>coding</code></td>
 <td>Tuned for code generation and software tasks.</td>
-</tr>
-<tr>
-<td><code>upscaling</code></td>
-<td>Image upscaling model (e.g. Real-ESRGAN). Used as a component in image pipelines.</td>
 </tr>
 <tr>
 <td><code>experimental</code></td>
@@ -5691,30 +5743,30 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 <h3 id="response-format_8">Response format</h3>
 <p>Returns a single model object with the same fields as described in the <a href="#get-v1models">models list endpoint</a> above. For Omni collections (<code>recipe: "collection.omni"</code>), the object additionally carries <code>components</code> (ordered component names) and <code>models</code> (each component's full model object) — see the <a href="../../guide/configuration/custom-models/#share-a-collection-export-import-and-hugging-face">collection file documentation</a>.</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;object&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;model&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;owned_by&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;max_context_window&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;downloaded&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;suggested&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">],</span>
-<span class="w">  </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;llamacpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;--no-mmap&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"created"</span><span class="p">:</span><span class="w"> </span><span class="mi">1744173590</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"object"</span><span class="p">:</span><span class="w"> </span><span class="s2">"model"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"owned_by"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsloth/Qwen3-0.6B-GGUF:Q4_0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"max_context_window"</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"downloaded"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"reasoning"</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--no-mmap"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"llamacpp_backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rocm"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="error-responses_1">Error responses</h3>
 <p>If the model is not found, the endpoint returns a 404 error:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;error&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;message&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Model Qwen3-0.6B-GGUF has not been found&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;not_found&quot;</span>
+<span class="w">  </span><span class="nt">"error"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Model Qwen3-0.6B-GGUF has not been found"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"not_found"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>

@@ -2971,8 +2971,8 @@
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
 <span class="w">                    </span>telemetry.otlp.endpoint<span class="o">=</span>http://localhost:6006/v1/traces<span class="w"> </span><span class="se">\</span>
 <span class="w">                    </span>telemetry.otlp.protocol<span class="o">=</span>http/protobuf<span class="w"> </span><span class="se">\</span>
-<span class="w">                    </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">&#39;[&quot;openinference&quot;]&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">                    </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">&#39;{&quot;x-project-name&quot;:&quot;lemonade&quot;}&#39;</span>
+<span class="w">                    </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">'["openinference"]'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">                    </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">'{"x-project-name":"lemonade"}'</span>
 </code></pre></div></p>
 <h5 id="option-b-configuration-via-configjson">Option B: Configuration via <code>config.json</code></h5>
 <p>Alternatively, edit the <code>telemetry</code> block in your <code>config.json</code> file inside the Lemonade cache directory.</p>
@@ -2981,14 +2981,14 @@
 Manually modifying <code>config.json</code> requires a restart of the Lemonade server to apply the changes. See the <a href=".././configuration/#configjson">Configuration Guide</a> to find the location of the <code>config.json</code> file on your operating system.</p>
 </blockquote>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;telemetry&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;enabled&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;otlp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;endpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:6006/v1/traces&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;protocol&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http/protobuf&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;semantics&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;openinference&quot;</span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;headers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;x-project-name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span>
+<span class="w">  </span><span class="nt">"telemetry"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"enabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"otlp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"endpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://localhost:6006/v1/traces"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"protocol"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http/protobuf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"semantics"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"openinference"</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"x-project-name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span>
 <span class="w">      </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -2997,13 +2997,13 @@ Manually modifying <code>config.json</code> requires a restart of the Lemonade s
 <h4 id="step-4-send-a-test-request">Step 4: Send a Test Request</h4>
 <p>To verify that telemetry is working correctly, send a test chat completion request to your running Lemonade server:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/api/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;your-model-name&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [</span>
-<span class="s1">      {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello, Lemonade! This is a test request for telemetry.&quot;}</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "your-model-name",</span>
+<span class="s1">    "messages": [</span>
+<span class="s1">      {"role": "user", "content": "Hello, Lemonade! This is a test request for telemetry."}</span>
 <span class="s1">    ]</span>
-<span class="s1">  }&#39;</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <h4 id="step-5-flush-traces-immediately-optional">Step 5: Flush Traces Immediately (Optional)</h4>
 <p>To optimize network performance, Lemonade buffers traces in memory and flushes them periodically. If you want to see your test request in the UI immediately without waiting, send a manual flush command:</p>
@@ -3023,8 +3023,8 @@ Manually modifying <code>config.json</code> requires a restart of the Lemonade s
 <p>To send trace details to Honeycomb (using <code>otel_genai</code> semantics):</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.enabled<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="se">\</span>
 <span class="w">                    </span>telemetry.otlp.endpoint<span class="o">=</span>https://api.honeycomb.io/v1/traces<span class="w"> </span><span class="se">\</span>
-<span class="w">                    </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">&#39;[&quot;otel_genai&quot;]&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">                    </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">&#39;{&quot;x-honeycomb-team&quot;: &quot;YOUR_API_KEY&quot;}&#39;</span>
+<span class="w">                    </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">'["otel_genai"]'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">                    </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">'{"x-honeycomb-team": "YOUR_API_KEY"}'</span>
 </code></pre></div>
 <hr />
 <h2 id="configuration-settings-reference">Configuration Settings Reference</h2>
@@ -3147,8 +3147,8 @@ lemonade<span class="w"> </span>config
 
 <span class="c1"># Configure telemetry options</span>
 lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.enabled<span class="o">=</span><span class="nb">true</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">&#39;[&quot;openinference&quot;]&#39;</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">&#39;{&quot;x-project-name&quot;:&quot;lemonade&quot;}&#39;</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">'["openinference"]'</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">'{"x-project-name":"lemonade"}'</span>
 </code></pre></div>
 <blockquote>
 <p>[!NOTE]
@@ -3158,15 +3158,15 @@ When configuring options that require JSON arrays (such as <code>telemetry.otlp.
 <p>You can update the internal configuration by sending a POST request to the <code>/internal/set</code> endpoint:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Enable telemetry and select only OpenTelemetry GenAI semantics</span>
 curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/internal/set<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;telemetry&quot;: {</span>
-<span class="s1">      &quot;enabled&quot;: true,</span>
-<span class="s1">      &quot;otlp&quot;: {</span>
-<span class="s1">        &quot;semantics&quot;: [&quot;otel_genai&quot;]</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "telemetry": {</span>
+<span class="s1">      "enabled": true,</span>
+<span class="s1">      "otlp": {</span>
+<span class="s1">        "semantics": ["otel_genai"]</span>
 <span class="s1">      }</span>
 <span class="s1">    }</span>
-<span class="s1">  }&#39;</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <h3 id="forcing-a-flush">Forcing a Flush</h3>
 <p>Because spans are buffered in memory to optimize networking, you can force-flush the telemetry queue at any time to export queued traces immediately:</p>
@@ -3184,14 +3184,14 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <h3 id="example-request-with-trace-parent">Example Request with Trace Parent</h3>
 <p>Here is how an instrumented caller supplies the <code>traceparent</code> header to Lemonade:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/api/v1/chat/completions<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">    &quot;model&quot;: &quot;your-model-name&quot;,</span>
-<span class="s1">    &quot;messages&quot;: [</span>
-<span class="s1">      {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello, Lemonade!&quot;}</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">    "model": "your-model-name",</span>
+<span class="s1">    "messages": [</span>
+<span class="s1">      {"role": "user", "content": "Hello, Lemonade!"}</span>
 <span class="s1">    ]</span>
-<span class="s1">  }&#39;</span>
+<span class="s1">  }'</span>
 </code></pre></div>
 <blockquote>
 <p>[!WARNING]

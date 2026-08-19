@@ -2566,12 +2566,12 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl http://localhost:8000/v1/health ^
-  -H &quot;Authorization: Bearer KEY&quot;
+  -H "Authorization: Bearer KEY"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:8000/v1/health<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer KEY&quot;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer KEY"</span>
 </code></pre></div>
 </div>
 </div>
@@ -2581,22 +2581,22 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/internal/set ^
-  -H &quot;Authorization: Bearer KEY&quot; ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;log_level\&quot;: \&quot;debug\&quot;}&quot;
+  -H "Authorization: Bearer KEY" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"log_level\": \"debug\"}"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/internal/set<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Authorization: Bearer KEY&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;log_level&quot;: &quot;debug&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Authorization: Bearer KEY"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"log_level": "debug"}'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <p>In JavaScript:</p>
-<div class="highlight"><pre><span></span><code><span class="k">await</span><span class="w"> </span><span class="nx">fetch</span><span class="p">(</span><span class="s2">&quot;http://localhost:8000/v1/models&quot;</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
+<div class="highlight"><pre><span></span><code><span class="k">await</span><span class="w"> </span><span class="nx">fetch</span><span class="p">(</span><span class="s2">"http://localhost:8000/v1/models"</span><span class="p">,</span><span class="w"> </span><span class="p">{</span>
 <span class="w">  </span><span class="nx">headers</span><span class="o">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nx">Authorization</span><span class="o">:</span><span class="w"> </span><span class="sb">`Bearer </span><span class="si">${</span><span class="nx">apiKey</span><span class="si">}</span><span class="sb">`</span><span class="p">,</span>
 <span class="w">  </span><span class="p">},</span>
@@ -2748,17 +2748,23 @@
 <td>Updates default HTTP client timeout</td>
 </tr>
 <tr>
-<td><code>no_broadcast</code></td>
+<td><code>broadcast</code></td>
 <td>bool</td>
-<td>Stops or starts UDP beacon</td>
+<td>Starts or stops UDP beacon</td>
+</tr>
+<tr>
+<td><code>models_dir</code></td>
+<td>string (<code>"auto"</code> or path)</td>
+<td>Updates the primary model cache location</td>
 </tr>
 <tr>
 <td><code>extra_models_dir</code></td>
 <td>string</td>
-<td>Updates model manager search path</td>
+<td>Validates access and updates the external GGUF search path</td>
 </tr>
 </tbody>
 </table>
+<p>When <code>extra_models_dir</code> points to an existing path, <code>lemond</code> validates that it is a readable directory before applying the update. A path that does not exist yet is accepted so the directory watcher can pick it up if it is created later. Because <code>/internal/set</code> validates all supplied keys before applying any of them, a directory validation error rejects the whole request with <code>400</code>.</p>
 <p><strong>Deferred keys</strong> (affect the next model load or eviction decision, no immediate side effect):</p>
 <table>
 <thead>
@@ -2827,14 +2833,14 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/internal/set ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;ctx_size\&quot;: 8192, \&quot;max_loaded_models\&quot;: 3, \&quot;log_level\&quot;: \&quot;debug\&quot;}&quot;
+  -H "Content-Type: application/json" ^
+  -d "{\"ctx_size\": 8192, \"max_loaded_models\": 3, \"log_level\": \"debug\"}"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/internal/set<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;ctx_size&quot;: 8192, &quot;max_loaded_models&quot;: 3, &quot;log_level&quot;: &quot;debug&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'</span>
 </code></pre></div>
 </div>
 </div>
@@ -2868,23 +2874,23 @@
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl -X POST http://localhost:8000/internal/pin ^
-  -H &quot;Content-Type: application/json&quot; ^
-  -d &quot;{\&quot;model_name\&quot;: \&quot;Qwen3-0.6B-GGUF\&quot;, \&quot;pinned\&quot;: true}&quot;
+  -H "Content-Type: application/json" ^
+  -d "{\"model_name\": \"Qwen3-0.6B-GGUF\", \"pinned\": true}"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:8000/internal/pin<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model_name&quot;: &quot;Qwen3-0.6B-GGUF&quot;, &quot;pinned&quot;: true}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"model_name": "Qwen3-0.6B-GGUF", "pinned": true}'</span>
 </code></pre></div>
 </div>
 </div>
 </div>
 <p><strong>Response format:</strong>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;success&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;pinned&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">  </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"success"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pinned"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
 <span class="p">}</span>
 </code></pre></div></p>
 

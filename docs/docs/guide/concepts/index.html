@@ -2531,32 +2531,32 @@
 
 <span class="c1"># The base_url points to an LLM server, which can either be</span>
 <span class="c1"># local (localhost address) or cloud-based (web address)</span>
-<span class="n">base_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span>
+<span class="n">base_url</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">"http://localhost:13305/api/v1"</span>
 
 <span class="c1"># The `client` instance here provides APIs to request</span>
 <span class="c1"># LLM invocations from the server</span>
 <span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span>
     <span class="n">base_url</span><span class="o">=</span><span class="n">base_url</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>  <span class="c1"># required, but unused in Lemonade</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">"lemonade"</span><span class="p">,</span>  <span class="c1"># required, but unused in Lemonade</span>
 <span class="p">)</span>
 
 <span class="c1"># The `messages` list provides the history of messages from</span>
 <span class="c1"># the system, assistant, and user roles</span>
 <span class="n">messages</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span><span class="s2">&quot;system&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span><span class="s2">&quot;You are a helpful assistant.&quot;</span><span class="p">},</span>
-    <span class="p">{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span><span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span><span class="s2">&quot;Hi, how are you?&quot;</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">"role"</span><span class="p">:</span><span class="s2">"system"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span><span class="s2">"You are a helpful assistant."</span><span class="p">},</span>
+    <span class="p">{</span><span class="s2">"role"</span><span class="p">:</span><span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span><span class="s2">"Hi, how are you?"</span><span class="p">},</span>
 <span class="p">]</span>
 
 <span class="c1"># This is the API call that sends the `messages` history to</span>
-<span class="c1"># the server&#39;s specific LLM `model`</span>
-<span class="c1"># It returns a `completion`, which is OpenAI&#39;s way of referring</span>
-<span class="c1"># to the LLM&#39;s reponse to the messages</span>
+<span class="c1"># the server's specific LLM `model`</span>
+<span class="c1"># It returns a `completion`, which is OpenAI's way of referring</span>
+<span class="c1"># to the LLM's reponse to the messages</span>
 <span class="n">completion</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Llama-3.1-8B-Instruct-Hybrid&quot;</span><span class="p">,</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">"Llama-3.1-8B-Instruct-Hybrid"</span><span class="p">,</span>
     <span class="n">messages</span><span class="o">=</span><span class="n">messages</span><span class="p">,</span>
 <span class="p">)</span>
 
-<span class="c1"># This code gets the LLM&#39;s response from the `completion`</span>
+<span class="c1"># This code gets the LLM's response from the `completion`</span>
 <span class="c1"># and prints it to the screen</span>
 <span class="n">response</span> <span class="o">=</span> <span class="n">completion</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span>
 <span class="nb">print</span><span class="p">(</span><span class="n">response</span><span class="p">)</span>

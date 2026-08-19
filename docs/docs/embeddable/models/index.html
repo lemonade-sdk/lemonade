@@ -2574,7 +2574,7 @@
 lemond.exe ./
 
 REM Set models_dir to be inside the lemond directory
-lemonade.exe config set models_dir=&quot;./models&quot;
+lemonade.exe config set models_dir="./models"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
@@ -2582,7 +2582,7 @@ lemonade.exe config set models_dir=&quot;./models&quot;
 ./lemond<span class="w"> </span>./
 
 <span class="c1"># Set models_dir to be inside the lemond directory</span>
-./lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">models_dir</span><span class="o">=</span><span class="s2">&quot;./models&quot;</span>
+./lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">models_dir</span><span class="o">=</span><span class="s2">"./models"</span>
 </code></pre></div>
 </div>
 </div>
@@ -2644,7 +2644,7 @@ cp<span class="w"> </span>models/models--unsloth--Qwen3-0.6B-GGUF/snapshots/5096
 lemond.exe ./
 
 REM Set the extra_models_dir search path
-lemonade.exe config set extra_models_dir=&quot;./example_extra_models_dir&quot;
+lemonade.exe config set extra_models_dir="./example_extra_models_dir"
 </code></pre></div>
 </div>
 <div class="tabbed-block">
@@ -2652,7 +2652,7 @@ lemonade.exe config set extra_models_dir=&quot;./example_extra_models_dir&quot;
 ./lemond<span class="w"> </span>./
 
 <span class="c1"># Set the extra_models_dir search path</span>
-./lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">&quot;./example_extra_models_dir&quot;</span>
+./lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">extra_models_dir</span><span class="o">=</span><span class="s2">"./example_extra_models_dir"</span>
 </code></pre></div>
 </div>
 </div>
@@ -2676,6 +2676,7 @@ lemonade.exe config set extra_models_dir=&quot;./example_extra_models_dir&quot;
 <blockquote>
 <p>Note: models imported via <code>extra_models_dir</code> will have the <code>extra.</code> prefix in the <code>list</code> command and <code>/v1/models</code> endpoint.</p>
 <p>Tip: <code>extra_models_dir</code> can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.</p>
+<p>Note: When an existing <code>extra_models_dir</code> is set at runtime, the path must be a readable directory for the <code>lemond</code> process. Permission or I/O failures are rejected instead of replacing the current model view. A path that does not exist yet is allowed and can be picked up later by the directory watcher.</p>
 </blockquote>
 <h2 id="customization">Customization</h2>
 <h3 id="changing-the-built-in-models-list">Changing the Built-In Models List</h3>
@@ -2702,15 +2703,15 @@ lemonade.exe list
 <p>Note: <code>lemond</code> needs to be restarted for <code>server_models.json</code> changes to take effect.</p>
 </blockquote>
 <p>For example, if you wanted to add <a href="https://huggingface.co/Tesslate/OmniCoder-9B-GGUF">OmniCoder-9B</a> to your application, add this entry to <code>server_models.json</code>:</p>
-<div class="highlight"><pre><span></span><code>&quot;OmniCoder-9B-GGUF&quot;: {
-    &quot;source&quot;: &quot;huggingface&quot;,
-    &quot;checkpoint&quot;: &quot;Tesslate/OmniCoder-9B-GGUF:omnicoder-9b-q4_k_m.gguf&quot;,
-    &quot;recipe&quot;: &quot;llamacpp&quot;,
-    &quot;suggested&quot;: true,
-    &quot;labels&quot;: [
-        &quot;tool-calling&quot;
+<div class="highlight"><pre><span></span><code>"OmniCoder-9B-GGUF": {
+    "source": "huggingface",
+    "checkpoint": "Tesslate/OmniCoder-9B-GGUF:omnicoder-9b-q4_k_m.gguf",
+    "recipe": "llamacpp",
+    "suggested": true,
+    "labels": [
+        "tool-calling"
     ],
-    &quot;size&quot;: 5.74
+    "size": 5.74
 }
 </code></pre></div>
 <p>You can learn more in the <a href="../../guide/configuration/custom-models/">Custom Models</a> guide, including how to enable your users to register their own custom models at runtime.</p>

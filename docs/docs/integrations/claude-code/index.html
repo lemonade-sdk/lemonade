@@ -2515,10 +2515,10 @@
 <p>When <code>--model</code> is provided, launch goes straight to starting the agent and loading that model.</p>
 <h2 id="passing-claude-arguments-with-agent-args">Passing Claude arguments with <code>--agent-args</code></h2>
 <p>You can pass any extra Claude CLI flags through Lemonade:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">&quot;--approval-mode never&quot;</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"--approval-mode never"</span>
 </code></pre></div>
 <p>Resume a previous Claude session:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--agent-args<span class="o">=</span><span class="s2">&quot;--resume 6a670b84-ac78-47e0-8c2a-c3e85efdd979&quot;</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--agent-args<span class="o">=</span><span class="s2">"--resume 6a670b84-ac78-47e0-8c2a-c3e85efdd979"</span>
 </code></pre></div>
 <p>If Claude supports a flag, you can pass it through <code>--agent-args</code>.</p>
 <h2 id="related-cli-docs">Related CLI Docs</h2>

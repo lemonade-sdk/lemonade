@@ -2630,8 +2630,8 @@
 </code></pre></div>
 <p>Or via HTTP:
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/api/v1/install<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;recipe&quot;: &quot;vllm&quot;, &quot;backend&quot;: &quot;rocm&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"recipe": "vllm", "backend": "rocm"}'</span>
 </code></pre></div></p>
 <p>The install fetches a per-GPU-target release (e.g. <code>…-gfx1151</code>, <code>…-gfx1150</code>) from <a href="https://github.com/lemonade-sdk/vllm-rocm/releases">lemonade-sdk/vllm-rocm</a>. The base version is pinned in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json"><code>backend_versions.json</code></a>; the <code>-{gfx_target}</code> suffix is appended at runtime from <code>SystemInfo::get_rocm_arch()</code>, so the default pin covers all RDNA/APU architectures on one line.</p>
 <h4 id="per-architecture-release-overrides">Per-architecture release overrides</h4>
@@ -2675,21 +2675,21 @@ recipes serve correctly without it.</p>
 <p>When adding a built-in model with <code>recipe: "vllm"</code>, check whether its model family needs vLLM arguments. If it does, update <code>vllm_model_config.json</code> in the same PR as the <code>server_models.json</code> entry.</p>
 <p>The config has two layers:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;schema_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;enable_checkpoint_regex_match&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;families&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;qwen3.&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;match&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">  </span><span class="nt">"schema_version"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"enable_checkpoint_regex_match"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"families"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"qwen3."</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"match"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="p">{</span>
-<span class="w">          </span><span class="nt">&quot;checkpoint_regex&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3\\.&quot;</span>
+<span class="w">          </span><span class="nt">"checkpoint_regex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3\\."</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">      </span><span class="p">],</span>
-<span class="w">      </span><span class="nt">&quot;args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;--enable-auto-tool-choice --tool-call-parser qwen3_coder&quot;</span>
+<span class="w">      </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="s2">"--enable-auto-tool-choice --tool-call-parser qwen3_coder"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">},</span>
-<span class="w">  </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;Qwen3.5-4B-vLLM&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;family&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;qwen3.&quot;</span>
+<span class="w">  </span><span class="nt">"models"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"Qwen3.5-4B-vLLM"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"family"</span><span class="p">:</span><span class="w"> </span><span class="s2">"qwen3."</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
@@ -2716,7 +2716,7 @@ recipes serve correctly without it.</p>
 <h2 id="tuning">Tuning</h2>
 <p>Free-form CLI args can be appended to <code>vllm-server</code> via <code>vllm.args</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="c1"># Allow more concurrent sequences and turn on prefix caching</span>
-lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>vllm.args<span class="o">=</span><span class="s2">&quot;--max-num-seqs 128 --enable-prefix-caching&quot;</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>vllm.args<span class="o">=</span><span class="s2">"--max-num-seqs 128 --enable-prefix-caching"</span>
 </code></pre></div>
 <p>The flat form (<code>vllm_args=...</code>) is also accepted and maps to the same setting.</p>
 <h2 id="known-gotchas">Known gotchas</h2>

@@ -2589,8 +2589,8 @@ docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </
 <h3 id="docker-run-with-cpu-backend">Docker Run with CPU backend</h3>
 <p>To use the CPU backend, create or modify the <code>config.json</code> file in the <code>lemonade-recipe</code> volume:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span>
+<span class="w">  </span><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cpu"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -2606,8 +2606,8 @@ docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </
 <h3 id="docker-run-with-amd-gpu-passthrough-using-rocm">Docker Run with AMD GPU Passthrough using ROCm</h3>
 <p>To use the ROCm backend, create or modify the <code>config.json</code> file in the <code>lemonade-recipe</code> volume:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rocm"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -2640,8 +2640,8 @@ the host's numeric group ID instead. Find it on the host with:</p>
 <p>Make sure you follow install steps described in <a href="https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html">ROCm for WSL</a></p>
 <p>Create or modify the <code>config.json</code> file in the <code>lemonade-recipe</code> volume:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rocm&quot;</span>
+<span class="w">  </span><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"rocm"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -2666,38 +2666,38 @@ the host's numeric group ID instead. Find it on the host with:</p>
 <p>Docker Compose makes it easier to manage multi-container applications.
 1. Make sure you have Docker Compose installed.
 2. Create a <code>docker-compose.yml</code> file like this:</p>
-<div class="highlight"><pre><span></span><code>services:
-  lemonade:
-    image: ghcr.io/lemonade-sdk/lemonade-server:latest
-    container_name: lemonade-server
-    ports:
-      - &quot;13305:13305&quot;
-    volumes:
-      # Persist downloaded models
-      - lemonade-cache:/opt/lemonade/.cache/huggingface
-      # Persist llama binaries
-      - lemonade-llama:/opt/lemonade/llama
-      # Persist model options and other backend binaries
-      - lemonade-recipe:/opt/lemonade/.cache/lemonade
-    restart: unless-stopped
-    # For AMD GPU (ROCm) on Linux only, also add:
-    # devices:
-    #   - /dev/kfd:/dev/kfd
-    #   - /dev/dri:/dev/dri
-    # group_add:
-    #   - video
-    #   - render
+<div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">ghcr.io/lemonade-sdk/lemonade-server:latest</span>
+<span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-server</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"13305:13305"</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># Persist downloaded models</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-cache:/opt/lemonade/.cache/huggingface</span>
+<span class="w">      </span><span class="c1"># Persist llama binaries</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-llama:/opt/lemonade/llama</span>
+<span class="w">      </span><span class="c1"># Persist model options and other backend binaries</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-recipe:/opt/lemonade/.cache/lemonade</span>
+<span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
+<span class="w">    </span><span class="c1"># For AMD GPU (ROCm) on Linux only, also add:</span>
+<span class="w">    </span><span class="c1"># devices:</span>
+<span class="w">    </span><span class="c1">#   - /dev/kfd:/dev/kfd</span>
+<span class="w">    </span><span class="c1">#   - /dev/dri:/dev/dri</span>
+<span class="w">    </span><span class="c1"># group_add:</span>
+<span class="w">    </span><span class="c1">#   - video</span>
+<span class="w">    </span><span class="c1">#   - render</span>
 
-volumes:
-  lemonade-cache:
-  lemonade-llama:
-  lemonade-recipe:
+<span class="nt">volumes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade-cache</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade-llama</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade-recipe</span><span class="p">:</span>
 </code></pre></div>
 <blockquote>
 <p>To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a <code>config.json</code> file in the <code>lemonade-recipe</code> volume with:
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span>
+<span class="w">  </span><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cpu"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
@@ -2722,7 +2722,7 @@ with the host's numeric group IDs from <code>getent group render video</code>.</
 <h2 id="container-based-workflows">Container-based workflows</h2>
 <p>This repository supports two container-related workflows with different goals:</p>
 <h3 id="development-dev-containers">Development (Dev Containers)</h3>
-<p>The <code>.devcontainer</code> (<a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev-getting-started.md#developer-ide--ide-build-steps">dev container</a>) configuration is intended for contributors and developers.
+<p>The <code>.devcontainer</code> (<a href="https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/getting-started.md#developer-ide-and-build-steps">dev container</a>) configuration is intended for contributors and developers.
 It provides a full development environment (tooling, debuggers, source mounted)
 and is primarily used with VS Code Dev Containers or GitHub Codespaces.</p>
 <h3 id="running-lemonade-in-a-container">Running Lemonade in a container</h3>
@@ -2791,13 +2791,13 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="w">    </span>mkdir<span class="w"> </span>-p<span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span><span class="nb">cd</span><span class="w"> </span>build<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>cmake<span class="w"> </span>..<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>--config<span class="w"> </span>Release<span class="w"> </span>-j<span class="s2">&quot;</span><span class="k">$(</span>nproc<span class="k">)</span><span class="s2">&quot;</span>
+<span class="w">    </span>cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </span>--config<span class="w"> </span>Release<span class="w"> </span>-j<span class="s2">"</span><span class="k">$(</span>nproc<span class="k">)</span><span class="s2">"</span>
 
 <span class="c"># Debug: Check build outputs</span>
-<span class="k">RUN</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;=== Build directory contents ===&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="k">RUN</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== Build directory contents ==="</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>ls<span class="w"> </span>-la<span class="w"> </span>build/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;=== Checking for resources ===&quot;</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>find<span class="w"> </span>build/<span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;*.json&quot;</span><span class="w"> </span>-o<span class="w"> </span>-name<span class="w"> </span><span class="s2">&quot;resources&quot;</span><span class="w"> </span>-type<span class="w"> </span>d
+<span class="w">    </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"=== Checking for resources ==="</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>find<span class="w"> </span>build/<span class="w"> </span>-name<span class="w"> </span><span class="s2">"*.json"</span><span class="w"> </span>-o<span class="w"> </span>-name<span class="w"> </span><span class="s2">"resources"</span><span class="w"> </span>-type<span class="w"> </span>d
 
 <span class="c"># # ============================================================</span>
 <span class="c"># # 2. Runtime stage — small, clean image</span>
@@ -2821,7 +2821,7 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="c"># Run as an unprivileged user; lemond never needs root at runtime.</span>
 <span class="k">RUN</span><span class="w"> </span>useradd<span class="w"> </span>-r<span class="w"> </span>-u<span class="w"> </span><span class="m">10001</span><span class="w"> </span>-s<span class="w"> </span>/usr/sbin/nologin<span class="w"> </span>lemonade
 
-<span class="c"># The application directory doubles as the user&#39;s HOME so the HuggingFace and</span>
+<span class="c"># The application directory doubles as the user's HOME so the HuggingFace and</span>
 <span class="c"># lemonade caches (both derived from $HOME) resolve to writable, owned paths.</span>
 <span class="k">WORKDIR</span><span class="w"> </span><span class="s">/opt/lemonade</span>
 <span class="k">ENV</span><span class="w"> </span><span class="nv">HOME</span><span class="o">=</span>/opt/lemonade
@@ -2840,7 +2840,7 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 
 <span class="c"># Expose the lemond/lemonade binaries on PATH so `docker exec` users can run</span>
 <span class="c"># them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.</span>
-<span class="k">ENV</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">&quot;/opt/lemonade:</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="k">ENV</span><span class="w"> </span><span class="nv">PATH</span><span class="o">=</span><span class="s2">"/opt/lemonade:</span><span class="si">${</span><span class="nv">PATH</span><span class="si">}</span><span class="s2">"</span>
 
 <span class="c"># Create cache directories and hand the whole tree to the unprivileged user.</span>
 <span class="k">RUN</span><span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/opt/lemonade/llama/cpu<span class="w"> </span><span class="se">\</span>
@@ -2862,37 +2862,37 @@ update the Dockerfile to use <code>COPY . /app</code> instead.</p>
 <span class="c"># Binds 0.0.0.0 because Docker port publishing (-p) reaches the container via</span>
 <span class="c"># its external interface, not loopback. Restrict exposure by publishing to</span>
 <span class="c"># host loopback (-p 127.0.0.1:13305:13305) and/or setting LEMONADE_API_KEY.</span>
-<span class="k">CMD</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;./lemond&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;--host&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span><span class="p">]</span>
+<span class="k">CMD</span><span class="w"> </span><span class="p">[</span><span class="s2">"./lemond"</span><span class="p">,</span><span class="w"> </span><span class="s2">"--host"</span><span class="p">,</span><span class="w"> </span><span class="s2">"0.0.0.0"</span><span class="p">]</span>
 </code></pre></div>
 <h3 id="2-build-the-docker-image">2. Build the Docker Image</h3>
 <p>Create below <code>docker-compose.yml</code> file within the parent directory of repository root (where Dockerfile is located):</p>
-<div class="highlight"><pre><span></span><code>services:
-  lemonade:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: lemonade-server
-    ports:
-      - &quot;13305:13305&quot;
-    volumes:
-      # Persist downloaded models
-      - lemonade-cache:/opt/lemonade/.cache/huggingface
-      # Persist llama binaries
-      - lemonade-llama:/opt/lemonade/llama
-      # Persist model options and other backend binaries
-      - lemonade-recipe:/opt/lemonade/.cache/lemonade
-    restart: unless-stopped
+<div class="highlight"><pre><span></span><code><span class="nt">services</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">build</span><span class="p">:</span>
+<span class="w">      </span><span class="nt">context</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.</span>
+<span class="w">      </span><span class="nt">dockerfile</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Dockerfile</span>
+<span class="w">    </span><span class="nt">container_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-server</span>
+<span class="w">    </span><span class="nt">ports</span><span class="p">:</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"13305:13305"</span>
+<span class="w">    </span><span class="nt">volumes</span><span class="p">:</span>
+<span class="w">      </span><span class="c1"># Persist downloaded models</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-cache:/opt/lemonade/.cache/huggingface</span>
+<span class="w">      </span><span class="c1"># Persist llama binaries</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-llama:/opt/lemonade/llama</span>
+<span class="w">      </span><span class="c1"># Persist model options and other backend binaries</span>
+<span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">lemonade-recipe:/opt/lemonade/.cache/lemonade</span>
+<span class="w">    </span><span class="nt">restart</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">unless-stopped</span>
 
-volumes:
-  lemonade-cache:
-  lemonade-llama:
-  lemonade-recipe:
+<span class="nt">volumes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade-cache</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade-llama</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">lemonade-recipe</span><span class="p">:</span>
 </code></pre></div>
 <blockquote>
 <p>To configure the llama.cpp backend (e.g., CPU instead of auto-detect), create a <code>config.json</code> file in the <code>lemonade-recipe</code> volume with:
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;llamacpp&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;cpu&quot;</span>
+<span class="w">  </span><span class="nt">"llamacpp"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"cpu"</span>
 <span class="w">  </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
@@ -2930,8 +2930,8 @@ lemonade-server<span class="w">  </span><span class="p">|</span><span class="w">
 <h3 id="5-load-a-model">5. Load a Model</h3>
 <p>You can use the gui on localhost:13305 or below command to load a model (e.g., Qwen 0.6B):</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/api/v1/load<span class="w"> </span><span class="se">\</span>
-<span class="w">     </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">     </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;model_name&quot;: &quot;Qwen3-0.6B-GGUF&quot;}&#39;</span>
+<span class="w">     </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">     </span>-d<span class="w"> </span><span class="s1">'{"model_name": "Qwen3-0.6B-GGUF"}'</span>
 </code></pre></div>
 <p>The server will:
 - Auto-download the GGUF model from HuggingFace
@@ -2942,13 +2942,13 @@ lemonade-server<span class="w">  </span><span class="p">|</span><span class="w">
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
 
 <span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span>
-    <span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/api/v1&quot;</span><span class="p">,</span>
-    <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;lemonade&quot;</span>  <span class="c1"># required but unused</span>
+    <span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/api/v1"</span><span class="p">,</span>
+    <span class="n">api_key</span><span class="o">=</span><span class="s2">"lemonade"</span>  <span class="c1"># required but unused</span>
 <span class="p">)</span>
 
 <span class="n">completion</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;Hello, Lemonade!&quot;</span><span class="p">}]</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"Hello, Lemonade!"</span><span class="p">}]</span>
 <span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="n">completion</span><span class="o">.</span><span class="n">choices</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">message</span><span class="o">.</span><span class="n">content</span><span class="p">)</span>

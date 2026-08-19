@@ -2755,7 +2755,7 @@ git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>checkout<span class="w"> </span>main
 git<span class="w"> </span>pull
 git<span class="w"> </span>cherry-pick<span class="w"> </span>&lt;commit-sha-from-release-branch&gt;
-git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main<span class="w">   </span><span class="c1"># requires admin &quot;bypass branch protections&quot; permission</span>
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main<span class="w">   </span><span class="c1"># requires admin "bypass branch protections" permission</span>
 </code></pre></div>
 <p>Confirm with the team before pushing directly to <code>main</code>.</p>
 <h2 id="step-3-push-a-tag">Step 3: Push a Tag</h2>
@@ -2794,7 +2794,7 @@ git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </
 <p>First confirm <strong>every release-branch fix is forward-ported to <code>main</code></strong> — <code>-s ours</code> silently drops anything that isn't (see Step 2's forward-port guidance).</p>
 <div class="highlight"><pre><span></span><code>git<span class="w"> </span>checkout<span class="w"> </span>main
 git<span class="w"> </span>pull
-git<span class="w"> </span>merge<span class="w"> </span>-s<span class="w"> </span>ours<span class="w"> </span>--no-ff<span class="w"> </span>vX.Y.Z<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;chore: link vX.Y.Z into main history for git describe&quot;</span>
+git<span class="w"> </span>merge<span class="w"> </span>-s<span class="w"> </span>ours<span class="w"> </span>--no-ff<span class="w"> </span>vX.Y.Z<span class="w"> </span>-m<span class="w"> </span><span class="s2">"chore: link vX.Y.Z into main history for git describe"</span>
 git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>main
 git<span class="w"> </span>describe<span class="w"> </span>--tags<span class="w"> </span>--abbrev<span class="o">=</span><span class="m">0</span><span class="w">   </span><span class="c1"># expect vX.Y.Z; `git diff origin/main HEAD` should be empty</span>
 </code></pre></div>

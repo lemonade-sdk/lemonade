@@ -2837,11 +2837,11 @@ python<span class="w"> </span>test/server_llm.py<span class="w"> </span>--wrappe
 <p>C++ unit tests — configure the build first (<code>./setup.sh</code> on Linux/macOS, <code>./setup.ps1</code> on Windows) if you haven't already.</p>
 <p>Linux / macOS:</p>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>default<span class="w"> </span>--target<span class="w"> </span>cpp-ci-tests
-ctest<span class="w"> </span>--test-dir<span class="w"> </span>build<span class="w"> </span>-L<span class="w"> </span><span class="s2">&quot;^cpp-ci</span>$<span class="s2">&quot;</span><span class="w"> </span>--output-on-failure
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build<span class="w"> </span>-L<span class="w"> </span><span class="s2">"^cpp-ci</span>$<span class="s2">"</span><span class="w"> </span>--output-on-failure
 </code></pre></div>
 <p>Windows (generator-independent, so it works whether <code>setup.ps1</code> configured the <code>windows</code> (VS 2022) or <code>vs18</code> (VS 2026) preset; Visual Studio builds are multi-config, so <code>ctest</code> needs <code>-C Release</code>):</p>
 <div class="highlight"><pre><span></span><code><span class="n">cmake</span> <span class="p">-</span><span class="n">-build</span> <span class="n">build</span> <span class="p">-</span><span class="n">-config</span> <span class="n">Release</span> <span class="p">-</span><span class="n">-target</span> <span class="n">cpp-ci-tests</span>
-<span class="n">ctest</span> <span class="p">-</span><span class="n">-test-dir</span> <span class="n">build</span> <span class="n">-C</span> <span class="n">Release</span> <span class="n">-L</span> <span class="s2">&quot;^cpp-ci$&quot;</span> <span class="p">-</span><span class="n">-output-on-failure</span>
+<span class="n">ctest</span> <span class="p">-</span><span class="n">-test-dir</span> <span class="n">build</span> <span class="n">-C</span> <span class="n">Release</span> <span class="n">-L</span> <span class="s2">"^cpp-ci$"</span> <span class="p">-</span><span class="n">-output-on-failure</span>
 </code></pre></div>
 <p>App typecheck and regression tests:</p>
 <div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>src/app<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>ci<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>npm<span class="w"> </span>run<span class="w"> </span>typecheck

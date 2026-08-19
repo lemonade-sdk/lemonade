@@ -2416,20 +2416,20 @@
 <p>When <code>--model</code> is provided, launch goes straight to starting the agent and loading that model.</p>
 <h2 id="passing-pi-arguments-with-agent-args">Passing Pi arguments with <code>--agent-args</code></h2>
 <p>You can pass any extra Pi CLI flags through Lemonade:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">&quot;-e npm:@foo/my-extension&quot;</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>launch<span class="w"> </span>pi<span class="w"> </span>--model<span class="w"> </span>Qwen3.5-35B-A3B-GGUF<span class="w"> </span>--agent-args<span class="w"> </span><span class="s2">"-e npm:@foo/my-extension"</span>
 </code></pre></div>
 <p>If Pi supports a flag, you can pass it through <code>--agent-args</code>.</p>
 <h2 id="how-it-works">How it works</h2>
 <p><code>lemonade launch pi</code> writes two configuration files:</p>
 <p><strong><code>~/.pi/agent/models.json</code></strong> (provider registration):
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;providers&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;Lemonade&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">      </span><span class="nt">&quot;baseUrl&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;http://localhost:13305/v1&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;api&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;openai-completions&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;apiKey&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;lemonade&quot;</span><span class="p">,</span>
-<span class="w">      </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
-<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3.5-35B-A3B-GGUF&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="nt">"providers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"Lemonade"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"baseUrl"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://localhost:13305/v1"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"api"</span><span class="p">:</span><span class="w"> </span><span class="s2">"openai-completions"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"apiKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"models"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span><span class="w"> </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF"</span><span class="w"> </span><span class="p">}</span>
 <span class="w">      </span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="w">  </span><span class="p">}</span>
@@ -2437,8 +2437,8 @@
 </code></pre></div></p>
 <p><strong><code>~/.pi/agent/settings.json</code></strong> (default provider/model):
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;defaultProvider&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Lemonade&quot;</span><span class="p">,</span>
-<span class="w">  </span><span class="nt">&quot;defaultModel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3.5-35B-A3B-GGUF&quot;</span>
+<span class="w">  </span><span class="nt">"defaultProvider"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Lemonade"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"defaultModel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-35B-A3B-GGUF"</span>
 <span class="p">}</span>
 </code></pre></div></p>
 <p>If these files already exist, Lemonade merges the <code>Lemonade</code> provider into your existing configuration while preserving other providers and settings.</p>

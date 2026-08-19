@@ -3293,7 +3293,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </tr>
 <tr>
 <td><code>--label LABEL</code></td>
-<td>Add a label to the new model. Repeatable. Valid labels include <code>coding</code>, <code>dflash</code>, <code>embeddings</code>, <code>hot</code>, <code>mtp</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code>.</td>
+<td>Add a label to the new model. Repeatable. Valid labels include <code>chat</code>, <code>coding</code>, <code>dflash</code>, <code>embeddings</code>, <code>hot</code>, <code>mtp</code>, <code>reasoning</code>, <code>reranking</code>, <code>tool-calling</code>, <code>vision</code>. When no <a href="../../../api/openai/#model-labels">deployment label</a> is given, the recipe's default is added — <code>chat</code> for <code>llamacpp</code>, <code>flm</code>, <code>ryzenai-llm</code> and <code>vllm</code>; <code>transcription</code> for <code>whispercpp</code>; <code>image</code> for <code>sd-cpp</code>; and so on.</td>
 </tr>
 <tr>
 <td><code>--components MODEL [MODEL ...]</code></td>
@@ -3389,67 +3389,67 @@ the embedded definition are logged as warnings); unknown components are register
 from the embedded definitions.</p>
 <p>Example collection file:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;user.MyKit&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;collection.omni&quot;</span><span class="p">,</span>
-<span class="w">    </span><span class="nt">&quot;checkpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;main&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;models&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"user.MyKit"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"collection.omni"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"checkpoints"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"main"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"components"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span><span class="w"> </span><span class="s2">"Whisper-Tiny"</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">"models"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
 <span class="w">        </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;checkpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;main&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unsloth/Qwen3-0.6B-GGUF:Q4_0&quot;</span><span class="w"> </span><span class="p">},</span>
-<span class="w">            </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reasoning&quot;</span><span class="p">],</span>
-<span class="w">            </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
-<span class="w">            </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span>
+<span class="w">            </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"checkpoints"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"main"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsloth/Qwen3-0.6B-GGUF:Q4_0"</span><span class="w"> </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"reasoning"</span><span class="p">],</span>
+<span class="w">            </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">            </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span>
 <span class="w">        </span><span class="p">},</span>
 <span class="w">        </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;model_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;whispercpp&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;checkpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">                </span><span class="nt">&quot;main&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggerganov/whisper.cpp:ggml-tiny.bin&quot;</span><span class="p">,</span>
-<span class="w">                </span><span class="nt">&quot;npu_cache&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai&quot;</span>
+<span class="w">            </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Whisper-Tiny"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"whispercpp"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"checkpoints"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nt">"main"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ggerganov/whisper.cpp:ggml-tiny.bin"</span><span class="p">,</span>
+<span class="w">                </span><span class="nt">"npu_cache"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"</span>
 <span class="w">            </span><span class="p">},</span>
-<span class="w">            </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;transcription&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;realtime-transcription&quot;</span><span class="p">],</span>
-<span class="w">            </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
-<span class="w">            </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.075</span>
+<span class="w">            </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"transcription"</span><span class="p">,</span><span class="w"> </span><span class="s2">"realtime-transcription"</span><span class="p">],</span>
+<span class="w">            </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span>
+<span class="w">            </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.075</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">    </span><span class="p">],</span>
-<span class="w">    </span><span class="nt">&quot;labels&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
-<span class="w">    </span><span class="nt">&quot;recipe_options&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">    </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">    </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
 <span class="p">}</span>
 </code></pre></div>
 <h3 id="register-via-api">Register via API</h3>
 <p>The <code>/v1/pull</code> endpoint accepts the same model registration fields as the CLI. Set <code>source</code> to <code>huggingface</code> or <code>modelscope</code>; when omitted, the server's configured <code>default_model_source</code> applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model_name&quot;: &quot;user.MyModel&quot;,</span>
-<span class="s1">        &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
-<span class="s1">        &quot;source&quot;: &quot;modelscope&quot;,</span>
-<span class="s1">        &quot;checkpoint&quot;: &quot;org/repo:Q4_0&quot;</span>
-<span class="s1">    }&#39;</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model_name": "user.MyModel",</span>
+<span class="s1">        "recipe": "llamacpp",</span>
+<span class="s1">        "source": "modelscope",</span>
+<span class="s1">        "checkpoint": "org/repo:Q4_0"</span>
+<span class="s1">    }'</span>
 </code></pre></div>
 <p>For multi-file models, send <code>checkpoints</code>:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model_name&quot;: &quot;user.Gemma-3-4b&quot;,</span>
-<span class="s1">        &quot;recipe&quot;: &quot;llamacpp&quot;,</span>
-<span class="s1">        &quot;checkpoints&quot;: {</span>
-<span class="s1">            &quot;main&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;,</span>
-<span class="s1">            &quot;mmproj&quot;: &quot;ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf&quot;</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model_name": "user.Gemma-3-4b",</span>
+<span class="s1">        "recipe": "llamacpp",</span>
+<span class="s1">        "checkpoints": {</span>
+<span class="s1">            "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",</span>
+<span class="s1">            "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"</span>
 <span class="s1">        },</span>
-<span class="s1">        &quot;labels&quot;: [&quot;vision&quot;]</span>
-<span class="s1">    }&#39;</span>
+<span class="s1">        "labels": ["vision"]</span>
+<span class="s1">    }'</span>
 </code></pre></div>
 <p>For an omni collection, send <code>components</code>:</p>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/v1/pull<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>-d<span class="w"> </span><span class="s1">&#39;{</span>
-<span class="s1">        &quot;model_name&quot;: &quot;user.MyKit&quot;,</span>
-<span class="s1">        &quot;recipe&quot;: &quot;collection.omni&quot;,</span>
-<span class="s1">        &quot;components&quot;: [&quot;Qwen3-0.6B-GGUF&quot;, &quot;Whisper-Tiny&quot;, &quot;SD-Turbo&quot;]</span>
-<span class="s1">    }&#39;</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-d<span class="w"> </span><span class="s1">'{</span>
+<span class="s1">        "model_name": "user.MyKit",</span>
+<span class="s1">        "recipe": "collection.omni",</span>
+<span class="s1">        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]</span>
+<span class="s1">    }'</span>
 </code></pre></div>
 <h3 id="edit-json-files-directly">Edit JSON files directly</h3>
 <p>Advanced users can edit <code>user_models.json</code> and <code>recipe_options.json</code> directly. The rest of this guide documents those files and gives complete examples.</p>
@@ -3564,12 +3564,12 @@ from the embedded definitions.</p>
 <p>When using the OpenAI SDK or LiteLLM, target the alias instead of the concrete model:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">openai</span><span class="w"> </span><span class="kn">import</span> <span class="n">OpenAI</span>
 
-<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">&quot;http://localhost:13305/v1&quot;</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">&quot;dummy&quot;</span><span class="p">)</span>
+<span class="n">client</span> <span class="o">=</span> <span class="n">OpenAI</span><span class="p">(</span><span class="n">base_url</span><span class="o">=</span><span class="s2">"http://localhost:13305/v1"</span><span class="p">,</span> <span class="n">api_key</span><span class="o">=</span><span class="s2">"dummy"</span><span class="p">)</span>
 
-<span class="c1"># The client requests the alias &quot;production-llm&quot;</span>
+<span class="c1"># The client requests the alias "production-llm"</span>
 <span class="n">response</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">chat</span><span class="o">.</span><span class="n">completions</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-    <span class="n">model</span><span class="o">=</span><span class="s2">&quot;production-llm&quot;</span><span class="p">,</span>
-    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">&quot;role&quot;</span><span class="p">:</span> <span class="s2">&quot;user&quot;</span><span class="p">,</span> <span class="s2">&quot;content&quot;</span><span class="p">:</span> <span class="s2">&quot;Hello&quot;</span><span class="p">}]</span>
+    <span class="n">model</span><span class="o">=</span><span class="s2">"production-llm"</span><span class="p">,</span>
+    <span class="n">messages</span><span class="o">=</span><span class="p">[{</span><span class="s2">"role"</span><span class="p">:</span> <span class="s2">"user"</span><span class="p">,</span> <span class="s2">"content"</span><span class="p">:</span> <span class="s2">"Hello"</span><span class="p">}]</span>
 <span class="p">)</span>
 </code></pre></div>
 <p>If the underlying target model changes, update the alias on the server using <code>lemonade alias add production-llm new-target</code> or <code>POST /internal/aliases</code>. Client application code requires no updates.</p>
@@ -3622,11 +3622,11 @@ from the embedded definitions.</p>
 <p>This file contains a JSON object where each key is a model name and each value defines the model's properties. Create this file in your cache directory if it doesn't exist.</p>
 <h3 id="template">Template</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;MyCustomModel&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;modelscope&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;org/repo-name:filename.gguf&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.5</span>
+<span class="w">    </span><span class="nt">"MyCustomModel"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"modelscope"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"org/repo-name:filename.gguf"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.5</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -3704,13 +3704,13 @@ from the embedded definitions.</p>
 <h3 id="multi-file-models">Multi-file models</h3>
 <p>For models that require multiple files (e.g., Whisper models with NPU cache, or Flux image models with separate VAE/text encoder), use <code>checkpoints</code> instead of <code>checkpoint</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;My-Whisper-Model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;checkpoints&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;main&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggerganov/whisper.cpp:ggml-tiny.bin&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;npu_cache&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai&quot;</span>
+<span class="w">    </span><span class="nt">"My-Whisper-Model"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"checkpoints"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"main"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ggerganov/whisper.cpp:ggml-tiny.bin"</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"npu_cache"</span><span class="p">:</span><span class="w"> </span><span class="s2">"amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"</span>
 <span class="w">        </span><span class="p">},</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;whispercpp&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.075</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"whispercpp"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.075</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -3749,9 +3749,9 @@ from the embedded definitions.</p>
 <h3 id="collections">Collections</h3>
 <p>A collection bundles several already-registered models so they can be loaded, pulled, or deleted as a single entry. Collections do not have their own checkpoint — they reference other models by name. An <strong>omni collection</strong> is a collection type registered with <code>recipe: "collection.omni"</code> — this is the recipe behind <a href="../../../dev/lemonade-omni/">Lemonade Omni Models</a>.</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;MyKit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;collection.omni&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;components&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Qwen3-0.6B-GGUF&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Whisper-Tiny&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;SD-Turbo&quot;</span><span class="p">]</span>
+<span class="w">    </span><span class="nt">"MyKit"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"collection.omni"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"components"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"Qwen3-0.6B-GGUF"</span><span class="p">,</span><span class="w"> </span><span class="s2">"Whisper-Tiny"</span><span class="p">,</span><span class="w"> </span><span class="s2">"SD-Turbo"</span><span class="p">]</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
@@ -3760,15 +3760,15 @@ from the embedded definitions.</p>
 <h3 id="image-defaults">Image defaults</h3>
 <p>For <code>sd-cpp</code> recipe models, you can specify default image generation parameters:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;My-SD-Model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;org/repo:model.safetensors&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sd-cpp&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;image_defaults&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">            </span><span class="nt">&quot;steps&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;cfg_scale&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">7.0</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;width&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
-<span class="w">            </span><span class="nt">&quot;height&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
+<span class="w">    </span><span class="nt">"My-SD-Model"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"org/repo:model.safetensors"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sd-cpp"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">5.2</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"image_defaults"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">"steps"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"cfg_scale"</span><span class="p">:</span><span class="w"> </span><span class="mf">7.0</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"width"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">"height"</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span>
 <span class="w">        </span><span class="p">}</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
@@ -3777,43 +3777,44 @@ from the embedded definitions.</p>
 <ul>
 <li>In <code>user_models.json</code>, store model names <strong>without</strong> the <code>user.</code> prefix (e.g., <code>MyCustomModel</code>).</li>
 <li>When referencing the model in API calls, CLI commands, or <code>recipe_options.json</code>, use the <strong>full prefixed name</strong> (e.g., <code>user.MyCustomModel</code>).</li>
-<li>Labels like <code>custom</code> are added automatically. Additional labels (<code>reasoning</code>, <code>vision</code>, <code>embeddings</code>, <code>reranking</code>) can be set via the <code>pull</code> CLI/API flags, or by including a <code>labels</code> array in the JSON entry.</li>
+<li>Labels like <code>custom</code> are added automatically, as is the recipe's default deployment label when the entry names none of its own (<code>chat</code> for a <code>llamacpp</code> entry, <code>image</code> for an <code>sd-cpp</code> one). Additional labels (<code>reasoning</code>, <code>vision</code>, <code>embeddings</code>, <code>reranking</code>) can be set via the <code>pull</code> CLI/API flags, or by including a <code>labels</code> array in the JSON entry.</li>
 </ul>
 <h2 id="recipe_optionsjson-reference"><code>recipe_options.json</code> Reference</h2>
 <p>This file configures per-model runtime settings. Each key is a <strong>canonical model ID</strong> — one of <code>user.NAME</code>, <code>extra.NAME</code>, or <code>builtin.NAME</code> (see the <a href="#model-naming-spec">Model naming spec</a> above). Each value contains the settings for that model.</p>
 <h3 id="template_1">Template</h3>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;user.MyCustomModel&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vulkan&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;llamacpp_args&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span>
+<span class="w">    </span><span class="nt">"user.MyCustomModel"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"llamacpp_backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vulkan"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"llamacpp_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span>
 <span class="w">    </span><span class="p">},</span>
-<span class="w">    </span><span class="nt">&quot;builtin.Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span>
+<span class="w">    </span><span class="nt">"builtin.Qwen2.5-Coder-1.5B-Instruct"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div>
 <blockquote>
 <p><strong>Migration:</strong> Older Lemonade versions stored built-in entries under their bare name (e.g. <code>"Qwen2.5-Coder-1.5B-Instruct"</code> with no prefix). On first load with the current version, any bare key matching a known built-in is rewritten to <code>builtin.&lt;name&gt;</code> in place. An INFO log line reports the number of migrated keys. Bare keys that don't match a built-in are preserved unchanged.</p>
 <p><strong>Note:</strong> Per-model options can also be configured through the Lemonade desktop app's model settings, or via the <code>save_options</code> parameter in the <a href="../../../api/lemonade/#post-v1load"><code>/api/v1/load</code> endpoint</a>.</p>
+<p><strong>Editing options without loading:</strong> <a href="../../../api/lemonade/#post-v1modelsidoptions"><code>POST /api/v1/models/{id}/options</code></a> writes this file directly, so options can be saved without bringing a model into memory. It merges rather than replaces, and <code>"ctx_size": -1</code> saves automatic context sizing even when the server-wide <code>ctx_size</code> is an explicit number. <a href="../../../api/lemonade/#delete-v1modelsidoptions"><code>DELETE</code></a> on the same path resets the model by removing its entry entirely.</p>
 </blockquote>
 <h2 id="complete-examples">Complete Examples</h2>
 <h3 id="example-1-adding-a-gguf-llm-with-large-context">Example 1: Adding a GGUF LLM with large context</h3>
 <p><strong><code>user_models.json</code>:</strong>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;source&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;huggingface&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span>
+<span class="w">    </span><span class="nt">"Qwen2.5-Coder-1.5B-Instruct"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"huggingface"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">1.0</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
 <p><strong><code>recipe_options.json</code>:</strong>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;user.Qwen2.5-Coder-1.5B-Instruct&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;ctx_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;llamacpp_backend&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;vulkan&quot;</span>
+<span class="w">    </span><span class="nt">"user.Qwen2.5-Coder-1.5B-Instruct"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"llamacpp_backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vulkan"</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
@@ -3824,27 +3825,27 @@ from the embedded definitions.</p>
 <h3 id="example-2-adding-a-vision-model-with-mmproj">Example 2: Adding a vision model with mmproj</h3>
 <p><strong><code>user_models.json</code>:</strong>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;My-Vision-Model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ggml-org/gemma-3-4b-it-GGUF:Q4_K_M&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;mmproj&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mmproj-model-f16.gguf&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">3.61</span>
+<span class="w">    </span><span class="nt">"My-Vision-Model"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ggml-org/gemma-3-4b-it-GGUF:Q4_K_M"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"mmproj"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mmproj-model-f16.gguf"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">3.61</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
 <h3 id="example-3-adding-an-embedding-model">Example 3: Adding an embedding model</h3>
 <p><strong><code>user_models.json</code>:</strong>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">    </span><span class="nt">&quot;My-Embedding-Model&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
-<span class="w">        </span><span class="nt">&quot;checkpoint&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;recipe&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;llamacpp&quot;</span><span class="p">,</span>
-<span class="w">        </span><span class="nt">&quot;size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.08</span>
+<span class="w">    </span><span class="nt">"My-Embedding-Model"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.08</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">}</span>
 </code></pre></div></p>
 <p>The model will automatically be available as <code>user.My-Embedding-Model</code>. To mark it as an embedding model, use the manual registration flags on <code>pull</code>:
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>pull<span class="w"> </span>user.My-Embedding-Model<span class="w"> </span><span class="se">\</span>
-<span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">&quot;nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--checkpoint<span class="w"> </span>main<span class="w"> </span><span class="s2">"nomic-ai/nomic-embed-text-v1-GGUF:Q4_K_S"</span><span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--recipe<span class="w"> </span>llamacpp<span class="w"> </span><span class="se">\</span>
 <span class="w">    </span>--label<span class="w"> </span>embeddings
 </code></pre></div>

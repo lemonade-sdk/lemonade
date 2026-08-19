@@ -3609,10 +3609,10 @@ This is dramatically faster (&lt;1s per renderer change) and is the right loop f
 - All dependencies are built from source (no external DLL requirements)
 - Security features enabled: Control Flow Guard, ASLR, DEP
 - <strong>Troubleshooting:</strong> If <code>npm run dev</code> or <code>cargo</code> commands fail with "program not found", ensure <code>%USERPROFILE%\.cargo\bin</code> is in your PATH. Add it permanently from PowerShell with a duplicate-safe update, then restart your IDE or terminal:
-  <div class="highlight"><pre><span></span><code><span class="nv">$cargoBin</span> <span class="p">=</span> <span class="nb">Join-Path</span> <span class="nv">$env:USERPROFILE</span> <span class="s2">&quot;.cargo\bin&quot;</span>
-<span class="nv">$userPath</span> <span class="p">=</span> <span class="no">[System.Environment]</span><span class="p">::</span><span class="n">GetEnvironmentVariable</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="s2">&quot;User&quot;</span><span class="p">)</span>
-<span class="k">if</span> <span class="p">((</span><span class="nv">$userPath</span> <span class="n">-split</span> <span class="s2">&quot;;&quot;</span><span class="p">)</span> <span class="o">-notcontains</span> <span class="nv">$cargoBin</span><span class="p">)</span> <span class="p">{</span>
-    <span class="no">[System.Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="s2">&quot;PATH&quot;</span><span class="p">,</span> <span class="s2">&quot;$cargoBin;$userPath&quot;</span><span class="p">,</span> <span class="s2">&quot;User&quot;</span><span class="p">)</span>
+  <div class="highlight"><pre><span></span><code><span class="nv">$cargoBin</span> <span class="p">=</span> <span class="nb">Join-Path</span> <span class="nv">$env:USERPROFILE</span> <span class="s2">".cargo\bin"</span>
+<span class="nv">$userPath</span> <span class="p">=</span> <span class="no">[System.Environment]</span><span class="p">::</span><span class="n">GetEnvironmentVariable</span><span class="p">(</span><span class="s2">"PATH"</span><span class="p">,</span> <span class="s2">"User"</span><span class="p">)</span>
+<span class="k">if</span> <span class="p">((</span><span class="nv">$userPath</span> <span class="n">-split</span> <span class="s2">";"</span><span class="p">)</span> <span class="o">-notcontains</span> <span class="nv">$cargoBin</span><span class="p">)</span> <span class="p">{</span>
+    <span class="no">[System.Environment]</span><span class="p">::</span><span class="n">SetEnvironmentVariable</span><span class="p">(</span><span class="s2">"PATH"</span><span class="p">,</span> <span class="s2">"$cargoBin;$userPath"</span><span class="p">,</span> <span class="s2">"User"</span><span class="p">)</span>
 <span class="p">}</span>
 </code></pre></div>
 - <strong>Troubleshooting:</strong> If Rust/Tauri fails with <code>link.exe</code> or <code>msvcrt.lib</code> errors, launch from a Visual Studio Developer shell and confirm <code>where link</code> lists the Visual Studio linker before Git's <code>link.exe</code>.</p>
@@ -3711,11 +3711,11 @@ sudo<span class="w"> </span>dnf<span class="w"> </span>install<span class="w"> <
 <h3 id="building-from-source-on-macos-for-m-series-arm64-family">Building from Source on MacOS for M-Series / arm64 Family</h3>
 <h4 id="macos-notary-tool-command">Macos Notary Tool Command</h4>
 <p>For access with P
-<div class="highlight"><pre><span></span><code>xcrun notarytool store-credentials AC_PASSWORD --apple-id &quot;your-apple-id@example.com&quot; --team-id &quot;your-team-id&quot; --private-key &quot;/path/to/AuthKey_XXXXXX.p8&quot;
+<div class="highlight"><pre><span></span><code>xcrun notarytool store-credentials AC_PASSWORD --apple-id "your-apple-id@example.com" --team-id "your-team-id" --private-key "/path/to/AuthKey_XXXXXX.p8"
 </code></pre></div>
 or
 For access with API password
-<div class="highlight"><pre><span></span><code>xcrun notarytool store-credentials AC_PASSWORD --apple-id &quot;your-apple-id@example.com&quot; --team-id &quot;your-team-id&quot; --password &quot;&quot;
+<div class="highlight"><pre><span></span><code>xcrun notarytool store-credentials AC_PASSWORD --apple-id "your-apple-id@example.com" --team-id "your-team-id" --password ""
 </code></pre></div>
 Get your team id at:
 https://developer.apple.com/account</p>
@@ -3757,17 +3757,17 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </li>
 <li>
 <p><strong>Set Environment Variables</strong>:
-   <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">DEVELOPER_ID_APPLICATION_IDENTITY</span><span class="o">=</span><span class="s2">&quot;Developer ID Application: Your Name (TEAMID)&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">DEVELOPER_ID_INSTALLER_IDENTITY</span><span class="o">=</span><span class="s2">&quot;Developer ID Installer: Your Name (TEAMID)&quot;</span>
-<span class="nb">export</span><span class="w"> </span><span class="nv">AC_PASSWORD</span><span class="o">=</span><span class="s2">&quot;your-app-specific-password&quot;</span>
+   <div class="highlight"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">DEVELOPER_ID_APPLICATION_IDENTITY</span><span class="o">=</span><span class="s2">"Developer ID Application: Your Name (TEAMID)"</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">DEVELOPER_ID_INSTALLER_IDENTITY</span><span class="o">=</span><span class="s2">"Developer ID Installer: Your Name (TEAMID)"</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">AC_PASSWORD</span><span class="o">=</span><span class="s2">"your-app-specific-password"</span>
 </code></pre></div></p>
 </li>
 <li>
 <p><strong>Configure Notarization Keychain Profile</strong>:
-   <div class="highlight"><pre><span></span><code>xcrun<span class="w"> </span>notarytool<span class="w"> </span>store-credentials<span class="w"> </span><span class="s2">&quot;AC_PASSWORD&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--apple-id<span class="w"> </span><span class="s2">&quot;your-apple-id@example.com&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--team-id<span class="w"> </span><span class="s2">&quot;YOURTEAMID&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--password<span class="w"> </span><span class="s2">&quot;your-app-specific-password&quot;</span>
+   <div class="highlight"><pre><span></span><code>xcrun<span class="w"> </span>notarytool<span class="w"> </span>store-credentials<span class="w"> </span><span class="s2">"AC_PASSWORD"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--apple-id<span class="w"> </span><span class="s2">"your-apple-id@example.com"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--team-id<span class="w"> </span><span class="s2">"YOURTEAMID"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--password<span class="w"> </span><span class="s2">"your-app-specific-password"</span>
 </code></pre></div></p>
 </li>
 <li>
@@ -3806,9 +3806,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <h3 id="debug-runtime-console-arguments">Debug / Runtime / Console arguments</h3>
 <ol>
 <li>You may find arguments which are passed through to the application you are debugging in .vscode/settings.json which will look like the following:
-<div class="highlight"><pre><span></span><code>&quot;cmake.debugConfig&quot;: {
-        &quot;args&quot;: [
-            &quot;--llamacpp&quot;, &quot;cpu&quot;
+<div class="highlight"><pre><span></span><code>"cmake.debugConfig": {
+        "args": [
+            "--llamacpp", "cpu"
         ]
     }
 </code></pre></div></li>
@@ -4072,9 +4072,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <td>Updates default HTTP client timeout</td>
 </tr>
 <tr>
-<td><code>no_broadcast</code></td>
+<td><code>broadcast</code></td>
 <td>bool</td>
-<td>Stops or starts UDP beacon</td>
+<td>Starts or stops UDP beacon</td>
 </tr>
 <tr>
 <td><code>extra_models_dir</code></td>
@@ -4144,8 +4144,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 </table>
 <p><strong>Example:</strong>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/internal/set<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s2">&quot;Content-Type: application/json&quot;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;ctx_size&quot;: 8192, &quot;max_loaded_models&quot;: 3, &quot;log_level&quot;: &quot;debug&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"ctx_size": 8192, "max_loaded_models": 3, "log_level": "debug"}'</span>
 </code></pre></div></p>
 <h4 id="get-internalconfig"><code>GET /internal/config</code></h4>
 <p>Returns the full runtime configuration as a flat JSON object containing all server-level and recipe option keys with their current values.</p>

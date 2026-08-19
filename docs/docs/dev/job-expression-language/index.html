@@ -2478,15 +2478,15 @@ ${list.0}
 <li><strong>Whole-string reference</strong> — when a params string is <em>exactly</em> one reference,
   the resolved value keeps its JSON type:</li>
 </ul>
-<div class="highlight"><pre><span></span><code>{ &quot;ctx_size&quot;: &quot;${inputs.ctx}&quot; }      // -&gt; a number, not the string &quot;32768&quot;
-{ &quot;messages&quot;: &quot;${inputs.prompt}&quot; }   // -&gt; an array
+<div class="highlight"><pre><span></span><code>{ "ctx_size": "${inputs.ctx}" }      // -&gt; a number, not the string "32768"
+{ "messages": "${inputs.prompt}" }   // -&gt; an array
 </code></pre></div>
 <ul>
 <li><strong>Embedded reference(s)</strong> — when a reference appears inside surrounding text
   (or more than one reference appears), each is stringified and interpolated,
   and the result is always a string:</li>
 </ul>
-<div class="highlight"><pre><span></span><code>{ &quot;label&quot;: &quot;vulkan @ ${inputs.ctx} tok&quot; }   // -&gt; &quot;vulkan @ 32768 tok&quot;
+<div class="highlight"><pre><span></span><code>{ "label": "vulkan @ ${inputs.ctx} tok" }   // -&gt; "vulkan @ 32768 tok"
 </code></pre></div>
 <p>Stringification: strings pass through; numbers/booleans use their literal
   form; <code>null</code> becomes empty; arrays/objects use compact JSON.</p>
@@ -2598,17 +2598,17 @@ error. Division by zero is an error. Division is floating-point
 (<code>10 / 4 == 2.5</code>).</p>
 <h2 id="grammar-ebnf">Grammar (EBNF)</h2>
 <div class="highlight"><pre><span></span><code>condition  = [ or ] ;                         (* empty = true *)
-or         = and { &quot;||&quot; and } ;
-and        = not { &quot;&amp;&amp;&quot; not } ;
-not        = &quot;!&quot; not | comparison ;
-comparison = additive [ ( &quot;==&quot; | &quot;!=&quot; | &quot;&lt;&quot; | &quot;&lt;=&quot; | &quot;&gt;&quot; | &quot;&gt;=&quot; ) additive ] ;
-additive   = multiplicative { ( &quot;+&quot; | &quot;-&quot; ) multiplicative } ;
-multiplicative = unary { ( &quot;*&quot; | &quot;/&quot; ) unary } ;
-unary      = &quot;-&quot; unary | primary ;
-primary    = number | string | &quot;true&quot; | &quot;false&quot; | &quot;null&quot;
-           | reference | &quot;(&quot; or &quot;)&quot; ;
-reference  = &quot;${&quot; path &quot;}&quot; ;
-path       = segment { &quot;.&quot; segment } ;
+or         = and { "||" and } ;
+and        = not { "&amp;&amp;" not } ;
+not        = "!" not | comparison ;
+comparison = additive [ ( "==" | "!=" | "&lt;" | "&lt;=" | "&gt;" | "&gt;=" ) additive ] ;
+additive   = multiplicative { ( "+" | "-" ) multiplicative } ;
+multiplicative = unary { ( "*" | "/" ) unary } ;
+unary      = "-" unary | primary ;
+primary    = number | string | "true" | "false" | "null"
+           | reference | "(" or ")" ;
+reference  = "${" path "}" ;
+path       = segment { "." segment } ;
 </code></pre></div>
 <h2 id="errors">Errors</h2>
 <p>Evaluation raises a client-facing error (HTTP 400 at job creation for <code>when</code>
@@ -2632,21 +2632,21 @@ context that is guaranteed to exist at that point (e.g. gate on an extracted
 scalar you set earlier, not on a possibly-absent nested path).</p>
 <h2 id="examples">Examples</h2>
 <div class="highlight"><pre><span></span><code>// Skip a step unless the vulkan run beat the rocm run.
-{ &quot;when&quot;: &quot;${vulkan_tps} &gt; ${rocm_tps}&quot; }
+{ "when": "${vulkan_tps} &gt; ${rocm_tps}" }
 
 // Batch-ladder gate: only adopt a larger batch if it improves prefill &gt;5%.
-{ &quot;when&quot;: &quot;${baseline.ttft_ms} / ${best.ttft_ms} &gt; 1.05&quot; }
+{ "when": "${baseline.ttft_ms} / ${best.ttft_ms} &gt; 1.05" }
 
 // Branch to a deeper sweep on the winning backend.
-{ &quot;branch&quot;: [
-    { &quot;when&quot;: &quot;${winner} == &#39;vulkan&#39;&quot;, &quot;goto&quot;: &quot;deep_vulkan&quot; },
-    { &quot;when&quot;: &quot;${winner} == &#39;rocm&#39;&quot;,   &quot;goto&quot;: &quot;deep_rocm&quot; }
+{ "branch": [
+    { "when": "${winner} == 'vulkan'", "goto": "deep_vulkan" },
+    { "when": "${winner} == 'rocm'",   "goto": "deep_rocm" }
 ] }
 
 // Interpolated params vs. type-preserving params.
-{ &quot;params&quot;: {
-    &quot;ctx_size&quot;: &quot;${inputs.ctx}&quot;,                 // number
-    &quot;summary&quot;:  &quot;won: ${winner} @ ${best.tps} tps&quot;  // string
+{ "params": {
+    "ctx_size": "${inputs.ctx}",                 // number
+    "summary":  "won: ${winner} @ ${best.tps} tps"  // string
 } }
 </code></pre></div>
 

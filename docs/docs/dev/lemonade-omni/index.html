@@ -2709,8 +2709,8 @@
 <p>To select components programmatically instead of relying on a loaded omni model, query <code>GET /v1/models?show_all=true</code> and match each model's <code>labels</code> against the <a href="#available-tools">Available tools</a> table. No Lemonade-specific client library is required: the tool schemas are plain OpenAI-format JSON, and every target endpoint uses OpenAI-compatible request and response shapes.</p>
 <p><a href="https://github.com/lemonade-sdk/lemonade/blob/main/examples/lemonade_tools.py"><code>examples/lemonade_tools.py</code></a> implements the full loop end-to-end:</p>
 <div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>openai
-python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span><span class="s2">&quot;Generate an image of a sunset&quot;</span>
-python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span><span class="s2">&quot;Say hello world out loud&quot;</span>
+python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span><span class="s2">"Generate an image of a sunset"</span>
+python<span class="w"> </span>examples/lemonade_tools.py<span class="w"> </span><span class="s2">"Say hello world out loud"</span>
 </code></pre></div>
 <h2 id="custom-omni-models">Custom Omni Models</h2>
 <p>You can build your own omni model from registered models — see <a href="../../guide/configuration/custom-models/#register-a-custom-omni-model-from-the-desktop-app">Register a custom Omni Model from the desktop app</a> in the custom models guide. The planner LLM must carry the <code>tool-calling</code> label, and each modality must have a downloaded model whose <code>labels</code> include the matching entry from the <a href="#available-tools">tools table</a>.</p>

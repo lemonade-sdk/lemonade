@@ -2580,8 +2580,8 @@
 </code></pre></div>
 <p>Or via HTTP:
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/api/v1/install<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-H<span class="w"> </span><span class="s1">&#39;Content-Type: application/json&#39;</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-d<span class="w"> </span><span class="s1">&#39;{&quot;recipe&quot;: &quot;moonshine&quot;, &quot;backend&quot;: &quot;cpu&quot;}&#39;</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s1">'Content-Type: application/json'</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"recipe": "moonshine", "backend": "cpu"}'</span>
 </code></pre></div></p>
 <p>The bundle version is pinned in <a href="https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json"><code>backend_versions.json</code></a> (<code>moonshine.cpu</code>), with tags following the upstream library version (<code>moonshine0.0.62</code> = <code>moonshine-voice</code> 0.0.62). Bundles are built automatically by <a href="https://github.com/lemonade-sdk/moonshine-server-rocm">lemonade-sdk/moonshine-server-rocm</a>, a distribution-only repo that tracks <code>moonshine-voice</code> PyPI releases — no moonshine code is forked; the <code>main.py</code> wrapper in <code>tools/moonshine-server/</code> here is frozen together with the PyPI wheel into a self-contained bundle.</p>
 <h2 id="models">Models</h2>
@@ -2660,7 +2660,7 @@
 <p>The desktop/web app's Transcription panel and the chat microphone button use this path automatically whenever the loaded transcription model carries the <code>realtime-transcription</code> label (all Moonshine models do).</p>
 <h2 id="tuning">Tuning</h2>
 <p>Free-form CLI args can be appended to <code>moonshine-server</code> via <code>moonshine_args</code>:</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">moonshine_args</span><span class="o">=</span><span class="s2">&quot;...&quot;</span>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">moonshine_args</span><span class="o">=</span><span class="s2">"..."</span>
 </code></pre></div>
 <p>(<code>--model-path</code>, <code>--model-arch</code>, <code>--port</code>, and <code>--tcp-port</code> are managed by Lemonade and rejected as custom args.)</p>
 <h2 id="known-gotchas">Known gotchas</h2>

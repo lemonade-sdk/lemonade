@@ -979,6 +979,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#choosing-the-rocm-install-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Choosing the ROCm Install Method
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2707,6 +2718,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#choosing-the-rocm-install-method" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Choosing the ROCm Install Method
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#pinning-to-a-specific-version-tag" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2902,7 +2924,7 @@ separate <code>llamacpp:cpu</code> backend is not required on macOS.</p>
 <p>The ROCm backend supports three channels to balance stability, performance, and access to latest features:</p>
 <h3 id="stable-channel-default">Stable Channel (Default)</h3>
 <p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
+<span class="w">  </span><span class="nt">"rocm_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stable"</span>
 <span class="p">}</span>
 </code></pre></div>
 - <strong>Source</strong>: Custom builds from <a href="https://github.com/lemonade-sdk/llama.cpp">lemonade-sdk/llama.cpp</a>
@@ -2913,7 +2935,7 @@ separate <code>llamacpp:cpu</code> backend is not required on macOS.</p>
 - <strong>Best For</strong>: Users who want the latest performance optimizations</p>
 <h3 id="nightly-channel">Nightly Channel</h3>
 <p><div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;nightly&quot;</span>
+<span class="w">  </span><span class="nt">"rocm_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"nightly"</span>
 <span class="p">}</span>
 </code></pre></div>
 - <strong>Source</strong>: Nightly builds from <a href="https://github.com/lemonade-sdk/llamacpp-rocm">lemonade-sdk/llamacpp-rocm</a>
@@ -2925,7 +2947,7 @@ separate <code>llamacpp:cpu</code> backend is not required on macOS.</p>
 <h3 id="changing-channels">Changing Channels</h3>
 <p>To switch between channels, update your <code>config.json</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
-<span class="w">  </span><span class="nt">&quot;rocm_channel&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;stable&quot;</span>
+<span class="w">  </span><span class="nt">"rocm_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"stable"</span>
 <span class="p">}</span>
 </code></pre></div>
 <p>Or use the Lemonade CLI:
@@ -2942,7 +2964,8 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends<span class="w"> </span>install<span class="w"> </span>llamacpp:rocm
 </code></pre></div></p>
 <h3 id="reusing-a-system-installed-rocm-windows-and-linux">Reusing a System-Installed ROCm (Windows and Linux)</h3>
-<p>On the stable channel Lemonade normally downloads its own ROCm runtime (TheRock). If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (<code>bin\amdhip64.dll</code> or <code>bin\amdhip64_&lt;version&gt;.dll</code> on Windows, <code>lib{,64}/libamdhip64.so</code> on Linux):</p>
+<p>On the stable channel Lemonade normally downloads its own ROCm runtime. By default it installs the ROCm runtime from AMD's pip wheels into a lemonade-managed virtual environment (under <code>therock-wheels/&lt;arch&gt;-&lt;version&gt;/</code> in the cache), and falls back to the TheRock tarball (under <code>therock/&lt;arch&gt;-&lt;version&gt;/</code>) when Python/venv/pip is unavailable or the wheel install can't serve your GPU. See <a href="#choosing-the-rocm-install-method"><code>rocm_install_method</code></a> to force one path.</p>
+<p>If you already have ROCm installed system-wide, Lemonade reuses it instead of downloading a second copy when it can find a matching version. It locates the install root in this order, using the first directory that contains the HIP runtime (<code>bin\amdhip64.dll</code> or <code>bin\amdhip64_&lt;version&gt;.dll</code> on Windows, <code>lib{,64}/libamdhip64.so</code> on Linux):</p>
 <ol>
 <li>The <code>ROCM_PATH</code> environment variable</li>
 <li><code>rocm-sdk path --root</code>, when <code>rocm-sdk</code> is on your <code>PATH</code> (e.g. a ROCm installed from the TheRock pip wheels)</li>
@@ -2953,8 +2976,35 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <span class="nb">export</span><span class="w"> </span><span class="nv">ROCM_PATH</span><span class="o">=</span>/path/to/rocm
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="c"># Windows (PowerShell)</span>
-<span class="nv">$env:ROCM_PATH</span> <span class="p">=</span> <span class="s2">&quot;C:\path\to\rocm&quot;</span>
+<span class="nv">$env:ROCM_PATH</span> <span class="p">=</span> <span class="s2">"C:\path\to\rocm"</span>
 </code></pre></div>
+<h3 id="choosing-the-rocm-install-method">Choosing the ROCm Install Method</h3>
+<p><code>rocm_install_method</code> controls how Lemonade installs its bundled ROCm runtime:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>auto</code> <em>(default)</em></td>
+<td>Install from pip wheels; fall back to the TheRock tarball when Python/pip is unavailable or the wheels can't serve the GPU.</td>
+</tr>
+<tr>
+<td><code>wheel</code></td>
+<td>Use pip wheels only; fail rather than fall back to the tarball.</td>
+</tr>
+<tr>
+<td><code>tarball</code></td>
+<td>Use the TheRock tarball only; never invokes Python or pip. Use this for Python-averse, air-gapped, or pip-restricted environments.</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">rocm_install_method</span><span class="o">=</span>tarball
+</code></pre></div>
+<p>It can also be set with the <code>LEMONADE_ROCM_INSTALL_METHOD</code> environment variable.</p>
 <h3 id="pinning-to-a-specific-version-tag">Pinning to a Specific Version Tag</h3>
 <p>You can pin <code>llamacpp.rocm_bin</code> to a specific release tag instead of using <code>"builtin"</code> or <code>"latest"</code>. <strong>Each channel downloads from a different GitHub repository, so you must set the correct channel before setting a specific tag.</strong></p>
 <table>
