@@ -7181,6 +7181,28 @@ optgroup {
   color: var(--success);
 }
 
+/* Source chip: which registry the weights come from, owner/repo, and quant. */
+.model-detail-panel__source {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.model-detail-panel__source > svg {
+  flex: 0 0 auto;
+}
+
+.model-detail-panel__source-registry {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.model-detail-panel__source-checkpoint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .model-detail-panel__error {
   font-size: var(--text-xs);
   color: var(--status-error);
@@ -8012,19 +8034,29 @@ optgroup {
   }
 }
 /* -- Model Configuration Tab ---------------------------------------- */
+/* Spacing climbs a major-fourth ladder rounded to the token scale: 12px within
+ * a control row, 16px between the rows of one control, 24px between the parts
+ * of a section, 32px between control groups and between sections. */
+/* The detail pane narrows independently of the window, so this panel's
+   breakpoints answer to the pane. */
 .detail-configuration {
   flex: 1;
   overflow-y: auto;
   padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-6);
+  container-type: inline-size;
+  container-name: model-configuration;
 }
 
+/* A form reads worst when a single control is stretched across a wide screen,
+   so it stops where the rest of the app's prose and controls stop. */
 .detail-configuration__section {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  max-width: var(--max-content-width);
+  gap: var(--space-5);
   padding: 0;
 }
 
@@ -8050,28 +8082,6 @@ optgroup {
   line-height: 1.45;
 }
 
-.detail-configuration__status {
-  display: inline-flex;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--surface-base);
-  color: var(--text-tertiary);
-  font-size: var(--type-overline-size);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-
-.detail-configuration__status.is-loaded {
-  border-color: color-mix(in srgb, var(--success) 36%, var(--border-subtle));
-  background: color-mix(in srgb, var(--success) 10%, var(--surface-base));
-  color: var(--success);
-}
-
 .detail-configuration__actions {
   padding-top: var(--space-2);
   border-top: 1px solid var(--border-subtle);
@@ -8079,7 +8089,7 @@ optgroup {
 
 .detail-configuration__load-controls {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-6);
 }
 
 .detail-configuration__context-card,
@@ -8092,12 +8102,17 @@ optgroup {
   box-shadow: none;
 }
 
+.detail-configuration__context-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .detail-configuration__control-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-3);
 }
 
 .detail-configuration__control-head label,
@@ -8110,13 +8125,11 @@ optgroup {
 .detail-configuration__context-number {
   position: relative;
   width: 9.5rem;
-  flex: 0 0 9.5rem;
 }
 
 .detail-configuration__context-input {
   width: 100%;
   padding-inline-end: 2.75rem;
-  text-align: right;
   font-family: var(--font-mono, monospace);
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
@@ -8188,6 +8201,13 @@ optgroup {
   cursor: pointer;
 }
 
+.detail-configuration__context-slider:disabled,
+.detail-configuration__axis-slider:disabled,
+.detail-configuration__context-stepper button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
 .detail-configuration__context-stepper button:hover:not(:disabled),
 .detail-configuration__context-stepper button:focus-visible {
   background: var(--surface-2);
@@ -8205,12 +8225,23 @@ optgroup {
   margin-top: var(--space-1);
 }
 
-.detail-configuration__slider-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.detail-configuration__context-row {
+  display: flex;
   align-items: center;
   gap: var(--space-3);
-  translate: 0 6px;
+}
+
+.detail-configuration__slider-row {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.detail-configuration__context-row .detail-configuration__context-number {
+  flex: 0 0 auto;
 }
 
 .detail-configuration__slider-row span,
@@ -8223,7 +8254,8 @@ optgroup {
   width: 100%;
 }
 
-.detail-configuration__context-slider::-webkit-slider-thumb {
+.detail-configuration__context-slider::-webkit-slider-thumb,
+.detail-configuration__axis-slider::-webkit-slider-thumb {
   width: 24px;
   height: 24px;
   border-radius: 0;
@@ -8231,15 +8263,18 @@ optgroup {
   filter: drop-shadow(0 2px 5px color-mix(in srgb, #000 45%, transparent));
 }
 
-.detail-configuration__context-slider::-webkit-slider-thumb:hover {
+.detail-configuration__context-slider::-webkit-slider-thumb:hover,
+.detail-configuration__axis-slider::-webkit-slider-thumb:hover {
   box-shadow: 0 0 0 5px var(--accent-soft);
 }
 
-.detail-configuration__context-slider:focus-visible::-webkit-slider-thumb {
+.detail-configuration__context-slider:focus-visible::-webkit-slider-thumb,
+.detail-configuration__axis-slider:focus-visible::-webkit-slider-thumb {
   box-shadow: 0 0 0 5px var(--accent-strong);
 }
 
-.detail-configuration__context-slider::-moz-range-thumb {
+.detail-configuration__context-slider::-moz-range-thumb,
+.detail-configuration__axis-slider::-moz-range-thumb {
   width: 24px;
   height: 24px;
   border: 0;
@@ -8255,6 +8290,8 @@ optgroup {
   gap: var(--space-3);
 }
 
+/* A value carries no more weight than the other controls' values do; semibold
+   is the field headings' job, and the select was competing with its own. */
 .detail-configuration__select {
   width: 100%;
   min-height: 36px;
@@ -8262,7 +8299,7 @@ optgroup {
   border-color: var(--border-subtle);
   background-color: color-mix(in srgb, var(--surface-base) 92%, var(--surface-2));
   color: var(--text-primary);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-regular);
 }
 
 .detail-configuration__selector-grid .input {
@@ -8282,9 +8319,217 @@ optgroup {
   outline: none;
 }
 
+/* ── Temperature axis ─────────────────────────────────────────
+   The one sampler set by feel rather than by number, so it is drawn along the
+   feeling: poles at the ends, the advised range lit in accent, and the two
+   shoulders hatched in the caution hue — hatched as well as coloured so the
+   advisory survives a palette nobody can tell coral from yellow in. */
+.detail-configuration__axis {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.detail-configuration__axis-caution {
+  color: var(--danger);
+  font-size: var(--text-xs);
+  text-align: end;
+}
+
+.detail-configuration__axis-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.detail-configuration__axis-scale {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+/* Qualitative ends of an axis, not values on it: the context slider's numeric
+   ticks sit in the same slot and must not be mistaken for these. */
+.detail-configuration__axis-pole {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The advised range is just the track; only the shoulders are marked, so the
+   accent thumb stays the brightest thing on the axis. The hatch runs the whole
+   width and the advised range is veiled back over it in the track's own colour,
+   so the caution gathers rather than switching on at a line. Two classes to
+   outrank the light theme's `.slider` background, which would erase these. */
+.slider.detail-configuration__axis-slider {
+  --axis-advised-start: 10%;
+  --axis-advised-end: 65%;
+  --axis-fade: 7%;
+  --axis-track: var(--surface-3);
+  --axis-caution-tint: color-mix(in srgb, var(--danger) 20%, transparent);
+  --axis-caution-line: color-mix(in srgb, var(--danger) 40%, transparent);
+  height: 8px;
+  background-image:
+    linear-gradient(to right,
+      transparent 0,
+      transparent calc(var(--axis-advised-start) - var(--axis-fade)),
+      var(--axis-track) var(--axis-advised-start),
+      var(--axis-track) var(--axis-advised-end),
+      transparent calc(var(--axis-advised-end) + var(--axis-fade)),
+      transparent 100%),
+    repeating-linear-gradient(135deg,
+      var(--axis-caution-line) 0 2px, var(--axis-caution-tint) 2px 6px);
+}
+
+[data-theme="light"] .slider.detail-configuration__axis-slider {
+  --axis-track: var(--surface-2);
+  --axis-caution-tint: color-mix(in srgb, var(--danger) 12%, transparent);
+  --axis-caution-line: color-mix(in srgb, var(--danger) 26%, transparent);
+}
+
+.detail-configuration__axis-number {
+  position: relative;
+  flex: 0 0 auto;
+  width: 7rem;
+}
+
+.detail-configuration__axis-input {
+  font-family: var(--font-mono, monospace);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Detailed samplers ────────────────────────────────────────
+   Folded by default, but never silently: the closed row carries the flags it
+   is holding, so the panel still states what will load. */
+.detail-configuration__sampler-details {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+.detail-configuration__sampler-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-2) 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-align: start;
+  cursor: pointer;
+}
+
+.detail-configuration__sampler-toggle:hover {
+  color: var(--text-primary);
+}
+
+.detail-configuration__sampler-toggle:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent-fg);
+  outline-offset: 2px;
+}
+
+.detail-configuration__sampler-toggle-label {
+  flex: 0 0 auto;
+}
+
+.detail-configuration__sampler-caret {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.detail-configuration__sampler-toggle[aria-expanded='true'] .detail-configuration__sampler-caret {
+  transform: rotate(90deg);
+}
+
+.detail-configuration__sampler-folded {
+  overflow: hidden;
+  flex: 1 1 0;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detail-configuration__sampler-caret {
+    transition: none;
+  }
+}
+
 .detail-configuration__args-grid {
   display: grid;
+  min-width: 0;
   gap: var(--space-2);
+}
+
+.detail-configuration__args-block {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-3);
+}
+
+/* Three across: the truncation samplers on one row, the two penalties on the
+   next, and the template kwargs across the full width below them. */
+.detail-configuration__sampler-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--space-3);
+  padding-bottom: var(--space-2);
+}
+
+.detail-configuration__sampler-grid .input {
+  width: 100%;
+}
+
+/* `hidden` alone loses to the display above. */
+.detail-configuration__sampler-grid[hidden] {
+  display: none;
+}
+
+.detail-configuration__sampler-field--wide {
+  grid-column: 1 / -1;
+}
+
+.detail-configuration__running-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.detail-configuration__running-state svg {
+  color: var(--success);
+}
+
+.detail-configuration__args-fallback {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.detail-configuration__args-fallback code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 
 .detail-configuration__args-field {
@@ -8307,13 +8552,16 @@ optgroup {
   max-width: 100%;
 }
 
+/* Height is set from the content by AutoGrowTextarea. */
 .detail-configuration .detail-tuning__args {
   width: 100%;
-  min-height: 7rem;
+  min-height: 0;
   padding: var(--space-3);
   border-color: var(--border-strong);
+  overflow-y: hidden;
   background: var(--surface-2);
   color: var(--text-primary);
+  resize: none;
 }
 
 .detail-configuration .detail-tuning__field small {
@@ -8322,23 +8570,59 @@ optgroup {
   font-size: var(--text-xs);
 }
 
-@media (max-width: 780px) {
-  .detail-configuration__selector-grid {
+@container model-configuration (max-width: 520px) {
+  .detail-configuration__sampler-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Named poles cost far more room than the context scale's two numbers, so
+     they are the first thing to come off the track's row. */
+  .detail-configuration__axis-scale {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-1);
+  }
+
+  .detail-configuration__axis-scale > input {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+}
+
+@container model-configuration (max-width: 420px) {
+  /* The summary is the reason the section can stay folded; below this there is
+     no room to read it, and an ellipsis on its own says nothing. */
+  .detail-configuration__sampler-folded {
+    display: none;
+  }
+}
+
+@container model-configuration (max-width: 340px) {
+  .detail-configuration__selector-grid,
+  .detail-configuration__sampler-grid {
     grid-template-columns: 1fr;
   }
 
-  .detail-configuration__control-head {
-    align-items: flex-start;
-    flex-direction: column;
+  .detail-configuration__context-row {
+    flex-wrap: wrap;
   }
 
-  .detail-configuration__context-input {
-    text-align: left;
-  }
-
-  .detail-configuration__context-number {
+  .detail-configuration__axis-number,
+  .detail-configuration__context-row .detail-configuration__context-number {
     width: 100%;
-    flex-basis: auto;
+  }
+
+  .detail-configuration__axis-row {
+    flex-wrap: wrap;
+  }
+
+  .detail-configuration__slider-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: var(--space-1);
+  }
+
+  .detail-configuration__slider-row > input {
+    grid-row: 2;
+    grid-column: 1 / -1;
   }
 }
 

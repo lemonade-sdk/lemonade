@@ -1416,6 +1416,8 @@ class LemonadeAPI {
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
+    // A load carries whatever the panel currently shows, saved or not, so it must
+    // not write those options back as the model's stored defaults.
     const body: Record<string, unknown> = {
       model_name: modelName,
       ...(stagedOptions || {}),
