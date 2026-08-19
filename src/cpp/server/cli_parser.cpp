@@ -19,10 +19,10 @@ CLIParser::CLIParser()
         ->type_name("DIR")
         ->default_val(utils::get_cache_dir());
 
-    app_.add_option("--port", config_.port, "Port number to serve on (overrides config.json)")
+    app_.add_option("--port", config_.port, "Port number to serve on (runtime override)")
         ->type_name("PORT");
 
-    app_.add_option("--host", config_.host, "Address to bind for connections (overrides config.json)")
+    app_.add_option("--host", config_.host, "Address to bind for connections (runtime override)")
         ->type_name("HOST");
 
     app_.add_flag("--broadcast,!--no-broadcast", config_.broadcast, "Enable or disable UDP broadcasting for server discovery");
