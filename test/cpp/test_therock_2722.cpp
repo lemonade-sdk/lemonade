@@ -4,14 +4,11 @@
 //
 // The upstream Windows tarball unpacks to a wrapper dir whose name includes an
 // rc suffix (e.g. therock-dist-windows-gfx1151-7.13.0rc2/), so bin/ lands one
-// level deep. normalize_therock_payload_dir() must find it and move it up so
-// every consumer (get_therock_lib_path etc.) sees install_dir/bin. The old
-// code deleted the tree on failure, destroying the evidence; the fix logs the
-// layout instead.
+// level deep; normalize_therock_payload_dir() must move it up so consumers
+// see install_dir/bin. The old code deleted the tree on failure, destroying
+// the evidence.
 //
-// get_external_rocm_loader_dir() must return the bin/ (Windows) or lib/
-// (Linux) of a ROCm root that resolves via ROCM_PATH — the directory sd-server
-// needs on its child PATH to find rocsolver.dll.
+// get_external_rocm_loader_dir() must return the resolved root's bin/ or lib/.
 
 #include <lemon/backends/backend_utils.h>
 

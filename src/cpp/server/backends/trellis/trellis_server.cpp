@@ -132,8 +132,7 @@ void TrellisServer::load(const std::string& model_name,
             dirs = BackendUtils::join_runtime_dirs(
                 BackendUtils::get_therock_lib_paths(arch));
         }
-        // Hand-installed ROCm (ROCM_PATH) must be loadable too (issue #2722).
-        // TheRock takes precedence; this only adds the external root when present.
+        // See BackendUtils::get_external_rocm_loader_dir() (issue #2722).
         const std::string external = BackendUtils::get_external_rocm_loader_dir();
         if (!external.empty()) {
             // TheRock (the pinned runtime) keeps precedence; the external

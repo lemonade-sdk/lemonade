@@ -108,8 +108,7 @@ void OpenMossServer::load(const std::string& model_name,
             dirs = BackendUtils::join_runtime_dirs(
                 BackendUtils::get_therock_lib_paths(arch));
         }
-        // Hand-installed ROCm (ROCM_PATH) must be loadable too (issue #2722).
-        // TheRock keeps precedence; the external root's dir is appended after it.
+        // See BackendUtils::get_external_rocm_loader_dir() (issue #2722).
         const std::string external = BackendUtils::get_external_rocm_loader_dir();
         if (!external.empty()) {
 #ifdef _WIN32
