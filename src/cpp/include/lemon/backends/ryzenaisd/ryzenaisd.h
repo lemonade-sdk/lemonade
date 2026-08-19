@@ -27,6 +27,7 @@ inline const BackendDescriptor descriptor = {
          "Ryzen AI SD Options"},
         {"steps",  "", 20,  "SIZE", "Number of diffusion steps",  "Ryzen AI SD Options"},
         {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Ryzen AI SD Options"},
+        {"strength", "", 0.75, "SIZE", "Denoising strength for img2img/edits/variations (0-1)", "Ryzen AI SD Options"},
         {"width",  "", 512, "SIZE", "Output image width",         "Ryzen AI SD Options"},
         {"height", "", 512, "SIZE", "Output image height",        "Ryzen AI SD Options"},
     },
@@ -47,7 +48,7 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      false,
     /*arg_variants*/    {},
     /*bin_variants*/    {"npu"},
-    /*config_extra*/    {{"steps", 20}, {"cfg_scale", 7.0}, {"width", 512}, {"height", 512}},
+    /*config_extra*/    {{"steps", 20}, {"cfg_scale", 7.0}, {"strength", 0.75}, {"width", 512}, {"height", 512}},
 };
 
 }  // namespace ryzenaisd

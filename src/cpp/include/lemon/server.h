@@ -310,6 +310,14 @@ private:
     bool parse_n_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
+    // Copies form field `field` into out[field] as an int, if present. Returns false
+    // (and writes a 400 error response) if the field is present but not a valid int.
+    bool parse_int_form_field(const httplib::Request& req, httplib::Response& res,
+                               nlohmann::json& out, const std::string& field);
+    // Copies form field `field` into out[field] as a float, if present. Returns false
+    // (and writes a 400 error response) if the field is present but not a valid number.
+    bool parse_float_form_field(const httplib::Request& req, httplib::Response& res,
+                                 nlohmann::json& out, const std::string& field);
 
     bool parse_required_json_body(const httplib::Request& req,
                                   httplib::Response& res,

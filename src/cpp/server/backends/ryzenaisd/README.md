@@ -118,6 +118,7 @@ A 200 response means the model swapped successfully in place.
 | `args` | `""` | Extra CLI flags forwarded to the subprocess (managed flags are blocked). |
 | `steps` | `20` | Default diffusion steps (overridden per model by `image_defaults`). |
 | `cfg_scale` | `7.0` | Default classifier-free guidance scale (overridden per model by `image_defaults`). |
+| `strength` | `0.75` | Default denoising strength for `image_edits`/`image_variations` (img2img/inpainting), sent as a plain multipart field. Request-level `strength` overrides this. Not overridden by `image_defaults` (no such per-model field exists yet). Note: `Server::handle_image_edits`/`handle_image_variations` (`server.cpp`, shared code) must also parse a `strength` multipart field into the request JSON for this to be reachable from an external HTTP client — added alongside this option since neither handler previously extracted it (and `handle_image_variations` didn't extract `prompt`/`steps`/`cfg_scale`/`seed` at all). |
 | `width` / `height` | `512` | Default image dimensions. |
 
 ## Relevant files

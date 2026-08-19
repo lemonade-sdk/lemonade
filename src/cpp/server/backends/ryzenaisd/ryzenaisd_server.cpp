@@ -319,20 +319,13 @@ json RyzenAISDServer::image_generations(const json& request) {
 
     // steps/cfg_scale/seed are only honored via the <sd_cpp_extra_args> tag
     // embedded in the prompt -- the server's hand-rolled JSON parser for this
-    // endpoint only reads "prompt" and "size", ignoring every other top-level
-    // field (including "n" -- unlike /v1/images/edits and /v1/images/variations,
-    // this endpoint always returns exactly one image).
+    // endpoint only reads "prompt", "size", and "n" from the top-level JSON,
+    // ignoring every other field. "n" (default 1) is read straight off
+    // sd_request below since it's just a copy of the incoming request.
     json extra_args = build_extra_args(request);
     std::string prompt = sd_request.value("prompt", "");
     prompt += " <sd_cpp_extra_args>" + extra_args.dump() + "</sd_cpp_extra_args>";
     sd_request["prompt"] = prompt;
-
-    if (request.contains("n") && request["n"].is_number_integer() && request["n"].get<int>() > 1) {
-        LOG(WARNING, "RyzenAISDServer")
-            << "ryzenai-sd-server's /v1/images/generations does not support n>1; "
-            << "requested n=" << request["n"].get<int>() << " but only 1 image will be returned"
-            << std::endl;
-    }
 
     LOG(DEBUG, "RyzenAISDServer") << "Forwarding image generation request" << std::endl;
     // Image generation can be slow; use no timeout.
@@ -355,6 +348,15 @@ json RyzenAISDServer::image_edits(const json& request) {
     if (!size.empty()) {
         fields.push_back({"size", size, "", ""});
     }
+
+    // ryzenai-sd-server's /v1/images/edits reads "strength" as a plain
+    // multipart field (img2img/inpainting denoising strength). Precedence:
+    // request override -> recipe_options default.
+    float strength = static_cast<float>(recipe_options_.get_option("strength"));
+    if (request.contains("strength") && request["strength"].is_number()) {
+        strength = request["strength"].get<float>();
+    }
+    fields.push_back({"strength", std::to_string(strength), "", ""});
 
     if (request.contains("image_data")) {
         std::string img = JsonUtils::base64_decode(request["image_data"].get<std::string>());
@@ -411,9 +413,13 @@ json RyzenAISDServer::image_variations(const json& request) {
         request["seed"].get<int>() >= 0) {
         fields.push_back({"seed", std::to_string(request["seed"].get<int>()), "", ""});
     }
+
+    // Precedence for strength: request override -> recipe_options default.
+    float strength = static_cast<float>(recipe_options_.get_option("strength"));
     if (request.contains("strength") && request["strength"].is_number()) {
-        fields.push_back({"strength", std::to_string(request["strength"].get<float>()), "", ""});
+        strength = request["strength"].get<float>();
     }
+    fields.push_back({"strength", std::to_string(strength), "", ""});
 
     if (request.contains("image_data")) {
         std::string img = JsonUtils::base64_decode(request["image_data"].get<std::string>());

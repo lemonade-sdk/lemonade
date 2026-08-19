@@ -122,6 +122,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "height": 512,
     "npu_bin": "builtin",
     "steps": 20,
+    "strength": 0.75,
     "width": 512
   },
   "sdcpp": {

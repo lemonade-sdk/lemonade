@@ -13,6 +13,7 @@ __pycache__/
 # Distribution / packaging
 .Python
 build/
+build_clean/
 develop-eggs/
 dist/
 downloads/
@@ -30,6 +31,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 .DS_Store
+*.png
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.

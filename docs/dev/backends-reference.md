@@ -149,6 +149,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ryzenaisd_args` | `--ryzenaisd-args` | ARGS | "" | Custom arguments to pass to ryzenai-sd-server (must not conflict with managed args) |
 | `steps` | — | SIZE | 20 | Number of diffusion steps |
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
+| `strength` | — | SIZE | 0.75 | Denoising strength for img2img/edits/variations (0-1) |
 | `width` | — | SIZE | 512 | Output image width |
 | `height` | — | SIZE | 512 | Output image height |
 
