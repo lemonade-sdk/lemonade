@@ -6,7 +6,7 @@ import { Icon, CapabilityIcon } from './Icon';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
-import { backendCompactLabel } from '../modelPresentation';
+import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
@@ -67,6 +67,7 @@ import {
   loadGlobalModelSettings,
   loadPinnedModelNames,
   loadWithGlobalModelPolicy,
+  savePinnedModelNames,
 } from '../features/modelSettings/globalModelSettings';
 
 interface Message {
@@ -454,6 +455,19 @@ function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, 
   return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
 }
 
+function loadedOverviewSizeLabel(info: ModelInfo | null): string | null {
+  const sizeGb = Number(info?.size);
+  if (!Number.isFinite(sizeGb) || sizeGb <= 0) return null;
+  if (sizeGb >= 1) return `${sizeGb.toFixed(1)} GB`;
+  if (sizeGb >= 0.01) return `${(sizeGb * 1000).toFixed(0)} MB`;
+  return '< 1 MB';
+}
+
+function loadedOverviewDeviceLabel(model: LoadedModel): string | null {
+  const device = String(model.device || '').trim();
+  return device ? device.toUpperCase() : null;
+}
+
 function deriveTitle(messages: Message[]): string {
   const first = messages.find(m => m.role === 'user');
   if (!first) return 'New conversation';
@@ -495,6 +509,7 @@ function timeAgo(ts: number): string {
 
 interface ChatViewProps {
   currentModel: string | null;
+  modelSelectionEpoch: number;
   loadedModels: LoadedModel[];
   serverModels: ModelInfo[];
   connectionStatus: ConnectionStatus;
@@ -860,7 +875,24 @@ function friendlyRouterChatError(message: string): string {
   return `${base}\n\nRouter diagnostic: ${hint}`;
 }
 
-const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loadedModels, serverModels, connectionStatus, onModelSelect, onOpenModelDetails, onRefresh }) => {
+const ChatView: React.FC<ChatViewProps> = ({
+  currentModel: selectedModel,
+  modelSelectionEpoch,
+  loadedModels,
+  serverModels,
+  connectionStatus,
+  onModelSelect,
+  onOpenModelDetails,
+  onRefresh,
+}) => {
+  const [showLoadedOverview, setShowLoadedOverview] = useState(
+    () => modelSelectionEpoch === 0,
+  );
+
+  useEffect(() => {
+    if (modelSelectionEpoch > 0) setShowLoadedOverview(false);
+  }, [modelSelectionEpoch]);
+
   const [fallbackModelOverride, setFallbackModelOverride] = useState<string | null>(null);
   const [preferredDefaultModelName, setPreferredDefaultModelName] = useState(() => loadPreferredDefaultModelName());
   const [lastReadyModelName, setLastReadyModelName] = useState<string | null>(() => loadLastReadyModelName());
@@ -2146,6 +2178,7 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
   }, []);
 
   const handleNewChat = useCallback(() => {
+    setShowLoadedOverview(true);
     setActiveId(null);
     inputRef.current?.focus();
   }, []);
@@ -3489,12 +3522,13 @@ ${finalText}`
             <EmptyState
               loadedModels={loadedModels}
               currentModel={currentModel}
+              showLoadedOverview={showLoadedOverview}
               onModelSelect={onModelSelect}
               onOpenModelDetails={onOpenModelDetails}
               onUnloadModel={handleLoadedCardUnload}
               unloadingModel={modelPickerUnloading}
               onChipClick={startLemonadeToolPrompt}
-              customModelInfos={customModelInfos}
+              modelInfos={knownModelInfos}
             />
           ) : (
             <div className="thread">
@@ -4431,113 +4465,218 @@ ${finalText}`
 interface EmptyStateProps {
   loadedModels: LoadedModel[];
   currentModel: string | null;
+  showLoadedOverview: boolean;
   onModelSelect: (model: string) => void;
   onOpenModelDetails: (model: string) => void;
   onUnloadModel: (model: string) => void;
   unloadingModel: string | null;
   onChipClick: (text: string) => void;
-  customModelInfos: ModelInfo[];
+  modelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
-  <>
-    <div className="hero">
-      <h1 className="hero__title">Get to know Lemonade</h1>
-      <p className="hero__subtitle">
-        {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
-          : 'Ask a question to learn how Lemonade works and get started with your first model.'}
-      </p>
+const EmptyState: React.FC<EmptyStateProps> = ({
+  loadedModels,
+  currentModel,
+  showLoadedOverview,
+  onModelSelect,
+  onOpenModelDetails,
+  onUnloadModel,
+  unloadingModel,
+  onChipClick,
+  modelInfos,
+}) => {
+  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
+  const pinnedNameSet = useMemo(
+    () => new Set(pinnedModels.map(name => name.toLowerCase())),
+    [pinnedModels],
+  );
 
-      <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
-          How do I use Lemonade?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-          How do I add a model?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
-          What are Lemonade tools?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-          What can my hardware run?
-        </button>
-      </div>
-    </div>
+  useEffect(() => {
+    const reloadPinnedModels = () => setPinnedModels(loadPinnedModelNames());
+    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadPinnedModels);
+    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadPinnedModels);
+  }, []);
 
-    {loadedModels.length > 0 && (
-      <>
-        <div className="section-label">
-          <span>Loaded right now</span>
-          <span className="section-label__rule" />
+  const togglePinnedModel = (modelName: string) => {
+    const key = modelName.toLowerCase();
+    const exists = pinnedModels.some(name => name.toLowerCase() === key);
+    const next = exists
+      ? pinnedModels.filter(name => name.toLowerCase() !== key)
+      : [modelName, ...pinnedModels];
+    setPinnedModels(next);
+    savePinnedModelNames(next);
+  };
+
+  return (
+    <>
+      {!(showLoadedOverview && loadedModels.length > 0) && (
+      <div className="hero">
+        <h1 className="hero__title">Get to know Lemonade</h1>
+        <p className="hero__subtitle">
+          {loadedModels.length > 0
+            ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
+            : 'Ask a question to learn how Lemonade works and get started with your first model.'}
+        </p>
+
+        <div className="chips" role="list">
+          <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
+            How do I use Lemonade?
+          </button>
+          <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
+            How do I add a model?
+          </button>
+          <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
+            What are Lemonade tools?
+          </button>
+          <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
+            What can my hardware run?
+          </button>
         </div>
-        <div className="active-models">
-          {loadedModels.map(m => {
-            const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
-            const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
-            const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
-            const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
-            const modeBadge = modelModeBadge(cap, m.recipe);
-            const selectable = canSelectInComposer(m) || isComposerSelectableCapability(cap);
-            const isActive = currentModel === m.model_name;
-            return (
-              <article className="active-card" key={m.model_name}>
-                <div className="active-card__head">
-                  <div>
-                    <div className="active-card__name-row">
+      </div>
+      )}
+
+      {showLoadedOverview && loadedModels.length > 0 && (
+        <section className="loaded-overview" aria-labelledby="loaded-overview-title">
+          <header className="loaded-overview__header">
+            <h2 id="loaded-overview-title" className="loaded-overview__title">Loaded now</h2>
+            <p className="loaded-overview__subtitle">
+              {loadedModels.length} model{loadedModels.length === 1 ? '' : 's'} ready for use
+            </p>
+          </header>
+
+          <div className="loaded-overview__list" role="list" aria-label="Loaded models">
+            {loadedModels.map(model => {
+              const modelInfo = findModelInfoByName(modelInfos, model.model_name);
+              const capability = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(model);
+              const audioInput = modelSupportsChatAudioInput(modelInfo, model);
+              const modeLabel = modelModeDisplayLabel(capability, audioInput, model.recipe);
+              const taskColor = capabilityColor(isRouterRecipe(model.recipe) ? 'router' : capability);
+              const selectable = canSelectInComposer(model) || isComposerSelectableCapability(capability);
+              const isActive = currentModel === model.model_name;
+              const isUnloading = unloadingModel === model.model_name;
+              const isPinned = pinnedNameSet.has(model.model_name.toLowerCase());
+              const sizeLabel = loadedOverviewSizeLabel(modelInfo);
+              const deviceLabel = loadedOverviewDeviceLabel(model);
+
+              return (
+                <article
+                  className={`loaded-overview__row${isActive ? ' loaded-overview__row--selected' : ''}${selectable && !isActive && !isUnloading ? ' loaded-overview__row--selectable' : ''}${isUnloading ? ' loaded-overview__row--busy' : ''}`}
+                  key={model.model_name}
+                  role="listitem"
+                  aria-label={`${model.model_name}, ${modeLabel}${deviceLabel ? `, ${deviceLabel}` : ''}${sizeLabel ? `, ${sizeLabel}` : ''}${isPinned ? ', pinned' : ''}${isActive ? ', selected' : ''}${isUnloading ? ', unloading' : ''}`}
+                  onClick={() => {
+                    if (selectable && !isActive && !isUnloading) onModelSelect(model.model_name);
+                  }}
+                >
+                  <div
+                    className="loaded-overview__task"
+                    style={taskColor ? ({ '--loaded-task-color': taskColor } as React.CSSProperties) : undefined}
+                  >
+                    <span className="loaded-overview__task-icon" aria-hidden="true">
+                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} size={40} />
+                    </span>
+                  </div>
+
+                  <div className="loaded-overview__identity">
+                    <div className="loaded-overview__name-line">
+                      <span className="loaded-overview__name" title={model.model_name}>{model.model_name}</span>
                       <button
                         type="button"
-                        className="active-card__name"
-                        onClick={() => onOpenModelDetails(m.model_name)}
-                        title={`Open ${m.model_name} in Models`}
+                        className="loaded-overview__details-link"
+                        onClick={event => {
+                          event.stopPropagation();
+                          onOpenModelDetails(model.model_name);
+                        }}
+                        aria-label={`Open ${model.model_name} model details`}
+                        title={`Open ${model.model_name} in Models`}
                       >
-                        {m.model_name}
+                        <Icon name="model-details" size={14} aria-hidden="true" />
                       </button>
                     </div>
-                    <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
+                    <div className="loaded-overview__meta-line">
+                      <span
+                        className="loaded-overview__meta-capability"
+                        style={taskColor ? { color: taskColor } : undefined}
+                      >
+                        {modeLabel}
+                      </span>
+                      {deviceLabel && (
+                        <span className="loaded-overview__meta-item" title={`Runtime device: ${deviceLabel}`}>
+                          {deviceLabel}
+                        </span>
+                      )}
+                      {sizeLabel && (
+                        <span className="loaded-overview__meta-item" title="Known model size">
+                          {sizeLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <span className="active-card__device">{m.device || 'device unknown'}</span>
-                </div>
-                <div className="active-card__badges">
-                  <span className={`cap-badge cap-badge--${modeBadge}`}><ModelModeIcons capability={cap} recipe={m.recipe} audioInput={audioInput} size={13} /> {modeLabel}</span>
-                </div>
-                <div className="active-card__actions">
-                  {isActive ? (
-                    <span className="active-card__status">● Active {modeLabel} mode</span>
-                  ) : selectable ? (
-                    <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                      Use in {modeLabel}
-                    </button>
-                  ) : (
-                    <span className="active-card__status active-card__status--muted">Utility model only</span>
-                  )}
-                </div>
-                <div className="active-card__footer">
-                  <button type="button" className="active-card__details" onClick={() => onOpenModelDetails(m.model_name)}>
-                    View details
-                  </button>
+
                   <button
                     type="button"
-                    className="active-card__eject"
-                    onClick={() => onUnloadModel(m.model_name)}
-                    disabled={unloadingModel === m.model_name}
-                    title={`Unload ${m.model_name}`}
+                    className={`loaded-overview__pin${isPinned ? ' loaded-overview__pin--active' : ''}`}
+                    onClick={event => {
+                      event.stopPropagation();
+                      togglePinnedModel(model.model_name);
+                    }}
+                    aria-label={isPinned ? `Unpin ${model.model_name}` : `Pin ${model.model_name}`}
+                    aria-pressed={isPinned}
+                    title={isPinned ? `Unpin ${model.model_name}` : `Pin ${model.model_name}`}
                   >
-                    {unloadingModel === m.model_name ? 'Unloading…' : 'Unload'}
+                    <Icon name="pin" size={16} aria-hidden="true" />
                   </button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </>
-    )}
-  </>
-);
+
+                  <div className="loaded-overview__selection">
+                    {isActive ? (
+                      <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected" aria-current="true">
+                        Selected
+                      </span>
+                    ) : selectable ? (
+                      <button
+                        type="button"
+                        className="loaded-overview__selection-pill loaded-overview__selection-pill--use"
+                        onClick={event => {
+                          event.stopPropagation();
+                          onModelSelect(model.model_name);
+                        }}
+                        disabled={isUnloading}
+                      >
+                        Use
+                      </button>
+                    ) : (
+                      <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected">
+                        Loaded
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="loaded-overview__unload"
+                    onClick={event => {
+                      event.stopPropagation();
+                      onUnloadModel(model.model_name);
+                    }}
+                    disabled={isUnloading}
+                    aria-label={isUnloading ? `Unloading ${model.model_name}` : `Unload ${model.model_name}`}
+                    title={isUnloading ? 'Unloading…' : `Unload ${model.model_name}`}
+                  >
+                    <Icon name={isUnloading ? 'clock' : 'eject'} size={20} aria-hidden="true" />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </>
+  );
+};
 
 /* ─── Message bubble ──────────────────────────────────── */
 
