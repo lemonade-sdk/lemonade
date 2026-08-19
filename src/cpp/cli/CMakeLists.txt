@@ -40,26 +40,35 @@ set(COMMON_SOURCES
     agent_config_file.cpp
     opencode_profile.cpp
     pi_profile.cpp
+    ../server/sandbox/env_scrubber.cpp
+    ../server/sandbox/sandbox_engine.cpp
     # Self-describing backend descriptors (plain data; CLI-safe). Lets the CLI
     # read recipe options/flags from descriptors without linking server classes.
     # The matching factories (create()) are server-only and NOT listed here.
     ${LEMON_BACKEND_DESCRIPTOR_SOURCES}
 )
 
+if(NOT NONO_LIBRARY)
+    list(APPEND COMMON_SOURCES ../server/sandbox/nono_stub.cpp)
+endif()
+
 # Add platform-specific sources
 if(WIN32)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_windows.cpp
         ../server/utils/platform/process_windows.cpp
+        ../server/sandbox/windows/windows_security_utils.cpp
     )
 elseif(APPLE)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_macos.cpp
+        ../server/utils/platform/process_unix_base.cpp
         ../server/utils/platform/process_macos.cpp
     )
 elseif(UNIX)
     list(APPEND COMMON_SOURCES
         ../server/utils/platform/path_linux.cpp
+        ../server/utils/platform/process_unix_base.cpp
         ../server/utils/platform/process_linux.cpp
     )
 endif()
@@ -159,6 +168,19 @@ if(UNIX AND NOT APPLE)
     target_link_libraries(lemonade PRIVATE
         Threads::Threads
     )
+endif()
+
+if(NONO_LIBRARY)
+    target_link_libraries(lemonade PRIVATE ${NONO_LIBRARY})
+    if(CMAKE_DL_LIBS)
+        target_link_libraries(lemonade PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(lemonade PRIVATE m)
+    endif()
+    if(TARGET nono_c_build)
+        add_dependencies(lemonade nono_c_build)
+    endif()
 endif()
 
 # Install target (only on non-macOS platforms where main CMakeLists doesn't handle it)

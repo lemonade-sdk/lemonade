@@ -66,6 +66,7 @@ private:
     json apply_voice_design(const json& request, httplib::DataSink& sink);
 
     std::string exe_path_;
+    std::string backend_;
     std::string model_path_;
     std::string voicegen_path_;
     std::map<std::string, std::string> reference_cache_;

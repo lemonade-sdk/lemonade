@@ -573,8 +573,17 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
+    std::string effective_model_path = !gguf_path.empty() ? gguf_path : model_info.checkpoint();
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        process_executable, effective_model_path, llamacpp_backend);
+    if (!draft_path.empty()) {
+        sandbox_policy.add_read_path(draft_path);
+    }
+    if (!mmproj_path.empty()) {
+        sandbox_policy.add_read_path(mmproj_path);
+    }
     set_process_handle(ProcessManager::start_process(
-        process_executable, args, working_dir, inherit_llama_output, true, env_vars),
+        process_executable, args, working_dir, inherit_llama_output, true, env_vars, sandbox_policy),
         process_executable, args);
 
     if (!wait_for_ready("/health")) {

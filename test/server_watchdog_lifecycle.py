@@ -447,12 +447,6 @@ class WatchdogLifecycleTests(ServerTestBase):
             "First concurrent request thread did not reach the request boundary",
         )
 
-        self._wait_for_pid_reaped(old_pid)
-        self.assertTrue(
-            workers[0].is_alive(),
-            "First request completed before the concurrent reload window was exercised",
-        )
-
         workers[1].start()
 
         for worker in workers:

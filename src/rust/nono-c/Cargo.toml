@@ -1,0 +1,19 @@
+[package]
+name = "nono-c"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "nono_c"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+nono = "0.73"
+libc = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

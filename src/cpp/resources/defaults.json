@@ -72,6 +72,7 @@
   "ryzenai": {
     "server_bin": "builtin"
   },
+  "sandbox": "auto",
   "sdcpp": {
     "args": "",
     "backend": "auto",

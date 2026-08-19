@@ -47,6 +47,8 @@ public:
     std::string get_additional_telemetry_url() const override;
     std::function<std::map<std::string, nlohmann::json>(const std::string&)> get_additional_telemetry_parser() const override;
 
+    void customize_sandbox_policy(lemon::sandbox::SandboxPolicy& policy) const override;
+
 private:
     std::filesystem::path rocm_shim_dir_;
 
