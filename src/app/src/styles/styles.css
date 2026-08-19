@@ -6710,7 +6710,7 @@ optgroup {
   padding: 0 var(--space-2) var(--space-2);
 }
 
-/* 2. Primary nav */
+/* 2. Primary nav — pinned above the scroll area (direct child of the rail) */
 .model-nav-rail__primary {
   list-style: none;
   margin: 0;
@@ -6718,11 +6718,11 @@ optgroup {
   display: flex;
   flex-direction: column;
   gap: var(--space-0-5);
+  flex-shrink: 0;
 }
 
 .model-nav-rail__primary.workspace-filter-list {
-  margin-inline: calc(-1 * var(--space-2));
-  padding-bottom: 0;
+  padding-bottom: var(--space-3);
 }
 
 .model-nav-rail__nav-item {
