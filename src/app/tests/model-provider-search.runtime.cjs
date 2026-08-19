@@ -65,7 +65,7 @@ assert.match(manager, /registration\.model_name/,
 assert.match(manager, /setCustomJsonNotice\(`Saved \${persistedName} to lemond\.`\)/,
   'successful custom-model saves must surface a confirmation notice');
 assert.match(listPanelSource, /name\.startsWith\('user\.'\)[\s\S]*labels\.includes\('custom'\)/,
-  'My Models must include custom definitions restored from lemond');
+  'the Custom tag must include custom definitions restored from lemond');
 assert.match(customModelStoreSource, /if \(!normalizedCheckpoints\.main && checkpoint\) normalizedCheckpoints\.main = checkpoint/,
   'legacy secondary checkpoint maps must promote the primary checkpoint to checkpoints.main');
 assert.match(customModelStoreSource, /if \(normalizedCheckpoints\.main\) opts\.checkpoints = normalizedCheckpoints/,
@@ -119,6 +119,8 @@ assert.doesNotMatch(remoteCapabilitiesSource, /pipeline\.includes\(/,
   'remote capability matching must not be broad substring guessing');
 assert.ok(manager.indexOf("renderProviderZone('huggingface')") < manager.indexOf("renderProviderZone('modelscope')"),
   'ModelScope results must be rendered below Hugging Face');
+assert.match(manager, /compactLabel: 'Online Catalog: Hugging Face'/, 'Hugging Face results must use the requested online-catalog section label');
+assert.match(manager, /compactLabel: 'Online Catalog: ModelScope'/, 'ModelScope results must use the requested online-catalog section label');
 assert.doesNotMatch(manager, /expandedRemoteModel|row__detail row__detail--remote|row__expand/,
   'remote registry rows must select the detail pane instead of expanding duplicate inline details');
 assert.doesNotMatch(manager, /row__action--download|row__action--hf-link/,

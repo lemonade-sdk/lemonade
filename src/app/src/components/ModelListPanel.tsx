@@ -292,7 +292,7 @@ export function modelMatchesTasks(m: ModelInfo, tasks?: ReadonlySet<FilterTab>):
    the model list the prototype already loads — no lemond calls. */
 
 /** Primary nav buckets in the left rail. */
-export type PrimaryFilter = 'all' | 'downloaded' | 'my-models' | 'favorites';
+export type PrimaryFilter = 'all' | 'downloaded' | 'favorites';
 
 /** A model counts as "downloaded" if it is locally present or running. */
 export function modelIsDownloaded(m: ModelInfo, loadedNames: Set<string>): boolean {
@@ -321,7 +321,6 @@ export function modelMatchesPrimary(
 ): boolean {
   switch (primary) {
     case 'downloaded': return modelIsDownloaded(m, loadedNames);
-    case 'my-models': return modelIsCustom(m);
     case 'favorites': return favoriteNames?.has(listModelName(m).toLowerCase()) ?? false;
     case 'all':
     default: return true;
@@ -351,7 +350,7 @@ export function modelMatchesBackend(m: ModelInfo, backend: string): boolean {
 }
 
 /** Curated tag chips (model families + size hints) shown in the left rail. */
-export const TAG_CHIPS: string[] = ['Recommended', 'Hot', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
+export const TAG_CHIPS: string[] = ['Recommended', 'Hot', 'Custom', 'Llama', 'Qwen', 'Phi', 'Mistral', 'Gemma', 'Bonsai', 'Small'];
 
 export function modelIsRecommended(m: ModelInfo): boolean {
   const raw = m as any;
@@ -386,6 +385,7 @@ export function modelMatchesTag(m: ModelInfo, tag: string | null): boolean {
   if (!t) return true;
   if (t === 'recommended') return modelIsRecommended(m);
   if (t === 'hot') return modelIsHot(m);
+  if (t === 'custom') return modelIsCustom(m);
   const labels = [
     ...(Array.isArray(m.labels) ? m.labels : []),
     ...(Array.isArray((m as any).tags) ? (m as any).tags : []),
@@ -572,7 +572,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     const sections: { key: string; label: string; entries: FlatModelEntry[] }[] = [
       { key: 'pinned', label: 'Pinned', entries: [] },
       { key: 'downloaded', label: 'Downloaded', entries: [] },
-      { key: 'available', label: 'Not downloaded', entries: [] },
+      { key: 'available', label: 'Local Catalog', entries: [] },
     ];
     const byKey = Object.fromEntries(sections.map(s => [s.key, s]));
     for (const entry of flatList) {
@@ -726,7 +726,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             role="searchbox"
             type="text"
               className="model-list-panel__search-input manager__search-input"
-            placeholder={onlineSearchEnabled ? 'Search built-in and online catalogs…' : 'Search built-in catalogs…'}
+            placeholder={onlineSearchEnabled ? 'Search local and online catalogs…' : 'Search local catalogs…'}
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
             aria-label="Search models"
