@@ -1505,11 +1505,23 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
     }
 
-    // Check if final file already exists and is complete. When the caller
-    // provided a content hash, the final path is only trusted if the hash
-    // matches; otherwise remove it and force a fresh download.
+    // Check if final file already exists and is complete. Recheck attested
+    // metadata here, after preceding transfers, before bypassing its digest.
     if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
-        if (expected_hash.present()) {
+        bool cached_file_still_matches = false;
+        if (expected_hash.present() && !options.verify_existing_hash &&
+            !options.verified_existing_mtime_ticks.empty()) {
+            std::error_code ec;
+            if (fs::is_regular_file(output_path_fs, ec) && !ec) {
+                const auto size = fs::file_size(output_path_fs, ec);
+                if (!ec && size == options.verified_existing_size) {
+                    const auto mtime = fs::last_write_time(output_path_fs, ec);
+                    cached_file_still_matches = !ec &&
+                        file_time_cache_stamp(mtime) == options.verified_existing_mtime_ticks;
+                }
+            }
+        }
+        if (expected_hash.present() && !cached_file_still_matches) {
             auto hash_result = verify_file_hash(output_path_fs, expected_hash);
             if (hash_result.ok) {
                 final_result.success = true;
@@ -1530,11 +1542,17 @@ DownloadResult HttpClient::download_file(const std::string& url,
                 return final_result;
             }
         } else {
-            // Final file exists with no partial - consider it complete when no
-            // stronger source-of-truth hash is available.
+            // No expected digest retains the original existing-file behavior;
+            // a hashed file reaches here only with a fresh attestation match.
             final_result.success = true;
             final_result.bytes_downloaded = 0;
-            LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
+            if (expected_hash.present()) {
+                LOG(INFO, "Download") << "Reusing previously verified file: "
+                                      << output_path << std::endl;
+            } else {
+                LOG(INFO, "Download") << "File already exists: "
+                                      << output_path << std::endl;
+            }
             return final_result;
         }
     }

@@ -1,4 +1,5 @@
 #include "lemon/models/artifact_transfer.h"
+#include "lemon/utils/http_client.h"
 #include "lemon/utils/path_utils.h"
 
 #include <atomic>
@@ -84,6 +85,29 @@ static ArtifactTransfer local_only_transfer() {
     return ArtifactTransfer(std::move(transfers));
 }
 
+// Mutate the first file while the second is transferred.
+class MutatePreviousFileTransfer final : public FileTransfer {
+public:
+    bool handles(const std::string& url) const override {
+        return url.rfind("fixture://", 0) == 0;
+    }
+    std::uint64_t transfer(const DownloadFile& file, const std::string& target_dir,
+                           const std::map<std::string, std::string>&,
+                           const lemon::models::ByteProgress&,
+                           const lemon::utils::CancelToken&) const override {
+        const fs::path dir = lemon::utils::path_from_utf8(target_dir);
+        if (file.name == "first.bin") {
+            write_file(dir / file.name, "initial");
+        } else {
+            write_file(dir / file.name, "second");
+            write_file(dir / "first.bin", "changed");
+            const fs::path first = dir / "first.bin";
+            fs::last_write_time(first, fs::last_write_time(first) + std::chrono::seconds(2));
+        }
+        return file.size;
+    }
+};
+
 static std::uint64_t total_needed(const std::vector<lemon::models::FilesystemRequirement>& reqs) {
     std::uint64_t total = 0;
     for (const auto& req : reqs) total += req.bytes_needed;
@@ -115,6 +139,64 @@ static void test_plan_from_manifest() {
     check_eq("per-file target is carried", plan.files[1].download_path, "/cache/other");
     check_eq("hash algorithm", plan.files[1].expected_hash_algorithm, "sha256");
     check_eq("hash value", plan.files[1].expected_hash, "cafe");
+}
+
+static void test_verified_cache_manifest_round_trip() {
+    json manifest = {{"download_path", "/cache"}, {"files", json::array()}};
+    manifest["files"].push_back({{"name", "cached.bin"},
+                                  {"url", "https://h/cached.bin"},
+                                  {"size", 7},
+                                  {"verify_existing_hash", false},
+                                  {"verified_existing_size", 7},
+                                  {"verified_existing_mtime_ticks", "133686123456789012"}});
+    const DownloadPlan plan = download_plan_from_manifest(json::parse(manifest.dump()));
+    check("previously verified file may skip digest", !plan.files[0].verify_existing_hash);
+    check_num("verified file size survives JSON", plan.files[0].verified_existing_size, 7);
+    check_eq("positive Windows timestamp survives JSON", plan.files[0].verified_existing_mtime_ticks,
+             "133686123456789012");
+
+    manifest["files"][0].erase("verified_existing_mtime_ticks");
+    check("missing attestation timestamp fails closed",
+          download_plan_from_manifest(manifest).files[0].verify_existing_hash);
+}
+
+static void test_file_time_cache_stamp() {
+    using Duration = fs::file_time_type::duration;
+    const auto fraction = std::chrono::nanoseconds(123456700);
+    const auto plus = std::chrono::duration_cast<Duration>(std::chrono::seconds(2) + fraction);
+    const auto minus = std::chrono::duration_cast<Duration>(-std::chrono::seconds(2) - fraction);
+    check_eq("positive timestamp preserves subsecond precision",
+             lemon::utils::file_time_cache_stamp(fs::file_time_type(plus)),
+             "2:123456700");
+    check_eq("negative timestamp preserves subsecond precision",
+             lemon::utils::file_time_cache_stamp(fs::file_time_type(minus)),
+             "-2:-123456700");
+}
+
+static void test_attestation_is_captured_before_next_file() {
+    const fs::path dir = make_temp_dir("attestation_order");
+    DownloadPlan plan;
+    plan.download_path = lemon::utils::path_to_utf8(dir);
+    plan.files.push_back(DownloadFile{"first.bin", "fixture://first", 7, {}, {}, {}});
+    plan.files.push_back(DownloadFile{"second.bin", "fixture://second", 6, {}, {}, {}});
+
+    std::vector<std::unique_ptr<FileTransfer>> transfers;
+    transfers.push_back(std::make_unique<MutatePreviousFileTransfer>());
+    ArtifactTransfer transfer(std::move(transfers));
+    std::string first_stamp;
+    std::size_t completed = 0;
+    transfer.execute(plan, {}, nullptr, {}, [&](const DownloadFile& file, std::size_t index) {
+        ++completed;
+        if (index == 0) {
+            first_stamp = lemon::utils::file_time_cache_stamp(
+                fs::last_write_time(dir / file.name));
+        }
+    });
+    check_num("completion callback runs once per file", completed, 2);
+    check("first-file attestation predates second-file mutation",
+          !first_stamp.empty() && first_stamp != lemon::utils::file_time_cache_stamp(
+              fs::last_write_time(dir / "first.bin")));
+    fs::remove_all(dir);
 }
 
 static void test_plan_bare_sha256() {
@@ -406,6 +488,34 @@ static void test_skips_completed_file() {
     fs::remove_all(dir);
 }
 
+static void test_http_rechecks_attested_metadata() {
+    const fs::path dir = make_temp_dir("http_attestation");
+    const fs::path file = dir / "cached.bin";
+    write_file(file, "initial");
+
+    lemon::utils::DownloadOptions options;
+    options.max_retries = 0;
+    options.expected_hash_algorithm = "sha256";
+    options.expected_hash = std::string(64, 'a'); // Deliberately wrong to detect a scan.
+    options.verify_existing_hash = false;
+    options.verified_existing_size = fs::file_size(file);
+    options.verified_existing_mtime_ticks =
+        lemon::utils::file_time_cache_stamp(fs::last_write_time(file));
+
+    const std::string url = "unsupported://never-used";
+    const auto hit = lemon::utils::HttpClient::download_file(
+        url, lemon::utils::path_to_utf8(file), nullptr, {}, options);
+    check("matching attestation skips a repeat scan", hit.success);
+
+    write_file(file, "changed"); // Same size, but a changed timestamp.
+    fs::last_write_time(file, fs::last_write_time(file) + std::chrono::seconds(2));
+    const auto miss = lemon::utils::HttpClient::download_file(
+        url, lemon::utils::path_to_utf8(file), nullptr, {}, options);
+    check("changed mtime forces hash verification", !miss.success);
+    check("failed verification removes the corrupt final file", !fs::exists(file));
+    fs::remove_all(dir);
+}
+
 static void test_hash_verification() {
     const fs::path dir = make_temp_dir("hash");
     const std::string content = "lemonade artifact transfer fixture";
@@ -508,6 +618,9 @@ static void test_removes_invalid_cached_gguf_before_download() {
 
 int main() {
     test_plan_from_manifest();
+    test_verified_cache_manifest_round_trip();
+    test_file_time_cache_stamp();
+    test_attestation_is_captured_before_next_file();
     test_plan_bare_sha256();
     test_space_accounting();
     test_copies_without_http();
@@ -518,6 +631,7 @@ int main() {
     test_progress_false_cancels_the_plan();
     test_progress_false_mid_copy_stops_the_bytes();
     test_skips_completed_file();
+    test_http_rechecks_attested_metadata();
     test_hash_verification();
     test_gguf_magic_rejected();
     test_gguf_with_magic_accepted();

@@ -24,6 +24,10 @@ struct DownloadFile {
     std::string expected_hash_algorithm;
     std::string expected_hash;
     std::string download_path;  // Empty uses the plan's target directory.
+    // Keep fields after download_path to preserve six-argument aggregate callers.
+    bool verify_existing_hash = true;
+    std::uint64_t verified_existing_size = 0;
+    std::string verified_existing_mtime_ticks = {};
 };
 
 struct DownloadPlan {
@@ -118,7 +122,8 @@ public:
     void execute(const DownloadPlan& plan,
                  const std::map<std::string, std::string>& headers,
                  DownloadProgressCallback progress,
-                 const utils::CancelToken& cancel) const;
+                 const utils::CancelToken& cancel,
+                 const std::function<void(const DownloadFile&, std::size_t)>& file_completed = {}) const;
 
 private:
     std::vector<std::unique_ptr<FileTransfer>> transfers_;

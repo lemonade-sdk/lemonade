@@ -25,6 +25,7 @@ namespace models {
 class FetchableRepository;
 class ModelStore;
 struct ArtifactRef;
+struct DownloadFile;
 
 class ArtifactSourceResolver;
 class ModelArtifactStore;
@@ -112,7 +113,8 @@ class ModelIngest : public ArtifactFetchService {
     void download_from_manifest(const nlohmann::json& manifest,
                                 std::map<std::string, std::string>& headers,
                                 DownloadProgressCallback progress_callback,
-                                const utils::CancelToken& cancel) const;
+                                const utils::CancelToken& cancel,
+                                const std::function<void(const DownloadFile&, std::size_t)>& file_completed) const;
 
     const ModelArtifactStore& artifacts() const;
 

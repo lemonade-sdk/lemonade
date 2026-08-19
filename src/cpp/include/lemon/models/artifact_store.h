@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 namespace lemon {
 namespace backends {
@@ -58,6 +59,8 @@ struct Provenance {
     std::string processed_snapshot_id;  // What this run fetched, which differs
                                         // when a cancelled pull fell back to the
                                         // snapshot already in place.
+    // Only files confirmed by this pull are updated; null invalidates an entry.
+    nlohmann::json verified_file_updates = nullptr;
 };
 
 struct CleanupReport {

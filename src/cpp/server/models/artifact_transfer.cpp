@@ -125,6 +125,20 @@ DownloadPlan download_plan_from_manifest(const nlohmann::json& manifest) {
             file.expected_hash = file_desc["sha256"].get<std::string>();
         }
 
+        file.verify_existing_hash = file_desc.value("verify_existing_hash", true);
+        if (!file.verify_existing_hash) {
+            if (file_desc.contains("verified_existing_size") &&
+                file_desc["verified_existing_size"].is_number_unsigned() &&
+                file_desc.contains("verified_existing_mtime_ticks") &&
+                file_desc["verified_existing_mtime_ticks"].is_string()) {
+                file.verified_existing_size =
+                    file_desc["verified_existing_size"].get<std::uint64_t>();
+                file.verified_existing_mtime_ticks =
+                    file_desc["verified_existing_mtime_ticks"].get<std::string>();
+            } else {
+                file.verify_existing_hash = true;
+            }
+        }
         plan.files.push_back(std::move(file));
     }
 
@@ -202,7 +216,8 @@ ArtifactTransfer ArtifactTransfer::with_default_transfers() {
 void ArtifactTransfer::execute(const DownloadPlan& plan,
                                const std::map<std::string, std::string>& headers,
                                DownloadProgressCallback progress,
-                               const utils::CancelToken& cancel) const {
+                               const utils::CancelToken& cancel,
+                               const std::function<void(const DownloadFile&, std::size_t)>& file_completed) const {
     const int total_files = static_cast<int>(plan.files.size());
 
     // Dispatch is settled before anything is written, so a file no transfer
@@ -373,6 +388,8 @@ void ArtifactTransfer::execute(const DownloadPlan& plan,
         }
 
         require_client();
+        // A successful transfer has finished its hash verification for this file.
+        if (file_completed) file_completed(file, static_cast<std::size_t>(file_index - 1));
         LOG(INFO, "ModelManager") << "Downloaded: " << file.name << std::endl;
 
         if (bytes_moved == 0) {
@@ -474,6 +491,9 @@ std::uint64_t HttpFileTransfer::transfer(const DownloadFile& file,
     options.connect_timeout = 60;
     options.expected_hash_algorithm = file.expected_hash_algorithm;
     options.expected_hash = file.expected_hash;
+    options.verify_existing_hash = file.verify_existing_hash;
+    options.verified_existing_size = file.verified_existing_size;
+    options.verified_existing_mtime_ticks = file.verified_existing_mtime_ticks;
 
     // The tick always exists — it is where the transport learns to abort on
     // the token, inside the HTTP client — even when nobody is watching bytes.
