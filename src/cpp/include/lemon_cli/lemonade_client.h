@@ -120,7 +120,7 @@ public:
                    const std::string& api_key,
                    bool allow_insecure_http = false);
     int cloud_auth_clear(const std::string& provider);
-    int cloud_list() const;
+    int cloud_list(bool json_output = false) const;
 
     // Cache management
     int cleanup_cache(bool dry_run) const;

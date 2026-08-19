@@ -724,8 +724,14 @@ lemonade cloud clear PROVIDER
 Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered.
 
 ```bash
-lemonade cloud list
+lemonade cloud list [--json]
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json` | Emit the provider list as a JSON array instead of human-readable text | Human-readable text |
+
+With `--json`, stdout is a JSON array of provider objects (the same `cloud.providers` payload from `/v1/system-info`). An empty installation emits `[]`. Fields include `name`, `base_url`, `allow_insecure_http`, `env_var`, `env_var_set`, `runtime_key_set`, and `models_discovered`. API keys are never included.
 
 ## Options for scan
 

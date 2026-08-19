@@ -1262,15 +1262,19 @@ int LemonadeClient::cloud_auth_clear(const std::string& provider) {
     }
 }
 
-int LemonadeClient::cloud_list() const {
+int LemonadeClient::cloud_list(bool json_output) const {
     try {
         std::string response = make_request("/api/v1/system-info", "GET");
         auto info = json::parse(response);
-        if (!info.contains("cloud") || !info["cloud"].contains("providers")) {
-            std::cout << "No cloud providers installed." << std::endl;
+        json providers = json::array();
+        if (info.contains("cloud") && info["cloud"].contains("providers") &&
+            info["cloud"]["providers"].is_array()) {
+            providers = info["cloud"]["providers"];
+        }
+        if (json_output) {
+            std::cout << providers.dump() << std::endl;
             return 0;
         }
-        const auto& providers = info["cloud"]["providers"];
         if (providers.empty()) {
             std::cout << "No cloud providers installed." << std::endl;
             return 0;

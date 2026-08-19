@@ -6,6 +6,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - list
 - export
 - backends
+- cloud
 - import (from JSON file)
 - pull with labels and checkpoints
 - load
@@ -576,6 +577,51 @@ sys.exit(0)
         """Test backends uninstall."""
         result = self.assertCommandSucceeds(["backends", "uninstall", "llamacpp:cpu"])
         print(f"Backends uninstall exit code: {result.returncode}")
+
+    # =============================================================================
+    # Cloud Tests
+    # =============================================================================
+
+    def test_046_cloud_list_json(self):
+        """Test `cloud list --json` emits the provider array from system-info."""
+        result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+        providers = json.loads(result.stdout)
+        self.assertIsInstance(providers, list)
+
+        provider = "clijsonprobe"
+        base_url = "https://example.invalid/v1"
+        try:
+            self.assertCommandSucceeds(
+                ["cloud", "install", provider, "--base-url", base_url]
+            )
+            result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+            providers = json.loads(result.stdout)
+            self.assertIsInstance(providers, list)
+            entry = next((p for p in providers if p.get("name") == provider), None)
+            self.assertIsNotNone(entry, f"{provider} missing from {providers}")
+            for key in (
+                "name",
+                "base_url",
+                "env_var",
+                "env_var_set",
+                "runtime_key_set",
+                "models_discovered",
+                "allow_insecure_http",
+            ):
+                self.assertIn(key, entry)
+            self.assertEqual(entry["base_url"], base_url)
+            self.assertEqual(entry["env_var"], "LEMONADE_CLIJSONPROBE_API_KEY")
+            self.assertFalse(entry["env_var_set"])
+            self.assertFalse(entry["runtime_key_set"])
+            self.assertEqual(entry["models_discovered"], 0)
+            self.assertFalse(entry["allow_insecure_http"])
+
+            human = self.assertCommandSucceeds(["cloud", "list"])
+            with self.assertRaises(json.JSONDecodeError):
+                json.loads(human.stdout)
+            self.assertIn(provider, human.stdout)
+        finally:
+            run_cli_command(["cloud", "uninstall", provider])
 
     # =============================================================================
     # Runtime Config Tests
