@@ -11001,11 +11001,23 @@ optgroup {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* The Settings rail's Server-status footer mirrors the Models rail's storage
+   meter, so it shares the same compact padding and stays pinned at the bottom. */
+.connect__rail .workspace-rail__footer {
+  padding: var(--space-2);
+}
+
 .workspace-nav {
   display: flex;
   flex-direction: column;
   gap: var(--space-0-5);
   padding: var(--space-3);
+  /* Scroll independently between the pinned header and pinned footer, so the
+     section list stays reachable and the Server status footer stays pinned to
+     the bottom of the rail (mirrors the Models rail layout). */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .workspace-nav button {
