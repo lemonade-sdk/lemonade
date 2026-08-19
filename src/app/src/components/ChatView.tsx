@@ -4520,9 +4520,8 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                     style={taskColor ? ({ '--loaded-task-color': taskColor } as React.CSSProperties) : undefined}
                   >
                     <span className="loaded-overview__task-icon" aria-hidden="true">
-                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} size={21} />
+                      <ModelModeIcons capability={capability} recipe={model.recipe} audioInput={audioInput} size={40} />
                     </span>
-                    <span className="loaded-overview__task-label">{modeLabel}</span>
                   </div>
 
                   <div className="loaded-overview__identity">
@@ -4541,18 +4540,25 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                         <Icon name="model-details" size={14} aria-hidden="true" />
                       </button>
                     </div>
-                    {deviceLabel && (
-                      <div className="loaded-overview__meta-line">
-                        <span className="loaded-overview__device-badge" title={`Runtime device: ${deviceLabel}`}>
+                    <div className="loaded-overview__meta-line">
+                      <span
+                        className="loaded-overview__meta-capability"
+                        style={taskColor ? { color: taskColor } : undefined}
+                      >
+                        {modeLabel}
+                      </span>
+                      {deviceLabel && (
+                        <span className="loaded-overview__meta-item" title={`Runtime device: ${deviceLabel}`}>
                           {deviceLabel}
                         </span>
-                      </div>
-                    )}
+                      )}
+                      {sizeLabel && (
+                        <span className="loaded-overview__meta-item" title="Known model size">
+                          {sizeLabel}
+                        </span>
+                      )}
+                    </div>
                   </div>
-
-                  <span className="loaded-overview__resource" title={sizeLabel ? 'Known model size' : undefined}>
-                    {sizeLabel || '—'}
-                  </span>
 
                   <button
                     type="button"
@@ -4565,7 +4571,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
                     aria-pressed={isPinned}
                     title={isPinned ? `Unpin ${model.model_name}` : `Pin ${model.model_name}`}
                   >
-                    <Icon name="pin" size={14} aria-hidden="true" />
+                    <Icon name="pin" size={16} aria-hidden="true" />
                   </button>
 
                   <div className="loaded-overview__selection">

@@ -901,7 +901,7 @@
 .loaded-overview__row {
   position: relative;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) minmax(72px, auto) 26px 84px 56px;
+  grid-template-columns: 56px minmax(0, 1fr) 26px 84px 56px;
   align-items: center;
   column-gap: var(--space-3);
   min-height: 78px;
@@ -936,11 +936,8 @@
 .loaded-overview__task {
   --loaded-task-color: var(--text-tertiary);
   grid-column: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
+  display: grid;
+  place-items: center;
   min-width: 0;
   color: var(--loaded-task-color);
 }
@@ -950,17 +947,6 @@
   height: 34px;
   display: grid;
   place-items: center;
-}
-
-.loaded-overview__task-label {
-  max-width: 56px;
-  color: var(--loaded-task-color);
-  font-size: 10px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.02em;
-  line-height: 1.1;
-  text-align: center;
-  white-space: normal;
 }
 
 .loaded-overview__identity {
@@ -1009,42 +995,35 @@
 .loaded-overview__meta-line {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  gap: 0;
   min-width: 0;
   margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
 }
 
-.loaded-overview__device-badge {
-  min-width: 0;
-  max-width: 132px;
-  overflow: hidden;
-  padding: 2px 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--surface-3) 78%, transparent);
-  color: var(--text-secondary);
-  font-size: 10px;
+.loaded-overview__meta-capability {
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.04em;
-  line-height: 1;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.loaded-overview__resource {
-  grid-column: 3;
-  min-width: 72px;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
+.loaded-overview__meta-item {
+  color: var(--text-tertiary);
   white-space: nowrap;
+}
+
+.loaded-overview__meta-line > span + span::before {
+  content: '·';
+  margin: 0 6px;
+  color: var(--text-disabled);
 }
 
 .loaded-overview__pin {
-  grid-column: 4;
-  width: 22px;
-  height: 22px;
+  grid-column: 3;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   justify-self: center;
@@ -1068,7 +1047,7 @@
 }
 
 .loaded-overview__selection {
-  grid-column: 5;
+  grid-column: 4;
   display: flex;
   justify-content: center;
 }
@@ -3559,8 +3538,7 @@ option:checked {
 /* PR3141 V2: loaded models responsive */
 @media (max-width: 768px) {
   .loaded-overview__header { align-items: flex-start; flex-direction: column; gap: var(--space-1); }
-  .loaded-overview__row { grid-template-columns: 52px minmax(0, 1fr) 24px 76px 52px; column-gap: var(--space-2); }
-  .loaded-overview__resource { display: none; }
+  .loaded-overview__row { grid-template-columns: 52px minmax(0, 1fr) 26px 76px 52px; column-gap: var(--space-2); }
   .loaded-overview__pin { grid-column: 3; }
   .loaded-overview__selection { grid-column: 4; }
   .loaded-overview__unload { width: 52px; }
@@ -3568,11 +3546,10 @@ option:checked {
 
 @media (max-width: 480px) {
   .loaded-overview { padding-top: var(--space-4); }
-  .loaded-overview__row { grid-template-columns: 46px minmax(0, 1fr) 24px 70px 48px; column-gap: var(--space-1-5); min-height: 74px; padding-inline-start: var(--space-2); }
+  .loaded-overview__row { grid-template-columns: 46px minmax(0, 1fr) 26px 70px 48px; column-gap: var(--space-1-5); min-height: 74px; padding-inline-start: var(--space-2); }
   .loaded-overview__task-icon { width: 34px; height: 30px; }
-  .loaded-overview__task-label { max-width: 46px; font-size: 9px; }
   .loaded-overview__name { font-size: var(--text-sm); }
-  .loaded-overview__device-badge { max-width: 84px; }
+  .loaded-overview__meta-line { font-size: 10px; }
   .loaded-overview__selection-pill { min-width: 66px; height: 30px; font-size: var(--text-xs); padding-inline: var(--space-2); }
   .loaded-overview__unload { width: 48px; }
 }
