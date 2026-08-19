@@ -506,29 +506,13 @@ void LlamaCppServer::load(const std::string& model_name,
         }
 
         // Windows DLL search order checks System32 BEFORE PATH, so a stale
-        // System32 amdhip64_7.dll crashes the runtime even when PATH points at
-        // TheRock. Copying to the exe directory overrides both.
+        // System32 amdhip64_7.dll shadows the TheRock runtime on PATH. Copying
+        // to the exe directory overrides both.
         if (llamacpp_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::vector<std::string> therock_dirs =
-                    BackendUtils::get_therock_lib_paths(rocm_arch);
-                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
-                if (!therock_bin.empty()) {
-                    fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
-                    fs::path target_dll = fs::path(executable).parent_path() / "amdhip64_7.dll";
-                    if (fs::exists(therock_dll)) {
-                        std::error_code ec;
-                        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                        if (!ec) {
-                            LOG(INFO, "LlamaCpp") << "Copied amdhip64_7.dll from TheRock to "
-                                << path_to_utf8(target_dll) << std::endl;
-                        } else {
-                            LOG(ERROR, "LlamaCpp") << "Failed to copy amdhip64_7.dll: "
-                                << ec.message() << std::endl;
-                        }
-                    }
-                }
+                BackendUtils::stage_therock_hip_runtime(
+                    rocm_arch, fs::path(executable).parent_path());
             }
         }
 
