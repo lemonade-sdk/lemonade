@@ -456,7 +456,7 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     if (creds.api_key.empty() || creds.base_url.empty()) {
         return missing_creds_error();
     }
-    std::string url = creds.base_url + path;
+    std::string url = upstream_url(creds.base_url, path);
     const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
 
     try {
@@ -563,8 +563,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         return;
     }
 
-    // The router calls this with endpoints like "/v1/chat/completions"; strip
-    // the local /v1 prefix and join with the provider's base URL.
+    // Only the completion endpoints carry stream_options, so the usage
+    // injection below has to know which one this is.
     std::string suffix = endpoint;
     const std::string v1_prefix = "/v1";
     if (suffix.rfind(v1_prefix, 0) == 0) {
@@ -613,7 +613,7 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         return;
     }
 
-    std::string url = creds.base_url + suffix;
+    std::string url = upstream_url(creds.base_url, endpoint);
 
     const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
 
@@ -884,6 +884,20 @@ std::map<std::string, std::string> CloudServer::upstream_headers(
     return headers;
 }
 
+std::string CloudServer::upstream_url(const std::string& base_url,
+                                      const std::string& endpoint) {
+    std::string normalized = base_url;
+    while (!normalized.empty() && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+    std::string suffix = endpoint;
+    const std::string v1_prefix = "/v1";
+    if (suffix.rfind(v1_prefix, 0) == 0) {
+        suffix = suffix.substr(v1_prefix.size());
+    }
+    return normalized + suffix;
+}
+
 utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_url,
                                                         bool allow_insecure_http) {
     // The AllowInsecureHttp opt-in only applies to plaintext http:// providers.
@@ -911,13 +925,11 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    // Mirror the trailing-slash normalization done in load() so a config
-    // entry like "https://.../v1/" doesn't produce "/v1//models".
     std::string normalized_base = base_url;
     while (!normalized_base.empty() && normalized_base.back() == '/') {
         normalized_base.pop_back();
     }
-    std::string url = normalized_base + "/models";
+    std::string url = upstream_url(normalized_base, "/models");
     const auto headers = upstream_headers(auth_header, api_key, wire_format);
 
     const auto policy = discovery_policy(normalized_base, allow_insecure_http);

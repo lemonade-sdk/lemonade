@@ -113,6 +113,12 @@ public:
     static utils::HttpSecurityPolicy discovery_policy(const std::string& base_url,
                                                       bool allow_insecure_http);
 
+    /// Joins a provider base URL with a local endpoint path. The "/v1" the
+    /// router puts on an endpoint is lemonade's own, not the provider's: a
+    /// gateway may serve the OpenAI shape at a base with no version segment.
+    static std::string upstream_url(const std::string& base_url,
+                                    const std::string& endpoint);
+
 private:
     struct ResolvedCreds {
         std::string api_key;

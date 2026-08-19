@@ -257,7 +257,7 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
 
     const auto auth_header = registry->auth_header_for(info.cloud_provider);
     AnthropicUpstream upstream;
-    upstream.url = base_url + "/messages";
+    upstream.url = backends::CloudServer::upstream_url(base_url, "/messages");
     upstream.headers = backends::CloudServer::upstream_headers(auth_header, api_key,
                                                                "anthropic");
     upstream.headers["Content-Type"] = "application/json";

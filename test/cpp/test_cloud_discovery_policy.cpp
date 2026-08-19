@@ -7,26 +7,39 @@
 // allow_insecure_http is stale or accidentally set, since the discovery request
 // carries an Authorization: Bearer header.
 //
-// upstream_headers(): an anthropic-wire-format provider must be sent
-// anthropic-version on every request, discovery included, since a strict
-// gateway rejects the request without it.
+// upstream_headers(): an anthropic-wire-format provider needs anthropic-version
+// on every request, discovery included; a provider that configures no auth
+// header must still get exactly Authorization: Bearer <key>.
+//
+// upstream_url(): the "/v1" on an endpoint is lemonade's own, not the
+// provider's, so it must be stripped before joining.
 //
 // Checks use an explicit pass/fail counter (not assert()) so the test stays
 // effective under the Release build the CI `default` preset uses, where
 // -DNDEBUG would compile assert() to a no-op.
 
 #include <cstdio>
+#include <map>
 #include <string>
 
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/utils/http_client.h>
 
+using lemon::CloudProviderRegistry;
 using lemon::backends::CloudServer;
 using lemon::utils::HttpSecurityPolicy;
 
 struct TestResult {
     int passed = 0;
     int failed = 0;
+
+    // Not map::at: a dropped header should fail a check, not terminate the run
+    // on an uncaught std::out_of_range.
+    static std::string header(const std::map<std::string, std::string>& headers,
+                              const std::string& name) {
+        auto it = headers.find(name);
+        return it == headers.end() ? std::string("<absent>") : it->second;
+    }
 
     void check(bool cond, const std::string& name) {
         if (cond) {
@@ -62,7 +75,7 @@ int main() {
     {
         const auto headers = CloudServer::upstream_headers(
             {"Authorization", "Bearer "}, "sk-test", "openai");
-        r.check(headers.at("Authorization") == "Bearer sk-test",
+        r.check(TestResult::header(headers, "Authorization") == "Bearer sk-test",
                 "openai -> auth header is name + prefix + key");
         r.check(headers.count("anthropic-version") == 0,
                 "openai -> no anthropic-version header");
@@ -71,9 +84,9 @@ int main() {
     {
         const auto headers = CloudServer::upstream_headers(
             {"x-api-key", ""}, "sk-test", "anthropic");
-        r.check(headers.at("x-api-key") == "sk-test",
+        r.check(TestResult::header(headers, "x-api-key") == "sk-test",
                 "anthropic -> empty prefix sends the bare key");
-        r.check(headers.at("anthropic-version") == CloudServer::kAnthropicVersion,
+        r.check(TestResult::header(headers, "anthropic-version") == CloudServer::kAnthropicVersion,
                 "anthropic -> anthropic-version is sent");
         r.check(headers.size() == 2,
                 "anthropic -> no headers beyond auth and version");
@@ -84,9 +97,44 @@ int main() {
         // gateway can front the Anthropic format behind bearer auth.
         const auto headers = CloudServer::upstream_headers(
             {"Authorization", "Bearer "}, "sk-test", "anthropic");
-        r.check(headers.at("Authorization") == "Bearer sk-test" &&
-                    headers.at("anthropic-version") == CloudServer::kAnthropicVersion,
+        r.check(TestResult::header(headers, "Authorization") == "Bearer sk-test" &&
+                    TestResult::header(headers, "anthropic-version") == CloudServer::kAnthropicVersion,
                 "anthropic + bearer auth -> both headers sent");
+    }
+
+    {
+        // Call sites used to hardcode Authorization/Bearer. A provider that
+        // sets neither field must still go out byte-identical to that, or the
+        // feature silently breaks every existing provider.
+        const auto headers = CloudServer::upstream_headers(
+            CloudProviderRegistry::AuthHeader{}, "sk-test", "openai");
+        r.check(headers.size() == 1 && TestResult::header(headers, "Authorization") == "Bearer sk-test",
+                "default AuthHeader + openai -> exactly Authorization: Bearer <key>");
+    }
+
+    {
+        // A gateway may serve the OpenAI shape at a base with no version
+        // segment, so the local "/v1" cannot be assumed to match the
+        // provider's layout.
+        r.check(CloudServer::upstream_url("https://gw.example.com/OpenAI",
+                                          "/v1/chat/completions") ==
+                    "https://gw.example.com/OpenAI/chat/completions",
+                "base without /v1 -> local /v1 prefix is not duplicated");
+
+        r.check(CloudServer::upstream_url("https://api.example.com/v1",
+                                          "/v1/chat/completions") ==
+                    "https://api.example.com/v1/chat/completions",
+                "base with /v1 -> provider's own version segment is preserved");
+
+        r.check(CloudServer::upstream_url("https://api.example.com/v1/",
+                                          "/v1/completions") ==
+                    "https://api.example.com/v1/completions",
+                "trailing slash on base -> no doubled separator");
+
+        r.check(CloudServer::upstream_url("https://gw.example.com/OpenAI",
+                                          "/models") ==
+                    "https://gw.example.com/OpenAI/models",
+                "discovery path without /v1 -> joined unchanged");
     }
 
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);
