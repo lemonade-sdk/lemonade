@@ -2569,7 +2569,7 @@
         "min_resident_gb": 16.0
     },
     "SD-Turbo-NPU": {
-        "checkpoint": "amd/stable-diffusion-turbo-amdnpu-onnx",
+        "checkpoint": "amd/sd-turbo-amdnpu-onnx",
         "recipe": "ryzenai-sd",
         "labels": ["image"],
         "size": 2.45,
@@ -2581,7 +2581,7 @@
         }
     },
     "SDXL-Turbo-NPU": {
-        "checkpoint": "amd/stable-diffusion-sdxl-turbo-amdnpu-onnx",
+        "checkpoint": "amd/sdxl-turbo-amdnpu-onnx",
         "recipe": "ryzenai-sd",
         "labels": ["image"],
         "size": 0.0,
@@ -2605,7 +2605,7 @@
         }
     },
     "SDXL-Base-NPU": {
-        "checkpoint": "amd/stable-diffusion-sdxl-base-amdnpu-onnx",
+        "checkpoint": "amd/sdxl-base-amdnpu-onnx",
         "recipe": "ryzenai-sd",
         "labels": ["image"],
         "size": 0.0,
@@ -2641,7 +2641,7 @@
         }
     },
     "Segmind-Vega-NPU": {
-        "checkpoint": "amd/stable-diffusion-segmind-vega-amdnpu-onnx",
+        "checkpoint": "amd/segmind-vega-amdnpu-onnx",
         "recipe": "ryzenai-sd",
         "labels": ["image"],
         "size": 0.0,
@@ -2650,6 +2650,78 @@
             "cfg_scale": 7.5,
             "width": 1024,
             "height": 1024
+        }
+    },
+    "FLUX.1-Schnell-NPU": {
+        "checkpoint": "amd/FLUX.1-schnell-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 0.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "FLUX.2-Klein-NPU": {
+        "checkpoint": "amd/FLUX.2-klein-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 0.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SSD-1B-NPU": {
+        "checkpoint": "amd/SSD-1B-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 5.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Playground-v2.5-NPU": {
+        "checkpoint": "amd/playground-v2.5-1024px-aesthetic-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 3.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Dreamshaper-XL-Lightning-NPU": {
+        "checkpoint": "amd/dreamshaper-xl-lightning-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "SD-1.5-ControlNet-Canny-NPU": {
+        "checkpoint": "amd/sd1.5-controlnet-canny-amdnpu-onnx",
+        "recipe": "ryzenai-sd",
+        "labels": ["image"],
+        "size": 0.0,
+        "image_defaults": {
+            "steps": 20,
+            "cfg_scale": 7.5,
+            "width": 512,
+            "height": 512
         }
     }
 }

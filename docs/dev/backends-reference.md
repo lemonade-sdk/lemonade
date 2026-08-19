@@ -424,16 +424,22 @@ the generator instead. Prose outside the markers is preserved. -->
 | `gemma-2-2b-Hybrid` | 4.04 | — |
 | `gpt-oss-20b-NPU` | 13.4 | — |
 
-#### `ryzenai-sd` — Ryzen AI SD (7 models)
+#### `ryzenai-sd` — Ryzen AI SD (13 models)
 
 | Model | Size (GB) | Labels |
 |-------|-----------|--------|
+| `Dreamshaper-XL-Lightning-NPU` | 0.0 | image |
+| `FLUX.1-Schnell-NPU` | 0.0 | image |
+| `FLUX.2-Klein-NPU` | 0.0 | image |
+| `Playground-v2.5-NPU` | 0.0 | image |
+| `SD-1.5-ControlNet-Canny-NPU` | 0.0 | image |
 | `SD-1.5-NPU` | 0.0 | image |
 | `SD-Turbo-NPU` | 2.45 | image |
 | `SD3-Medium-NPU` | 0.0 | image |
 | `SD3.5-Medium-NPU` | 0.0 | image |
 | `SDXL-Base-NPU` | 0.0 | image |
 | `SDXL-Turbo-NPU` | 0.0 | image |
+| `SSD-1B-NPU` | 0.0 | image |
 | `Segmind-Vega-NPU` | 0.0 | image |
 
 #### `sd-cpp` — StableDiffusion.cpp (12 models)

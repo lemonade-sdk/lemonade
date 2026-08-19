@@ -14,7 +14,7 @@
     "recipe": "ryzenai-sd"
   },
   "SD-Turbo-NPU": {
-    "checkpoint": "amd/stable-diffusion-turbo-amdnpu-onnx",
+    "checkpoint": "amd/sd-turbo-amdnpu-onnx",
     "image_defaults": {
       "cfg_scale": 0.0,
       "height": 512,
@@ -57,7 +57,7 @@
     "recipe": "ryzenai-sd"
   },
   "SDXL-Base-NPU": {
-    "checkpoint": "amd/stable-diffusion-sdxl-base-amdnpu-onnx",
+    "checkpoint": "amd/sdxl-base-amdnpu-onnx",
     "image_defaults": {
       "cfg_scale": 7.5,
       "height": 1024,
@@ -71,7 +71,7 @@
     "recipe": "ryzenai-sd"
   },
   "SDXL-Turbo-NPU": {
-    "checkpoint": "amd/stable-diffusion-sdxl-turbo-amdnpu-onnx",
+    "checkpoint": "amd/sdxl-turbo-amdnpu-onnx",
     "image_defaults": {
       "cfg_scale": 0.0,
       "height": 1024,
@@ -85,7 +85,7 @@
     "recipe": "ryzenai-sd"
   },
   "Segmind-Vega-NPU": {
-    "checkpoint": "amd/stable-diffusion-segmind-vega-amdnpu-onnx",
+    "checkpoint": "amd/segmind-vega-amdnpu-onnx",
     "image_defaults": {
       "cfg_scale": 7.5,
       "height": 1024,
