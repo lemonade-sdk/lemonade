@@ -116,6 +116,23 @@ int main() {
     }
 
     {
+        // Mixed wrapper contents (payload dirs + a stray file) all move up,
+        // and the wrapper is removed only after every entry moved.
+        const fs::path install = tmp / "wrapped_mixed";
+        const fs::path wrapper = install / "therock-dist-windows-gfx1151-7.13.0rc2";
+        write_stub(wrapper / "bin" / "amdhip64_7.dll");
+        write_stub(wrapper / "lib" / "rocsolver.dll");
+        write_stub(wrapper / "README.txt");
+
+        const std::string found = BackendUtils::normalize_therock_payload_dir(install.string());
+        check(!found.empty(), "normalize: mixed wrapper contents are located");
+        check(fs::exists(install / "README.txt"),
+              "normalize: stray wrapper file is moved up too");
+        check(!fs::exists(wrapper),
+              "normalize: wrapper dir removed only after every entry moved");
+    }
+
+    {
         // Multiple top-level dirs: no unambiguous wrapper — do not mangle.
         const fs::path install = tmp / "ambiguous_install";
         fs::create_directories(install / "dir_a");
@@ -166,6 +183,18 @@ int main() {
         BackendUtils::get_external_rocm_loader_dir();
         check(true, "no ROCM_PATH: get_external_rocm_loader_dir returns without throwing");
     }
+
+#ifndef _WIN32
+    {
+        // A lib64-only ROCm root (no lib/) must still resolve to a loader dir.
+        const fs::path root = tmp / "external_rocm_lib64";
+        write_stub(root / "lib64" / "libamdhip64.so");
+        set_rocm_path(root.string());
+        const std::string dir = BackendUtils::get_external_rocm_loader_dir();
+        check(!dir.empty() && fs::equivalent(fs::path(dir), root / "lib64"),
+              "loader dir resolves a lib64-only ROCm root");
+    }
+#endif
 
     fs::remove_all(tmp);
     if (g_failures) {

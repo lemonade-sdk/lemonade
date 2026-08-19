@@ -1663,17 +1663,28 @@ namespace lemon::backends {
             LOG(INFO, "BackendUtils") << "TheRock tarball unpacked under wrapper dir "
                                       << wrapper.filename().string()
                                       << "; moving contents into " << install_dir << std::endl;
+            // Snapshot the entries before renaming: mutating a directory while
+            // iterating it is unspecified, and the wrapper is only removed once
+            // every move succeeded so a failure can't lose payload content.
+            std::vector<fs::path> entries;
             for (fs::directory_iterator it(wrapper, ec), end; it != end && !ec; it.increment(ec)) {
-                const fs::path target = fs::path(install_dir) / it->path().filename();
-                fs::rename(it->path(), target, ec);
+                entries.push_back(it->path());
+            }
+            ec.clear();
+            bool all_moved = true;
+            for (const fs::path& entry : entries) {
+                fs::rename(entry, fs::path(install_dir) / entry.filename(), ec);
                 if (ec) {
-                    LOG(WARNING, "BackendUtils") << "Failed to move " << it->path().string()
+                    LOG(WARNING, "BackendUtils") << "Failed to move " << entry.string()
                                                  << " into " << install_dir << ": " << ec.message()
                                                  << std::endl;
+                    all_moved = false;
+                    ec.clear();
                 }
-                ec.clear();
             }
-            fs::remove_all(wrapper, ec);
+            if (all_moved) {
+                fs::remove_all(wrapper, ec);
+            }
             if (fs::is_directory(fs::path(install_dir) / payload_name, ec)) {
                 return (fs::path(install_dir) / payload_name).string();
             }
@@ -2129,9 +2140,20 @@ namespace lemon::backends {
 #ifdef _WIN32
         const fs::path loader_dir = *root / "bin";
 #else
-        const fs::path loader_dir = *root / "lib";
+        // validate_rocm_root accepts lib or lib64 roots; mirror that so a
+        // lib64-only layout still yields a loader dir for the backend child.
+        fs::path loader_dir;
+        for (const char* lib_subdir : {"lib", "lib64"}) {
+            ec.clear();
+            const fs::path candidate = *root / lib_subdir;
+            if (fs::is_directory(candidate, ec) &&
+                fs::exists(candidate / "libamdhip64.so", ec)) {
+                loader_dir = candidate;
+                break;
+            }
+        }
 #endif
-        if (!fs::is_directory(loader_dir, ec)) {
+        if (loader_dir.empty() || !fs::is_directory(loader_dir, ec)) {
             return "";
         }
         LOG(DEBUG, "BackendUtils") << "Returning external ROCm loader dir: "

@@ -216,7 +216,7 @@ namespace lemon::backends {
 
         /**
          * Loader dir of the externally-resolved ROCm root (bin/ on Windows,
-         * lib/ on Linux), or "" when no external root resolves. When the user
+         * lib/ or lib64/ on Linux), or "" when no external root resolves. When the user
          * points ROCM_PATH at a hand-installed ROCm, that root's bin/ must be
          * on the backend child's PATH/LD_LIBRARY_PATH or DLL/SO loading fails
          * (rocsolver.dll not found, issue #2722). Use alongside (after)
