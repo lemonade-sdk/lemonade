@@ -192,6 +192,11 @@ std::vector<std::string> WrappedServer::get_launch_command() const {
     return launch_command_;
 }
 
+WrappedServer::ProcessInfo WrappedServer::get_process_info() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return {process_handle_.pid, launch_command_};
+}
+
 int WrappedServer::get_backend_port() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
     return port_;

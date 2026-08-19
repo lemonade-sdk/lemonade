@@ -409,6 +409,12 @@ public:
     std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
 
+    struct ProcessInfo {
+        int pid = 0;
+        std::vector<std::string> launch_command;
+    };
+    ProcessInfo get_process_info() const;
+
     // Cheap liveness gate used by the router. On POSIX this relies on
     // ProcessManager::is_running(), which intentionally checks without reaping.
     virtual bool is_backend_alive() const;

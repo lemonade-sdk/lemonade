@@ -1,7 +1,8 @@
 // Proves the recorded launch command always describes the process currently in
-// process_handle_. Neither half is reachable from /health: a restart replacing
-// the previous command needs a backend to be started twice (in production, a
-// watchdog reset), and cleanup erasing it is invisible because
+// process_handle_, and that /health reads both halves as one snapshot rather
+// than two independently locked reads. Neither half is reachable from /health:
+// a restart replacing the previous command needs a backend to be started twice
+// (in production, a watchdog reset), and cleanup erasing it is invisible because
 // Router::get_all_loaded_models() drops dead backends before it builds any JSON.
 
 #include "lemon/wrapped_server.h"
@@ -48,28 +49,32 @@ int main() {
     const lemon::ProcessHandle handle{nullptr, 0};
 
     check("a server that never started reports no command",
-          server.get_launch_command().empty());
+          server.get_process_info().launch_command.empty());
 
     server.set_process_handle(handle, "llama-server.exe",
                               {"-m", "model.gguf", "--ctx-size", "8192"});
-    const std::vector<std::string> first = server.get_launch_command();
+    const std::vector<std::string> first = server.get_process_info().launch_command;
     check("executable lands at index 0",
           !first.empty() && first[0] == "llama-server.exe");
     check("arguments follow the executable in order",
           first == std::vector<std::string>({"llama-server.exe", "-m", "model.gguf",
                                              "--ctx-size", "8192"}));
+    check("the standalone accessor agrees with the snapshot",
+          server.get_launch_command() == first &&
+              server.get_process_id() == server.get_process_info().pid);
 
     // What a watchdog reset does: same object, second process, new port.
     server.set_process_handle(handle, "llama-server.exe",
                               {"-m", "model.gguf", "--port", "8082"});
     check("a restart replaces the previous command instead of appending",
-          server.get_launch_command() ==
+          server.get_process_info().launch_command ==
               std::vector<std::string>({"llama-server.exe", "-m", "model.gguf",
                                         "--port", "8082"}));
 
     server.consume_process_handle_for_cleanup();
-    check("cleanup erases the command along with the handle",
-          server.get_launch_command().empty());
+    const lemon::WrappedServer::ProcessInfo cleaned = server.get_process_info();
+    check("cleanup erases pid and command in the same snapshot",
+          cleaned.pid == 0 && cleaned.launch_command.empty());
 
     if (failures == 0) {
         std::printf("\nAll launch command checks passed.\n");
