@@ -36,6 +36,10 @@ The `lemonade` CLI provides full control over the Lemonade service from your ter
 
 Almost every aspect of Lemonade can be customized. Learn more in the [configuration](./configuration/README.md) guide.
 
+### Security & Sandboxing
+
+Lemonade automatically executes inference backends under kernel sandboxing and ambient credential scrubbing. Learn more in the [Process Sandboxing & Security](./sandboxing.md) guide.
+
 ### Need Help?
 
 Check out the [Frequently Asked Questions](./faq.md) and join the [Discord](https://discord.gg/5xXzkMu8Zk). The Lemonade community is excited to help you get started!

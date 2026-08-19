@@ -1,16 +1,18 @@
-#include <lemon/wrapped_server.h>
-#include <lemon/utils/process_manager.h>
-#include <lemon/utils/http_client.h>
-#include <lemon/streaming_proxy.h>
-#include <lemon/error_types.h>
-#include <httplib.h>
 #include <algorithm>
-#include <cctype>
-#include <thread>
 #include <chrono>
-#include <iostream>
+#include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <thread>
+#include <httplib.h>
+#include <lemon/error_types.h>
+#include <lemon/runtime_config.h>
+#include <lemon/streaming_proxy.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/http_client.h>
+#include <lemon/utils/process_manager.h>
+#include <lemon/wrapped_server.h>
 
 namespace lemon {
 
@@ -865,6 +867,162 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
             // Sink might be closed, ignore
         }
     }
+}
+
+lemon::sandbox::SandboxPolicy WrappedServer::build_default_sandbox_policy(
+    const std::string& model_path,
+    const std::string& executable,
+    uint16_t port,
+    const std::string& backend_variant,
+    DeviceType device_type,
+    const RecipeOptions* recipe_opts) {
+
+    lemon::sandbox::SandboxPolicy policy;
+    policy.bind_port = port;
+    policy.network_access = lemon::sandbox::NetworkAccess::LoopbackOnly;
+
+    // Resolve SandboxMode from RuntimeConfig or environment, defaulting to Auto
+    std::string sb_mode_str = "auto";
+    if (auto* cfg = RuntimeConfig::global()) {
+        sb_mode_str = cfg->sandbox_mode();
+    } else if (const char* mode_env = std::getenv("LEMONADE_SANDBOX_MODE")) {
+        if (*mode_env != '\0') sb_mode_str = mode_env;
+    }
+    policy.mode = lemon::sandbox::parse_sandbox_mode(sb_mode_str);
+
+    // Step 1: Base System Runtime
+    lemon::sandbox::PolicyPresets::apply_system_runtime(policy);
+
+    // Step 2: Additive Hardware Profile Preset
+    lemon::sandbox::PolicyPresets::apply_hardware_profile(policy, device_type, backend_variant);
+
+    // Step 3: Backend Declared Workload Assets
+    lemon::sandbox::PolicyPresets::apply_backend_workload(policy, executable, model_path);
+
+    if (const char* mock_req = std::getenv("MOCK_LLAMA_REQUEST_PATH")) {
+        if (*mock_req != '\0') {
+            policy.allow_env_var("MOCK_LLAMA_REQUEST_PATH");
+            policy.add_write_path(mock_req);
+            std::filesystem::path mrp(mock_req);
+            if (mrp.has_parent_path()) {
+                policy.add_write_path(mrp.parent_path().string());
+            }
+        }
+    }
+    if (const char* mock_err = std::getenv("MOCK_LLAMA_ERROR_STATUS")) {
+        if (*mock_err != '\0') policy.allow_env_var("MOCK_LLAMA_ERROR_STATUS");
+    }
+    if (const char* mock_resp = std::getenv("MOCK_LLAMA_ERROR_RESPONSE")) {
+        if (*mock_resp != '\0') policy.allow_env_var("MOCK_LLAMA_ERROR_RESPONSE");
+    }
+    if (const char* hip_override = std::getenv("LEMONADE_GGML_HIP_PATH")) {
+        if (*hip_override != '\0') {
+            policy.allow_env_var("LEMONADE_GGML_HIP_PATH");
+            policy.add_read_path(hip_override);
+        }
+    }
+
+    // Step 4: Recipe Delta Overrides
+    if (recipe_opts != nullptr) {
+        json sb_opt = recipe_opts->get_option("sandbox");
+        if (sb_opt.is_object()) {
+            try {
+                lemon::sandbox::SandboxPolicy overrides = sb_opt.get<lemon::sandbox::SandboxPolicy>();
+                auto server_mode = policy.mode;
+                policy.merge(overrides);
+                if (server_mode == lemon::sandbox::SandboxMode::Disabled) {
+                    policy.mode = lemon::sandbox::SandboxMode::Disabled;
+                } else if (server_mode == lemon::sandbox::SandboxMode::Enforced) {
+                    policy.mode = lemon::sandbox::SandboxMode::Enforced;
+                } else if (server_mode == lemon::sandbox::SandboxMode::Auto) {
+                    if (overrides.mode == lemon::sandbox::SandboxMode::Enforced) {
+                        policy.mode = lemon::sandbox::SandboxMode::Enforced;
+                    } else {
+                        policy.mode = lemon::sandbox::SandboxMode::Auto;
+                    }
+                }
+            } catch (const std::exception& e) {
+                LOG(ERROR, "WrappedServer") << "Failed to parse recipe sandbox overrides: " << e.what() << std::endl;
+                throw;
+            }
+        }
+    }
+
+    // Special case for hf_load recipes in llama.cpp (they need network egress and ~/.cache/llama.cpp writes)
+    if (backend_variant == "hf_load" || (recipe_opts != nullptr && recipe_opts->get_recipe() == "hf_load")) {
+        lemon::sandbox::PolicyPresets::apply_network_egress(policy);
+        const char* home = std::getenv("HOME");
+#ifdef _WIN32
+        if (!home) home = std::getenv("USERPROFILE");
+#endif
+        if (home) {
+            std::filesystem::path llama_cache = std::filesystem::path(home) / ".cache" / "llama.cpp";
+            policy.add_write_path(llama_cache.string());
+        }
+    }
+
+    policy.normalize_paths();
+
+    std::string val_err;
+    if (!lemon::sandbox::validate_policy(policy, &val_err)) {
+        LOG(ERROR, "WrappedServer") << "Sandbox policy validation rejected candidate policy: " << val_err << std::endl;
+        throw std::runtime_error("Sandbox policy validation failed: " + val_err);
+    }
+
+    return policy;
+}
+
+lemon::sandbox::SandboxPolicy WrappedServer::build_sandbox_policy(
+    const std::string& executable,
+    const std::string& backend_variant) const {
+    return build_sandbox_policy(executable, model_name_, get_backend_port(), backend_variant);
+}
+
+lemon::sandbox::SandboxPolicy WrappedServer::build_sandbox_policy(
+    const std::string& executable,
+    const std::string& model_path,
+    const std::string& backend_variant) const {
+    return build_sandbox_policy(executable, model_path, get_backend_port(), backend_variant);
+}
+
+lemon::sandbox::SandboxPolicy WrappedServer::build_sandbox_policy(
+    const std::string& executable,
+    const std::string& model_path,
+    uint16_t port,
+    const std::string& backend_variant) const {
+    auto policy = build_default_sandbox_policy(model_path, executable, port, backend_variant, device_type_, &recipe_options_);
+    customize_sandbox_policy(policy);
+    policy.normalize_paths();
+
+    std::string val_err;
+    if (!lemon::sandbox::validate_policy(policy, &val_err)) {
+        LOG(ERROR, "WrappedServer") << "Sandbox policy validation rejected customized policy: " << val_err << std::endl;
+        throw std::runtime_error("Sandbox policy validation failed: " + val_err);
+    }
+
+    LOG(DEBUG, "WrappedServer") << "Enforcing sandbox policy for '" << server_name_ << "':\n"
+                                << policy.to_detailed_string() << std::endl;
+    return policy;
+}
+
+ProcessHandle WrappedServer::start_backend_process(
+    const std::string& executable,
+    const std::vector<std::string>& args,
+    const std::string& working_dir,
+    bool inherit_output,
+    bool filter_health_logs,
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    const std::string& backend_variant,
+    const std::string& model_path) {
+
+    auto policy = build_sandbox_policy(
+        executable,
+        !model_path.empty() ? model_path : model_name_,
+        get_backend_port(),
+        backend_variant);
+
+    return utils::ProcessManager::start_process(
+        executable, args, working_dir, inherit_output, filter_health_logs, env_vars, policy);
 }
 
 } // namespace lemon

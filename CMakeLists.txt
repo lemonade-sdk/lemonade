@@ -203,6 +203,47 @@ set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 # instead of installing project-local dependencies with npm for web-app builds.
 option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
 
+# Build and link the in-tree nono Rust C FFI static library by default when cargo is available.
+find_program(CARGO_EXECUTABLE cargo)
+option(LEMON_USE_NONO_RUST "Link nono Rust C FFI library (libnono_c)" ON)
+option(CARGO_OFFLINE "Build Rust crates in offline mode" OFF)
+set(NONO_ROOT "" CACHE PATH "Path to nono Rust crate or prebuilt libnono installation")
+
+if(LEMON_USE_NONO_RUST)
+    if(NOT WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rust/nono-c/Cargo.toml" AND CARGO_EXECUTABLE)
+        set(NONO_C_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/src/rust/nono-c/Cargo.toml")
+        set(NONO_C_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/rust/nono-c/target/release")
+        set(NONO_LIBRARY "${NONO_C_LIB_DIR}/libnono_c.a")
+
+        set(NONO_CARGO_ARGS build --release --manifest-path "${NONO_C_MANIFEST}")
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rust/nono-c/vendor")
+            list(APPEND NONO_CARGO_ARGS
+                --config "source.crates-io.replace-with=\"vendored-sources\""
+                --config "source.vendored-sources.directory=\"${CMAKE_CURRENT_SOURCE_DIR}/src/rust/nono-c/vendor\""
+                --offline
+            )
+        elseif(CARGO_OFFLINE)
+            list(APPEND NONO_CARGO_ARGS --offline)
+        endif()
+
+        add_custom_target(nono_c_build
+            COMMAND ${CARGO_EXECUTABLE} ${NONO_CARGO_ARGS}
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/src/rust/nono-c"
+            BYPRODUCTS "${NONO_LIBRARY}"
+            COMMENT "Building in-tree nono-c Rust static library"
+            VERBATIM
+        )
+        add_compile_definitions(LEMON_HAS_NONO_RUST=1)
+        message(STATUS "Enabled in-tree nono Rust C FFI library: ${NONO_LIBRARY}")
+    elseif(NONO_ROOT)
+        find_library(NONO_LIBRARY NAMES nono_c nono nono_ffi PATHS ${NONO_ROOT}/lib ${NONO_ROOT}/target/release /usr/local/lib /usr/lib)
+        if(NONO_LIBRARY)
+            add_compile_definitions(LEMON_HAS_NONO_RUST=1)
+            message(STATUS "Found external nono Rust C FFI library: ${NONO_LIBRARY}")
+        endif()
+    endif()
+endif()
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -994,7 +1035,13 @@ set(SOURCES_CORE
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
     src/cpp/server/websocket_server.cpp
+    src/cpp/server/sandbox/env_scrubber.cpp
+    src/cpp/server/sandbox/sandbox_engine.cpp
 )
+
+if(NOT NONO_LIBRARY)
+    list(APPEND SOURCES_CORE src/cpp/server/sandbox/nono_stub.cpp)
+endif()
 
 # Add platform-specific source files to core
 if(WIN32)
@@ -1004,6 +1051,7 @@ if(WIN32)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/archive_windows.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/process_windows.cpp)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/network_windows.cpp)
+    list(APPEND SOURCES_CORE src/cpp/server/sandbox/windows/windows_security_utils.cpp)
 elseif(APPLE)
     list(APPEND SOURCES_CORE src/cpp/server/macos_system_info.mm)
     list(APPEND SOURCES_CORE src/cpp/server/utils/platform/path_macos.cpp)
@@ -1093,6 +1141,19 @@ add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
 add_executable(${EXECUTABLE_NAME} src/cpp/server/main.cpp)
 if(WIN32)
     target_sources(${EXECUTABLE_NAME} PRIVATE src/cpp/server/version.rc)
+endif()
+
+if(APPLE)
+    add_executable(lemonade-sandbox-exec src/cpp/sandbox-exec/main.cpp)
+    target_include_directories(lemonade-sandbox-exec PRIVATE src/cpp/include)
+    target_link_libraries(lemonade-sandbox-exec PRIVATE nlohmann_json::nlohmann_json)
+    if(LEMON_USE_NONO_RUST AND NONO_LIBRARY)
+        add_dependencies(lemonade-sandbox-exec nono_c_build)
+        target_link_libraries(lemonade-sandbox-exec PRIVATE "${NONO_LIBRARY}")
+        target_link_libraries(lemonade-sandbox-exec PRIVATE "-framework CoreFoundation" "-framework Security" "-framework SystemConfiguration")
+    else()
+        target_sources(lemonade-sandbox-exec PRIVATE src/cpp/server/sandbox/nono_stub.cpp)
+    endif()
 endif()
 
 
@@ -1267,6 +1328,19 @@ elseif(UNIX)
                 message(STATUS "libcap not found - capability inheritance will be disabled")
             endif()
         endif()
+    endif()
+endif()
+
+if(NONO_LIBRARY)
+    target_link_libraries(lemonade-server-core PUBLIC ${NONO_LIBRARY})
+    if(CMAKE_DL_LIBS)
+        target_link_libraries(lemonade-server-core PUBLIC ${CMAKE_DL_LIBS})
+    endif()
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(lemonade-server-core PUBLIC pthread m)
+    endif()
+    if(TARGET nono_c_build)
+        add_dependencies(lemonade-server-core nono_c_build)
     endif()
 endif()
 
@@ -1742,10 +1816,10 @@ if(APPLE)
 
     # INSTALLATION (Component Structure)
 
-    # Main Router -> /usr/local/bin
-    install(TARGETS ${EXECUTABLE_NAME} RUNTIME DESTINATION "bin" COMPONENT Runtime)
+    # Main Router and Trampoline -> /usr/local/bin
+    install(TARGETS ${EXECUTABLE_NAME} lemonade-sandbox-exec RUNTIME DESTINATION "bin" COMPONENT Runtime)
 
-    # Sign the router binary after installation (Release builds only)
+    # Sign the router and trampoline binaries after installation (Release builds only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         install(CODE "
             execute_process(
@@ -1754,6 +1828,13 @@ if(APPLE)
             )
             if(NOT SIGN_RESULT EQUAL 0)
                 message(FATAL_ERROR \"Failed to sign ${EXECUTABLE_NAME}\")
+            endif()
+            execute_process(
+                COMMAND codesign --force --options runtime --timestamp --entitlements \"${ENTITLEMENTS_PATH}\" --sign \"${SIGNING_IDENTITY}\" -v \"${CMAKE_BINARY_DIR}/_CPack_Packages/Darwin/productbuild/Lemonade-${PROJECT_VERSION}-Darwin/Runtime/usr/local/bin/lemonade-sandbox-exec\"
+                RESULT_VARIABLE SIGN_RESULT_EXEC
+            )
+            if(NOT SIGN_RESULT_EXEC EQUAL 0)
+                message(FATAL_ERROR \"Failed to sign lemonade-sandbox-exec\")
             endif()
         " COMPONENT Runtime)
     endif()
@@ -2235,15 +2316,13 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     if(EXISTS "${_PROCESS_MANAGER_TEST_SRC}")
         add_executable(test_process_manager
             test/cpp/test_process_manager.cpp
-            src/cpp/server/utils/process_manager.cpp
-            src/cpp/server/utils/platform/process_linux.cpp
         )
         target_include_directories(test_process_manager PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
             ${CMAKE_CURRENT_BINARY_DIR}/include
         )
         find_package(Threads REQUIRED)
-        target_link_libraries(test_process_manager PRIVATE Threads::Threads)
+        target_link_libraries(test_process_manager PRIVATE lemonade-server-core Threads::Threads)
         add_cpp_ci_test(ProcessManagerTest CI ON COMMAND test_process_manager)
     endif()
 endif()
@@ -3146,4 +3225,60 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_executable(test_launch_command test/cpp/test_launch_command.cpp)
     target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
+endif()
+
+set(_SANDBOX_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_policy.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_POLICY_TEST_SRC}")
+    add_executable(test_sandbox_policy test/cpp/test_sandbox_policy.cpp)
+    target_link_libraries(test_sandbox_policy PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxPolicyTest CI ON COMMAND test_sandbox_policy)
+endif()
+
+set(_SANDBOX_ENV_SCRUBBER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_env_scrubber.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_ENV_SCRUBBER_TEST_SRC}")
+    add_executable(test_sandbox_env_scrubber test/cpp/test_sandbox_env_scrubber.cpp)
+    target_link_libraries(test_sandbox_env_scrubber PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxEnvScrubberTest CI ON COMMAND test_sandbox_env_scrubber)
+endif()
+
+set(_SANDBOX_ENGINE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_engine.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_ENGINE_TEST_SRC}")
+    add_executable(test_sandbox_engine test/cpp/test_sandbox_engine.cpp)
+    target_link_libraries(test_sandbox_engine PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxEngineTest CI ON COMMAND test_sandbox_engine)
+endif()
+
+set(_SANDBOX_PROCESS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_process.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_PROCESS_TEST_SRC}")
+    add_executable(test_sandbox_process test/cpp/test_sandbox_process.cpp)
+    target_link_libraries(test_sandbox_process PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxProcessTest CI ON COMMAND test_sandbox_process)
+endif()
+
+set(_SANDBOX_WRAPPED_SERVER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_wrapped_server.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_WRAPPED_SERVER_TEST_SRC}")
+    add_executable(test_sandbox_wrapped_server test/cpp/test_sandbox_wrapped_server.cpp)
+    target_link_libraries(test_sandbox_wrapped_server PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxWrappedServerTest CI ON COMMAND test_sandbox_wrapped_server)
+endif()
+
+set(_SANDBOX_ENV_SCRUBBER_CONFINEMENT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_env_scrubber_confinement.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_ENV_SCRUBBER_CONFINEMENT_TEST_SRC}")
+    add_executable(test_sandbox_env_scrubber_confinement test/cpp/test_sandbox_env_scrubber_confinement.cpp)
+    target_link_libraries(test_sandbox_env_scrubber_confinement PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxEnvScrubberConfinementTest CI ON COMMAND test_sandbox_env_scrubber_confinement)
+endif()
+
+set(_SANDBOX_BACKEND_CONFINEMENT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_backend_confinement.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_BACKEND_CONFINEMENT_TEST_SRC}")
+    add_executable(test_sandbox_backend_confinement test/cpp/test_sandbox_backend_confinement.cpp)
+    target_link_libraries(test_sandbox_backend_confinement PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxBackendConfinementTest CI ON COMMAND test_sandbox_backend_confinement)
+endif()
+
+set(_SANDBOX_WINDOWS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sandbox_windows.cpp")
+if(BUILD_TESTING AND EXISTS "${_SANDBOX_WINDOWS_TEST_SRC}")
+    add_executable(test_sandbox_windows test/cpp/test_sandbox_windows.cpp)
+    target_link_libraries(test_sandbox_windows PRIVATE lemonade-server-core)
+    add_cpp_ci_test(SandboxWindowsTest CI ON COMMAND test_sandbox_windows)
 endif()

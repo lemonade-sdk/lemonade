@@ -134,6 +134,33 @@ Add the test to CI in both matrices of `.github/workflows/cpp_server_build_test_
 
 If your backend uses ROCm via TheRock, add its recipe to `_THEROCK_RECIPES` in `test/utils/server_base.py`. Otherwise a cold runner folds the one-time TheRock download into the first request's timeout instead of `TIMEOUT_ROCM_INSTALL`, and the ROCm job flakes.
 
+## Sandboxing and Policy Profiling
+
+All backend subprocesses spawned by `lemond` execute under dynamic kernel sandboxing (Landlock on Linux, Seatbelt on macOS, AppContainer on Windows) with default-deny network egress and ambient secret scrubbing.
+
+For most backends, sandboxing is **completely implicit**: calling `WrappedServer::start_backend_process(executable, args, ...)` automatically executes the 4-step policy assembly line (System Runtime $\rightarrow$ Hardware Profile $\rightarrow$ Backend Assets $\rightarrow$ Recipe Delta).
+
+If your backend requires custom compilation caches (like Triton in `vLLM`) or framework environment variables, override the `customize_sandbox_policy(SandboxPolicy& policy)` hook on your server class. See the [Backend Sandboxing & Capability Architecture](sandboxing-and-capabilities.md) guide for detailed architectural documentation.
+
+### Profiling with `nono learn`
+
+To discover all system paths, device nodes, and environment requirements for a new backend:
+
+1. **CLI Capability Profiling**: Use `nono learn` from the `nono` toolchain to trace syscalls and generate a capability profile:
+   ```bash
+   nono learn -- /path/to/backend-binary [args...]
+   ```
+2. **Runtime Policy Logging**: Set `LEMONADE_LOG_LEVEL=debug` (or run `lemonade config set log_level=debug`) to inspect the full structured `SandboxPolicy` (allowed paths, devices, network rules, environment allowlists) logged before process spawn.
+
+### Debugging Sandbox Denials
+
+1. Set `LEMONADE_LOG_LEVEL=debug` to inspect the full structured `SandboxPolicy` logged before process spawn.
+2. Check Linux kernel Landlock audit logs for runtime permission denials:
+   ```bash
+   dmesg -wT | grep -E "landlock|audit"
+   ```
+3. Set `LEMONADE_SANDBOX_MODE=disabled` to isolate whether an issue stems from sandbox policy restrictions or intrinsic backend failures.
+
 ## Adding a new endpoint or capability
 
 Serving an existing capability interface (`ITranscriptionServer`, `IImageServer`, `ITextToSpeechServer`) needs nothing beyond the folder above. The endpoint, router plumbing, and API docs already exist, and the endpoint's test already covers any backend that serves it.

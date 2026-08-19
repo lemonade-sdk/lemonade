@@ -145,13 +145,22 @@ void TheNoiseServer::load(const std::string& model_name,
     // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
     std::vector<std::pair<std::string, std::string>> env_vars;
 
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        exe_path, dit_path, "gpu");
+    if (!vae_path.empty()) {
+        sandbox_policy.add_read_path(vae_path);
+    }
+    if (!text_encoder_path.empty()) {
+        sandbox_policy.add_read_path(text_encoder_path);
+    }
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",
         is_debug(),  // inherit_output
         false,  // filter_health_logs
-        env_vars
+        env_vars,
+        sandbox_policy
     );
     set_process_handle(started_handle, exe_path, args);
 

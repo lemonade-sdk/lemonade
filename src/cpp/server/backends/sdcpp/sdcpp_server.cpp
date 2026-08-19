@@ -384,13 +384,24 @@ void SDServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        process_exe_path, model_path, resolved_backend);
+    if (!llm_path.empty()) {
+        sandbox_policy.add_read_path(llm_path);
+    }
+    if (!vae_path.empty()) {
+        sandbox_policy.add_read_path(vae_path);
+    }
+    sandbox_policy.add_write_path("/tmp");
+
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         process_exe_path,
         args,
         working_dir,
         is_debug(),  // inherit_output
         false,  // filter_health_logs
-        env_vars
+        env_vars,
+        sandbox_policy
     );
     set_process_handle(started_handle, process_exe_path, args);
 
@@ -728,8 +739,12 @@ std::string SDServer::upscale_via_cli(
 
     // inherit_output = true so subprocess stderr/stdout is visible in server
     // logs for debugging failed upscale operations
+    lemon::sandbox::SandboxPolicy upscale_policy = build_default_sandbox_policy(
+        upscale_model_path, cli_exe_path, 0, "cpu");
+    upscale_policy.add_write_path(temp_dir.string());
+
     auto proc = ProcessManager::start_process(
-        cli_exe_path, cli_args, "", true, false, env_vars);
+        cli_exe_path, cli_args, "", true, false, env_vars, upscale_policy);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
 

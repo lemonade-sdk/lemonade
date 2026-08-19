@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
+#include <lemon/sandbox/sandbox_policy.h>
 #include "utils/process_manager.h"
 #include "utils/http_client.h"
 #include "server_capabilities.h"
@@ -540,6 +541,41 @@ public:
     void set_prompt_tokens(int prompt_tokens) {
         telemetry_.prompt_tokens = prompt_tokens;
     }
+
+    virtual void customize_sandbox_policy(lemon::sandbox::SandboxPolicy& policy) const {}
+
+    virtual lemon::sandbox::SandboxPolicy build_sandbox_policy(
+        const std::string& executable,
+        const std::string& backend_variant = "") const;
+
+    virtual lemon::sandbox::SandboxPolicy build_sandbox_policy(
+        const std::string& executable,
+        const std::string& model_path,
+        const std::string& backend_variant) const;
+
+    virtual lemon::sandbox::SandboxPolicy build_sandbox_policy(
+        const std::string& executable,
+        const std::string& model_path,
+        uint16_t port,
+        const std::string& backend_variant) const;
+
+    static lemon::sandbox::SandboxPolicy build_default_sandbox_policy(
+        const std::string& model_path,
+        const std::string& executable,
+        uint16_t port,
+        const std::string& backend_variant = "",
+        DeviceType device_type = DEVICE_NONE,
+        const RecipeOptions* recipe_opts = nullptr);
+
+    ProcessHandle start_backend_process(
+        const std::string& executable,
+        const std::vector<std::string>& args,
+        const std::string& working_dir = "",
+        bool inherit_output = false,
+        bool filter_health_logs = false,
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {},
+        const std::string& backend_variant = "",
+        const std::string& model_path = "");
 
 protected:
     struct BackendWatchdogPolicy {

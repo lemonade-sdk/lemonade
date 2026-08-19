@@ -25,6 +25,7 @@ static const json& common_defaults() {
         {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
         {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
         {"pinned", false},
+        {"sandbox", nullptr},
     };
     return d;
 }
@@ -83,6 +84,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     keys.push_back("downsize_idle_timeout");
     keys.push_back("evict_weight_factor");
     keys.push_back("pinned");
+    keys.push_back("sandbox");
 
     return keys;
 }

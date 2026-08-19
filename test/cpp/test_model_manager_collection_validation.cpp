@@ -298,6 +298,7 @@ static void test_register_preserves_routing(ModelManager& manager) {
 int main() {
     fs::path temp = make_temp_dir();
     lemon::utils::set_cache_dir(temp.string());
+    lemon::utils::set_config_dir(temp.string());
 
     ModelManager manager;
     test_accepts_valid_router_policy(manager);

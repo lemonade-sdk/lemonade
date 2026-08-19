@@ -345,6 +345,14 @@ int LemonadeClient::status(int display_port) const {
             std::cout << std::left << std::setw(20) << "Max Models/Type"
                       << json_response["max_models"]["llm"].get<int>() << std::endl;
         }
+        if (json_response.contains("sandbox") && json_response["sandbox"].is_object()) {
+            auto sb = json_response["sandbox"];
+            std::string mode = sb.value("mode", "auto");
+            std::string backend = sb.value("backend", "none");
+            bool enforced = sb.value("kernel_enforced", false);
+            std::string sb_str = mode + " (" + backend + (enforced ? ", kernel-enforced" : ", scrubbed-only") + ")";
+            std::cout << std::left << std::setw(20) << "Sandbox" << sb_str << std::endl;
+        }
 
         // Loaded models table
         if (json_response.contains("all_models_loaded") && json_response["all_models_loaded"].is_array() &&
