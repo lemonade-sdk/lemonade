@@ -82,6 +82,7 @@ struct DownloadOptions {
     int no_progress_timeout = 60;      // Seconds without byte progress before aborting (0 = disabled)
     bool range_retry_on_zero_byte_retry = true; // Retry empty failed attempts with Range: 0-
     bool force_initial_range_request = false;   // Force Range: 0- even on the first attempt
+    bool verify_existing_hash = true;   // Re-hash already-complete final files by default
 
     // Optional content verification. expected_hash accepts plain hex or
     // prefixed values like "sha256:<hex>", "sha1:<hex>", or
