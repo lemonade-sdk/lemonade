@@ -1,6 +1,15 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "The easiest free local coding setup with Pi and Qwen3.8 27B!",
+        url: "https://www.youtube.com/watch?v=AT10gUUgTrE",
+        date: "August 19, 2026",
+        description: "Install the Pi coding agent, connect it to Lemonade, and let Qwen3.8 27B build this video's title card in HTML and CSS—all running locally for free.",
+        image: "https://img.youtube.com/vi/AT10gUUgTrE/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
         title: "Make images and audio in Claude Code with the local AI skill!",
         url: "https://www.youtube.com/watch?v=OmteZN1Wtes",
         date: "August 17, 2026",
