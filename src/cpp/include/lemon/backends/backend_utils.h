@@ -143,15 +143,54 @@ namespace lemon::backends {
         /** Get TheRock installation directory for a specific architecture and version */
         static std::string get_therock_install_dir(const std::string& arch, const std::string& version);
 
+        /** See backend_utils.cpp:install_rocm_runtime() for install method details */
+        static void install_rocm_runtime(const std::string& arch, const std::string& version,
+                                         DownloadProgressCallback progress_cb = nullptr);
+
+        static bool install_therock_wheels(const std::string& arch, const std::string& version,
+                                           DownloadProgressCallback progress_cb = nullptr);
+
+        /** Directory holding the lemonade-managed ROCm wheel venv for arch/version. */
+        static std::string get_therock_wheel_dir(const std::string& arch, const std::string& version);
+
+        /** True when the pip-wheel runtime for arch/version is still usable. See impl for liveness check vs tarball fallback. */
+        static bool therock_wheel_runtime_alive(const std::string& arch,
+                                                const std::string& version);
+
+        /** True for a concrete gfx target (e.g. gfx1151, gfx90a) that maps to a
+         *  rocm-sdk-device wheel; false for family placeholders like gfx110X,
+         *  which have no device wheel and fall back to the tarball. Exposed for
+         *  unit testing. */
+        static bool is_concrete_gfx_arch(const std::string& arch);
+
+        /** Parse a pip "Downloading <name> (<size>)" progress line. On a match,
+         *  sets filename to the wheel's basename and bytes_total to the parsed
+         *  size (0 when the size is absent or unparseable) and returns true;
+         *  returns false when the line is not a pip download line. pip prints
+         *  units as kB/MB/GB (uppercase), so matching is case-insensitive.
+         *  Exposed for unit testing. */
+        static bool parse_pip_download_line(const std::string& line,
+                                            std::string& filename,
+                                            size_t& bytes_total);
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
 
-        /** Clean up old TheRock versions, keeping only the specified version */
-        static void cleanup_old_therock_versions(const std::string& current_version);
+        /** Clean up stale TheRock versions, keeping only the pinned ones */
+        static void cleanup_old_therock_versions();
 
-        /** Get TheRock lib directory path if available, or empty string if not needed */
+        /** Back-compat single-directory accessor. See get_therock_lib_paths() for why multi-dir is needed. */
         static std::string get_therock_lib_path(const std::string& rocm_arch);
+
+        /** All TheRock runtime dirs (in loader-path order). The pip-wheel runtime splits HIP and BLAS libs across _rocm_sdk_core/bin and _rocm_sdk_libraries/bin (recorded in runtime_paths.txt); consumers need both on the loader path. */
+        static std::vector<std::string> get_therock_lib_paths(const std::string& rocm_arch);
+
+        /** Join runtime library directories into a single loader-path string
+         *  (';' on Windows, ':' elsewhere), converting each to an absolute path.
+         *  LLVM paths must already be included in dirs (see
+         *  get_therock_lib_paths). Returns "" for empty input. */
+        static std::string join_runtime_dirs(const std::vector<std::string>& dirs);
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);
