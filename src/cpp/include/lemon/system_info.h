@@ -25,12 +25,18 @@ struct CPUInfo : DeviceInfo {
 };
 
 struct GPUInfo : DeviceInfo {
-    int index = -1;  // NVIDIA only: physical device index from nvidia-smi, when available
+    // Runtime device ordinal: the N in a "ROCm<N>"/"CUDA<N>" device selection.
+    // -1 when the platform gives no stable ordinal.
+    int index = -1;
     std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
     double virtual_gb = 0.0;
+    // In-use memory for this specific device; -1 when the platform cannot report
+    // per-device usage, which callers must distinguish from a genuine 0.
+    double vram_used_gb = -1.0;
+    double virtual_used_gb = -1.0;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -230,7 +236,11 @@ private:
     bool get_amd_is_igpu(const std::string& drm_render_minor);
 
 private:
-    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
+    // `missing_value` is returned when the counter is absent or unparseable. Callers
+    // reading in-use memory pass -1 so an unreadable counter is not mistaken for an
+    // idle card, which would overestimate free VRAM.
+    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname,
+                              double missing_value = 0.0);
 };
 
 // macOS implementation
