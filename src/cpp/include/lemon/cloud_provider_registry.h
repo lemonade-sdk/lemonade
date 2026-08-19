@@ -164,10 +164,7 @@ public:
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_auth_header_name(const std::string& name);
 
-    // Validates a candidate auth header value prefix. Empty is valid and
-    // meaningful (gateways that expect the bare key); only characters a header
-    // value cannot carry are rejected.
-    // Returns empty string on OK, a human-readable error message otherwise.
+    // Empty is valid and meaningful here: gateways that expect the bare key.
     static std::string validate_auth_header_prefix(const std::string& prefix);
 
     // Validates a candidate base URL: must be https:// or http://. Plain HTTP
@@ -177,9 +174,8 @@ public:
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_base_url(const std::string& base_url);
 
-    // Validates a candidate wire format. Only "openai" and "anthropic" are
-    // recognized; anything else would leave the provider undispatchable.
-    // Returns empty string on OK, a human-readable error message otherwise.
+    // Only "openai" and "anthropic" are recognized; anything else would leave
+    // the provider undispatchable.
     static std::string validate_wire_format(const std::string& wire_format);
 
     // Returns true for an http:// base URL, false for https:// or invalid input.

@@ -95,9 +95,8 @@ public:
         const CloudProviderRegistry::AuthHeader& auth_header = {},
         const std::string& wire_format = "openai");
 
-    /// Version an Anthropic-wire-format provider is addressed with. Required
-    /// by the Messages API and by strict gateways on every request, discovery
-    /// included, so both paths must send the same value.
+    /// Strict gateways reject any call that omits this, discovery included, so
+    /// relay and discovery must send the same value.
     static constexpr const char* kAnthropicVersion = "2023-06-01";
 
     /// Outbound headers for a request to `provider`: the configured auth
