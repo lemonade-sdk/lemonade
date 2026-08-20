@@ -12,12 +12,65 @@
 #include <lemon/version.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
+#include "telemetry.h"
+
+#if defined(__GLIBC__)
+#include <cstdlib>
+#include <malloc.h>
+#include <string_view>
+#endif
 
 #ifndef _WIN32
 #include <unistd.h>
 #endif
 
 using namespace lemon;
+
+namespace {
+
+#if defined(__GLIBC__)
+constexpr int GLIBC_MMAP_THRESHOLD_BYTES = 1024 * 1024;
+constexpr std::string_view GLIBC_MMAP_THRESHOLD_TUNABLE =
+    "glibc.malloc.mmap_threshold";
+
+bool glibc_tunable_is_set(std::string_view tunables,
+                          std::string_view name) noexcept {
+    while (!tunables.empty()) {
+        const size_t separator = tunables.find(':');
+        const std::string_view entry = tunables.substr(0, separator);
+        const size_t assignment = entry.find('=');
+        if (assignment != std::string_view::npos &&
+            entry.substr(0, assignment) == name) {
+            return true;
+        }
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        tunables.remove_prefix(separator + 1);
+    }
+    return false;
+}
+
+bool glibc_mmap_threshold_is_overridden() noexcept {
+    if (std::getenv("MALLOC_MMAP_THRESHOLD_") != nullptr) {
+        return true;
+    }
+    const char* tunables = std::getenv("GLIBC_TUNABLES");
+    return tunables != nullptr &&
+           glibc_tunable_is_set(tunables, GLIBC_MMAP_THRESHOLD_TUNABLE);
+}
+
+bool configure_glibc_mmap_threshold() noexcept {
+    if (glibc_mmap_threshold_is_overridden()) {
+        return true;
+    }
+    // Fixing the threshold prevents glibc from retaining large temporary
+    // allocations after its dynamic threshold has increased.
+    return mallopt(M_MMAP_THRESHOLD, GLIBC_MMAP_THRESHOLD_BYTES) != 0;
+}
+#endif
+
+} // namespace
 
 // Global flags for signal handling
 static std::atomic<bool> g_reload_requested(false);
@@ -63,6 +116,18 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
+#if defined(__GLIBC__)
+    // mallopt() is process-wide and MT-Unsafe. Apply it before initializing
+    // telemetry or constructing Server, both of which start worker threads.
+    if (!configure_glibc_mmap_threshold()) {
+        std::cerr << "Warning: failed to set glibc M_MMAP_THRESHOLD; "
+                  << "memory from large requests may not be released promptly"
+                  << std::endl;
+    }
+#endif
+
+    telemetry::initialize();
+
     try {
         CLIParser parser;
         parser.parse(argc, argv);
