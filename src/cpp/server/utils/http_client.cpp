@@ -26,6 +26,25 @@ std::atomic<long> HttpClient::default_timeout_seconds_{300};
 
 namespace {
 
+// Bounds the TCP handshake so an unroutable host cannot hold a worker for the
+// full request timeout.
+constexpr long kConnectTimeoutSeconds = 30;
+
+// How long a stream may deliver nothing before it is treated as dead. Well
+// above any inter-token gap, well below "never".
+constexpr long kStreamStallSeconds = 120;
+
+// Resolves the 0-means-default convention shared by every request method.
+// Without this, curl reads 0 as "no timeout" and a silent upstream parks the
+// calling httplib worker permanently.
+long effective_timeout(long timeout_seconds) {
+    if (timeout_seconds == HttpClient::kNoTimeout) {
+        return 0;
+    }
+    return timeout_seconds > 0 ? timeout_seconds
+                               : HttpClient::get_default_timeout();
+}
+
 static std::string trim_copy(const std::string& value) {
     const auto first = value.find_first_not_of(" \t\r\n\"'");
     if (first == std::string::npos) {
@@ -496,8 +515,8 @@ HttpResponse HttpClient::get(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT,
-                     timeout_seconds > 0 ? timeout_seconds : default_timeout_seconds_.load());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     // Add custom headers
@@ -555,7 +574,8 @@ HttpResponse HttpClient::post(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     if (cancel_flag) {
@@ -640,7 +660,8 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     CURLcode res = curl_easy_perform(curl);
@@ -740,7 +761,15 @@ HttpResponse HttpClient::post_stream(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
+    // A total timeout would kill a long but healthy generation, so an
+    // unqualified request is bounded by upstream silence instead of duration.
+    if (timeout_seconds == 0) {
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kStreamStallSeconds);
+    } else {
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
+    }
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
     if (should_cancel) {

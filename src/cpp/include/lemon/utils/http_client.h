@@ -96,6 +96,11 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
+    // curl reads CURLOPT_TIMEOUT 0 as "no timeout", which collides with the
+    // 0-means-default convention every request method here uses. A caller that
+    // genuinely wants to block indefinitely passes this instead.
+    static constexpr long kNoTimeout = -1;
+
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }
@@ -111,6 +116,8 @@ public:
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Simple POST request. Redirects are never followed.
+    // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
+    // kNoTimeout to opt out deliberately.
     static HttpResponse post(
         const std::string& url,
         const std::string& body,
@@ -120,6 +127,7 @@ public:
         std::atomic<bool>* cancel_flag = nullptr);
 
     // Multipart form data POST request. Redirects are never followed.
+    // timeout_seconds=0 uses default_timeout_seconds_.
     static HttpResponse post_multipart(
         const std::string& url,
         const std::vector<MultipartField>& fields,
@@ -134,6 +142,11 @@ public:
     // out_response_headers, when non-null, is filled with the response headers
     // (names lowercased) before on_status fires, so a caller deciding what to
     // send downstream can see them without waiting for the transfer to finish.
+    //
+    // timeout_seconds=0 uses default_timeout_seconds_. A total timeout would
+    // cut off a long but healthy generation, so this bounds upstream silence
+    // instead: the transfer is aborted only after kStreamStallSeconds with no
+    // progress, which a streaming response cannot legitimately exceed.
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,

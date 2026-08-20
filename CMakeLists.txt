@@ -3032,6 +3032,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
 endif()
 
+set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_timeout.cpp")
+if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
+    add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
+    target_link_libraries(test_http_client_timeout PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
+endif()
+
 set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
 if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
     add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
