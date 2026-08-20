@@ -65,12 +65,12 @@ __Please do not use AI to write issues__. If you feel an issue is important enou
 
 1. Work that is ready for CI testing and AI review, but not ready for human review, should be marked as a draft PR.
 2. Please use an AI review tool such as Claude Code's `/review` on your own code to flag and fix problems before marking the PR ready for human review.
-2. A "ready for review" non-draft PR is a signal that it is ready for human review.
-3. Evaluate the PR for scope:
+3. A "ready for review" non-draft PR is a signal that it is ready for human review.
+4. Evaluate the PR for scope:
     - minor features and fixes should have any 1 reviewer.
     - major features, refactors, new backends, security-related issues, etc. should have 2 reviewers including 1 subject area expert.
     - project scope expansion, re-architecture, design language changes, etc. should have @jeremyfowers review.
-4. Evaluate the PR for which subject areas it impacts, and request review from a subject area expert in the maintainers table below.
+5. Evaluate the PR for which subject areas it impacts, and request review from a subject area expert in the maintainers table below.
 
 ## Maintainers
 
