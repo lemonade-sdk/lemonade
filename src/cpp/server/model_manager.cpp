@@ -1023,11 +1023,11 @@ ModelManager::ModelManager(const std::string& extra_models_dir)
 }
 
 std::string ModelManager::get_user_models_file() {
-    return get_cache_dir() + "/user_models.json";
+    return get_config_dir() + "/user_models.json";
 }
 
 std::string ModelManager::get_recipe_options_file() {
-    return get_cache_dir() + "/recipe_options.json";
+    return get_config_dir() + "/recipe_options.json";
 }
 
 std::string ModelManager::get_hf_cache_dir() const {

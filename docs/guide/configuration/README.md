@@ -2,21 +2,23 @@
 
 ## Overview
 
-Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade cache directory.
+Lemonade Server starts automatically with the OS after installation. Persistent JSON configuration is stored in Lemonade's config directory; caches and downloaded artifacts stay in the cache directory.
 
 ## config.json
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
-- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/var/lib/lemonade/config.json`
 
-  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+  > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), while cached models go to `/var/cache/huggingface` (CacheDirectory). For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
-- **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
+- **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
+- **macOS:** `/Library/Application Support/lemonade/.config/config.json`
 
-If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
+If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
+
+On startup, Lemonade automatically migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
 
 > Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
 
@@ -409,25 +411,24 @@ Because CLI overrides are ephemeral and do not mutate `config.json` on disk, if 
 If the server won't start and CLI tools aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux (Debian/Ubuntu)
-sudo nano /var/lib/lemonade/.cache/lemonade/config.json
-
-# Linux (Fedora/Red Hat)
-sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+# Linux (Debian/Ubuntu and Fedora/Red Hat)
+sudo nano /var/lib/lemonade/config.json
 
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
-# %USERPROFILE%\.cache\lemonade\config.json
+# %USERPROFILE%\.config\lemonade\config.json
 # Then quit and relaunch from the Start Menu
 ```
 
 ## lemond CLI
 
 ```
-lemond [cache_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
+lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 ```
 
+- **cache_dir** — Path to the lemonade cache/data directory. Optional; defaults to the platform-specific cache location.
+- **config_dir** — Path to the lemonade config directory for persistent JSON state. Optional; defaults to the platform-specific config location.
 - **--port** — Port to serve on (runtime override, does not mutate config.json).
 - **--host** — Address to bind (runtime override, does not mutate config.json).
 - **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).

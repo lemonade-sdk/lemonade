@@ -1186,9 +1186,8 @@ if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
 
     add_executable(test_mcp_client_config
         ${MCP_CLIENT_CONFIG_TEST_SOURCE}
-        src/cpp/server/mcp_client.cpp
     )
-    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads lemonade-httplib)
+    target_link_libraries(test_mcp_client_config PRIVATE lemonade-server-core)
 
     if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
         file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
@@ -1972,11 +1971,12 @@ if(UNIX AND NOT APPLE)
         RENAME lemond.service
     )
 
-    # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
+    # Install the optional environment-file template loaded by the unit via
+    # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade/conf.d
-        RENAME zz-secrets.conf
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
+        DESTINATION /etc/default
+        RENAME lemond
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ
     )
 
     # Create symlinks for KaTeX fonts if they exist on the system
@@ -2891,6 +2891,13 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_executable(test_config_migration test/cpp/test_config_migration.cpp)
     target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
+endif()
+
+set(_CONFIG_DIR_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_dir_migration.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DIR_MIGRATION_TEST_SRC}")
+    add_executable(test_config_dir_migration test/cpp/test_config_dir_migration.cpp)
+    target_link_libraries(test_config_dir_migration PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDirMigrationTest CI ON COMMAND test_config_dir_migration)
 endif()
 
 set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")

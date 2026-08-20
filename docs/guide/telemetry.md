@@ -91,7 +91,7 @@ lemonade config set telemetry.enabled=true \
 ```
 
 ##### Option B: Configuration via `config.json`
-Alternatively, edit the `telemetry` block in your `config.json` file inside the Lemonade cache directory.
+Alternatively, edit the `telemetry` block in your `config.json` file inside the Lemonade config directory.
 
 > [!IMPORTANT]
 > Manually modifying `config.json` requires a restart of the Lemonade server to apply the changes. See the [Configuration Guide](./configuration/README.md#configjson) to find the location of the `config.json` file on your operating system.

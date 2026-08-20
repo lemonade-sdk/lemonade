@@ -83,16 +83,16 @@ json ConfigFile::get_defaults() {
     return defaults;
 }
 
-json ConfigFile::load(const std::string& cache_dir) {
+json ConfigFile::load(const std::string& cache_dir, const std::string& config_dir) {
     json defaults = get_defaults();
-    fs::path config_path = utils::path_from_utf8(cache_dir) / "config.json";
+    fs::path config_dir_path = utils::path_from_utf8(config_dir);
+    fs::path config_path = config_dir_path / "config.json";
 
     if (!fs::exists(config_path)) {
-        fs::path cache_path = utils::path_from_utf8(cache_dir);
-        if (!fs::exists(cache_path)) {
-            fs::create_directories(cache_path);
+        if (!fs::exists(config_dir_path)) {
+            fs::create_directories(config_dir_path);
         }
-        save(cache_dir, defaults);
+        save(config_dir, defaults);
         return defaults;
     }
 
@@ -139,7 +139,7 @@ json ConfigFile::load(const std::string& cache_dir) {
         }
 
         LOG(WARNING) << "  Using defaults." << std::endl;
-        save(cache_dir, defaults);
+        save(config_dir, defaults);
         return defaults;
     }
 
@@ -172,22 +172,22 @@ json ConfigFile::load(const std::string& cache_dir) {
                           << std::endl;
             }
         }
-        save(cache_dir, merged);
+        save(config_dir, merged);
     }
 
     return merged;
 }
 
-void ConfigFile::save(const std::string& cache_dir, const json& config) {
+void ConfigFile::save(const std::string& config_dir, const json& config) {
     std::unique_lock lock(file_mutex_);
 
-    fs::path cache_path = utils::path_from_utf8(cache_dir);
-    if (!fs::exists(cache_path)) {
-        fs::create_directories(cache_path);
+    fs::path config_dir_path = utils::path_from_utf8(config_dir);
+    if (!fs::exists(config_dir_path)) {
+        fs::create_directories(config_dir_path);
     }
 
-    fs::path config_path = cache_path / "config.json";
-    fs::path temp_path = cache_path / "config.json.tmp";
+    fs::path config_path = config_dir_path / "config.json";
+    fs::path temp_path = config_dir_path / "config.json.tmp";
 
     {
         std::ofstream file(temp_path);
@@ -211,6 +211,5 @@ void ConfigFile::save(const std::string& cache_dir, const json& config) {
         fs::remove(temp_path);
     }
 }
-
 
 } // namespace lemon

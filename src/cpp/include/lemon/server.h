@@ -48,7 +48,9 @@ struct RouterDispatchResult {
 
 class Server {
 public:
-    Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir);
+    Server(std::shared_ptr<RuntimeConfig> config,
+           const std::string& cache_dir,
+           const std::string& config_dir);
 
     ~Server();
 
@@ -350,7 +352,8 @@ private:
     double get_npu_utilization();
 
     std::shared_ptr<RuntimeConfig> config_;
-    std::string cache_dir_;  // Lemonade cache dir for config.json persistence
+    std::string cache_dir_;  // Lemonade cache dir; persistent JSON may live in sibling .config dir
+    std::string config_dir_;
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
 
     std::thread http_v4_thread_;
