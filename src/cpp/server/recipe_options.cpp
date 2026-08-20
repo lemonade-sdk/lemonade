@@ -175,7 +175,11 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
 
     for (auto key : to_copy) {
-        if (options.contains(key) && !is_empty_option(key, options[key])) {
+        if (!options.contains(key)) {
+            continue;
+        }
+        explicit_options_[key] = options[key];
+        if (!is_empty_option(key, options[key])) {
             options_[key] = options[key];
         }
     }
@@ -210,41 +214,11 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
-    // Read defensively: a hand-edited recipe_options.json can hold any type
-    // here, and throwing would take down every read of the model.
-    const json own_merge_args = options_.contains("merge_args") ? options_["merge_args"]
-                                                                : options.get_option("merge_args");
-    bool merge_args = own_merge_args.is_boolean() ? own_merge_args.get<bool>() : true;
-
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
-        if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {
-            // Special handling for _args options: parse, merge maps, re-stringify
-            std::string target_str = "";
-            if (merged.contains(it.key()) && merged[it.key()].is_string()) {
-                target_str = merged[it.key()];
-            }
-
-            std::string incoming_str = it.value().is_string() ? it.value() : "";
-
-            if (target_str.empty()) {
-                merged[it.key()] = incoming_str;
-            } else if (incoming_str.empty()) {
-                merged[it.key()] = target_str;
-            } else {
-                auto target_tokens = lemon::utils::parse_custom_args(target_str, true);
-                auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str, true);
-
-                auto target_map = lemon::utils::build_custom_args_map(target_tokens);
-                auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
-
-                auto merged_map = lemon::utils::merge_args_maps(target_map, incoming_map);
-                merged[it.key()] = lemon::utils::map_to_args_string(merged_map);
-            }
-        } else if (!merged.contains(it.key()) && !is_empty_option(it.key(), it.value())) {
+        if (!merged.contains(it.key()) && !is_empty_option(it.key(), it.value())) {
             merged[it.key()] = it.value();
         }
     }
-
     return RecipeOptions(recipe_, merged);
 }
 
@@ -266,10 +240,21 @@ json RecipeOptions::get_option(const std::string& opt) const {
 
 void RecipeOptions::set_option(const std::string& opt, const json& value) {
     options_[opt] = value;
+    explicit_options_[opt] = value;
 }
 
 void RecipeOptions::remove_option(const std::string& opt) {
     options_.erase(opt);
+    explicit_options_.erase(opt);
+}
+
+bool RecipeOptions::has_explicit_option(const std::string& opt) const {
+    return explicit_options_.contains(opt);
+}
+
+json RecipeOptions::get_explicit_option(const std::string& opt) const {
+    auto it = explicit_options_.find(opt);
+    return it != explicit_options_.end() ? *it : json();
 }
 
 #ifdef LEMONADE_CLI

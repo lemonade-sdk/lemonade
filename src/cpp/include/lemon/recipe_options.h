@@ -19,6 +19,10 @@ public:
     json get_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
+    // True when constructor input named this option, even if its sentinel value
+    // was dropped from options_.
+    bool has_explicit_option(const std::string& opt) const;
+    json get_explicit_option(const std::string& opt) const;
     std::string get_recipe() const { return recipe_; };
 
 #ifdef LEMONADE_CLI
@@ -42,6 +46,7 @@ public:
     static bool is_default_sentinel(const std::string& key, const json& value);
 private:
     json options_ = json::object();
+    json explicit_options_ = json::object();
     std::string recipe_ = "";
 };
 }

@@ -953,7 +953,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 > Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
-Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
+Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. For `*_args`, a concrete value replaces the model/architecture args scope for that load; backend/machine args remain only when `merge_args` is true. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
 
 ### Parameters
 
@@ -971,7 +971,7 @@ Recipe option fields on `/v1/load` have three-state semantics. Omitting a field 
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
-| `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
+| `merge_args` | No | All | Boolean. If true (default), backend/machine `*_args` are inherited; concrete request `*_args` replace model/architecture args while keeping backend args. If false, no inherited custom args or overridable runtime defaults are applied. |
 
 **Setting Priority:**
 
