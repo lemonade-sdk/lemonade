@@ -641,7 +641,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `host` | string | HTTP rebind |
 | `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
-| `no_broadcast` | bool | Stops or starts UDP beacon |
+| `broadcast` | bool | Starts or stops UDP beacon |
 | `extra_models_dir` | string | Updates model manager search path |
 
 **Deferred keys** (affect the next model load or eviction decision, no immediate side effect):

@@ -177,9 +177,24 @@ ProcessHandle WrappedServer::get_process_handle_snapshot() const {
     return process_handle_;
 }
 
-void WrappedServer::set_process_handle(ProcessHandle handle) {
+void WrappedServer::set_process_handle(ProcessHandle handle,
+                                       const std::string& executable,
+                                       const std::vector<std::string>& args) {
     std::lock_guard<std::mutex> lock(process_mutex_);
     process_handle_ = handle;
+    launch_command_.clear();
+    launch_command_.push_back(executable);
+    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
+}
+
+std::vector<std::string> WrappedServer::get_launch_command() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return launch_command_;
+}
+
+WrappedServer::ProcessInfo WrappedServer::get_process_info() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return {process_handle_.pid, launch_command_};
 }
 
 int WrappedServer::get_backend_port() const {
@@ -192,6 +207,7 @@ ProcessHandle WrappedServer::consume_process_handle_for_cleanup() {
     ProcessHandle handle = process_handle_;
     process_handle_ = {nullptr, 0};
     port_ = 0;
+    launch_command_.clear();
     return handle;
 }
 
@@ -794,11 +810,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
             StreamingProxy::forward_sse_stream(url, request_body, sink,
                 [telemetry_callback](const StreamingProxy::TelemetryData& telemetry) {
                     if (telemetry_callback) {
-                        telemetry_callback(telemetry.input_tokens,
-                                           telemetry.output_tokens,
-                                           telemetry.time_to_first_token,
-                                           telemetry.tokens_per_second,
-                                           telemetry.error_message);
+                        telemetry_callback(telemetry);
                     }
                 },
                 timeout_seconds,
@@ -816,7 +828,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
         bool will_retry = (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) && !streamed_any_bytes;
 
         if (telemetry_callback && !will_retry) {
-            telemetry_callback(0, 0, 0.0, 0.0, e.what());
+            StreamingProxy::TelemetryData error_telemetry;
+            error_telemetry.error_message = e.what();
+            telemetry_callback(error_telemetry);
         }
 
         // Try to send error to client if possible

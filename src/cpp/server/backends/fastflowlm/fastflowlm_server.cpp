@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/audio_types.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/error_types.h"
@@ -215,7 +216,8 @@ void FastFlowLMServer::load(const std::string& model_name,
     }
     LOG(INFO, "ProcessManager") << std::endl;
 
-    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true));
+    set_process_handle(utils::ProcessManager::start_process(flm_path, args, "", is_debug(), true),
+                       flm_path, args);
     LOG(INFO, "ProcessManager") << "Process started successfully" << std::endl;
 
     bool ready = wait_for_ready();
@@ -322,19 +324,22 @@ json FastFlowLMServer::embeddings(const json& request) {
     return forward_request("/v1/embeddings", request);
 }
 
-json FastFlowLMServer::reranking(const json& request) {
-    if (model_type_ != ModelType::LLM) {
-        return ErrorResponse::from_exception(
-            UnsupportedOperationException("Reranking", "FLM " + model_type_to_string(model_type_) + " model")
-        );
-    }
-    return forward_request("/v1/rerank", request);
-}
-
 json FastFlowLMServer::audio_transcriptions(const json& request) {
     if (model_type_ != ModelType::TRANSCRIPTION) {
         return ErrorResponse::from_exception(
             UnsupportedOperationException("Audio transcription", "FLM " + model_type_to_string(model_type_) + " model")
+        );
+    }
+
+    // FLM's transcription endpoint ignores response_format and always answers with
+    // the compact {model, text} JSON. Plain text can be derived from that; SRT and
+    // VTT cannot, because they need the per-segment timestamps FLM never returns.
+    const std::string requested_format = request.value("response_format", audio::ResponseFormat::JSON);
+    if (requested_format == audio::ResponseFormat::SRT ||
+        requested_format == audio::ResponseFormat::VTT) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("response_format '" + requested_format + "'",
+                                          "FLM transcription models (no segment timestamps)")
         );
     }
 
@@ -380,6 +385,8 @@ json FastFlowLMServer::audio_transcriptions(const json& request) {
             fields.push_back({"temperature", std::to_string(request["temperature"].get<double>()), "", ""});
         }
 
+        // FLM always replies with JSON here, so the strict shared helper is correct:
+        // handle_audio_transcriptions() renders the "text" field for plain-text formats.
         return forward_multipart_request("/v1/audio/transcriptions", fields);
 
     } catch (const std::exception& e) {

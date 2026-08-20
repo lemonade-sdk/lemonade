@@ -1137,7 +1137,9 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
 int LemonadeClient::install_cloud_provider(const std::string& provider,
                                             const std::string& base_url,
                                             const std::string& api_key,
-                                            bool allow_insecure_http) {
+                                            bool allow_insecure_http,
+                                            const std::optional<std::string>& auth_header_name,
+                                            const std::optional<std::string>& auth_header_prefix) {
     std::cout << "Installing cloud provider: " << provider
               << " (" << base_url << ")" << std::endl;
     try {
@@ -1151,6 +1153,12 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
         }
         if (!api_key.empty()) {
             body["api_key"] = api_key;
+        }
+        if (auth_header_name) {
+            body["auth_header_name"] = *auth_header_name;
+        }
+        if (auth_header_prefix) {
+            body["auth_header_prefix"] = *auth_header_prefix;
         }
         std::string response = make_request("/api/v1/install", "POST",
                                              body.dump(), "application/json");
@@ -1286,6 +1294,14 @@ int LemonadeClient::cloud_list() const {
                       << ", runtime_key_set=" << (p.value("runtime_key_set", false) ? "yes" : "no")
                       << ", models_discovered=" << p.value("models_discovered", size_t{0})
                       << std::endl;
+            const std::string header_name = p.value("auth_header_name", std::string("Authorization"));
+            const std::string header_prefix = p.value("auth_header_prefix", std::string("Bearer "));
+            if (header_name != "Authorization" || header_prefix != "Bearer ") {
+                // Quoted so a trailing space or a deliberately empty prefix is
+                // visible rather than indistinguishable from the default.
+                std::cout << "    auth header: " << header_name
+                          << ": \"" << header_prefix << "\"<key>" << std::endl;
+            }
             print_response_warnings(p, "    ");
         }
         return 0;

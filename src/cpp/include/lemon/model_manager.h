@@ -40,6 +40,19 @@ public:
 };
 constexpr const char* kUnknownModelErrorCode = "unknown_model";
 
+// Thrown when a definition names a deployment mode its recipe's backend cannot
+// serve. Registering it would list the model as something it is not and then
+// fail at inference time. A definition naming *no* mode is not an error: the
+// recipe's default is stamped instead.
+//
+// CONTRACT: the /pull HTTP handler catches this type and returns 400. Loading an
+// already-persisted entry does not go through registration, so an entry written
+// by an older version is still normalized rather than blocking startup.
+class InvalidModelDefinitionError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 // Progress information for download operations
 struct DownloadProgress {
     std::string file;           // Current file being downloaded
@@ -312,6 +325,27 @@ public:
 
     void save_model_options(const ModelInfo& info);
 
+    // The model's own entry in recipe_options.json, i.e. only what the user
+    // explicitly saved. Empty object when the model has no entry.
+    json get_saved_model_options(const std::string& model_name);
+
+    // What the model would resolve to with its recipe_options.json entry
+    // removed: image_defaults plus the registry JSON's own recipe_options.
+    RecipeOptions get_model_default_options(const ModelInfo& info);
+
+    // Replace the model's recipe_options.json entry, returning the new entry.
+    // An empty object erases the entry rather than persisting `{}`.
+    json set_saved_model_options(const std::string& model_name, const json& saved);
+
+    // Merge changes into the model's recipe_options.json entry and return the
+    // new entry. A null value erases that key. Atomic with respect to other
+    // writers of the same entry.
+    json update_saved_model_options(const std::string& model_name, const json& changes);
+
+    // The model-level options update_saved_model_options(changes) would leave
+    // the model with, computed without persisting anything.
+    RecipeOptions preview_saved_model_options(const ModelInfo& info, const json& changes);
+
     void start_directory_watcher();
 
 private:
@@ -373,10 +407,16 @@ private:
     // cannot recursively re-fire.
     void notify_models_changed();
 
+    json registry_recipe_options(const std::string& cache_key);
+    // Caller must hold models_cache_mutex_.
+    json registry_recipe_options_locked(const std::string& cache_key);
+    json write_saved_model_options(const std::string& model_name, const json& options, bool merge);
+
     // Cache management
     void build_cache();
     void add_model_to_cache(const std::string& model_name);
-    void update_model_options_in_cache(const ModelInfo& info);
+    // Caller must hold models_cache_mutex_.
+    void update_model_options_in_cache_locked(const ModelInfo& info);
     void update_model_in_cache(const std::string& model_name, bool downloaded);
     void remove_model_from_cache(const std::string& model_name);
 
@@ -422,6 +462,9 @@ private:
 
     // Cache of all models with their download status
     mutable std::mutex models_cache_mutex_;
+    // Orders recipe_options.json rewrites without holding models_cache_mutex_
+    // (which every request thread contends on) across disk I/O.
+    std::mutex recipe_options_write_mutex_;
 
     // Serializes concurrent downloads that write into the same snapshot
     // (keyed by checkpoint repo). See download_registered_model.

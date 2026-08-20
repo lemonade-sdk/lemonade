@@ -11,6 +11,7 @@
 #include <ctime>
 #include <filesystem>
 #include <random>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -124,10 +125,21 @@ void TheNoiseServer::load(const std::string& model_name,
         "--port", std::to_string(port_)
     };
 
-    std::string lora_dir = options.get_option("lora_dir");
+    // lora_dir / upscaler_dir are server-wide config (config.json
+    // "thenoise" section) and are not overridable per model.
+    std::string lora_dir;
+    std::string upscaler_dir;
+    if (auto* cfg = RuntimeConfig::global()) {
+        lora_dir = cfg->backend_string("thenoise", "lora_dir");
+        upscaler_dir = cfg->backend_string("thenoise", "upscaler_dir");
+    }
     if (!lora_dir.empty()) {
         args.push_back("--lora-dir");
         args.push_back(lora_dir);
+    }
+    if (!upscaler_dir.empty()) {
+        args.push_back("--upscaler-dir");
+        args.push_back(upscaler_dir);
     }
 
     // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
@@ -141,7 +153,7 @@ void TheNoiseServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start thenoise process");
@@ -285,12 +297,6 @@ json TheNoiseServer::build_request(const json& request) const {
         body["sampler"] = sampler;
     }
 
-    // upscale
-    bool upscale = resolve_bool("upscale", recipe_options_.get_option("upscale"));
-    if (upscale) {
-        body["upscale"] = true;
-    }
-
     // qwen_vae_enhance
     bool qwen_vae_enhance = resolve_bool("qwen_vae_enhance",
         recipe_options_.get_option("qwen_vae_enhance"));
@@ -323,6 +329,24 @@ json TheNoiseServer::build_request(const json& request) const {
         const json opt = recipe_options_.get_option("lora_specs");
         std::string specs = opt.is_string() ? opt.get<std::string>() : "";
         if (!specs.empty()) body["lora_specs"] = split_lora_specs(specs);
+    }
+
+    // Pass through any request parameters this adapter does not map so they
+    // reach the backend untouched. Skip every key the adapter handles (derived
+    // from the descriptor options) plus the ones it consumes/transforms that
+    // are not descriptor options, so raw forms are never re-forwarded.
+    std::set<std::string> handled;
+    for (const auto& opt : thenoise::descriptor.options) {
+        handled.insert(opt.name);
+    }
+    for (const char* key : {
+        "prompt", "seed", "size", "model", "n"
+    }) {
+        handled.insert(key);
+    }
+    for (auto& [key, value] : request.items()) {
+        if (handled.count(key)) continue;
+        body[key] = value;
     }
 
     return body;

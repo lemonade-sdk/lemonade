@@ -23,6 +23,9 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
+| `GET` | [`/v1/models/{id}/options`](#get-v1modelsidoptions) | Read a model's saved, effective, and default recipe options |
+| `POST` | [`/v1/models/{id}/options`](#post-v1modelsidoptions) | Save recipe options for a model without loading it |
+| `DELETE` | [`/v1/models/{id}/options`](#delete-v1modelsidoptions) | Reset a model's recipe options to defaults |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -223,6 +226,121 @@ When `include_paths=true` is supplied, each file entry also includes `path`:
 | `files[].size_bytes` | File size in bytes. Directories are summed recursively. Missing files report `0`. |
 | `files[].exists` | Whether the resolved path currently exists on disk. |
 
+## `GET /v1/models/{id}/options`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Read a model's recipe options, separated by layer, without loading it. With `POST` and `DELETE` on the same path, this manages per-model options independently of [`/v1/load`](#post-v1load).
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
+```
+
+### Response format
+
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--no-mmap` saved and the context size left automatic:
+
+```json
+{
+  "model_name": "Qwen3-0.6B-GGUF",
+  "recipe": "llamacpp",
+  "saved": {
+    "llamacpp_args": "--no-mmap"
+  },
+  "effective": {
+    "auto_evict": null,
+    "ctx_size": -1,
+    "downsize_idle_timeout": 60,
+    "evict_idle_timeout": 300,
+    "evict_weight_factor": 1.0,
+    "llamacpp_args": "--no-mmap",
+    "llamacpp_backend": "vulkan",
+    "llamacpp_device": "",
+    "merge_args": true,
+    "model_name": "Qwen3-0.6B-GGUF"
+  },
+  "defaults": {
+    "auto_evict": null,
+    "ctx_size": -1,
+    "downsize_idle_timeout": 60,
+    "evict_idle_timeout": 300,
+    "evict_weight_factor": 1.0,
+    "llamacpp_args": "",
+    "llamacpp_backend": "vulkan",
+    "llamacpp_device": "",
+    "merge_args": true,
+    "model_name": "Qwen3-0.6B-GGUF"
+  },
+  "resolved_ctx_size": 32768
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `model_name` | The id from the URL. It appears again inside `effective` and `defaults` so that each one is a complete `/v1/load` body. |
+| `recipe` | The recipe the option names belong to. |
+| `saved` | The model's own entry in `recipe_options.json`: only what was explicitly saved, or `{}` when nothing is. It can also hold keys this endpoint does not accept, such as `pinned` written by `/v1/load`, so replay `effective` rather than `saved`. |
+| `effective` | The `/v1/load` body shown above. Posting it back whole to this endpoint saves every resolved value as an override, so send only the options the user changed. |
+| `defaults` | What `effective` becomes if `saved` is erased, in the same shape. A `ctx_size` of `-1` means the server picks the context size automatically. |
+| `resolved_ctx_size` | The context size a load right now would use: the effective `ctx_size`, or the automatically computed size when that is `-1`. |
+
+> Note: per-architecture defaults come from the model's GGUF metadata. For a model that has not been downloaded yet, every key is still present but carries the value it has before those defaults apply.
+
+## `POST /v1/models/{id}/options`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Save recipe options for a model without loading it. The request body is a flat object of the same recipe options [`/v1/load`](#post-v1load) accepts. The URL identifies the model; a `model_name` in the body is ignored.
+
+The request merges into the model's saved entry, so keys you don't mention are left alone. `null` removes an option, and the model falls back to the next layer of the [priority chain](#post-v1load). [`DELETE`](#delete-v1modelsidoptions) removes every saved option at once.
+
+`dry_run: true` validates and resolves the request identically but persists nothing: `effective` and `resolved_ctx_size` describe the state the save would produce, while `saved` keeps reporting the entry on disk. Use it to preview a change before committing it.
+
+`ctx_size` takes a positive whole number, or `-1` to pin the model to automatic sizing even when the server-wide `ctx_size` is a specific number.
+
+A `400` reports an unrecognized option name, an option from a different recipe, a value of the wrong type, or an invalid `ctx_size`, and nothing from that request is saved.
+
+Saving never loads or reloads the model, so a model that is already running keeps its current options until it is next loaded.
+
+> Note: `pinned` is not settable here and is omitted from `effective` and `defaults`. It belongs to [`/v1/load`](#post-v1load) and `/internal/pin`.
+
+### Example requests
+
+Save a context size without loading the model:
+
+```bash
+curl -X POST http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options \
+  -H "Content-Type: application/json" \
+  -d '{"ctx_size": 8192, "llamacpp_backend": "vulkan"}'
+```
+
+Set the context size back to automatic, leaving the backend choice saved:
+
+```bash
+curl -X POST http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options \
+  -H "Content-Type: application/json" \
+  -d '{"ctx_size": -1}'
+```
+
+### Response format
+
+Same as [`GET /v1/models/{id}/options`](#get-v1modelsidoptions), reflecting the state after the write.
+
+## `DELETE /v1/models/{id}/options`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Reset a model to its defaults by erasing its `recipe_options.json` entry entirely. The model keeps the defaults that come from its registry entry and from the server's global configuration; only the user's saved overrides are removed.
+
+### Example request
+
+```bash
+curl -X DELETE http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
+```
+
+### Response format
+
+Same as [`GET /v1/models/{id}/options`](#get-v1modelsidoptions), with `saved` now `{}`.
+
 ## `POST /v1/models/register`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
@@ -355,6 +473,36 @@ The `recipe` field defines which software framework and device will be used to l
 A model definition requires at least a `main` checkpoint. This can be either
 be specified with the `checkpoint` parameter, or a `main` key in the
 `checkpoints` dict.
+
+Each backend serves a fixed set of [deployment modes](openai.md#model-labels),
+and a model deploys in exactly one of them. Naming a mode the recipe cannot
+serve, or naming two — whether through `labels` or through the `embedding` /
+`reranking` parameters — is rejected with `400` and nothing is registered:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "user.Clf", "recipe": "llamacpp",
+       "checkpoint": "example/model:Q4_K_M", "labels": ["classification"]}'
+```
+
+```json
+{"error": "Model 'user.Clf': recipe 'llamacpp' cannot serve 'classification'. It serves 'chat', 'embeddings', 'reranking'. Omit the label to deploy as 'chat'."}
+```
+
+```bash
+curl -X POST http://localhost:8000/api/v1/pull \
+  -H "Content-Type: application/json" \
+  -d '{"model_name": "user.Both", "recipe": "llamacpp",
+       "checkpoint": "example/model:Q4_K_M", "labels": ["chat", "embeddings"]}'
+```
+
+```json
+{"error": "Model 'user.Both': a model deploys in exactly one mode, but these labels name two: 'chat' and 'embeddings'. Register one model per mode."}
+```
+
+Omitting the deployment label entirely is always valid — the recipe's default is
+applied.
 
 Other checkpoint types may also be specified depending on the model type.
 This list is not exhaustive, and may change or grow over time as models
@@ -805,14 +953,16 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 > Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
+Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
+
 ### Parameters
 
 | Parameter | Required | Applies to | Description |
 |-----------|----------|------------|-------------|
 | `model_name` | Yes | All | [Lemonade Server model name](https://lemonade-server.ai/models.html) to load. |
 | `pinned` | No | All | Boolean. If true, pins the loaded model to prevent LRU eviction. Defaults to `false`. |
-| `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. |
-| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. |
+| `save_options` | No | All | Boolean. If true, saves recipe options to `recipe_options.json`. Any previously stored value for `model_name` is replaced. To save options without loading, or to change one option without resending the rest, use [`POST /v1/models/{id}/options`](#post-v1modelsidoptions) instead. |
+| `ctx_size` | No | llamacpp, flm, ryzenai-llm | Context size for the model. Overrides the default value. Pass `-1` to size it automatically instead of using a saved value; omit it to use the saved value. |
 | `llamacpp_backend` | No | llamacpp | LlamaCpp backend to use (`vulkan`, `rocm`, `metal` or `cpu`). |
 | `llamacpp_args` | No | llamacpp | Custom arguments to pass to llama-server. The following are NOT allowed: `-m`, `--port`, `--ctx-size`, `-ngl`, `--jinja`, `--mmproj`, `--embeddings`, `--reranking`. |
 | `whispercpp_backend` | No | whispercpp | WhisperCpp backend: `npu` or `cpu` on Windows; `cpu` or `vulkan` on Linux. Default is `npu` if supported. |
@@ -1120,6 +1270,12 @@ curl http://localhost:13305/v1/health
       "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
+      "launch_command": [
+        "~/.cache/lemonade/bin/ryzenai/npu/ryzenai-server.exe",
+        "-m", "~/.cache/lemonade/models/Llama-3.2-1B-Instruct-Hybrid",
+        "--port", "8001",
+        "--ctx-size", "4096"
+      ],
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -1134,6 +1290,13 @@ curl http://localhost:13305/v1/health
       "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
+      "launch_command": [
+        "~/.cache/lemonade/bin/llamacpp/rocm-stable/llama-server.exe",
+        "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size", "8192",
+        "--port", "8002",
+        "--no-mmap"
+      ],
       "recipe_options": {
         "ctx_size": 8192,
         "llamacpp_args": "--no-mmap",
@@ -1182,6 +1345,7 @@ curl http://localhost:13305/v1/health
   - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
+  - `launch_command` - *(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included.
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
@@ -1220,7 +1384,15 @@ curl http://localhost:13305/v1/stats
   "tokens_per_second": 33.33,
   "input_tokens": 128,
   "output_tokens": 5,
-  "prompt_tokens": 9
+  "prompt_tokens": 9,
+  "cache_tokens": 96,
+  "request_count_total": 12,
+  "input_tokens_total": 1536,
+  "output_tokens_total": 60,
+  "prompt_tokens_total": 108,
+  "cache_tokens_total": 1152,
+  "routing_decisions_total": 4,
+  "routing_switches_total": 1
 }
 ```
 
@@ -1231,6 +1403,10 @@ curl http://localhost:13305/v1/stats
 - `input_tokens` - Number of tokens processed
 - `output_tokens` - Number of tokens generated
 - `prompt_tokens` - Total prompt tokens including cached tokens
+- `cache_tokens` - Prompt tokens served from the backend's prefix cache on the last request (llama.cpp `timings.cache_n`, or `usage.prompt_tokens_details.cached_tokens` / Responses-API `input_tokens_details.cached_tokens` from OpenAI-compatible cloud providers). `null` when the last request did not report cache usage
+- `*_total` - Cumulative counters since server start
+- `routing_decisions_total` - Routing decisions made by `collection.router` dispatch
+- `routing_switches_total` - Routing decisions that changed a conversation's routed model (a proxy for route ping-pong; conversations are identified by a hash of the system prompt and first user message)
 
 ## `GET /v1/system-stats`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1511,6 +1687,8 @@ curl "http://localhost:13305/v1/system-info"
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
     - `base_url` - Persisted base URL from `config.json`.
+    - `auth_header_name` - Header this provider's API key is sent in (default `Authorization`).
+    - `auth_header_prefix` - Value prefix placed before the key (default `Bearer `).
     - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
@@ -1567,6 +1745,11 @@ Registers an OpenAI-compatible chat provider. The base URL is persisted to `conf
 | `provider` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `base_url` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
 | `api_key` | No | Optional. If set, stored in process memory; honors env-wins precedence (see `/v1/cloud/auth`). |
+| `allow_insecure_http` | No | Default `false`. Must be `true` to send an API key to an `http://` base URL. |
+| `auth_header_name` | No | Header carrying the API key. Must be a valid HTTP header name. Default `"Authorization"`. |
+| `auth_header_prefix` | No | Value prefix before the key. Default `"Bearer "`; pass `""` for gateways that expect the bare key. |
+
+Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
 Example request:
 
@@ -1588,6 +1771,8 @@ Response format:
   "backend": "cloud",
   "provider": "fireworks",
   "base_url": "https://api.fireworks.ai/inference/v1",
+  "auth_header_name": "Authorization",
+  "auth_header_prefix": "Bearer ",
   "models_discovered": 12,
   "auth_state": {
     "env_var_set": true,

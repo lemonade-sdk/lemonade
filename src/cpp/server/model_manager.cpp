@@ -142,45 +142,6 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
-// The deployment ModelType a model actually serves, honoring backend capability.
-// get_model_type_from_labels() gives chat-indicator labels (reasoning / vision /
-// tools / chat-transcription) priority — correct for LLM backends, but wrong for
-// a backend that cannot chat: its descriptor declares a definitive non-LLM
-// deployment (onnxruntime -> classification, sd-cpp -> image, whispercpp ->
-// transcription), and a stray chat-indicator label must not promote it to LLM
-// and slip past classifier-capability validation or send run_classifier down the
-// unsupported chat_completion path at runtime.
-static ModelType get_deployment_model_type(const std::string& recipe,
-                                           const std::vector<std::string>& labels) {
-    if (const auto* desc = lemon::backends::descriptor_for(recipe)) {
-        for (const auto& label : desc->default_labels) {
-            ModelType backend_type = get_model_type_from_labels({label});
-            if (backend_type != ModelType::LLM) {
-                return backend_type;
-            }
-        }
-    }
-    ModelType type = get_model_type_from_labels(labels);
-
-    // Reaching here means the backend declares no definitive non-LLM deployment,
-    // i.e. it is a chat/general backend (llamacpp/flm/ryzenai/vllm/cloud) — none
-    // of which implement IClassificationServer (only onnxruntime does, and it
-    // returned CLASSIFICATION above via its default label). So a `classification`
-    // label here is spurious: typing it CLASSIFICATION would send run_classifier
-    // to Router::classify() and hit an unsupported-capability error. Drop the
-    // claim so the model stays an LLM, usable as an LLM-as-classifier via chat.
-    if (type == ModelType::CLASSIFICATION) {
-        std::vector<std::string> non_classification;
-        for (const auto& label : labels) {
-            if (label != "classification" && label != "classifier") {
-                non_classification.push_back(label);
-            }
-        }
-        return get_model_type_from_labels(non_classification);
-    }
-    return type;
-}
-
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
@@ -189,6 +150,13 @@ static std::string cache_key_to_canonical_id(const std::string& cache_key) {
         return cache_key;
     }
     return canonical_id(ModelSource::Builtin, cache_key);
+}
+
+// An illegal label set names the model it came from, wherever it is reported —
+// a /pull 400, a collection import refusal, a skipped entry on load.
+static std::string describe_illegal_labels(const std::string& model_name,
+                                           const std::string& reason) {
+    return "Model '" + model_name + "': " + reason;
 }
 
 // Candidate roots that FLM may use to store models. FLM resolves its model
@@ -1197,7 +1165,8 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     info.suggested = true;
     info.downloaded = true;
     info.source = EXTRA_MODEL_SOURCE;
-    info.labels.push_back("custom");
+    info.labels = {"custom"};
+    lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
     info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
     return info;
 }
@@ -1401,7 +1370,7 @@ void ModelManager::discover_extra_models_in_directory(
                 info.resolved_paths["mmproj"] = mmproj_file.string();
                 info.labels.push_back("vision");
             }
-            info.type = get_deployment_model_type(info.recipe, info.labels);
+            info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
             if (path == main_model_path) {
@@ -1424,7 +1393,7 @@ void ModelManager::discover_extra_models_in_directory(
             info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
-        info.type = get_deployment_model_type(info.recipe, info.labels);
+        info.type = get_model_type_from_labels(info.labels);
         add_extra_model(discovered, dir_name, dir_path, std::move(info));
     }
 }
@@ -1578,9 +1547,146 @@ void ModelManager::save_model_options(const ModelInfo& info) {
     LOG(INFO, "ModelManager") << "Saving options for model: " << info.model_name << std::endl;
     // Persist under canonical ID (built-ins are keyed bare in cache but
     // recipe_options.json stores them as builtin.<name>).
-    recipe_options_[cache_key_to_canonical_id(info.model_name)] = info.recipe_options.to_json();
-    update_model_options_in_cache(info);
-    save_user_json(get_recipe_options_file(), recipe_options_);
+    const std::string id = cache_key_to_canonical_id(info.model_name);
+    std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+
+    json snapshot;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        recipe_options_[id] = info.recipe_options.to_json();
+        snapshot = recipe_options_;
+        update_model_options_in_cache_locked(info);
+    }
+    save_user_json(get_recipe_options_file(), snapshot);
+}
+
+json ModelManager::get_saved_model_options(const std::string& model_name) {
+    const std::string id = cache_key_to_canonical_id(resolve_model_name(model_name));
+
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    if (recipe_options_.contains(id) && recipe_options_[id].is_object()) {
+        return recipe_options_[id];
+    }
+    return json::object();
+}
+
+RecipeOptions ModelManager::get_model_default_options(const ModelInfo& info) {
+    return build_recipe_options(info, registry_recipe_options(resolve_model_name(info.model_name)),
+                                "", json::object());
+}
+
+RecipeOptions ModelManager::preview_saved_model_options(const ModelInfo& info, const json& changes) {
+    const std::string cache_key = resolve_model_name(info.model_name);
+    const std::string id = cache_key_to_canonical_id(cache_key);
+
+    json saved = get_saved_model_options(cache_key);
+    for (const auto& [key, value] : changes.items()) {
+        if (value.is_null()) {
+            saved.erase(key);
+        } else {
+            saved[key] = value;
+        }
+    }
+    // Same layering as write_saved_model_options, so a preview cannot differ
+    // from the state the real write would produce.
+    return build_recipe_options(info, registry_recipe_options(cache_key), id, json{{id, saved}});
+}
+
+// The model's own `recipe_options` block from user_models.json/server_models.json,
+// i.e. the layer between image_defaults and what the user saved.
+json ModelManager::registry_recipe_options(const std::string& cache_key) {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return registry_recipe_options_locked(cache_key);
+}
+
+json ModelManager::registry_recipe_options_locked(const std::string& cache_key) {
+    const bool is_user_model = is_user_model_name(cache_key);
+    const std::string json_key = strip_user_model_prefix(cache_key);
+    const json* model_json = nullptr;
+    if (is_user_model && user_models_.contains(json_key)) {
+        model_json = &user_models_[json_key];
+    } else if (!is_user_model && server_models_.contains(json_key)) {
+        model_json = &server_models_[json_key];
+    }
+    if (model_json && model_json->contains("recipe_options") &&
+        (*model_json)["recipe_options"].is_object()) {
+        return (*model_json)["recipe_options"];
+    }
+    return json(nullptr);
+}
+
+json ModelManager::set_saved_model_options(const std::string& model_name, const json& saved) {
+    return write_saved_model_options(model_name, saved, /*merge=*/false);
+}
+
+json ModelManager::update_saved_model_options(const std::string& model_name, const json& changes) {
+    return write_saved_model_options(model_name, changes, /*merge=*/true);
+}
+
+// Read-modify-write of one model's recipe_options.json entry.
+//
+// recipe_options_write_mutex_ orders the whole-file rewrites, so two writers
+// can't land their snapshots out of order; models_cache_mutex_ covers the merge
+// and the matching cache update together, so the cache can never end up holding
+// an older option set than the file. Only the first is held across disk I/O —
+// every request thread contends on the cache mutex.
+json ModelManager::write_saved_model_options(const std::string& model_name,
+                                             const json& options, bool merge) {
+    const std::string cache_key = resolve_model_name(model_name);
+    const std::string id = cache_key_to_canonical_id(cache_key);
+    LOG(INFO, "ModelManager") << "Updating saved options for model: " << model_name << std::endl;
+
+    // get_model_info takes models_cache_mutex_ itself, so read it before
+    // locking. The registry layer is re-read under the lock instead, since the
+    // rebuild below has to reflect the registry as it stands at that moment.
+    ModelInfo info;
+    bool have_info = true;
+    try {
+        info = get_model_info(cache_key);
+    } catch (const std::exception&) {
+        have_info = false;
+    }
+
+    std::lock_guard<std::mutex> write_lock(recipe_options_write_mutex_);
+
+    json saved;
+    json snapshot;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        saved = merge && recipe_options_.contains(id) && recipe_options_[id].is_object()
+                    ? recipe_options_[id]
+                    : json::object();
+        if (merge) {
+            for (const auto& [key, value] : options.items()) {
+                if (value.is_null()) {
+                    saved.erase(key);
+                } else {
+                    saved[key] = value;
+                }
+            }
+        } else if (options.is_object()) {
+            saved = options;
+        }
+
+        if (saved.empty()) {
+            recipe_options_.erase(id);
+        } else {
+            recipe_options_[id] = saved;
+        }
+        snapshot = recipe_options_;
+
+        if (have_info) {
+            // Same layering as build_cache(), so the two can't drift.
+            info.recipe_options = build_recipe_options(
+                info, registry_recipe_options_locked(cache_key), id, json{{id, saved}});
+            update_model_options_in_cache_locked(info);
+        }
+    }
+
+    if (!have_info) invalidate_models_cache();
+
+    save_user_json(get_recipe_options_file(), snapshot);
+    return saved;
 }
 
 std::map<std::string, ModelInfo> ModelManager::get_supported_models() {
@@ -2198,8 +2304,23 @@ void ModelManager::build_cache() {
             json_recipe_options[key] = value["recipe_options"];
         }
 
+        // Built-ins declare their mode in server_models.json, and
+        // test_server_models_labels.py fails CI on one that names an illegal
+        // set, so this normally changes nothing — but it is what makes "an LLM
+        // always carries `chat`" hold for every ingest path rather than only
+        // for the ones that happen to call it.
+        std::string illegal =
+            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+        if (!illegal.empty()) {
+            LOG(ERROR, "ModelManager")
+                << "Skipping " << describe_illegal_labels(info.model_name, illegal)
+                << std::endl;
+            continue;
+        }
+        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
+
         // Populate type and device fields (multi-model support)
-        info.type = get_deployment_model_type(info.recipe, info.labels);
+        info.type = get_model_type_from_labels(info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -2249,6 +2370,19 @@ void ModelManager::build_cache() {
                 info.labels.push_back(label.get<std::string>());
             }
         }
+        // Registration is not re-run on load, so an entry persisted before the
+        // deployment labels existed is checked and stamped here instead. Skipping
+        // it costs the user one model; guessing which of its mode claims was
+        // meant would make every consumer trust an answer nobody wrote.
+        std::string illegal =
+            lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+        if (!illegal.empty()) {
+            LOG(ERROR, "ModelManager")
+                << "Skipping " << describe_illegal_labels(info.model_name, illegal)
+                << std::endl;
+            continue;
+        }
+        lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
         parse_image_defaults(info, value);
         parse_extras(info, value);
@@ -2259,7 +2393,7 @@ void ModelManager::build_cache() {
         }
 
         // Populate type and device fields (multi-model support)
-        info.type = get_deployment_model_type(info.recipe, info.labels);
+        info.type = get_model_type_from_labels(info.labels);
         info.device = device_type_for_recipe(info.recipe);
 
         try {
@@ -2326,6 +2460,19 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Clients are not guaranteed to handle a model that declares no deployment
+    // label. Every ingest path above stamps one; name any model that reached
+    // here without.
+    for (const auto& [name, info] : all_models) {
+        ModelType mode = ModelType::LLM;
+        if (!find_deployment_mode(info.labels, mode)) {
+            LOG(WARNING, "ModelManager")
+                << "Model '" << name << "' (recipe " << info.recipe
+                << ") has no deployment label; add one (chat, transcription, embeddings, ...)"
+                << std::endl;
+        }
+    }
+
     // Populate recipe options. recipe_options.json is keyed by canonical ID
     // (user.*, extra.*, builtin.*) - built-ins are keyed bare in the cache, so
     // we translate before lookup.
@@ -2371,7 +2518,7 @@ void ModelManager::build_cache() {
 
     for (auto& [name, info] : all_models) {
         populate_model_metadata(info);
-        if (info.downloaded) {
+        if (info.downloaded && !backend_self_manages_downloads(info.recipe)) {
             refresh_on_disk_size(info);
         }
         models_cache_[name] = info;
@@ -2480,9 +2627,17 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
             info.labels.push_back(label.get<std::string>());
         }
     }
+    std::string illegal =
+        lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+    if (!illegal.empty()) {
+        LOG(ERROR, "ModelManager")
+            << "Skipping " << describe_illegal_labels(model_name, illegal) << std::endl;
+        return;
+    }
+    lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
     // Populate type and device fields (multi-model support)
-    info.type = get_deployment_model_type(info.recipe, info.labels);
+    info.type = get_model_type_from_labels(info.labels);
     info.device = device_type_for_recipe(info.recipe);
 
     resolve_all_model_paths(info);
@@ -2512,9 +2667,7 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
 }
 
-void ModelManager::update_model_options_in_cache(const ModelInfo& info) {
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
+void ModelManager::update_model_options_in_cache_locked(const ModelInfo& info) {
     if (!cache_valid_) {
         return; // Will rebuild on next access
     }
@@ -2926,7 +3079,8 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     try {
         models = backends::CloudServer::discover_models(
             provider, api_key, base_url,
-            cloud_registry_->allow_insecure_http_for(provider));
+            cloud_registry_->allow_insecure_http_for(provider),
+            cloud_registry_->auth_header_for(provider));
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;
@@ -3014,21 +3168,27 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
 // The label set a user or inline model definition normalizes to. Kept in one
 // place so model registration (register_user_model) and collection.router
 // capability validation (validate_collection_request) derive the same type for
-// the same definition: explicit labels + legacy capability flags + the backend
-// descriptor's default labels (e.g. sd-cpp -> "image", whispercpp -> "transcription").
-static std::set<std::string> normalized_definition_labels(const json& model_data) {
-    std::set<std::string> labels = {"custom"};
-    std::vector<std::string> extra = model_data.value("labels", std::vector<std::string>{});
-    labels.insert(extra.begin(), extra.end());
-    if (model_data.value("reasoning", false)) labels.insert("reasoning");
-    if (model_data.value("vision", false)) labels.insert("vision");
-    if (model_data.value("embedding", false)) labels.insert("embeddings");
-    if (model_data.value("reranking", false)) labels.insert("reranking");
-    if (const auto* desc =
-            lemon::backends::descriptor_for(model_data.value("recipe", std::string()))) {
-        for (const auto& label : desc->default_labels) labels.insert(label);
+// the same definition: explicit labels + the capability booleans + the recipe's
+// default deployment mode. `illegal`, when given, receives why the definition
+// cannot describe a model, so the caller can refuse it in those words. The
+// returned set is meaningless when it is non-empty.
+static std::set<std::string> normalized_definition_labels(
+    const json& model_data, std::string* illegal = nullptr) {
+    const std::string recipe = model_data.value("recipe", std::string());
+    std::vector<std::string> labels = {"custom"};
+    for (const auto& label : model_data.value("labels", std::vector<std::string>{})) {
+        add_label_once(labels, label);
     }
-    return labels;
+    if (model_data.value("reasoning", false)) add_label_once(labels, "reasoning");
+    if (model_data.value("vision", false)) add_label_once(labels, "vision");
+    if (model_data.value("embedding", false)) add_label_once(labels, "embeddings");
+    if (model_data.value("reranking", false)) add_label_once(labels, "reranking");
+
+    if (illegal != nullptr) {
+        *illegal = lemon::backends::illegal_deployment_labels(labels, recipe);
+    }
+    lemon::backends::ensure_deployment_label(labels, recipe);
+    return std::set<std::string>(labels.begin(), labels.end());
 }
 
 // Whether the persisted user-model entry under `key` is a router collection.
@@ -3047,6 +3207,8 @@ static bool user_entry_is_router_collection(const json& user_models,
 void ModelManager::register_user_model(const std::string& model_name,
                                       const json& model_data,
                                       const std::string& source) {
+    const std::string recipe = model_data.value("recipe", std::string());
+
     // Remove "user." prefix if present
     std::string clean_name = model_name;
     if (is_user_model_name(clean_name)) {
@@ -3060,11 +3222,17 @@ void ModelManager::register_user_model(const std::string& model_name,
             model_entry[prop] = model_data[prop];
         }
     }
-    std::set<std::string> labels = normalized_definition_labels(model_data);
-
-    // `recipe` already copied into `model_entry` by the USER_DEFINED_MODEL_PROPS
-    // loop above; this local is just for the collection handling below.
-    std::string recipe = model_data.value("recipe", "");
+    // Every registration path funnels through here — direct registration, an
+    // imported collection's inline components, re-registration — so this is the
+    // one gate that refuses an illegal set of mode labels. Loading an
+    // already-persisted entry does not come through here; it is checked again on
+    // load, where an entry written by an older version is skipped rather than
+    // blocking startup.
+    std::string illegal;
+    std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
+    if (!illegal.empty()) {
+        throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
+    }
 
     model_entry["labels"] = labels;
     model_entry["suggested"] = true; // Always set suggested=true for user models
@@ -3160,7 +3328,7 @@ bool ModelManager::is_model_downloaded(const std::string& model_name) {
         : model_name;
     auto it = models_cache_.find(canonical_name);
     if (it != models_cache_.end()) {
-        if (it->second.downloaded) {
+        if (it->second.downloaded && !backend_self_manages_downloads(it->second.recipe)) {
             bool still_complete = are_required_checkpoints_complete(it->second);
             if (!still_complete) {
                 it->second.downloaded = false;
@@ -5281,6 +5449,16 @@ std::optional<std::string> ModelManager::validate_collection_request(
                        "' has an incomplete definition in 'models' (a recipe and "
                        "at least one checkpoint are required).";
             }
+            // register_user_model() would throw on this once the import reached
+            // registration, leaving a partly-imported collection behind. Report
+            // it here, where the import can still be refused whole.
+            if (!model_exists(bare) && def != nullptr) {
+                std::string illegal;
+                normalized_definition_labels(*def, &illegal);
+                if (!illegal.empty()) {
+                    return describe_illegal_labels(component_name, illegal);
+                }
+            }
         } else if (!model_exists(component_name)) {
             return "Collection component not registered: '" + component_name +
                    "'. Pull or register it before referencing it in a collection.";
@@ -5312,16 +5490,11 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 if (!def) {
                     return std::nullopt;
                 }
-                // Derive the type exactly as register_user_model() +
-                // get_deployment_model_type() would once this inline definition
-                // is registered — explicit labels, legacy capability flags, and
-                // the backend's default labels, with the backend's deployment
-                // capability winning over chat-indicator labels — so validation
-                // and runtime cannot disagree (e.g. a label-less sd-cpp model is
-                // IMAGE, and onnxruntime + reasoning:true is CLASSIFICATION, not LLM).
+                // Derive the type exactly as register_user_model() would once
+                // this inline definition is registered, so validation and
+                // runtime cannot disagree.
                 std::set<std::string> label_set = normalized_definition_labels(*def);
-                return get_deployment_model_type(
-                    def->value("recipe", std::string()),
+                return get_model_type_from_labels(
                     std::vector<std::string>(label_set.begin(), label_set.end()));
             }
         };
@@ -5460,6 +5633,15 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
             }
         }
     }
+    // This path reads the registry json directly rather than the cache the
+    // illegal entries were skipped from, so it refuses them again in its own
+    // "no such model" terms.
+    std::string illegal =
+        lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
+    if (!illegal.empty()) {
+        throw std::runtime_error(describe_illegal_labels(info.model_name, illegal));
+    }
+    lemon::backends::ensure_deployment_label(info.labels, info.recipe);
 
     // Parse size
     if (model_json->contains("size")) {

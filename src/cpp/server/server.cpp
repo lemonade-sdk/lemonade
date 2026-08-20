@@ -1,4 +1,6 @@
 #include "lemon/server.h"
+#include "lemon/audio_types.h"
+#include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
@@ -17,6 +19,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/model_name_utils.h"
@@ -1077,6 +1080,21 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_model_files(req, res);
     });
 
+    // Per-model recipe options. Same ordering constraint as /files above: must
+    // precede the generic /models/(.+) route.
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        const std::string route = std::string(prefix) + R"(/models/(.+)/options)";
+        web_server.Get(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_get(req, res);
+        });
+        web_server.Post(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_post(req, res);
+        });
+        web_server.Delete(route, [this](const httplib::Request& req, httplib::Response& res) {
+            handle_model_options_delete(req, res);
+        });
+    }
+
     // Model by ID (need to register for both versions with regex, with and without /api prefix)
     web_server.Get(R"(/api/v0/models/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_model_by_id(req, res);
@@ -1976,57 +1994,76 @@ void Server::run() {
             break;
         }
 
-        std::atomic<bool> listener_started(false);
-        std::atomic<bool> listener_start_failed(false);
+        const std::size_t listener_count =
+            static_cast<std::size_t>(!ipv4.empty()) +
+            static_cast<std::size_t>(!ipv6.empty());
+        utils::ListenerStartupState listener_startup(listener_count);
 
         if (!ipv4.empty()) {
             // setup ipv4 thread
             setup_http_logger(*http_server_);
-            http_v4_thread_ = std::thread([this, ipv4, &listener_started, &listener_start_failed]() {
+            http_v4_thread_ = std::thread([this, ipv4, &listener_startup]() {
                 LOG(INFO, "Server") << "Binding IPv4 HTTP server to " << ipv4 << ":" << port_ << "..." << std::endl;
                 int result = http_front_->bind_to_port(ipv4, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv4 HTTP server to " << ipv4 << ":" << port_ << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_bind_failure();
                     return;
                 }
                 // The routed server's keep-alive loop runs only while it sees
                 // a valid listen socket
                 http_server_->set_listen_socket(http_front_->listen_socket());
                 LOG(INFO, "Server") << "IPv4 HTTP server listening on " << ipv4 << ":" << port_ << std::endl;
-                listener_started = true;
+                listener_startup.record_bind_success();
                 if (!http_front_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv4 HTTP server listen_after_bind() failed" << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_listen_failure();
                 }
             });
         }
         if (!ipv6.empty()) {
             // setup ipv6 thread
             setup_http_logger(*http_server_v6_);
-            http_v6_thread_ = std::thread([this, ipv6, &listener_started, &listener_start_failed]() {
+            http_v6_thread_ = std::thread([this, ipv6, &listener_startup]() {
                 LOG(INFO, "Server") << "Binding IPv6 HTTP server to [" << ipv6 << "]:" << port_ << "..." << std::endl;
                 int result = http_front_v6_->bind_to_port(ipv6, port_);
                 if (result <= 0) {
                     LOG(ERROR, "Server") << "Failed to bind IPv6 HTTP server to [" << ipv6 << "]:" << port_ << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_bind_failure();
                     return;
                 }
                 http_server_v6_->set_listen_socket(http_front_v6_->listen_socket());
                 LOG(INFO, "Server") << "IPv6 HTTP server listening on [" << ipv6 << "]:" << port_ << std::endl;
-                listener_started = true;
+                listener_startup.record_bind_success();
                 if (!http_front_v6_->listen_after_bind()) {
                     LOG(ERROR, "Server") << "IPv6 HTTP server listen_after_bind() failed" << std::endl;
-                    listener_start_failed = true;
+                    listener_startup.record_listen_failure();
                 }
             });
+        }
+
+        while (!listener_startup.bind_attempts_complete() &&
+               !shutdown_requested_.load() && !rebind_requested_.load()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        if (listener_startup.failed()) {
+            LOG(ERROR, "Server") << "Could not start HTTP listeners for every address resolved for host '"
+                                 << host << "' (bind or listen failure). Server startup aborted." << std::endl;
+            stop();
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+            startup_failed_ = true;
+            break;
         }
 
         // Enumerate all RFC1918 interfaces to determine if we can broadcast.
         // The beacon will send per-interface with the correct IP in the payload.
         auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
-        bool no_bcast = config_->no_broadcast();
-        if (!rfc1918Interfaces.empty() && !no_bcast) {
+        bool bcast = config_->broadcast();
+        if (!rfc1918Interfaces.empty() && bcast) {
             std::cout << "[Server] [Net Broadcast] Broadcasting on " << rfc1918Interfaces.size()
                       << " RFC1918 interface(s):";
             for (const auto& iface : rfc1918Interfaces) {
@@ -2038,8 +2075,8 @@ void Server::run() {
                 port_,
                 2
             );
-        } else if (!rfc1918Interfaces.empty() && no_bcast) {
-            LOG(INFO, "Server") << "Broadcasting disabled by --no-broadcast option" << std::endl;
+        } else if (!rfc1918Interfaces.empty() && !bcast) {
+            LOG(INFO, "Server") << "Broadcasting disabled by configuration or CLI option" << std::endl;
         } else {
             LOG(INFO, "Server") << "Unable to broadcast my existance please use a RFC1918 IPv4," << std::endl
                         << "or hostname that resolves to RFC1918 IPv4." << std::endl;
@@ -2049,7 +2086,8 @@ void Server::run() {
         // The threads are blocked in listen_after_bind(), which only returns when
         // the server is stopped or an error occurs.
         while ((http_v4_thread_.joinable() || http_v6_thread_.joinable()) &&
-               !shutdown_requested_.load() && !rebind_requested_.load()) {
+               !shutdown_requested_.load() && !rebind_requested_.load() &&
+               !listener_startup.failed()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
 
@@ -2064,6 +2102,17 @@ void Server::run() {
             if (http_v6_thread_.joinable())
                 http_v6_thread_.join();
             break;  // Exit the main loop
+        }
+
+        if (listener_startup.failed()) {
+            LOG(ERROR, "Server") << "An HTTP listener stopped unexpectedly. Server exiting." << std::endl;
+            stop();
+            if (http_v4_thread_.joinable())
+                http_v4_thread_.join();
+            if (http_v6_thread_.joinable())
+                http_v6_thread_.join();
+            startup_failed_ = true;
+            break;
         }
 
         // If rebind was requested, stop() has already been called by apply_config_side_effects().
@@ -2082,20 +2131,6 @@ void Server::run() {
                 http_v4_thread_.join();
             if (http_v6_thread_.joinable())
                 http_v6_thread_.join();
-        }
-
-        if (!listener_started && listener_start_failed) {
-            if (rebind_requested_) {
-                // Port rebind failed (e.g. port in use) — restore old port and retry
-                LOG(ERROR, "Server") << "Failed to bind to new port " << port_
-                            << ", will not retry" << std::endl;
-                rebind_requested_ = false;
-                break;
-            }
-            std::cerr << "[Server] Another Lemonade router/server instance is already running on "
-                      << config_->host() << ":" << port_ << ". Duplicate instance now exiting." << std::endl;
-            stop();
-            break;
         }
 
         if (!rebind_requested_) {
@@ -2996,6 +3031,240 @@ void Server::handle_model_files(const httplib::Request& req, httplib::Response& 
     }
 }
 
+// `pinned` is live-process state: Router::load_model keeps a running server's
+// own pin rather than the resolved one, so a value saved here would not reach a
+// model that is already up. /v1/load and /internal/pin own it, and this endpoint
+// neither reports it in effective/defaults nor accepts it.
+static bool is_live_process_option(const std::string& key) {
+    return key == "pinned";
+}
+
+// Fill in every option the recipe accepts, resolving unset keys through the
+// default chain, so a client can render a complete form from one response.
+static nlohmann::json resolve_all_recipe_options(const RecipeOptions& options) {
+    nlohmann::json resolved = options.to_resolved_json();
+    resolved.erase("pinned");
+    return resolved;
+}
+
+static bool option_type_matches(const nlohmann::json& expected, const nlohmann::json& value) {
+    if (expected.is_number()) return value.is_number();
+    if (expected.is_string()) return value.is_string();
+    // Booleans, and the tri-state options whose default is null to mean "follow
+    // the global setting", both only ever hold a boolean once set.
+    return value.is_boolean();
+}
+
+// Reject values that pass the type check but would break the load they are
+// saved for. Returns an error message, or empty when the value is usable.
+static std::string validate_option_value(const std::string& key,
+                                         const nlohmann::json& expected,
+                                         const nlohmann::json& value) {
+    if (key == "ctx_size") {
+        // A literal above INT64_MAX parses as an unsigned and wraps on the way
+        // to int64_t, so 2^64-1 would arrive as -1 and read as "size it
+        // automatically". Rule it out before the conversion.
+        const bool fits_int64 = value.is_number_integer() &&
+            (!value.is_number_unsigned() ||
+             value.get<uint64_t>() <= static_cast<uint64_t>(INT64_MAX));
+        // 0 is not a shorthand for anything here: only -1 auto-resolves, so a 0
+        // reaches the backend verbatim and FastFlowLM and vLLM both reject it.
+        if (!fits_int64 || value.get<int64_t>() < -1 || value == 0) {
+            return "'ctx_size' must be a positive whole number, "
+                   "or -1 to size it automatically";
+        }
+        return "";
+    }
+
+    // A fractional value for a whole-number option is silently ignored by the
+    // consumers that read it, so refuse it.
+    if (expected.is_number_integer() && !value.is_number_integer()) {
+        return "'" + key + "' must be a whole number";
+    }
+    return "";
+}
+
+void Server::respond_with_model_options(
+    const httplib::Request& req, httplib::Response& res,
+    const std::function<bool(const std::string&, ModelInfo&, httplib::Response&)>& mutation) {
+    const std::string model_id = utils::normalize_model_name(req.matches[1]);
+    std::string model_key = model_id;
+
+    if (!model_manager_->model_exists(model_key)) {
+        std::optional<std::string> target;
+        if (alias_manager_ && alias_manager_->has_alias(model_id)) {
+            target = alias_manager_->resolve_alias(model_id);
+        }
+        std::string canonical_target = target ? model_manager_->resolve_model_name(*target) : "";
+        if (target && model_manager_->model_exists(canonical_target)) {
+            model_key = canonical_target;
+        } else if (target && model_manager_->model_exists(*target)) {
+            model_key = *target;
+        } else {
+            res.status = 404;
+            res.set_content(create_model_error(model_id, "Model not found").dump(), "application/json");
+            return;
+        }
+    }
+
+    // Work in canonical names from here on: a user model's requested id is its
+    // bare public name, which not every downstream lookup resolves for itself.
+    model_key = model_manager_->resolve_model_name(model_key);
+
+    try {
+        ModelInfo info = model_manager_->get_model_info(model_key);
+        if (mutation && !mutation(model_key, info, res)) return;
+
+        const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
+        RecipeOptions effective = router_->resolve_effective_options(info, no_request_options);
+
+        ModelInfo without_saved = info;
+        without_saved.recipe_options = model_manager_->get_model_default_options(info);
+        RecipeOptions defaults = router_->resolve_effective_options(without_saved, no_request_options);
+
+        // `effective` and `defaults` double as replayable /v1/load bodies.
+        nlohmann::json effective_json = resolve_all_recipe_options(effective);
+        nlohmann::json defaults_json = resolve_all_recipe_options(defaults);
+        effective_json["model_name"] = model_id;
+        defaults_json["model_name"] = model_id;
+
+        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        const nlohmann::json effective_ctx = effective.get_option("ctx_size");
+        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
+            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+
+        nlohmann::json response = {
+            {"model_name", model_id},
+            {"recipe", info.recipe},
+            {"saved", model_manager_->get_saved_model_options(model_key)},
+            {"effective", effective_json},
+            {"defaults", defaults_json},
+            {"resolved_ctx_size", resolved_ctx}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
+                             << "': " << e.what() << std::endl;
+        if (!model_manager_->model_exists(model_key)) {
+            // The model went away between the existence check and the read.
+            res.status = 404;
+            res.set_content(create_model_error(model_key, e.what()).dump(), "application/json");
+            return;
+        }
+        // Anything else is a server-side failure, most often the options file
+        // being unwritable. Reporting it through create_model_error would call
+        // it a load failure, which this endpoint never performs.
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", "Failed to read or update options for '" + model_id + "': " + e.what()},
+            {"type", "server_error"},
+            {"code", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_model_options_get(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res, nullptr);
+}
+
+void Server::handle_model_options_post(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this, &req](const std::string& model_key, ModelInfo& info, httplib::Response& r) {
+            nlohmann::json body;
+            if (!parse_required_json_body(req, r, body)) return false;
+            if (!body.is_object()) {
+                r.status = 400;
+                r.set_content(nlohmann::json{{"error", "Request body must be a JSON object of recipe options"}}
+                                  .dump(), "application/json");
+                return false;
+            }
+
+            bool dry_run = false;
+            if (body.contains("dry_run")) {
+                if (!body["dry_run"].is_boolean()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'dry_run' must be a boolean"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                dry_run = body["dry_run"].get<bool>();
+                body.erase("dry_run");
+            }
+
+            const auto keys = RecipeOptions::keys_for_recipe(info.recipe);
+            const std::set<std::string> allowed(keys.begin(), keys.end());
+            const RecipeOptions unset(info.recipe, nlohmann::json::object());
+
+            // Validate everything before writing anything, and express each
+            // change as set-or-erase so the merge can happen atomically.
+            nlohmann::json changes = nlohmann::json::object();
+            for (const auto& [key, value] : body.items()) {
+                // The URL names the model; tolerate the body's copy so the
+                // `effective` object (a /v1/load body) can be posted back here.
+                if (key == "model_name") continue;
+                if (!allowed.count(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Unknown option '" + key +
+                                                           "' for recipe '" + info.recipe + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                if (is_live_process_option(key)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "'" + key + "' applies to a running "
+                        "model; use /v1/load or /internal/pin"}}.dump(), "application/json");
+                    return false;
+                }
+                // null removes the key. The other values the option system
+                // reads as "not set" ("", -1, "auto") still clear every option
+                // except ctx_size, where -1 is a value and a malformed size is
+                // an error rather than an absence.
+                const bool clears = value.is_null() ||
+                    (key != "ctx_size" && RecipeOptions::is_default_sentinel(key, value));
+                if (clears) {
+                    changes[key] = nullptr;
+                    continue;
+                }
+                const nlohmann::json expected = unset.get_option(key);
+                if (!option_type_matches(expected, value)) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", "Invalid type for option '" + key + "'"}}
+                                      .dump(), "application/json");
+                    return false;
+                }
+                const std::string invalid = validate_option_value(key, expected, value);
+                if (!invalid.empty()) {
+                    r.status = 400;
+                    r.set_content(nlohmann::json{{"error", invalid}}.dump(), "application/json");
+                    return false;
+                }
+                changes[key] = value;
+            }
+
+            if (dry_run) {
+                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                return true;
+            }
+            if (!changes.empty()) {
+                model_manager_->update_saved_model_options(model_key, changes);
+            }
+            info = model_manager_->get_model_info(model_key);
+            return true;
+        });
+}
+
+void Server::handle_model_options_delete(const httplib::Request& req, httplib::Response& res) {
+    respond_with_model_options(req, res,
+        [this](const std::string& model_key, ModelInfo& info, httplib::Response&) {
+            if (!model_manager_->get_saved_model_options(model_key).empty()) {
+                model_manager_->set_saved_model_options(model_key, nlohmann::json::object());
+            }
+            info = model_manager_->get_model_info(model_key);
+            return true;
+        });
+}
+
 void Server::handle_collection_chat_completions(const nlohmann::json& request_json,
                                                 const ModelInfo& collection_info,
                                                 httplib::Response& res) {
@@ -3086,6 +3355,8 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     result.requested_model = collection_info.model_name;
     result.selected_model = decision.route_to;
     result.decision = std::move(decision);
+    router_->note_route_decision(utils::conversation_fingerprint(request_json),
+                                 result.selected_model);
     return result;
 }
 
@@ -3245,6 +3516,26 @@ std::set<std::string> Server::active_policy_helper_models() {
         }
     }
     return needed;
+}
+
+void Server::record_response_telemetry(const nlohmann::json& response,
+                                       const nlohmann::json& request_json) {
+    if (!response.is_object() ||
+        (!response.contains("timings") && !response.contains("usage"))) {
+        return;
+    }
+
+    StreamingProxy::TelemetryData telemetry = StreamingProxy::extract_telemetry(response);
+    std::string model_name = request_json.value("model", "");
+    LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
+                           << ", tokens=" << (telemetry.input_tokens + telemetry.output_tokens)
+                           << " (in=" << telemetry.input_tokens
+                           << ", out=" << telemetry.output_tokens << ")"
+                           << ", ttft=" << std::fixed << std::setprecision(2)
+                           << telemetry.time_to_first_token << "s"
+                           << ", tps=" << telemetry.tokens_per_second << std::endl;
+
+    router_->update_request_telemetry(model_name, telemetry);
 }
 
 void Server::handle_chat_completions(const httplib::Request& req, httplib::Response& res) {
@@ -3423,97 +3714,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
             res.set_content(response.dump(), "application/json");
 
-            // Print and save telemetry for non-streaming
-            // llama-server includes timing data in the response under "timings" field
-            if (response.contains("timings")) {
-                auto timings = response["timings"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (timings.contains("prompt_n")) {
-                    input_tokens = timings["prompt_n"].get<int>();
-                }
-                if (timings.contains("predicted_n")) {
-                    output_tokens = timings["predicted_n"].get<int>();
-                }
-                if (timings.contains("prompt_ms")) {
-                    ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                }
-                if (timings.contains("predicted_per_second")) {
-                    tps = timings["predicted_per_second"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            } else if (response.contains("usage")) {
-                // OpenAI format uses "usage" field
-                auto usage = response["usage"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (usage.contains("prompt_tokens")) {
-                    input_tokens = usage["prompt_tokens"].get<int>();
-                }
-                if (usage.contains("completion_tokens")) {
-                    output_tokens = usage["completion_tokens"].get<int>();
-                }
-
-                // FLM format may include timing data
-                if (usage.contains("prefill_duration_ttft")) {
-                    ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                }
-                if (usage.contains("decoding_speed_tps")) {
-                    tps = usage["decoding_speed_tps"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            }
-
-            // Capture prompt_tokens from usage if available
-            if (response.contains("usage")) {
-                auto usage = response["usage"];
-                if (usage.contains("prompt_tokens")) {
-                    int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
-                }
-            }
+            record_response_telemetry(response, request_json);
 
 
         }
@@ -3644,95 +3845,7 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
             attach_route_decision(response, res, route_dispatch);
             res.set_content(response.dump(), "application/json");
 
-            // Print and save telemetry for non-streaming completions
-            if (response.contains("timings")) {
-                auto timings = response["timings"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (timings.contains("prompt_n")) {
-                    input_tokens = timings["prompt_n"].get<int>();
-                }
-                if (timings.contains("predicted_n")) {
-                    output_tokens = timings["predicted_n"].get<int>();
-                }
-                if (timings.contains("prompt_ms")) {
-                    ttft_seconds = timings["prompt_ms"].get<double>() / 1000.0;
-                }
-                if (timings.contains("predicted_per_second")) {
-                    tps = timings["predicted_per_second"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            } else if (response.contains("usage")) {
-                auto usage = response["usage"];
-                int input_tokens = 0;
-                int output_tokens = 0;
-                double ttft_seconds = 0.0;
-                double tps = 0.0;
-
-                if (usage.contains("prompt_tokens")) {
-                    input_tokens = usage["prompt_tokens"].get<int>();
-                }
-                if (usage.contains("completion_tokens")) {
-                    output_tokens = usage["completion_tokens"].get<int>();
-                }
-
-                // FLM format may include timing data
-                if (usage.contains("prefill_duration_ttft")) {
-                    ttft_seconds = usage["prefill_duration_ttft"].get<double>();
-                }
-                if (usage.contains("decoding_speed_tps")) {
-                    tps = usage["decoding_speed_tps"].get<double>();
-                }
-
-                std::string model_name = request_json.value("model", "");
-                LOG(INFO, "Telemetry") << "Inference completed: model=" << model_name
-                                       << ", tokens=" << (input_tokens + output_tokens)
-                                       << " (in=" << input_tokens << ", out=" << output_tokens << ")"
-                                       << ", ttft=" << std::fixed << std::setprecision(2) << ttft_seconds << "s"
-                                       << ", tps=" << tps << std::endl;
-
-                LOG(DEBUG, "Telemetry") << "=== Telemetry ===\n"
-                                        << "Model:         " << model_name << "\n"
-                                        << "Input tokens:  " << input_tokens << "\n"
-                                        << "Output tokens: " << output_tokens << "\n"
-                                        << "TTFT (s):      " << std::fixed << std::setprecision(2) << ttft_seconds << "\n"
-                                        << "TPS:           " << std::fixed << std::setprecision(2) << tps << "\n"
-                                        << "=================" << std::endl;
-
-                // Save telemetry to router
-                router_->update_telemetry(model_name, input_tokens, output_tokens,
-                                          ttft_seconds, tps);
-            }
-
-            // Capture prompt_tokens from usage if available
-            if (response.contains("usage")) {
-                auto usage = response["usage"];
-                if (usage.contains("prompt_tokens")) {
-                    int prompt_tokens = usage["prompt_tokens"].get<int>();
-                    router_->update_prompt_tokens(request_json.value("model", ""), prompt_tokens);
-                }
-            }
+            record_response_telemetry(response, request_json);
         }
 
     } catch (const RouterResidencyConflictException& e) {
@@ -4185,7 +4298,7 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
 
         // Build request JSON for router
-        nlohmann::json request_json;
+        nlohmann::json request_json = nlohmann::json::object();
 
         // Extract form fields
         if (req.form.has_field("model")) {
@@ -4204,6 +4317,20 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         }
         if (req.form.has_field("temperature")) {
             request_json["temperature"] = std::stod(req.form.get_field("temperature"));
+        }
+
+        // Validate response format early
+        std::string response_format =
+            request_json.value("response_format", lemon::audio::ResponseFormat::JSON);
+
+        if (!lemon::audio::is_supported_response_format(response_format)) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "Unsupported response_format: " + response_format},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
         }
 
         // Extract audio file
@@ -4257,9 +4384,15 @@ void Server::handle_audio_transcriptions(const httplib::Request& req, httplib::R
         // Forward to router
         auto response = router_->audio_transcriptions(request_json);
 
-        // Check for error in response
         if (response.contains("error")) {
             set_error_response(response, res, 500);
+            return;
+        }
+
+        if (lemon::audio::is_plain_text_format(response_format) &&
+            response.contains("text") &&
+            response["text"].is_string()) {
+            res.set_content(response["text"].get<std::string>(), "text/plain");
             return;
         }
 
@@ -5115,9 +5248,10 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         if (resolved_backend == "rocm-stable") {
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
-                std::string therock_lib = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
-                if (!therock_lib.empty()) {
-                    lib_path = therock_lib + ":" + lib_path;
+                std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
+                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch));
+                if (!therock_dirs.empty()) {
+                    lib_path = therock_dirs + ":" + lib_path;
                 }
             }
         }
@@ -5131,16 +5265,36 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         if (resolved_backend == "rocm-stable") {
             std::string new_path = cli_dir.string();
             std::string rocm_arch = SystemInfo::get_rocm_arch();
+            std::vector<std::string> therock_dirs;
             if (!rocm_arch.empty()) {
-                std::string therock_bin = lemon::backends::BackendUtils::get_therock_lib_path(rocm_arch);
-                if (!therock_bin.empty()) {
-                    new_path = therock_bin + ";" + new_path;
+                therock_dirs =
+                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch);
+                for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                    if (!it->empty()) {
+                        new_path = *it + ";" + new_path;
+                    }
                 }
             }
 
             const char* existing_path = std::getenv("PATH");
             if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
             env_vars.push_back({"PATH", new_path});
+
+            if (!therock_dirs.empty()) {
+                fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
+                fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
+                if (fs::exists(therock_dll)) {
+                    std::error_code ec;
+                    fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                    if (!ec) {
+                        LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
+                            << lemon::utils::path_to_utf8(target_dll) << std::endl;
+                    } else {
+                        LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
+                            << ec.message() << std::endl;
+                    }
+                }
+            }
         }
 #endif
 
@@ -5251,6 +5405,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             attach_route_decision(response, res, route_dispatch);
             LOG(INFO, "Server") << "200 OK" << std::endl;
             res.set_content(response.dump(), "application/json");
+
+            record_response_telemetry(response, request_json);
         }
 
     } catch (const RouterResidencyConflictException& e) {
@@ -5276,7 +5432,9 @@ bool Server::parse_required_json_body(const httplib::Request& req,
     try {
         out = nlohmann::json::parse(req.body);
         return true;
-    } catch (const nlohmann::json::parse_error& e) {
+    } catch (const nlohmann::json::exception& e) {
+        // Not just parse_error: a numeric literal too large for a double raises
+        // out_of_range, which is a sibling type and would otherwise escape as a 500.
         res.status = 400;
         nlohmann::json error = {{"error", std::string("Invalid JSON in request body: ") + e.what()}};
         res.set_content(error.dump(), "application/json");
@@ -5405,6 +5563,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
         res.status = 400;
         nlohmann::json error = {{"error", e.what()}, {"code", lemon::kUnknownModelErrorCode}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const lemon::InvalidModelDefinitionError& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", e.what()}};
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_pull: " << e.what() << std::endl;
@@ -5643,8 +5806,30 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
 
         auto info = model_manager_->get_model_info(model_name);
 
-        // Extract optional per-model settings (defaults to -1 / empty = use Router defaults)
+        // Extract optional per-model settings. Omitted options keep saved values;
+        // explicit *_args keys mask them for this load, and null acts as a tombstone.
+        // ctx_size=-1 explicitly requests automatic sizing.
+        // ctx_size=-1 remains an explicit request for automatic sizing.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        std::set<std::string> transient_saved_option_tombstones;
+        std::set<std::string> transient_saved_option_masks;
+        for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
+            if (!request_json.contains(key)) {
+                continue;
+            }
+
+            if (request_json[key].is_null()) {
+                transient_saved_option_tombstones.insert(key);
+                transient_saved_option_masks.insert(key);
+                continue;
+            }
+
+            if (key.size() >= 5 &&
+                key.compare(key.size() - 5, 5, "_args") == 0) {
+                transient_saved_option_masks.insert(key);
+            }
+        }
+
         bool save_options = request_json.value("save_options", false);
         std::optional<bool> pinned_opt = std::nullopt;
         if (request_json.contains("pinned") && request_json["pinned"].is_boolean()) {
@@ -5655,20 +5840,48 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         LOG(INFO, "Server") << " " << options.to_log_string(false);
         LOG(INFO, "Server") << std::endl;
 
-        // Persist request options to model info if requested
+        // Persist concrete request options if requested. A null tombstone is
+        // load-scoped, so preserve the existing saved value for that key.
         if (save_options) {
-            info.recipe_options = options;
-            model_manager_->save_model_options(info);
+            json saved_for_write = options.to_json();
+            if (!transient_saved_option_tombstones.empty()) {
+                const json existing_saved = model_manager_->get_saved_model_options(model_name);
+                for (const auto& key : transient_saved_option_tombstones) {
+                    auto it = existing_saved.find(key);
+                    if (it != existing_saved.end()) {
+                        saved_for_write[key] = *it;
+                    }
+                }
+            }
+            model_manager_->set_saved_model_options(model_name, saved_for_write);
+            info = model_manager_->get_model_info(model_name);
         }
 
-        // Download model if needed (first-time use or missing files). Collections have no
-        // checkpoint of their own, so skip the generic HF download path here
-        // and let the per-component branch below cascade any missing pieces.
         if (!model_manager_->is_model_downloaded(model_name) && !is_model_collection_recipe(info.recipe)) {
             LOG(INFO, "Server") << "Model not downloaded, downloading..." << std::endl;
             model_manager_->download_registered_model(info);
             info = model_manager_->get_model_info(model_name);
         }
+
+        // ModelInfo::recipe_options contains the model-level defaults plus the
+        // recipe_options.json overlay. Rebuild that local copy with request-masked
+        // saved keys removed. Concrete *_args then override the saved same-key
+        // layer while merge_args can still combine model defaults and the lower
+        // architecture/backend/global layers. This load does not alter the
+        // persistent recipe_options.json entry.
+        if (!transient_saved_option_masks.empty()) {
+            json per_model_options = model_manager_->get_model_default_options(info).to_json();
+            const json saved = model_manager_->get_saved_model_options(model_name);
+            if (saved.is_object()) {
+                for (const auto& [key, value] : saved.items()) {
+                    if (transient_saved_option_masks.count(key) == 0) {
+                        per_model_options[key] = value;
+                    }
+                }
+            }
+            info.recipe_options = RecipeOptions(info.recipe, per_model_options);
+        }
+
 
         // Collection models: load each component instead
         if (is_omni_collection_recipe(info.recipe) && !info.components.empty()) {
@@ -6163,7 +6376,7 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
                 return;
             }
             if (allow_insecure_http && !already_allowed) {
-                cloud_registry_->install(provider, base_url, true);
+                cloud_registry_->set_allow_insecure_http(provider, true);
                 persist_cloud_providers();
             }
         }
@@ -6430,6 +6643,8 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"name", rec.name},
                 {"base_url", rec.base_url},
                 {"allow_insecure_http", rec.allow_insecure_http},
+                {"auth_header_name", rec.auth_header_name},
+                {"auth_header_prefix", rec.auth_header_prefix},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -6850,10 +7065,10 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
-        } else if (key == "no_broadcast") {
-            bool nb = config_->no_broadcast();
-            LOG(INFO, "Server") << "Broadcast " << (nb ? "disabled" : "enabled") << std::endl;
-            if (nb) {
+        } else if (key == "broadcast" || key == "no_broadcast") {
+            bool bcast = config_->broadcast();
+            LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
+            if (!bcast) {
                 udp_beacon_.stopBroadcasting();
             } else {
                 auto rfc1918Interfaces = udp_beacon_.getLocalRFC1918Interfaces();
@@ -7369,47 +7584,78 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    api_key: "..."}  // optional
+        //    auth_header_name / auth_header_prefix: see
+        //      CloudProviderRegistry::Record,
+        //    api_key: "..."}
+        //
+        // Every field after base_url is optional and applied only when
+        // present, so a re-install that omits one (the desktop add-provider
+        // form posts just backend / provider / base_url / api_key) keeps the
+        // stored value.
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");
             const std::string api_key = request_json.value("api_key", "");
-            bool allow_insecure_http = false;
-            if (request_json.contains("allow_insecure_http")) {
-                if (!request_json["allow_insecure_http"].is_boolean()) {
-                    res.status = 400;
-                    nlohmann::json error = {{"error", {
-                        {"message", "allow_insecure_http must be a boolean when provided"},
-                        {"type", "invalid_request_error"}}}};
-                    res.set_content(error.dump(), "application/json");
-                    return;
-                }
-                allow_insecure_http = request_json["allow_insecure_http"].get<bool>();
-            }
-            if (provider.empty() || base_url.empty()) {
+
+            auto reject = [&](const std::string& message) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"message", message},
                     {"type", "invalid_request_error"}}}};
                 res.set_content(error.dump(), "application/json");
+            };
+            if (provider.empty() || base_url.empty()) {
+                reject("Cloud install requires 'provider' and 'base_url' string fields");
                 return;
             }
             if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", err},
-                    {"type", "invalid_request_error"}}}};
-                res.set_content(error.dump(), "application/json");
+                reject(err);
                 return;
             }
             if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", err},
-                    {"type", "invalid_request_error"}}}};
-                res.set_content(error.dump(), "application/json");
+                reject(err);
                 return;
             }
+
+            CloudProviderRegistry::InstallOptions install_options;
+            auto read_header_field = [&](const char* field,
+                                         std::string (*validate)(const std::string&),
+                                         std::optional<std::string>& out) {
+                if (!request_json.contains(field)) return true;
+                if (!request_json[field].is_string()) {
+                    reject(std::string(field) + " must be a string when provided");
+                    return false;
+                }
+                auto value = request_json[field].get<std::string>();
+                if (auto err = validate(value); !err.empty()) {
+                    reject(err);
+                    return false;
+                }
+                out = std::move(value);
+                return true;
+            };
+            if (!read_header_field("auth_header_name",
+                                   CloudProviderRegistry::validate_auth_header_name,
+                                   install_options.auth_header_name) ||
+                !read_header_field("auth_header_prefix",
+                                   CloudProviderRegistry::validate_auth_header_prefix,
+                                   install_options.auth_header_prefix)) {
+                return;
+            }
+            if (request_json.contains("allow_insecure_http")) {
+                if (!request_json["allow_insecure_http"].is_boolean()) {
+                    reject("allow_insecure_http must be a boolean when provided");
+                    return;
+                }
+                install_options.allow_insecure_http =
+                    request_json["allow_insecure_http"].get<bool>();
+            }
+            // The http:// opt-in gate below reflects the effective state: an
+            // omitted flag on a re-install keeps whatever was stored.
+            const bool allow_insecure_http =
+                install_options.allow_insecure_http.value_or(
+                    cloud_registry_->allow_insecure_http_for(provider));
+
             const auto env_state = cloud_registry_->auth_state(provider);
             if (CloudProviderRegistry::is_http_base_url(base_url) &&
                 !allow_insecure_http &&
@@ -7426,7 +7672,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
             LOG(INFO, "Server") << "Installing cloud provider '" << provider
                                   << "' with base_url " << base_url << std::endl;
-            cloud_registry_->install(provider, base_url, allow_insecure_http);
+            cloud_registry_->install(provider, base_url, install_options);
             persist_cloud_providers();
 
             // Best-effort optional auth: if api_key was supplied, treat this
@@ -7443,6 +7689,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             // call /v1/system-info later to see how many models showed up.
             size_t models_after = model_manager_->refresh_cloud_models(provider);
             const auto state = cloud_registry_->auth_state(provider);
+            const auto auth_header = cloud_registry_->auth_header_for(provider);
 
             nlohmann::json response = {
                 {"status", "success"},
@@ -7450,6 +7697,8 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"provider", provider},
                 {"base_url", cloud_registry_->base_url_for(provider)},
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
+                {"auth_header_name", auth_header.name},
+                {"auth_header_prefix", auth_header.prefix},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},

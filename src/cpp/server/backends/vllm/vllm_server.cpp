@@ -501,7 +501,8 @@ void VLLMServer::load(const std::string& model_name,
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
+    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
+                       executable, args);
 
     // vLLM can take longer to start (loading model, compiling kernels)
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
@@ -571,23 +572,14 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
     }
 
-    Telemetry telemetry;
+    StreamingProxy::TelemetryData telemetry;
     bool has_telemetry = false;
-    std::string telemetry_error = "";
 
     WrappedServer::forward_streaming_request(
         endpoint, body, sink, sse, timeout_seconds,
-        [&telemetry, &has_telemetry, &telemetry_error](int input_tokens,
-                                     int output_tokens,
-                                     double time_to_first_token,
-                                     double tokens_per_second,
-                                     const std::string& error_message) {
+        [&telemetry, &has_telemetry](const StreamingProxy::TelemetryData& reported) {
             has_telemetry = true;
-            telemetry.input_tokens = input_tokens;
-            telemetry.output_tokens = output_tokens;
-            telemetry.time_to_first_token = time_to_first_token;
-            telemetry.tokens_per_second = tokens_per_second;
-            telemetry_error = error_message;
+            telemetry = reported;
         });
 
     if (has_telemetry) {
@@ -602,11 +594,7 @@ void VLLMServer::forward_streaming_request(const std::string& endpoint,
         }
 
         if (telemetry_callback) {
-            telemetry_callback(telemetry.input_tokens,
-                               telemetry.output_tokens,
-                               telemetry.time_to_first_token,
-                               telemetry.tokens_per_second,
-                               telemetry_error);
+            telemetry_callback(telemetry);
         }
     }
 }

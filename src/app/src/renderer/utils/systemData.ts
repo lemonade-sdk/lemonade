@@ -74,7 +74,7 @@ export interface BackendInfo {
   download_size_bytes?: number;
 }
 
-interface SystemData {
+export interface SystemData {
   info?: SystemInfo;
 }
 

@@ -44,9 +44,9 @@ inline const BackendDescriptor descriptor = {
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
-    /*default_labels*/  {"image"},
+    /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()
-    /*modality*/        "Image generation",
+    /*default_capabilities*/ {},
     /*experimental*/    false,
     /*web_display_name*/ "stable-diffusion.cpp",
     /*rocm_channels*/   {"stable"},

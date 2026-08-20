@@ -1,4 +1,4 @@
-# 🍋 Lemonade Frequently Asked Questions
+# Lemonade Frequently Asked Questions
 
 ## Overview
 

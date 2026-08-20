@@ -50,6 +50,7 @@
 #include "lemon/utils/aixlog.hpp"
 
 static const std::vector<std::string> VALID_LABELS = {
+    "chat",
     "coding",
     "dflash",
     "embeddings",
@@ -147,6 +148,7 @@ struct CliConfig {
     std::string host = "127.0.0.1";
     int port = 13305;
     bool is_ssl = false;
+    bool no_discovery = false;
     std::string api_key;
     std::string model;
     std::string list_filter;
@@ -181,6 +183,10 @@ struct CliConfig {
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
+    // Unset means "don't send the field", so the server keeps the provider's
+    // current value instead of resetting it to the Authorization/Bearer default.
+    std::optional<std::string> cloud_auth_header_name;
+    std::optional<std::string> cloud_auth_header_prefix;
 
     // Alias management options
     std::string alias_name;
@@ -605,16 +611,6 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
 static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
     lemonade::LemonadeClient& client,
     int context_window) {
-    static const std::unordered_set<std::string> non_llm_labels = {
-        "embeddings",
-        "reranking",
-        "transcription",
-        "image",
-        "tts",
-        "upscaling",
-        "edit"
-    };
-
     std::vector<lemon_cli::AgentModelEntry> models;
 
     try {
@@ -631,22 +627,27 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
                 continue;
             }
 
-            bool is_llm = true;
-            if (model.contains("labels") && model["labels"].is_array()) {
-                for (const auto& label : model["labels"]) {
-                    if (label.is_string() && non_llm_labels.count(label.get<std::string>()) > 0) {
-                        is_llm = false;
+            bool is_chat = false;
+            const auto labels = model.find("labels");
+            if (labels != model.end() && labels->is_array()) {
+                for (const auto& label : *labels) {
+                    if (label.is_string() && label.get<std::string>() == "chat") {
+                        is_chat = true;
                         break;
                     }
                 }
             }
-
-            if (!is_llm) {
+            if (!is_chat) {
                 continue;
             }
 
             const std::string model_id = model["id"].get<std::string>();
-            models.push_back({model_id, model_id + " (local)", context_window});
+            int model_context_window = context_window;
+            if (model.contains("recipe_options") && model["recipe_options"].is_object()
+			    && model["recipe_options"].contains("ctx_size")) {
+                model_context_window = model["recipe_options"]["ctx_size"].get<int>();
+            }
+            models.push_back({model_id, model_id + " (local)", model_context_window});
         }
     } catch (const std::exception&) {
         // Non-fatal: we still include the selected model below.
@@ -1247,6 +1248,7 @@ int main(int argc, char* argv[]) {
         ->default_val(config.api_key)
         ->type_name("KEY")
         ->envname("LEMONADE_API_KEY");
+    app.add_flag("!--discovery,--no-discovery", config.no_discovery, "Enable or disable auto-discovery of local server via UDP beacon");
 
     // Subcommands
     // Quick start commands
@@ -1314,6 +1316,13 @@ int main(int argc, char* argv[]) {
         ->type_name("KEY");
     cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
         "Explicitly allow sending this provider's API key over http://.");
+    cloud_install_cmd->add_option("--auth-header-name", config.cloud_auth_header_name,
+        "Custom auth header name, for gateways that don't use 'Authorization' (default: Authorization)")
+        ->type_name("HEADER");
+    cloud_install_cmd->add_option("--auth-header-prefix", config.cloud_auth_header_prefix,
+        "Custom auth header value prefix; pass an empty string for gateways with no "
+        "'Bearer ' prefix (default: 'Bearer ')")
+        ->type_name("PREFIX");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1514,10 +1523,10 @@ int main(int argc, char* argv[]) {
     config.codex_use_user_config = (codex_provider_opt != nullptr && codex_provider_opt->count() > 0);
 
     // Auto-discover local server via UDP beacon if the default connection fails
-    // Skip when: no command given, scan command, or user explicitly set --host/--port
+    // Skip when: no command given, scan command, or user explicitly set --host/--port, or --no-discovery is set
     bool has_command = !app.get_subcommands().empty();
     bool explicit_target = (host_opt->count() > 0 || port_opt->count() > 0);
-    if (has_command && scan_cmd->count() == 0 && !explicit_target) {
+    if (has_command && scan_cmd->count() == 0 && !explicit_target && !config.no_discovery) {
         // Localhost responds in <10ms; use short timeout. Remote hosts need more.
         bool is_local = (config.host.empty() || config.host == "127.0.0.1" ||
                          config.host == "localhost" || config.host == "0.0.0.0");
@@ -1606,7 +1615,9 @@ int main(int argc, char* argv[]) {
             return client.install_cloud_provider(config.cloud_provider,
                                                   config.cloud_base_url,
                                                   config.cloud_api_key,
-                                                  config.cloud_allow_insecure_http);
+                                                  config.cloud_allow_insecure_http,
+                                                  config.cloud_auth_header_name,
+                                                  config.cloud_auth_header_prefix);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);
