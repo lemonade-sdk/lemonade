@@ -36,6 +36,9 @@
         "route_to": "cloud" },
       { "id": "unicode-keyword-rule",
         "match": { "keywords_any": ["café"] },
+        "route_to": "cloud" },
+      { "id": "digit-class-rule",
+        "match": { "regex": "id-\\d" },
         "route_to": "cloud" }
     ]
   }

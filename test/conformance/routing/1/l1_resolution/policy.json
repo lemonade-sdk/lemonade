@@ -12,7 +12,21 @@
         "route_to": "cloud" },
       { "id": "second-rule",
         "match": { "keywords_any": ["shared", "only2"] },
-        "route_to": "edge" }
+        "route_to": "edge" },
+      { "id": "explicit-default-rule",
+        "match": { "keywords_any": ["only3"] },
+        "route_to": "local" },
+      { "id": "nested-outputs-rule",
+        "match": { "keywords_any": ["escalate"] },
+        "route_to": "cloud",
+        "outputs": {
+          "category": "support",
+          "priority": 1,
+          "metadata": {
+            "team": "tier2",
+            "tags": ["urgent", "billing"]
+          }
+        } }
     ]
   }
 }

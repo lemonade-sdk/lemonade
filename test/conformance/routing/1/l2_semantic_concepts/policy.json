@@ -1,0 +1,18 @@
+{
+  "version": "1",
+  "model_name": "user.Semantic-Concepts",
+  "recipe": "collection.router",
+  "components": ["MathLLM", "CodingLLM", "DefaultLLM", "EmbedModel"],
+  "routing": {
+    "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "topic", "type": "semantic_similarity", "model": "EmbedModel",
+        "reference_phrases": { "coding": ["writes code"], "math": ["proves theorems"] } }
+    ],
+    "rules": [
+      { "id": "route-CodingLLM",  "match": { "classifier": "topic", "label": "coding", "min_score": 0.75 }, "route_to": "CodingLLM" },
+      { "id": "route-MathLLM",   "match": { "classifier": "topic", "label": "math",   "min_score": 0.75 }, "route_to": "MathLLM" }
+    ]
+  }
+}
