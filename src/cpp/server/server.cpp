@@ -15,6 +15,7 @@
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -6623,6 +6624,22 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // Enrich with release_url, download_filename, version from BackendManager config
     if (system_info.contains("recipes")) {
         enrich_recipes(system_info["recipes"]);
+    }
+
+    // Surfaced as a separate host-specific field rather than by pruning
+    // `recipes`, which must stay canonical: the docs generator renders
+    // README/models.js from it and would otherwise drift with the generating
+    // machine's memory. Dynamic-model backends (cloud, flm) are never listed.
+    if (model_manager_) {
+        nlohmann::json unavailable = nlohmann::json::array();
+        for (const std::string& recipe : model_manager_->recipes_with_all_models_filtered()) {
+            const BackendDescriptor* desc = backends::descriptor_for(recipe);
+            if (desc && desc->dynamic_models) {
+                continue;
+            }
+            unavailable.push_back(recipe);
+        }
+        system_info["unavailable_recipes"] = std::move(unavailable);
     }
 
     // Surface runtime config flags that affect client-side install/download UX.

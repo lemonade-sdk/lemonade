@@ -2805,6 +2805,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
+# Recipe hiding: a backend with every built-in model dropped by the system-memory
+# heuristic (and no user model left) is hidden from the recipe/backends listing.
+set(_RECIPE_HIDING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_hiding.cpp")
+if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
+    add_executable(test_recipe_hiding test/cpp/test_recipe_hiding.cpp)
+    target_link_libraries(test_recipe_hiding PRIVATE lemonade-server-core)
+    add_dependencies(test_recipe_hiding copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
+endif()
+
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
 # and persistence of ModelScope provenance in ModelInfo.
 set(_MODEL_REGISTRY_TEST_SRC

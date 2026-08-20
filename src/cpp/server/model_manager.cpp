@@ -2481,8 +2481,10 @@ void ModelManager::build_cache() {
         info.recipe_options = build_recipe_options(info, jro, cache_key_to_canonical_id(name), recipe_options_);
     }
 
-    // Step 2: Filter by backend availability
-    all_models = filter_models_by_backend(all_models);
+    // Step 2: Filter by backend availability. This is the full-registry pass, so
+    // it also refreshes the recipe availability side table used to hide backends
+    // that have nothing runnable on this host.
+    all_models = filter_models_by_backend(all_models, /*track_recipe_availability=*/true);
 
     // Step 3: Check download status for all models. Dynamic-discovery backends
     // (flm, cloud) already set downloaded during discovery; everyone else asks
@@ -2858,7 +2860,8 @@ bool parse_TF_env_var(const char* env_var_name) {
 }
 
 std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
-    const std::map<std::string, ModelInfo>& models) {
+    const std::map<std::string, ModelInfo>& models,
+    bool track_recipe_availability) {
 
     // Check if model filtering is disabled via config.json
     bool disable_filtering = false;
@@ -2871,6 +2874,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
 
     if (disable_filtering) {
         filtered_out_models_.clear();
+        if (track_recipe_availability) {
+            recipes_all_models_filtered_.clear();
+        }
         return models;
     }
 
@@ -2884,6 +2890,9 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
     std::map<std::string, ModelInfo> filtered;
 
     filtered_out_models_.clear();
+
+    std::set<std::string> size_filtered_recipes;
+    std::set<std::string> visible_recipes;
 
     json system_info = SystemInfoCache::get_system_info_with_cache();
     json hardware = system_info.contains("devices") ? system_info["devices"] : json::object();
@@ -3005,6 +3014,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
             if (info.size > max_model_size_gb) {
                 filter_out = true;
+                size_filtered_recipes.insert(recipe);
                 std::ostringstream oss;
                 oss << std::fixed << std::setprecision(1);
                 oss << "This model requires approximately " << info.size << " GB of memory, "
@@ -3033,10 +3043,35 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         }
 
         // Model passes all filters
+        visible_recipes.insert(info.recipe);
         filtered[name] = info;
     }
 
+    // Only the full-registry pass may commit the availability side table;
+    // incremental single-model passes would otherwise reduce it to one model.
+    if (track_recipe_availability) {
+        recipes_all_models_filtered_ =
+            recipes_missing_all_models(size_filtered_recipes, visible_recipes);
+    }
+
     return filtered;
+}
+
+std::set<std::string> ModelManager::recipes_all_models_filtered_snapshot() const {
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return recipes_all_models_filtered_;
+}
+
+std::set<std::string> ModelManager::recipes_missing_all_models(
+    const std::set<std::string>& size_filtered_recipes,
+    const std::set<std::string>& visible_recipes) {
+    std::set<std::string> hidden;
+    for (const auto& recipe : size_filtered_recipes) {
+        if (visible_recipes.find(recipe) == visible_recipes.end()) {
+            hidden.insert(recipe);
+        }
+    }
+    return hidden;
 }
 
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
@@ -5672,6 +5707,12 @@ std::string ModelManager::get_model_filter_reason(const std::string& model_name)
 
     // Model wasn't filtered out (either it's available or doesn't exist)
     return "";
+}
+
+std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
+    build_cache();
+    std::lock_guard<std::mutex> lock(models_cache_mutex_);
+    return recipes_all_models_filtered_;
 }
 
 // Must be called with models_cache_mutex_ held.
