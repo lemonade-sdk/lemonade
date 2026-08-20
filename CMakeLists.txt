@@ -3092,3 +3092,12 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
 endif()
+
+# Launch command bookkeeping: the command recorded at spawn must keep describing
+# the process currently held, so a restart replaces it and cleanup erases it.
+set(_LAUNCH_COMMAND_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_launch_command.cpp")
+if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
+    add_executable(test_launch_command test/cpp/test_launch_command.cpp)
+    target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
+endif()

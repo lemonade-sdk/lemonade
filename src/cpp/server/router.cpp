@@ -1304,7 +1304,11 @@ json Router::get_all_loaded_models() const {
                   server->get_model_type(), server->get_residency_class());
         model_info["device"] = device_type_to_string(server->get_device_type());
         model_info["backend_url"] = server->get_address();  // For debugging port issues
-        model_info["pid"] = server->get_process_id();
+        const WrappedServer::ProcessInfo process_info = server->get_process_info();
+        model_info["pid"] = process_info.pid;
+        if (!process_info.launch_command.empty()) {
+            model_info["launch_command"] = process_info.launch_command;
+        }
         model_info["status"] = model_state_to_string(server->get_state());
         model_info["backend_alive"] = true;
         model_info["backend_health"] = server->get_backend_health_state();
