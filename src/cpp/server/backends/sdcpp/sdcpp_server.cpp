@@ -52,34 +52,6 @@ std::string resolve_sdcpp_backend(const std::string& backend) {
     return backend;
 }
 
-std::string trim_version_prefix(const std::string& version) {
-    if (!version.empty() && version[0] == 'v') {
-        return version.substr(1);
-    }
-    return version;
-}
-
-std::string trim_to_major_minor(const std::string& version) {
-    // Trim to MAJOR.MINOR format (e.g., "7.12.0" -> "7.12")
-    std::string trimmed = trim_version_prefix(version);
-    size_t second_dot = trimmed.find('.', trimmed.find('.') + 1);
-    if (second_dot != std::string::npos) {
-        return trimmed.substr(0, second_dot);
-    }
-    return trimmed;
-}
-
-std::string get_therock_version() {
-    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
-    if (!config.contains("therock") || !config["therock"].is_object() ||
-        !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
-        throw std::runtime_error("backend_versions.json is missing 'therock.version'");
-    }
-    // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
-    // (for example: rocm-7.12.0), so keep the patch component.
-    return trim_version_prefix(config["therock"]["version"].get<std::string>());
-}
-
 int generate_random_seed() {
     return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
@@ -126,11 +98,13 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
                 SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
+        // sd.cpp embeds the ROCm runtime it was built with (e.g. rocm-7.14.0),
+        // which drifts independently of backend_versions.json's therock.version.
+        // Wildcard the runtime so install resolves the actual published asset.
 #ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
+        params.filename = "sd-" + short_version + "-bin-win-rocm-*-x64.zip";
 #elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
-                  get_therock_version() + ".zip";
+        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-*.zip";
 #else
         throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
 #endif

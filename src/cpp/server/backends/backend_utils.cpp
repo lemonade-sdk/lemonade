@@ -166,13 +166,48 @@ namespace lemon::backends {
         return p == pattern.size();
     }
 
+    // Compare two release-asset version tokens numerically, segment by segment,
+    // so "7.10.0" beats "7.9.0" even though lexicographic order would say
+    // otherwise. Non-numeric segments are skipped; only digit runs count.
+    static bool version_greater(const std::string& a, const std::string& b) {
+        std::vector<unsigned long> as, bs;
+        const auto collect = [](const std::string& v, std::vector<unsigned long>& out) {
+            std::string cur;
+            for (char ch : v) {
+                if (std::isdigit(static_cast<unsigned char>(ch))) {
+                    cur.push_back(ch);
+                } else if (!cur.empty()) {
+                    out.push_back(std::strtoul(cur.c_str(), nullptr, 10));
+                    cur.clear();
+                }
+            }
+            if (!cur.empty()) {
+                out.push_back(std::strtoul(cur.c_str(), nullptr, 10));
+            }
+        };
+        collect(a, as);
+        collect(b, bs);
+        const size_t n = std::max(as.size(), bs.size());
+        for (size_t i = 0; i < n; ++i) {
+            const unsigned long ai = i < as.size() ? as[i] : 0;
+            const unsigned long bi = i < bs.size() ? bs[i] : 0;
+            if (ai != bi) {
+                return ai > bi;
+            }
+        }
+        return false;
+    }
+
     // Resolve a '*' wildcard in a release asset filename to the concrete asset
     // name published for `tag`. Some upstreams embed a component that changes
     // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
-    // sd-...-bin-Darwin-macOS-15.7.7-arm64.zip). Rather than hardcode and chase
+    // sd-...-bin-Darwin-macOS-15.7.7-arm64.zip, or the ROCm runtime in
+    // sd-...-bin-win-rocm-7.13.0-x64.zip). Rather than hardcode and chase
     // that value on every bump, the backend spec carries a '*' placeholder and
-    // we look up the real asset name here via the GitHub Releases API. Returns
-    // the pattern unchanged when it contains no wildcard.
+    // we look up the real asset name here via the GitHub Releases API. When
+    // several assets match (sd-cpp publishes a per-ROCm-runtime build, e.g.
+    // -rocm-7.1.1 alongside -rocm-7.13.0), the numerically newest version wins.
+    // Returns the pattern unchanged when it contains no wildcard.
     static std::string resolve_asset_wildcard(const std::string& repo,
                                               const std::string& tag,
                                               const std::string& pattern,
@@ -210,17 +245,44 @@ namespace lemon::backends {
                 tag + ": " + e.what());
         }
 
+        // A single-* pattern must match text beginning with the pattern's fixed
+        // prefix and ending with its fixed suffix, so the wildcard region is
+        // exactly the version token we use to break multi-match ties.
+        const size_t star = pattern.find('*');
+        const std::string prefix = pattern.substr(0, star);
+        const std::string suffix = pattern.substr(star + 1);
+
         if (body.contains("assets") && body["assets"].is_array()) {
+            std::string best_name;
+            std::string best_version;
             for (const auto& asset : body["assets"]) {
                 if (!asset.contains("name") || !asset["name"].is_string()) {
                     continue;
                 }
                 const std::string name = asset["name"].get<std::string>();
-                if (wildcard_match(pattern, name)) {
-                    LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
-                        << pattern << "' to '" << name << "'" << std::endl;
-                    return name;
+                if (!wildcard_match(pattern, name)) {
+                    continue;
                 }
+
+                std::string version;
+                if (name.size() >= prefix.size() + suffix.size() &&
+                    name.compare(0, prefix.size(), prefix) == 0 &&
+                    name.compare(name.size() - suffix.size(), suffix.size(), suffix) == 0) {
+                    version = name.substr(prefix.size(),
+                                          name.size() - prefix.size() - suffix.size());
+                }
+
+                if (best_name.empty() ||
+                    (!version.empty() && version_greater(version, best_version))) {
+                    best_name = name;
+                    best_version = version;
+                }
+            }
+
+            if (!best_name.empty()) {
+                LOG(INFO, spec.log_name()) << "Resolved asset wildcard '"
+                    << pattern << "' to '" << best_name << "'" << std::endl;
+                return best_name;
             }
         }
 
