@@ -172,22 +172,13 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     lemon::utils::set_cache_dir(cli_config.cache_dir);
 
     auto config_json = lemon::ConfigFile::load(cli_config.cache_dir);
-
-    // CLI overrides (persist to config.json)
-    bool cli_overrides = false;
+    auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
     if (cli_config.port != -1) {
-        config_json["port"] = cli_config.port;
-        cli_overrides = true;
+        runtime_config->set_port_override(cli_config.port);
     }
     if (!cli_config.host.empty()) {
-        config_json["host"] = cli_config.host;
-        cli_overrides = true;
+        runtime_config->set_host_override(cli_config.host);
     }
-    if (cli_overrides) {
-        lemon::ConfigFile::save(cli_config.cache_dir, config_json);
-    }
-
-    auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
     lemon::RuntimeConfig::set_global(runtime_config.get());
 
     lemon::utils::set_models_dir(runtime_config->models_dir());

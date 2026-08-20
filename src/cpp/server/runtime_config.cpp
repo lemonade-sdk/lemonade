@@ -283,12 +283,28 @@ RuntimeConfig::RuntimeConfig(const json& config)
 
 int RuntimeConfig::port() const {
     std::shared_lock lock(mutex_);
+    if (port_override_.has_value()) {
+        return *port_override_;
+    }
     return config_["port"].get<int>();
+}
+
+void RuntimeConfig::set_port_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    port_override_ = override_val;
 }
 
 std::string RuntimeConfig::host() const {
     std::shared_lock lock(mutex_);
+    if (host_override_.has_value()) {
+        return *host_override_;
+    }
     return config_["host"].get<std::string>();
+}
+
+void RuntimeConfig::set_host_override(std::optional<std::string> override_val) {
+    std::unique_lock lock(mutex_);
+    host_override_ = override_val;
 }
 
 int RuntimeConfig::websocket_port() const {
