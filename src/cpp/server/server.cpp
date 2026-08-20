@@ -884,6 +884,84 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
         }
     }
 
+    telemetry::g_incoming_client_id.clear();
+    telemetry::g_incoming_session_id.clear();
+
+    auto trim = [](const std::string& str) -> std::string {
+        size_t s = str.find_first_not_of(" \t\r\n");
+        if (s == std::string::npos) return "";
+        size_t e = str.find_last_not_of(" \t\r\n");
+        return str.substr(s, e - s + 1);
+    };
+
+    std::string client_val;
+    if (config_) {
+        for (const auto& hdr : config_->telemetry_session_headers_client()) {
+            std::string cleaned_hdr = trim(hdr);
+            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
+                std::string val = trim(req.get_header_value(cleaned_hdr));
+                if (!val.empty()) {
+                    client_val = val;
+                    break;
+                }
+            }
+        }
+    }
+    if (client_val.empty()) {
+        static const char* kWellKnownClientHeaders[] = {
+            "x-opencode-client",
+            "x-client-id",
+            "x-client-name"
+        };
+        for (const char* hdr : kWellKnownClientHeaders) {
+            if (req.has_header(hdr)) {
+                std::string val = trim(req.get_header_value(hdr));
+                if (!val.empty()) {
+                    client_val = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    std::string session_val;
+    if (config_) {
+        for (const auto& hdr : config_->telemetry_session_headers_id()) {
+            std::string cleaned_hdr = trim(hdr);
+            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
+                std::string val = trim(req.get_header_value(cleaned_hdr));
+                if (!val.empty()) {
+                    session_val = val;
+                    break;
+                }
+            }
+        }
+    }
+    if (session_val.empty()) {
+        static const char* kWellKnownSessionHeaders[] = {
+            "x-opencode-session",
+            "x-session-id",
+            "x-client-session-id",
+            "mcp-session-id",
+            "x-conversation-id",
+            "session-id"
+        };
+        for (const char* hdr : kWellKnownSessionHeaders) {
+            if (req.has_header(hdr)) {
+                std::string val = trim(req.get_header_value(hdr));
+                if (!val.empty()) {
+                    session_val = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!session_val.empty()) {
+        telemetry::g_incoming_client_id = client_val;
+        telemetry::g_incoming_session_id = session_val;
+    }
+
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
     // gateway (Critical Invariant #10). It is the only API route outside the

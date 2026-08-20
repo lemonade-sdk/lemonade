@@ -366,12 +366,13 @@ public:
                  const std::string& url,
                  std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser,
                  const nlohmann::json& usage_payload,
-                 const std::string& text_output) {
+                 const std::string& text_output,
+                 const std::vector<ToolCall>& tool_calls = {}) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (queue_.size() >= 100) {
             return false;
         }
-        queue_.push({span, url, parser, usage_payload, text_output});
+        queue_.push({span, url, parser, usage_payload, text_output, tool_calls});
         cv_.notify_one();
         return true;
     }
@@ -388,6 +389,7 @@ private:
         std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
         nlohmann::json usage_payload;
         std::string text_output;
+        std::vector<ToolCall> tool_calls;
     };
 
     std::queue<Task> queue_;
@@ -428,7 +430,7 @@ private:
                     LOG(DEBUG, "Telemetry") << "Failed to fetch metrics in background: unknown error" << std::endl;
                 }
             }
-            task.span->end_with_success(task.usage_payload, task.text_output);
+            task.span->end_with_success(task.usage_payload, task.text_output, task.tool_calls);
 
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -819,6 +821,27 @@ static std::string truncate_string(const std::string& str, size_t max_len) {
     return str.substr(0, max_len - 15) + "... [TRUNCATED]";
 }
 
+static std::string format_namespaced_session(const std::string& client, const std::string& session, size_t max_len) {
+    if (client.empty()) {
+        return truncate_string(session, max_len);
+    }
+    if (session.empty()) {
+        return truncate_string(client, max_len);
+    }
+    if (client.length() + 1 + session.length() <= max_len) {
+        return client + "/" + session;
+    }
+    size_t session_budget = std::min(session.length(), max_len > 4 ? max_len - 4 : max_len);
+    size_t client_budget = (max_len > session_budget + 1) ? (max_len - session_budget - 1) : 0;
+    std::string trunc_client = truncate_string(client, client_budget);
+    size_t remaining_for_session = max_len - trunc_client.length() - (trunc_client.empty() ? 0 : 1);
+    std::string trunc_session = truncate_string(session, remaining_for_session);
+    if (trunc_client.empty()) {
+        return trunc_session;
+    }
+    return trunc_client + "/" + trunc_session;
+}
+
 InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json)
     : span_kind_(span_kind), name_(name), model_name_(model_name), start_time_(std::chrono::steady_clock::now()) {
     // When the caller supplies a valid W3C trace context (gated behind
@@ -843,6 +866,8 @@ InferenceSpan::InferenceSpan(const std::string& span_kind, const std::string& na
     }
     if (request_json.contains("session_id") && request_json["session_id"].is_string()) {
         session_id_ = truncate_string(request_json["session_id"].get<std::string>(), max_len);
+    } else if (!g_incoming_session_id.empty()) {
+        session_id_ = format_namespaced_session(g_incoming_client_id, g_incoming_session_id, max_len);
     }
 
     if (span_kind_ == "LLM") {
@@ -946,10 +971,10 @@ nlohmann::json InferenceSpan::build_common_attributes(bool has_openinference, bo
         attributes.push_back({{"key", "input.value"}, {"value", {{"stringValue", final_input}}}});
 
         if (!user_id_.empty()) {
-            attributes.push_back({{"key", "openinference.user.id"}, {"value", {{"stringValue", user_id_}}}});
+            attributes.push_back({{"key", "user.id"}, {"value", {{"stringValue", user_id_}}}});
         }
         if (!session_id_.empty()) {
-            attributes.push_back({{"key", "openinference.session.id"}, {"value", {{"stringValue", session_id_}}}});
+            attributes.push_back({{"key", "session.id"}, {"value", {{"stringValue", session_id_}}}});
         }
 
         if (span_kind_ == "LLM") {
@@ -1004,7 +1029,7 @@ nlohmann::json InferenceSpan::build_common_attributes(bool has_openinference, bo
     return attributes;
 }
 
-void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, const std::string& complete_output) {
+void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, const std::string& complete_output, const std::vector<ToolCall>& tool_calls) {
     if (ended_) return;
     ended_ = true;
 
@@ -1012,25 +1037,40 @@ void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, con
     uint64_t start_nano = end_time - std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - start_time_).count();
 
+    size_t max_len = 1000;
     bool hide_inputs = false;
     bool hide_outputs = false;
     bool hide_thinking = false;
     if (auto* config = RuntimeConfig::global()) {
+        max_len = static_cast<size_t>(config->telemetry_max_attribute_length());
         hide_inputs = config->telemetry_hide_inputs();
         hide_outputs = config->telemetry_hide_outputs();
         hide_thinking = config->telemetry_hide_thinking();
     }
 
-    std::string final_output;
+    std::string processed_output;
     if (hide_outputs) {
-        final_output = "[REDACTED]";
+        processed_output = "[REDACTED]";
     } else {
-        final_output = complete_output;
+        processed_output = complete_output;
         if (hide_thinking) {
-            final_output = strip_thinking(final_output);
+            processed_output = strip_thinking(processed_output);
         } else {
-            final_output = standardize_thinking(final_output);
+            processed_output = standardize_thinking(processed_output);
         }
+    }
+
+    std::string final_output = processed_output;
+    if (final_output.empty() && !tool_calls.empty() && !hide_outputs) {
+        nlohmann::json tc_arr = nlohmann::json::array();
+        for (const auto& tc : tool_calls) {
+            tc_arr.push_back({
+                {"id", tc.id},
+                {"type", "function"},
+                {"function", {{"name", tc.function_name}, {"arguments", tc.function_arguments}}}
+            });
+        }
+        final_output = tc_arr.dump();
     }
 
     bool has_openinference = false;
@@ -1060,11 +1100,27 @@ void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, con
     }
 
     if (has_openinference) {
-        attributes.push_back({{"key", "output.value"}, {"value", {{"stringValue", final_output}}}});
+        attributes.push_back({{"key", "output.value"}, {"value", {{"stringValue", truncate_string(final_output, max_len)}}}});
 
-        if (span_kind_ == "LLM" && !final_output.empty()) {
+        if (span_kind_ == "LLM" && (!processed_output.empty() || !tool_calls.empty())) {
             attributes.push_back({{"key", "llm.output_messages.0.message.role"}, {"value", {{"stringValue", "assistant"}}}});
-            attributes.push_back({{"key", "llm.output_messages.0.message.content"}, {"value", {{"stringValue", final_output}}}});
+            if (!processed_output.empty()) {
+                attributes.push_back({{"key", "llm.output_messages.0.message.content"}, {"value", {{"stringValue", truncate_string(processed_output, max_len)}}}});
+            }
+            if (!hide_outputs) {
+                for (size_t i = 0; i < tool_calls.size(); ++i) {
+                    std::string tc_prefix = "llm.output_messages.0.message.tool_calls." + std::to_string(i) + ".tool_call.";
+                    if (!tool_calls[i].id.empty()) {
+                        attributes.push_back({{"key", tc_prefix + "id"}, {"value", {{"stringValue", truncate_string(tool_calls[i].id, max_len)}}}});
+                    }
+                    if (!tool_calls[i].function_name.empty()) {
+                        attributes.push_back({{"key", tc_prefix + "function.name"}, {"value", {{"stringValue", truncate_string(tool_calls[i].function_name, max_len)}}}});
+                    }
+                    if (!tool_calls[i].function_arguments.empty()) {
+                        attributes.push_back({{"key", tc_prefix + "function.arguments"}, {"value", {{"stringValue", truncate_string(tool_calls[i].function_arguments, max_len)}}}});
+                    }
+                }
+            }
         }
 
         if (prompt_tokens >= 0) {
@@ -1095,9 +1151,9 @@ void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, con
         if (completion_tokens >= 0) {
             attributes.push_back({{"key", "gen_ai.usage.output_tokens"}, {"value", {{"intValue", completion_tokens}}}});
         }
-        if (span_kind_ == "LLM" && !final_output.empty()) {
+        if (span_kind_ == "LLM" && !processed_output.empty()) {
             attributes.push_back({{"key", "gen_ai.output.messages.0.role"}, {"value", {{"stringValue", "assistant"}}}});
-            attributes.push_back({{"key", "gen_ai.output.messages.0.content"}, {"value", {{"stringValue", final_output}}}});
+            attributes.push_back({{"key", "gen_ai.output.messages.0.content"}, {"value", {{"stringValue", truncate_string(processed_output, max_len)}}}});
         }
     }
 
@@ -1266,18 +1322,19 @@ void end_llm_span_async(
     const std::string& metrics_url,
     std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser,
     const nlohmann::json& usage_payload,
-    const std::string& text_output) {
+    const std::string& text_output,
+    const std::vector<ToolCall>& tool_calls) {
 
     if (!span) return;
 
     if (metrics_url.empty() || !parser) {
-        span->end_with_success(usage_payload, text_output);
+        span->end_with_success(usage_payload, text_output, tool_calls);
         return;
     }
 
-    if (!g_metrics_worker.enqueue(span, metrics_url, parser, usage_payload, text_output)) {
+    if (!g_metrics_worker.enqueue(span, metrics_url, parser, usage_payload, text_output, tool_calls)) {
         LOG(WARNING, "Telemetry") << "MetricsWorker queue full. Dropping optional metrics and completing span immediately." << std::endl;
-        span->end_with_success(usage_payload, text_output);
+        span->end_with_success(usage_payload, text_output, tool_calls);
     }
 }
 
@@ -1369,5 +1426,7 @@ thread_local std::chrono::steady_clock::time_point g_request_start_time;
 thread_local std::string g_current_client_session_id;
 thread_local std::string g_incoming_trace_id;
 thread_local std::string g_incoming_parent_span_id;
+thread_local std::string g_incoming_client_id;
+thread_local std::string g_incoming_session_id;
 
 } // namespace lemon::telemetry

@@ -134,6 +134,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
       ],
       "send_batch_size": 100
     },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
+    },
     "trust_incoming_trace_context": false
   },
   "thenoise": {

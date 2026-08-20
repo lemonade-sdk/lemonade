@@ -513,6 +513,46 @@ double RuntimeConfig::telemetry_otlp_batch_timeout_s() const {
     return get_double_opt(nullptr, {"telemetry", "otlp", "batch_timeout_s"}, 1.0);
 }
 
+static void extract_header_strings(const json& val, std::vector<std::string>& headers) {
+    if (val.is_array()) {
+        for (const auto& item : val) {
+            if (item.is_string()) {
+                std::string s = item.get<std::string>();
+                if (!s.empty()) headers.push_back(s);
+            }
+        }
+    } else if (val.is_string()) {
+        std::string s = val.get<std::string>();
+        if (!s.empty()) headers.push_back(s);
+    }
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_session_headers_id() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> headers;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("session") && config_["telemetry"]["session"].is_object()) {
+        const auto& sess = config_["telemetry"]["session"];
+        if (sess.contains("headers") && sess["headers"].is_object() && sess["headers"].contains("id")) {
+            extract_header_strings(sess["headers"]["id"], headers);
+        }
+    }
+    return headers;
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_session_headers_client() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> headers;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("session") && config_["telemetry"]["session"].is_object()) {
+        const auto& sess = config_["telemetry"]["session"];
+        if (sess.contains("headers") && sess["headers"].is_object() && sess["headers"].contains("client")) {
+            extract_header_strings(sess["headers"]["client"], headers);
+        }
+    }
+    return headers;
+}
+
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
     std::shared_lock lock(mutex_);
     if (config_.contains(backend_name) && config_[backend_name].is_object()) {
@@ -742,7 +782,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
             "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
-            "max_queue_capacity", "max_attribute_length", "otlp"
+            "max_queue_capacity", "max_attribute_length", "otlp", "session"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
@@ -858,6 +898,43 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                 }
             }
         }
+        if (value.contains("session")) {
+            const auto& sess = value["session"];
+            if (!sess.is_object()) {
+                throw std::invalid_argument("'telemetry.session' must be an object");
+            }
+            static const std::unordered_set<std::string> valid_session_keys = {
+                "headers"
+            };
+            for (auto& [s_key, s_val] : sess.items()) {
+                if (valid_session_keys.find(s_key) == valid_session_keys.end()) {
+                    throw std::invalid_argument("Unknown config key: 'telemetry.session." + s_key + "'");
+                }
+            }
+            if (sess.contains("headers")) {
+                const auto& hdrs = sess["headers"];
+                if (!hdrs.is_object()) {
+                    throw std::invalid_argument("'telemetry.session.headers' must be an object");
+                }
+                static const std::unordered_set<std::string> valid_headers_keys = {
+                    "id", "client"
+                };
+                for (auto& [h_key, h_val] : hdrs.items()) {
+                    if (valid_headers_keys.find(h_key) == valid_headers_keys.end()) {
+                        throw std::invalid_argument("Unknown config key: 'telemetry.session.headers." + h_key + "'");
+                    }
+                    if (h_val.is_array()) {
+                        for (const auto& item : h_val) {
+                            if (!item.is_string()) {
+                                throw std::invalid_argument("'telemetry.session.headers." + h_key + "' elements must be strings");
+                            }
+                        }
+                    } else if (!h_val.is_string()) {
+                        throw std::invalid_argument("'telemetry.session.headers." + h_key + "' must be a string or array of strings");
+                    }
+                }
+            }
+        }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");
@@ -962,6 +1039,30 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                                 applied_diff["telemetry"]["otlp"] = json::object();
                             }
                             applied_diff["telemetry"]["otlp"][otlp_key] = otlp_val;
+                        }
+                    }
+                } else if (t_key == "session" && t_val.is_object()) {
+                    if (!config_["telemetry"].contains("session") || !config_["telemetry"]["session"].is_object()) {
+                        config_["telemetry"]["session"] = json::object();
+                    }
+                    if (t_val.contains("headers") && t_val["headers"].is_object()) {
+                        if (!config_["telemetry"]["session"].contains("headers") || !config_["telemetry"]["session"]["headers"].is_object()) {
+                            config_["telemetry"]["session"]["headers"] = json::object();
+                        }
+                        for (auto& [h_key, h_val] : t_val["headers"].items()) {
+                            if (!config_["telemetry"]["session"]["headers"].contains(h_key) || config_["telemetry"]["session"]["headers"][h_key] != h_val) {
+                                config_["telemetry"]["session"]["headers"][h_key] = h_val;
+                                if (!applied_diff.contains("telemetry")) {
+                                    applied_diff["telemetry"] = json::object();
+                                }
+                                if (!applied_diff["telemetry"].contains("session")) {
+                                    applied_diff["telemetry"]["session"] = json::object();
+                                }
+                                if (!applied_diff["telemetry"]["session"].contains("headers")) {
+                                    applied_diff["telemetry"]["session"]["headers"] = json::object();
+                                }
+                                applied_diff["telemetry"]["session"]["headers"][h_key] = h_val;
+                            }
                         }
                     }
                 } else {
