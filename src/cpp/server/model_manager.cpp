@@ -1224,7 +1224,9 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
-    // Recursively find all .gguf files
+    // Recursively find all .gguf files. Use error_code to skip inaccessible
+    // entries (permission denied, broken symlinks, dangling temp files from
+    // interrupted downloads) instead of throwing.
     try {
         for (const auto& entry : fs::recursive_directory_iterator(
                  search_path, fs::directory_options::skip_permission_denied)) {
@@ -2199,7 +2201,15 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
         return !safe_exists(path_from_utf8(path_str + ".partial"));
     }
 
-    return !has_partial_files(resolved);
+    if (has_partial_files(resolved)) return false;
+
+    // Check for .completed sentinel — this is the authoritative marker that a
+    // download finished successfully. Without it, a crash during download
+    // (between fs::rename and manifest removal) leaves a corrupt file that is
+    // indistinguishable from a complete download by other checks alone.
+    // The sentinel is written after all files are verified in
+    // download_from_huggingface().
+    return safe_exists(marker_dir / ".completed");
 }
 
 /**
@@ -3344,6 +3354,7 @@ bool ModelManager::backend_self_manages_downloads(const std::string& recipe) con
     return desc && desc->self_manages_downloads;
 }
 
+
 void ModelManager::download_registered_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress_callback) {
     // Serialize downloads per checkpoint repo. A second request for the same
     // repo (e.g. a client that timed out and retried /pull while the first
@@ -3533,6 +3544,7 @@ json ModelManager::fetch_collection_manifest(const std::string& repo_id,
         manifest_info.model_name = repo_id;
         manifest_info.checkpoints["main"] = repo_id;
         try {
+
             manifest_info.registry_source = source;
             download_from_registry(manifest_info, nullptr);
             manifest = read_cached_collection_manifest(cache_dir);
@@ -4776,6 +4788,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
 //   - FLM backend: ✅ Downloads FLM models via 'flm pull' command
 //   - llama-server backend: ❌ Cannot download (expects GGUF files pre-cached)
 //   - ryzenai-server backend: ❌ Cannot download (expects ONNX files pre-cached)
+
 void ModelManager::download_from_registry(const ModelInfo& info,
                                           DownloadProgressCallback progress_callback) {
     const std::string main_repo_id = checkpoint_to_repo_id(info.checkpoint("main"));
@@ -4800,6 +4813,41 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     repositories.emplace(main_repo_id, registry.fetch_repository(main_repo_id));
 
     std::map<std::string, std::vector<std::string>> files_to_download;
+
+    // Resume fast-path: if a download manifest exists, resume downloading
+    // incomplete files instead of re-fetching the HF API and rebuilding the
+    // file list. This handles the common case of a network interruption.
+    {
+        fs::path model_cache_path = path_from_utf8(get_hf_cache_dir()) / repo_id_to_cache_dir_name(main_repo_id);
+        fs::path manifest_path = model_cache_path / "snapshots" / ".download_manifest.json";
+        if (!safe_exists(manifest_path)) {
+            manifest_path = model_cache_path / ".download_manifest.json";
+        }
+        if (safe_exists(manifest_path)) {
+            try {
+                json manifest = JsonUtils::load_from_file(path_to_utf8(manifest_path));
+                if (manifest.contains("files") && manifest["files"].is_array() && !manifest["files"].empty()) {
+                    LOG(INFO, "ModelManager") << "Resuming interrupted download from existing manifest"
+                                              << std::endl;
+                    std::map<std::string, std::string> headers;
+                    const char* hf_token = std::getenv("HF_TOKEN");
+                    if (hf_token && hf_token[0]) {
+                        headers["Authorization"] = "Bearer " + std::string(hf_token);
+                    }
+                    download_from_manifest(manifest, headers, progress_callback);
+                    if (fs::exists(manifest_path)) {
+                        fs::remove(manifest_path);
+                    }
+                    return;
+                }
+            } catch (...) {
+                // Stale manifest — fall through to fresh download
+                LOG(WARNING, "ModelManager") << "Failed to resume from manifest, starting fresh download"
+                                             << std::endl;
+            }
+        }
+    }
+
     std::vector<std::string> main_repo_files;
     for (const auto& file : repositories.at(main_repo_id).files) {
         if (!file.directory) main_repo_files.push_back(file.path);
@@ -4972,6 +5020,19 @@ void ModelManager::download_from_registry(const ModelInfo& info,
     download_from_manifest(manifest, headers, progress_callback);
     std::error_code manifest_ec;
     fs::remove(manifest_path, manifest_ec);
+
+    // Write .completed sentinel — the authoritative marker that a download
+    // finished successfully. Unlike manifest removal (which leaves a window
+    // where a crash produces a corrupt file indistinguishable from a complete
+    // one), the sentinel is only created after all files are verified.
+    // is_checkpoint_path_complete() checks for this file.
+    const fs::path completed_path =
+        path_from_utf8(repo_snapshot_paths.at(main_repo_id)) / ".completed";
+    if (!safe_exists(completed_path)) {
+        std::ofstream completed_file(path_to_utf8(completed_path));
+        completed_file << "completed\n";
+        completed_file.close();
+    }
 
     for (const auto& [repo_id, snapshot_id] : repo_snapshot_ids) {
         const fs::path& cache_path = repo_cache_paths.at(repo_id);

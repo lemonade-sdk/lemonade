@@ -86,8 +86,6 @@ namespace lemon {
 
 namespace {
 
-
-
 // Normalize client-provided model names: strip ":latest" suffix (Ollama/Docker convention)
 // Returns true if the model name was modified
 bool normalize_client_model_name(json& request_json) {
@@ -3708,6 +3706,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                         if (message.contains("content")) {
                             LOG(DEBUG, "Server") << "Message content: " << message["content"].get<std::string>().substr(0, 200) << std::endl;
                         }
+                    }
+
+                    // Ensure content field is present alongside reasoning_content
+                    // Standard OpenAI-compatible clients expect content to always be present
+                    const bool has_reasoning = message.contains("reasoning_content") &&
+                                               message["reasoning_content"].is_string();
+                    const bool has_content = message.contains("content") && !message["content"].is_null();
+                    if (has_reasoning && !has_content) {
+                        message["content"] = "";
                     }
                 }
             }

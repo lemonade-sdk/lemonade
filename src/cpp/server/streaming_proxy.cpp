@@ -3,6 +3,9 @@
 #include <iostream>
 #include <chrono>
 #include <cstring>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include <stdexcept>
 #include <curl/curl.h>
 #include <lemon/utils/aixlog.hpp>
@@ -77,8 +80,116 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 }
 
+// Normalize a single `data: {...}` SSE line for chat.completion.chunk objects.
+// Applies two fixes for OpenAI API compliance:
+//
+// 1. Role normalization: some backends emit null or missing `delta.role` on
+//    content chunks. Injects `"role": "assistant"` when the delta contains
+//    assistant-type fields (content, reasoning_content, thinking, tool_calls,
+//    function_call) but role is absent or null.
+//
+// 2. Content normalization: backends that emit `reasoning_content` often omit
+//    the standard `content` field entirely. Injects `"content": ""` to prevent
+//    OpenAI-compatible clients (e.g. @ai-sdk/openai-compatible) from resetting
+//    the connection when content is expected but absent.
+std::string normalize_data_line(const std::string& line) {
+    const std::string prefix = "data: ";
+    if (line.rfind(prefix, 0) != 0) {
+        return line;
+    }
+
+    // Preserve trailing \r if present (some SSE implementations send \r\n)
+    std::string suffix;
+    std::string payload = line.substr(prefix.size());
+    if (!payload.empty() && payload.back() == '\r') {
+        suffix = "\r";
+        payload.pop_back();
+    }
+
+    if (payload.empty() || payload == "[DONE]") {
+        return line;
+    }
+
+    try {
+        auto chunk = json::parse(payload);
+        // Only normalize chat.completion.chunk objects — leave text_completion,
+        // error frames, and other SSE events untouched.
+        if (!chunk.is_object() ||
+            !chunk.contains("object") ||
+            !chunk["object"].is_string() ||
+            chunk["object"].get<std::string>() != "chat.completion.chunk" ||
+            !chunk.contains("choices") ||
+            !chunk["choices"].is_array()) {
+            return line;
+        }
+
+        bool changed = false;
+        for (auto& choice : chunk["choices"]) {
+            if (!choice.is_object() || !choice.contains("delta") || !choice["delta"].is_object()) {
+                continue;
+            }
+
+            auto& delta = choice["delta"];
+
+            // --- Fix 1: Role normalization ---
+            const bool role_is_null = delta.contains("role") && delta["role"].is_null();
+            const bool role_is_missing = !delta.contains("role");
+            const bool has_assistant_delta =
+                delta.contains("content") ||
+                delta.contains("reasoning_content") ||
+                delta.contains("thinking") ||
+                delta.contains("tool_calls") ||
+                delta.contains("function_call");
+
+            if (role_is_null || (role_is_missing && has_assistant_delta)) {
+                delta["role"] = "assistant";
+                changed = true;
+            }
+
+            // --- Fix 2: Content normalization ---
+            // If delta has reasoning_content but content is missing or null,
+            // inject empty content string for OpenAI compatibility
+            const bool has_reasoning = delta.contains("reasoning_content") &&
+                                       delta["reasoning_content"].is_string();
+            const bool has_content = delta.contains("content") && !delta["content"].is_null();
+
+            if (has_reasoning && !has_content) {
+                delta["content"] = "";
+                changed = true;
+            }
+        }
+
+        if (!changed) {
+            return line;
+        }
+
+        return prefix + chunk.dump() + suffix;
+    } catch (...) {
+        // Malformed JSON — pass through unchanged
+        return line;
+    }
+}
+
 } // namespace
 
+std::string StreamingProxy::normalize_chat_completion_chunk(const std::string& sse_chunk) {
+    std::string output;
+    size_t pos = 0;
+
+    while (pos < sse_chunk.size()) {
+        size_t newline = sse_chunk.find('\n', pos);
+        if (newline == std::string::npos) {
+            output += normalize_data_line(sse_chunk.substr(pos));
+            break;
+        }
+
+        output += normalize_data_line(sse_chunk.substr(pos, newline - pos));
+        output.push_back('\n');
+        pos = newline + 1;
+    }
+
+    return output;
+}
 
 void StreamingProxy::forward_sse_stream(
     const std::string& backend_url,
@@ -95,12 +206,20 @@ void StreamingProxy::forward_sse_stream(
             telemetry.model_name = req_json["model"].get<std::string>();
         }
     } catch (...) {}
+    // During long prefill phases (e.g., 15k-token prompts taking minutes), no
+    // bytes are sent to the client. This can trigger client-side read timeouts
+    // (e.g. httplib::Client's 300s default) or reverse-proxy idle timeouts.
+    // Send periodic SSE comment lines (`: keepalive`) to reset I/O timeouts
+    // on both sides — SSE parsers ignore comment lines.
+    constexpr auto KEEPALIVE_INTERVAL = std::chrono::seconds(10);
+
     std::string line_buffer;
     bool stream_error = false;
     bool has_done_marker = false;
-    bool has_first_token = false;
+    std::atomic<bool> has_first_token{false};
     double time_to_first_token = 0.0;
     const auto start_time = std::chrono::steady_clock::now();
+
 
     int backend_status = 200;
     std::string error_body;
@@ -121,11 +240,37 @@ void StreamingProxy::forward_sse_stream(
         }
     };
 
+    // Mutex serialises sink.write() calls from the libcurl callback thread and
+    // the optional keepalive heartbeat thread below.
+    std::mutex sink_mutex;
+
+    // Start a keepalive heartbeat thread that sends SSE comment lines every
+    // KEEPALIVE_INTERVAL while waiting for the first token. The thread stops
+    // when has_first_token is set or the stream ends. This prevents client-side
+    // read timeouts during extended prefill phases where the backend sends no
+    // data for minutes.
+    std::atomic<bool> heartbeat_running{true};
+    std::thread heartbeat_thread([&]() {
+        while (!has_first_token.load() && heartbeat_running.load()) {
+            std::this_thread::sleep_for(KEEPALIVE_INTERVAL);
+            if (has_first_token.load() || !heartbeat_running.load()) break;
+            std::lock_guard<std::mutex> lock(sink_mutex);
+            const char* keepalive = ": keepalive\n\n";
+            if (!sink.write(keepalive, strlen(keepalive))) {
+                // Client disconnected — stop heartbeat
+                heartbeat_running.store(false);
+                break;
+            }
+        }
+    });
+
+
     utils::HttpResponse result = utils::HttpClient::post_stream(
         backend_url,
         request_body,
-        [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
-         &start_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
+        [&sink, &sink_mutex, &line_buffer, &has_done_marker, &has_first_token,
+         &time_to_first_token, &start_time, &on_chunk, &process_line, &backend_status,
+         &error_body](const char* data, size_t length) {
             if (on_chunk) {
                 on_chunk();
             }
@@ -137,22 +282,48 @@ void StreamingProxy::forward_sse_stream(
                 return true;
             }
 
-            line_buffer.append(data, length);
-            process_sse_lines(line_buffer, process_line);
-
             std::string chunk(data, length);
-            if (!has_first_token && chunk.find("data: ") != std::string::npos) {
-                has_first_token = true;
+
+
+            // First-token timing — also signals the heartbeat to stop
+            if (!has_first_token.load() && chunk.find("data: ") != std::string::npos) {
+                has_first_token.store(true);
                 time_to_first_token = std::chrono::duration<double>(
                     std::chrono::steady_clock::now() - start_time).count();
             }
 
+            // [DONE] marker detection
             if (chunk.find("data: [DONE]") != std::string::npos) {
                 has_done_marker = true;
             }
 
-            if (!sink.write(data, length)) {
-                return false;
+            // Accumulate bytes and flush only complete (newline-terminated lines):
+            // each complete line feeds telemetry extraction, then is normalized
+            // for OpenAI compatibility before being forwarded to the client.
+            line_buffer.append(chunk);
+            std::string output;
+            size_t pos = 0;
+            size_t newline;
+            while ((newline = line_buffer.find('\n', pos)) != std::string::npos) {
+                std::string line = line_buffer.substr(pos, newline - pos + 1);
+                std::string telemetry_line = line;
+                if (!telemetry_line.empty() && telemetry_line.back() == '\n') {
+                    telemetry_line.pop_back();
+                }
+                if (!telemetry_line.empty() && telemetry_line.back() == '\r') {
+                    telemetry_line.pop_back();
+                }
+                process_line(telemetry_line);
+                output.append(StreamingProxy::normalize_chat_completion_chunk(line));
+                pos = newline + 1;
+            }
+            line_buffer.erase(0, pos);
+
+            if (!output.empty()) {
+                std::lock_guard<std::mutex> lock(sink_mutex);
+                if (!sink.write(output.data(), output.size())) {
+                    return false; // Client disconnected
+                }
             }
 
             return true;
@@ -165,6 +336,14 @@ void StreamingProxy::forward_sse_stream(
             return sink.is_writable && !sink.is_writable();
         }
     );
+
+    // Signal heartbeat thread to stop and wait for it. This must happen
+    // before any post-stream sink operations (flush, [DONE], sink.done()).
+    heartbeat_running.store(false);
+    if (heartbeat_thread.joinable()) {
+        heartbeat_thread.join();
+    }
+
 
     const bool client_disconnected =
         result.curl_code == CURLE_WRITE_ERROR ||
@@ -228,6 +407,19 @@ void StreamingProxy::forward_sse_stream(
     }
 
     if (!stream_error) {
+        // Flush any trailing partial line before sending [DONE]: extract
+        // telemetry from it, then forward it normalized.
+        if (!line_buffer.empty()) {
+            std::string telemetry_tail = line_buffer;
+            if (!telemetry_tail.empty() && telemetry_tail.back() == '\r') {
+                telemetry_tail.pop_back();
+            }
+            process_line(telemetry_tail);
+            std::string tail = StreamingProxy::normalize_chat_completion_chunk(line_buffer);
+            sink.write(tail.data(), tail.size());
+            line_buffer.clear();
+        }
+
         // Ensure [DONE] marker is sent only for clean transports. If the transport
         // was interrupted before [DONE], the block above throws and recovery is
         // handled by WrappedServer/Router instead of pretending success.
@@ -240,13 +432,6 @@ void StreamingProxy::forward_sse_stream(
         sink.done();
 
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
-
-        if (!line_buffer.empty()) {
-            if (line_buffer.back() == '\r') {
-                line_buffer.pop_back();
-            }
-            process_line(line_buffer);
-        }
 
         if (telemetry.time_to_first_token <= 0.0) {
             telemetry.time_to_first_token = time_to_first_token;

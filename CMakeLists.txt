@@ -3092,3 +3092,23 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
 endif()
+
+# Streaming proxy reasoning content normalization: ensures `content` field is
+# always present alongside `reasoning_content` in SSE delta chunks.
+set(_STREAMING_REASONING_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_reasoning_content.cpp"
+)
+if(EXISTS "${_STREAMING_REASONING_TEST_SRC}")
+    add_executable(test_streaming_proxy_reasoning_content
+        test/cpp/test_streaming_proxy_reasoning_content.cpp
+    )
+    target_include_directories(test_streaming_proxy_reasoning_content PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_streaming_proxy_reasoning_content PRIVATE
+        lemonade-server-core
+        nlohmann_json::nlohmann_json
+    )
+    add_cpp_ci_test(StreamingProxyReasoningContentTest CI ON COMMAND test_streaming_proxy_reasoning_content)
+endif()

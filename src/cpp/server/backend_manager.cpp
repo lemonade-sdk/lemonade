@@ -331,10 +331,23 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
         return;
     }
 
-    std::string rocm_arch = SystemInfo::get_rocm_arch();
     std::string version = backend_versions["therock"]["version"].get<std::string>();
 
-    backends::BackendUtils::install_rocm_runtime(rocm_arch, version, progress_cb);
+    const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+    if (rocm_arches.empty()) {
+        // Fall back to single-arch detection for backward compatibility.
+        std::string single_arch = SystemInfo::get_rocm_arch();
+        if (!single_arch.empty()) {
+            backends::BackendUtils::install_rocm_runtime(single_arch, version, progress_cb);
+        }
+        return;
+    }
+
+    // Install the ROCm runtime for every detected GPU architecture (iGPU first,
+    // then dGPUs), not just the first one — each GPU needs its own binaries.
+    for (const auto& rocm_arch : rocm_arches) {
+        backends::BackendUtils::install_rocm_runtime(rocm_arch, version, progress_cb);
+    }
 }
 
 } // namespace
