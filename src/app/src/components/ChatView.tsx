@@ -46,7 +46,7 @@ import {
 import { storageKey } from '../storage';
 import { CHAT_HISTORY_PREFERENCE_EVENT, loadChatHistoryPreference } from '../features/chatHistory/historySettings';
 import type { DownloadListItem } from '../features/downloadManager/downloadStore';
-import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel } from '../features/collections/collectionModels';
+import { findModelInfoByName, getAudioTranscriptionComponent, getPrimaryChatComponent, getVisionChatComponent, isCollectionModel, virtualLoadedCollection } from '../features/collections/collectionModels';
 import { LEMONADE_MCP_SERVER_ID, LEMONADE_MCP_TOOL_COUNT, MAX_MCP_SERVER_SELECTION, type McpServerToolOption } from '../tools/mcpMetadata';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import { TTS_SETTINGS_EVENT, loadTtsPlaybackSettings, ttsVoiceFromRecipeOptions } from '../features/audio/ttsSettings';
@@ -1842,9 +1842,11 @@ const ChatView: React.FC<ChatViewProps> = ({
     convoId: string,
   ): Promise<ModelSnapshot> => {
     const [{ downloadStore }, api] = await Promise.all([getDownloadStoreModule(), getApiClient()]);
-    const loadedFrom = (models: LoadedModel[]) => models.find(
-      model => model.model_name.toLowerCase() === modelName.toLowerCase(),
-    ) || null;
+    const loadedFrom = (models: LoadedModel[], info: ModelInfo | null = initialInfo) => (
+      models.find(
+        model => model.model_name.toLowerCase() === modelName.toLowerCase(),
+      ) || (info && isCollectionModel(info) ? virtualLoadedCollection(info, models) : null)
+    );
 
     let health = await api.health();
     let loaded = loadedFrom(health.all_models_loaded || []);
@@ -1917,7 +1919,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     await loadModelForChat(modelName, info || initialInfo);
     await Promise.resolve(onRefresh());
     health = await api.health();
-    loaded = loadedFrom(health.all_models_loaded || []);
+    loaded = loadedFrom(health.all_models_loaded || [], info);
     if (!loaded) throw new Error(`${modelName} was downloaded but did not become ready for chat.`);
 
     saveLastReadyModelName(loaded.model_name);
