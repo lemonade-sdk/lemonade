@@ -1,4 +1,5 @@
 #include "lemon/anthropic_error.h"
+#include "lemon/anthropic_relay_headers.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/error_types.h"
@@ -8,8 +9,13 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm>
+#include <condition_variable>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -211,9 +217,13 @@ static void set_anthropic_error_response(httplib::Response& res, int status,
         "application/json");
 }
 
+using anthropic::is_forwardable_request_header;
+using anthropic::is_forwardable_response_header;
+
 static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_manager,
                                                          const std::string& model,
-                                                         const json& request_json) {
+                                                         const json& request_json,
+                                                         const httplib::Request& req) {
     AnthropicUpstreamMatch match;
     if (model_manager == nullptr) return match;
     CloudProviderRegistry* registry = model_manager->cloud_registry();
@@ -255,6 +265,14 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
                          "--allow-insecure-http to send the API key in plaintext");
     }
 
+    // CloudServer::load() rejects this for the OpenAI-shaped endpoints; without
+    // the same check here a hand-authored registry entry would relay an empty
+    // model id and surface an opaque provider 400 instead.
+    if (info.checkpoint().empty()) {
+        return fail(500, "cloud model '" + model + "' is missing the 'checkpoint' "
+                         "field (provider's upstream model id)");
+    }
+
     // The body passes through byte-for-byte apart from "model", which must name
     // the provider's own id rather than lemonade's "<provider>.<id>" public one.
     json forwarded = request_json;
@@ -263,14 +281,68 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
     const auto auth_header = registry->auth_header_for(info.cloud_provider);
     AnthropicUpstream upstream;
     upstream.url = backends::CloudServer::upstream_url(base_url, "/messages");
+    // The Anthropic API reads `beta` from the query string, so it has to be
+    // reattached to the upstream URL rather than folded into a header.
+    if (req.has_param("beta") && req.get_param_value("beta") == "true") {
+        upstream.url += "?beta=true";
+    }
     upstream.headers = backends::CloudServer::upstream_headers(auth_header, api_key,
                                                                "anthropic");
     upstream.headers["Content-Type"] = "application/json";
+    // The first client value replaces whatever default upstream_headers() set;
+    // a repeat of the same name is joined, since a client may send
+    // anthropic-beta as several headers rather than one comma-separated value.
+    std::set<std::string> from_client;
+    for (const auto& [name, value] : req.headers) {
+        std::string lower = name;
+        for (auto& c : lower) c = std::tolower(static_cast<unsigned char>(c));
+        if (!is_forwardable_request_header(lower)) continue;
+        if (from_client.insert(lower).second) {
+            upstream.headers[lower] = value;
+        } else {
+            upstream.headers[lower] += "," + value;
+        }
+    }
     upstream.policy = backends::CloudServer::discovery_policy(base_url, allow_insecure_http);
     upstream.body = forwarded.dump();
     match.upstream = std::move(upstream);
     return match;
 }
+
+static void relay_response_headers(const std::map<std::string, std::string>& upstream,
+                                   httplib::Response& res) {
+    for (const auto& [name, value] : upstream) {
+        if (is_forwardable_response_header(name)) {
+            res.set_header(name, value);
+        }
+    }
+}
+
+// Handoff between the thread running the upstream request and the thread
+// httplib runs the response body on. The upstream status has to be known
+// before the handler returns, because that is when httplib commits the status
+// line — so the request starts here rather than inside the content provider.
+struct AnthropicRelayStream {
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    bool status_known = false;
+    int status = 0;
+    std::map<std::string, std::string> headers;
+
+    std::string pending;        // 200: body bytes awaiting the client
+    std::string error_body;     // non-200: buffered for a one-shot response
+    bool upstream_done = false;
+    bool client_gone = false;
+    std::string transport_error;
+    bool ended_early = false;
+
+    // Bounds how far the upstream read can run ahead of a slow client. Large
+    // enough that a normal SSE frame never blocks, small enough that a stalled
+    // client cannot make the relay buffer a whole response.
+    static constexpr size_t max_pending = 1 * 1024 * 1024;
+    static constexpr size_t max_error_body = 64 * 1024;
+};
 
 static void forward_anthropic_upstream(AnthropicUpstream upstream,
                                        bool stream,
@@ -281,6 +353,7 @@ static void forward_anthropic_upstream(AnthropicUpstream upstream,
             auto response = utils::HttpClient::post(
                 upstream.url, upstream.body, upstream.headers, 0, upstream.policy);
             res.status = response.status_code;
+            relay_response_headers(response.headers, res);
             res.set_content(response.body, "application/json");
         } catch (const std::exception& e) {
             set_anthropic_error_response(
@@ -289,58 +362,160 @@ static void forward_anthropic_upstream(AnthropicUpstream upstream,
         return;
     }
 
+    auto state = std::make_shared<AnthropicRelayStream>();
+
+    std::thread([state, upstream = std::move(upstream)]() {
+        std::map<std::string, std::string> response_headers;
+        // curl delivers every header before the first body byte, so the map is
+        // complete by the time either publisher below runs.
+        auto publish_status = [&](int status) {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (state->status_known) return;
+            state->status = status;
+            state->headers = response_headers;
+            state->status_known = true;
+            state->cv.notify_all();
+        };
+
+        try {
+            auto result = utils::HttpClient::post_stream(
+                upstream.url, upstream.body,
+                [&](const char* data, size_t length) {
+                    std::unique_lock<std::mutex> lock(state->mutex);
+                    if (state->status_known && state->status != 200) {
+                        if (state->error_body.size() < state->max_error_body) {
+                            state->error_body.append(
+                                data, std::min(length, state->max_error_body -
+                                                           state->error_body.size()));
+                        }
+                        return true;
+                    }
+                    state->cv.wait(lock, [&] {
+                        return state->client_gone ||
+                               state->pending.size() < state->max_pending;
+                    });
+                    if (state->client_gone) return false;
+                    state->pending.append(data, length);
+                    state->cv.notify_all();
+                    return true;
+                },
+                upstream.headers, 0, publish_status, upstream.policy,
+                [state]() {
+                    std::lock_guard<std::mutex> lock(state->mutex);
+                    return state->client_gone;
+                },
+                &response_headers);
+
+            // on_status never fires when the body is empty, so fall back to the
+            // code curl always records after the transfer.
+            publish_status(result.status_code);
+            if (result.curl_code != 0) {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                if (!state->client_gone) {
+                    state->ended_early = true;
+                    state->transport_error = result.curl_error;
+                }
+            }
+        } catch (const std::exception& e) {
+            {
+                std::lock_guard<std::mutex> lock(state->mutex);
+                state->transport_error = e.what();
+            }
+            publish_status(0);
+        }
+
+        std::lock_guard<std::mutex> lock(state->mutex);
+        state->upstream_done = true;
+        state->cv.notify_all();
+    }).detach();
+
+    std::unique_lock<std::mutex> lock(state->mutex);
+    state->cv.wait(lock, [&] { return state->status_known || state->upstream_done; });
+    const int status = state->status;
+
+    // A non-200 body is not SSE. Relaying it as a one-shot response keeps the
+    // real status on the wire, which an SDK gating on the status code needs.
+    if (status != 200) {
+        state->cv.wait(lock, [&] { return state->upstream_done; });
+        const std::string error_body = state->error_body;
+        const std::string transport_error = state->transport_error;
+        auto headers = state->headers;
+        lock.unlock();
+
+        if (status == 0) {
+            set_anthropic_error_response(
+                res, 502, "cloud request for '" + model + "' failed: " + transport_error);
+            return;
+        }
+        res.status = status;
+        relay_response_headers(headers, res);
+        // Providers report errors as JSON in the Anthropic error envelope, so
+        // the body relays unchanged when there is one to relay.
+        if (!error_body.empty()) {
+            res.set_content(error_body, "application/json");
+        } else {
+            res.set_content(
+                anthropic::build_anthropic_error(
+                    json{{"message", "cloud request for '" + model +
+                                     "' failed with status " + std::to_string(status)}},
+                    status).dump(),
+                "application/json");
+        }
+        return;
+    }
+
+    relay_response_headers(state->headers, res);
+    lock.unlock();
+
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no");
     res.set_chunked_content_provider(
         "text/event-stream",
-        [upstream = std::move(upstream), model](size_t offset, httplib::DataSink& sink) {
+        [state, model](size_t offset, httplib::DataSink& sink) {
             if (offset > 0) return false;
-            // Both ends speak Anthropic SSE, so a 200 relays unparsed. A
-            // non-200 body is not SSE, so it is diverted and re-emitted as an
-            // error event rather than written into the event stream.
-            static constexpr size_t max_error_body = 64 * 1024;
-            int upstream_status = 200;
-            std::string error_body;
-            auto emit_error = [&sink, &model](int status, const std::string& message) {
-                write_sse_event(sink, "error", anthropic::build_anthropic_error(
-                    json{{"message", "cloud request for '" + model + "' " + message}},
-                    status));
-            };
+            // Both ends speak Anthropic SSE, so the body relays unparsed.
+            for (;;) {
+                std::unique_lock<std::mutex> lock(state->mutex);
+                state->cv.wait(lock, [&] {
+                    return !state->pending.empty() || state->upstream_done;
+                });
+                std::string chunk;
+                chunk.swap(state->pending);
+                const bool done = state->upstream_done;
+                const bool ended_early = state->ended_early;
+                const std::string transport_error = state->transport_error;
+                state->cv.notify_all();
+                lock.unlock();
 
-            try {
-                auto result = utils::HttpClient::post_stream(
-                    upstream.url, upstream.body,
-                    [&](const char* data, size_t length) {
-                        if (upstream_status != 200) {
-                            if (error_body.size() < max_error_body) {
-                                error_body.append(
-                                    data,
-                                    std::min(length, max_error_body - error_body.size()));
-                            }
-                            return true;
-                        }
-                        return sink.write(data, length);
-                    },
-                    upstream.headers, 0,
-                    [&upstream_status](int status) { upstream_status = status; },
-                    upstream.policy,
-                    [&sink]() { return sink.is_writable && !sink.is_writable(); });
-                // on_status never fires when the body is empty, so fall back to
-                // the code curl always records after the transfer.
-                const int status =
-                    upstream_status != 200 ? upstream_status : result.status_code;
-                if (status != 200) {
-                    emit_error(status, "failed with status " + std::to_string(status) +
-                                       (error_body.empty() ? "" : ": " + error_body));
-                } else if (result.curl_code != 0 && sink.is_writable && sink.is_writable()) {
-                    emit_error(502, "stream ended early: " + result.curl_error);
+                if (!chunk.empty() && !sink.write(chunk.data(), chunk.size())) {
+                    std::lock_guard<std::mutex> gone(state->mutex);
+                    state->client_gone = true;
+                    state->cv.notify_all();
+                    break;
                 }
-            } catch (const std::exception& e) {
-                emit_error(502, std::string("failed: ") + e.what());
+                if (done) {
+                    // Upstream committed a 200 and then broke off, so the
+                    // status cannot be corrected — report it in-band instead.
+                    if (ended_early) {
+                        write_sse_event(sink, "error", anthropic::build_anthropic_error(
+                            json{{"message", "cloud request for '" + model +
+                                             "' stream ended early: " + transport_error}},
+                            502));
+                    }
+                    break;
+                }
             }
             sink.done();
             return false;
+        },
+        // Runs even when the provider never does — a client that disappears
+        // before the response starts would otherwise leave the upstream thread
+        // parked on the pending-buffer wait with the connection still open.
+        [state](bool) {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->client_gone = true;
+            state->cv.notify_all();
         }
     );
 }
@@ -1106,10 +1281,23 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
             }
         }
 
+        auto emit_warning_header = [&res, &warnings]() {
+            if (warnings.empty()) return;
+            std::ostringstream warning_header;
+            for (size_t i = 0; i < warnings.size(); ++i) {
+                if (i > 0) warning_header << " | ";
+                warning_header << warnings[i];
+            }
+            res.set_header("X-Lemonade-Warning", warning_header.str());
+            std::cerr << "[OllamaApi] Anthropic compatibility warnings: "
+                      << warning_header.str() << std::endl;
+        };
+
         // Relaying verbatim keeps thinking blocks, tool use, and cache control
         // intact. No router slot is taken — there is no local resource to hold.
-        auto match = resolve_anthropic_upstream(model_manager_, model, request_json);
+        auto match = resolve_anthropic_upstream(model_manager_, model, request_json, req);
         if (match.claimed) {
+            emit_warning_header();
             if (!match.upstream) {
                 set_anthropic_error_response(res, match.error_status,
                                              match.error_message);
@@ -1141,15 +1329,7 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         }
 
         bool stream = openai_req.value("stream", false);
-        if (!warnings.empty()) {
-            std::ostringstream warning_header;
-            for (size_t i = 0; i < warnings.size(); ++i) {
-                if (i > 0) warning_header << " | ";
-                warning_header << warnings[i];
-            }
-            res.set_header("X-Lemonade-Warning", warning_header.str());
-            std::cerr << "[OllamaApi] Anthropic compatibility warnings: " << warning_header.str() << std::endl;
-        }
+        emit_warning_header();
 
         if (stream) {
             openai_req["stream"] = true;

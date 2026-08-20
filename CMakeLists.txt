@@ -3053,6 +3053,13 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
 endif()
 
+set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")
+if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_RELAY_HEADERS_TEST_SRC}")
+    add_executable(test_anthropic_relay_headers test/cpp/test_anthropic_relay_headers.cpp)
+    target_link_libraries(test_anthropic_relay_headers PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AnthropicRelayHeadersTest CI ON COMMAND test_anthropic_relay_headers)
+endif()
+
 set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)

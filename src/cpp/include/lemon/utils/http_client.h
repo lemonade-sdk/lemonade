@@ -16,6 +16,8 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
+    // Response headers, names lowercased. Populated by post(); other verbs
+    // leave this empty.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
@@ -128,6 +130,10 @@ public:
     // on_status fires once, before the first chunk is delivered, so callers can
     // divert an error body instead of forwarding it as payload bytes. Redirects
     // are never followed.
+    //
+    // out_response_headers, when non-null, is filled with the response headers
+    // (names lowercased) before on_status fires, so a caller deciding what to
+    // send downstream can see them without waiting for the transfer to finish.
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,
@@ -136,7 +142,8 @@ public:
         long timeout_seconds = 300,
         std::function<void(int status_code)> on_status = nullptr,
         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
-        std::function<bool()> should_cancel = nullptr);
+        std::function<bool()> should_cancel = nullptr,
+        std::map<std::string, std::string>* out_response_headers = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,

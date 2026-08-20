@@ -248,6 +248,40 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
     return total_size;
 }
 
+// Collects response headers into HttpResponse::headers, lowercasing names so
+// lookups do not depend on the casing a given provider happens to send.
+static size_t response_header_callback(char* buffer, size_t size, size_t nitems,
+                                       void* userdata) {
+    const size_t total = size * nitems;
+    auto* headers = static_cast<std::map<std::string, std::string>*>(userdata);
+    if (!headers) {
+        return total;
+    }
+
+    std::string line(buffer, total);
+    const size_t colon = line.find(':');
+    if (colon == std::string::npos) {
+        // Status line, or the blank line ending a header block. A redirect or
+        // an informational 1xx starts a fresh block, so drop what came before.
+        if (line.rfind("HTTP/", 0) == 0) {
+            headers->clear();
+        }
+        return total;
+    }
+
+    std::string name = line.substr(0, colon);
+    for (auto& c : name) c = std::tolower(static_cast<unsigned char>(c));
+
+    std::string value = line.substr(colon + 1);
+    const size_t first = value.find_first_not_of(" \t");
+    const size_t last = value.find_last_not_of(" \t\r\n");
+    value = (first == std::string::npos) ? std::string()
+                                         : value.substr(first, last - first + 1);
+
+    (*headers)[name] = value;
+    return total;
+}
+
 // Callback for writing to file
 static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* stream) {
     size_t written = fwrite(ptr, size, nmemb, static_cast<FILE*>(stream));
@@ -515,6 +549,8 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
     if (!apply_http_security_policy(curl, policy, false)) {
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
@@ -675,7 +711,8 @@ HttpResponse HttpClient::post_stream(const std::string& url,
                                      long timeout_seconds,
                                      std::function<void(int)> on_status,
                                      HttpSecurityPolicy policy,
-                                     std::function<bool()> should_cancel) {
+                                     std::function<bool()> should_cancel,
+                                     std::map<std::string, std::string>* out_response_headers) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -695,6 +732,10 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(body.size()));
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, stream_write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &callback_data);
+    if (out_response_headers) {
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, response_header_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, out_response_headers);
+    }
     if (!apply_http_security_policy(curl, policy, false)) {
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
