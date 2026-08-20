@@ -1186,9 +1186,8 @@ if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
 
     add_executable(test_mcp_client_config
         ${MCP_CLIENT_CONFIG_TEST_SOURCE}
-        src/cpp/server/mcp_client.cpp
     )
-    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads lemonade-httplib)
+    target_link_libraries(test_mcp_client_config PRIVATE lemonade-server-core)
 
     if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
         file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
