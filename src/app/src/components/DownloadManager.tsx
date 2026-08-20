@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api, { friendlyErrorMessage } from '../api';
 import { Icon } from './Icon';
-import { DownloadListItem, DownloadStatus, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
+import { DownloadListItem, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 
 interface DownloadManagerProps {
   isVisible: boolean;
@@ -61,32 +61,24 @@ function isFinalizing(download: DownloadListItem): boolean {
     && download.bytesDownloaded >= download.bytesTotal;
 }
 
-function applyControlSnapshot(
-  download: DownloadListItem,
-  result: unknown,
-  fallbackStatus: DownloadStatus,
-): void {
-  if (!result || typeof result !== 'object' || Array.isArray(result)) return;
-  const snapshot = result as Record<string, unknown>;
-  downloadStore.upsertFromPull(download.modelName, {
-    ...snapshot,
-    status: snapshot.status || fallbackStatus,
-  }, download.downloadType);
-}
-
 async function removeDownload(download: DownloadListItem): Promise<void> {
-  downloadStore.remove(download.id);
-  await api.controlDownload(download.id, 'remove').catch(() => undefined);
+  // Terminal history can disappear immediately, but paused/non-terminal rows
+  // stay canonical until the server confirms removal through /downloads.
+  downloadStore.dismiss(download.id);
+  await api.controlDownload(download.id, 'remove').catch(err => {
+    console.error('Remove download failed:', friendlyErrorMessage(err));
+  });
+  await downloadStore.refresh();
 }
 
 const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose }) => {
-  const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const [downloads, setDownloads] = useState<DownloadListItem[]>(() => downloadStore.visibleSnapshot());
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [busyIds, setBusyIds] = useState<Set<string>>(() => new Set());
   const prevStatusRef = useRef<Map<string, Pick<DownloadListItem, 'status' | 'running'>> | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
 
-  useEffect(() => downloadStore.subscribe(setDownloads), []);
+  useEffect(() => downloadStore.subscribeVisible(setDownloads), []);
 
   // Announce status transitions (start/complete/error/pause/resume) to screen readers.
   // Runs on every downloads change but only emits announcements on status transitions,
@@ -181,21 +173,16 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   }, []);
 
   const handlePause = (download: DownloadListItem) => withBusy(download.id, async () => {
-    downloadStore.markLocal(download.modelName, 'paused', download.downloadType);
-    const result = await api.controlDownload(download.id, 'pause').catch(() => undefined);
-    applyControlSnapshot(download, result, 'paused');
+    await api.controlDownload(download.id, 'pause').catch(() => undefined);
     await downloadStore.refresh();
   });
 
   const handleCancel = (download: DownloadListItem) => withBusy(download.id, async () => {
-    downloadStore.markLocal(download.modelName, 'cancelled', download.downloadType);
-    const result = await api.controlDownload(download.id, 'cancel').catch(() => undefined);
-    applyControlSnapshot(download, result, 'cancelled');
+    await api.controlDownload(download.id, 'cancel').catch(() => undefined);
     await downloadStore.refresh();
   });
 
   const handleDeletePartial = (download: DownloadListItem) => withBusy(download.id, async () => {
-    downloadStore.markLocal(download.modelName, 'deleting', download.downloadType);
     try {
       if (download.downloadType === 'model') {
         await api.deleteModel(download.modelName);
@@ -205,18 +192,24 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
       }
     } finally {
       await removeDownload(download);
-      await downloadStore.refresh();
     }
   });
 
   const handleResume = (download: DownloadListItem) => withBusy(download.id, async () => {
-    downloadStore.markLocal(download.modelName, 'downloading', download.downloadType);
+    downloadStore.wake(download.modelName, download.downloadType);
     if (download.downloadType === 'model') {
+      const wake = () => { downloadStore.wake(download.modelName, 'model'); };
       void api.pullModel(download.modelName, {
-        onProgress: data => downloadStore.upsertFromPull(download.modelName, data, 'model'),
-        onComplete: data => downloadStore.upsertFromPull(download.modelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model'),
-        onError: err => downloadStore.upsertFromPull(download.modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model'),
-      }).catch(err => downloadStore.upsertFromPull(download.modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model'));
+        onProgress: wake,
+        onComplete: wake,
+        onError: err => {
+          console.error('Resume download failed:', friendlyErrorMessage(err));
+          wake();
+        },
+      }).catch(err => {
+        console.error('Resume download failed:', friendlyErrorMessage(err));
+        wake();
+      });
     }
     await downloadStore.refresh();
   });
@@ -224,12 +217,19 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
   const handleRetry = (download: DownloadListItem) => withBusy(download.id, async () => {
     await removeDownload(download);
     if (download.downloadType === 'model') {
-      downloadStore.markLocal(download.modelName, 'downloading', 'model');
+      downloadStore.wake(download.modelName, 'model');
+      const wake = () => { downloadStore.wake(download.modelName, 'model'); };
       void api.pullModel(download.modelName, {
-        onProgress: data => downloadStore.upsertFromPull(download.modelName, data, 'model'),
-        onComplete: data => downloadStore.upsertFromPull(download.modelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model'),
-        onError: err => downloadStore.upsertFromPull(download.modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model'),
-      }).catch(err => downloadStore.upsertFromPull(download.modelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model'));
+        onProgress: wake,
+        onComplete: wake,
+        onError: err => {
+          console.error('Retry download failed:', friendlyErrorMessage(err));
+          wake();
+        },
+      }).catch(err => {
+        console.error('Retry download failed:', friendlyErrorMessage(err));
+        wake();
+      });
     }
     await downloadStore.refresh();
   });
@@ -254,8 +254,9 @@ const DownloadManager: React.FC<DownloadManagerProps> = ({ isVisible, onClose })
     // server may still return the terminal row for a short window and that makes
     // the UI appear to jump into an unclear state. The dismissed ids suppress
     // stale terminal snapshots across tabs until the server forgets them.
-    downloadStore.removeMany(removable.map(download => download.id));
-    void Promise.allSettled(removable.map(download => api.controlDownload(download.id, 'remove')));
+    downloadStore.dismissMany(removable.map(download => download.id));
+    void Promise.allSettled(removable.map(download => api.controlDownload(download.id, 'remove')))
+      .then(() => downloadStore.refresh());
   };
 
   const toggleExpanded = (downloadId: string) => {

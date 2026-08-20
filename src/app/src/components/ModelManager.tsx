@@ -1702,21 +1702,24 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
-    downloadStore.markLocal(name, 'downloading', 'model');
+    downloadStore.wake(name, 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        const item = downloadStore.upsertFromPull(name, data, 'model');
-        setPulling(p => ({ ...p, [name]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[name] ?? 0) }));
+        const item = downloadStore.wake(name, 'model');
+        setPulling(p => ({ ...p, [name]: item?.percent ?? p[name] ?? 0 }));
       },
       onComplete: (data) => {
-        downloadStore.upsertFromPull(name, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
+        downloadStore.wake(name, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         refresh();
       },
       onError: (err) => {
-        downloadStore.upsertFromPull(name, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
+        const message = friendlyErrorMessage(err);
+        downloadStore.wake(name, 'model');
+        setLoadError({ modelName: name, message });
+        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1740,7 +1743,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     pullAbortRef.current[name]?.abort();
     await api.controlDownload(`model:${name}`, 'cancel').catch(() => undefined);
     delete pullAbortRef.current[name];
-    downloadStore.markLocal(name, 'cancelled', 'model');
+    await downloadStore.refresh();
     setPulling(p => { const next = { ...p }; delete next[name]; return next; });
   };
 
@@ -1750,15 +1753,15 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const ac = new AbortController();
     pullAbortRef.current[name] = ac;
     setPulling(p => ({ ...p, [name]: 0 }));
-    downloadStore.markLocal(name, 'downloading', 'model');
+    downloadStore.wake(name, 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        const item = downloadStore.upsertFromPull(name, data, 'model');
-        setPulling(p => ({ ...p, [name]: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[name] ?? 0) }));
+        const item = downloadStore.wake(name, 'model');
+        setPulling(p => ({ ...p, [name]: item?.percent ?? p[name] ?? 0 }));
       },
       onComplete: async (data) => {
-        downloadStore.upsertFromPull(name, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
+        downloadStore.wake(name, 'model');
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
         await refresh();
@@ -1776,7 +1779,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         setLoadingModel(null);
       },
       onError: (err) => {
-        downloadStore.upsertFromPull(name, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
+        const message = friendlyErrorMessage(err);
+        downloadStore.wake(name, 'model');
+        setLoadError({ modelName: name, message });
+        window.setTimeout(() => setLoadError(prev => prev?.modelName === name ? null : prev), 6000);
         delete pullAbortRef.current[name];
         setPulling(p => { const next = { ...p }; delete next[name]; return next; });
       },
@@ -1805,28 +1811,31 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const ac = new AbortController();
     pullRemoteAbortRef.current[key] = ac;
     setPullingRemote(p => ({ ...p, [key]: { percent: 0, modelName: targetModelName, checkpoint } }));
-    downloadStore.markLocal(targetModelName, 'downloading', 'model');
+    downloadStore.wake(targetModelName, 'model');
 
     const callbacks: PullCallbacks = {
       onProgress: (data) => {
-        const item = downloadStore.upsertFromPull(targetModelName, data, 'model');
+        const item = downloadStore.wake(targetModelName, 'model');
         setPullingRemote(p => ({
           ...p,
           [key]: {
-            percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : p[key]?.percent ?? 0),
+            percent: item?.percent ?? p[key]?.percent ?? 0,
             modelName: targetModelName,
             checkpoint,
           },
         }));
       },
       onComplete: (data) => {
-        downloadStore.upsertFromPull(targetModelName, { ...data, status: 'completed', complete: true, percent: 100 }, 'model');
+        downloadStore.wake(targetModelName, 'model');
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
         refresh();
       },
       onError: (err) => {
-        downloadStore.upsertFromPull(targetModelName, { status: 'error', error: friendlyErrorMessage(err) }, 'model');
+        const message = friendlyErrorMessage(err);
+        downloadStore.wake(targetModelName, 'model');
+        setLoadError({ modelName: targetModelName, message });
+        window.setTimeout(() => setLoadError(prev => prev?.modelName === targetModelName ? null : prev), 6000);
         console.error(`${PROVIDER_META[provider].label} pull failed:`, err);
         delete pullRemoteAbortRef.current[key];
         setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });
@@ -1865,7 +1874,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     const active = activeRemotePull(provider, modelId, vdata);
     if (active) {
       await api.controlDownload(active.downloadId || `model:${active.modelName}`, 'cancel').catch(() => undefined);
-      downloadStore.markLocal(active.modelName, 'cancelled', 'model');
+      await downloadStore.refresh();
     }
     delete pullRemoteAbortRef.current[key];
     setPullingRemote(p => { const next = { ...p }; delete next[key]; return next; });

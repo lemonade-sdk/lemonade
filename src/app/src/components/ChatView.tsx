@@ -1880,36 +1880,28 @@ const ChatView: React.FC<ChatViewProps> = ({
     if (!modelIsDownloaded(info)) {
       let pullError: Error | null = null;
       let pullCompleted = false;
-      downloadStore.markLocal(modelName, 'downloading', 'model');
+      downloadStore.wake(modelName, 'model');
       setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'downloading', percent: 0 } }));
 
       await api.pullModel(modelName, {
         onProgress: data => {
-          const item = downloadStore.upsertFromPull(modelName, data as Record<string, unknown>, 'model');
+          const item = downloadStore.wake(modelName, 'model');
           setModelPreparations(prev => ({
             ...prev,
             [convoId]: {
               modelName,
               phase: 'downloading',
-              percent: item?.percent ?? (typeof data.percent === 'number' ? data.percent : undefined),
+              percent: item?.percent ?? prev[convoId]?.percent ?? 0,
             },
           }));
         },
         onComplete: data => {
           pullCompleted = true;
-          downloadStore.upsertFromPull(modelName, {
-            ...(data as Record<string, unknown>),
-            status: 'completed',
-            complete: true,
-            percent: 100,
-          }, 'model');
+          downloadStore.wake(modelName, 'model');
         },
         onError: error => {
           pullError = error;
-          downloadStore.upsertFromPull(modelName, {
-            status: 'error',
-            error: friendlyErrorMessage(error),
-          }, 'model');
+          downloadStore.wake(modelName, 'model');
         },
       });
 

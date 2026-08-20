@@ -323,11 +323,19 @@ type BackendSyncResult = {
 };
 
 const BACKEND_STATUS_RETRY_DELAYS_MS = [0, 250, 500, 1000, 2000, 4000, 8000] as const;
+const BACKEND_DOWNLOAD_REGISTRATION_TIMEOUT_MS = 15_000;
 
 class BackendDownloadMissingError extends Error {
   constructor() {
     super('Backend download disappeared before reaching a terminal state');
     this.name = 'BackendDownloadMissingError';
+  }
+}
+
+class BackendDownloadRegistrationTimeoutError extends Error {
+  constructor() {
+    super('Backend download did not appear in /api/v1/downloads');
+    this.name = 'BackendDownloadRegistrationTimeoutError';
   }
 }
 
@@ -354,8 +362,16 @@ function waitForBackendDownloadTerminal(
     let sawDownload = false;
     let unsubscribe: (() => void) | null = null;
     let unsubscribeWhenReady = false;
+    let registrationTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearRegistrationTimer = () => {
+      if (registrationTimer == null) return;
+      clearTimeout(registrationTimer);
+      registrationTimer = null;
+    };
 
     const cleanup = () => {
+      clearRegistrationTimer();
       signal.removeEventListener('abort', onAbort);
       if (unsubscribe) unsubscribe();
       else unsubscribeWhenReady = true;
@@ -381,6 +397,7 @@ function waitForBackendDownloadTerminal(
         }
         return;
       }
+      if (!sawDownload) clearRegistrationTimer();
       sawDownload = true;
       if (isDownloadActive(item) || item.running === true) return;
       if (item.status !== 'completed'
@@ -395,6 +412,9 @@ function waitForBackendDownloadTerminal(
       return;
     }
     signal.addEventListener('abort', onAbort, { once: true });
+    registrationTimer = setTimeout(() => {
+      finish(() => reject(new BackendDownloadRegistrationTimeoutError()));
+    }, BACKEND_DOWNLOAD_REGISTRATION_TIMEOUT_MS);
     unsubscribe = downloadStore.subscribe(inspect);
     if (unsubscribeWhenReady) unsubscribe();
   });
@@ -859,6 +879,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     const downloadName = backendDownloadName(recipe, backend);
     const waitController = new AbortController();
     let actionUrl = '';
+    let installError: Error | null = null;
 
     pendingBackendActionsRef.current.set(key, {
       isUpdate,
@@ -866,7 +887,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     });
     setInstalling(key);
     toast(`${actionLabel} ${engineName} · ${backend}…`);
-    downloadStore.markLocal(downloadName, 'downloading', 'backend');
+    downloadStore.wake(downloadName, 'backend');
     const terminalDownloadPromise = waitForBackendDownloadTerminal(recipe, backend, waitController.signal);
     // Observe rejection immediately; the original promise is still awaited below,
     // but this prevents an unhandled rejection if the API call itself fails first.
@@ -875,50 +896,27 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
     try {
       await api.installBackend(recipe, backend, {
         onProgress: (d) => {
-          const rawStatus = typeof d.status === 'string' ? d.status : '';
-          const normalizedStatus = rawStatus.toLowerCase();
-          const completed = d.complete === true
-            || normalizedStatus === 'completed'
-            || normalizedStatus === 'complete'
-            || normalizedStatus === 'success'
-            || normalizedStatus === 'done';
           const percent = typeof d.percent === 'number' ? d.percent : undefined;
           if (typeof d.action === 'string' && d.action.trim()) actionUrl = d.action.trim();
+          downloadStore.wake(downloadName, 'backend');
 
-          downloadStore.upsertFromPull(downloadName, {
-            ...d,
-            id: backendDownloadId(recipe, backend),
-            type: 'backend',
-            name: downloadName,
-            status: completed ? 'completed' : (rawStatus || 'downloading'),
-            complete: completed ? true : d.complete,
-            running: completed && typeof d.running !== 'boolean' ? false : d.running,
-            percent: completed ? 100 : (percent ?? d.percent),
-          }, 'backend');
-
-          if (!completed && percent != null) {
-            toast(`${actionLabel} ${engineName} · ${backend}… ${percent}%`);
+          if (percent != null) {
+            toast(`${actionLabel} ${engineName} · ${backend}... ${percent}%`);
           }
         },
         onComplete: () => {
-          void downloadStore.refresh();
+          downloadStore.wake(downloadName, 'backend');
         },
         onError: (err) => {
-          downloadStore.upsertFromPull(downloadName, {
-            id: backendDownloadId(recipe, backend),
-            type: 'backend',
-            name: downloadName,
-            status: 'error',
-            running: false,
-            error: friendlyErrorMessage(err),
-          }, 'backend');
+          installError = err;
+          downloadStore.wake(downloadName, 'backend');
         },
       });
+      if (installError) throw installError;
 
       if (actionUrl) {
         waitController.abort();
         await terminalDownloadPromise.catch(() => undefined);
-        downloadStore.remove(backendDownloadId(recipe, backend));
         window.open(actionUrl, '_blank', 'noopener,noreferrer');
         toast(`${engineName} · ${backend} requires manual setup`);
         return;
@@ -955,18 +953,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
       }
 
       const message = friendlyErrorMessage(err);
-      const current = downloadStore.snapshot()
-        .find(download => backendDownloadMatches(download, recipe, backend));
-      if (current?.status !== 'error' && current?.status !== 'cancelled' && current?.status !== 'paused') {
-        downloadStore.upsertFromPull(downloadName, {
-          id: backendDownloadId(recipe, backend),
-          type: 'backend',
-          name: downloadName,
-          status: 'error',
-          running: false,
-          error: message,
-        }, 'backend');
-      }
+      downloadStore.wake(downloadName, 'backend');
       toast(`${actionLabel} failed: ${message}`);
       void fetchInfo(false);
     } finally {

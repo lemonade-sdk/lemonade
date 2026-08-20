@@ -35,6 +35,15 @@ assert.doesNotMatch(
   /if \(!api\.isConnected\)/,
   'an authoritative /downloads refresh must not depend on the global connection flag',
 );
+assert.doesNotMatch(
+  source,
+  /lemonade_download_manager_items_v1/,
+  'download rows must never be persisted client-side',
+);
+assert.match(source, /visibleSnapshot\(\): DownloadListItem\[\]/);
+assert.match(source, /isDismissedTerminal\(download, dismissed\)/);
+assert.match(source, /wake\(modelName\?: string, type: DownloadType = 'model'\)/);
+assert.doesNotMatch(source, /upsertFromPull|markLocal|TERMINAL_TTL_MS/);
 
 const originalTsLoader = require.extensions['.ts'];
 const originalApiCache = require.cache[apiPath];
@@ -135,37 +144,110 @@ async function waitFor(predicate, timeoutMs = 1500) {
       running: true,
       percent: 10,
     }];
-    downloadStore.markLocal('test-model', 'downloading', 'model');
-    await waitFor(() => downloadRequests === 3, 1600);
+    downloadStore.wake('test-model', 'model');
+    await waitFor(
+      () => downloadRequests >= 3 && downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
+      1600,
+    );
     assert.ok(
       downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
       'an active download must remain represented after polling',
     );
 
-    downloadStore.upsertFromPull('test-model', {
-      id: 'model:test-model',
-      status: 'completed',
-      complete: true,
-      running: false,
-      percent: 100,
-    }, 'model');
+    // Pull callbacks are wake-up signals only. The server still says active,
+    // so a callback may not manufacture a terminal row in canonical state.
+    const requestsBeforeCallbackWake = downloadRequests;
+    downloadStore.wake('test-model', 'model');
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforeCallbackWake + 1);
+    assert.ok(
+      downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
+      'callback data must not override the authoritative /downloads snapshot',
+    );
+
     serverDownloads = [];
+    const requestsBeforeEmptySnapshot = downloadRequests;
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforeEmptySnapshot + 1);
+    assert.equal(downloadStore.snapshot().length, 0, 'an empty server snapshot must remove the active row immediately');
     const requestsAtCompletion = downloadRequests;
     await sleep(1200);
     assert.equal(
       downloadRequests,
       requestsAtCompletion,
-      'the last terminal download event must cancel the already-scheduled next poll',
+      'an idle authoritative snapshot must stop polling',
     );
+
+    const requestsBeforeWakeBurst = downloadRequests;
+    for (let i = 0; i < 25; i += 1) downloadStore.wake('burst-model', 'model');
+    await sleep(650);
+    assert.equal(
+      downloadRequests,
+      requestsBeforeWakeBurst + 1,
+      'many SSE-style wake signals must coalesce into one /downloads request',
+    );
+
+    // Dismissed state is presentation-only: canonical state remains intact, and
+    // non-terminal rows can never be hidden by a client-owned dismissed id.
+    serverDownloads = [{
+      id: 'model:completed-model',
+      type: 'model',
+      model_name: 'completed-model',
+      status: 'completed',
+      complete: true,
+      running: false,
+      percent: 100,
+      created_at: Date.now() - 10_000,
+    }];
+    const requestsBeforeCompletedSnapshot = downloadRequests;
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforeCompletedSnapshot + 1);
+    downloadStore.dismissMany(['model:completed-model']);
+    assert.equal(downloadStore.snapshot().length, 1, 'dismiss must not mutate canonical server state');
+    assert.equal(downloadStore.visibleSnapshot().length, 0, 'dismiss may hide terminal history visually');
+
+    const firstAttemptCreatedAt = serverDownloads[0].created_at;
+    await downloadStore.refresh();
+    assert.equal(downloadStore.visibleSnapshot().length, 0, 'the same dismissed server attempt stays hidden');
+
+    serverDownloads = [{
+      ...serverDownloads[0],
+      status: 'error',
+      complete: false,
+      error: 'new attempt failed',
+      created_at: firstAttemptCreatedAt + 5_000,
+    }];
+    await downloadStore.refresh();
+    assert.equal(
+      downloadStore.visibleSnapshot().length,
+      1,
+      'a new terminal attempt reusing the same stable id must not inherit an old dismissal',
+    );
+
+    serverDownloads = [{
+      id: 'model:paused-model',
+      type: 'model',
+      model_name: 'paused-model',
+      status: 'paused',
+      running: false,
+      percent: 25,
+    }];
+    const requestsBeforePausedSnapshot = downloadRequests;
+    await downloadStore.refresh();
+    assert.equal(downloadRequests, requestsBeforePausedSnapshot + 1);
+    downloadStore.dismissMany(['model:paused-model']);
+    assert.equal(downloadStore.snapshot().length, 1);
+    assert.equal(downloadStore.visibleSnapshot().length, 1, 'paused server state must remain visible and blocking');
 
     const focusListeners = windowListeners.get('focus') || [];
     assert.equal(focusListeners.length, 1);
+    const requestsBeforeFocus = downloadRequests;
     focusListeners[0]();
-    await waitFor(() => downloadRequests === requestsAtCompletion + 1);
+    await waitFor(() => downloadRequests === requestsBeforeFocus + 1);
     await sleep(1150);
     assert.equal(
       downloadRequests,
-      requestsAtCompletion + 1,
+      requestsBeforeFocus + 1,
       'focus may refresh idle state once but must not restart perpetual polling',
     );
 
