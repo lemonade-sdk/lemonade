@@ -2282,13 +2282,13 @@ jobs:
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
       - name: Stop the tray agent started by the .pkg
-        # postinst-full-mac bootstraps com.lemonade.tray into the GUI domain and
+        # postinst-full-mac bootstraps ai.lemonadeserver.tray into the GUI domain and
         # the tray is single-instance, so test_tray_https.py cannot start its own
         # while this one runs. KeepAlive is false, so it stays down.
         shell: bash
         run: |
           set -e
-          launchctl bootout "gui/$(id -u)/com.lemonade.tray" 2>/dev/null || true
+          launchctl bootout "gui/$(id -u)/ai.lemonadeserver.tray" 2>/dev/null || true
           pkill -f lemonade-tray 2>/dev/null || true
           sudo pkill -f lemonade-tray 2>/dev/null || true
           for i in $(seq 1 15); do
