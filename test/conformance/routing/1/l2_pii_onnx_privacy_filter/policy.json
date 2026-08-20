@@ -1,0 +1,1334 @@
+{
+  "version": "1",
+  "model_name": "user.PII-ONNX-PrivacyFilter-Router",
+  "recipe": "collection.router",
+  "components": [
+    "fireworks.kimi-k2p6",
+    "Qwen3.5-0.8B-GGUF",
+    "user.privacy-filter-ml-v2-onnx"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-0.8B-GGUF",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pii-onnx-pf",
+        "type": "classifier",
+        "model": "user.privacy-filter-ml-v2-onnx",
+        "labels": [
+          "O",
+          "B-ACCOUNTNAME",
+          "I-ACCOUNTNAME",
+          "E-ACCOUNTNAME",
+          "S-ACCOUNTNAME",
+          "B-AGE",
+          "I-AGE",
+          "E-AGE",
+          "S-AGE",
+          "B-AMOUNT",
+          "I-AMOUNT",
+          "E-AMOUNT",
+          "S-AMOUNT",
+          "B-BANKACCOUNT",
+          "I-BANKACCOUNT",
+          "E-BANKACCOUNT",
+          "S-BANKACCOUNT",
+          "B-BIC",
+          "I-BIC",
+          "E-BIC",
+          "S-BIC",
+          "B-BITCOINADDRESS",
+          "I-BITCOINADDRESS",
+          "E-BITCOINADDRESS",
+          "S-BITCOINADDRESS",
+          "B-BUILDINGNUMBER",
+          "I-BUILDINGNUMBER",
+          "E-BUILDINGNUMBER",
+          "S-BUILDINGNUMBER",
+          "B-CITY",
+          "I-CITY",
+          "E-CITY",
+          "S-CITY",
+          "B-COUNTY",
+          "I-COUNTY",
+          "E-COUNTY",
+          "S-COUNTY",
+          "B-CREDITCARD",
+          "I-CREDITCARD",
+          "E-CREDITCARD",
+          "S-CREDITCARD",
+          "B-CREDITCARDISSUER",
+          "I-CREDITCARDISSUER",
+          "E-CREDITCARDISSUER",
+          "S-CREDITCARDISSUER",
+          "B-CURRENCY",
+          "I-CURRENCY",
+          "E-CURRENCY",
+          "S-CURRENCY",
+          "B-CURRENCYCODE",
+          "I-CURRENCYCODE",
+          "E-CURRENCYCODE",
+          "S-CURRENCYCODE",
+          "B-CURRENCYNAME",
+          "I-CURRENCYNAME",
+          "E-CURRENCYNAME",
+          "S-CURRENCYNAME",
+          "B-CURRENCYSYMBOL",
+          "I-CURRENCYSYMBOL",
+          "E-CURRENCYSYMBOL",
+          "S-CURRENCYSYMBOL",
+          "B-CVV",
+          "I-CVV",
+          "E-CVV",
+          "S-CVV",
+          "B-DATE",
+          "I-DATE",
+          "E-DATE",
+          "S-DATE",
+          "B-DATEOFBIRTH",
+          "I-DATEOFBIRTH",
+          "E-DATEOFBIRTH",
+          "S-DATEOFBIRTH",
+          "B-EMAIL",
+          "I-EMAIL",
+          "E-EMAIL",
+          "S-EMAIL",
+          "B-ETHEREUMADDRESS",
+          "I-ETHEREUMADDRESS",
+          "E-ETHEREUMADDRESS",
+          "S-ETHEREUMADDRESS",
+          "B-EYECOLOR",
+          "I-EYECOLOR",
+          "E-EYECOLOR",
+          "S-EYECOLOR",
+          "B-FIRSTNAME",
+          "I-FIRSTNAME",
+          "E-FIRSTNAME",
+          "S-FIRSTNAME",
+          "B-GENDER",
+          "I-GENDER",
+          "E-GENDER",
+          "S-GENDER",
+          "B-GPSCOORDINATES",
+          "I-GPSCOORDINATES",
+          "E-GPSCOORDINATES",
+          "S-GPSCOORDINATES",
+          "B-HEIGHT",
+          "I-HEIGHT",
+          "E-HEIGHT",
+          "S-HEIGHT",
+          "B-IBAN",
+          "I-IBAN",
+          "E-IBAN",
+          "S-IBAN",
+          "B-IMEI",
+          "I-IMEI",
+          "E-IMEI",
+          "S-IMEI",
+          "B-IPADDRESS",
+          "I-IPADDRESS",
+          "E-IPADDRESS",
+          "S-IPADDRESS",
+          "B-JOBDEPARTMENT",
+          "I-JOBDEPARTMENT",
+          "E-JOBDEPARTMENT",
+          "S-JOBDEPARTMENT",
+          "B-JOBTITLE",
+          "I-JOBTITLE",
+          "E-JOBTITLE",
+          "S-JOBTITLE",
+          "B-LASTNAME",
+          "I-LASTNAME",
+          "E-LASTNAME",
+          "S-LASTNAME",
+          "B-LITECOINADDRESS",
+          "I-LITECOINADDRESS",
+          "E-LITECOINADDRESS",
+          "S-LITECOINADDRESS",
+          "B-MACADDRESS",
+          "I-MACADDRESS",
+          "E-MACADDRESS",
+          "S-MACADDRESS",
+          "B-MASKEDNUMBER",
+          "I-MASKEDNUMBER",
+          "E-MASKEDNUMBER",
+          "S-MASKEDNUMBER",
+          "B-MIDDLENAME",
+          "I-MIDDLENAME",
+          "E-MIDDLENAME",
+          "S-MIDDLENAME",
+          "B-OCCUPATION",
+          "I-OCCUPATION",
+          "E-OCCUPATION",
+          "S-OCCUPATION",
+          "B-ORDINALDIRECTION",
+          "I-ORDINALDIRECTION",
+          "E-ORDINALDIRECTION",
+          "S-ORDINALDIRECTION",
+          "B-ORGANIZATION",
+          "I-ORGANIZATION",
+          "E-ORGANIZATION",
+          "S-ORGANIZATION",
+          "B-PASSWORD",
+          "I-PASSWORD",
+          "E-PASSWORD",
+          "S-PASSWORD",
+          "B-PHONE",
+          "I-PHONE",
+          "E-PHONE",
+          "S-PHONE",
+          "B-PIN",
+          "I-PIN",
+          "E-PIN",
+          "S-PIN",
+          "B-PREFIX",
+          "I-PREFIX",
+          "E-PREFIX",
+          "S-PREFIX",
+          "B-SECONDARYADDRESS",
+          "I-SECONDARYADDRESS",
+          "E-SECONDARYADDRESS",
+          "S-SECONDARYADDRESS",
+          "B-SEX",
+          "I-SEX",
+          "E-SEX",
+          "S-SEX",
+          "B-SSN",
+          "I-SSN",
+          "E-SSN",
+          "S-SSN",
+          "B-STATE",
+          "I-STATE",
+          "E-STATE",
+          "S-STATE",
+          "B-STREET",
+          "I-STREET",
+          "E-STREET",
+          "S-STREET",
+          "B-TIME",
+          "I-TIME",
+          "E-TIME",
+          "S-TIME",
+          "B-URL",
+          "I-URL",
+          "E-URL",
+          "S-URL",
+          "B-USERAGENT",
+          "I-USERAGENT",
+          "E-USERAGENT",
+          "S-USERAGENT",
+          "B-USERNAME",
+          "I-USERNAME",
+          "E-USERNAME",
+          "S-USERNAME",
+          "B-VIN",
+          "I-VIN",
+          "E-VIN",
+          "S-VIN",
+          "B-VRM",
+          "I-VRM",
+          "E-VRM",
+          "S-VRM",
+          "B-ZIPCODE",
+          "I-ZIPCODE",
+          "E-ZIPCODE",
+          "S-ZIPCODE"
+        ],
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "pii-detected",
+        "match": {
+          "any": [
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-AMOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-AMOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-AMOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-AMOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CITY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CITY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CITY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CITY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-COUNTY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-COUNTY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-COUNTY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-COUNTY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CREDITCARDISSUER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CREDITCARDISSUER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CREDITCARDISSUER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CREDITCARDISSUER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CURRENCY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CURRENCY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CURRENCY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CURRENCY",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CURRENCYCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CURRENCYCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CURRENCYCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CURRENCYCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CURRENCYNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CURRENCYNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CURRENCYNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CURRENCYNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CURRENCYSYMBOL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CURRENCYSYMBOL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CURRENCYSYMBOL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CURRENCYSYMBOL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-DATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-DATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-DATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-DATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-EYECOLOR",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-EYECOLOR",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-EYECOLOR",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-EYECOLOR",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-GENDER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-GENDER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-GENDER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-GENDER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-IPADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-IPADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-IPADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-IPADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-JOBDEPARTMENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-JOBDEPARTMENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-JOBDEPARTMENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-JOBDEPARTMENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-JOBTITLE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-JOBTITLE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-JOBTITLE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-JOBTITLE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-MACADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-MACADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-MACADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-MACADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-OCCUPATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-OCCUPATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-OCCUPATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-OCCUPATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-ORDINALDIRECTION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-ORDINALDIRECTION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-ORDINALDIRECTION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-ORDINALDIRECTION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-ORGANIZATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-ORGANIZATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-ORGANIZATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-ORGANIZATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-PREFIX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-PREFIX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-PREFIX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-PREFIX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-SEX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-SEX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-SEX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-SEX",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-STATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-STATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-STATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-STATE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-TIME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-TIME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-TIME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-TIME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-URL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-URL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-URL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-URL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-USERAGENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-USERAGENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-USERAGENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-USERAGENT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "B-ZIPCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "I-ZIPCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "E-ZIPCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pf",
+              "label": "S-ZIPCODE",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-0.8B-GGUF"
+      }
+    ]
+  }
+}

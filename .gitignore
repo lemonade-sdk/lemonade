@@ -192,3 +192,12 @@ CLAUDE.local.md
 
 # PII routing eval run backups (pii_routing_eval.py --log-dir)
 test/conformance/routing/**/runs/
+test/eval/ryzenai_npu_benchmark.py
+test/eval/runs/npu_bench_Qwen3-1.7B_rai_1.8.0_npu_16K_20260812-193623.json
+test/eval/runs/npu_bench_Qwen3-1.7B_rai_1.8.0_npu_16K_20260812-193723.json
+test_native_export_fp32.onnx
+test_native_export_fp32.onnx.data
+test_native_export.onnx
+test_native_export.onnx.data
+test_native_export18.onnx
+test_native_export18.onnx.data

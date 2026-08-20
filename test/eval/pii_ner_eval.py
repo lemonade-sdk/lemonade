@@ -34,7 +34,7 @@ Requirements:
     pip install transformers torch
 
 Usage:
-    python test/eval/pii_ner_eval.py [--corpus-dir DIR] [--model NAME] [--limit N] [--verbose] [--device DEVICE]
+    python test/eval/pii_ner_eval.py [--corpus-dir DIR] [--model NAME] [--limit N] [--verbose] [--device DEVICE] [--resume-from LOG]
 
 Defaults:
     --corpus-dir     test/conformance/routing/1/l2_pii_nemotron
@@ -44,6 +44,14 @@ Defaults:
     --max-length     8192  (model supports up to 32768; truncation=True either way)
     --progress-every 50  (0 disables the heartbeat)
     --log-dir        <corpus-dir>/runs/  (pass --no-log-file to skip the backup)
+    --resume-from    none (path to a prior run's .log to continue after an
+                     interruption - cases already logged there are skipped,
+                     not re-run; their tallies are reconstructed from the log
+                     line itself, not re-inferred. Requires that prior run
+                     used --verbose, since a non-verbose log only records
+                     failures and can't distinguish "not yet run" from
+                     "passed". Appends to the same log file so the final
+                     summary covers the whole corpus in one place.)
 
 Examples:
     # Smoke test on 20 cases before committing to the full corpus
@@ -51,6 +59,9 @@ Examples:
 
     # Full corpus
     python test/eval/pii_ner_eval.py
+
+    # Resume a run that died partway through (e.g. machine went to sleep)
+    python test/eval/pii_ner_eval.py --resume-from test/conformance/routing/1/l2_pii_nemotron/runs/ner_mmbert32k-pii-detector-merged_20260811-194327.log
 """
 
 import argparse
@@ -134,6 +145,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip writing the run log / JSON summary backup.",
     )
+    p.add_argument(
+        "--resume-from",
+        default=None,
+        help="Path to a prior (--verbose) run's .log to continue after an "
+        "interruption, instead of starting over.",
+    )
     return p.parse_args()
 
 
@@ -204,6 +221,39 @@ def detect_entity_types(
 
 
 # ---------------------------------------------------------------------------
+# Resume
+# ---------------------------------------------------------------------------
+
+import re
+
+_RESUME_LINE_RE = re.compile(
+    r"^  \[(?:(FAIL|PASS)\]\[(TP|TN|FP|FN)|ERROR)\] ([^\s:]+)(?:: (?:expected_pii=\S* )?detected=(\S+))?"
+)
+
+
+def parse_resume_log(log_path: Path) -> tuple[dict[str, dict], dict[str, int]]:
+    """Reconstruct per-case outcomes from a prior --verbose run's log, so
+    those cases can be skipped (not re-inferred) on resume. Returns
+    (processed: {name: {"kind": ..., "detected": ...}}, counts).
+    ERROR'd cases are intentionally NOT included in `processed` - a case that
+    threw (e.g. a transient OOM) should be retried, not permanently skipped.
+    """
+    processed: dict[str, dict] = {}
+    counts = {"TP": 0, "TN": 0, "FP": 0, "FN": 0, "ERROR": 0}
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        m = _RESUME_LINE_RE.match(line)
+        if not m:
+            continue
+        status, kind, name, detected = m.groups()
+        if status is None:
+            counts["ERROR"] += 1
+            continue
+        processed[name] = {"kind": kind, "detected": detected or "none"}
+        counts[kind] += 1
+    return processed, counts
+
+
+# ---------------------------------------------------------------------------
 # Evaluation
 # ---------------------------------------------------------------------------
 
@@ -216,25 +266,58 @@ def evaluate(args: argparse.Namespace) -> None:
         print(f"ERROR: cases.jsonl not found at {cases_path}", file=sys.stderr)
         sys.exit(1)
 
-    cases = [
+    all_cases = [
         json.loads(line)
         for line in cases_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
     if args.limit and args.limit > 0:
-        cases = cases[: args.limit]
+        all_cases = all_cases[: args.limit]
+
+    counts = {"TP": 0, "TN": 0, "FP": 0, "FN": 0, "ERROR": 0}
+    wrong_cases: list[dict] = []
+    cases = all_cases
+    resume_note = ""
+    if args.resume_from:
+        resume_log_path = Path(args.resume_from)
+        processed, counts = parse_resume_log(resume_log_path)
+        by_name = {c.get("name", "?"): c for c in all_cases}
+        for name, info in processed.items():
+            if info["kind"] in ("FN", "FP") and name in by_name:
+                wrong_cases.append(
+                    {
+                        "name": name,
+                        "kind": info["kind"],
+                        "expected_pii": by_name[name].get("pii_category", "none"),
+                        "detected_types": info["detected"],
+                        "note": by_name[name].get("note", ""),
+                    }
+                )
+        cases = [c for c in all_cases if c.get("name", "?") not in processed]
+        resume_note = (
+            f" (resuming from {resume_log_path.name}: "
+            f"{len(processed)} already done, {len(cases)} remaining)"
+        )
 
     log_file_handle = None
     log_path: Path | None = None
     json_path: Path | None = None
+    run_id = ""
     if not args.no_log_file:
-        log_dir = Path(args.log_dir) if args.log_dir else corpus_dir / "runs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        model_slug = args.model.split("/")[-1]
-        run_id = f"ner_{model_slug}_{time.strftime('%Y%m%d-%H%M%S')}"
-        log_path = log_dir / f"{run_id}.log"
-        json_path = log_dir / f"{run_id}.json"
-        log_file_handle = log_path.open("w", encoding="utf-8", buffering=1)
+        if args.resume_from:
+            resume_log_path = Path(args.resume_from)
+            log_path = resume_log_path
+            json_path = resume_log_path.with_suffix(".json")
+            run_id = resume_log_path.stem
+            log_file_handle = log_path.open("a", encoding="utf-8", buffering=1)
+        else:
+            log_dir = Path(args.log_dir) if args.log_dir else corpus_dir / "runs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            model_slug = args.model.split("/")[-1]
+            run_id = f"ner_{model_slug}_{time.strftime('%Y%m%d-%H%M%S')}"
+            log_path = log_dir / f"{run_id}.log"
+            json_path = log_dir / f"{run_id}.json"
+            log_file_handle = log_path.open("w", encoding="utf-8", buffering=1)
 
     def log(msg: str = "") -> None:
         print(msg, flush=True)
@@ -244,18 +327,16 @@ def evaluate(args: argparse.Namespace) -> None:
 
     try:
         device = resolve_device(args.device)
+        log(f"\n--- resuming{resume_note} ---" if args.resume_from else "")
         log(f"Corpus : {corpus_dir}")
         log(f"Model  : {args.model}")
         log(f"Device : {device}")
-        log(f"Cases  : {len(cases)}")
+        log(f"Cases  : {len(all_cases)}{resume_note}")
         log()
 
         log("Loading model (first run downloads weights from HuggingFace)...")
         tokenizer, model = load_model(args.model, device)
         log("Model loaded.\n")
-
-        counts = {"TP": 0, "TN": 0, "FP": 0, "FN": 0, "ERROR": 0}
-        wrong_cases: list[dict] = []
 
         start_time = time.time()
         for idx, case in enumerate(cases, start=1):
@@ -377,7 +458,7 @@ def evaluate(args: argparse.Namespace) -> None:
                 "corpus_dir": str(corpus_dir),
                 "model": args.model,
                 "device": device,
-                "n_cases": len(cases),
+                "n_cases": len(all_cases),
                 "elapsed_seconds": elapsed_seconds,
                 "counts": counts,
                 "recall": recall,

@@ -6,7 +6,7 @@
   "n_benign": 1,
   "n_pii_relabeled_benign_due_to_truncation": 0,
   "total": 20001,
-  "privacy_model": "Qwen3.5-9B-NoThinking",
+  "privacy_model": "Qwen3.5-0.8B-GGUF",
   "cloud_model": "fireworks.kimi-k2p6",
   "max_chars": 0,
   "top_pii_types": [

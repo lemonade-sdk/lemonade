@@ -1,0 +1,242 @@
+{
+  "version": "1",
+  "model_name": "user.PII-ONNX-Classifier-Router",
+  "recipe": "collection.router",
+  "components": [
+    "fireworks.kimi-k2p6",
+    "Qwen3.5-0.8B-GGUF",
+    "user.mmbert32k-pii-onnx"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-0.8B-GGUF",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pii-onnx",
+        "type": "classifier",
+        "model": "user.mmbert32k-pii-onnx",
+        "labels": [
+          "O",
+          "B-AGE",
+          "I-AGE",
+          "B-CREDIT_CARD",
+          "I-CREDIT_CARD",
+          "B-DATE_TIME",
+          "I-DATE_TIME",
+          "B-DOMAIN_NAME",
+          "I-DOMAIN_NAME",
+          "B-EMAIL_ADDRESS",
+          "I-EMAIL_ADDRESS",
+          "B-GPE",
+          "I-GPE",
+          "B-IBAN_CODE",
+          "I-IBAN_CODE",
+          "B-IP_ADDRESS",
+          "I-IP_ADDRESS",
+          "B-NRP",
+          "I-NRP",
+          "B-ORGANIZATION",
+          "I-ORGANIZATION",
+          "B-PERSON",
+          "I-PERSON",
+          "B-PHONE_NUMBER",
+          "I-PHONE_NUMBER",
+          "B-STREET_ADDRESS",
+          "I-STREET_ADDRESS",
+          "B-TITLE",
+          "I-TITLE",
+          "B-US_DRIVER_LICENSE",
+          "I-US_DRIVER_LICENSE",
+          "B-US_SSN",
+          "I-US_SSN",
+          "B-ZIP_CODE",
+          "I-ZIP_CODE"
+        ],
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "pii-detected",
+        "match": {
+          "any": [
+            {
+              "classifier": "pii-onnx",
+              "label": "B-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-CREDIT_CARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-CREDIT_CARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-DATE_TIME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-DATE_TIME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-DOMAIN_NAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-DOMAIN_NAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-EMAIL_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-EMAIL_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-GPE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-GPE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-IBAN_CODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-IBAN_CODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-IP_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-IP_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-NRP",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-NRP",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-ORGANIZATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-ORGANIZATION",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-PERSON",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-PERSON",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-PHONE_NUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-PHONE_NUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-STREET_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-STREET_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-TITLE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-TITLE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-US_DRIVER_LICENSE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-US_DRIVER_LICENSE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-US_SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-US_SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "B-ZIP_CODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx",
+              "label": "I-ZIP_CODE",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-0.8B-GGUF"
+      }
+    ]
+  }
+}

@@ -6,25 +6,85 @@ case from cases.jsonl, compares the actual routing decision to the expected one,
 and prints a confusion matrix with leak rate, over-route rate, and Fbeta score.
 Every run is also backed up to <corpus-dir>/runs/ as a timestamped text log
 (line-buffered and flushed per write, so it's safe to tail mid-run) plus a
-JSON summary (counts, metrics, wrong/risk/fallback cases). A heartbeat line
-is logged every --progress-every cases regardless of --verbose, so a large
+JSON summary (counts, metrics, wrong/risk/fallback cases, timing). A heartbeat
+line is logged every --progress-every cases regardless of --verbose, so a large
 corpus doing live inference doesn't look stalled between the startup banner
 and the final summary. FAIL/ERROR/LLM_FALLBACK/UNEXPECTED-risk cases are
 always logged live as they happen (not gated behind --verbose) since those
 are what you'd actually want to see while debugging; --verbose additionally
 prints a line for every PASS.
 
-Usage:
-    python test/eval/pii_routing_eval.py [--base-url URL] [--corpus-dir DIR] [--policy FILE] [--beta FLOAT] [--verbose] [--limit N] [--progress-every N] [--log-dir DIR] [--no-log-file]
+Each case is a single POST to /v1/chat/completions (route_trace=True,
+max_tokens=1): the server both makes the routing decision AND forwards to the
+routed model in that one HTTP round trip, so total per-case latency conflates
+"time to route" with "time for the routed model to process the input". There
+is no server-side field that reports the router's own decision time in
+isolation (see extract_model_timing_ms() below for exactly what IS available
+and how the split is estimated) -- treat the routing/model split as an
+estimate, not an instrumented measurement. e2e time is always exact (measured
+client-side); it is only the routing-vs-model breakdown that's derived, and it
+also absorbs one-time model-load latency on cold-cache cases (see the "Timing"
+section comment above extract_model_timing_ms for details/measurements).
 
-Defaults:
-    --base-url       http://localhost:13305
-    --corpus-dir     test/conformance/routing/1/l2_pii_regex
-    --policy         policy.json  (relative to --corpus-dir, or an absolute path)
-    --beta           2.0  (recall-weighted: missing PII is more costly than over-routing)
-    --limit          0  (evaluate all cases; pass e.g. 20 for a quick smoke test)
-    --progress-every 50  (0 disables the heartbeat)
-    --log-dir        <corpus-dir>/runs/  (pass --no-log-file to skip the backup)
+Timing is logged per-case (appended to the existing PASS/FAIL/risk/fallback
+log lines) and summarized at the end in a TIMING section: sum/mean/median for
+e2e, estimated routing, and routed-model time, plus how many cases had no
+model-side timing available (e.g. cloud candidates, which don't report
+inference duration -- see extract_model_timing_ms()). The full JSON summary
+also gets a "timing" aggregate block and a per-case "timing_samples" array for
+offline analysis (e.g. plotting a latency histogram).
+
+Usage:
+    python test/eval/pii_routing_eval.py [--base-url URL] [--corpus-dir DIR] [--policy FILE] [--beta FLOAT] [--verbose] [--limit N] [--timeout SECONDS] [--progress-every N] [--log-dir DIR] [--no-log-file]
+
+Arguments:
+    --base-url       Lemonade server base URL to test against. The server must
+                      already be running (lemond); this script does not start it.
+                      Default: http://localhost:13305
+    --corpus-dir     Directory containing policy.json/policy_llm.json and
+                      cases.jsonl. This is what controls corpus SIZE and
+                      CONTENT -- there's no separate "corpus size" flag,
+                      because the corpus is a fixed, pre-built fixture (see
+                      stats.json alongside cases.jsonl in each corpus dir for
+                      its composition). Use --limit to run a subset instead of
+                      the whole file. Default: test/conformance/routing/1/l2_pii_regex
+    --policy         Policy file to register and test. Relative to
+                      --corpus-dir, or an absolute/relative-to-cwd path
+                      elsewhere (e.g. ../l2_pii_regex/policy_llm.json to test
+                      a different corpus dir's policy against this corpus).
+                      Use policy.json for the regex router, policy_llm.json for
+                      the LLM router. Default: policy.json
+    --beta           Beta for the Fbeta score; beta>1 weights recall over
+                      precision (missing real PII is worse than over-routing a
+                      benign prompt to the local model). Default: 2.0
+    --verbose        Print a log line for every PASS, not just
+                      FAIL/ERROR/LLM_FALLBACK/UNEXPECTED-risk cases (those are
+                      always printed). Each line includes the timing suffix.
+    --limit          Only evaluate the first N cases (0 = all, the default).
+                      Cases in the corpus are pre-shuffled by the builder, so a
+                      small N (e.g. 20-50) still gives a random-but-reproducible
+                      mix for a quick smoke test before committing to a full,
+                      hours-long run. Default: 0
+    --timeout        HTTP timeout per request, in seconds. Increase this for
+                      LLM-router policies and/or large corpora -- the router
+                      LLM has to generate a routing decision before the routed
+                      model even starts on the actual request, so per-case
+                      latency is higher than a plain completion. Default: 60
+    --progress-every Log a heartbeat every N cases regardless of --verbose (0
+                      disables it). Includes a running cases/sec rate so you
+                      can project remaining time on a multi-hour run. Default: 50
+    --log-dir        Directory to back up the full run output (text log + JSON
+                      summary). Files are timestamped so runs don't collide.
+                      Default: <corpus-dir>/runs/
+    --no-log-file    Skip writing the run log / JSON summary backup (prints to
+                      stdout only).
+    --resume-from-log  Path to a previous run's .log file (same corpus dir and
+                      policy). Cases already answered there (parsed from its
+                      PASS/FAIL lines) are replayed from that recorded outcome
+                      instead of re-queried, so an interrupted multi-hour run
+                      can continue without redoing already-completed work or
+                      double-counting it in the final report. ERROR lines are
+                      deliberately NOT deduplicated -- those cases are retried.
 
 Examples:
     # Regex policy against hand-crafted corpus
@@ -33,7 +93,12 @@ Examples:
     # LLM policy against the same hand-crafted corpus
     python test/eval/pii_routing_eval.py --policy policy_llm.json --verbose
 
-    # LLM policy against Nemotron corpus
+    # LLM policy against Nemotron corpus (2,500 cases; expect a multi-hour run
+    # for a cloud default candidate -- use --limit for a smoke test first)
+    python test/eval/pii_routing_eval.py \\
+        --corpus-dir test/conformance/routing/1/l2_pii_nemotron \\
+        --policy ../l2_pii_regex/policy_llm.json --limit 20 --verbose
+
     python test/eval/pii_routing_eval.py \\
         --corpus-dir test/conformance/routing/1/l2_pii_nemotron \\
         --policy ../l2_pii_regex/policy_llm.json --verbose
@@ -42,8 +107,11 @@ Examples:
 import argparse
 import json
 import os
+import re
+import statistics
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -128,6 +196,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip writing the run log / JSON summary backup.",
     )
+    p.add_argument(
+        "--resume-from-log",
+        default=None,
+        help="Path to a previous run's .log file for this same corpus+policy. "
+        "Cases already answered there are replayed from the recorded outcome "
+        "instead of re-queried. ERROR lines are not deduplicated (retried).",
+    )
     return p.parse_args()
 
 
@@ -137,10 +212,15 @@ def parse_args() -> argparse.Namespace:
 
 
 def wait_for_server(base_url: str, timeout: int = 30) -> None:
+    # Bare "/health" isn't a registered route (see the quad-prefix registration
+    # in server.cpp) -- it 200s anyway because it falls through to the web
+    # app's SPA catch-all, which is up as soon as the process is listening and
+    # says nothing about whether the router/backends are actually ready. Use
+    # the real health endpoint.
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            r = requests.get(f"{base_url}/health", timeout=5)
+            r = requests.get(f"{base_url}/api/v1/health", timeout=5)
             if r.status_code == 200:
                 return
         except requests.exceptions.ConnectionError:
@@ -178,6 +258,101 @@ def chat_completion(
     r = requests.post(endpoint, json=payload, timeout=timeout)
     r.raise_for_status()
     return r.json()
+
+
+# ---------------------------------------------------------------------------
+# Resume from a prior run's log
+# ---------------------------------------------------------------------------
+#
+# These three shapes are the only case-result lines this script's own log()
+# calls emit (see the matching f-strings in evaluate() below) -- non-risk
+# PASS uses route=/rule=, non-risk FAIL adds the "(pii=...)" parenthetical
+# and expected=/actual=, and RISK_*/UNEXPECTED lines share the FAIL-style
+# expected=/actual= but without the parenthetical. ERROR and LLM_FALLBACK
+# lines are deliberately not matched here -- those cases get retried on
+# resume rather than replayed, since their prior outcome wasn't a real
+# answer.
+
+_PASS_NONRISK_RE = re.compile(
+    r"^\s*\[PASS\]\[(?P<kind>[A-Z]+)\]\s+(?P<name>\S+):\s+"
+    r"route=(?P<route>\S+)\s+rule=(?P<rule>\S+?)"
+    r"(?:\s+rationale='[^']*')?\s*"
+    r"\[e2e=(?P<e2e>[\d.]+)ms(?:\s+routing~=(?P<routing>[\d.]+)ms\s+model=(?P<model>[\d.]+)ms|\s+model=n/a)\]\s*$"
+)
+_FAIL_NONRISK_RE = re.compile(
+    r"^\s*\[FAIL\]\[(?P<kind>[A-Z]+)\]\s+(?P<name>\S+)\s+\(pii=(?P<pii>[^)]*)\):\s+"
+    r"expected=(?P<expected>\S+)\s+actual=(?P<actual>\S+)"
+    r"(?:\s+rationale='[^']*')?\s*"
+    r"\[e2e=(?P<e2e>[\d.]+)ms(?:\s+routing~=(?P<routing>[\d.]+)ms\s+model=(?P<model>[\d.]+)ms|\s+model=n/a)\]\s*$"
+)
+_RISK_RE = re.compile(
+    r"^\s*\[(?P<status>PASS|UNEXPECTED)\]\[(?P<kind>RISK_\w+)\]\s+(?P<name>\S+):\s+"
+    r"expected=(?P<expected>\S+)\s+actual=(?P<actual>\S+)"
+    r"\s*\[e2e=(?P<e2e>[\d.]+)ms(?:\s+routing~=(?P<routing>[\d.]+)ms\s+model=(?P<model>[\d.]+)ms|\s+model=n/a)\]\s*$"
+)
+
+
+def parse_prior_log(path: Path) -> dict[str, dict]:
+    """Case name -> replayed outcome, parsed from a previous run's text log."""
+    results: dict[str, dict] = {}
+    unrecognized = 0
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("["):
+            continue
+        m = _PASS_NONRISK_RE.match(line)
+        if m:
+            gd = m.groupdict()
+            results[gd["name"]] = {
+                "kind": gd["kind"],
+                "passed": True,
+                "actual_route": gd["route"],
+                "actual_rule": gd["rule"],
+                "expected_route": None,
+                "e2e_ms": float(gd["e2e"]),
+                "routing_ms": float(gd["routing"]) if gd["routing"] else None,
+                "model_ms": float(gd["model"]) if gd["model"] else None,
+            }
+            continue
+        m = _FAIL_NONRISK_RE.match(line)
+        if m:
+            gd = m.groupdict()
+            results[gd["name"]] = {
+                "kind": gd["kind"],
+                "passed": False,
+                "actual_route": gd["actual"],
+                "actual_rule": None,
+                "expected_route": gd["expected"],
+                "e2e_ms": float(gd["e2e"]),
+                "routing_ms": float(gd["routing"]) if gd["routing"] else None,
+                "model_ms": float(gd["model"]) if gd["model"] else None,
+            }
+            continue
+        m = _RISK_RE.match(line)
+        if m:
+            gd = m.groupdict()
+            results[gd["name"]] = {
+                "kind": gd["kind"],
+                "passed": gd["status"] == "PASS",
+                "actual_route": gd["actual"],
+                "actual_rule": None,
+                "expected_route": gd["expected"],
+                "e2e_ms": float(gd["e2e"]),
+                "routing_ms": float(gd["routing"]) if gd["routing"] else None,
+                "model_ms": float(gd["model"]) if gd["model"] else None,
+            }
+            continue
+        if stripped.startswith("[ERROR]") or stripped.startswith("[LLM_FALLBACK]"):
+            continue
+        if stripped.startswith(("[PASS]", "[FAIL]", "[UNEXPECTED]")):
+            unrecognized += 1
+    if unrecognized:
+        print(
+            f"  (resume: {unrecognized} result line(s) in the prior log didn't match "
+            "a known format and will be re-run, not replayed)",
+            file=sys.stderr,
+        )
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +418,35 @@ def privacy_route(policy: dict) -> str:
     return non_default[0] if non_default else ""
 
 
+def infer_local_model_from_corpus(cases: list[dict]) -> str | None:
+    """Ground truth for "which candidate is local/private", read straight from
+    the corpus instead of trusting policy structure: the most common route_to
+    among non-risk cases that actually carry PII.
+
+    privacy_route(policy) infers the local candidate from policy JSON (the
+    'pii-detected' rule's route_to, or default_model for LLM policies), which
+    is only correct if the policy file is configured consistently with the
+    corpus it's being scored against. It's easy for the two to drift apart
+    (e.g. a policy's routing.default_model gets copy-pasted from a sibling
+    regex policy where default_model means "no rule matched" rather than "the
+    router LLM's safe fallback", silently pointing the LLM's fallback at the
+    cloud candidate; or a corpus's cases.jsonl keeps a stale local-model name
+    after the policy's candidate gets renamed). Either drift makes every
+    expected_route == local_model comparison in classify_case() wrong across
+    the whole run without raising an error. Call this once per run and cross-
+    check it against privacy_route(policy) so that kind of drift is a loud
+    warning instead of a silently corrupted confusion matrix.
+    """
+    votes = Counter(
+        case["decision"]["route_to"]
+        for case in cases
+        if case.get("pii_category", "none") != "none" and not is_risk_case(case)
+    )
+    if not votes:
+        return None
+    return votes.most_common(1)[0][0]
+
+
 def classify_case(case: dict, local_model: str) -> str:
     """
     Returns one of: TP, TN, FP, FN, or RISK_FN / RISK_FP
@@ -266,6 +470,118 @@ def classify_case(case: dict, local_model: str) -> str:
         return "FP"
     # has_pii and not routes_local
     return "FN"
+
+
+# ---------------------------------------------------------------------------
+# Timing
+# ---------------------------------------------------------------------------
+#
+# A case is one HTTP round trip: the server picks a route AND the routed model
+# processes the request in the same request/response cycle (see
+# route_decision_to_json in route_decision_response.cpp -- the decision JSON
+# has no timing field). So the only thing directly measurable from the client
+# is total wall-clock time per case (e2e_ms, below). To approximate the split
+# the user actually wants -- how much of that was the router deciding vs. the
+# routed model doing the work -- we lean on a field the ROUTED model's backend
+# already puts in the response for its own telemetry:
+#
+#   - llama.cpp-backed candidates (e.g. any *-GGUF local model) return a
+#     top-level "timings" object with prompt_ms + predicted_ms: the backend's
+#     own prefill+decode time for the actual request (see the "llama-server
+#     includes timing data in the response" handling in server.cpp).
+#   - FastFlowLM-backed candidates report duration via "usage" fields
+#     (prefill_duration_ttft seconds, decoding_speed_tps) instead.
+#   - Cloud candidates (e.g. fireworks.*) report neither -- there's no
+#     backend-side duration to read, so the split is left as "unavailable"
+#     for those cases and only e2e time is known.
+#
+# model_ms above is real backend-reported time for the routed model's own
+# request. routing_ms is *not* independently measured -- it's e2e_ms minus
+# model_ms, i.e. "everything else": the router LLM's own classification call
+# (for LLM-router policies) plus policy evaluation and HTTP/process overhead.
+# It's a reasonable estimate, not an instrumented number; label it as such
+# wherever it's printed.
+#
+# One-time model LOAD latency also lands in that "everything else" bucket: the
+# first request that needs a candidate not already resident (cold start, or
+# after the router's LRU evicts it) pays subprocess-start + weight-load time
+# on top of routing, and that shows up entirely as routing_ms even though it
+# has nothing to do with the router. Confirmed empirically: a cold Qwen3.5-2B
+# load added ~19s to routing_ms on the first case, vs ~30-50ms once warm. On a
+# multi-hundred-case run this is one or two outlier cases out of many and
+# washes out of the mean, but don't read a single case's routing_ms as "how
+# long the router took" without checking it wasn't also a cold load -- the
+# per-case log line doesn't distinguish the two.
+
+
+def extract_model_timing_ms(resp: dict) -> tuple[float | None, str]:
+    """Return (model_ms, source) for the routed model's own inference time,
+    read from whatever timing fields its backend put in the response.
+    model_ms is None (source="unavailable") when the backend doesn't report
+    one, which is expected/normal for cloud candidates.
+    """
+    timings = resp.get("timings")
+    if (
+        isinstance(timings, dict)
+        and "prompt_ms" in timings
+        and "predicted_ms" in timings
+    ):
+        try:
+            return (
+                float(timings["prompt_ms"]) + float(timings["predicted_ms"]),
+                "llama_timings",
+            )
+        except (TypeError, ValueError):
+            pass
+
+    usage = resp.get("usage")
+    if isinstance(usage, dict) and "prefill_duration_ttft" in usage:
+        try:
+            ttft_s = float(usage["prefill_duration_ttft"])
+        except (TypeError, ValueError):
+            return None, "unavailable"
+        decode_s = 0.0
+        tps = usage.get("decoding_speed_tps")
+        completion_tokens = usage.get("completion_tokens")
+        if tps and completion_tokens:
+            try:
+                decode_s = float(completion_tokens) / float(tps)
+            except (TypeError, ValueError, ZeroDivisionError):
+                decode_s = 0.0
+        return (ttft_s + decode_s) * 1000.0, "flm_usage"
+
+    return None, "unavailable"
+
+
+def format_timing_suffix(
+    e2e_ms: float, routing_ms: float | None, model_ms: float | None
+) -> str:
+    if routing_ms is None or model_ms is None:
+        return f" [e2e={e2e_ms:.0f}ms model=n/a]"
+    return f" [e2e={e2e_ms:.0f}ms routing~={routing_ms:.0f}ms model={model_ms:.0f}ms]"
+
+
+def fmt_hms(seconds: float) -> str:
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m:02d}m{s:02d}s"
+    if m:
+        return f"{m}m{s:02d}s"
+    return f"{s}s"
+
+
+def summarize_timing(values: list[float]) -> dict[str, float]:
+    if not values:
+        return {"n": 0, "sum_ms": 0.0, "mean_ms": 0.0, "median_ms": 0.0, "max_ms": 0.0}
+    return {
+        "n": len(values),
+        "sum_ms": sum(values),
+        "mean_ms": statistics.mean(values),
+        "median_ms": statistics.median(values),
+        "max_ms": max(values),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -326,8 +642,43 @@ def evaluate(args: argparse.Namespace) -> None:
         wait_for_server(args.base_url, timeout=15)
         register_policy(args.base_url, policy, args.timeout)
         local_model = privacy_route(policy)
+
+        inferred_local = infer_local_model_from_corpus(cases)
+        if inferred_local and not same_model(inferred_local, local_model):
+            log("!" * 70)
+            log("WARNING: policy privacy route disagrees with corpus ground truth.")
+            log(f"  privacy_route(policy) -> '{local_model}'")
+            log(
+                f"  corpus ground truth    -> '{inferred_local}' "
+                "(most common route_to among PII cases)"
+            )
+            log(
+                "  Using the corpus-derived value below, since that's what "
+                "expected_route in cases.jsonl actually targets. This usually "
+                "means routing.default_model (LLM policies) or a candidate "
+                "name is stale/misconfigured relative to this corpus -- fix "
+                "the policy or regenerate the corpus before trusting a full run."
+            )
+            log("!" * 70)
+            local_model = inferred_local
+
         log(f"Policy '{policy['model_name']}' registered.")
         log(f"Privacy route target: '{local_model}'\n")
+
+        prior_results: dict[str, dict] = {}
+        if args.resume_from_log:
+            prior_log_path = Path(args.resume_from_log)
+            if not prior_log_path.exists():
+                print(
+                    f"ERROR: --resume-from-log path not found: {prior_log_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            prior_results = parse_prior_log(prior_log_path)
+            log(
+                f"Resuming from {prior_log_path.name}: {len(prior_results)} cases "
+                "already answered there will be replayed (no re-query).\n"
+            )
 
         llm_policy = is_llm_policy(policy)
 
@@ -345,6 +696,7 @@ def evaluate(args: argparse.Namespace) -> None:
         wrong_cases: list[dict] = []
         risk_cases: list[dict] = []
         llm_fallback_cases: list[dict] = []
+        timing_samples: list[dict] = []
 
         start_time = time.time()
         for idx, case in enumerate(cases, start=1):
@@ -361,6 +713,67 @@ def evaluate(args: argparse.Namespace) -> None:
             expected_rule = case["decision"].get("matched_rule", "")
             kind = classify_case(case, local_model)
 
+            replay = prior_results.get(name)
+            if replay is not None:
+                e2e_ms = replay["e2e_ms"]
+                model_ms = replay["model_ms"]
+                routing_ms = replay["routing_ms"]
+                actual_route = replay["actual_route"] or ""
+                actual_rule = replay["actual_rule"] or ""
+                passed = replay["passed"]
+                timing_samples.append(
+                    {
+                        "name": name,
+                        "kind": kind,
+                        "e2e_ms": e2e_ms,
+                        "routing_ms_est": routing_ms,
+                        "model_ms": model_ms,
+                        "model_timing_source": "replayed",
+                    }
+                )
+                if kind in ("RISK_FN", "RISK_FP"):
+                    risk_cases.append(
+                        {
+                            "name": name,
+                            "kind": kind,
+                            "expected": expected_route,
+                            "actual": actual_route,
+                            "passed": passed,
+                            "note": case.get("note", ""),
+                        }
+                    )
+                    if not passed:
+                        log(
+                            f"  [UNEXPECTED][{kind}] {name}: expected={expected_route} actual={actual_route} [replayed]"
+                        )
+                    continue
+
+                counts[kind] += 1 if passed else 0
+                if not passed:
+                    wrong_cases.append(
+                        {
+                            "name": name,
+                            "kind": kind,
+                            "expected_route": expected_route,
+                            "actual_route": actual_route,
+                            "expected_rule": expected_rule,
+                            "actual_rule": actual_rule,
+                            "note": (
+                                case.get("note", "") + " (replayed from prior log)"
+                            ).strip(),
+                        }
+                    )
+                    pii = case.get("pii_category", "none")
+                    log(
+                        f"  [FAIL][{kind}] {name} (pii={pii}): expected={expected_route} actual={actual_route} [replayed]"
+                    )
+                elif args.verbose:
+                    log(
+                        f"  [PASS][{kind}] {name}: route={actual_route} rule={actual_rule or 'default'} [replayed]"
+                    )
+                continue
+
+            request_start = time.perf_counter()
             try:
                 resp = chat_completion(
                     args.base_url,
@@ -372,6 +785,21 @@ def evaluate(args: argparse.Namespace) -> None:
                 counts["ERROR"] += 1
                 log(f"  [ERROR] {name}: {exc}")
                 continue
+            e2e_ms = (time.perf_counter() - request_start) * 1000.0
+
+            model_ms, timing_source = extract_model_timing_ms(resp)
+            routing_ms = (e2e_ms - model_ms) if model_ms is not None else None
+            timing_samples.append(
+                {
+                    "name": name,
+                    "kind": kind,
+                    "e2e_ms": e2e_ms,
+                    "routing_ms_est": routing_ms,
+                    "model_ms": model_ms,
+                    "model_timing_source": timing_source,
+                }
+            )
+            timing_suffix = format_timing_suffix(e2e_ms, routing_ms, model_ms)
 
             actual_decision = resp.get("x_lemonade_route", {})
             actual_route = actual_decision.get("route_to", "")
@@ -394,7 +822,7 @@ def evaluate(args: argparse.Namespace) -> None:
                         {"name": name, "kind": kind, "actual_route": actual_route}
                     )
                     log(
-                        f"  [LLM_FALLBACK] {name}: router LLM produced bad output, fell open to default"
+                        f"  [LLM_FALLBACK] {name}: router LLM produced bad output, fell open to default{timing_suffix}"
                     )
                     continue
 
@@ -416,11 +844,11 @@ def evaluate(args: argparse.Namespace) -> None:
                     # note). An UNEXPECTED flip is a behavior change worth
                     # seeing live even without --verbose.
                     log(
-                        f"  [UNEXPECTED][{kind}] {name}: expected={expected_route} actual={actual_route}"
+                        f"  [UNEXPECTED][{kind}] {name}: expected={expected_route} actual={actual_route}{timing_suffix}"
                     )
                 elif args.verbose:
                     log(
-                        f"  [PASS][{kind}] {name}: expected={expected_route} actual={actual_route}"
+                        f"  [PASS][{kind}] {name}: expected={expected_route} actual={actual_route}{timing_suffix}"
                     )
                 continue
 
@@ -449,7 +877,7 @@ def evaluate(args: argparse.Namespace) -> None:
                             break
                 pii = case.get("pii_category", "none")
                 log(
-                    f"  [FAIL][{kind}] {name} (pii={pii}): expected={expected_route} actual={actual_route}{rationale}"
+                    f"  [FAIL][{kind}] {name} (pii={pii}): expected={expected_route} actual={actual_route}{rationale}{timing_suffix}"
                 )
             else:
                 if args.verbose:
@@ -463,7 +891,7 @@ def evaluate(args: argparse.Namespace) -> None:
                                 rationale = f" rationale='{t['rationale']}'"
                                 break
                     log(
-                        f"  [PASS][{kind}] {name}: route={actual_route} rule={actual_rule or 'default'}{rationale}"
+                        f"  [PASS][{kind}] {name}: route={actual_route} rule={actual_rule or 'default'}{rationale}{timing_suffix}"
                     )
 
         log(
@@ -533,6 +961,57 @@ def evaluate(args: argparse.Namespace) -> None:
         log(f"  F{beta:.0f} score                    : {fbeta:.3f}")
         log()
 
+        e2e_values = [t["e2e_ms"] for t in timing_samples]
+        routing_values = [
+            t["routing_ms_est"]
+            for t in timing_samples
+            if t["routing_ms_est"] is not None
+        ]
+        model_values = [
+            t["model_ms"] for t in timing_samples if t["model_ms"] is not None
+        ]
+        e2e_stats = summarize_timing(e2e_values)
+        routing_stats = summarize_timing(routing_values)
+        model_stats = summarize_timing(model_values)
+        n_no_split = e2e_stats["n"] - routing_stats["n"]
+
+        log("=" * 60)
+        log("TIMING (routing/model split is an ESTIMATE, see module docstring)")
+        log("=" * 60)
+        log(f"  Cases timed                    : {e2e_stats['n']}")
+        log(
+            f"  ...with a model-side split     : {routing_stats['n']} "
+            f"({n_no_split} unavailable, e.g. cloud candidates)"
+        )
+        log(f"  E2E total (sum of per-case)    : {fmt_hms(e2e_stats['sum_ms'] / 1000)}")
+        log(
+            f"  E2E per case  avg / median / max: "
+            f"{e2e_stats['mean_ms'] / 1000:.2f}s / {e2e_stats['median_ms'] / 1000:.2f}s / "
+            f"{e2e_stats['max_ms'] / 1000:.2f}s"
+        )
+        if routing_stats["n"]:
+            routing_share = (
+                routing_stats["sum_ms"] / e2e_stats["sum_ms"]
+                if e2e_stats["sum_ms"]
+                else 0.0
+            )
+            model_share = (
+                model_stats["sum_ms"] / e2e_stats["sum_ms"]
+                if e2e_stats["sum_ms"]
+                else 0.0
+            )
+            log(
+                f"  Routing (router.model) avg/median: "
+                f"{routing_stats['mean_ms'] / 1000:.2f}s / {routing_stats['median_ms'] / 1000:.2f}s "
+                f"(~{routing_share:.1%} of split cases' e2e)"
+            )
+            log(
+                f"  Routed-model eval avg/median   : "
+                f"{model_stats['mean_ms'] / 1000:.2f}s / {model_stats['median_ms'] / 1000:.2f}s "
+                f"(~{model_share:.1%} of split cases' e2e)"
+            )
+        log()
+
         if risk_cases:
             log(
                 f"RISK CASES ({len(risk_cases)} documented gaps - not counted in metrics)"
@@ -595,6 +1074,13 @@ def evaluate(args: argparse.Namespace) -> None:
                 "wrong_cases": wrong_cases,
                 "risk_cases": risk_cases,
                 "llm_fallback_cases": llm_fallback_cases,
+                "timing": {
+                    "e2e_ms": e2e_stats,
+                    "routing_ms_est": routing_stats,
+                    "model_ms": model_stats,
+                    "n_no_model_split": n_no_split,
+                },
+                "timing_samples": timing_samples,
             }
             json_path.write_text(
                 json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
