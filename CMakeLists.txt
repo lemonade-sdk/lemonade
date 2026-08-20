@@ -1976,7 +1976,7 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
         DESTINATION /etc/default
         RENAME lemond
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ
     )
 
     # Create symlinks for KaTeX fonts if they exist on the system
