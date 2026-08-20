@@ -99,6 +99,12 @@
       ],
       "send_batch_size": 100
     },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
+    },
     "trust_incoming_trace_context": false
   },
   "thenoise": {

@@ -58,8 +58,8 @@ public:
     double telemetry_otlp_retry_backoff_base_s() const;
     int telemetry_otlp_send_batch_size() const;
     double telemetry_otlp_batch_timeout_s() const;
-
-
+    std::vector<std::string> telemetry_session_headers_id() const;
+    std::vector<std::string> telemetry_session_headers_client() const;
     // Feature flags
     bool offline() const;
     bool auto_check_model_updates() const;
