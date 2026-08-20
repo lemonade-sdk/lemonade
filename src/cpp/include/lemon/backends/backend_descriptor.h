@@ -114,6 +114,13 @@ struct BackendDescriptor {
     std::vector<std::string> bin_variants;         // each emits `<variant>_bin: "builtin"`
     nlohmann::json config_extra = nlohmann::json::object();  // fixed extras (e.g. prefer_system, image defaults)
 
+    // True if this backend's ROCm build is self-contained (bundles its own ROCm
+    // userspace runtime, e.g. vLLM's portable archive). Such backends never need
+    // the external TheRock runtime that the rocm-stable channel otherwise pulls
+    // for llamacpp/sd-cpp. Trailing field so existing positional initializers keep
+    // their default (false) without edits.
+    bool rocm_bundles_runtime = false;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;

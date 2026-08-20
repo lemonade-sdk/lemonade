@@ -823,8 +823,10 @@ static std::string get_expected_backend_version(const std::string& recipe, const
 
     // The expected version must resolve the SAME per-arch override that install used,
     // or these GPUs report update_required forever: versions_match tolerates the
-    // "-{family}" suffix but not a different base.
-    if (recipe == "vllm" && resolved_backend == "rocm") {
+    // "-{family}" suffix but not a different base. The CDNA overrides are
+    // stable-line pins applied only on the stable channel (see
+    // VLLMServer::get_install_params), so mirror that gate here.
+    if (recipe == "vllm" && resolved_backend == "rocm-stable") {
         std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
         if (!asset_family.empty()) {
             std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);

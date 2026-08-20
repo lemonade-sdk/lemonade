@@ -30,35 +30,81 @@ env:
 
 jobs:
   # ========================================================================
-  # Discover the latest vllm-rocm release
+  # Resolve the vllm-rocm pins per channel and decide what to validate.
   # ========================================================================
-  get-latest-releases:
-    name: Get latest releases
-    # Only the auto-update runs resolve upstream releases. Everywhere else the
-    # build validates the pins committed in backend_versions.json, so a bad
-    # upstream release can't fail a merge or hide a broken pin.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  resolve:
+    name: Resolve channels
     runs-on: ubuntu-latest
     outputs:
-      vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
+      channels: ${{ steps.pick.outputs.channels }}
+      stable_base: ${{ steps.pick.outputs.stable_base }}
+      nightly_base: ${{ steps.pick.outputs.nightly_base }}
     steps:
-      - name: Get latest vllm-rocm release
-        id: vllm_rocm
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
+      - name: Resolve channels and bases
+        id: pick
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_AUTOUPDATE: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
-          RELEASE=$(gh api repos/lemonade-sdk/vllm-rocm/releases/latest --jq '.tag_name')
-          echo "Latest vllm-rocm release: $RELEASE"
-          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          set -e
+          strip_suffix() { sed -E 's/-gfx[0-9a-fA-FxX]+$//'; }
+
+          if [ "$IS_AUTOUPDATE" != "true" ]; then
+            # PR / merge_group: no upstream resolution. Validate the committed
+            # default-channel (stable) pin so a bad committed pin can't merge.
+            echo "channels=[\"stable\"]" >> "$GITHUB_OUTPUT"
+            echo "stable_base=" >> "$GITHUB_OUTPUT"
+            echo "nightly_base=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          repo="lemonade-sdk/vllm-rocm"
+
+          stable_tag=$(gh api "repos/$repo/releases/latest" --jq '.tag_name')
+          stable_base=$(printf '%s' "$stable_tag" | strip_suffix)
+          echo "Latest stable release: $stable_tag -> base $stable_base"
+
+          # Newest prerelease that is NOT an omni artifact.
+          # The releases API returns newest-first, so the first match is the current nightly.
+          nightly_tag=$(gh api "repos/$repo/releases?per_page=100" \
+            --jq '[.[] | select(.prerelease == true) | select(.tag_name | startswith("vllm-omni") | not)] | .[0].tag_name // ""')
+          nightly_base=$(printf '%s' "$nightly_tag" | strip_suffix)
+          echo "Newest non-omni prerelease: $nightly_tag -> base $nightly_base"
+
+          committed_stable=$(python3 -c 'import json;print(json.load(open("src/cpp/resources/backend_versions.json"))["vllm"].get("rocm-stable",""))')
+          committed_nightly=$(python3 -c 'import json;print(json.load(open("src/cpp/resources/backend_versions.json"))["vllm"].get("rocm-nightly",""))')
+
+          changed=()
+          if [ -n "$stable_base" ] && [ "$stable_base" != "$committed_stable" ]; then
+            changed+=("stable")
+          fi
+          if [ -n "$nightly_base" ] && [ "$nightly_base" != "$committed_nightly" ]; then
+            changed+=("nightly")
+          fi
+
+          # Emit a JSON array for the downstream matrix (empty => jobs skip).
+          json="[]"
+          if [ "${#changed[@]}" -gt 0 ]; then
+            json=$(printf '%s\n' "${changed[@]}" | python3 -c 'import sys,json;print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
+          fi
+          echo "Channels to process: $json"
+          echo "channels=$json" >> "$GITHUB_OUTPUT"
+          echo "stable_base=$stable_base" >> "$GITHUB_OUTPUT"
+          echo "nightly_base=$nightly_base" >> "$GITHUB_OUTPUT"
 
   # ========================================================================
-  # Build binaries with updated backend version
+  # Build binaries once (backend_versions.json holds both channel pins; the
+  # channel is selected at runtime via config.json's rocm_channel).
   # ========================================================================
   build:
     name: Build (Linux)
-    needs: get-latest-releases
+    needs: resolve
     # Label a PR `ci:upgrades` to opt it back in.
-    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && needs.resolve.outputs.channels != '[]' && always() && !failure() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -67,9 +113,11 @@ jobs:
           fetch-depth: 0
 
       - name: Update backend_versions.json
-        if: needs.get-latest-releases.result == 'success'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          STABLE_BASE: ${{ needs.resolve.outputs.stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.nightly_base }}
+          CHANNELS: ${{ needs.resolve.outputs.channels }}
         run: |
           set -e
           python3 - << 'PY'
@@ -77,13 +125,16 @@ jobs:
           path = "src/cpp/resources/backend_versions.json"
           with open(path) as f:
               data = json.load(f)
-          release = os.environ["VLLM_ROCM_RELEASE"]
-          old = data["vllm"].get("rocm", "")
-          data["vllm"]["rocm"] = release
+          channels = json.loads(os.environ["CHANNELS"])
+          bases = {"stable": os.environ["STABLE_BASE"], "nightly": os.environ["NIGHTLY_BASE"]}
+          for ch in channels:
+              key = f"rocm-{ch}"
+              old = data["vllm"].get(key, "")
+              data["vllm"][key] = bases[ch]
+              print(f"vllm.{key}: {old} -> {bases[ch]}")
           with open(path, "w") as f:
               json.dump(data, f, indent=2)
               f.write("\n")
-          print(f"vllm.rocm: {old} -> {release}")
           PY
 
       - name: Build lemond and the CLI
@@ -108,13 +159,17 @@ jobs:
           retention-days: 7
 
   # ========================================================================
-  # Validate backend on self-hosted runner
+  # Validate each changed channel on the self-hosted gfx1151 runner.
   # ========================================================================
   validate:
-    name: Validate vllm (rocm)
-    needs: [get-latest-releases, build]
-    if: always() && needs.build.result == 'success'
+    name: Validate vllm (rocm, ${{ matrix.channel }})
+    needs: [resolve, build]
+    if: always() && needs.build.result == 'success' && needs.resolve.outputs.channels != '[]'
     runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJSON(needs.resolve.outputs.channels) }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -143,18 +198,24 @@ jobs:
       - name: Run validation with lemond
         env:
           HOME: ${{ github.workspace }}/.home
+          ROCM_CHANNEL: ${{ matrix.channel }}
         run: |
           set -e
           mkdir -p "$HOME"
           echo "HOME=$HOME" >> "$GITHUB_ENV"
 
           CACHE_DIR="$(pwd)/ci-cache-vllm"
-          LOGS_DIR="$(pwd)/server-logs-rocm"
+          LOGS_DIR="$(pwd)/server-logs-rocm-${ROCM_CHANNEL}"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+          # Select the channel under test. config.json is deep-merged over
+          # defaults.json on load, so a single-key file is sufficient.
+          echo "{\"rocm_channel\": \"$ROCM_CHANNEL\"}" > "$CACHE_DIR/config.json"
+          echo "Validating rocm_channel=$ROCM_CHANNEL"
 
           # This validate job runs on a shared self-hosted runner, so the default
           # port 13305 may already be held by another job. lemond now refuses to
@@ -207,7 +268,7 @@ jobs:
             test/validate_vllm.py
             --backend rocm
             --port "$PORT"
-            --output vllm_validation_rocm.json
+            --output vllm_validation_rocm_${ROCM_CHANNEL}.json
             --logs-dir "$LOGS_DIR"
           )
           if [ "${LITE_MODE}" = "true" ]; then
@@ -227,16 +288,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: validation-results-rocm
-          path: vllm_validation_rocm.json
+          name: validation-results-rocm-${{ matrix.channel }}
+          path: vllm_validation_rocm_${{ matrix.channel }}.json
           retention-days: 30
 
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: server-logs-rocm
-          path: server-logs-rocm/
+          name: server-logs-rocm-${{ matrix.channel }}
+          path: server-logs-rocm-${{ matrix.channel }}/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -248,63 +309,76 @@ jobs:
           pkill -9 -f "resource_tracker" 2>/dev/null || true
 
   # ========================================================================
-  # Create PR if validation passed (schedule or workflow_dispatch only)
+  # Create a per-channel PR if validation passed (schedule/workflow_dispatch).
+  # One PR per changed channel, touching only that channel's key.
   # ========================================================================
   create-pr:
-    name: Create update PR
-    needs: [get-latest-releases, validate]
+    name: Create update PR (${{ matrix.channel }})
+    needs: [resolve, validate]
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.validate.result == 'success' &&
+      needs.resolve.outputs.channels != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJSON(needs.resolve.outputs.channels) }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Download validation results
         uses: actions/download-artifact@v7
         with:
-          pattern: validation-results-*
-          merge-multiple: true
+          name: validation-results-rocm-${{ matrix.channel }}
 
       - name: Update backend_versions.json
         env:
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          CHANNEL: ${{ matrix.channel }}
+          STABLE_BASE: ${{ needs.resolve.outputs.stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.nightly_base }}
         run: |
           python3 - << 'PY'
           import json, os
           path = 'src/cpp/resources/backend_versions.json'
           with open(path) as f:
               data = json.load(f)
-          rocm = os.environ['VLLM_ROCM_RELEASE']
-          data['vllm']['rocm'] = rocm
+          ch = os.environ['CHANNEL']
+          base = {"stable": os.environ["STABLE_BASE"], "nightly": os.environ["NIGHTLY_BASE"]}[ch]
+          key = f"rocm-{ch}"
+          old = data['vllm'].get(key, "")
+          data['vllm'][key] = base
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          print(f"Updated: vllm.rocm = {rocm}")
+          print(f"Updated: vllm.{key} = {old} -> {base}")
           PY
 
       - name: Generate PR body
         env:
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          CHANNEL: ${{ matrix.channel }}
+          STABLE_BASE: ${{ needs.resolve.outputs.stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.nightly_base }}
         run: |
           python3 << 'PYEOF'
           import json, os
 
-          lines = []
-          rocm = os.environ.get("VLLM_ROCM_RELEASE", "unknown")
+          ch = os.environ["CHANNEL"]
+          base = {"stable": os.environ["STABLE_BASE"], "nightly": os.environ["NIGHTLY_BASE"]}[ch]
 
-          lines.append("## Auto-update vLLM backend")
+          lines = []
+          lines.append(f"## Auto-update vLLM backend ({ch})")
           lines.append("")
-          lines.append(f"- **vllm-rocm**: `{rocm}`")
+          lines.append(f"- **vllm-rocm `rocm-{ch}`**: `{base}`")
           lines.append("")
           lines.append("## Validation Results")
           lines.append("")
           lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
           lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          results_file = "vllm_validation_rocm.json"
+          results_file = f"vllm_validation_rocm_{ch}.json"
           if not os.path.isfile(results_file):
-              lines.append("| _rocm: no results_ | | | | | | |")
+              lines.append(f"| _rocm/{ch}: no results_ | | | | | | |")
           else:
               with open(results_file) as f:
                   results = json.load(f)
@@ -318,7 +392,7 @@ jobs:
                   if isinstance(tps, float):
                       tps = f"{tps:.1f}"
                   lines.append(
-                      f"| {r['model']} (rocm) | {status} | {resp} | "
+                      f"| {r['model']} (rocm/{ch}) | {status} | {resp} | "
                       f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
                       f"{ttft} | {tps} |"
                   )
@@ -334,9 +408,12 @@ jobs:
       - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          CHANNEL: ${{ matrix.channel }}
+          STABLE_BASE: ${{ needs.resolve.outputs.stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.nightly_base }}
         run: |
-          BRANCH="auto/vllm-update-${VLLM_ROCM_RELEASE}"
+          if [ "$CHANNEL" = "stable" ]; then BASE="$STABLE_BASE"; else BASE="$NIGHTLY_BASE"; fi
+          BRANCH="auto/vllm-update-${CHANNEL}-${BASE}"
 
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING_PR" ]; then
@@ -354,11 +431,11 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update vllm-rocm to ${VLLM_ROCM_RELEASE}"
+          git commit -m "Update vllm-rocm ${CHANNEL} to ${BASE}"
           git push origin "$BRANCH"
 
           gh pr create \
-            --title "Update vllm-rocm to ${VLLM_ROCM_RELEASE}" \
+            --title "Update vllm-rocm ${CHANNEL} to ${BASE}" \
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"

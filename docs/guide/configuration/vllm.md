@@ -33,6 +33,30 @@ curl -X POST http://localhost:13305/api/v1/install \
 
 The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`) from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm/releases). The base version is pinned in [`backend_versions.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/backend_versions.json); the `-{gfx_target}` suffix is appended at runtime from `SystemInfo::get_rocm_arch()`, so the default pin covers all RDNA/APU architectures on one line.
 
+### ROCm Channels (stable / nightly)
+
+The `vllm:rocm` backend publishes two channels, selected by the same global [`rocm_channel`](#) toggle used by `llamacpp:rocm` and `sd-cpp:rocm`:
+
+| Channel | What it is | Pin key |
+|---|---|---|
+| `stable` *(default)* | AMD's matched, self-consistent vLLM + ROCm PyTorch set. Lags upstream vLLM but is the qualified line. | `vllm.rocm-stable` |
+| `nightly` | Latest vLLM against the latest AMD ROCm PyTorch. Bleeding edge; may be red on the newest stack. | `vllm.rocm-nightly` |
+
+Unlike `llamacpp:rocm`, **both vLLM channels come from the same upstream repository** ([lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm)) — only the pinned version differs. Upstream distinguishes them by GitHub release flag: stable is the repo's `latest` full release, nightly (and the separate omni artifact) are prereleases. Lemonade's auto-bump reads `/releases/latest` for the stable pin and the newest non-omni prerelease for the nightly pin, so the two keys never cross-contaminate.
+
+Switch channels and reinstall:
+```bash
+# Nightly (experimental)
+lemonade config set rocm_channel=nightly
+lemonade backends install vllm:rocm
+
+# Back to stable (default)
+lemonade config set rocm_channel=stable
+lemonade backends install vllm:rocm
+```
+
+`rocm_channel` is global (it applies to every ROCm backend at once). The per-architecture overrides below are stable-line pins and apply **only** on the stable channel; on nightly, each detected arch uses the resolved nightly base.
+
 #### Per-architecture release overrides
 
 Some GPU targets ride a different vLLM/ROCm wheel cadence than the default pin and cannot share a single release tag — CDNA-dcgpu (gfx942 / MI300X), for example, uses its own vLLM/ROCm release line, separate from the RDNA line (its official asset is not published yet — see the staged-status note above). For those, `backend_versions.json` carries an optional `vllm.rocm_arch_overrides` map keyed by asset family; the override base is resolved for the detected arch (falling back to the default pin otherwise) before the `-{gfx_target}` suffix is appended. An explicit `vllm.rocm_bin` pin (`latest` or a specific tag) still takes precedence over the builtin per-arch override — the override only replaces the *default* base. A pin that already carries a `-{gfx_target}` suffix must match the detected architecture: a cross-arch pin (for example a repo-wide `latest` that resolved to a suffixed RDNA tag, or an explicit tag for a different target) is **rejected** rather than installed against the wrong architecture line. Note that pinning `vllm.rocm_bin` to the exact default base tag is treated the same as leaving it unset (`builtin`) — the per-arch override still applies; set an explicit *non-default* tag to opt out of the override.
@@ -130,7 +154,7 @@ Lemonade-managed process arguments cannot be set in this file or in `vllm_args`:
 
 Some FP8 Qwen3.6 recipes enable **Multi-Token Prediction (MTP)** speculative decoding through a structured `speculative_config` object in [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json) (`{"method": "mtp", "num_speculative_tokens": 1}`). It is configured as an object rather than a `vllm_args` string because the space-delimited `vllm_args` tokenizer would corrupt inline JSON; Lemonade serializes it to a single `--speculative-config` argument.
 
-**Validation scope.** MTP was verified on gfx942 / MI300X (`vllm0.19.1-rocm7.13.0`): vLLM detects the model's MTP head, and the dense `Qwen3.6-27B-FP8` recipe reached ~80% draft-token acceptance. The `Qwen3.6-35B-A3B-FP8` MoE recipes were throughput-benched on the same GPU with the MTP head active. The recipes are **not** arch-restricted, so an RDNA host with enough VRAM can load them against the default RDNA pin (`vllm0.20.1-rocm7.12.0`); that pin is newer than the gfx942 line and exposes the same method, but MTP on RDNA has not been independently serve-validated.
+**Validation scope.** MTP was verified on gfx942 / MI300X (`vllm0.19.1-rocm7.13.0`): vLLM detects the model's MTP head, and the dense `Qwen3.6-27B-FP8` recipe reached ~80% draft-token acceptance. The `Qwen3.6-35B-A3B-FP8` MoE recipes were throughput-benched on the same GPU with the MTP head active. The recipes are **not** arch-restricted, so an RDNA host with enough VRAM can load them against the default RDNA stable pin (`vllm.rocm-stable`, currently `vllm0.22.1-rocm7.13.0`); that pin is newer than the gfx942 line and exposes the same method, but MTP on RDNA has not been independently serve-validated.
 
 ## Tuning
 
