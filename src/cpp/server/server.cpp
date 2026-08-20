@@ -360,9 +360,12 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
+Server::Server(std::shared_ptr<RuntimeConfig> config,
+               const std::string& cache_dir,
+               const std::string& config_dir)
     : config_(config),
       cache_dir_(cache_dir),
+      config_dir_(config_dir),
       port_(config->port()), running_(false), udp_beacon_(),
       metrics_platform_(create_metrics_platform()) {
 
@@ -634,7 +637,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             job_states->erase(job_id);
         };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
-            lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
+            cache_dir_, config_dir_, lemon::jobs::build_op_registry(std::move(providers)));
     }
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -1358,7 +1361,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Server-side MCP client host foundation (admin-gated through the existing
     // /internal/* pre-routing auth). GUI3 and the web UI can both use these
     // endpoints via the normal Lemonade server connection.
-    register_mcp_client_routes(web_server, cache_dir_);
+    register_mcp_client_routes(web_server, cache_dir_, config_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -6305,7 +6308,7 @@ void Server::persist_cloud_providers() {
     try {
         json snap = config_->snapshot();
         snap["cloud_providers"] = cloud_registry_->to_config_array();
-        ConfigFile::save(cache_dir_, snap);
+        ConfigFile::save(config_dir_, snap);
     } catch (const std::exception& e) {
         // Persistence failure must not undo the in-memory change — the
         // registry is already updated and the provider is usable until
@@ -6884,7 +6887,7 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
         // Persist changes to config.json
         if (!cache_dir_.empty()) {
             try {
-                ConfigFile::save(cache_dir_, config_->snapshot());
+                ConfigFile::save(config_dir_, config_->snapshot());
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
             }

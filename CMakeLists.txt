@@ -1972,10 +1972,11 @@ if(UNIX AND NOT APPLE)
         RENAME lemond.service
     )
 
-    # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
+    # Install the optional environment-file template loaded by the unit via
+    # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade/conf.d
-        RENAME zz-secrets.conf
+        DESTINATION /etc/default
+        RENAME lemond
         PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 

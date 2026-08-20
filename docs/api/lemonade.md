@@ -452,7 +452,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register and Install a Model**
 
-Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade cache (default: `~/.cache/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
+Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade config directory (default: `~/.config/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
 
 The `recipe` field defines which software framework and device will be used to load and run the model.
 
@@ -984,7 +984,7 @@ When loading a model, settings are applied in this priority order:
 
 ### Per-model options
 
-You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). The available options depend on the model's recipe:
+You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade config directory (default: `~/.config/lemonade`). The available options depend on the model's recipe:
 
 ```json
 {

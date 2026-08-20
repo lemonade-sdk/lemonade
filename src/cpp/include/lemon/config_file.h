@@ -78,7 +78,7 @@ static inline bool config_migrate(json& config,
 
 // ============================================================================
 
-/// Manages reading and writing config.json in the lemonade cache dir.
+/// Manages reading and writing config.json in the lemonade config dir.
 class ConfigFile {
 public:
     /// The canonical default config: resources/defaults.json (global keys) with
@@ -91,14 +91,15 @@ public:
     /// is merged on top when present.
     static json get_defaults();
 
-    /// Load config.json from cache_dir, deep-merging with defaults.
+    /// Load config.json from the config directory derived from cache_dir,
+    /// deep-merging with defaults.
     /// Applies migrations for older config formats, then persists if any
     /// changes were made. Unknown keys are preserved (forward compatibility).
-    static json load(const std::string& cache_dir);
+    static json load(const std::string& cache_dir, const std::string& config_dir);
 
-    /// Save config to <cache_dir>/config.json atomically (write temp, rename).
+    /// Save config to <config_dir>/config.json atomically (write temp, rename).
     /// Thread-safe.
-    static void save(const std::string& cache_dir, const json& config);
+    static void save(const std::string& config_dir, const json& config);
 
 private:
     static std::shared_mutex file_mutex_;

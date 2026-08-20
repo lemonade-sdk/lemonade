@@ -170,16 +170,22 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     auto cli_config = parser.get_config();
 
     lemon::utils::set_cache_dir(cli_config.cache_dir);
+    lemon::utils::set_config_dir(cli_config.config_dir);
+    lemon::utils::migrate_legacy_json_files_to_config_dir(cli_config.cache_dir,
+                                                          cli_config.config_dir);
 
-    auto config_json = lemon::ConfigFile::load(cli_config.cache_dir);
+    auto config_json = lemon::ConfigFile::load(cli_config.cache_dir,
+                                               cli_config.config_dir);
+
     auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
+    lemon::RuntimeConfig::set_global(runtime_config.get());
+
     if (cli_config.port != -1) {
         runtime_config->set_port_override(cli_config.port);
     }
     if (!cli_config.host.empty()) {
         runtime_config->set_host_override(cli_config.host);
     }
-    lemon::RuntimeConfig::set_global(runtime_config.get());
 
     lemon::utils::set_models_dir(runtime_config->models_dir());
 
@@ -193,9 +199,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     // Start server on background thread
     std::string cache_dir = cli_config.cache_dir;
-    std::thread server_thread([runtime_config, cache_dir]() {
+    std::string config_dir = cli_config.config_dir;
+    std::thread server_thread([runtime_config, cache_dir, config_dir]() {
         try {
-            lemon::Server server(runtime_config, cache_dir);
+            lemon::Server server(runtime_config, cache_dir, config_dir);
             server.run();
         } catch (const std::exception& e) {
             MessageBoxA(NULL, e.what(), "Lemonade Server Error", MB_OK | MB_ICONERROR);

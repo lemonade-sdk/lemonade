@@ -1,4 +1,5 @@
 #include "lemon/mcp_client.h"
+#include "lemon/utils/path_utils.h"
 
 #include <algorithm>
 #include <atomic>
@@ -1863,10 +1864,12 @@ private:
     }
 };
 
-McpClientManager::McpClientManager(std::string cache_dir)
-    : cache_dir_(std::move(cache_dir)) {
+McpClientManager::McpClientManager(std::string cache_dir, std::string config_dir)
+    : cache_dir_(std::move(cache_dir)),
+      config_dir_(std::move(config_dir)) {
     if (cache_dir_.empty()) cache_dir_ = ".";
-    config_path_ = (fs::path(cache_dir_) / kConfigFileName).string();
+    if (config_dir_.empty()) config_dir_ = utils::get_config_dir();
+    config_path_ = (fs::path(config_dir_) / kConfigFileName).string();
     load_config_file();
 }
 
@@ -2520,18 +2523,21 @@ std::string McpClientManager::next_id_locked(
 }
 
 void register_mcp_client_routes(httplib::Server& server,
-                                const std::string& cache_dir) {
+                                const std::string& cache_dir,
+                                const std::string& config_dir) {
     static std::mutex managers_mutex;
-    static std::map<std::string, std::weak_ptr<McpClientManager>> managers;
+    static std::map<std::pair<std::string, std::string>,
+                    std::weak_ptr<McpClientManager>> managers;
 
     std::shared_ptr<McpClientManager> manager;
     {
         std::lock_guard<std::mutex> lock(managers_mutex);
-        const auto it = managers.find(cache_dir);
+        const std::pair<std::string, std::string> key{cache_dir, config_dir};
+        const auto it = managers.find(key);
         if (it != managers.end()) manager = it->second.lock();
         if (!manager) {
-            manager = std::make_shared<McpClientManager>(cache_dir);
-            managers[cache_dir] = manager;
+            manager = std::make_shared<McpClientManager>(cache_dir, config_dir);
+            managers[key] = manager;
         }
     }
     manager->register_routes(server);
