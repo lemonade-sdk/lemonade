@@ -32,7 +32,9 @@ struct RuntimeArgDefault {
 };
 
 inline bool is_custom_args_option(const std::string& key) {
-    return key.size() >= 5 && key.compare(key.size() - 5, 5, "_args") == 0;
+    return key != "merge_args" &&
+           key.size() > 5 &&
+           key.compare(key.size() - 5, 5, "_args") == 0;
 }
 
 inline std::string merge_custom_args(const std::string& high,

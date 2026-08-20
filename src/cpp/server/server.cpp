@@ -5850,7 +5850,6 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // ModelInfo::recipe_options contains the model-level defaults plus the
         // Null tombstones are load-local: remove only those saved keys from the
         // local model layer without changing recipe_options.json.
         if (!transient_saved_option_tombstones.empty()) {

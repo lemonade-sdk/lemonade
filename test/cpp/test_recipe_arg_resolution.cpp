@@ -9,6 +9,7 @@ using lemon::utils::RuntimeArgDefault;
 using lemon::utils::ScopedCustomArgs;
 using lemon::utils::append_runtime_arg_defaults;
 using lemon::utils::build_custom_args_map;
+using lemon::utils::is_custom_args_option;
 using lemon::utils::parse_custom_args;
 using lemon::utils::resolve_scoped_custom_args;
 
@@ -24,8 +25,29 @@ static bool expect_args(const char* name, const std::string& actual,
     return ok;
 }
 
+static bool expect_bool(const char* name, bool actual, bool expected) {
+    const bool ok = actual == expected;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  %s\n  want: %s\n",
+                    actual ? "true" : "false",
+                    expected ? "true" : "false");
+    }
+    return ok;
+}
+
 int main() {
     int failures = 0;
+
+    failures += !expect_bool(
+        "llamacpp_args is a custom args option",
+        is_custom_args_option("llamacpp_args"), true);
+    failures += !expect_bool(
+        "sdcpp_args is a custom args option",
+        is_custom_args_option("sdcpp_args"), true);
+    failures += !expect_bool(
+        "merge_args is not a custom args option",
+        is_custom_args_option("merge_args"), false);
 
     const std::string backend = "-b 2048 -ub 1024 -np 1";
     const std::string architecture = "--temp 0.8 --top-k 40";

@@ -119,12 +119,12 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
         {"--reasoning-format auto", "--reasoning-format", {}, false},
     };
 
-    const std::string draft_path = model_info.resolved_path("draft");
+    const std::string draft_checkpoint = model_info.checkpoint("draft");
     const bool has_dflash_label =
         std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") !=
         model_info.labels.end();
     const bool is_dflash_draft =
-        !draft_path.empty() && is_dflash_draft_checkpoint(model_info.checkpoint("draft"));
+        !draft_checkpoint.empty() && is_dflash_draft_checkpoint(draft_checkpoint);
     const bool uses_mtp =
         std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") !=
         model_info.labels.end();

@@ -1764,7 +1764,6 @@ class EndpointTests(ServerTestBase):
                 "max_completion_tokens",
                 "model",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ]
@@ -1775,6 +1774,15 @@ class EndpointTests(ServerTestBase):
                     f"Request-scoped field '{field}' must NOT leak into recipe_options "
                     f"on auto-load (found: {recipe_options.get(field)})",
                 )
+
+            # Runtime defaults may populate llamacpp_args; the inference request must not.
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Request llamacpp_args must not leak into recipe_options on auto-load",
+            )
 
             print(
                 f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "
