@@ -394,8 +394,12 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
     // Rate-limit guard: GitHub returns 429/403 when unauthenticated requests
     // exceed 60 req/hr per IP. Once hit, back off until Retry-After expires
     // instead of spamming the API (which resets the clock on each 429).
+    // s_rate_limit_until is shared across concurrent calls, so guard it with a
+    // mutex to avoid a data race.
+    static std::mutex rate_limit_mutex;
     static std::chrono::steady_clock::time_point s_rate_limit_until;
     {
+        std::lock_guard<std::mutex> lock(rate_limit_mutex);
         auto now = std::chrono::steady_clock::now();
         if (now < s_rate_limit_until) {
             auto remaining = std::chrono::duration_cast<std::chrono::seconds>(
@@ -455,7 +459,8 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         // backoff clock so we don't spam the API until the window expires.
         if (resp.status_code == 429 || resp.status_code == 403) {
             int retry_seconds = 60;
-            auto retry_it = resp.headers.find("Retry-After");
+            // HttpClient normalizes response header keys to lowercase.
+            auto retry_it = resp.headers.find("retry-after");
             if (retry_it != resp.headers.end()) {
                 try { retry_seconds = std::stoi(retry_it->second); } catch (...) {}
             }
@@ -471,8 +476,11 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
                     } catch (...) {}
                 }
             }
-            s_rate_limit_until = std::chrono::steady_clock::now()
-                + std::chrono::seconds(retry_seconds);
+            {
+                std::lock_guard<std::mutex> lock(rate_limit_mutex);
+                s_rate_limit_until = std::chrono::steady_clock::now()
+                    + std::chrono::seconds(retry_seconds);
+            }
             LOG(WARNING, "BackendManager") << "GitHub returned HTTP " << resp.status_code
                                            << " for " << repo << ", backing off "
                                            << retry_seconds << "s" << std::endl;

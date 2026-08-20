@@ -42,6 +42,35 @@ static std::string lower_copy(std::string value) {
     return value;
 }
 
+struct ResponseHeaderCollector {
+    std::map<std::string, std::string>* headers;
+};
+
+// Collects response headers into a caller-provided map. Keys are lower-cased
+// for case-insensitive lookup (HTTP header names are case-insensitive).
+static size_t collect_response_header_callback(char* buffer, size_t size, size_t nitems,
+                                               void* userdata) {
+    const size_t total = size * nitems;
+    auto* collector = static_cast<ResponseHeaderCollector*>(userdata);
+    if (!collector || !collector->headers || total == 0) {
+        return total;
+    }
+
+    std::string line(buffer, total);
+
+    // Skip the status line and blank separator lines.
+    if (line.rfind("HTTP/", 0) == 0) return total;
+    if (line == "\r\n" || line == "\n") return total;
+
+    const auto colon = line.find(':');
+    if (colon == std::string::npos) return total;
+
+    const std::string key = lower_copy(trim_copy(line.substr(0, colon)));
+    const std::string value = trim_copy(line.substr(colon + 1));
+    (*collector->headers)[key] = value;
+    return total;
+}
+
 static size_t curl_off_to_size(curl_off_t value) {
     return value > 0 ? static_cast<size_t>(value) : 0;
 }
@@ -454,10 +483,13 @@ HttpResponse HttpClient::get(const std::string& url,
 
     HttpResponse response;
     std::string response_body;
+    ResponseHeaderCollector header_collector{&response.headers};
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, collect_response_header_callback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &header_collector);
     if (!apply_http_security_policy(curl, policy, true)) {
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
