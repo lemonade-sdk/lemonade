@@ -168,6 +168,46 @@ void test_explicit_config_dir_is_honored() {
 }
 
 #ifndef _WIN32
+void test_systemd_state_directory_takes_precedence_over_home() {
+    const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    const fs::path root = fs::temp_directory_path() /
+                          ("lemonade_state_dir_" + std::to_string(unique));
+    const fs::path home = root / "home";
+    const fs::path state_dir = root / "var-lib-lemonade";
+
+    ScopedEnvVar home_var("HOME", home.string());
+    ScopedEnvVar state_var("STATE_DIRECTORY", state_dir.string());
+
+    lemon::utils::set_config_dir("");
+
+    const std::string resolved_config_dir = lemon::utils::get_config_dir();
+    assert(resolved_config_dir == state_dir.string());
+
+    fs::remove_all(root);
+}
+
+void test_systemd_cache_directory_is_used_directly() {
+    const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    const fs::path root = fs::temp_directory_path() /
+                          ("lemonade_cache_dir_" + std::to_string(unique));
+    const fs::path home = root / "home";
+    const fs::path cache_dir = root / "var-cache-lemonade";
+
+    ScopedEnvVar home_var("HOME", home.string());
+    ScopedEnvVar cache_var("CACHE_DIRECTORY", cache_dir.string());
+
+    lemon::utils::set_cache_dir("");
+
+    const std::string resolved_cache_dir = lemon::utils::get_cache_dir();
+    assert(resolved_cache_dir == cache_dir.string());
+
+    fs::remove_all(root);
+}
+
 void test_xdg_cache_and_config_dirs_are_resolved_separately() {
     const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
                             std::chrono::steady_clock::now().time_since_epoch())
@@ -211,6 +251,8 @@ int main() {
     test_identical_cache_and_config_dirs_stay_put();
     test_explicit_config_dir_is_honored();
 #ifndef _WIN32
+    test_systemd_state_directory_takes_precedence_over_home();
+    test_systemd_cache_directory_is_used_directly();
     test_xdg_cache_and_config_dirs_are_resolved_separately();
 #endif
     std::cout << "config dir migration tests passed\n";

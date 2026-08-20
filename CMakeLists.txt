@@ -2893,6 +2893,13 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
 endif()
 
+set(_CONFIG_DIR_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_dir_migration.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DIR_MIGRATION_TEST_SRC}")
+    add_executable(test_config_dir_migration test/cpp/test_config_dir_migration.cpp)
+    target_link_libraries(test_config_dir_migration PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDirMigrationTest CI ON COMMAND test_config_dir_migration)
+endif()
+
 set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_DISCOVERY_TEST_SRC}")
     add_executable(test_config_discovery test/cpp/test_config_discovery.cpp)
