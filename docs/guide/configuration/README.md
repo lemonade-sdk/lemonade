@@ -391,17 +391,22 @@ lemonade config set telemetry.otlp.semantics='["openinference"]'
 lemonade config set telemetry.otlp.headers='{"Authorization":"Bearer key"}'
 ```
 
-### lemond CLI arguments (fallback)
+### lemond CLI arguments (runtime overrides)
 
-If the server cannot start (e.g., invalid port in config.json), `lemond` accepts `--port` and `--host` as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:
+`lemond` accepts `--port` and `--host` as CLI arguments to provide ephemeral runtime overrides for that specific server process without modifying `config.json`:
 
 ```bash
 lemond --port 9000 --host 0.0.0.0
 ```
 
+Because CLI overrides are ephemeral and do not mutate `config.json` on disk, if the server cannot start due to an invalid port or host setting in `config.json`:
+1. Start `lemond` using the CLI override: `lemond --port 9000`
+2. Run `lemonade config set port=9000` against the running server to persist the fix for subsequent restarts.
+3. Alternatively, edit `config.json` directly as shown below.
+
 ### Edit config.json manually (last resort)
 
-If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
+If the server won't start and CLI tools aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
 # Linux (Debian/Ubuntu)
@@ -423,9 +428,8 @@ sudo systemctl restart lemond
 lemond [cache_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 ```
 
-- **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
-- **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
-- **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **--port** — Port to serve on (runtime override, does not mutate config.json).
+- **--host** — Address to bind (runtime override, does not mutate config.json).
 - **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
 
 ## API Key and Security
