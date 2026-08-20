@@ -37,12 +37,12 @@ Each contribution needs to:
 
 1. Accurately describe the scope, use case, and implementation in the PR description.
 2. Solve one clearly defined problem, and limit its scope to what is necessary.
-2. Adhere to the [project philosophy](./philosophy.md).
-3. Pass the CI tests and follow the [testing guide](./testing.md).
+3. Adhere to the [project philosophy](./philosophy.md).
+4. Pass the CI tests and follow the [testing guide](./testing.md).
     - Contributors: make sure the code builds locally before creating the PR.
     - Reviewers: make sure to check the code *before* allowing CI to run!
-4. Meet the requirements of the [documentation guide](./documentation.md).
-5. Sustain the overall code quality and standards of the rest of the repo.
+5. Meet the requirements of the [documentation guide](./documentation.md).
+6. Sustain the overall code quality and standards of the rest of the repo.
 
 The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.
 
