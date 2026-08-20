@@ -9,13 +9,10 @@
 #include <sstream>
 #include <chrono>
 #include <algorithm>
-#include <condition_variable>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <set>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -318,32 +315,6 @@ static void relay_response_headers(const std::map<std::string, std::string>& ups
     }
 }
 
-// Handoff between the thread running the upstream request and the thread
-// httplib runs the response body on. The upstream status has to be known
-// before the handler returns, because that is when httplib commits the status
-// line — so the request starts here rather than inside the content provider.
-struct AnthropicRelayStream {
-    std::mutex mutex;
-    std::condition_variable cv;
-
-    bool status_known = false;
-    int status = 0;
-    std::map<std::string, std::string> headers;
-
-    std::string pending;        // 200: body bytes awaiting the client
-    std::string error_body;     // non-200: buffered for a one-shot response
-    bool upstream_done = false;
-    bool client_gone = false;
-    std::string transport_error;
-    bool ended_early = false;
-
-    // Bounds how far the upstream read can run ahead of a slow client. Large
-    // enough that a normal SSE frame never blocks, small enough that a stalled
-    // client cannot make the relay buffer a whole response.
-    static constexpr size_t max_pending = 1 * 1024 * 1024;
-    static constexpr size_t max_error_body = 64 * 1024;
-};
-
 static void forward_anthropic_upstream(AnthropicUpstream upstream,
                                        bool stream,
                                        const std::string& model,
@@ -362,160 +333,65 @@ static void forward_anthropic_upstream(AnthropicUpstream upstream,
         return;
     }
 
-    auto state = std::make_shared<AnthropicRelayStream>();
-
-    std::thread([state, upstream = std::move(upstream)]() {
-        std::map<std::string, std::string> response_headers;
-        // curl delivers every header before the first body byte, so the map is
-        // complete by the time either publisher below runs.
-        auto publish_status = [&](int status) {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            if (state->status_known) return;
-            state->status = status;
-            state->headers = response_headers;
-            state->status_known = true;
-            state->cv.notify_all();
-        };
-
-        try {
-            auto result = utils::HttpClient::post_stream(
-                upstream.url, upstream.body,
-                [&](const char* data, size_t length) {
-                    std::unique_lock<std::mutex> lock(state->mutex);
-                    if (state->status_known && state->status != 200) {
-                        if (state->error_body.size() < state->max_error_body) {
-                            state->error_body.append(
-                                data, std::min(length, state->max_error_body -
-                                                           state->error_body.size()));
-                        }
-                        return true;
-                    }
-                    state->cv.wait(lock, [&] {
-                        return state->client_gone ||
-                               state->pending.size() < state->max_pending;
-                    });
-                    if (state->client_gone) return false;
-                    state->pending.append(data, length);
-                    state->cv.notify_all();
-                    return true;
-                },
-                upstream.headers, 0, publish_status, upstream.policy,
-                [state]() {
-                    std::lock_guard<std::mutex> lock(state->mutex);
-                    return state->client_gone;
-                },
-                &response_headers);
-
-            // on_status never fires when the body is empty, so fall back to the
-            // code curl always records after the transfer.
-            publish_status(result.status_code);
-            if (result.curl_code != 0) {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                if (!state->client_gone) {
-                    state->ended_early = true;
-                    state->transport_error = result.curl_error;
-                }
-            }
-        } catch (const std::exception& e) {
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                state->transport_error = e.what();
-            }
-            publish_status(0);
-        }
-
-        std::lock_guard<std::mutex> lock(state->mutex);
-        state->upstream_done = true;
-        state->cv.notify_all();
-    }).detach();
-
-    std::unique_lock<std::mutex> lock(state->mutex);
-    state->cv.wait(lock, [&] { return state->status_known || state->upstream_done; });
-    const int status = state->status;
-
-    // A non-200 body is not SSE. Relaying it as a one-shot response keeps the
-    // real status on the wire, which an SDK gating on the status code needs.
-    if (status != 200) {
-        state->cv.wait(lock, [&] { return state->upstream_done; });
-        const std::string error_body = state->error_body;
-        const std::string transport_error = state->transport_error;
-        auto headers = state->headers;
-        lock.unlock();
-
-        if (status == 0) {
-            set_anthropic_error_response(
-                res, 502, "cloud request for '" + model + "' failed: " + transport_error);
-            return;
-        }
-        res.status = status;
-        relay_response_headers(headers, res);
-        // Providers report errors as JSON in the Anthropic error envelope, so
-        // the body relays unchanged when there is one to relay.
-        if (!error_body.empty()) {
-            res.set_content(error_body, "application/json");
-        } else {
-            res.set_content(
-                anthropic::build_anthropic_error(
-                    json{{"message", "cloud request for '" + model +
-                                     "' failed with status " + std::to_string(status)}},
-                    status).dump(),
-                "application/json");
-        }
-        return;
-    }
-
-    relay_response_headers(state->headers, res);
-    lock.unlock();
-
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_header("X-Accel-Buffering", "no");
+    // Everything below runs inside the content provider, after the status line
+    // is already on the wire. That costs the real status on a non-200 (relayed
+    // as an SSE error frame instead) but keeps every blocking wait somewhere
+    // sink.is_writable can observe the peer, so a client that disappears cannot
+    // strand the upstream transfer.
     res.set_chunked_content_provider(
         "text/event-stream",
-        [state, model](size_t offset, httplib::DataSink& sink) {
+        [upstream = std::move(upstream), model](size_t offset, httplib::DataSink& sink) {
             if (offset > 0) return false;
-            // Both ends speak Anthropic SSE, so the body relays unparsed.
-            for (;;) {
-                std::unique_lock<std::mutex> lock(state->mutex);
-                state->cv.wait(lock, [&] {
-                    return !state->pending.empty() || state->upstream_done;
-                });
-                std::string chunk;
-                chunk.swap(state->pending);
-                const bool done = state->upstream_done;
-                const bool ended_early = state->ended_early;
-                const std::string transport_error = state->transport_error;
-                state->cv.notify_all();
-                lock.unlock();
+            // Both ends speak Anthropic SSE, so a 200 relays unparsed. A
+            // non-200 body is not SSE, so it is diverted and re-emitted as an
+            // error event rather than written into the event stream.
+            static constexpr size_t max_error_body = 64 * 1024;
+            int upstream_status = 200;
+            std::string error_body;
+            std::map<std::string, std::string> response_headers;
+            auto emit_error = [&sink, &model](int status, const std::string& message) {
+                write_sse_event(sink, "error", anthropic::build_anthropic_error(
+                    json{{"message", "cloud request for '" + model + "' " + message}},
+                    status));
+            };
 
-                if (!chunk.empty() && !sink.write(chunk.data(), chunk.size())) {
-                    std::lock_guard<std::mutex> gone(state->mutex);
-                    state->client_gone = true;
-                    state->cv.notify_all();
-                    break;
+            try {
+                auto result = utils::HttpClient::post_stream(
+                    upstream.url, upstream.body,
+                    [&](const char* data, size_t length) {
+                        if (upstream_status != 200) {
+                            if (error_body.size() < max_error_body) {
+                                error_body.append(
+                                    data,
+                                    std::min(length, max_error_body - error_body.size()));
+                            }
+                            return true;
+                        }
+                        return sink.write(data, length);
+                    },
+                    upstream.headers, 0,
+                    [&upstream_status](int status) { upstream_status = status; },
+                    upstream.policy,
+                    [&sink]() { return sink.is_writable && !sink.is_writable(); },
+                    &response_headers);
+                // on_status never fires when the body is empty, so fall back to
+                // the code curl always records after the transfer.
+                const int status =
+                    upstream_status != 200 ? upstream_status : result.status_code;
+                if (status != 200) {
+                    emit_error(status, "failed with status " + std::to_string(status) +
+                                       (error_body.empty() ? "" : ": " + error_body));
+                } else if (result.curl_code != 0 && sink.is_writable && sink.is_writable()) {
+                    emit_error(502, "stream ended early: " + result.curl_error);
                 }
-                if (done) {
-                    // Upstream committed a 200 and then broke off, so the
-                    // status cannot be corrected — report it in-band instead.
-                    if (ended_early) {
-                        write_sse_event(sink, "error", anthropic::build_anthropic_error(
-                            json{{"message", "cloud request for '" + model +
-                                             "' stream ended early: " + transport_error}},
-                            502));
-                    }
-                    break;
-                }
+            } catch (const std::exception& e) {
+                emit_error(502, std::string("failed: ") + e.what());
             }
             sink.done();
             return false;
-        },
-        // Runs even when the provider never does — a client that disappears
-        // before the response starts would otherwise leave the upstream thread
-        // parked on the pending-buffer wait with the connection still open.
-        [state](bool) {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            state->client_gone = true;
-            state->cv.notify_all();
         }
     );
 }

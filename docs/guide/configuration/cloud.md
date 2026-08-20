@@ -79,7 +79,7 @@ Every request to an `anthropic` provider, discovery included, carries `anthropic
 
 Discovery is unchanged — `GET <base_url>/models`, which these providers serve in the OpenAI envelope. Inference differs:
 
-- **`POST /v1/messages`** relays to `<base_url>/messages` byte-for-byte, rewriting only the `model` field. Nothing is converted, so thinking blocks, tool use, cache control, and future Anthropic fields pass through intact. Streaming relays the upstream SSE unmodified, and the upstream status code is preserved on both the streaming and non-streaming paths. `retry-after`, `request-id`, and `anthropic-ratelimit-*` response headers are relayed back.
+- **`POST /v1/messages`** relays to `<base_url>/messages` byte-for-byte, rewriting only the `model` field. Nothing is converted, so thinking blocks, tool use, cache control, and future Anthropic fields pass through intact. Streaming relays the upstream SSE unmodified. `retry-after`, `request-id`, and `anthropic-ratelimit-*` response headers are relayed back. A non-streaming request reports the upstream status code directly; with `stream: true` the response has already begun by the time upstream's status is known, so an upstream error arrives as an SSE `error` event on a `200` and the status code carries no signal.
 - **`POST /v1/chat/completions` and `POST /v1/completions`** are refused, since the provider does not serve the OpenAI shape. A non-streaming request gets `400` pointing at `/v1/messages`; a `stream: true` request gets the same message as an SSE error frame on a `200`, because the response has already begun by the time the body is written.
 
 Relayed requests take no router slot — there is no local model to load — so they do not appear in `/v1/stats`.
@@ -152,7 +152,7 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
 | Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
 | Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. With `stream: true` this arrives as an SSE error frame on a `200`, not a `400`. |
-| An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. |
+| An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. With `stream: true` on `/v1/messages` the `401` appears as an SSE `error` event on a `200`, so check the event body rather than the status code. |
 
 For a structured view of every installed provider's auth state and discovered model count, hit `GET /v1/system-info` — the `cloud.providers[]` block reports `env_var_set`, `runtime_key_set`, and `models_discovered` per provider.
 
