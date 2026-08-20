@@ -2062,7 +2062,13 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
   const togglePinnedModel = async (name: string) => {
     const loaded = loadedModels.find(model => model.model_name.toLowerCase() === name.toLowerCase());
-    if (!loaded) return;
+    if (!loaded) {
+      setLoadError({
+        modelName: name,
+        message: `Cannot change pin state for ${name}: the model is no longer loaded.`,
+      });
+      return;
+    }
 
     try {
       setLoadError(null);
@@ -3128,7 +3134,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           onCancelPull={handleCancelPull}
           serverDefaultCtxSize={serverDefaultCtxSize}
           isPinned={selectedDetailModelId ? pinnedNameSet.has(selectedDetailModelId.toLowerCase()) : false}
-          onTogglePin={selectedDetailModelId && displayLoadedModels.some(m => m.model_name === selectedDetailModelId) ? togglePinnedModel : undefined}
+          onTogglePin={selectedDetailModelId && loadedModels.some(m => m.model_name.toLowerCase() === selectedDetailModelId.toLowerCase()) ? togglePinnedModel : undefined}
           isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
           onToggleFavorite={toggleFavoriteModel}
           onEditCustomCollection={(model) => {

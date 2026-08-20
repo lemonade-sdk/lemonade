@@ -387,7 +387,9 @@ assert.match(apiSource, /'\/internal\/pin'/, 'pin mutations must use the server 
 assert.match(managerSource, /loadedModels\.filter\(model => model\.pinned === true\)/, 'GUI pin state must derive from loaded server models');
 assert.match(managerSource, /api\.setModelPinned\(name, loaded\.pinned !== true\)/, 'GUI pin toggles must mutate server state');
 assert.match(managerSource, /onToggleFavorite=\{toggleFavoriteModel\}/, 'model list secondary action must be Favorite');
-assert.match(managerSource, /onTogglePin=\{selectedDetailModelId && displayLoadedModels\.some/, 'detail Pin handler must only be supplied for loaded models');
+assert.match(managerSource, /onTogglePin=\{selectedDetailModelId && loadedModels\.some/, 'detail Pin handler must only be supplied for server-loaded models');
+assert.doesNotMatch(managerSource, /onTogglePin=\{selectedDetailModelId && displayLoadedModels\.some/, 'virtual collection entries must not expose the server Pin action');
+assert.doesNotMatch(managerSource, /if \(!loaded\) return;/, 'Pin handler must not silently no-op if loaded state races the click');
 assert.match(modelListSource, /ariaKeyShortcuts=\{onToggleFavorite \? 'F'/, 'model list must expose Favorite as its row shortcut');
 assert.match(modelListSource, /icon: 'star'/, 'model list secondary action must render Favorite');
 assert.doesNotMatch(modelListSource, /onTogglePin\?:/, 'model list must not own runtime Pin mutation');
