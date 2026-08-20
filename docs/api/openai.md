@@ -956,7 +956,7 @@ The generated audio file is returned as-is.
 ## `GET /v1/models`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, and, when known, `max_context_window`.
+Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, `context_length`, and, when known, `max_context_window`.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
@@ -993,6 +993,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "recipe": "llamacpp",
       "size": 0.38,
       "max_context_window": 40960,
+      "context_length": 8192,
       "downloaded": true,
       "suggested": true,
       "update_available": false,
@@ -1044,6 +1045,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
+  - `context_length` - Integer indicating the effective context window the model is served with, rather than the native maximum in `max_context_window`. Populated from the loaded context when the model is running and the configured `ctx_size` otherwise (omitted when neither is known).
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
   - `suggested` - Boolean indicating if the model is recommended for general use
@@ -1167,6 +1169,7 @@ Returns a single model object with the same fields as described in the [models l
   "recipe": "llamacpp",
   "size": 0.38,
   "max_context_window": 40960,
+  "context_length": 8192,
   "downloaded": true,
   "suggested": true,
   "labels": ["reasoning"],

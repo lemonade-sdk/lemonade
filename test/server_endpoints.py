@@ -715,6 +715,110 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] NotFoundError raised for non-existent model")
 
+    def _retrieve_model_json(self, model=ENDPOINT_TEST_MODEL):
+        """Fetch one model entry. The OpenAI SDK object does not expose
+        context_length, so read the raw JSON."""
+        response = requests.get(
+            f"{self.base_url}/models/{model}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _unload_for_configured_context(self):
+        """Unload first: a loaded model reports its own size, which outranks
+        the configured value these tests check."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+    def test_006a_context_length_uses_explicit_ctx_size(self):
+        """An explicit per-model ctx_size is what context_length reports."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 8192}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            8192,
+            "context_length should match the explicitly saved ctx_size",
+        )
+
+        print("[OK] context_length reflects an explicit ctx_size")
+
+    def test_006b_context_length_inherits_global_ctx_size(self):
+        """With nothing saved on the model, context_length follows the global."""
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self._snapshot_options()
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+
+        self._unload_for_configured_context()
+        self._reset_options()
+        self._set_global_ctx_size(4096)
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            4096,
+            "context_length should inherit the server-wide ctx_size",
+        )
+
+        print("[OK] context_length inherits the global ctx_size")
+
+    def test_006c_context_length_never_reports_a_sentinel(self):
+        """ctx_size=-1 means "size automatically" and must never be returned."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        context_length = model.get("context_length")
+        self.assertIsNotNone(
+            context_length,
+            "context_length should still be present when ctx_size is automatic",
+        )
+        self.assertGreater(
+            context_length,
+            0,
+            "context_length must never surface the -1 auto sentinel",
+        )
+
+        print(
+            f"[OK] context_length with automatic ctx_size resolved to {context_length}"
+        )
+
+    def test_006d_context_length_agrees_between_list_and_retrieve(self):
+        """The list and retrieve endpoints must report the same value."""
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        listed = {m["id"]: m for m in response.json()["data"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, listed)
+
+        for model_id, entry in listed.items():
+            if "context_length" in entry:
+                self.assertGreater(
+                    entry["context_length"],
+                    0,
+                    f"{model_id} reported a non-positive context_length",
+                )
+
+        self.assertEqual(
+            listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            self._retrieve_model_json().get("context_length"),
+            "list and retrieve should report the same context_length",
+        )
+
+        print("[OK] context_length agrees across /models and /models/{id}")
+
     def test_007_pull_model_non_streaming(self):
         """Test pulling/downloading a model (non-streaming mode)."""
         # First delete model if it exists to ensure we're actually testing pull
