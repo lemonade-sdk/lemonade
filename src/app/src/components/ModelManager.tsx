@@ -27,14 +27,8 @@ import Modal from './inspect/Modal';
 import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import {
-  GLOBAL_MODEL_SETTINGS_EVENT,
-  automaticUpdateIsDue,
-  loadGlobalModelSettings,
   loadPinnedModelNames,
-  loadWithGlobalModelPolicy,
-  saveGlobalModelSettings,
   savePinnedModelNames,
-  type GlobalModelSettings,
 } from '../features/modelSettings/globalModelSettings';
 import { backendLabel } from '../modelPresentation';
 import { useServerModelState } from '../features/models/modelState';
@@ -1131,8 +1125,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
-  const [globalModelSettings, setGlobalModelSettings] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
-  const automaticUpdateStartedRef = useRef(false);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
@@ -1178,17 +1170,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       .catch(() => { if (!cancelled) setStorageInfo(null); });
     return () => { cancelled = true; };
   }, [visibleServerModels.length]);
-
-  useEffect(() => {
-    const reloadGlobalSettings = () => {
-      setGlobalModelSettings(loadGlobalModelSettings());
-      setPinnedModels(loadPinnedModelNames());
-    };
-    automaticUpdateStartedRef.current = false;
-    reloadGlobalSettings();
-    window.addEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
-    return () => window.removeEventListener(GLOBAL_MODEL_SETTINGS_EVENT, reloadGlobalSettings);
-  }, []);
 
   const refreshCustomRecipeAvailability = useCallback(async () => {
     if (!api.isConnected) {
@@ -1605,18 +1586,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     visited.delete(key);
   };
 
-  const loadWithGlobalPolicy = async (model: ModelInfo, overrideOptions?: Record<string, unknown>): Promise<void> => {
-    await loadWithGlobalModelPolicy({
-      loadedModels,
-      allModels,
-      target: model,
-      pinnedNames: pinnedModels,
-      settings: globalModelSettings,
-      unload: name => api.unloadModel(name),
-      load: () => loadModelRuntime(model, new Set<string>(), overrideOptions),
-    });
-  };
-
   const handleLoad = async (model: ModelInfo, overrideOptions?: Record<string, unknown>) => {
     if (loadingModel) return;
     const name = modelName(model);
@@ -1628,11 +1597,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setLoadError(null);
     setLoadingModel(name);
     try {
-      if (isRouterModelInfo(model)) {
-        await ensureServerRouterReady(name);
-      } else {
-        await loadWithGlobalPolicy(model, overrideOptions);
-      }
+      await loadModelRuntime(model, new Set<string>(), overrideOptions);
       await refresh();
       onModelSelect(name);
     } catch (err) {
@@ -2416,19 +2381,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       });
     }
   }, [allModels, downloadItems, loadedNames, pulling]);
-
-  useEffect(() => {
-    if (automaticUpdateStartedRef.current || !api.isConnected || modelsLoading) return;
-    if (!automaticUpdateIsDue(globalModelSettings)) return;
-    automaticUpdateStartedRef.current = true;
-    void handleUpdateAllModels().finally(() => {
-      const next = saveGlobalModelSettings({
-        ...loadGlobalModelSettings(),
-        lastAutomaticUpdateAt: new Date().toISOString(),
-      });
-      setGlobalModelSettings(next);
-    });
-  }, [globalModelSettings, handleUpdateAllModels, modelsLoading]);
 
   const localRegistryRefs = useMemo(() => {
     const refs = new Set<string>();

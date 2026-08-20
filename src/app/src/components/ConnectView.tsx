@@ -399,13 +399,13 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
 
         {activeSection === 'chat' && (
         <section className="connect__section global-model-settings">
-          <GlobalModelSettingsPanel section="chat" models={models} loadedModels={loadedModels} />
+          <GlobalModelSettingsPanel section="chat" models={models} loadedModels={loadedModels} connected={status === 'connected'} />
         </section>
         )}
 
         {activeSection === 'memory' && (
         <section className="connect__section global-model-settings">
-          <GlobalModelSettingsPanel section="memory" models={models} loadedModels={loadedModels} />
+          <GlobalModelSettingsPanel section="memory" models={models} loadedModels={loadedModels} connected={status === 'connected'} />
         </section>
         )}
 
@@ -444,7 +444,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
           </WorkspaceActionGroup>
           {directoryNotice && <div className="connect__notice">{directoryNotice}</div>}
           {directoryError && <div className="connect__error">{directoryError}</div>}
-          <GlobalModelSettingsPanel section="updates" models={models} loadedModels={loadedModels} />
+          <GlobalModelSettingsPanel section="updates" models={models} loadedModels={loadedModels} connected={status === 'connected'} />
         </section>
         )}
 
