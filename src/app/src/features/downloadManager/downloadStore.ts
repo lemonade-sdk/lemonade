@@ -38,8 +38,8 @@ export interface DownloadListItem {
 type Listener = (downloads: DownloadListItem[]) => void;
 
 const DISMISSED_STORAGE_KEY = 'lemonade_download_manager_dismissed_v1';
-const TERMINAL_TTL_MS = 60 * 60 * 1000;
 const POLL_MS = 1000;
+const WAKE_REFRESH_MIN_INTERVAL_MS = 500;
 const SPEED_SMOOTHING_ALPHA = 0.35;
 
 function now(): number { return Date.now(); }
@@ -433,17 +433,27 @@ function sortDownloads(downloads: DownloadListItem[]): DownloadListItem[] {
   return [...downloads].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-function readDismissed(timestamp = now()): Record<string, number> {
+type DismissedDownload = {
+  createdAt: number;
+  dismissedAt: number;
+};
+
+type DismissedDownloads = Record<string, DismissedDownload>;
+
+function readDismissed(): DismissedDownloads {
   if (typeof localStorage === 'undefined') return {};
   try {
     const raw = localStorage.getItem(DISMISSED_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const kept: Record<string, number> = {};
+    const kept: DismissedDownloads = {};
     Object.entries(parsed as Record<string, unknown>).forEach(([id, value]) => {
-      const dismissedAt = finiteNumber(value, 0);
-      if (dismissedAt > 0 && timestamp - dismissedAt < TERMINAL_TTL_MS) kept[id] = dismissedAt;
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+      const record = value as Record<string, unknown>;
+      const createdAt = finiteNumber(record.createdAt, 0);
+      const dismissedAt = finiteNumber(record.dismissedAt, 0);
+      if (createdAt > 0 && dismissedAt > 0) kept[id] = { createdAt, dismissedAt };
     });
     return kept;
   } catch {
@@ -451,7 +461,7 @@ function readDismissed(timestamp = now()): Record<string, number> {
   }
 }
 
-function writeDismissed(dismissed: Record<string, number>): void {
+function writeDismissed(dismissed: DismissedDownloads): void {
   if (typeof localStorage === 'undefined') return;
   try {
     const serialized = JSON.stringify(dismissed);
@@ -459,12 +469,17 @@ function writeDismissed(dismissed: Record<string, number>): void {
       localStorage.setItem(DISMISSED_STORAGE_KEY, serialized);
     }
   } catch {
-    // Ignore unavailable storage; the in-memory removal still applies.
+    // Ignore unavailable storage; dismissal remains presentation-only.
   }
 }
 
-function isDismissedTerminal(download: DownloadListItem, dismissed: Record<string, number>): boolean {
-  return Boolean(dismissed[download.id]) && isDownloadTerminal(download);
+function isDismissedTerminal(download: DownloadListItem, dismissed: DismissedDownloads): boolean {
+  const record = dismissed[download.id];
+  return Boolean(
+    record
+    && Math.abs(record.createdAt - download.createdAt) < 1
+    && isDownloadTerminal(download),
+  );
 }
 
 class DownloadStore {
@@ -472,7 +487,10 @@ class DownloadStore {
   private listeners = new Set<Listener>();
   private visibleListeners = new Set<Listener>();
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshInFlight: Promise<void> | null = null;
+  private wakeRefreshQueued = false;
+  private lastRefreshStartedAt = 0;
   private started = false;
 
   constructor() {
@@ -521,19 +539,31 @@ class DownloadStore {
   async refresh(): Promise<void> {
     if (this.refreshInFlight) return this.refreshInFlight;
 
-    // A manual/focus refresh supersedes a pending scheduled poll. Cancelling it
-    // here prevents the timer from firing while the same request is in flight.
+    // An explicit refresh also satisfies any queued SSE wake-up. Pull progress
+    // is deliberately coalesced so a fast SSE stream cannot turn into a burst
+    // of GET /downloads requests.
     this.clearPollTimer();
+    this.clearWakeTimer();
+    this.wakeRefreshQueued = false;
+    this.lastRefreshStartedAt = now();
     this.refreshInFlight = (async () => {
       try {
         const serverDownloads = await api.downloads();
         const normalized = serverDownloads
-          .map(raw => normalizeDownload(raw, this.findExisting(raw)))
+          .map(raw => {
+            const previous = this.findExisting(raw);
+            const serverCreatedAt = creationTimeFromRaw(raw);
+            const sameAttempt = !previous
+              || serverCreatedAt == null
+              || Math.abs(serverCreatedAt - previous.createdAt) < 1;
+            return normalizeDownload(raw, sameAttempt ? previous : undefined);
+          })
           .filter((item): item is DownloadListItem => Boolean(item));
         this.replaceFromServer(normalized);
       } catch {
         // A failed poll is not an empty authoritative snapshot. Keep the last
-        // successful /downloads snapshot and retry only while it has active work.
+        // successful /downloads snapshot and retry only when server-owned work
+        // or a coalesced wake-up asks for another refresh.
       }
     })();
     try {
@@ -541,36 +571,38 @@ class DownloadStore {
     } finally {
       this.refreshInFlight = null;
       this.syncPolling();
+      this.scheduleWakeRefresh();
     }
   }
 
-  upsertFromPull(_modelName: string, _data: Record<string, unknown> = {}, _type: DownloadType = 'model'): DownloadListItem | null {
-    // Pull/install callbacks are only a wake-up signal. Download state itself is
-    // always replaced from GET /api/v1/downloads.
-    void this.refresh();
-    return null;
+  wake(modelName?: string, type: DownloadType = 'model'): DownloadListItem | null {
+    this.start();
+    this.wakeRefreshQueued = true;
+    this.scheduleWakeRefresh();
+    if (!modelName) return null;
+    return this.downloads.find(item => (
+      item.downloadType === type
+      && (item.modelName === modelName || item.id === `${type}:${modelName}`)
+    )) || null;
   }
 
-  markLocal(_modelName: string, _status: DownloadStatus, _type: DownloadType = 'model'): void {
-    // Preserve the existing call sites without creating an optimistic download
-    // row. The server registry is the only source that may change this store.
-    void this.refresh();
+  dismiss(downloadId: string): void {
+    this.dismissMany([downloadId]);
   }
 
-  remove(downloadId: string): void {
-    this.removeMany([downloadId]);
-  }
-
-  removeMany(downloadIds: string[]): void {
+  dismissMany(downloadIds: string[]): void {
     const ids = new Set(downloadIds.filter(Boolean));
     if (ids.size === 0) return;
 
-    // Dismissal is presentation-only. It may hide terminal history in the
-    // Download Manager, but canonical snapshot()/subscribe() state is untouched.
+    // Dismissal is presentation-only and is tied to one concrete server
+    // attempt. It never expires on a wall-clock TTL: a failed server-side
+    // remove therefore cannot make old history mysteriously reappear later.
     const dismissed = readDismissed();
-    const timestamp = now();
+    const dismissedAt = now();
     this.downloads.forEach(download => {
-      if (ids.has(download.id) && isDownloadTerminal(download)) dismissed[download.id] = timestamp;
+      if (ids.has(download.id) && isDownloadTerminal(download)) {
+        dismissed[download.id] = { createdAt: download.createdAt, dismissedAt };
+      }
     });
     writeDismissed(dismissed);
     this.emitVisible();
@@ -591,11 +623,17 @@ class DownloadStore {
     });
 
     const dismissed = readDismissed();
-    for (const item of map.values()) {
-      // A retry reusing the same stable id is a new visible row. Clearing this is
-      // visual only and never changes canonical download/blocking state.
-      if (isDownloadActive(item)) delete dismissed[item.id];
-    }
+    Object.entries(dismissed).forEach(([id, record]) => {
+      const item = map.get(id);
+      // Missing rows, active rows, and a new attempt with the same stable id all
+      // invalidate an old presentation-only dismissal. This also handles a CLI
+      // retry that starts and finishes while GUI polling is idle.
+      if (!item
+        || isDownloadActive(item)
+        || Math.abs(item.createdAt - record.createdAt) >= 1) {
+        delete dismissed[id];
+      }
+    });
     writeDismissed(dismissed);
 
     this.downloads = sortDownloads(Array.from(map.values()));
@@ -618,6 +656,29 @@ class DownloadStore {
     return this.downloads.some(isDownloadActive);
   }
 
+  private clearWakeTimer(): void {
+    if (!this.wakeTimer) return;
+    clearTimeout(this.wakeTimer);
+    this.wakeTimer = null;
+  }
+
+  private scheduleWakeRefresh(): void {
+    if (!this.started || !this.wakeRefreshQueued || this.wakeTimer || this.refreshInFlight) return;
+    const elapsed = now() - this.lastRefreshStartedAt;
+    const delay = Math.max(0, WAKE_REFRESH_MIN_INTERVAL_MS - elapsed);
+    if (delay === 0) {
+      this.wakeRefreshQueued = false;
+      void this.refresh();
+      return;
+    }
+    this.wakeTimer = setTimeout(() => {
+      this.wakeTimer = null;
+      if (!this.wakeRefreshQueued) return;
+      this.wakeRefreshQueued = false;
+      void this.refresh();
+    }, delay);
+  }
+
   private clearPollTimer(): void {
     if (!this.pollTimer) return;
     clearTimeout(this.pollTimer);
@@ -627,8 +688,8 @@ class DownloadStore {
   private syncPolling(): void {
     // The initial start()/explicit refresh is enough to discover server-owned
     // work. Once the authoritative snapshot is idle, do not keep hitting
-    // /downloads. Pull/install callbacks, focus/online, and an explicitly opened
-    // download manager can wake the store again.
+    // /downloads. Coalesced pull/install wakes, focus/online, and an explicitly
+    // opened download manager can wake the store again.
     if (!this.started || !this.hasActiveDownloads()) {
       this.clearPollTimer();
       return;

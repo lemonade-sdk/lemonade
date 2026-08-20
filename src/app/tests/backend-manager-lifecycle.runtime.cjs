@@ -29,15 +29,19 @@ assert.match(
   /const terminalDownloadPromise = waitForBackendDownloadTerminal[\s\S]*?await api\.installBackend\([\s\S]*?const terminalDownload = await terminalDownloadPromise/,
 );
 assert.match(installBlock, /void terminalDownloadPromise\.catch\(\(\) => undefined\)/);
-assert.match(installBlock, /onComplete: \(\) => \{[\s\S]*?downloadStore\.refresh\(\)/);
+assert.match(installBlock, /onComplete: \(\) => \{[\s\S]*?downloadStore\.wake\(downloadName, 'backend'\)/);
 const onCompleteBlock = installBlock.match(
   /onComplete: \(\) => \{[\s\S]*?\n\s*\},\n\s*onError:/,
 )?.[0] || '';
 assert.doesNotMatch(onCompleteBlock, /status: 'completed'|still needs update/);
 
-// An API error must become a truly terminal error and can never fall through to success.
-assert.match(installBlock, /onError: \(err\) => \{[\s\S]*?status: 'error',[\s\S]*?running: false/);
+// installBackend reports errors through its callback; capture and rethrow them so
+// a failure before the server registers a backend row cannot hang the UI.
+assert.match(installBlock, /let installError: Error \| null = null/);
+assert.match(installBlock, /onError: \(err\) => \{[\s\S]*?installError = err;[\s\S]*?downloadStore\.wake/);
+assert.match(installBlock, /await api\.installBackend[\s\S]*?if \(installError\) throw installError/);
 assert.match(installBlock, /terminalDownload\.status === 'error'[\s\S]*?throw new Error/);
+assert.match(source, /BACKEND_DOWNLOAD_REGISTRATION_TIMEOUT_MS/);
 
 // Both install and update use the same post-terminal status synchronization.
 assert.match(installBlock, /const synced = await syncBackendStatus\(recipe, backend\)/);
@@ -66,7 +70,9 @@ function declarationText(name, kind) {
 
 function buildRuntimeHelpers(downloadStore) {
   const helperSource = [
+    'const BACKEND_DOWNLOAD_REGISTRATION_TIMEOUT_MS = 20;',
     declarationText('BackendDownloadMissingError', 'class'),
+    declarationText('BackendDownloadRegistrationTimeoutError', 'class'),
     declarationText('backendActionIsReflected', 'function'),
     declarationText('waitForBackendDownloadTerminal', 'function'),
     'module.exports = { backendActionIsReflected, waitForBackendDownloadTerminal };',
@@ -87,6 +93,8 @@ function buildRuntimeHelpers(downloadStore) {
     exports: module.exports,
     AbortController,
     Error,
+    setTimeout,
+    clearTimeout,
     downloadStore,
     cleanString: value => {
       const text = String(value || '').trim();
@@ -154,6 +162,16 @@ async function runBehaviorChecks() {
     const terminal = waitForBackendDownloadTerminal('llamacpp', 'cpu', controller.signal);
     store.set([]);
     await assert.rejects(terminal, error => error?.name === 'BackendDownloadMissingError');
+  }
+
+  {
+    const store = createDownloadStore([]);
+    const { waitForBackendDownloadTerminal } = buildRuntimeHelpers(store);
+    const controller = new AbortController();
+    await assert.rejects(
+      waitForBackendDownloadTerminal('llamacpp', 'cpu', controller.signal),
+      error => error?.name === 'BackendDownloadRegistrationTimeoutError',
+    );
   }
 
   {

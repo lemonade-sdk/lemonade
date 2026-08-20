@@ -107,3 +107,62 @@ test('legacy localStorage download rows are ignored', async ({ page }) => {
   await expect(page.locator('.download-item')).toHaveCount(0);
   await expect(page.locator('.download-manager__empty')).toContainText('No downloads yet');
 });
+
+test('paused remove refreshes the authoritative server snapshot', async ({ page }) => {
+  let serverDownloads = [{
+    id: 'model:Paused-Model', type: 'model', model_name: 'Paused-Model', status: 'paused', running: false,
+    created_at: Date.now() - 1000,
+    file: 'paused.gguf', file_index: 1, total_files: 1, bytes_downloaded: 100, bytes_total: 1000, percent: 10,
+  }];
+
+  await page.route('**/api/v1/health**', route =>
+    route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
+  );
+  await page.route('**/api/v1/downloads**', route => route.fulfill({ json: { downloads: serverDownloads } }));
+  await page.route('**/api/v1/downloads/control', async route => {
+    serverDownloads = [];
+    await route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto('/');
+  await page.locator('.titlebar__download-toggle').click();
+  const item = page.locator('.download-item').filter({ hasText: 'Paused-Model' });
+  await expect(item).toHaveCount(1);
+  await item.getByRole('button', { name: 'Remove from list' }).click();
+  await expect(item).toHaveCount(0);
+});
+
+test('dismissal stays hidden on remove failure but does not hide a newer terminal attempt', async ({ page }) => {
+  const firstCreatedAt = Date.now() - 10_000;
+  let serverDownloads = [{
+    id: 'model:Retry-Model', type: 'model', model_name: 'Retry-Model', status: 'error', running: false,
+    created_at: firstCreatedAt,
+    file: 'retry.gguf', file_index: 1, total_files: 1, bytes_downloaded: 100, bytes_total: 1000, percent: 10,
+    error: 'first attempt failed',
+  }];
+
+  await page.route('**/api/v1/health**', route =>
+    route.fulfill({ json: { status: 'ok', all_models_loaded: [] } }),
+  );
+  await page.route('**/api/v1/downloads**', route => route.fulfill({ json: { downloads: serverDownloads } }));
+  await page.route('**/api/v1/downloads/control', route =>
+    route.fulfill({ status: 500, json: { error: 'remove failed' } }),
+  );
+
+  await page.goto('/');
+  await page.locator('.titlebar__download-toggle').click();
+  let item = page.locator('.download-item').filter({ hasText: 'Retry-Model' });
+  await expect(item).toHaveCount(1);
+  await item.getByRole('button', { name: 'Remove from list' }).click();
+  await expect(item).toHaveCount(0);
+
+  serverDownloads = [{
+    ...serverDownloads[0],
+    created_at: firstCreatedAt + 5000,
+    error: 'second attempt failed',
+  }];
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  item = page.locator('.download-item').filter({ hasText: 'Retry-Model' });
+  await expect(item).toHaveCount(1);
+  await expect(item).toContainText('second attempt failed');
+});

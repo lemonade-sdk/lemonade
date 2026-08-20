@@ -42,6 +42,8 @@ assert.doesNotMatch(
 );
 assert.match(source, /visibleSnapshot\(\): DownloadListItem\[\]/);
 assert.match(source, /isDismissedTerminal\(download, dismissed\)/);
+assert.match(source, /wake\(modelName\?: string, type: DownloadType = 'model'\)/);
+assert.doesNotMatch(source, /upsertFromPull|markLocal|TERMINAL_TTL_MS/);
 
 const originalTsLoader = require.extensions['.ts'];
 const originalApiCache = require.cache[apiPath];
@@ -142,7 +144,7 @@ async function waitFor(predicate, timeoutMs = 1500) {
       running: true,
       percent: 10,
     }];
-    downloadStore.markLocal('test-model', 'downloading', 'model');
+    downloadStore.wake('test-model', 'model');
     await waitFor(
       () => downloadRequests >= 3 && downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
       1600,
@@ -152,17 +154,12 @@ async function waitFor(predicate, timeoutMs = 1500) {
       'an active download must remain represented after polling',
     );
 
-    // Pull callbacks may wake the store, but they may not author download state.
-    // The server still says active, so a local-looking terminal callback must be ignored.
-    downloadStore.upsertFromPull('test-model', {
-      id: 'model:test-model',
-      status: 'completed',
-      complete: true,
-      running: false,
-      percent: 100,
-    }, 'model');
+    // Pull callbacks are wake-up signals only. The server still says active,
+    // so a callback may not manufacture a terminal row in canonical state.
+    const requestsBeforeCallbackWake = downloadRequests;
+    downloadStore.wake('test-model', 'model');
     await downloadStore.refresh();
-    assert.equal(downloadRequests, 4);
+    assert.equal(downloadRequests, requestsBeforeCallbackWake + 1);
     assert.ok(
       downloadStore.snapshot().some(item => item.modelName === 'test-model' && item.running === true),
       'callback data must not override the authoritative /downloads snapshot',
@@ -181,6 +178,15 @@ async function waitFor(predicate, timeoutMs = 1500) {
       'an idle authoritative snapshot must stop polling',
     );
 
+    const requestsBeforeWakeBurst = downloadRequests;
+    for (let i = 0; i < 25; i += 1) downloadStore.wake('burst-model', 'model');
+    await sleep(650);
+    assert.equal(
+      downloadRequests,
+      requestsBeforeWakeBurst + 1,
+      'many SSE-style wake signals must coalesce into one /downloads request',
+    );
+
     // Dismissed state is presentation-only: canonical state remains intact, and
     // non-terminal rows can never be hidden by a client-owned dismissed id.
     serverDownloads = [{
@@ -191,13 +197,32 @@ async function waitFor(predicate, timeoutMs = 1500) {
       complete: true,
       running: false,
       percent: 100,
+      created_at: Date.now() - 10_000,
     }];
     const requestsBeforeCompletedSnapshot = downloadRequests;
     await downloadStore.refresh();
     assert.equal(downloadRequests, requestsBeforeCompletedSnapshot + 1);
-    downloadStore.removeMany(['model:completed-model']);
+    downloadStore.dismissMany(['model:completed-model']);
     assert.equal(downloadStore.snapshot().length, 1, 'dismiss must not mutate canonical server state');
     assert.equal(downloadStore.visibleSnapshot().length, 0, 'dismiss may hide terminal history visually');
+
+    const firstAttemptCreatedAt = serverDownloads[0].created_at;
+    await downloadStore.refresh();
+    assert.equal(downloadStore.visibleSnapshot().length, 0, 'the same dismissed server attempt stays hidden');
+
+    serverDownloads = [{
+      ...serverDownloads[0],
+      status: 'error',
+      complete: false,
+      error: 'new attempt failed',
+      created_at: firstAttemptCreatedAt + 5_000,
+    }];
+    await downloadStore.refresh();
+    assert.equal(
+      downloadStore.visibleSnapshot().length,
+      1,
+      'a new terminal attempt reusing the same stable id must not inherit an old dismissal',
+    );
 
     serverDownloads = [{
       id: 'model:paused-model',
@@ -210,7 +235,7 @@ async function waitFor(predicate, timeoutMs = 1500) {
     const requestsBeforePausedSnapshot = downloadRequests;
     await downloadStore.refresh();
     assert.equal(downloadRequests, requestsBeforePausedSnapshot + 1);
-    downloadStore.removeMany(['model:paused-model']);
+    downloadStore.dismissMany(['model:paused-model']);
     assert.equal(downloadStore.snapshot().length, 1);
     assert.equal(downloadStore.visibleSnapshot().length, 1, 'paused server state must remain visible and blocking');
 
