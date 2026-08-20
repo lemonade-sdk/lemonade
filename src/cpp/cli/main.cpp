@@ -1552,17 +1552,41 @@ int main(int argc, char* argv[]) {
     // Execute command
     if (status_cmd->count() > 0) {
         if (config.json_output) {
-            // Verify the server is actually reachable before reporting its port.
-            // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers to target the wrong process.
-            bool reachable = try_live_check(config.host, config.port, config.api_key, config.is_ssl, 500);
-            if (!reachable) {
-                std::cerr << "Server is not running" << std::endl;
+            nlohmann::json health;
+            try {
+                health = client.fetch_health();
+            } catch (const nlohmann::json::exception& e) {
+                std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
+                return 1;
+            } catch (const std::exception& e) {
+                std::cerr << "Error fetching health status: " << e.what() << std::endl;
                 return 1;
             }
+
             nlohmann::json out;
             out["port"] = config.port;
-            std::cout << out.dump() << std::endl;
+            out["version"] = health.value("version", "");
+            out["websocket_port"] = health.value("websocket_port", 0);
+            out["models"] = nlohmann::json::array();
+
+            for (const auto& model : health.value("all_models_loaded", nlohmann::json::array())) {
+                if (!model.is_object()) continue;
+
+                nlohmann::json entry;
+                entry["model_name"] = model.value("model_name", "");
+                entry["checkpoint"] = model.value("checkpoint", "");
+                entry["type"] = model.value("type", "");
+                entry["device"] = model.value("device", "");
+                entry["recipe"] = model.value("recipe", "");
+                entry["recipe_options"] = model.value("recipe_options", nlohmann::json::object());
+                entry["status"] = model.value("status", "");
+                entry["pinned"] = model.value("pinned", false);
+                entry["pid"] = model.value("pid", 0);
+                entry["backend_url"] = model.value("backend_url", "");
+                out["models"].push_back(entry);
+            }
+
+            std::cout << out.dump(2) << std::endl;
             return 0;
         }
         return client.status(config.port);

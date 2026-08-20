@@ -320,10 +320,13 @@ int LemonadeClient::check_model_updates() const {
     }
 }
 
+json LemonadeClient::fetch_health() const {
+    return json::parse(make_request("/api/v1/health", "GET", "", "", 500, 500));
+}
+
 int LemonadeClient::status(int display_port) const {
     try {
-        std::string response = make_request("/api/v1/health", "GET", "", "", 500, 500);
-        auto json_response = json::parse(response);
+        auto json_response = fetch_health();
 
         int port = display_port > 0 ? display_port : port_;
         std::cout << "Server is running on port " << port << std::endl;
@@ -355,8 +358,10 @@ int LemonadeClient::status(int display_port) const {
                       << std::setw(10) << "Type"
                       << std::setw(10) << "Device"
                       << std::setw(14) << "Recipe"
+                      << std::setw(9) << "Ctx"
+                      << std::setw(10) << "Status"
                       << "Checkpoint" << std::endl;
-            std::cout << std::string(100, '-') << std::endl;
+            std::cout << std::string(119, '-') << std::endl;
 
             for (const auto& model : json_response["all_models_loaded"]) {
                 if (!model.is_object()) continue;
@@ -366,11 +371,19 @@ int LemonadeClient::status(int display_port) const {
                     model_name += " (pinned)";
                 }
 
+                const json recipe_options = model.value("recipe_options", json::object());
+                std::string ctx_size = "-";
+                if (recipe_options.contains("ctx_size") && recipe_options["ctx_size"].is_number()) {
+                    ctx_size = std::to_string(recipe_options["ctx_size"].get<int>());
+                }
+
                 std::cout << std::left
                           << std::setw(30) << model_name
                           << std::setw(10) << model.value("type", "-")
                           << std::setw(10) << model.value("device", "-")
                           << std::setw(14) << model.value("recipe", "-")
+                          << std::setw(9) << ctx_size
+                          << std::setw(10) << model.value("status", "-")
                           << model.value("checkpoint", "-") << std::endl;
             }
         } else {

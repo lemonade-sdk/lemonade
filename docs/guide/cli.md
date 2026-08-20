@@ -660,6 +660,38 @@ lemonade launch claude --model Qwen3.5-0.8B-GGUF --agent-args "--resume SESSION_
 lemonade launch claude --directory coding-agents --recipe-file Qwen3.5-35B-A3B-NoThinking.json
 ```
 
+## Options for status
+
+The `status` command reports whether the server can be reached and, if it can, what it currently has loaded:
+
+```bash
+lemonade status [options]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json` | Emit machine-readable JSON instead of a table | off |
+
+With `--json`, a single JSON object is written to stdout and nothing else. It carries `port`, `version`, `websocket_port`, and a `models` array that is present even when no model is loaded. Each entry reports `model_name`, `checkpoint`, `type`, `device`, `recipe`, `status`, `pinned`, `pid`, `backend_url`, and a `recipe_options` object holding the values the model was actually loaded with, so a `ctx_size` of `auto` appears here as a number. These field names do not change, but the keys inside `recipe_options` differ from one recipe to the next, so check that a key is present before reading it. If the server cannot be reached, stdout stays empty, the error goes to stderr, and the command exits with `1`.
+
+```json
+{
+  "port": 13306,
+  "version": "11.7.0",
+  "websocket_port": 9000,
+  "models": [
+    {
+      "model_name": "Qwen3.5-0.8B-GGUF",
+      "checkpoint": "unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M.gguf",
+      "type": "llm", "device": "gpu", "recipe": "llamacpp",
+      "recipe_options": { "ctx_size": 4096, "llamacpp_backend": "vulkan" },
+      "status": "ready", "pinned": false, "pid": 30932,
+      "backend_url": "http://127.0.0.1:8001/v1"
+    }
+  ]
+}
+```
+
 ## Options for cloud
 
 The `cloud` command manages OpenAI-compatible cloud providers (Fireworks, OpenAI, OpenRouter, Together, etc.). Provider URLs persist in `lemond`'s `config.json`; API keys live in env vars (preferred) or `lemond`'s process memory and are never written to disk. See the [Cloud Offload guide](./configuration/cloud.md) for the full workflow.
