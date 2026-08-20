@@ -141,20 +141,29 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
-  // Mirrors BackendRow's `isInstalledLike`: something is on disk here, so this
-  // panel must keep showing it. It is the only place that offers uninstall
-  // (ModelManager renders the 'banner' variant, which has no uninstall action),
-  // so hiding an unavailable-but-installed backend would strand it.
-  const isInstalledLike = (info: BackendInfo) =>
-    info.state === 'installed' || info.state === 'update_available';
+  // Matches the server's own `locally_installed` (system_info.cpp): these three
+  // states all mean the backend is on disk, `update_required` included.
+  const isLocallyInstalled = (info: BackendInfo) =>
+    info.state === 'installed' ||
+    info.state === 'update_available' ||
+    info.state === 'update_required';
+
+  // An unavailable recipe has no built-in model that fits this host, so it keeps
+  // only rows for an existing installation: this panel is the only one offering
+  // uninstall (ModelManager renders the 'banner' variant, which has none), so
+  // hiding those would strand them. `installable` and `action_required` are
+  // dropped — nothing is on disk yet, and setting one up would buy the user
+  // nothing. A recipe left with no rows falls out via the length check below.
+  const keepBackend = (recipeName: string) =>
+    unavailableRecipes.has(recipeName)
+      ? isLocallyInstalled
+      : (info: BackendInfo) => info.state !== 'unsupported';
 
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)
-      .filter(([recipeName, recipe]: [string, Recipe]) =>
-        !unavailableRecipes.has(recipeName) ||
-        Object.values(recipe.backends).some(isInstalledLike))
       .map(([recipeName, recipe]: [string, Recipe]) => {
-        const backends = Object.entries(recipe.backends).filter(([, info]) => info.state !== 'unsupported');
+        const keep = keepBackend(recipeName);
+        const backends = Object.entries(recipe.backends).filter(([, info]) => keep(info));
         return [recipeName, backends] as [string, Array<[string, BackendInfo]>];
       })
       .filter(([, backends]) => backends.length > 0)
