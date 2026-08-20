@@ -338,6 +338,11 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
+    // An auto slot count also enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
+    // ctx_size the context a request actually gets.
+    push_overridable_arg(args, llamacpp_args, "--parallel", "1", {"-np"});
+
     if (!llamacpp_device.empty()) {
         BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
         push_arg(args, reserved_flags, "--device", llamacpp_device);
