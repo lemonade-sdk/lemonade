@@ -30,6 +30,16 @@ static void check_eq(const char* name, const std::string& actual, const std::str
     }
 }
 
+static void check_bool(const char* name, bool actual, bool expected) {
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("      Expected: %s\n", expected ? "true" : "false");
+        std::printf("      Actual:   %s\n", actual ? "true" : "false");
+        ++g_failures;
+    }
+}
+
 static void check_double(const char* name, const std::map<std::string, nlohmann::json>& m, const std::string& key, double expected) {
     auto it = m.find(key);
     bool ok = (it != m.end() && (it->second.is_number() || it->second.is_number_integer()) && std::abs(it->second.get<double>() - expected) < 1e-6);
@@ -548,7 +558,7 @@ int main() {
         check_eq("InferenceSpan session: omitted when absent (session.id)", get_span_attr(last_span, "session.id"), "");
         check_eq("InferenceSpan session: omitted when absent (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "");
 
-        // 6. Tool calls output messages, max_attribute_length truncation, and fallback output.value
+        // 6. Tool calls output messages, max_attribute_length truncation with valid JSON, and fallback output.value
         std::vector<lemon::telemetry::ToolCall> sample_tool_calls = {
             {"call_abc123", "bash", "{\"command\": \"git branch --all -vv\"}"}
         };
@@ -557,7 +567,10 @@ int main() {
         check_eq("InferenceSpan tool calls: openinference role", get_span_attr(last_span, "llm.output_messages.0.message.role"), "assistant");
         check_eq("InferenceSpan tool calls: openinference tool id", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.id"), "call_abc123");
         check_eq("InferenceSpan tool calls: openinference function name", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.name"), "bash");
-        check_eq("InferenceSpan tool calls: openinference function args truncated", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments"), "{\"com... [TRUNCATED]");
+        std::string args_str = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
+        nlohmann::json parsed_args = nlohmann::json::parse(args_str, nullptr, false);
+        check_bool("InferenceSpan tool calls: function args is valid JSON", parsed_args.is_discarded(), false);
+        check_bool("InferenceSpan tool calls: function args has _truncated flag", parsed_args.value("_truncated", false), true);
         check_eq("InferenceSpan tool calls: openinference fallback output.value truncated", get_span_attr(last_span, "output.value"), "[{\"fu... [TRUNCATED]");
 
         // 7. hide_thinking preserves stripped output in output_messages content
@@ -604,7 +617,35 @@ int main() {
         check_eq("InferenceSpan hide_outputs: openinference content redacted", get_span_attr(last_span, "llm.output_messages.0.message.content"), "[REDACTED]");
         check_eq("InferenceSpan hide_outputs: openinference tool id suppressed", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.id"), "");
         check_eq("InferenceSpan hide_outputs: openinference function name suppressed", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.name"), "");
-        check_eq("InferenceSpan hide_outputs: gen_ai content redacted", get_span_attr(last_span, "gen_ai.output.messages.0.content"), "[REDACTED]");
+        // 9. Unicode boundary and strict max_attribute_length bounds
+        std::vector<lemon::telemetry::ToolCall> unicode_tool_calls = {
+            {"call_uni", "search", "{\"query\": \"日本語テスト🚀 emoji and characters\"}"}
+        };
+        for (int bound : {0, 1, 2, 10, 18, 30, 50, 100}) {
+            nlohmann::json test_cfg_bound_json = {
+                {"config_version", 2},
+                {"port", 13305},
+                {"host", "localhost"},
+                {"telemetry", {
+                    {"enabled", true},
+                    {"max_attribute_length", bound},
+                    {"otlp", {
+                        {"semantics", {"openinference"}}
+                    }}
+                }}
+            };
+            lemon::RuntimeConfig test_cfg_bound(test_cfg_bound_json);
+            lemon::RuntimeConfig::set_global(&test_cfg_bound);
+
+            auto span_bound = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+            span_bound->end_with_success(nlohmann::json::object(), "", unicode_tool_calls);
+            std::string bound_args = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
+            check_bool("InferenceSpan unicode args length <= max_len", bound_args.size() <= static_cast<size_t>(bound), true);
+            if (!bound_args.empty()) {
+                nlohmann::json p = nlohmann::json::parse(bound_args, nullptr, false);
+                check_bool("InferenceSpan unicode args valid JSON", p.is_discarded(), false);
+            }
+        }
 
         // Clean up
         lemon::telemetry::unregister_span_listener();

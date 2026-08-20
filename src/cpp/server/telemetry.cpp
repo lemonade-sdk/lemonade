@@ -430,7 +430,13 @@ private:
                     LOG(DEBUG, "Telemetry") << "Failed to fetch metrics in background: unknown error" << std::endl;
                 }
             }
-            task.span->end_with_success(task.usage_payload, task.text_output, task.tool_calls);
+            try {
+                task.span->end_with_success(task.usage_payload, task.text_output, task.tool_calls);
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Telemetry") << "Failed to complete span in background metrics worker: " << e.what() << std::endl;
+            } catch (...) {
+                LOG(WARNING, "Telemetry") << "Failed to complete span in background metrics worker: unknown error" << std::endl;
+            }
 
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -811,14 +817,72 @@ static uint64_t get_unix_nano() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
 }
 
+static size_t utf8_safe_len(const std::string& str, size_t max_bytes) {
+    if (str.length() <= max_bytes) {
+        return str.length();
+    }
+    size_t len = max_bytes;
+    while (len > 0 && (static_cast<unsigned char>(str[len]) & 0xC0) == 0x80) {
+        --len;
+    }
+    if (len > 0) {
+        unsigned char lead = static_cast<unsigned char>(str[len]);
+        size_t char_len = 1;
+        if ((lead & 0xE0) == 0xC0) char_len = 2;
+        else if ((lead & 0xF0) == 0xE0) char_len = 3;
+        else if ((lead & 0xF8) == 0xF0) char_len = 4;
+
+        if (len + char_len > max_bytes) {
+            // Incomplete character at the end; exclude the lead byte
+        } else {
+            len += char_len;
+        }
+    }
+    return len;
+}
+
 static std::string truncate_string(const std::string& str, size_t max_len) {
     if (str.length() <= max_len) {
         return str;
     }
     if (max_len <= 15) {
-        return str.substr(0, max_len);
+        return str.substr(0, utf8_safe_len(str, max_len));
     }
-    return str.substr(0, max_len - 15) + "... [TRUNCATED]";
+    size_t prefix_len = utf8_safe_len(str, max_len - 15);
+    return str.substr(0, prefix_len) + "... [TRUNCATED]";
+}
+
+static std::string truncate_json_string(const std::string& str, size_t max_len) {
+    if (str.length() <= max_len) {
+        return str;
+    }
+    nlohmann::json j = nlohmann::json::parse(str, nullptr, false);
+    if (!j.is_discarded()) {
+        if (max_len >= 35) {
+            size_t budget = max_len - 30;
+            std::string trunc_val = truncate_string(str, budget);
+            nlohmann::json trunc_j = {
+                {"_truncated", true},
+                {"value", trunc_val}
+            };
+            std::string out = trunc_j.dump();
+            if (out.size() <= max_len) {
+                return out;
+            }
+        }
+        if (max_len >= 18) {
+            nlohmann::json trunc_j = {{"_truncated", true}};
+            std::string out = trunc_j.dump();
+            if (out.size() <= max_len) {
+                return out;
+            }
+        }
+        if (max_len >= 2) {
+            return "{}";
+        }
+        return "";
+    }
+    return truncate_string(str, max_len);
 }
 
 static std::string format_namespaced_session(const std::string& client, const std::string& session, size_t max_len) {
@@ -1117,7 +1181,10 @@ void InferenceSpan::end_with_success(const nlohmann::json& usage_or_timings, con
                         attributes.push_back({{"key", tc_prefix + "function.name"}, {"value", {{"stringValue", truncate_string(tool_calls[i].function_name, max_len)}}}});
                     }
                     if (!tool_calls[i].function_arguments.empty()) {
-                        attributes.push_back({{"key", tc_prefix + "function.arguments"}, {"value", {{"stringValue", truncate_string(tool_calls[i].function_arguments, max_len)}}}});
+                        std::string args_val = truncate_json_string(tool_calls[i].function_arguments, max_len);
+                        if (!args_val.empty()) {
+                            attributes.push_back({{"key", tc_prefix + "function.arguments"}, {"value", {{"stringValue", args_val}}}});
+                        }
                     }
                 }
             }
