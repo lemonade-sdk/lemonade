@@ -524,7 +524,9 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         )}
       </section>
 
-      {/* 5. Storage meter */}
+      </div>
+
+      {/* 5. Storage meter — pinned footer (stays at the bottom of the rail) */}
       <div className="model-nav-rail__storage">
         <div className="model-nav-rail__storage-row">
           <span className="model-nav-rail__storage-label">Storage{storage.real ? '' : ' (est.)'}</span>
@@ -541,7 +543,6 @@ export const ModelNavRail: React.FC<ModelNavRailProps> = ({
         >
           <span className="model-nav-rail__storage-fill" style={{ width: `${storage.pct}%` }} aria-hidden="true" />
         </div>
-      </div>
       </div>
     </nav>
   );

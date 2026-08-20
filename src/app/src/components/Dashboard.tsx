@@ -1,9 +1,10 @@
-import React, { lazy, Suspense, useCallback, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, LoadedModel } from '../api';
 import { capabilityFromLoaded } from '../modelCapabilities';
 import { backendCompactLabel } from '../modelPresentation';
 import { useDashboardData } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
+import { evictionRuntimeSettingsFromConfig } from '../features/modelSettings/globalModelSettings';
 import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
 
 /* ── Helpers ───────────────────────────────────────────────── */
@@ -80,7 +81,8 @@ const RingGauge = React.memo<{
   unit?: string;
   color?: string;
   subtitle?: string;
-}>(({ value, max = 100, size = 110, label, unit = '%', color, subtitle }) => {
+  thresholdPercent?: number | null;
+}>(({ value, max = 100, size = 110, label, unit = '%', color, subtitle, thresholdPercent = null }) => {
   const safeVal = value != null && value >= 0 ? value : 0;
   const pctVal = Math.min(100, (safeVal / max) * 100);
   const unavailable = value == null || value < 0;
@@ -88,6 +90,16 @@ const RingGauge = React.memo<{
   const r = 42;
   const circumference = 2 * Math.PI * r;
   const offset = circumference - (pctVal / 100) * circumference;
+  const safeThreshold = thresholdPercent != null && Number.isFinite(thresholdPercent) && thresholdPercent > 0 && thresholdPercent <= 100
+    ? thresholdPercent
+    : null;
+  const thresholdAngle = safeThreshold == null ? null : (safeThreshold / 100) * Math.PI * 2 - Math.PI / 2;
+  const thresholdMarker = thresholdAngle == null ? null : {
+    x1: 50 + Math.cos(thresholdAngle) * (r - 5),
+    y1: 50 + Math.sin(thresholdAngle) * (r - 5),
+    x2: 50 + Math.cos(thresholdAngle) * (r + 4),
+    y2: 50 + Math.sin(thresholdAngle) * (r + 4),
+  };
 
   const autoColor = pctVal < 50 ? 'var(--success)' : pctVal < 80 ? 'var(--accent)' : 'var(--danger)';
   const ringColor = color || autoColor;
@@ -119,6 +131,12 @@ const RingGauge = React.memo<{
             filter={`url(#${filterId})`}
             style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1)' }}
           />
+        )}
+        {thresholdMarker && (
+          <g className="dash2-gauge__threshold" data-eviction-threshold={safeThreshold}>
+            <title>{`Eviction threshold: ${safeThreshold}%`}</title>
+            <line {...thresholdMarker} />
+          </g>
         )}
       </svg>
       <div className="dash2-gauge__center">
@@ -211,6 +229,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
   } = useDashboardData(isActive);
 
   const [ejecting, setEjecting] = useState<string | null>(null);
+  const [evictionThresholdPercent, setEvictionThresholdPercent] = useState<number | null>(null);
   const ejectingRef = useRef<string | null>(null);
   const handleEject = useCallback((modelName: string) => {
     if (ejectingRef.current) return;
@@ -227,12 +246,30 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
     })();
   }, [refresh]);
 
+  useEffect(() => {
+    if (!isActive) return;
+    let cancelled = false;
+    void api.getRuntimeConfig()
+      .then(config => {
+        if (cancelled) return;
+        const eviction = evictionRuntimeSettingsFromConfig(config);
+        setEvictionThresholdPercent(eviction.autoEvict ? eviction.autoEvictThresholdPercent : null);
+      })
+      .catch(() => {
+        if (!cancelled) setEvictionThresholdPercent(null);
+      });
+    return () => { cancelled = true; };
+  }, [isActive]);
+
   const memoryTopology = useMemo(() => dashboardMemoryTopology(systemInfo), [systemInfo]);
   const ramUsedGb = sysStats?.memory_gb ?? null;
   const ramGaugeMax = memoryTopology.hostTotalGb
     ?? Math.max(64, Math.ceil((ramUsedGb || 0) / 16) * 16);
   const vramGaugeMax = memoryTopology.gpuTotalGb
     ?? Math.max(32, Math.ceil(((sysStats?.vram_gb ?? 0) || 0) / 8) * 8);
+  const evictionThresholdText = evictionThresholdPercent == null
+    ? null
+    : `Eviction threshold: ${Number(evictionThresholdPercent.toFixed(2))}%`;
 
   /* ── Render ──────────────────────────────────────────────── */
 
@@ -389,7 +426,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                   max={ramGaugeMax}
                   unit="GB"
                   color="var(--info)"
-                  subtitle={ramUsedGb == null ? 'Shared memory pool' : `${ramUsedGb.toFixed(1)} GB used · shared pool`}
+                  thresholdPercent={memoryTopology.hostTotalGb != null ? evictionThresholdPercent : null}
+                  subtitle={[
+                    ramUsedGb == null ? 'Shared memory pool' : `${ramUsedGb.toFixed(1)} GB used · shared pool`,
+                    memoryTopology.hostTotalGb == null ? evictionThresholdText : null,
+                  ].filter(Boolean).join(' · ')}
                 />
               ) : (
                 <RingGauge label="RAM" value={ramUsedGb} max={ramGaugeMax} unit="GB"
@@ -399,7 +440,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                 color="var(--accent)" subtitle={pct(sysStats!.gpu_percent)} />}
               {!memoryTopology.unified && hasGpu && sysStats!.vram_gb != null && sysStats!.vram_gb >= 0 && (
                 <RingGauge label="VRAM" value={sysStats!.vram_gb!} max={vramGaugeMax} unit="GB"
-                  color="var(--warn)" subtitle={`${sysStats!.vram_gb!.toFixed(1)} GB`} />
+                  color="var(--warn)" thresholdPercent={memoryTopology.gpuTotalGb != null ? evictionThresholdPercent : null}
+                  subtitle={[
+                    `${sysStats!.vram_gb!.toFixed(1)} GB`,
+                    memoryTopology.gpuTotalGb == null ? evictionThresholdText : null,
+                  ].filter(Boolean).join(' · ')} />
               )}
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
                 color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}

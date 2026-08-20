@@ -250,6 +250,105 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await expect(page.locator('.connect__notice')).toHaveCount(0);
   });
 
+  test('01b2 — lifecycle settings use authoritative runtime config', async ({ page }) => {
+    let runtimeConfig: Record<string, unknown> = {
+      models_dir: 'auto',
+      extra_models_dir: '',
+      max_loaded_models: 3,
+      auto_evict: true,
+      auto_evict_threshold_pct: 0.875,
+      auto_check_model_updates: false,
+    };
+    const configWrites: Record<string, unknown>[] = [];
+    let rejectNextWrite = false;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: {
+        status: 'ok',
+        version: 'test',
+        all_models_loaded: [
+          { model_name: 'loaded-a', model_type: 'llm' },
+          { model_name: 'loaded-b', model_type: 'embedding' },
+        ],
+      },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({ json: { object: 'list', data: [] } }));
+    await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
+    await page.route('**/internal/set**', async route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      configWrites.push(body);
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'runtime config rejected for test' }),
+        });
+        return;
+      }
+      runtimeConfig = { ...runtimeConfig, ...body };
+      await route.fulfill({ json: { status: 'success', updated: body } });
+    });
+
+    await page.goto('/#/connect/memory');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const maxLoaded = page.getByRole('spinbutton', { name: 'Maximum loaded models per type', exact: true });
+    const automaticEviction = page.getByRole('checkbox', { name: /Automatic eviction/ });
+    const evictionThreshold = page.getByRole('spinbutton', { name: 'Eviction threshold', exact: true });
+    await expect(maxLoaded).toHaveValue('3');
+    await expect(page.getByRole('button', { name: 'Increase maximum loaded models per type' })).toBeVisible();
+    await maxLoaded.fill('1');
+    await page.getByRole('button', { name: 'Decrease maximum loaded models per type' }).click();
+    await expect(maxLoaded).toHaveValue('-1');
+    await page.getByRole('button', { name: 'Increase maximum loaded models per type' }).click();
+    await expect(maxLoaded).toHaveValue('1');
+    await maxLoaded.fill('0');
+    await expect(maxLoaded).not.toHaveValue('0');
+    await expect(automaticEviction).toBeChecked();
+    await expect(evictionThreshold).toHaveValue('87.5');
+    const increaseEvictionThreshold = page.getByRole('button', { name: 'Increase eviction threshold' });
+    await expect(increaseEvictionThreshold).toBeVisible();
+    await increaseEvictionThreshold.click();
+    await expect(evictionThreshold).toHaveValue('92.5');
+    await expect(page.getByText('2 loaded', { exact: true })).toBeVisible();
+    await expect(page.getByText('Memory budget', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Loading policy', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Protect pinned models from automatic eviction', { exact: true })).toHaveCount(0);
+
+    await maxLoaded.fill('5');
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await expect.poll(() => configWrites.length).toBe(1);
+    expect(configWrites[0]).toEqual({
+      max_loaded_models: 5,
+      auto_evict: true,
+      auto_evict_threshold_pct: 0.925,
+    });
+    await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible();
+
+    rejectNextWrite = true;
+    await maxLoaded.fill('7');
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await expect(page.locator('.global-model-settings__body .connect__error')).toContainText('Failed to save settings');
+    await expect(maxLoaded).toHaveValue('5');
+    await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveCount(0);
+
+    await automaticEviction.uncheck();
+    await expect(page.getByRole('spinbutton', { name: 'Eviction threshold', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+    await expect(automaticEviction).toBeChecked();
+    await expect(page.getByRole('spinbutton', { name: 'Eviction threshold', exact: true })).toHaveValue('92.5');
+
+    await page.goto('/#/connect/model-storage');
+    const startupUpdates = page.getByRole('checkbox', { name: /Check for model updates on server startup/ });
+    await expect(startupUpdates).not.toBeChecked();
+    await startupUpdates.check();
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await expect.poll(() => configWrites.length).toBe(3);
+    expect(configWrites[2]).toEqual({ auto_check_model_updates: true });
+    await expect(page.getByText('Automatic model updates', { exact: true })).toHaveCount(0);
+  });
+
   test('01c — Apps is a standalone workspace with category rail navigation', async ({ page }) => {
     await page.route('**/api/v1/health**', route => route.fulfill({
       json: { status: 'ok', version: 'test', all_models_loaded: [] },
@@ -775,39 +874,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: {
         recipes: {
-          llamacpp: {
-            default_backend: 'cpu',
-            selectable_backend: true,
-            uses_ctx_size: true,
-            modality: 'Text generation',
-            options: [
-              {
-                name: 'llamacpp_backend',
-                cli_flag: '--llamacpp',
-                default: '',
-                type_name: 'BACKEND',
-                help: 'LlamaCpp backend to use',
-                group: 'Llama.cpp Backend Options',
-              },
-              {
-                name: 'llamacpp_device',
-                cli_flag: '--llamacpp-device',
-                default: '',
-                type_name: 'DEVICES',
-                help: 'Comma-separated list of accelerator devices to use (e.g. Vulkan0)',
-                group: 'Llama.cpp Backend Options',
-              },
-              {
-                name: 'llamacpp_args',
-                cli_flag: '--llamacpp-args',
-                default: '',
-                type_name: 'ARGS',
-                help: 'Custom arguments to pass to llama-server',
-                group: 'Llama.cpp Backend Options',
-              },
-            ],
-            backends: { cpu: { state: 'installed', version: 'test' } },
-          },
+          llamacpp: llamacppRecipe(),
         },
       },
     }));
@@ -1655,39 +1722,7 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.route('**/api/v1/system-info**', route => route.fulfill({
       json: {
         recipes: {
-          llamacpp: {
-            default_backend: 'cpu',
-            selectable_backend: true,
-            uses_ctx_size: true,
-            modality: 'Text generation',
-            options: [
-              {
-                name: 'llamacpp_backend',
-                cli_flag: '--llamacpp',
-                default: '',
-                type_name: 'BACKEND',
-                help: 'LlamaCpp backend to use',
-                group: 'Llama.cpp Backend Options',
-              },
-              {
-                name: 'llamacpp_device',
-                cli_flag: '--llamacpp-device',
-                default: '',
-                type_name: 'DEVICES',
-                help: 'Comma-separated list of accelerator devices to use (e.g. Vulkan0)',
-                group: 'Llama.cpp Backend Options',
-              },
-              {
-                name: 'llamacpp_args',
-                cli_flag: '--llamacpp-args',
-                default: '',
-                type_name: 'ARGS',
-                help: 'Custom arguments to pass to llama-server',
-                group: 'Llama.cpp Backend Options',
-              },
-            ],
-            backends: { cpu: { state: 'installed', version: 'test' } },
-          },
+          llamacpp: llamacppRecipe(),
         },
       },
     }));

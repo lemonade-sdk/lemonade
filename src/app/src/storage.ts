@@ -11,15 +11,6 @@ const LEGACY_KEYS: Record<string, string> = {
   lemonade_custom_models: 'custom_models',
 };
 
-const OBSOLETE_LEGACY_CONFIGURATION_KEYS = [
-  'lemonade_user_presets',
-  'lemonade_applied_presets',
-  `${STORAGE_PREFIX}user_presets`,
-  `${STORAGE_PREFIX}applied_presets`,
-  `${STORAGE_PREFIX}backend_presets`,
-  `${STORAGE_PREFIX}running_presets`,
-  `${STORAGE_PREFIX}pinned_models`,
-] as const;
 
 let migrationComplete = false;
 
@@ -119,10 +110,6 @@ function copyIfMissing(store: Storage, source: string, target: string): boolean 
   }
 }
 
-function removeObsoleteLegacyConfiguration(store: Storage): void {
-  for (const key of OBSOLETE_LEGACY_CONFIGURATION_KEYS) store.removeItem(key);
-}
-
 function migrateScopedValue(
   store: Storage,
   source: string,
@@ -181,7 +168,9 @@ export function migrateClientStorage(): void {
   migrationComplete = true;
 
   try {
-    removeObsoleteLegacyConfiguration(localStorage);
+    // Pin ownership moved to lemond. Clear the stale GUI3 cache even
+    // when the v2 storage migration already ran in an older build.
+    localStorage.removeItem(`${STORAGE_PREFIX}pinned_models`);
     if (localStorage.getItem(MIGRATION_KEY) === 'true') return;
 
     for (const [legacyKey, key] of Object.entries(LEGACY_KEYS)) {
@@ -232,14 +221,13 @@ export function clearClientStorage(): void {
         || key === MIGRATION_KEY
         || key === PREVIOUS_MIGRATION_KEY
         || key in LEGACY_KEYS
-        || OBSOLETE_LEGACY_CONFIGURATION_KEYS.includes(key as typeof OBSOLETE_LEGACY_CONFIGURATION_KEYS[number])
         || key === 'lemonade_theme'
         || key === 'lemonade_current_view')
       .forEach(key => localStorage.removeItem(key));
     Object.keys(sessionStorage)
       .filter(key => key.startsWith(STORAGE_PREFIX)
         || key in LEGACY_KEYS
-        || OBSOLETE_LEGACY_CONFIGURATION_KEYS.includes(key as typeof OBSOLETE_LEGACY_CONFIGURATION_KEYS[number]))
+        )
       .forEach(key => sessionStorage.removeItem(key));
   } catch {
     // Ignore unavailable browser storage.
