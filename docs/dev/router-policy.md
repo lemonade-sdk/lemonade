@@ -154,7 +154,19 @@ and every entry's `model` must be one of `components`:
 
 ## Registering and invoking
 
-Register the policy like any collection — `POST /v1/pull` with the policy JSON:
+Register the policy like any collection — from the CLI:
+
+```bash
+lemonade import ./my-router.json            # register (idempotent: re-import to update)
+lemonade import ./my-router.json --dry-run  # validate only; nothing is registered
+```
+
+`--dry-run` runs the same structural checks as registration plus the
+server-side policy parse (rule/candidate cross-checks, classifier references,
+`version`); component *existence* in the registry is only checked by a real
+registration.
+
+Or `POST /v1/pull` with the policy JSON directly:
 
 ```bash
 curl -X POST http://localhost:13305/api/v1/pull \

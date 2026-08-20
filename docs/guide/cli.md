@@ -193,6 +193,10 @@ lemonade pull unsloth/Qwen3-8B-GGUF:Q4_K_M
 lemonade pull user.MyModel --checkpoint main org/model:Q4_0 --recipe llamacpp --alias my-alias
 ```
 
+To register a model or router policy from a local JSON file, use
+[`lemonade import`](#options-for-import) — a `.json` path passed to `pull`
+prints a hint pointing there.
+
 | Option | Description | Required |
 |--------|-------------|----------|
 | `MODEL_OR_CHECKPOINT` | Registered model name, or `owner/repo[:variant]` Hugging Face/ModelScope checkpoint | Yes |
@@ -254,11 +258,23 @@ lemonade import [JSON_FILE] [options]
 
 | Option | Description | Required |
 |--------|-------------|----------|
-| `JSON_FILE` | Path to a JSON configuration file | No |
+| `JSON_FILE` | Path to a JSON model/policy file (e.g. a `collection.router` policy) | No |
+| `--dry-run` | Validate `JSON_FILE` without registering — structural checks, plus the server-side policy parse for `collection.router` files | No |
+| `--alias ALIAS` | Add an alias for the imported model | No |
 | `--directory DIR` | Remote recipes directory to query (e.g., `coding-agents`) | No |
 | `--recipe-file FILE` | Specific recipe JSON filename from the selected directory | No |
 | `--skip-prompt` | Run non-interactively (requires `--directory` and `--recipe-file` for remote import) | No |
 | `--yes` | Alias for `--skip-prompt` | No |
+
+Import is idempotent — re-import the file to update an existing registration.
+Router policies (`collection.router` files) register the same way; `--dry-run`
+additionally runs the server-side policy parse (rule/candidate cross-checks,
+classifier references, `version`) without registering anything:
+
+```bash
+lemonade import ./my-router.json            # register / update
+lemonade import ./my-router.json --dry-run  # validate only
+```
 
 **Remote import notes:**
 - Running `lemonade import` without `JSON_FILE` starts interactive recipe browsing from GitHub.
