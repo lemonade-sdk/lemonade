@@ -134,6 +134,7 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
     input_modalities: Array.isArray(model.input_modalities) ? model.input_modalities.filter((value): value is string => typeof value === 'string') : undefined,
     output_modalities: Array.isArray(model.output_modalities) ? model.output_modalities.filter((value): value is string => typeof value === 'string') : undefined,
     recipe_options: isObject(model.recipe_options) ? model.recipe_options : undefined,
+    pinned: typeof model.pinned === 'boolean' ? model.pinned : undefined,
   };
 }
 
@@ -226,6 +227,7 @@ export interface LoadedModel {
   input_modalities?: string[];
   output_modalities?: string[];
   recipe_options?: Record<string, unknown>;
+  pinned?: boolean;
 }
 
 /** Response shape of GET/POST/DELETE /api/v1/models/{id}/options. */
@@ -1468,6 +1470,18 @@ class LemonadeAPI {
     }
     const body = modelName ? { model_name: modelName } : {};
     const result = await this._json('/api/v1/unload', { method: 'POST', body });
+    this._notifyModelsChanged();
+    return result;
+  }
+
+  async setModelPinned(
+    modelName: string,
+    pinned: boolean,
+  ): Promise<{ status: string; model_name: string; pinned: boolean }> {
+    const result = await this._json<{ status: string; model_name: string; pinned: boolean }>(
+      '/internal/pin',
+      { method: 'POST', body: { model_name: modelName, pinned } },
+    );
     this._notifyModelsChanged();
     return result;
   }

@@ -25,12 +25,7 @@ import {WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, Works
 import Modal from './inspect/Modal';
 
 import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
-import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
-import {
-  loadPinnedModelNames,
-  savePinnedModelNames,
-} from '../features/modelSettings/globalModelSettings';
-import { backendLabel } from '../modelPresentation';
+import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';import { backendLabel } from '../modelPresentation';
 import { useServerModelState } from '../features/models/modelState';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
@@ -1121,7 +1116,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
   const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
-  const [pinnedModels, setPinnedModels] = useState<string[]>(() => loadPinnedModelNames());
+  const pinnedModels = useMemo(
+    () => loadedModels.filter(model => model.pinned === true).map(model => model.model_name),
+    [loadedModels],
+  );
   const [favoriteModels, setFavoriteModels] = useState<string[]>(() => loadFavoriteModels());
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
@@ -1156,7 +1154,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
 
   useEffect(() => {
-    setPinnedModels(loadPinnedModelNames());
     setFavoriteModels(loadFavoriteModels());
   }, []);
 
@@ -2072,13 +2069,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
   };
 
-  const togglePinnedModel = (name: string) => {
-    setPinnedModels(prev => {
-      const exists = prev.some(item => item.toLowerCase() === name.toLowerCase());
-      const next = exists ? prev.filter(item => item.toLowerCase() !== name.toLowerCase()) : [name, ...prev];
-      savePinnedModelNames(next);
-      return next;
-    });
+  const togglePinnedModel = async (name: string) => {
+    const loaded = loadedModels.find(model => model.model_name.toLowerCase() === name.toLowerCase());
+    if (!loaded) {
+      setLoadError({
+        modelName: name,
+        message: `Cannot change pin state for ${name}: the model is no longer loaded.`,
+      });
+      return;
+    }
+
+    try {
+      setLoadError(null);
+      await api.setModelPinned(name, loaded.pinned !== true);
+    } catch (error) {
+      setLoadError({ modelName: name, message: friendlyErrorMessage(error) });
+    }
   };
 
   const toggleFavoriteModel = (name: string) => {
@@ -2765,8 +2771,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         onUpdateAllModels={() => { void handleUpdateAllModels(); }}
         onOpenCustomModels={() => openCustomForm('model')}
         pinnedNames={pinnedNameSet}
-        onTogglePin={togglePinnedModel}
         favoriteNames={favoriteNameSet}
+        onToggleFavorite={toggleFavoriteModel}
         registryZoneTop={hasRemoteActivity && !hasLocalMatches ? renderRegistryZones() : undefined}
         registryZone={hasRemoteActivity && hasLocalMatches ? renderRegistryZones() : undefined}
         systemInfo={systemInfo}
@@ -3137,7 +3143,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           onCancelPull={handleCancelPull}
           serverDefaultCtxSize={serverDefaultCtxSize}
           isPinned={selectedDetailModelId ? pinnedNameSet.has(selectedDetailModelId.toLowerCase()) : false}
-          onTogglePin={togglePinnedModel}
+          onTogglePin={selectedDetailModelId && loadedModels.some(m => m.model_name.toLowerCase() === selectedDetailModelId.toLowerCase()) ? togglePinnedModel : undefined}
           isFavorite={selectedDetailModelId ? favoriteNameSet.has(selectedDetailModelId.toLowerCase()) : false}
           onToggleFavorite={toggleFavoriteModel}
           onEditCustomCollection={(model) => {

@@ -439,12 +439,12 @@ export interface ModelListPanelProps {
   onOpenCustomModels?: () => void;
   onOpenRouter?: () => void;
   onUpdateAllModels?: () => void;
-  /** Lowercased set of pinned model names. Pinned rows float to the top. Client-local. */
+  /** Lowercased server-owned pin state. Pinned running rows stay grouped at the top. */
   pinnedNames?: Set<string>;
-  /** Toggle a model's pinned state. Receives the model name. */
-  onTogglePin?: (name: string) => void;
   /** Lowercased set of favorited model names (distinct from pinned). Client-local. */
   favoriteNames?: Set<string>;
+  /** Toggle a model's favorite state. Receives the model name. */
+  onToggleFavorite?: (name: string) => void;
   /** Optional remote-provider results rendered below the local model list. */
   registryZone?: React.ReactNode;
   /** Elevated remote-provider results rendered above the list when no local results match. */
@@ -474,8 +474,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   onOpenRouter,
   onUpdateAllModels,
   pinnedNames,
-  onTogglePin,
   favoriteNames,
+  onToggleFavorite,
   registryZone,
   registryZoneTop,
   systemInfo = null,
@@ -587,10 +587,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   }, [flatList]);
 
   // Arrow/Home/End and Enter/Space live in WorkspaceList; the catalog only adds
-  // its own pin shortcut.
+  // its own Favorite shortcut for the row-scoped secondary action.
   const handleItemKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>, modelId: string) => {
-    if ((e.key === 'p' || e.key === 'P') && onTogglePin) { e.preventDefault(); onTogglePin(modelId); }
-  }, [onTogglePin]);
+    if ((e.key === 'f' || e.key === 'F') && onToggleFavorite) { e.preventDefault(); onToggleFavorite(modelId); }
+  }, [onToggleFavorite]);
 
   /* One catalog row. Hoisted out of the section map so the body reads at its
      own indentation rather than three levels in. */
@@ -634,13 +634,26 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           : undefined;
     const meta = model.size != null && model.size > 0 ? listFmtSize(model.size) : undefined;
     const secondaryTags = capTags.filter(tag => tag !== (primaryCapability as string));
+    const favorited = favoriteNames?.has(mId.toLowerCase()) ?? false;
 
     return (
       <WorkspaceListRow
         key={mId}
         rowId={mId}
         capability={primaryCapability}
-        title={displayName}
+        title={(
+          <span className="model-list-panel__row-title">
+            <span className="model-list-panel__row-title-text">{displayName}</span>
+            {favorited && (
+              <Icon
+                name="star"
+                size={10}
+                className="model-list-panel__favorite-indicator"
+                aria-hidden="true"
+              />
+            )}
+          </span>
+        )}
         meta={meta}
         glyphs={secondaryTags.map(capabilityTagIconTarget)}
         anchor={recipe && !neutralCollectionGuide ? displayedBackend : undefined}
@@ -653,19 +666,16 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         tabIndex={isSelected ? 0 : -1}
         dataAttributes={{ 'data-model-id': mId }}
         className={pinned ? 'workspace-list-row--pinned' : undefined}
-        ariaKeyShortcuts={onTogglePin ? 'P' : undefined}
-        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
+        ariaKeyShortcuts={onToggleFavorite ? 'F' : undefined}
+        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${favorited ? ', favorite' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
         onClick={() => onSelectModel(mId)}
-        onKeyDown={e => handleItemKeyDown(e, mId)}
-        action={onTogglePin ? {
-          icon: 'pin',
-          label: pinned ? `Unpin ${displayName} (P)` : `Pin ${displayName} (P)`,
-          onClick: () => onTogglePin(mId),
-          // A pinned model's pin outranks its engine as the fact worth showing,
-          // and keeps the row's state visible without hovering. The row owns the
-          // advertised P keyboard shortcut, so the nested affordance is pointer-only.
+        onKeyDown={onToggleFavorite ? e => handleItemKeyDown(e, mId) : undefined}
+        action={onToggleFavorite ? {
+          icon: 'star',
+          label: favorited ? `Remove ${displayName} from favorites (F)` : `Add ${displayName} to favorites (F)`,
+          onClick: () => onToggleFavorite(mId),
           pointerOnly: true,
-          latched: pinned,
+          active: favorited,
         } : undefined}
       />
     );

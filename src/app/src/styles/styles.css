@@ -14339,7 +14339,7 @@ a.backend-card__version:focus-visible {
 /* Hovering hands the right edge to the action. Visibility rather than display,
    so the anchor keeps reserving its own width and the meta line cannot reflow. */
 .workspace-list-row:hover .workspace-list-row__anchor,
-.workspace-list-row:focus-within .workspace-list-row__anchor { visibility: hidden; }
+.workspace-list-row:focus-within:not(.workspace-list-row--pointer-action) .workspace-list-row__anchor { visibility: hidden; }
 
 /* Dot and words are one unit. Split across the grid — dot in the trailing
    column, words in the meta line — the mark sat diagonally away from the thing
@@ -14408,7 +14408,7 @@ a.backend-card__version:focus-visible {
 }
 
 .workspace-list-row:hover .workspace-list-row__action,
-.workspace-list-row:focus-within .workspace-list-row__action,
+.workspace-list-row:focus-within:not(.workspace-list-row--pointer-action) .workspace-list-row__action,
 .workspace-list-row__action--latched { visibility: visible; }
 
 .workspace-list-row__action:hover {
@@ -14416,8 +14416,17 @@ a.backend-card__version:focus-visible {
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
-/* A latched action is the row's standing fact, not a transient affordance. */
-.workspace-list-row__action--latched { color: var(--accent-fg); }
+/* Active state may be transient; only `latched` also controls visibility. */
+.workspace-list-row__action--latched,
+.workspace-list-row__action--active { color: var(--accent-fg); }
+/* A favorited row keeps the normal hover-only affordance, but the visible star
+   uses the same active treatment as the Favorite control in ModelDetailPanel. */
+.workspace-list-row__action--active .app-icon[data-icon='star'] {
+  color: var(--accent-fg);
+}
+.workspace-list-row__action--active .app-icon[data-icon='star'] path {
+  fill: currentColor;
+}
 
 .workspace-list-row__progress {
   position: absolute;
@@ -15560,6 +15569,45 @@ button.workspace-metadata-chip:hover {
 }
 .router-editor__graph-modal .router-graph__inspector-body .router-node__child {
   grid-template-columns: 26px minmax(min-content, 1fr);
+}
+
+/* Compact at-rest Favorite indicator for model rows. */
+.model-list-panel__row-title {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.model-list-panel__row-title-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed at the title row's right edge so model-name length never moves it. */
+.model-list-panel__favorite-indicator {
+  position: absolute;
+  inset-inline-end:
+    calc(var(--space-1) - var(--workspace-list-row-action));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 10px;
+  height: 10px;
+  color: var(--accent-fg);
+  pointer-events: none;
+}
+
+.model-list-panel__favorite-indicator path {
+  fill: none;
+}
+
+/* The full-size Favorite affordance owns the hover state. Keep only one star
+   visible while it temporarily replaces the backend anchor. */
+.workspace-list-row:hover .model-list-panel__favorite-indicator {
+  visibility: hidden;
 }
 
 /* PR3141 V2: loaded models responsive */

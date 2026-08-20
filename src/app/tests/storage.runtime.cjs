@@ -58,6 +58,7 @@ values.set('lemonade:user:a:global_model_settings', JSON.stringify({ resourceBud
 values.set('lemonade:user:b:global_model_settings', JSON.stringify({ autoEvictOnPressure: true, evictionPolicy: 'largest' }));
 values.set('lemonade:user:a:mcp_server_ids', JSON.stringify(['a']));
 values.set('lemonade:user:b:mcp_server_ids', JSON.stringify(['b']));
+values.set('lemonade:pinned_models', 'obsolete');
 
 const storageModule = loadStorageModule();
 assert.equal(storageModule.storageKey('conversations'), 'lemonade:conversations');
@@ -80,5 +81,12 @@ assert.equal(localStorage.getItem('lemonade:user:a:conversations'), null);
 assert.equal(localStorage.getItem('lemonade:user:b:conversations'), null);
 assert.equal(localStorage.getItem('lemonade:lemonade_storage_migrated_v1'), null);
 assert.equal(values.get('lemonade_storage_migrated_v2'), 'true');
+assert.equal(localStorage.getItem('lemonade:pinned_models'), null);
+
+// Cleanup must also run for users whose v2 migration marker already exists.
+values.set('lemonade:pinned_models', 'obsolete-again');
+const rerunStorageModule = loadStorageModule();
+assert.equal(rerunStorageModule.storageKey('rerun_probe'), 'lemonade:rerun_probe');
+assert.equal(localStorage.getItem('lemonade:pinned_models'), null);
 
 console.log('Client storage migration preserves scoped conversations and merges compatible settings.');

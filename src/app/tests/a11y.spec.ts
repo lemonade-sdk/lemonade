@@ -2158,20 +2158,29 @@ test.describe('Accessibility — model README raw-HTML rendering (#2355)', () =>
 
 // ─── 26. #2355 left-rail parity — pin / favorite (client-local) ───────────────
 //
-// fl0rianr feedback (2026-06-25): the master-detail rail dropped the original
-// rail's pin/favorite affordance. Re-wired the existing client-local pin store
-// (localStorage `pinned_models`, no lemond) into ModelListPanel. Pinned models
-// float to the top; the affordance is a non-button span (so it does not nest an
-// interactive control inside role="option"), and keyboard/AT users toggle via
-// the "P" shortcut on the focused row, with pinned state in the row aria-label.
-// Range: A118–A123.
+// Model-list secondary action: Favorite is client-local UI state. Runtime Pin is
+// server-owned and intentionally not the list row action. The obsolete
+// lemonade:pinned_models key must still be removed by storage migration.
+// Range: A118-A123.
 
 test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
-  async function goToModelsWithMock(page: Page): Promise<void> {
+  async function goToModelsWithMock(page: Page, serverPinned = false): Promise<void> {
     await page.route('**/api/v1/health', async route =>
       route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+        body: JSON.stringify({
+          status: 'ok',
+          version: 'test',
+          all_models_loaded: [
+            {
+              model_name: 'Llama-3.1-8B',
+              recipe: 'llamacpp',
+              pid: 123,
+              last_use: 1,
+              pinned: serverPinned,
+            },
+          ],
+        }),
       }),
     );
     await page.route('**/api/v1/models**', async route =>
@@ -2193,95 +2202,101 @@ test.describe('Accessibility — left-rail pin/favorite parity (#2355)', () => {
     await page.waitForTimeout(200);
   }
 
-  test('A118 — each model row exposes a pin affordance with an accessible title', async ({ page }) => {
+  function modelRow(page: Page, name: string) {
+    return page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: name }).first();
+  }
+
+  test('A118 — every local model row exposes Favorite as its secondary action', async ({ page }) => {
     await goToModelsWithMock(page);
-    const pins = page.locator('.model-list-panel__list .workspace-list-row__action');
-    const count = await pins.count();
-    expect(count).toBeGreaterThan(0);
-    // Title communicates the pin action to pointer users.
-    const title = await pins.first().getAttribute('title');
-    expect((title ?? '').toLowerCase()).toContain('pin');
+    for (const name of ['Llama-3.1-8B', 'Qwen2.5-7B']) {
+      const action = modelRow(page, name).locator('.workspace-list-row__action');
+      await expect(action).toHaveCount(1);
+      const title = await action.getAttribute('title');
+      expect((title ?? '').toLowerCase()).toContain('favorite');
+    }
   });
 
-  test('A119 — pin affordance is NOT a nested interactive button inside role="option"', async ({ page }) => {
+  test('A119 — Favorite affordance is not a nested interactive button inside role="option"', async ({ page }) => {
     await goToModelsWithMock(page);
-    const pin = page.locator('.model-list-panel__list .workspace-list-row__action').first();
-    // It must be a span (not a button/anchor/input) so role=option does not nest
-    // an interactive control (axe nested-interactive).
-    const tag = await pin.evaluate(el => el.tagName.toLowerCase());
+    const action = modelRow(page, 'Llama-3.1-8B').locator('.workspace-list-row__action');
+    const tag = await action.evaluate(el => el.tagName.toLowerCase());
     expect(tag).toBe('span');
-    // No button inside any option row.
     expect(await page.locator('[role="option"] button').count()).toBe(0);
   });
 
-  test('A120 — clicking the pin toggles the row pinned state and aria-label', async ({ page }) => {
-    await goToModelsWithMock(page);
-    const row = page.locator('.model-list-panel__list .workspace-list-row').first();
-    const pin = row.locator('.workspace-list-row__action');
+  test('A120 — Favorite only replaces backend info while the row is hovered', async ({ page }) => {
+    await goToModelsWithMock(page, true);
+    const row = modelRow(page, 'Llama-3.1-8B');
+    await expect(row).toHaveClass(/workspace-list-row--pinned/);
+    const action = row.locator('.workspace-list-row__action');
+    const anchor = row.locator('.workspace-list-row__anchor');
+    await expect(anchor).toBeVisible();
+    await expect(action).toBeHidden();
     await row.hover();
-    await expect(pin).toBeVisible();
-    await pin.click();
-    await page.waitForTimeout(100);
-    // The (now-pinned) model floats to the top; assert the first row is pinned.
-    const firstRow = page.locator('.model-list-panel__list .workspace-list-row').first();
-    await expect(firstRow).toHaveClass(/workspace-list-row--pinned/);
-    const label = await firstRow.getAttribute('aria-label');
-    expect((label ?? '').toLowerCase()).toContain('pinned');
-    // Unpin and verify the pinned class is removed.
-    await firstRow.hover();
-    const unpin = firstRow.locator('.workspace-list-row__action');
-    await expect(unpin).toBeVisible();
-    await unpin.click();
-    await page.waitForTimeout(100);
-    expect(await page.locator('.model-list-panel__list .workspace-list-row--pinned').count()).toBe(0);
+    await expect(anchor).toBeHidden();
+    await expect(action).toBeVisible();
+    await action.click();
+    await expect(action).not.toHaveClass(/workspace-list-row__action--latched/);
+    await expect(action).toHaveClass(/workspace-list-row__action--active/);
+    await expect(row.locator('.model-list-panel__favorite-indicator')).toBeHidden();
+    await expect(row).toHaveClass(/workspace-list-row--pinned/);
+    await expect(row).toHaveAttribute('aria-label', /favorite/i);
+    await page.locator('.model-list-panel__search-input').hover();
+    await expect(action).toBeHidden();
+    await expect(anchor).toBeVisible();
+    await expect(row.locator('.model-list-panel__favorite-indicator')).toBeVisible();
   });
 
-  test('A121 — selected row is keyboard-operable: "P" toggles pin (aria-keyshortcuts)', async ({ page }) => {
+  test('A121 — selected model row is keyboard-operable: "F" toggles Favorite', async ({ page }) => {
     await goToModelsWithMock(page);
-    // Select a model (focus moves to the detail panel in master-detail), then
-    // return focus to the now-focusable selected row (tabIndex 0) — the path a
-    // keyboard user takes via Shift+Tab — and press the advertised "P" shortcut.
-    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
+    const row = modelRow(page, 'Llama-3.1-8B');
+    await row.click();
     await page.waitForTimeout(150);
-    const selected = page.locator('.model-list-panel__list .workspace-list-row--selected');
-    // The shortcut must be advertised to assistive tech.
-    expect(await selected.getAttribute('aria-keyshortcuts')).toBe('P');
+    const selected = modelRow(page, 'Llama-3.1-8B');
+    expect(await selected.getAttribute('aria-keyshortcuts')).toBe('F');
     await selected.focus();
-    await page.keyboard.press('p');
-    await page.waitForTimeout(100);
-    const pinnedCount = await page.locator('.model-list-panel__list .workspace-list-row--pinned').count();
-    expect(pinnedCount).toBe(1);
-    const label = await page.locator('.model-list-panel__list .workspace-list-row--pinned').first().getAttribute('aria-label');
-    expect((label ?? '').toLowerCase()).toContain('pinned');
+    await page.keyboard.press('f');
+    await expect(selected.locator('.workspace-list-row__action')).not.toHaveClass(/workspace-list-row__action--latched/);
+    // The click that selected this row leaves the pointer over it. Move away before
+    // checking the at-rest state; while hovered the Favorite action should be visible.
+    await page.locator('.model-list-panel__search-input').hover();
+    await expect(selected.locator('.workspace-list-row__action')).toBeHidden();
+    await expect(selected).toHaveAttribute('aria-label', /favorite/i);
   });
 
-  test('A122 — pinned state persists client-locally to localStorage (no lemond)', async ({ page }) => {
-    await goToModelsWithMock(page);
-    const pinRow = page.locator('.model-list-panel__list .workspace-list-row').first();
-    await pinRow.hover();
-    const pin = pinRow.locator('.workspace-list-row__action');
-    await expect(pin).toBeVisible();
-    await pin.click();
-    await page.waitForTimeout(100);
-    const persisted = await page.evaluate(() => {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.endsWith('pinned_models')) return localStorage.getItem(key);
-      }
-      return null;
+  test('A122 — Favorite persists client-locally while obsolete Pin storage is removed', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('lemonade:pinned_models', JSON.stringify(['Qwen2.5-7B']));
     });
-    expect(persisted, 'a *pinned_models localStorage key should exist').toBeTruthy();
-    expect((persisted ?? '').length).toBeGreaterThan(2); // non-empty JSON array
+    await goToModelsWithMock(page);
+    expect(await page.evaluate(() => localStorage.getItem('lemonade:pinned_models'))).toBeNull();
+
+    const row = modelRow(page, 'Qwen2.5-7B');
+    await row.hover();
+    await row.locator('.workspace-list-row__action').click();
+    expect(await page.evaluate(() => localStorage.getItem('lemonade:favorite_models'))).toContain('Qwen2.5-7B');
+
+    await page.reload();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row');
+    const reloadedRow = modelRow(page, 'Qwen2.5-7B');
+    await expect(reloadedRow).toHaveAttribute('aria-label', /favorite/i);
+    // Reload preserves the pointer position, which may still be over this row.
+    // Move away before asserting the non-hover state.
+    await page.locator('.model-list-panel__search-input').hover();
+    await expect(reloadedRow.locator('.workspace-list-row__action')).toBeHidden();
+    await expect(reloadedRow.locator('.model-list-panel__favorite-indicator')).toBeVisible();
+    await reloadedRow.hover();
+    await expect(reloadedRow.locator('.model-list-panel__favorite-indicator')).toBeHidden();
+    await expect(reloadedRow.locator('.workspace-list-row__action')).toHaveAttribute('title', /remove .* from favorites/i);
+    await expect(reloadedRow.locator('.workspace-list-row__action')).toHaveClass(/workspace-list-row__action--active/);
+    expect(await page.evaluate(() => localStorage.getItem('lemonade:pinned_models'))).toBeNull();
   });
 
-  test('A123 — model list with a pinned row passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
-    await goToModelsWithMock(page);
-    const pinRow = page.locator('.model-list-panel__list .workspace-list-row').first();
-    await pinRow.hover();
-    const pin = pinRow.locator('.workspace-list-row__action');
-    await expect(pin).toBeVisible();
-    await pin.click();
-    await page.waitForTimeout(150);
+  test('A123 — model list with server Pin state and Favorite action passes WCAG 2.1 AA axe-core scan', async ({ page }) => {
+    await goToModelsWithMock(page, true);
+    const row = modelRow(page, 'Llama-3.1-8B');
+    await row.hover();
+    await row.locator('.workspace-list-row__action').click();
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
       .analyze();

@@ -357,8 +357,8 @@ function joinMeta(parts: React.ReactNode[]): React.ReactNode[] {
  * instead means the anchor reaches the row's true right edge and the control
  * appears only when it is relevant — at a size worth aiming at.
  *
- * `latched` makes the swap permanent — a pinned model shows its pin instead of
- * its engine, because the pin is now the more useful fact about that row.
+ * `latched` makes the swap permanent when a caller intentionally wants the
+ * row-scoped action to remain visible after hover/focus.
  * Otherwise the anchor holds the slot and the control takes it on hover.
  */
 export interface WorkspaceListRowAction {
@@ -367,6 +367,8 @@ export interface WorkspaceListRowAction {
   onClick: () => void;
   /** Hold the slot permanently, replacing the anchor. */
   latched?: boolean;
+  /** Use active-state styling without forcing the action to stay visible. */
+  active?: boolean;
   /** Render a pointer-only affordance when the owning option provides keyboard access. */
   pointerOnly?: boolean;
 }
@@ -404,7 +406,7 @@ export const WorkspaceList: React.FC<WorkspaceListProps> = ({
   onRowFocus, onRowActivate, wrap = false, activateOnMove = false, selectable = true,
 }) => {
   const handleKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
-    // A row may claim a key first — the catalog's pin shortcut does.
+    // A row may claim a key first — the catalog's Favorite shortcut does.
     if (event.defaultPrevented) return;
 
     const options = Array.from(
@@ -637,7 +639,7 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
       aria-label={ariaLabel}
       aria-keyshortcuts={ariaKeyShortcuts}
       tabIndex={tabIndex}
-      className={`workspace-list-row${selected ? ' workspace-list-row--selected' : ''}${disabled ? ' workspace-list-row--disabled' : ''}${className ? ` ${className}` : ''}`}
+      className={`workspace-list-row${selected ? ' workspace-list-row--selected' : ''}${disabled ? ' workspace-list-row--disabled' : ''}${action?.pointerOnly ? ' workspace-list-row--pointer-action' : ''}${className ? ` ${className}` : ''}`}
       onClick={disabled ? undefined : onClick}
       onKeyDown={onKeyDown}
       onFocus={onFocus}
@@ -667,10 +669,10 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
 
       {action && (action.pointerOnly ? (
         // A listbox option cannot legally contain another interactive control.
-        // Use this only when the option itself owns the keyboard command (the model
-        // pin advertises and handles P); pointer behaviour and visuals stay intact.
+        // Use this only when the option itself owns the keyboard command; pointer
+        // behaviour and visuals stay intact without nesting a second interactive control.
         <span
-          className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}`}
+          className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}${action.active ? ' workspace-list-row__action--active' : ''}`}
           onClick={event => { event.stopPropagation(); action.onClick(); }}
           aria-hidden="true"
           title={action.label}
@@ -680,7 +682,7 @@ export const WorkspaceListRow: React.FC<WorkspaceListRowProps> = ({
       ) : (
         <button
           type="button"
-          className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}`}
+          className={`workspace-list-row__action${action.latched ? ' workspace-list-row__action--latched' : ''}${action.active ? ' workspace-list-row__action--active' : ''}`}
           onClick={event => { event.stopPropagation(); action.onClick(); }}
           aria-label={action.label}
           title={action.label}
