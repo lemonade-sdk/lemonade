@@ -141,9 +141,18 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
+  // Mirrors BackendRow's `isInstalledLike`: something is on disk here, so this
+  // panel must keep showing it. It is the only place that offers uninstall
+  // (ModelManager renders the 'banner' variant, which has no uninstall action),
+  // so hiding an unavailable-but-installed backend would strand it.
+  const isInstalledLike = (info: BackendInfo) =>
+    info.state === 'installed' || info.state === 'update_available';
+
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)
-      .filter(([recipeName]) => !unavailableRecipes.has(recipeName))
+      .filter(([recipeName, recipe]: [string, Recipe]) =>
+        !unavailableRecipes.has(recipeName) ||
+        Object.values(recipe.backends).some(isInstalledLike))
       .map(([recipeName, recipe]: [string, Recipe]) => {
         const backends = Object.entries(recipe.backends).filter(([, info]) => info.state !== 'unsupported');
         return [recipeName, backends] as [string, Array<[string, BackendInfo]>];
