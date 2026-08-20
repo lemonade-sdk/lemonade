@@ -20,16 +20,17 @@ If you are using a standalone `lemond` executable, the default location is `~/.c
 
 On startup, Lemonade automatically migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
 
-> Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
+> Note: `config.json` is a sparse override file. It only contains settings you explicitly customize; all unspecified settings automatically inherit default values and receive upstream improvements across updates.
 
-### Seeding defaults for packaged installs
+### Defaults Precedence & Layering
 
-On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+When `lemond` starts, effective configuration is resolved by deep-merging settings in increasing precedence:
 
-1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
-2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
-
-Values set in the user's `config.json` always take precedence over these seeded defaults.
+1. **Built-in Defaults**: Factory defaults baked into the release (`resources/defaults.json` and backend descriptors).
+2. **Distro / System Defaults**: On Linux, `lemond` merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship system-level defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+3. **Environment Defaults**: Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under `/usr/share`).
+4. **User Overrides (`config.json`)**: Values explicitly set in your `config.json` override defaults.
+5. **CLI Flags**: Arguments passed to `lemond` (e.g. `--port`, `--host`).
 
 ### Example config.json
 

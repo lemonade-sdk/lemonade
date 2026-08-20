@@ -83,17 +83,11 @@ json ConfigFile::get_defaults() {
     return defaults;
 }
 
-json ConfigFile::load(const std::string& cache_dir, const std::string& config_dir) {
-    json defaults = get_defaults();
-    fs::path config_dir_path = utils::path_from_utf8(config_dir);
-    fs::path config_path = config_dir_path / "config.json";
+json ConfigFile::load_raw(const std::string& config_dir) {
+    fs::path config_path = utils::path_from_utf8(config_dir) / "config.json";
 
     if (!fs::exists(config_path)) {
-        if (!fs::exists(config_dir_path)) {
-            fs::create_directories(config_dir_path);
-        }
-        save(config_dir, defaults);
-        return defaults;
+        return json::object();
     }
 
     // Clean up stale temp file from a previous interrupted save
@@ -112,9 +106,8 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
 
         std::ifstream file(config_path);
         if (!file.is_open()) {
-            LOG(WARNING) << "Could not open " << config_path.string()
-                        << ", using defaults" << std::endl;
-            return defaults;
+            LOG(WARNING) << "Could not open " << config_path.string() << std::endl;
+            return json::object();
         }
 
         try {
@@ -138,8 +131,29 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
             LOG(WARNING) << "  Renamed to " << backup.string() << std::endl;
         }
 
-        LOG(WARNING) << "  Using defaults." << std::endl;
-        save(config_dir, defaults);
+        return json::object();
+    }
+
+    if (!loaded.is_object()) {
+        LOG(WARNING) << "Config in " << config_path.string()
+                     << " is not a JSON object, treating as empty" << std::endl;
+        return json::object();
+    }
+
+    return loaded;
+}
+
+json ConfigFile::load(const std::string& cache_dir, const std::string& config_dir) {
+    json defaults = get_defaults();
+    std::string effective_config_dir = config_dir.empty() ? utils::get_config_dir() : config_dir;
+    fs::path config_path = utils::path_from_utf8(effective_config_dir) / "config.json";
+
+    if (!fs::exists(config_path)) {
+        return defaults;
+    }
+
+    json loaded = load_raw(effective_config_dir);
+    if (loaded.empty()) {
         return defaults;
     }
 
@@ -150,16 +164,13 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
     bool had_legacy_no_broadcast = loaded.contains("no_broadcast");
     json normalized_loaded = normalize_legacy_keys(loaded);
 
-    // Deep-merge: user values override defaults, missing fields filled from defaults.
-    json merged = utils::JsonUtils::merge(defaults, normalized_loaded);
-
     // Apply migrations if the config is older than the current version.
     // The inline config_migrate() handles version bumping and field removal.
-    bool migrated = config_migrate(merged, defaults, original_version);
+    bool migrated = config_migrate(normalized_loaded, defaults, original_version);
 
     if (had_legacy_no_broadcast) {
         LOG(INFO) << "Migrating config: no_broadcast=" << loaded["no_broadcast"]
-                  << " -> broadcast=" << merged["broadcast"] << std::endl;
+                  << " -> broadcast=" << normalized_loaded["broadcast"] << std::endl;
         migrated = true;
     }
 
@@ -172,9 +183,11 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
                           << std::endl;
             }
         }
-        save(config_dir, merged);
+        save(effective_config_dir, normalized_loaded);
     }
 
+    // Deep-merge: user values override defaults, missing fields filled from defaults.
+    json merged = utils::JsonUtils::merge(defaults, normalized_loaded);
     return merged;
 }
 
