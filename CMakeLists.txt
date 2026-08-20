@@ -1534,7 +1534,7 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
             DESTINATION share/applications
         )
         # Install MetaInfo file for web app
-        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.webapp.metainfo.xml
+        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.webapp.metainfo.xml
             DESTINATION share/metainfo
         )
         # Create symlink in standard applications path only if not installing to /usr
@@ -1650,8 +1650,8 @@ if(APPLE)
     endif()
 
     # Configure Plists & Entitlements
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/com.lemonade.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist @ONLY)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/com.lemonade.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/ai.lemonadeserver.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.server.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/ai.lemonadeserver.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.tray.plist @ONLY)
 
     set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/entitlements.plist")
     if(NOT EXISTS "${ENTITLEMENTS_PATH}")
@@ -1806,8 +1806,8 @@ if(APPLE)
     )
 
     # Plists -> /Library/...
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "/Library/LaunchDaemons" COMPONENT Runtime)
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "/Library/LaunchAgents" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.server.plist" DESTINATION "/Library/LaunchDaemons" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.tray.plist" DESTINATION "/Library/LaunchAgents" COMPONENT Runtime)
 
     # Placeholder -> /usr/local/share/lemonade-server
     file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
@@ -1816,7 +1816,7 @@ if(APPLE)
     # ackaging & Notarization
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
-    set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
+    set(CPACK_PRODUCTBUILD_IDENTIFIER "ai.lemonadeserver.server")
 
     # Declare the package arm64-only so the macOS Installer does not assume our
     # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
@@ -1829,8 +1829,8 @@ if(APPLE)
     endif()
     set(CPACK_PRODUCTBUILD_RELOCATE OFF)  # Prevent install_name_tool from invalidating signatures
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
-    set(CPACK_PRODUCTBUILD_BUNDLE com.lemonade.server.Applications OFF)
-    set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
+    set(CPACK_PRODUCTBUILD_BUNDLE ai.lemonadeserver.server.Applications OFF)
+    set(CPACK_PRODUCTBUILD_BUNDLE_ID ai.lemonadeserver.server.Applications)
 
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
     set(CPACK_SET_DESTDIR ON)
@@ -2061,7 +2061,7 @@ if(UNIX AND NOT APPLE)
                 DESTINATION share/applications
             )
             # Install MetaInfo file for the Tauri app
-            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonade_server.app.metainfo.xml
+            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.app.metainfo.xml
                 DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
@@ -3105,4 +3105,13 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
+endif()
+
+# Launch command bookkeeping: the command recorded at spawn must keep describing
+# the process currently held, so a restart replaces it and cleanup erases it.
+set(_LAUNCH_COMMAND_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_launch_command.cpp")
+if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
+    add_executable(test_launch_command test/cpp/test_launch_command.cpp)
+    target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
 endif()

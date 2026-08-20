@@ -156,7 +156,7 @@ void AceStepServer::load(const std::string& model_name,
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path, args, "", is_debug(), false, env_vars);
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start acestep-server process");
     }

@@ -1270,6 +1270,12 @@ curl http://localhost:13305/v1/health
       "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
+      "launch_command": [
+        "~/.cache/lemonade/bin/ryzenai/npu/ryzenai-server.exe",
+        "-m", "~/.cache/lemonade/models/Llama-3.2-1B-Instruct-Hybrid",
+        "--port", "8001",
+        "--ctx-size", "4096"
+      ],
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -1284,6 +1290,13 @@ curl http://localhost:13305/v1/health
       "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
+      "launch_command": [
+        "~/.cache/lemonade/bin/llamacpp/rocm-stable/llama-server.exe",
+        "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size", "8192",
+        "--port", "8002",
+        "--no-mmap"
+      ],
       "recipe_options": {
         "ctx_size": 8192,
         "llamacpp_args": "--no-mmap",
@@ -1332,6 +1345,7 @@ curl http://localhost:13305/v1/health
   - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
+  - `launch_command` - *(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included.
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)

@@ -147,6 +147,25 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
 
+    def _assert_loaded_model_launch_command(self, model_info):
+        """Assert /health exposes the command the wrapped backend was started with."""
+        self.assertIsNotNone(model_info, "Model should appear in /health")
+        self.assertIn("launch_command", model_info)
+        command = model_info["launch_command"]
+        self.assertIsInstance(command, list)
+        self.assertGreater(len(command), 1)
+        self.assertTrue(all(isinstance(part, str) for part in command))
+        self.assertTrue(command[0], "Executable belongs at index 0")
+
+        # The backend is started with a resolved on-disk path, so the checkpoint
+        # file name has to appear somewhere in the arguments.
+        checkpoint_file = model_info.get("checkpoint", "").split(":")[-1]
+        if checkpoint_file:
+            self.assertTrue(
+                any(checkpoint_file in part for part in command),
+                f"Checkpoint {checkpoint_file} missing from {command}",
+            )
+
     def _parse_prometheus_text(self, body):
         """Validate Prometheus text format and return sample labels by metric name."""
         samples = {}
@@ -811,6 +830,7 @@ class EndpointTests(ServerTestBase):
         # Verify model is loaded via health endpoint and exposes backend PID
         loaded_model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
         self._assert_loaded_model_pid(loaded_model)
+        self._assert_loaded_model_launch_command(loaded_model)
 
         print(f"[OK] Loaded model: {ENDPOINT_TEST_MODEL}")
 
