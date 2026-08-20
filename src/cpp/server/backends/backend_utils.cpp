@@ -166,9 +166,8 @@ namespace lemon::backends {
         return p == pattern.size();
     }
 
-    // Compare two release-asset version tokens numerically, segment by segment,
-    // so "7.10.0" beats "7.9.0" even though lexicographic order would say
-    // otherwise. Non-numeric segments are skipped; only digit runs count.
+    // Numeric segment-by-segment compare, so "7.10.0" beats "7.9.0" where
+    // lexicographic order would not.
     static bool version_greater(const std::string& a, const std::string& b) {
         std::vector<unsigned long> as, bs;
         const auto collect = [](const std::string& v, std::vector<unsigned long>& out) {
@@ -198,16 +197,11 @@ namespace lemon::backends {
         return false;
     }
 
-    // Resolve a '*' wildcard in a release asset filename to the concrete asset
-    // name published for `tag`. Some upstreams embed a component that changes
-    // on every build (e.g. the macOS runner version in sd-cpp's Darwin asset:
-    // sd-...-bin-Darwin-macOS-15.7.7-arm64.zip, or the ROCm runtime in
-    // sd-...-bin-win-rocm-7.13.0-x64.zip). Rather than hardcode and chase
-    // that value on every bump, the backend spec carries a '*' placeholder and
-    // we look up the real asset name here via the GitHub Releases API. When
-    // several assets match (sd-cpp publishes a per-ROCm-runtime build, e.g.
-    // -rocm-7.1.1 alongside -rocm-7.13.0), the numerically newest version wins.
-    // Returns the pattern unchanged when it contains no wildcard.
+    // Resolve a '*' wildcard in a release asset filename to the concrete
+    // asset published for `tag` via the GitHub Releases API, for upstream
+    // components that change between builds (e.g. the macOS runner version or
+    // sd.cpp's ROCm runtime). When several assets match, the numerically
+    // newest version wins.
     static std::string resolve_asset_wildcard(const std::string& repo,
                                               const std::string& tag,
                                               const std::string& pattern,
