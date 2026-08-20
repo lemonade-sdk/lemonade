@@ -4015,6 +4015,13 @@ optgroup {
 
 .dash2-gauge__svg { display: block; }
 
+.dash2-gauge__threshold line {
+  stroke: var(--text-primary);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 2px var(--surface-0));
+}
+
 .dash2-gauge__center {
   position: absolute;
   top: 0; left: 50%;
@@ -13862,7 +13869,8 @@ a.backend-card__version:focus-visible {
 .global-settings-grid { display: grid; gap: var(--space-3); }
 .global-settings-grid--two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .global-settings-field { display: grid; gap: var(--space-2); min-width: 0; color: var(--text-secondary); font-size: var(--text-xs); }
-.global-settings-field > span { font-weight: var(--weight-semibold); }
+.global-settings-field > span,
+.global-settings-field > label { font-weight: var(--weight-semibold); }
 .global-settings-field > .select,
 .global-settings-field .input,
 .global-settings-pin-add > .select {
@@ -13870,11 +13878,11 @@ a.backend-card__version:focus-visible {
   min-width: 0;
 }
 .global-settings-number { position: relative; }
-.global-settings-number .input { padding-right: 44px; }
+.global-settings-number .input { padding-right: 72px; }
 .global-settings-number strong {
   position: absolute;
   top: 50%;
-  right: var(--space-3);
+  right: 40px;
   transform: translateY(-50%);
   color: var(--text-tertiary);
   font-size: var(--text-xs);

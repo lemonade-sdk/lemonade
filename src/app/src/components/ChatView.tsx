@@ -66,7 +66,6 @@ import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
   loadPinnedModelNames,
-  loadWithGlobalModelPolicy,
   savePinnedModelNames,
 } from '../features/modelSettings/globalModelSettings';
 
@@ -1761,21 +1760,20 @@ const ChatView: React.FC<ChatViewProps> = ({
 
   useEffect(() => () => stopAutoSpeech(), [stopAutoSpeech]);
 
-  const loadModelWithPolicy = useCallback(async (
+  const loadModelForChat = useCallback(async (
     modelName: string,
     info: ModelInfo | null,
     recipeOptions?: Record<string, unknown>,
   ) => {
     const api = await getApiClient();
-    let currentLoaded = loadedModels;
-    try {
-      currentLoaded = (await api.health()).all_models_loaded || loadedModels;
-    } catch {
-      // The render snapshot is still sufficient when a health refresh is not
-      // available (for example during a short reconnect window).
-    }
     const target = info || findModelInfoByName(knownModelInfos, modelName) || null;
     if (isRouterModelInfo(target)) {
+      let currentLoaded = loadedModels;
+      try {
+        currentLoaded = (await api.health()).all_models_loaded || loadedModels;
+      } catch {
+        // The render snapshot is sufficient if health is briefly unavailable.
+      }
       const fresh = await api.models(true).catch(() => ({ data: knownModelInfos }));
       const available = [...fresh.data, ...knownModelInfos].filter((item, index, list) => {
         const name = modelInfoName(item).toLowerCase();
@@ -1785,16 +1783,8 @@ const ChatView: React.FC<ChatViewProps> = ({
       if (!preflight.ok) throw new Error(routerPreflightError(preflight));
       return { mode: 'router', status: 'ready', virtual: true };
     }
-    return loadWithGlobalModelPolicy({
-      loadedModels: currentLoaded,
-      allModels: knownModelInfos,
-      target,
-      pinnedNames: loadPinnedModelNames(),
-      settings: globalModelSettings,
-      unload: name => api.unloadModel(name),
-      load: () => api.loadModel(modelName, recipeOptions, target),
-    });
-  }, [globalModelSettings, knownModelInfos, loadedModels]);
+    return api.loadModel(modelName, recipeOptions, target);
+  }, [knownModelInfos, loadedModels]);
 
   const waitForExistingModelDownload = useCallback(async (modelName: string, convoId: string): Promise<boolean> => {
     const [{ downloadStore }, api] = await Promise.all([getDownloadStoreModule(), getApiClient()]);
@@ -1932,7 +1922,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     }
 
     setModelPreparations(prev => ({ ...prev, [convoId]: { modelName, phase: 'loading', percent: 100 } }));
-    await loadModelWithPolicy(modelName, info || initialInfo);
+    await loadModelForChat(modelName, info || initialInfo);
     await Promise.resolve(onRefresh());
     health = await api.health();
     loaded = loadedFrom(health.all_models_loaded || []);
@@ -1945,7 +1935,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     return snapshotFromLoaded(loaded)
       || snapshotFromModelInfo(info || initialInfo)
       || snapshotFromName(modelName, [loaded])!;
-  }, [knownModelInfos, loadModelWithPolicy, onModelSelect, onRefresh, waitForExistingModelDownload]);
+  }, [knownModelInfos, loadModelForChat, onModelSelect, onRefresh, waitForExistingModelDownload]);
 
   const speakWithPinnedTts = useCallback(async (text: string, source: 'assistant' | 'user', force = false) => {
     const trimmed = text.trim();
@@ -1959,7 +1949,7 @@ const ChatView: React.FC<ChatViewProps> = ({
       const api = await getApiClient();
       const isLoaded = loadedModels.some(model => model.model_name.toLowerCase() === modelName.toLowerCase());
       if (!isLoaded) {
-        await loadModelWithPolicy(modelName, findModelInfoByName(knownModelInfos, modelName) || null);
+        await loadModelForChat(modelName, findModelInfoByName(knownModelInfos, modelName) || null);
       }
       const modelInfo = findModelInfoByName(knownModelInfos, modelName);
       const modelRecipe = String(
@@ -1984,7 +1974,7 @@ const ChatView: React.FC<ChatViewProps> = ({
     } catch (err) {
       console.warn(`Could not play ${source} text with TTS model:`, err);
     }
-  }, [knownModelInfos, loadModelWithPolicy, loadedModels, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
+  }, [knownModelInfos, loadModelForChat, loadedModels, stopAutoSpeech, ttsPlaybackSettings.modelName, ttsPlaybackSettings.playbackMode, ttsPlaybackSettings.speakUserText]);
 
   // Streaming hook — owns token buffer, flush interval, abort controllers
   const handleStreamDone = useCallback((convoId: string, stats: ChatCompletionStats, toolCalls?: ToolCallEntry[]) => {
@@ -2503,7 +2493,7 @@ ${finalText}`
           if (!model3dSettings.imageModel) throw new Error('Choose a downloaded image model for the text-to-3D reference step.');
           const imageInfo = findModelInfoByName(knownModelInfos, model3dSettings.imageModel) || null;
           if (!loadedModels.some(item => item.model_name.toLowerCase() === model3dSettings.imageModel.toLowerCase())) {
-            await loadModelWithPolicy(model3dSettings.imageModel, imageInfo);
+            await loadModelForChat(model3dSettings.imageModel, imageInfo);
           }
           const references = await api.imageGeneration(
             model3dSettings.imageModel,
@@ -2512,7 +2502,7 @@ ${finalText}`
           );
           referenceImage = references[0];
           generatedReference = [referenceImage];
-          await loadModelWithPolicy(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
+          await loadModelForChat(model.name, findModelInfoByName(knownModelInfos, model.name) || null);
         } else if (!referenceImage) {
           throw new Error('Image-to-3D needs one reference image.');
         }
@@ -2548,7 +2538,7 @@ ${finalText}`
             targetModel = openMossVoiceDesignModel;
             if (openMossCloneModel) {
               if (!loadedModels.some(item => item.model_name.toLowerCase() === openMossVoiceDesignModel.toLowerCase())) {
-                await loadModelWithPolicy(
+                await loadModelForChat(
                   openMossVoiceDesignModel,
                   findModelInfoByName(knownModelInfos, openMossVoiceDesignModel) || null,
                 );
@@ -2580,7 +2570,7 @@ ${finalText}`
           }
 
           if (reloadTargetAfterVoiceDesign || !loadedModels.some(item => item.model_name.toLowerCase() === targetModel.toLowerCase())) {
-            await loadModelWithPolicy(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
+            await loadModelForChat(targetModel, findModelInfoByName(knownModelInfos, targetModel) || null);
           }
         }
 
@@ -2625,7 +2615,7 @@ ${finalText}`
   }, [
     appendAssistantMessage, audioGenerationSettings, imageMode, imageSettings,
     isOpenMossTts, knownModelInfos, loadedModels, model3dSettings, onRefresh,
-    loadModelWithPolicy, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
+    loadModelForChat, openMossCloneModel, openMossSettings, openMossVoiceDesignModel,
     speakWithPinnedTts, trackGeneratedMediaUrl,
   ]);
 
@@ -3204,7 +3194,7 @@ ${finalText}`
     setFallbackModelOverride(option.name);
     onModelSelect(option.name);
     try {
-      await loadModelWithPolicy(option.name, option.info || null);
+      await loadModelForChat(option.name, option.info || null);
       await Promise.resolve(onRefresh());
       setFallbackModelOverride(null);
       onModelSelect(option.name);
@@ -3218,7 +3208,7 @@ ${finalText}`
     } finally {
       setModelPickerLoading(null);
     }
-  }, [connectionStatus, currentModel, loadModelWithPolicy, modelPickerLoading, onModelSelect, onRefresh]);
+  }, [connectionStatus, currentModel, loadModelForChat, modelPickerLoading, onModelSelect, onRefresh]);
 
   // ── Option select from assistant messages ───────────────────
 
