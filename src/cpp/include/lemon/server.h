@@ -73,6 +73,11 @@ public:
     // main() can report failure and exit non-zero.
     bool startup_failed() const;
 
+    // Unified config endpoints (callable directly in unit tests)
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -87,11 +92,6 @@ private:
 
     // Stop the main-port listeners (fronts) and detach the routed servers
     void stop_http_listeners();
-
-    // Unified config endpoints
-    void handle_config_set(const httplib::Request& req, httplib::Response& res);
-    void handle_config_get(const httplib::Request& req, httplib::Response& res);
-    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.

@@ -791,6 +791,9 @@ void Server::stop_http_listeners() {
 Server::~Server() {
     cancel_download_jobs();
     stop();
+    if (model_cache_warmup_thread_.joinable()) {
+        model_cache_warmup_thread_.join();
+    }
 }
 
 namespace {
@@ -6383,11 +6386,11 @@ void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) c
 }
 
 void Server::persist_cloud_providers() {
-    if (cache_dir_.empty() || !cloud_registry_) return;
+    if (config_dir_.empty() || !cloud_registry_) return;
     try {
-        json snap = config_->snapshot();
-        snap["cloud_providers"] = cloud_registry_->to_config_array();
-        ConfigFile::save(config_dir_, snap);
+        json user_cfg = ConfigFile::load_raw(config_dir_);
+        user_cfg["cloud_providers"] = cloud_registry_->to_config_array();
+        ConfigFile::save(config_dir_, user_cfg);
     } catch (const std::exception& e) {
         // Persistence failure must not undo the in-memory change — the
         // registry is already updated and the provider is usable until
@@ -6979,10 +6982,15 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
             apply_config_side_effects(applied);
         });
 
-        // Persist changes to config.json
-        if (!cache_dir_.empty()) {
+        if (!config_dir_.empty()) {
             try {
-                ConfigFile::save(config_dir_, config_->snapshot());
+                json user_cfg = ConfigFile::load_raw(config_dir_);
+                if (result.contains("updated") && result["updated"].is_object()) {
+                    user_cfg = utils::JsonUtils::merge(user_cfg, result["updated"]);
+                }
+                json defaults = ConfigFile::get_defaults();
+                utils::JsonUtils::prune_matching(user_cfg, defaults);
+                ConfigFile::save(config_dir_, user_cfg);
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
             }
@@ -7122,25 +7130,27 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             if (new_port != current_port) {
                 LOG(INFO, "Server") << "Port change requested: " << current_port << " -> " << new_port << std::endl;
                 port_.store(new_port);
+                if (running_) {
+                    rebind_requested_ = true;
+                    udp_beacon_.stopBroadcasting();
+                    stop_http_listeners();
+                }
+            }
+        } else if (key == "host") {
+            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
+            if (running_) {
                 rebind_requested_ = true;
                 udp_beacon_.stopBroadcasting();
                 stop_http_listeners();
             }
-        } else if (key == "host") {
-            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
-            rebind_requested_ = true;
-            udp_beacon_.stopBroadcasting();
-            stop_http_listeners();
             // Restart websocket server with new host
-            if (websocket_server_) {
+            if (websocket_server_ && running_) {
                 websocket_server_->stop();
                 websocket_server_ = std::make_unique<WebSocketServer>(
                     router_.get(),
                     config_->host(),
                     config_->websocket_port());
-                if (running_) {
-                    websocket_server_->start();
-                }
+                websocket_server_->start();
             }
         } else if (key == "websocket_port") {
             if (websocket_server_) {

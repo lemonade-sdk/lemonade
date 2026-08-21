@@ -91,11 +91,14 @@ public:
     /// is merged on top when present.
     static json get_defaults();
 
-    /// Load config.json from the config directory derived from cache_dir,
-    /// deep-merging with defaults.
+    /// Load raw config.json from config_dir without merging defaults.
+    /// Returns an empty JSON object if the file does not exist or is empty.
+    static json load_raw(const std::string& config_dir);
+
+    /// Load config.json from config_dir (or derived from cache_dir), deep-merging with defaults.
     /// Applies migrations for older config formats, then persists if any
     /// changes were made. Unknown keys are preserved (forward compatibility).
-    static json load(const std::string& cache_dir, const std::string& config_dir);
+    static json load(const std::string& cache_dir, const std::string& config_dir = "");
 
     /// Save config to <config_dir>/config.json atomically (write temp, rename).
     /// Thread-safe.

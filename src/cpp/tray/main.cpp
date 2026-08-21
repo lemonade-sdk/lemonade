@@ -30,6 +30,7 @@
 #include <lemon/logging_config.h>
 #include <lemon/runtime_config.h>
 #include <lemon/server.h>
+#include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <winsock2.h>
 #include <windows.h>
