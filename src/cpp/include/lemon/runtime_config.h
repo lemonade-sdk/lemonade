@@ -26,7 +26,9 @@ public:
     // --- Thread-safe typed getters (shared lock) ---
     // Top-level server settings
     int port() const;
+    void set_port_override(std::optional<int> override_val);
     std::string host() const;
+    void set_host_override(std::optional<std::string> override_val);
     int websocket_port() const;
     std::string log_level() const;
     std::string extra_models_dir() const;
@@ -56,8 +58,8 @@ public:
     double telemetry_otlp_retry_backoff_base_s() const;
     int telemetry_otlp_send_batch_size() const;
     double telemetry_otlp_batch_timeout_s() const;
-
-
+    std::vector<std::string> telemetry_session_headers_id() const;
+    std::vector<std::string> telemetry_session_headers_client() const;
     // Feature flags
     bool offline() const;
     bool auto_check_model_updates() const;
@@ -152,6 +154,8 @@ private:
     json config_;
 
     // Transient CLI overrides (not persisted to disk)
+    std::optional<int> port_override_;
+    std::optional<std::string> host_override_;
     std::optional<bool> broadcast_override_;
 
     // Valid log levels

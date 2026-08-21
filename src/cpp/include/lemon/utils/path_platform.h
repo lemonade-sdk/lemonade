@@ -24,6 +24,7 @@ public:
     // Directory resolution
     virtual std::string get_executable_dir() = 0;
     virtual std::string get_cache_dir(const std::string& g_cache_dir) = 0;
+    virtual std::string get_config_dir(const std::string& g_config_dir) = 0;
     virtual std::string get_runtime_dir() = 0;
 
     // Platform-specific install prefixes for resource lookup

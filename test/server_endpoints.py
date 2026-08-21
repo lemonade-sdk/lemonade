@@ -147,6 +147,25 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
 
+    def _assert_loaded_model_launch_command(self, model_info):
+        """Assert /health exposes the command the wrapped backend was started with."""
+        self.assertIsNotNone(model_info, "Model should appear in /health")
+        self.assertIn("launch_command", model_info)
+        command = model_info["launch_command"]
+        self.assertIsInstance(command, list)
+        self.assertGreater(len(command), 1)
+        self.assertTrue(all(isinstance(part, str) for part in command))
+        self.assertTrue(command[0], "Executable belongs at index 0")
+
+        # The backend is started with a resolved on-disk path, so the checkpoint
+        # file name has to appear somewhere in the arguments.
+        checkpoint_file = model_info.get("checkpoint", "").split(":")[-1]
+        if checkpoint_file:
+            self.assertTrue(
+                any(checkpoint_file in part for part in command),
+                f"Checkpoint {checkpoint_file} missing from {command}",
+            )
+
     def _parse_prometheus_text(self, body):
         """Validate Prometheus text format and return sample labels by metric name."""
         samples = {}
@@ -811,6 +830,7 @@ class EndpointTests(ServerTestBase):
         # Verify model is loaded via health endpoint and exposes backend PID
         loaded_model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
         self._assert_loaded_model_pid(loaded_model)
+        self._assert_loaded_model_launch_command(loaded_model)
 
         print(f"[OK] Loaded model: {ENDPOINT_TEST_MODEL}")
 
@@ -1744,7 +1764,6 @@ class EndpointTests(ServerTestBase):
                 "max_completion_tokens",
                 "model",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ]
@@ -1755,6 +1774,15 @@ class EndpointTests(ServerTestBase):
                     f"Request-scoped field '{field}' must NOT leak into recipe_options "
                     f"on auto-load (found: {recipe_options.get(field)})",
                 )
+
+            # Runtime defaults may populate llamacpp_args; the inference request must not.
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Request llamacpp_args must not leak into recipe_options on auto-load",
+            )
 
             print(
                 f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "

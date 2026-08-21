@@ -48,7 +48,9 @@ struct RouterDispatchResult {
 
 class Server {
 public:
-    Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir);
+    Server(std::shared_ptr<RuntimeConfig> config,
+           const std::string& cache_dir,
+           const std::string& config_dir);
 
     ~Server();
 
@@ -71,6 +73,11 @@ public:
     // main() can report failure and exit non-zero.
     bool startup_failed() const;
 
+    // Unified config endpoints (callable directly in unit tests)
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -85,11 +92,6 @@ private:
 
     // Stop the main-port listeners (fronts) and detach the routed servers
     void stop_http_listeners();
-
-    // Unified config endpoints
-    void handle_config_set(const httplib::Request& req, httplib::Response& res);
-    void handle_config_get(const httplib::Request& req, httplib::Response& res);
-    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.
@@ -350,7 +352,8 @@ private:
     double get_npu_utilization();
 
     std::shared_ptr<RuntimeConfig> config_;
-    std::string cache_dir_;  // Lemonade cache dir for config.json persistence
+    std::string cache_dir_;  // Lemonade cache dir; persistent JSON may live in sibling .config dir
+    std::string config_dir_;
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
 
     std::thread http_v4_thread_;

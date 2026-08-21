@@ -2063,6 +2063,15 @@
         ],
         "size": 39.77
     },
+    "RPG-HaloTales-V2": {
+        "checkpoint": "lemonade-sdk/RPG-HaloTales-V2",
+        "recipe": "collection.omni",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 55.77
+    },
     "kokoro-v1": {
         "checkpoint": "mikkoph/kokoro-onnx",
         "recipe": "kokoro",
@@ -2218,6 +2227,44 @@
         "image_defaults": {
             "steps": 8,
             "cfg_scale": 1.0,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Flux-2-Klein-4B-TheNoise": {
+        "checkpoints": {
+            "main": "black-forest-labs/FLUX.2-klein-4B:flux-2-klein-4b.safetensors",
+            "text_encoder": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/text_encoders/qwen_3_4b.safetensors",
+            "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-4b:split_files/vae/flux2-vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 16.1,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1,
+            "width": 1024,
+            "height": 1024
+        }
+    },
+    "Flux-2-Klein-9B-TheNoise": {
+        "checkpoints": {
+            "main": "unsloth/FLUX.2-klein-9B:flux-2-klein-9b.safetensors",
+            "text_encoder": "Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/text_encoders/qwen_3_8b.safetensors",
+            "vae": "Comfy-Org/vae-text-encorder-for-flux-klein-9b:split_files/vae/flux2-vae.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "image"
+        ],
+        "size": 32.5,
+        "image_defaults": {
+            "steps": 4,
+            "cfg_scale": 1,
             "width": 1024,
             "height": 1024
         }

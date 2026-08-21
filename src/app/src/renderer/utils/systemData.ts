@@ -4,6 +4,10 @@ export interface SystemInfo {
   processor: string;
   devices: Devices;
   recipes?: Recipes;
+  // Recipes with nothing runnable on this host: every built-in model was
+  // dropped by the system-memory heuristic. `recipes` stays canonical, so
+  // listings that reflect this host must subtract this set themselves.
+  unavailable_recipes?: string[];
 }
 
 interface Devices {
