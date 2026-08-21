@@ -4,9 +4,10 @@ Router end-to-end tests for Lemonade Server (issue #2388).
 Registers a `collection.router` collection and drives it with a vanilla OpenAI
 client, asserting that requests are dispatched to the right candidate by the
 policy's rules. Covers deterministic conditions (keywords / min_chars /
-metadata), a model-backed `semantic_similarity` classifier, a cloud candidate,
-first-match ordering, fail-open to `default_model`, and the decision surfaced on
-the response (`x-lemonade-route` header + `x_lemonade_route` body).
+metadata), the opt-in `routing.momentum` filter for multi-turn min_chars, a
+model-backed `semantic_similarity` classifier, a cloud candidate, first-match
+ordering, fail-open to `default_model`, and the decision surfaced on the
+response (`x-lemonade-route` header + `x_lemonade_route` body).
 
 The routing decision is computed server-side before the request is forwarded to
 the chosen candidate, so these are true end-to-end runs: a real completion comes
@@ -273,6 +274,30 @@ class RouterTests(ServerTestBase):
         decision = resp.json().get("x_lemonade_route", {})
         return header, decision, resp.json()
 
+    def _route_messages(self, messages, metadata=None, collection=COLLECTION_NAME):
+        """Like `_route` but sends a full multi-turn `messages` array, so a test
+        can exercise routing.momentum's per-request history folding (there is
+        no server-side session state: the whole conversation must be resent
+        each turn, exactly as any OpenAI-style chat client already does)."""
+        body = {
+            "model": collection,
+            "messages": messages,
+            "max_tokens": 8,
+            "temperature": 0.0,
+            "route_trace": True,
+        }
+        if metadata is not None:
+            body["metadata"] = metadata
+        resp = requests.post(
+            f"{self.base_url}/chat/completions", json=body, timeout=600
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"status {resp.status_code}: {resp.text}"
+        )
+        header = resp.headers.get("x-lemonade-route", "<missing>")
+        decision = resp.json().get("x_lemonade_route", {})
+        return header, decision, resp.json()
+
     def _delete_collection(self, collection):
         """Remove a registered router collection so a stale router isn't left on
         persistent runners (esp. before a cloud provider it references is
@@ -483,6 +508,122 @@ class RouterTests(ServerTestBase):
         decision = resp.json().get("x_lemonade_route", {})
         self.assertEqual(decision.get("trace", []), [])
         print("[OK] route_trace omitted -> no trace array")
+
+    def test_640_momentum_survives_short_followup(self):
+        """routing.momentum keeps a short follow-up on the escalated route.
+
+        Reproduces the issue's headline scenario: a long first turn escalates
+        via min_chars, then an 11-byte follow-up ("yes, do it") alone would
+        fall below the threshold -- but with momentum enabled and the full
+        conversation history resent (there is no session state), the
+        momentum-filtered effective length keeps the route on the capable
+        candidate. Asserts the trace rationale carries effective_chars.
+        """
+        collection = "user.Test-Router-Momentum"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [DEFAULT_MODEL, CAPABLE_MODEL],
+            "routing": {
+                "candidates": [DEFAULT_MODEL, CAPABLE_MODEL],
+                "default_model": DEFAULT_MODEL,
+                "momentum": {"enabled": True, "attack": 1.0, "release": 0.3},
+                "rules": [
+                    {
+                        "id": "long-to-capable",
+                        "match": {"min_chars": 2000},
+                        "route_to": CAPABLE_MODEL,
+                    }
+                ],
+            },
+        }
+        try:
+            resp = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+            )
+            self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+            long_prompt = "Please review this code. " + ("data point " * 400)
+            self.assertGreater(len(long_prompt), 2000)
+            first_turn = [{"role": "user", "content": long_prompt}]
+            _, decision_a, _ = self._route_messages(first_turn, collection=collection)
+            self.assertEqual(decision_a.get("route_to"), CAPABLE_MODEL)
+            self.assertEqual(decision_a.get("matched_rule"), "long-to-capable")
+            print(f"[OK] momentum: long first turn -> {CAPABLE_MODEL}")
+
+            followup = first_turn + [
+                {"role": "assistant", "content": "Here is my review."},
+                {"role": "user", "content": "yes, do it"},
+            ]
+            _, decision_b, _ = self._route_messages(followup, collection=collection)
+            self.assertEqual(
+                decision_b.get("route_to"),
+                CAPABLE_MODEL,
+                f"short follow-up should survive on the escalated route: {decision_b}",
+            )
+            self.assertEqual(decision_b.get("matched_rule"), "long-to-capable")
+            rationale = ""
+            for entry in decision_b.get("trace", []):
+                if entry.get("condition") == "min_chars":
+                    rationale = entry.get("rationale", "")
+            self.assertIn(
+                "effective_chars=",
+                rationale,
+                f"expected momentum rationale on min_chars trace entry: {decision_b}",
+            )
+            print(
+                f"[OK] momentum: short follow-up stays on {CAPABLE_MODEL} "
+                f"({rationale})"
+            )
+        finally:
+            self._delete_collection(collection)
+
+    def test_641_momentum_absent_is_noop(self):
+        """The identical long-then-short history, against a sibling collection
+        with no routing.momentum block, falls through on the raw last-turn
+        length alone -- proving momentum is opt-in and absent-block behavior
+        is unaffected by richer history being present."""
+        collection = "user.Test-Router-Momentum-Absent"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [DEFAULT_MODEL, CAPABLE_MODEL],
+            "routing": {
+                "candidates": [DEFAULT_MODEL, CAPABLE_MODEL],
+                "default_model": DEFAULT_MODEL,
+                "rules": [
+                    {
+                        "id": "long-to-capable",
+                        "match": {"min_chars": 2000},
+                        "route_to": CAPABLE_MODEL,
+                    }
+                ],
+            },
+        }
+        try:
+            resp = requests.post(
+                f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+            )
+            self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+            long_prompt = "Please review this code. " + ("data point " * 400)
+            followup = [
+                {"role": "user", "content": long_prompt},
+                {"role": "assistant", "content": "Here is my review."},
+                {"role": "user", "content": "yes, do it"},
+            ]
+            _, decision, _ = self._route_messages(followup, collection=collection)
+            self.assertEqual(
+                decision.get("route_to"),
+                DEFAULT_MODEL,
+                f"without momentum, the short raw last turn should fall open: {decision}",
+            )
+            self.assertTrue(decision.get("default_used"))
+            print(f"[OK] momentum absent: short follow-up alone -> {DEFAULT_MODEL}")
+        finally:
+            self._delete_collection(collection)
 
     def test_610_cloud_candidate_routing(self):
         """A candidate whose recipe is `cloud` routes to a cloud provider.

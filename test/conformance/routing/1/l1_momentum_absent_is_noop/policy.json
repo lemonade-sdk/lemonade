@@ -1,0 +1,15 @@
+{
+  "version": "1",
+  "model_name": "user.Momentum-AbsentIsNoop",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "min_chars-rule",
+        "match": { "min_chars": 400 },
+        "route_to": "cloud" }
+    ]
+  }
+}

@@ -2652,6 +2652,28 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_DETERMINISTIC_TEST_SRC}")
     add_cpp_ci_test(RoutingPolicyDeterministicTest CI ON COMMAND test_routing_policy_deterministic)
 endif()
 
+# Routing momentum filter: compute_effective_chars() arithmetic, CharsCondition
+# reading EvalContext::effective_chars, and RoutingPolicyEngine::route() folding
+# RoutePolicy::Momentum + RouteContext::user_turn_chars per request.
+set(_ROUTING_MOMENTUM_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_momentum.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_MOMENTUM_TEST_SRC}")
+    add_executable(test_routing_policy_momentum
+        test/cpp/test_routing_policy_momentum.cpp
+        src/cpp/server/routing_policy.cpp
+    )
+    target_include_directories(test_routing_policy_momentum PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_momentum PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyMomentumTest CI ON COMMAND test_routing_policy_momentum)
+endif()
+
 # Routing engine assembly (issue #2382): RoutingPolicyEngine constructor rule
 # compilation, first-match-wins route(), default fail-open, trace opt-in,
 # on_error error paths, and concurrent route() consistency against a fake.

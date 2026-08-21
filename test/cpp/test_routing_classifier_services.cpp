@@ -494,6 +494,84 @@ static void test_build_route_context_responses_uses_last_user_message() {
           ctx.input == "thanks that helps");
 }
 
+// Momentum signal: build_route_context must collect every USER turn's byte
+// length, oldest-first, alongside (not instead of) the existing last-turn-only
+// ctx.input/ctx.params.chars. Interleaved assistant turns must be skipped.
+static void test_build_route_context_collects_user_turn_chars_chat() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "user"}, {"content", "abc"}},                // 3 bytes
+            {{"role", "assistant"}, {"content", "irrelevant"}},
+            {{"role", "user"}, {"content", "abcdefghij"}},         // 10 bytes
+            {{"role", "assistant"}, {"content", "irrelevant"}},
+            {{"role", "user"}, {"content", "z"}},                  // 1 byte
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("chat: user_turn_chars collects only user-role lengths, in order",
+          ctx.user_turn_chars == std::vector<std::size_t>{3, 10, 1});
+    check("chat: user_turn_chars.back() equals params.chars",
+          ctx.user_turn_chars.back() == ctx.params.chars);
+}
+
+static void test_build_route_context_prompt_has_single_entry_series() {
+    // Legacy `prompt` has no multi-turn concept; degenerates to one entry
+    // equal to params.chars.
+    json request = {{"model", "router"}, {"prompt", "hello world"}};
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("prompt: user_turn_chars is a single entry equal to params.chars",
+          ctx.user_turn_chars == std::vector<std::size_t>{ctx.params.chars});
+}
+
+static void test_build_route_context_responses_multi_turn_user_chars() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "12345"}},        // 5 bytes
+            })}},
+            {{"role", "assistant"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "response text here"}},
+            })}},
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "1234567890"}},   // 10 bytes
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses: user_turn_chars collects role-tagged user lengths in order",
+          ctx.user_turn_chars == std::vector<std::size_t>{5, 10});
+}
+
+static void test_build_route_context_responses_role_less_fallback_single_entry() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"type", "input_text"}, {"text", "hello"}},
+            {{"type", "input_text"}, {"text", "world"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    // Role-less fallback concatenates into one logical turn ("hello\nworld").
+    check("responses role-less fallback: single-entry series equals params.chars",
+          ctx.user_turn_chars == std::vector<std::size_t>{ctx.params.chars});
+}
+
+static void test_build_route_context_all_image_user_turn_contributes_zero() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "image_url"}, {"image_url", {{"url", "data:image/png;base64,AAAA"}}}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("all-image user turn contributes 0 bytes, not a crash",
+          ctx.user_turn_chars == std::vector<std::size_t>{0});
+}
+
 static lemon::CostServices fake_cost_services() {
     lemon::CostServices services;
     services.cost_of = [](const std::string& candidate) -> lemon::CostInfo {
@@ -716,6 +794,11 @@ int main() {
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
     test_build_route_context_responses_uses_last_user_message();
+    test_build_route_context_collects_user_turn_chars_chat();
+    test_build_route_context_prompt_has_single_entry_series();
+    test_build_route_context_responses_multi_turn_user_chars();
+    test_build_route_context_responses_role_less_fallback_single_entry();
+    test_build_route_context_all_image_user_turn_contributes_zero();
     test_estimated_cost_attached_on_matched_rule();
     test_estimated_cost_attached_on_default();
     test_estimated_cost_omitted_when_candidate_has_no_cost_data();

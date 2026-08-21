@@ -664,6 +664,16 @@ void trace_leaf(EvalContext& ctx, const char* name, bool result) {
     }
 }
 
+// Momentum-aware sibling: records the effective-vs-raw length in `rationale`
+// so route_trace explains why a short turn still matched a long-input rule.
+void trace_leaf(EvalContext& ctx, const char* name, bool result, const std::string& rationale) {
+    if (ctx.want_trace) {
+        TraceEntry entry{name, std::nullopt, result};
+        entry.rationale = rationale;
+        ctx.trace.push_back(std::move(entry));
+    }
+}
+
 // Frozen v1: case-insensitivity is an ASCII-only fold (locale-independent, no
 // Unicode/ICU dependency). Bytes outside A-Z are left untouched.
 std::string ascii_lower(std::string s) {
@@ -875,10 +885,19 @@ public:
         : threshold_(threshold), bound_(bound) {}
 
     bool evaluate(EvalContext& ctx) const override {
-        const std::size_t n = ctx.request.params.chars;
-        const bool result =
-            bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
-        trace_leaf(ctx, bound_ == Bound::Min ? "min_chars" : "max_chars", result);
+        const bool momentum_active = ctx.effective_chars.has_value();
+        const double n = momentum_active ? *ctx.effective_chars
+                                          : static_cast<double>(ctx.request.params.chars);
+        const bool result = bound_ == Bound::Min ? (n >= static_cast<double>(threshold_))
+                                                  : (n <= static_cast<double>(threshold_));
+        const char* name = bound_ == Bound::Min ? "min_chars" : "max_chars";
+        if (momentum_active) {
+            trace_leaf(ctx, name, result,
+                       "effective_chars=" + json(*ctx.effective_chars).dump() +
+                           " raw_chars=" + std::to_string(ctx.request.params.chars));
+        } else {
+            trace_leaf(ctx, name, result);
+        }
         return result;
     }
 
@@ -1339,6 +1358,17 @@ void attach_estimated_cost(Decision& decision, const CostServices& cost_services
 
 } // namespace
 
+double compute_effective_chars(const std::vector<std::size_t>& turn_chars,
+                               double attack, double release) {
+    if (turn_chars.empty()) return 0.0;
+    double m = static_cast<double>(turn_chars.front());
+    for (std::size_t i = 1; i < turn_chars.size(); ++i) {
+        const double c = static_cast<double>(turn_chars[i]);
+        m = m + (c >= m ? attack : release) * (c - m);
+    }
+    return m;
+}
+
 RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
                                          CostServices cost_services)
     : policy_(std::move(policy)),
@@ -1358,6 +1388,12 @@ RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices 
 
 Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
     EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
+    if (policy_.momentum.enabled) {
+        eval.effective_chars = compute_effective_chars(
+            ctx.user_turn_chars.empty() ? std::vector<std::size_t>{ctx.params.chars}
+                                        : ctx.user_turn_chars,
+            policy_.momentum.attack, policy_.momentum.release);
+    }
 
     // First-match-wins over the compiled rules. A classifier-level failure is
     // already absorbed upstream by ClassifierBandCondition (Score::ok + the

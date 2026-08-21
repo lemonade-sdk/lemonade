@@ -69,7 +69,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 |-----------|---------|
 | `keywords_any` / `keywords_all` | Case-insensitive substring match over the input. |
 | `regex` | ECMAScript regex over the input. |
-| `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
+| `min_chars` / `max_chars` | Input length in UTF-8 bytes. With opt-in [`routing.momentum`](#momentum-routingmomentum), compares the momentum-filtered effective length instead of the raw last turn. |
 | `has_tools` / `has_images` | Boolean — request carries tools / images. |
 | `metadata` | `{ key, equals \| any \| exists }` over the request's OpenAI `metadata`. |
 
@@ -151,6 +151,70 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+
+## Momentum (`routing.momentum`)
+
+By default, `min_chars`/`max_chars` measure only the **latest user turn**. In a
+real conversation that turn's length swings wildly — a long coding question
+escalates to a big model via `min_chars`, then the follow-up "yes, do it" (a
+handful of bytes) falls straight back to `default_model` **mid-task**. Every
+such flap pays a real switch cost (model load/eviction, cache miss) and tends
+to hurt multi-turn quality.
+
+`routing.momentum` fixes this by replacing the raw last-turn length with a
+momentum-filtered **effective length**, recomputed fresh from that request's
+own message history — there is no server-side session state; the whole
+conversation is already resent on every turn, exactly like any OpenAI-style
+chat client already does.
+
+```json
+"routing": {
+  "momentum": { "enabled": true, "attack": 1.0, "release": 0.3 }
+}
+```
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `enabled` | yes (once the block is authored) | Turns momentum on for every `min_chars`/`max_chars` condition in this policy. |
+| `attack` | no | `(0, 1]`. Weight applied when a turn's length *rises*. Default `1.0` — a sudden long/complex turn escalates immediately. |
+| `release` | no | `(0, 1]`. Weight applied when a turn's length *falls*. Default `0.3` — a short follow-up only decays the effective length by 30% per turn, so the conversation stays on the escalated route for several turns before de-escalating. |
+
+Momentum applies **only** to `min_chars`/`max_chars`; `keywords_any`/`keywords_all`,
+`regex`, `metadata`, and classifier conditions are unaffected. Absent, or
+`enabled: false`, is behavior-identical to a policy without this block.
+
+**The formula.** Given the UTF-8 byte length of every user turn in the request,
+oldest-first, `c_1 .. c_n`: `m_1 = c_1`, and for `i > 1`,
+
+```
+m_i = m_{i-1} + attack  * (c_i - m_{i-1})   when c_i >= m_{i-1}  (rising)
+m_i = m_{i-1} + release * (c_i - m_{i-1})   when c_i <  m_{i-1}  (falling)
+```
+
+`min_chars`/`max_chars` then compare their threshold against `m_n` instead of
+the raw last-turn length. `attack = release = 1.0` degenerates exactly to
+today's behavior (`m_n == c_n`).
+
+Worked example: turns of 100, 1000, then 50 bytes, with `attack: 0.5` /
+`release: 0.25`: `m_1 = 100`, `m_2 = 100 + 0.5*(1000-100) = 550`,
+`m_3 = 550 + 0.25*(50-550) = 425`. A `min_chars: 400` rule still matches on the
+425-byte effective length even though the raw last turn (50 bytes) alone would
+miss it.
+
+**Trace.** When momentum is active, the `min_chars`/`max_chars` trace entry
+keeps its usual `condition` name and additionally carries a `rationale` string,
+e.g. `"effective_chars=425.0 raw_chars=50"` — so `route_trace: true` explains
+why a short turn still matched a long-input rule (see
+[The decision on the response](#the-decision-on-the-response)).
+
+**Non-goals.** Momentum is stateless and request-scoped by design: it does not
+add a server-side session store, decision cache, or client headers. It does not
+extend to classifier-scored conditions (a classifier-momentum variant is future
+work), and it does not add a separate `threshold`/`switch_margin` knob — in
+Lemonade's rule engine the thresholds already live in each rule's
+`min_chars`/`max_chars`. Token-based length (`min_tokens`/`max_tokens`) remains
+a deferred, separately named future addition — never a redefinition of
+`min_chars`/`max_chars` or of momentum's byte-based filter.
 
 ## Registering and invoking
 

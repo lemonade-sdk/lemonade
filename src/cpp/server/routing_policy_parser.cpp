@@ -206,6 +206,41 @@ void validate_score_bound(const json& leaf,
     out = value;
 }
 
+void validate_momentum_coefficient(const json& leaf,
+                                   const std::string& key,
+                                   double& out,
+                                   const std::string& path) {
+    if (!leaf.contains(key)) {
+        return;   // `out` already holds the struct default (1.0 or 0.3)
+    }
+    if (!leaf.at(key).is_number()) {
+        throw std::invalid_argument(path + "." + key + " must be numeric");
+    }
+    const double value = leaf.at(key).get<double>();
+    if (!(value > 0.0 && value <= 1.0)) {
+        throw std::invalid_argument(path + "." + key + " must be in (0, 1]");
+    }
+    out = value;
+}
+
+RoutePolicy::Momentum parse_momentum(const json& routing) {
+    RoutePolicy::Momentum momentum;
+    if (!routing.contains("momentum")) {
+        return momentum;   // absent => off, defaults
+    }
+    const json& m = routing.at("momentum");
+    require_object(m, "routing.momentum");
+    reject_unknown_keys(m, routing_momentum_keys(), "routing.momentum");
+    const json& enabled = required_field(m, "enabled", "routing.momentum");
+    if (!enabled.is_boolean()) {
+        throw std::invalid_argument("routing.momentum.enabled must be a boolean");
+    }
+    momentum.enabled = enabled.get<bool>();
+    validate_momentum_coefficient(m, "attack", momentum.attack, "routing.momentum");
+    validate_momentum_coefficient(m, "release", momentum.release, "routing.momentum");
+    return momentum;
+}
+
 void validate_string_array(const json& value,
                            const std::string& path,
                            bool require_non_empty) {
@@ -526,7 +561,12 @@ const std::set<std::string>& routing_policy_root_keys() {
 
 const std::set<std::string>& routing_block_keys() {
     static const std::set<std::string> keys = {
-        "candidates", "default_model", "router", "classifiers", "rules"};
+        "candidates", "default_model", "router", "classifiers", "rules", "momentum"};
+    return keys;
+}
+
+const std::set<std::string>& routing_momentum_keys() {
+    static const std::set<std::string> keys = {"enabled", "attack", "release"};
     return keys;
 }
 
@@ -647,6 +687,7 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     RoutePolicy policy;
     policy.candidates = parse_candidates(routing, declared, options);
     policy.default_model = parse_default_model(routing, policy.candidates, declared, options);
+    policy.momentum = parse_momentum(routing);
 
     // Desugar the L0a `routing.router` sugar into explicit classifiers + rules
     // before the normal parse path runs. Everything downstream sees the core
