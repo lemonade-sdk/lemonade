@@ -130,7 +130,7 @@ public:
                 return nvidia.vram_used_gb;
             }
 
-            double highest_usage = nvidia.vram_used_gb >= 0.0 ? nvidia.gpu_percent : -1.0;
+            double highest_usage = nvidia.gpu_percent;
             std::string highest_card;
             double highest_card_memory = nvidia.vram_used_gb;
 
