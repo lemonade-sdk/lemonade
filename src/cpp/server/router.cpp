@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
@@ -27,6 +28,7 @@
 #include "lemon/eviction_engine.h"
 #include "lemon/suspend_inhibitor.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 namespace lemon {
 
@@ -1394,12 +1396,62 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
     json backend_json = tentative.get_option(backend_option);
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    // Second pass: rebuild defaults using the resolved backend.
-    // Per-architecture defaults sit between global config and model-level recipe_options.
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
+    RecipeOptions default_opt(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions arch_opts(model_info.recipe,
                             model_manager_->get_architecture_defaults(model_info.gguf.architecture));
-    return request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+    RecipeOptions effective =
+        request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+
+    const json model_json = model_info.recipe_options.to_json();
+    const json model_defaults_json =
+        model_manager_->get_model_default_options(model_info).to_json();
+    const json arch_json = arch_opts.to_json();
+    const json backend_defaults_json = default_opt.to_json();
+    const json merge_value = effective.get_option("merge_args");
+    const bool merge_args = merge_value.is_boolean() ? merge_value.get<bool>() : true;
+
+    auto args_value = [](const json& layer, const std::string& key) {
+        auto it = layer.find(key);
+        return it != layer.end() && it->is_string() ? it->get<std::string>() : "";
+    };
+
+    for (const auto& key : RecipeOptions::keys_for_recipe(model_info.recipe)) {
+        if (!utils::is_custom_args_option(key)) continue;
+
+        utils::CustomArgsRequestState request_state =
+            utils::CustomArgsRequestState::Omitted;
+        std::string request_args;
+        if (request_options.has_explicit_option(key)) {
+            const json raw_request = request_options.get_explicit_option(key);
+            if (raw_request.is_null()) {
+                request_state = utils::CustomArgsRequestState::Tombstone;
+            } else if (raw_request.is_string()) {
+                request_state = utils::CustomArgsRequestState::Value;
+                request_args = raw_request.get<std::string>();
+            } else {
+                throw std::invalid_argument("'" + key + "' must be a string or null");
+            }
+        }
+
+        const std::string resolved_args =
+            utils::resolve_scoped_custom_args({
+                args_value(backend_defaults_json, key),
+                args_value(arch_json, key),
+                args_value(model_defaults_json, key),
+                args_value(model_json, key),
+                request_state,
+                request_args,
+                merge_args,
+            });
+        // Keep empty results: explicit "" is a meaningful clear value and the
+        // effective layer is also used as replayable load input.
+        effective.set_option(key, resolved_args);
+    }
+
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        ops->resolve_runtime_options(model_info, effective);
+    }
+    return effective;
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {
