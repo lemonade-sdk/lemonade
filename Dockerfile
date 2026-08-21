@@ -25,7 +25,7 @@ WORKDIR /app
 
 # Build the project
 RUN rm -rf build && \
-    cmake --preset default && \
+    cmake --preset default -DBUILD_TESTING=OFF && \
     cmake --build --preset default web-app
 
 # Debug: Check build outputs
