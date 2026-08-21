@@ -494,6 +494,83 @@ static void test_build_route_context_responses_uses_last_user_message() {
           ctx.input == "thanks that helps");
 }
 
+static void test_build_route_context_reads_max_tokens() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", 256},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: max_tokens populates expected_output_tokens",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 256);
+}
+
+static void test_build_route_context_reads_max_completion_tokens_when_max_tokens_absent() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_completion_tokens", 512},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: max_completion_tokens populates expected_output_tokens "
+          "when max_tokens is absent",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 512);
+}
+
+static void test_build_route_context_max_tokens_wins_over_max_completion_tokens() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", 128},
+        {"max_completion_tokens", 512},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: max_tokens takes precedence when both are present",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 128);
+}
+
+static void test_build_route_context_expected_output_tokens_absent_when_unset() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: expected_output_tokens is nullopt when neither field is sent",
+          !ctx.params.expected_output_tokens.has_value());
+}
+
+static void test_build_route_context_ignores_non_positive_or_non_integer_max_tokens() {
+    json zero_request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", 0},
+    };
+    RouteContext zero_ctx = lemon::build_route_context(zero_request, "router");
+    check("build_route_context: max_tokens: 0 is treated as absent",
+          !zero_ctx.params.expected_output_tokens.has_value());
+
+    json negative_request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", -10},
+    };
+    RouteContext negative_ctx = lemon::build_route_context(negative_request, "router");
+    check("build_route_context: a negative max_tokens is treated as absent",
+          !negative_ctx.params.expected_output_tokens.has_value());
+
+    json string_request = {
+        {"model", "router"},
+        {"messages", json::array({{{"role", "user"}, {"content", "hi"}}})},
+        {"max_tokens", "unlimited"},
+    };
+    RouteContext string_ctx = lemon::build_route_context(string_request, "router");
+    check("build_route_context: a non-integer max_tokens is treated as absent",
+          !string_ctx.params.expected_output_tokens.has_value());
+}
+
 static lemon::CostServices fake_cost_services() {
     lemon::CostServices services;
     services.cost_of = [](const std::string& candidate) -> lemon::CostInfo {
@@ -716,6 +793,11 @@ int main() {
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
     test_build_route_context_responses_uses_last_user_message();
+    test_build_route_context_reads_max_tokens();
+    test_build_route_context_reads_max_completion_tokens_when_max_tokens_absent();
+    test_build_route_context_max_tokens_wins_over_max_completion_tokens();
+    test_build_route_context_expected_output_tokens_absent_when_unset();
+    test_build_route_context_ignores_non_positive_or_non_integer_max_tokens();
     test_estimated_cost_attached_on_matched_rule();
     test_estimated_cost_attached_on_default();
     test_estimated_cost_omitted_when_candidate_has_no_cost_data();
