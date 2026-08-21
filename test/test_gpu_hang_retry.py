@@ -12,6 +12,7 @@ import sys
 import json
 import time
 import shutil
+import socket
 import subprocess
 import requests
 import unittest
@@ -24,8 +25,16 @@ from utils.server_base import parse_args, get_cli_binary, run_server_tests
 
 args = parse_args()
 
-PORT = 13333
-BASE_URL = f"http://127.0.0.1:{PORT}"
+
+def find_free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
 MOCK_BIN_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "build", "mock-bin"
 )
@@ -37,6 +46,9 @@ import os
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+class ThreadedHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
 
 state_file = {state_file_repr}
 attempt = 1
@@ -68,6 +80,9 @@ barrier = threading.Barrier(2)
 state_lock = threading.Lock()
 
 class MockLlamaServer(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
     def do_POST(self):
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length)
@@ -89,7 +104,7 @@ class MockLlamaServer(BaseHTTPRequestHandler):
             if b"concurrent-test" in body:
                 # Synchronize concurrent requests on the first attempt
                 try:
-                    barrier.wait(timeout=2.0)
+                    barrier.wait(timeout=10.0)
                 except threading.BrokenBarrierError:
                     pass
 
@@ -144,7 +159,7 @@ class MockLlamaServer(BaseHTTPRequestHandler):
         self.wfile.write(b'{{"status": "ok"}}')
 
 try:
-    server = ThreadingHTTPServer(('127.0.0.1', port), MockLlamaServer)
+    server = ThreadedHTTPServer(('127.0.0.1', port), MockLlamaServer)
     server.serve_forever()
 except Exception as e:
     print("Mock server exception:", e)
@@ -178,6 +193,11 @@ class TestGpuHangRecovery(unittest.TestCase):
         # Clear state file
         if os.path.exists(STATE_FILE):
             os.remove(STATE_FILE)
+
+        self.port = find_free_port()
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        self.session = requests.Session()
+        self.session.trust_env = False
 
         # Resolve build directory and lemond binary
         name = "lemond.exe" if os.name == "nt" else "lemond"
@@ -234,15 +254,34 @@ class TestGpuHangRecovery(unittest.TestCase):
 
         # Start lemond in a background process with PATH overridden and fast watchdog
         env = os.environ.copy()
+        for var in list(env.keys()):
+            if (
+                var.startswith("LEMONADE_")
+                and var != "LEMONADE_BACKEND_WATCHDOG_POLL_SECONDS"
+            ):
+                del env[var]
         env["PATH"] = f"{MOCK_BIN_DIR}{os.pathsep}{env.get('PATH', '')}"
         env["LEMONADE_BACKEND_WATCHDOG_POLL_SECONDS"] = "1"
+        env["NO_PROXY"] = "127.0.0.1,localhost"
+        env["no_proxy"] = "127.0.0.1,localhost"
 
-        print("Starting lemond...")
+        self.log_file_path = os.path.join(cache_dir, f"lemond_{self.port}.log")
+        self.log_file = open(self.log_file_path, "w")
+
+        print(f"Starting lemond on port {self.port}...")
         self.lemond_proc = subprocess.Popen(
-            [lemond_bin, "--port", str(PORT), cache_dir],
+            [
+                lemond_bin,
+                cache_dir,
+                "--port",
+                str(self.port),
+                "--host",
+                "127.0.0.1",
+                "--no-broadcast",
+            ],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=self.log_file,
+            stderr=subprocess.STDOUT,
             text=True,
         )
 
@@ -250,7 +289,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         healthy = False
         for _ in range(30):
             try:
-                resp = requests.get(f"{BASE_URL}/api/v1/health", timeout=1)
+                resp = self.session.get(f"{self.base_url}/api/v1/health", timeout=1)
                 if resp.status_code == 200:
                     healthy = True
                     break
@@ -264,20 +303,26 @@ class TestGpuHangRecovery(unittest.TestCase):
                 self.lemond_proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.lemond_proc.kill()
-            stdout, stderr = self.lemond_proc.communicate()
-            print("Lemond stdout:", stdout)
-            print("Lemond stderr:", stderr)
+            self.log_file.flush()
+            with open(self.log_file_path, "r") as f:
+                print("Lemond output:", f.read())
             self.fail("lemond failed to start / respond to health check")
 
     def tearDown(self):
         # Terminate lemond
-        if self.lemond_proc:
+        if getattr(self, "lemond_proc", None):
             self.lemond_proc.terminate()
             try:
                 self.lemond_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 self.lemond_proc.kill()
                 self.lemond_proc.wait()
+
+        if getattr(self, "log_file", None):
+            try:
+                self.log_file.close()
+            except Exception:
+                pass
 
         # Restore config.json backup
         if hasattr(self, "config_path"):
@@ -320,8 +365,8 @@ class TestGpuHangRecovery(unittest.TestCase):
 
         # Load the capability test model
         print("Loading test model...")
-        load_resp = requests.post(
-            f"{BASE_URL}/api/v1/load",
+        load_resp = self.session.post(
+            f"{self.base_url}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=60,
         )
@@ -335,8 +380,8 @@ class TestGpuHangRecovery(unittest.TestCase):
             "stream": False,
         }
 
-        resp = requests.post(
-            f"{BASE_URL}/api/v1/chat/completions", json=payload, timeout=60
+        resp = self.session.post(
+            f"{self.base_url}/api/v1/chat/completions", json=payload, timeout=60
         )
 
         # Verify request succeeded
@@ -366,8 +411,8 @@ class TestGpuHangRecovery(unittest.TestCase):
 
         # Load the capability test model
         print("Loading test model...")
-        load_resp = requests.post(
-            f"{BASE_URL}/api/v1/load",
+        load_resp = self.session.post(
+            f"{self.base_url}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=60,
         )
@@ -381,8 +426,11 @@ class TestGpuHangRecovery(unittest.TestCase):
             "stream": True,
         }
 
-        resp = requests.post(
-            f"{BASE_URL}/api/v1/chat/completions", json=payload, stream=True, timeout=60
+        resp = self.session.post(
+            f"{self.base_url}/api/v1/chat/completions",
+            json=payload,
+            stream=True,
+            timeout=60,
         )
 
         # Consume the stream
@@ -423,8 +471,8 @@ class TestGpuHangRecovery(unittest.TestCase):
 
         # Load the capability test model
         print("Loading test model...")
-        load_resp = requests.post(
-            f"{BASE_URL}/api/v1/load",
+        load_resp = self.session.post(
+            f"{self.base_url}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
             timeout=60,
         )
@@ -440,8 +488,11 @@ class TestGpuHangRecovery(unittest.TestCase):
 
         def send_request():
             try:
-                return requests.post(
-                    f"{BASE_URL}/api/v1/chat/completions", json=payload, timeout=60
+                # Create isolated session for concurrent request
+                s = requests.Session()
+                s.trust_env = False
+                return s.post(
+                    f"{self.base_url}/api/v1/chat/completions", json=payload, timeout=60
                 )
             except Exception as e:
                 return e

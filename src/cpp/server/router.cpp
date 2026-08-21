@@ -189,13 +189,13 @@ bool Router::is_watchdog_reset_response(const json& response) const {
         return true;
     }
 
-    if (error.contains("message") && error["message"].is_string() &&
-        error.contains("type") && error["type"].is_string()) {
+    if (error.contains("message") && error["message"].is_string()) {
         std::string message = error["message"].get<std::string>();
-        std::string type = error["type"].get<std::string>();
-        if ((message.find("Compute error.") != std::string::npos ||
-             message.find("GPU Hang") != std::string::npos) &&
-            type.find("server_error") != std::string::npos) {
+        std::string lowered = message;
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lowered.find("compute error") != std::string::npos ||
+            lowered.find("gpu hang") != std::string::npos) {
             return true;
         }
     }
@@ -1616,7 +1616,6 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 // Template method for streaming execution
 template<typename Func>
 void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span) {
-    WrappedServer* server = nullptr;
     std::string requested_model;
 
     try {
