@@ -115,9 +115,7 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
                                                  bool merge_args) {
     if (!merge_args) return custom_args;
 
-    std::vector<RuntimeArgDefault> defaults = {
-        {"--reasoning-format auto", "--reasoning-format", {}, false},
-    };
+    std::vector<RuntimeArgDefault> defaults;
 
     const std::string draft_checkpoint = model_info.checkpoint("draft");
     const bool has_dflash_label =
@@ -130,21 +128,9 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
         model_info.labels.end();
 
     if (is_dflash_draft && has_dflash_label) {
-        defaults.push_back({"--spec-type draft-dflash", "--spec-type", {}, false});
+        defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
     } else if (uses_mtp) {
-        defaults.push_back({"--spec-type draft-mtp", "--spec-type", {}, false});
-    }
-
-    defaults.push_back({"--no-ui", "--no-ui", {}, true});
-
-    if (SystemInfo::get_has_igpu()) {
-        defaults.push_back({
-            "--load-mode none",
-            "--load-mode",
-            {"--direct-io", "--no-direct-io", "-dio", "-ndio", "--mmap",
-             "--no-mmap", "--mlock", "-lm"},
-            false,
-        });
+        defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
 
     return append_runtime_arg_defaults(custom_args, defaults);
@@ -293,10 +279,6 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
-    const json merge_args_value = options.get_option("merge_args");
-    const bool merge_args =
-        merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
-    llamacpp_args = resolve_llamacpp_runtime_args(model_info, llamacpp_args, merge_args);
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 

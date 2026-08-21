@@ -2446,12 +2446,13 @@ void Server::ensure_collection_loaded(const ModelInfo& info) {
             comp_info = model_manager_->get_model_info(component);
         }
         LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-        // Per the documented contract, per-model options like ctx_size or
-        // llamacpp_backend are NOT forwarded from the collection's load request
-        // to its components. Each component uses its own saved recipe_options.json
-        // entry.
-        router_->load_model(component, comp_info, comp_info.recipe_options, true,
-                            /*allow_reload_on_option_change=*/true);
+        // The collection load request does not become the component request
+        // layer. Router already reads the component's saved options from comp_info,
+        // so an empty request preserves normal model/architecture/backend scope
+        // semantics.
+        router_->load_model(
+            component, comp_info, RecipeOptions(comp_info.recipe, json::object()), true,
+            /*allow_reload_on_option_change=*/true);
     }
 }
 

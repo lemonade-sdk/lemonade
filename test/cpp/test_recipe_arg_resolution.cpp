@@ -126,38 +126,18 @@ int main() {
         "-b 2048 --override-kv a=bool:false --override-kv b=bool:false");
 
     const std::vector<RuntimeArgDefault> runtime_defaults = {
-        {"--reasoning-format auto", "--reasoning-format", {}, false},
-        {"--no-ui", "--no-ui", {}, true},
-        {"--load-mode none", "--load-mode",
-         {"--direct-io", "--no-direct-io", "-dio", "-ndio", "--mmap",
-          "--no-mmap", "--mlock", "-lm"},
-         false},
+        {"--spec-type draft-mtp", "--spec-type"},
     };
 
     failures += !expect_args(
-        "runtime defaults become part of effective args",
+        "runtime default becomes part of effective args",
         append_runtime_arg_defaults("--threads 4", runtime_defaults),
-        "--threads 4 --reasoning-format auto --no-ui --load-mode none");
+        "--threads 4 --spec-type draft-mtp");
 
     failures += !expect_args(
-        "runtime exact option overrides default",
-        append_runtime_arg_defaults("--reasoning-format=deepseek", runtime_defaults),
-        "--reasoning-format deepseek --no-ui --load-mode none");
-
-    failures += !expect_args(
-        "runtime binary negation overrides default",
-        append_runtime_arg_defaults("--ui", runtime_defaults),
-        "--ui --reasoning-format auto --load-mode none");
-
-    failures += !expect_args(
-        "runtime alias overrides load-mode default",
-        append_runtime_arg_defaults("--no-mmap", runtime_defaults),
-        "--no-mmap --reasoning-format auto --no-ui");
-
-    failures += !expect_args(
-        "runtime equals-form alias overrides load-mode default",
-        append_runtime_arg_defaults("--mmap=auto", runtime_defaults),
-        "--mmap auto --reasoning-format auto --no-ui");
+        "explicit runtime option overrides default",
+        append_runtime_arg_defaults("--spec-type=draft-dflash", runtime_defaults),
+        "--spec-type draft-dflash");
 
     failures += !expect_args(
         "merge false suppresses overridable runtime defaults",

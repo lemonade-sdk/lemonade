@@ -219,7 +219,9 @@ RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
             merged[it.key()] = it.value();
         }
     }
-    return RecipeOptions(recipe_, merged);
+    RecipeOptions inherited(recipe_, merged);
+    inherited.explicit_options_ = explicit_options_;
+    return inherited;
 }
 
 json RecipeOptions::get_option(const std::string& opt) const {

@@ -1433,8 +1433,7 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
             }
         }
 
-        effective.set_option(
-            key,
+        const std::string resolved_args =
             utils::resolve_scoped_custom_args({
                 args_value(backend_defaults_json, key),
                 args_value(arch_json, key),
@@ -1443,7 +1442,10 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
                 request_state,
                 request_args,
                 merge_args,
-            }));
+            });
+        // Keep empty results: explicit "" is a meaningful clear value and the
+        // effective layer is also used as replayable load input.
+        effective.set_option(key, resolved_args);
     }
 
     if (const auto* ops = backends::ops_for(model_info.recipe)) {

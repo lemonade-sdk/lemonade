@@ -27,8 +27,6 @@ struct ScopedCustomArgs {
 struct RuntimeArgDefault {
     std::string args;
     std::string flag;
-    std::vector<std::string> aliases;
-    bool negatable = false;
 };
 
 inline bool is_custom_args_option(const std::string& key) {
@@ -74,22 +72,8 @@ inline std::string append_runtime_arg_defaults(
     std::vector<std::string> resolved_tokens = parse_custom_args(custom_args);
 
     for (const auto& runtime_default : defaults) {
-        bool overridden = custom_args_has_flag(resolved_tokens, runtime_default.flag);
-
-        if (!overridden && runtime_default.negatable) {
-            const std::string negated = negate_flag(runtime_default.flag);
-            overridden = !negated.empty() && custom_args_has_flag(resolved_tokens, negated);
-        }
-
-        if (!overridden) {
-            for (const auto& alias : runtime_default.aliases) {
-                if (custom_args_has_flag(resolved_tokens, alias)) {
-                    overridden = true;
-                    break;
-                }
-            }
-        }
-
+        const bool overridden =
+            custom_args_has_flag(resolved_tokens, runtime_default.flag);
         if (overridden || runtime_default.args.empty()) continue;
 
         if (!result.empty()) result += " ";

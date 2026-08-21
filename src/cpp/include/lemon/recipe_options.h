@@ -19,8 +19,8 @@ public:
     json get_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
-    // True when constructor input named this option, even if its sentinel value
-    // was dropped from options_.
+    // True when this layer explicitly named or set this option, even if its
+    // sentinel value was dropped from options_. inherit() preserves this provenance.
     bool has_explicit_option(const std::string& opt) const;
     json get_explicit_option(const std::string& opt) const;
     std::string get_recipe() const { return recipe_; };
