@@ -1,6 +1,5 @@
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <nlohmann/json.hpp>
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
@@ -55,7 +54,8 @@ int main() {
         CLIParser parser;
         const std::string temp_dir_arg = temp_dir.string();
         const char* argv[] = {"lemond", temp_dir_arg.c_str(), "--port", "8888", "--host", "127.0.0.1"};
-        parser.parse(6, const_cast<char**>(argv));
+        int res = parser.parse(6, const_cast<char**>(argv));
+        check(res == 0 && parser.should_continue(), "CLIParser parses explicit directory with overrides successfully");
         auto cli_cfg = parser.get_config();
         check(cli_cfg.cache_dir == temp_dir_arg, "CLIParser preserves explicit cache directory");
         check(cli_cfg.config_dir == temp_dir_arg, "CLIParser uses cache directory as config directory for portable installs");
@@ -102,7 +102,8 @@ int main() {
     {
         CLIParser parser;
         const char* argv[] = {"lemond"};
-        parser.parse(1, const_cast<char**>(argv));
+        int res = parser.parse(1, const_cast<char**>(argv));
+        check(res == 0 && parser.should_continue(), "CLIParser parses default lemond invocation successfully");
         auto cli_cfg = parser.get_config();
         check(cli_cfg.port == -1, "Default port is -1 when omitted");
         check(cli_cfg.host.empty(), "Default host is empty when omitted");
