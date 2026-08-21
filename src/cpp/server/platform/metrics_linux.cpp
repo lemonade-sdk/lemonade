@@ -1,4 +1,5 @@
 #include <lemon/system_metrics_platform.h>
+#include "nvidia_metrics.h"
 #include <fstream>
 #include <sstream>
 #include <filesystem>
@@ -86,14 +87,15 @@ public:
     }
 
     double get_gpu_usage() override {
+        const NvidiaMetrics nvidia = query_nvidia_metrics();
         try {
             std::string drm_path = "/sys/class/drm";
 
             if (!fs::exists(drm_path)) {
-                return -1.0;
+                return nvidia.gpu_percent;
             }
 
-            double highest_usage = -1.0;
+            double highest_usage = nvidia.gpu_percent;
 
             for (const auto& entry : fs::directory_iterator(drm_path)) {
                 std::string card_name = entry.path().filename().string();
@@ -120,16 +122,17 @@ public:
     }
 
     double get_vram_usage_gb() override {
+        const NvidiaMetrics nvidia = query_nvidia_metrics();
         try {
             std::string drm_path = "/sys/class/drm";
 
             if (!fs::exists(drm_path)) {
-                return -1.0;
+                return nvidia.vram_used_gb;
             }
 
-            double highest_usage = -1.0;
+            double highest_usage = nvidia.vram_used_gb >= 0.0 ? nvidia.gpu_percent : -1.0;
             std::string highest_card;
-            double highest_card_memory = 0.0;
+            double highest_card_memory = nvidia.vram_used_gb;
 
             for (const auto& entry : fs::directory_iterator(drm_path)) {
                 std::string card_name = entry.path().filename().string();
@@ -182,7 +185,7 @@ public:
                 }
             }
 
-            return highest_card_memory > 0 ? highest_card_memory : -1.0;
+            return highest_card_memory >= 0 ? highest_card_memory : -1.0;
         } catch (...) {
             return -1.0;
         }
