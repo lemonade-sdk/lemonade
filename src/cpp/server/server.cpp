@@ -3528,6 +3528,11 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         RouteContext ctx;
         ctx.input = prompt;
         ctx.params.chars = prompt.size();
+        // A test prompt is a single turn with no history, so its whole-request
+        // total is the prompt itself — the same equality build_route_context
+        // gives the history-less `prompt` form. Leaving this at 0 would make
+        // every min_total_chars rule silently untestable here.
+        ctx.params.total_chars = prompt.size();
         ctx.params.has_images = has_images;
         ctx.params.has_tools = has_tools;
         ctx.metadata = std::move(metadata);

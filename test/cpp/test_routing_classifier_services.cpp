@@ -494,6 +494,128 @@ static void test_build_route_context_responses_uses_last_user_message() {
           ctx.input == "thanks that helps");
 }
 
+// total_chars is the whole-conversation counterpart of chars (#2958): every
+// text part the request carries, across every role, so a policy can route on
+// conversation size rather than on the size of the latest turn.
+static void test_build_route_context_total_chars_all_roles() {
+    const std::string system_text = "you are a helpful assistant";
+    const std::string user_first = "first turn about databases";
+    const std::string assistant_text = "sure, here is a schema";
+    const std::string tool_text = "{\"rows\": 42}";
+    const std::string user_last = "go on";
+
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "system"}, {"content", system_text}},
+            {{"role", "user"}, {"content", user_first}},
+            {{"role", "assistant"}, {"content", assistant_text}},
+            {{"role", "tool"}, {"content", tool_text}},
+            {{"role", "user"}, {"content", user_last}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    const std::size_t expected = system_text.size() + user_first.size() +
+                                 assistant_text.size() + tool_text.size() +
+                                 user_last.size();
+    check("total_chars sums text across every role", ctx.params.total_chars == expected);
+    check("chars still measures the latest user turn only",
+          ctx.params.chars == user_last.size());
+    check("a long history with a short last turn has total_chars > chars",
+          ctx.params.total_chars > ctx.params.chars);
+}
+
+// Guards the short-circuit trap: the image scan stops at the first hit, so
+// totalling alongside it must not stop with it.
+static void test_build_route_context_total_chars_counts_past_first_image() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "text"}, {"text", "describe this"}},
+                {{"type", "image_url"}, {"image_url", {{"url", "data:image/png;base64,AAAA"}}}},
+            })}},
+            {{"role", "assistant"}, {"content", "that is a cat"}},
+            {{"role", "user"}, {"content", "and this one?"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    const std::size_t expected = std::string("describe this").size() +
+                                 std::string("that is a cat").size() +
+                                 std::string("and this one?").size();
+    check("total_chars counts messages after the first image",
+          ctx.params.total_chars == expected);
+    check("has_images still set when totalling shares the pass", ctx.params.has_images);
+}
+
+static void test_build_route_context_total_chars_utf8_bytes() {
+    // "café" is 4 code points but 5 UTF-8 bytes; two messages => 10 bytes.
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "assistant"}, {"content", "caf\xC3\xA9"}},
+            {{"role", "user"}, {"content", "caf\xC3\xA9"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("total_chars counts UTF-8 bytes, not code points", ctx.params.total_chars == 10);
+}
+
+// The legacy completions forms carry no history, so the total is the routing
+// input itself — total_chars == chars.
+static void test_build_route_context_total_chars_prompt_form() {
+    json string_request = {{"model", "router"}, {"prompt", "plain text prompt"}};
+    RouteContext string_ctx = lemon::build_route_context(string_request, "router");
+    check("prompt string: total_chars == chars",
+          string_ctx.params.total_chars == string_ctx.params.chars &&
+              string_ctx.params.total_chars == std::string("plain text prompt").size());
+
+    json array_request = {
+        {"model", "router"},
+        {"prompt", json::array({"first part", "second part"})},
+    };
+    RouteContext array_ctx = lemon::build_route_context(array_request, "router");
+    check("prompt array: total_chars == chars",
+          array_ctx.params.total_chars == array_ctx.params.chars &&
+              array_ctx.params.total_chars == std::string("first part\nsecond part").size());
+
+    json input_string_request = {{"model", "router"}, {"input", "plain text prompt"}};
+    RouteContext input_string_ctx = lemon::build_route_context(input_string_request, "router");
+    check("input string: total_chars == chars",
+          input_string_ctx.params.total_chars == input_string_ctx.params.chars);
+}
+
+static void test_build_route_context_total_chars_responses_input_array() {
+    json role_tagged = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "assistant"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "here is some code"}},
+            })}},
+            {{"role", "user"}, {"content", json::array({
+                {{"type", "input_text"}, {"text", "thanks that helps"}},
+            })}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(role_tagged, "router");
+    check("responses input array: total_chars sums all items",
+          ctx.params.total_chars == std::string("here is some code").size() +
+                                        std::string("thanks that helps").size());
+    check("responses input array: chars is the last user item only",
+          ctx.params.chars == std::string("thanks that helps").size());
+
+    json bare = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"type", "input_text"}, {"text", "hello"}},
+            {{"type", "input_image"}, {"image_url", "data:image/png;base64,AAAA"}},
+        })},
+    };
+    RouteContext bare_ctx = lemon::build_route_context(bare, "router");
+    check("responses bare parts: images contribute nothing to total_chars",
+          bare_ctx.params.total_chars == std::string("hello").size());
+}
+
 static lemon::CostServices fake_cost_services() {
     lemon::CostServices services;
     services.cost_of = [](const std::string& candidate) -> lemon::CostInfo {
@@ -716,6 +838,11 @@ int main() {
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
     test_build_route_context_responses_uses_last_user_message();
+    test_build_route_context_total_chars_all_roles();
+    test_build_route_context_total_chars_counts_past_first_image();
+    test_build_route_context_total_chars_utf8_bytes();
+    test_build_route_context_total_chars_prompt_form();
+    test_build_route_context_total_chars_responses_input_array();
     test_estimated_cost_attached_on_matched_rule();
     test_estimated_cost_attached_on_default();
     test_estimated_cost_omitted_when_candidate_has_no_cost_data();
