@@ -3627,6 +3627,16 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
 
+    std::function<bool()> should_cancel;
+    if (req.is_connection_closed) {
+        should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    std::atomic<bool> req_cancel{false};
+    if (should_cancel && should_cancel()) {
+        req_cancel.store(true);
+    }
+    WrappedServer::RequestCancelScope cancel_scope(should_cancel, &req_cancel);
+
     try {
 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
@@ -3772,7 +3782,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             // Log the HTTP request
             LOG(INFO, "Server") << "POST /api/v1/chat/completions - 200 OK" << std::endl;
 
-            auto response = router_->chat_completion(request_json);
+            auto response = router_->chat_completion(request_json, &req_cancel);
 
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
@@ -3814,6 +3824,16 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_completions(const httplib::Request& req, httplib::Response& res) {
+    std::function<bool()> should_cancel;
+    if (req.is_connection_closed) {
+        should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    std::atomic<bool> req_cancel{false};
+    if (should_cancel && should_cancel()) {
+        req_cancel.store(true);
+    }
+    WrappedServer::RequestCancelScope cancel_scope(should_cancel, &req_cancel);
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -5423,6 +5443,16 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
+    std::function<bool()> should_cancel;
+    if (req.is_connection_closed) {
+        should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    std::atomic<bool> req_cancel{false};
+    if (should_cancel && should_cancel()) {
+        req_cancel.store(true);
+    }
+    WrappedServer::RequestCancelScope cancel_scope(should_cancel, &req_cancel);
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
         normalize_client_model_name(request_json);
