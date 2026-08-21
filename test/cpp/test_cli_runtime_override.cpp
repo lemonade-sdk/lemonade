@@ -53,9 +53,12 @@ int main() {
         ConfigFile::save(temp_dir.string(), initial_cfg);
 
         CLIParser parser;
-        const char* argv[] = {"lemond", temp_dir.string().c_str(), "--port", "8888", "--host", "127.0.0.1"};
+        const std::string temp_dir_arg = temp_dir.string();
+        const char* argv[] = {"lemond", temp_dir_arg.c_str(), "--port", "8888", "--host", "127.0.0.1"};
         parser.parse(6, const_cast<char**>(argv));
         auto cli_cfg = parser.get_config();
+        check(cli_cfg.cache_dir == temp_dir_arg, "CLIParser preserves explicit cache directory");
+        check(cli_cfg.config_dir == temp_dir_arg, "CLIParser uses cache directory as config directory for portable installs");
 
         json loaded = ConfigFile::load(cli_cfg.cache_dir, cli_cfg.config_dir);
         check(loaded["port"] == 13305, "Loaded config before override has original port");
@@ -77,9 +80,9 @@ int main() {
         check(snap["port"] == 13305, "snapshot() contains persistent port 13305, not override");
         check(snap["host"] == "localhost", "snapshot() contains persistent host localhost, not override");
 
-        // Simulate `lemonade config set log_level=debug` which calls ConfigFile::save(cache_dir, snapshot())
+        // Simulate persisting a config update without leaking runtime overrides
         runtime_cfg.set(json{{"log_level", "debug"}});
-        ConfigFile::save(cli_cfg.cache_dir, runtime_cfg.snapshot());
+        ConfigFile::save(cli_cfg.config_dir, runtime_cfg.snapshot());
 
         // Re-read from disk to ensure config.json was updated with log_level but did NOT leak port/host overrides
         json disk_cfg = ConfigFile::load(cli_cfg.cache_dir, cli_cfg.config_dir);
