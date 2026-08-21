@@ -228,6 +228,7 @@ private:
     double get_amd_vram(const std::string& drm_render_minor);
     double get_amd_gtt(const std::string& drm_render_minor);
     bool get_amd_is_igpu(const std::string& drm_render_minor);
+    double get_igpu_carveout_gb();
 
 private:
     double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
