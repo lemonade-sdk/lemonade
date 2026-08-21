@@ -128,6 +128,9 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `sd-cpp_backend` | `--sdcpp` | BACKEND | "" | SD.cpp backend to use |
 | `sdcpp_args` | `--sdcpp-args` | ARGS | "" | Custom arguments to pass to sd-server (must not conflict with managed args) |
+| `diffusion_fa` | `--diffusion-fa` | BOOL | false | Enable fused-attention |
+| `diffusion_conv_direct` | `--diffusion-conv-direct` | BOOL | false | Enable direct convolution |
+| `vae_conv_direct` | `--vae-conv-direct` | BOOL | false | Enable VAE direct convolution |
 | `steps` | — | SIZE | 20 | Number of diffusion steps |
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
 | `width` | — | SIZE | 512 | Output image width |

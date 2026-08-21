@@ -110,10 +110,13 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "cpu_bin": "builtin",
     "cuda_args": "",
     "cuda_bin": "builtin",
+    "diffusion_conv_direct": false,
+    "diffusion_fa": false,
     "height": 512,
     "rocm_args": "",
     "rocm_bin": "builtin",
     "steps": 20,
+    "vae_conv_direct": false,
     "vulkan_args": "",
     "vulkan_bin": "builtin",
     "width": 512
