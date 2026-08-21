@@ -2817,6 +2817,21 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
+set(_MODEL_DOWNLOAD_STATE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_download_state.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_DOWNLOAD_STATE_TEST_SRC}")
+    add_executable(test_model_download_state
+        test/cpp/test_model_download_state.cpp
+    )
+    target_link_libraries(test_model_download_state PRIVATE lemonade-server-core)
+    add_dependencies(test_model_download_state copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelDownloadStateTest CI ON COMMAND test_model_download_state)
+endif()
+
+
 # Recipe hiding: a backend with every built-in model dropped by the system-memory
 # heuristic (and no user model left) is hidden from the recipe/backends listing.
 set(_RECIPE_HIDING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_hiding.cpp")
