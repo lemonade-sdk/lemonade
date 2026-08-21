@@ -294,6 +294,14 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         };
       }
 
+      if (model.speech_defaults && typeof model.speech_defaults === 'object' && !Array.isArray(model.speech_defaults)) {
+        modelInfo.speech_defaults = { ...model.speech_defaults };
+      }
+
+      if (model.audio_defaults && typeof model.audio_defaults === 'object' && !Array.isArray(model.audio_defaults)) {
+        modelInfo.audio_defaults = { ...model.audio_defaults };
+      }
+
       acc[model.id] = modelInfo;
       return acc;
     }, {} as ModelsData);

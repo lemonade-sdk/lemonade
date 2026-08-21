@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 import io
 import math
 import struct
-import threading
+import time
 import wave
 
 import requests
@@ -268,28 +268,36 @@ class OpenMossTTSTests(ServerTestBase):
         self._assert_wav_response(response, "Voice design")
         print(f"[OK] Voice design produced a clip ({len(response.content)} bytes)")
 
+    def _loaded_model_pid(self, model):
+        response = requests.get(
+            f"{self.base_url}/health",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        for loaded in response.json().get("all_models_loaded", []):
+            if loaded.get("model_name") == model:
+                return loaded.get("pid")
+        return None
+
     def test_011_concurrent_speech_and_voice_design(self):
-        """A voice-design swap waits for an in-flight speech request."""
+        """A request arriving after speech is stopped waits for voice design."""
+
         model = get_test_model("tts")
-        barrier = threading.Barrier(2)
-        payloads = [
-            {
-                "model": model,
-                "input": "A concurrent speech request must survive the voice model swap. "
-                * 20,
-                "max_audio_frames": 300,
-            },
-            {
-                "model": model,
-                "input": "This request designs a voice without interrupting its neighbor.",
-                "voice_design_description": (
-                    "a bright, precise documentary narrator with a gentle cadence"
-                ),
-            },
-        ]
+        voice_design_payload = {
+            "model": model,
+            "input": "This request designs a voice without interrupting its neighbor.",
+            "voice_design_description": (
+                "a precise late-night radio narrator with a softly rising cadence"
+            ),
+        }
+        plain_payload = {
+            "model": model,
+            "input": (
+                "A request entering during the model swap must wait and then speak."
+            ),
+        }
 
         def send(payload):
-            barrier.wait(timeout=TIMEOUT_DEFAULT)
             return requests.post(
                 f"{self.base_url}/audio/speech",
                 json=payload,
@@ -297,10 +305,34 @@ class OpenMossTTSTests(ServerTestBase):
             )
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            responses = list(executor.map(send, payloads))
+            design_future = executor.submit(send, voice_design_payload)
+            # The Lemonade /health snapshot keeps the model visible during the
+            # intentional swap, but its wrapped speech PID is zero after the
+            # speech process was actually stopped. Enter the second request only
+            # in that exact window; this is the race the old simultaneous-start
+            # test could miss.
 
-        self._assert_wav_response(responses[0], "Concurrent plain speech")
-        self._assert_wav_response(responses[1], "Concurrent voice design")
+            deadline = time.monotonic() + min(TIMEOUT_MODEL_OPERATION, 120)
+            while time.monotonic() < deadline:
+                if self._loaded_model_pid(model) == 0:
+                    break
+                if design_future.done():
+                    self.fail(
+                        "Voice design completed before the test observed the "
+                        "speech-process swap window"
+                    )
+                time.sleep(0.05)
+            else:
+                self.fail("Timed out waiting for OpenMOSS speech PID to become zero")
+
+            plain_future = executor.submit(send, plain_payload)
+            design_response = design_future.result(timeout=TIMEOUT_MODEL_OPERATION)
+            plain_response = plain_future.result(timeout=TIMEOUT_MODEL_OPERATION)
+
+        self._assert_wav_response(design_response, "Concurrent voice design")
+        self._assert_wav_response(
+            plain_response, "Speech entering during voice-design swap"
+        )
 
     def test_012_streaming_wav(self):
         """A wav-only backend streams its own container instead of being rejected."""

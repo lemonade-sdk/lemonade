@@ -20,7 +20,7 @@ import EmptyState from '../EmptyState';
 import TypingIndicator from '../TypingIndicator';
 import Combobox from '../Combobox';
 
-type VoiceMode = 'describe' | 'clone';
+type VoiceMode = 'plain' | 'describe' | 'clone';
 
 const speechDefaultsForModel = (
   params: GenerationParamMetadata[],
@@ -66,7 +66,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   const [ttsMessageHistory, setTTSMessageHistory] = useState<TTSClip[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingValue, setEditingValue] = useState('');
-  const [voiceMode, setVoiceMode] = useState<VoiceMode>('describe');
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>('plain');
   const [voiceDescription, setVoiceDescription] = useState('');
   const [cloneWav, setCloneWav] = useState<{ b64: string; name: string } | null>(null);
   const [speechParams, setSpeechParams] = useState<Record<string, number>>({});
@@ -152,16 +152,20 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
     try {
       const extra: Record<string, unknown> = { ...speechParams };
-      if (supportsVoiceDesign && voiceDesignParam) {
-        const styleNote = voiceDescription.trim();
-        if (voiceMode === 'describe') {
-          extra[voiceDesignParam.name] = styleNote;
-          await synthAndRecord(text, ttsModel, '', undefined, extra);
-        } else {
-          await synthAndRecord(text, ttsModel, styleNote, cloneWav?.b64, extra);
-        }
+      const styleNote = voiceDescription.trim();
+      if (supportsVoiceDesign && voiceDesignParam && voiceMode === 'describe') {
+        extra[voiceDesignParam.name] = styleNote;
+        await synthAndRecord(text, ttsModel, '', undefined, extra);
+      } else if (supportsVoiceDesign && voiceMode === 'clone') {
+        await synthAndRecord(text, ttsModel, styleNote, cloneWav?.b64, extra);
       } else {
-        await synthAndRecord(text, ttsModel, tts.currentVoice, undefined, extra);
+        await synthAndRecord(
+          text,
+          ttsModel,
+          supportsVoiceDesign ? styleNote : tts.currentVoice,
+          undefined,
+          extra,
+        );
       }
     } catch (error: any) {
       console.error('Failed to process message:', error);
@@ -312,6 +316,11 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
               <div className="tts-generation-controls">
                 <div className="tts-mode-toggle">
                   <button
+                    className={`toggle-button${voiceMode === 'plain' ? ' active' : ''}`}
+                    onClick={() => setVoiceMode('plain')}
+                    disabled={busy}
+                  >Plain</button>
+                  <button
                     className={`toggle-button${voiceMode === 'describe' ? ' active' : ''}`}
                     onClick={() => setVoiceMode('describe')}
                     disabled={busy}
@@ -322,12 +331,14 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                     disabled={busy}
                   >Clone</button>
                 </div>
-                {voiceMode === 'describe' ? (
+                {voiceMode !== 'clone' ? (
                   <input
                     className="form-input"
                     value={voiceDescription}
                     onChange={(e) => setVoiceDescription(e.target.value)}
-                    placeholder="Describe the voice (e.g. warm low female, British accent)"
+                    placeholder={voiceMode === 'describe'
+                      ? 'Describe the voice (e.g. warm low female, British accent)'
+                      : 'Optional style instruction (e.g. cheerful, whispering)'}
                     disabled={busy}
                   />
                 ) : (

@@ -81,6 +81,28 @@ const systemInfo = {
 
 const tests = [
   {
+    name: 'model-specific speech/audio defaults survive /models normalization',
+    run() {
+      const source = fs.readFileSync(
+        path.join(appRoot, 'src', 'renderer', 'utils', 'modelData.ts'),
+        'utf8',
+      );
+      assert.ok(source.includes('modelInfo.speech_defaults'));
+      assert.ok(source.includes('modelInfo.audio_defaults'));
+    },
+  },
+  {
+    name: 'TTS voice modes retain the plain path',
+    run() {
+      const source = fs.readFileSync(
+        path.join(appRoot, 'src', 'renderer', 'components', 'panels', 'TTSPanel.tsx'),
+        'utf8',
+      );
+      assert.ok(source.includes("type VoiceMode = 'plain' | 'describe' | 'clone'"));
+      assert.ok(source.includes("voiceMode === 'plain'"));
+    },
+  },
+  {
     name: 'generation controls retain server-declared bounds and defaults',
     run() {
       const params = metadata.generationParams(systemInfo, 'inventedaudio', 'audio-generation');

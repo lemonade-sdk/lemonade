@@ -33,6 +33,27 @@ constexpr const char* kVoiceDesignPhrase =
 
 constexpr const char* kVoiceDesignField = "voice_design_description";
 
+class ProcessSwapGuard {
+
+public:
+
+    explicit ProcessSwapGuard(std::atomic<bool>& flag) : flag_(flag) {
+        flag_.store(true, std::memory_order_release);
+    }
+
+    ~ProcessSwapGuard() {
+        flag_.store(false, std::memory_order_release);
+    }
+
+    ProcessSwapGuard(const ProcessSwapGuard&) = delete;
+    ProcessSwapGuard& operator=(const ProcessSwapGuard&) = delete;
+
+private:
+
+    std::atomic<bool>& flag_;
+
+};
+
 std::string string_field(const json& request, const char* key) {
     const auto it = request.find(key);
     return (it != request.end() && it->is_string()) ? it->get<std::string>() : std::string();
@@ -59,6 +80,13 @@ OpenMossServer::OpenMossServer(const std::string& log_level,
 
 OpenMossServer::~OpenMossServer() {
     unload();
+}
+
+
+bool OpenMossServer::is_backend_alive() const {
+    return process_swap_in_progress_.load(std::memory_order_acquire)
+        || WrappedServer::is_backend_alive();
+
 }
 
 std::string OpenMossServer::resolve_binary_path(const std::string& backend) {
@@ -120,7 +148,7 @@ void OpenMossServer::load(const std::string& model_name,
         BackendUtils::apply_cuda_env_vars(env_vars, "openmoss-server");
     }
 
-    std::unique_lock<std::shared_mutex> lock(process_mutex_);
+    std::unique_lock<std::shared_mutex> lock(request_mutex_);
     exe_path_ = exe_path;
     env_vars_ = env_vars;
     model_path_ = model_path;
@@ -140,7 +168,7 @@ OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) 
         throw std::runtime_error("Failed to find an available port");
     }
 
-    const std::vector<std::string> args = {
+    proc.args = {
         "--model", model_path,
         "--host", "127.0.0.1",
         "--port", std::to_string(proc.port),
@@ -151,7 +179,7 @@ OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) 
 
     LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << proc.port << std::endl;
     proc.handle = utils::ProcessManager::start_process(
-        exe_path_, args, "", is_debug(), false, env_vars_);
+        exe_path_, proc.args, "", is_debug(), false, env_vars_);
     if (!has_process_handle(proc.handle)) {
         throw std::runtime_error("Failed to start openmoss-server process");
     }
@@ -170,7 +198,7 @@ void OpenMossServer::stop_speech_process() {
 void OpenMossServer::start_speech_process() {
     Subprocess proc = spawn(model_path_);
     port_ = proc.port;
-    set_process_handle(proc.handle);
+    set_process_handle(proc.handle, exe_path_, proc.args);
     LOG(INFO, "openmoss-server") << "Process started with PID: " << proc.handle.pid << std::endl;
 
     if (!wait_for_ready("/health")) {
@@ -180,7 +208,7 @@ void OpenMossServer::start_speech_process() {
 }
 
 void OpenMossServer::unload() {
-    std::unique_lock<std::shared_mutex> lock(process_mutex_);
+    std::unique_lock<std::shared_mutex> lock(request_mutex_);
     stop_speech_process();
     reference_cache_.clear();
 }
@@ -191,6 +219,7 @@ std::string OpenMossServer::design_reference_sample(const std::string& voice_des
         return cached->second;
     }
 
+    ProcessSwapGuard swap_guard(process_swap_in_progress_);
     LOG(INFO, "openmoss-server") << "Designing reference voice for: " << voice_description << std::endl;
     stop_speech_process();
 
@@ -297,17 +326,17 @@ void OpenMossServer::audio_speech(const json& request, httplib::DataSink& sink) 
     };
 
     if (needs_voice_design) {
-        std::unique_lock<std::shared_mutex> lock(process_mutex_);
+        std::unique_lock<std::shared_mutex> lock(request_mutex_);
         forward();
         return;
     }
 
-    std::shared_lock<std::shared_mutex> lock(process_mutex_);
+    std::shared_lock<std::shared_mutex> lock(request_mutex_);
     forward();
 }
 
 void OpenMossServer::audio_generations(const json& request, httplib::DataSink& sink) {
-    std::shared_lock<std::shared_mutex> lock(process_mutex_);
+    std::shared_lock<std::shared_mutex> lock(request_mutex_);
     json body;
     body["prompt"] = string_field(request, "prompt");
     for (const char* key : {"seconds", "steps", "cfg_scale", "sigma_shift",

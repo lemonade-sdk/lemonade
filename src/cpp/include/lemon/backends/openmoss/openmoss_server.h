@@ -5,6 +5,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/server_capabilities.h"
 #include "lemon/wrapped_server.h"
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
@@ -31,6 +32,7 @@ public:
               const RecipeOptions& options,
               bool do_not_upgrade) override;
     void unload() override;
+    bool is_backend_alive() const override;
 
     void audio_speech(const json& request, httplib::DataSink& sink) override;
     void audio_generations(const json& request, httplib::DataSink& sink) override;
@@ -40,6 +42,7 @@ private:
     struct Subprocess {
         ProcessHandle handle;
         int port = 0;
+        std::vector<std::string> args;
     };
 
     std::string resolve_binary_path(const std::string& backend);
@@ -57,7 +60,8 @@ private:
     std::string voicegen_path_;
     std::map<std::string, std::string> reference_cache_;
     std::vector<std::pair<std::string, std::string>> env_vars_;
-    std::shared_mutex process_mutex_;
+    std::shared_mutex request_mutex_;
+    std::atomic<bool> process_swap_in_progress_{false};
 };
 
 namespace openmoss {
