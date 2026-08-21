@@ -10,6 +10,10 @@ const files = {
   connect: path.join(root, 'src/components/ConnectView.tsx'),
   apps: path.join(root, 'src/components/AppsView.tsx'),
   backendManager: path.join(root, 'src/components/BackendManager.tsx'),
+  modelManager: path.join(root, 'src/components/ModelManager.tsx'),
+  icons: path.join(root, 'src/components/Icon.tsx'),
+  localIcons: path.join(root, 'src/components/localIcons.tsx'),
+  tauriShim: path.join(root, 'src/tauriShim.ts'),
   catalogLayout: path.join(root, 'src/components/WorkspaceCatalogLayout.tsx'),
   mcpPanel: path.join(root, 'src/components/McpPanel.tsx'),
   api: path.join(root, 'src/api.ts'),
@@ -94,6 +98,15 @@ assert.match(sources.backendManager, /const \[showLogos, setShowLogos\] = useSta
 assert.match(sources.backendManager, /data-backends-unsupported-toggle[\s\S]*?data-backends-logo-toggle/);
 assert.match(sources.backendManager, /checked=\{showLogos\}[\s\S]*?<span>Show logos<\/span>/);
 assert.match(sources.backendManager, /showLogos \? \([\s\S]*?data-backend-logo[\s\S]*?: \([\s\S]*?workspace-card__name backend-card__name/);
+
+assert.match(sources.modelManager, /EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir'/);
+assert.match(sources.modelManager, /isExtraModelsDirModel\(model\)[\s\S]*?await showExternalModelDeleteNotice\(model\)[\s\S]*?return;/);
+assert.match(sources.modelManager, /managed in your external models folder\. Delete it directly from that folder\./);
+assert.match(sources.modelManager, /manager__toast-folder-action[\s\S]*?<Icon name="folder"/);
+assert.match(sources.tauriShim, /const \{ openUrl \} = await import\('@tauri-apps\/plugin-opener'\)/);
+assert.match(sources.tauriShim, /openExternalModelsFolder: \(path: string\) => invoke\('open_external_models_folder', \{ path \}\)/);
+assert.match(sources.icons, /'folder'/);
+assert.match(sources.localIcons, /"folder": \{/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />HTTP endpoint</);
