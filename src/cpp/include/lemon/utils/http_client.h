@@ -1,14 +1,15 @@
 #pragma once
 
-#include <string>
-#include <map>
-#include <vector>
-#include <functional>
-#include <chrono>
-#include <memory>
-#include <iostream>
-#include <iomanip>
 #include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace lemon {
 namespace utils {
@@ -102,6 +103,16 @@ public:
         return default_timeout_seconds_;
     }
 
+    // Global cap; when set, downloads are also serialized so concurrent
+    // transfers cannot exceed it in aggregate.
+    static void set_download_rate_limit(int64_t bytes_per_second) {
+        download_rate_limit_bytes_per_second_ = bytes_per_second;
+    }
+
+    static int64_t get_download_rate_limit() {
+        return download_rate_limit_bytes_per_second_.load();
+    }
+
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
@@ -154,6 +165,7 @@ public:
 
 private:
     static std::atomic<long> default_timeout_seconds_;
+    static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,

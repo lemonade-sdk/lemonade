@@ -1,5 +1,6 @@
 #include "lemon_tray/tray_ui.h"
 #include <lemon/utils/path_utils.h>
+#include <lemon/utils/rate_limit_utils.h>
 #include <lemon/version.h>
 
 #include <algorithm>
@@ -286,6 +287,37 @@ void TrayUI::fetch_runtime_config() {
         if (config.contains("max_loaded_models") && config["max_loaded_models"].is_number_integer()) {
             max_loaded_models_ = config["max_loaded_models"].get<int>();
         }
+        if (config.contains("download_rate_limit") && config["download_rate_limit"].is_string()) {
+            download_rate_limit_ = config["download_rate_limit"].get<std::string>();
+        } else {
+            download_rate_limit_.clear();
+        }
+        // Capture the option list once per tray session: it mirrors the
+        // configured download_rate_limit_options, while the active limit is
+        // refreshed on every pass so the checked mark follows runtime changes
+        // made from other clients.
+        if (download_rate_limit_options_.empty()) {
+            if (config.contains("download_rate_limit_options") &&
+                config["download_rate_limit_options"].is_array()) {
+                for (const auto& r : config["download_rate_limit_options"]) {
+                    if (r.is_string()) {
+                        const std::string s = r.get<std::string>();
+                        if (std::find(download_rate_limit_options_.begin(),
+                                      download_rate_limit_options_.end(), s) ==
+                            download_rate_limit_options_.end()) {
+                            download_rate_limit_options_.push_back(s);
+                        }
+                    }
+                }
+            }
+            bool unlimited = lemon::utils::parse_rate_limit_to_bytes(download_rate_limit_) <= 0;
+            if (!unlimited &&
+                std::find(download_rate_limit_options_.begin(),
+                          download_rate_limit_options_.end(), download_rate_limit_) ==
+                    download_rate_limit_options_.end()) {
+                download_rate_limit_options_.push_back(download_rate_limit_);
+            }
+        }
         if (config.contains("ctx_size") && config["ctx_size"].is_number_integer()) {
             recipe_options_["ctx_size"] = config["ctx_size"].get<int>();
         }
@@ -474,6 +506,46 @@ Menu TrayUI::create_menu(const std::vector<LoadedModelInfo>& loaded_models,
     }
     menu.add_item(MenuItem::Submenu("Max Loaded Models", max_models_submenu));
 
+    // Rate-limit submenu: shown when at least one rate is configured or a
+    // non-unlimited default is active. Items are sorted ascending by byte
+    // value; "Unlimited" is always last and the active option is marked.
+    bool unlimited_active =
+        lemon::utils::parse_rate_limit_to_bytes(download_rate_limit_) <= 0;
+    if (!download_rate_limit_options_.empty() || !unlimited_active) {
+        auto rate_submenu = std::make_shared<Menu>();
+
+        std::vector<std::string> candidates = download_rate_limit_options_;
+        if (!unlimited_active) {
+            bool present = std::find(candidates.begin(), candidates.end(),
+                                     download_rate_limit_) !=
+                           candidates.end();
+            if (!present) candidates.push_back(download_rate_limit_);
+        }
+
+        std::sort(candidates.begin(), candidates.end(),
+                  [](const std::string& a, const std::string& b) {
+                      return lemon::utils::parse_rate_limit_to_bytes(a) <
+                             lemon::utils::parse_rate_limit_to_bytes(b);
+                  });
+
+        for (const auto& rate : candidates) {
+            bool checked = !unlimited_active && rate == download_rate_limit_;
+            rate_submenu->add_item(MenuItem::Checkable(
+                rate,
+                [this, rate]() { on_select_download_rate_limit(rate); },
+                checked
+            ));
+        }
+
+        rate_submenu->add_item(MenuItem::Checkable(
+            "Unlimited",
+            [this]() { on_select_download_rate_limit(""); },
+            unlimited_active
+        ));
+
+        menu.add_item(MenuItem::Submenu("Download Rate Limit", rate_submenu));
+    }
+
     menu.add_separator();
     menu.add_item(MenuItem::Action("Documentation", [this]() { on_open_documentation(); }));
     menu.add_item(MenuItem::Action("Show Logs", [this]() { on_show_logs(); }));
@@ -581,6 +653,20 @@ void TrayUI::on_change_max_loaded_models(int new_max) {
         std::string label = (new_max == -1) ? "Unlimited" : std::to_string(new_max);
         show_notification("Max Loaded Models Changed",
                           "Lemonade Server max loaded models is now " + label);
+    }
+}
+
+void TrayUI::on_select_download_rate_limit(const std::string& rate) {
+    std::string rate_copy = rate;
+    nlohmann::json body;
+    body["download_rate_limit"] = rate_copy;
+    std::string result = http_post("/api/v1/params", body.dump());
+    if (!result.empty()) {
+        download_rate_limit_ = rate_copy;
+        build_menu();
+        std::string label = rate_copy.empty() ? "Unlimited" : rate_copy;
+        show_notification("Download Rate Limit Changed",
+                          "Lemonade Server download rate limit is now " + label);
     }
 }
 

@@ -7688,6 +7688,363 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_056_download_rate_limit_config(self):
+        """download_rate_limit is a string cap; download_rate_limit_options is a
+        list of tray submenu options; both validate and round-trip via
+        /internal/set independently. Spawns its own lemond so it does not depend
+        on an externally-managed server (unlike the shared-server assumption of
+        ServerTestBase)."""
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_ratecfg_")
+        log_path = os.path.join(cache_dir, "lemond.log")
+        with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump({"config_version": 2}, f)
+
+        proc = None
+        try:
+            with open(log_path, "w", encoding="utf-8") as log:
+                proc = subprocess.Popen(
+                    [lemond_binary, cache_dir, "--port", str(port)],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            deadline = time.time() + 60
+            healthy = False
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    healthy = True
+                    break
+                time.sleep(1)
+            self.assertTrue(
+                healthy,
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            # Invalid values are rejected by config validation.
+            bad_changes = [
+                {"download_rate_limit": "10M5"},  # malformed rate string
+                {"download_rate_limit": -5},  # non-string / negative
+                {"download_rate_limit": "abc"},  # invalid rate string
+                {"download_rate_limit": {"default": "abc"}},  # old object form rejected
+                {"download_rate_limit": {"default": "10M5"}},
+                {"download_rate_limit": {"default": -5}},
+                {"download_rate_limit": {"rates": "notarray"}},
+                {"download_rate_limit": {"default": "10M", "rates": [123]}},
+                {"download_rate_limit": {"default": "10M", "unknown": 1}},
+                {"download_rate_limit_options": "notarray"},  # options not an array
+                {"download_rate_limit_options": ["10M5"]},  # malformed option
+                {"download_rate_limit_options": [123]},  # non-string option
+                {"download_rate_limit_options": ["10M", "bad"]},  # one malformed option
+            ]
+            for body in bad_changes:
+                resp = requests.post(
+                    set_url,
+                    headers=headers,
+                    json=body,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    resp.status_code,
+                    400,
+                    f"expected 400 for {body!r}, got {resp.status_code}: {resp.text}",
+                )
+
+            # A full round-trip persists in the config snapshot.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={
+                    "download_rate_limit": "10M",
+                    "download_rate_limit_options": ["10M", "50M", "100M"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "10M")
+            self.assertEqual(cfg["download_rate_limit_options"], ["10M", "50M", "100M"])
+
+            # A partial default update preserves the configured options.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "20M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "20M")
+            self.assertEqual(cfg["download_rate_limit_options"], ["10M", "50M", "100M"])
+
+            # A partial options update preserves the active cap.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit_options": ["25M", "100M"]},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "20M")
+            self.assertEqual(cfg["download_rate_limit_options"], ["25M", "100M"])
+
+            # Clearing the default (runtime unlimited) keeps the options.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "")
+            self.assertEqual(cfg["download_rate_limit_options"], ["25M", "100M"])
+
+            print(
+                "[OK] download_rate_limit validates and round-trips via /internal/set"
+            )
+        finally:
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def test_057_download_rate_limit_invalid_config_startup(self):
+        """An invalid download_rate_limit in config.json must not crash
+        lemond: the raw value is preserved in the snapshot and the server stays
+        healthy (invalid caps are treated as unlimited)."""
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_badcfg_")
+        log_path = os.path.join(cache_dir, "lemond.log")
+        with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "config_version": 2,
+                    "download_rate_limit": "-1",
+                },
+                f,
+            )
+
+        proc = None
+        try:
+            with open(log_path, "w", encoding="utf-8") as log:
+                proc = subprocess.Popen(
+                    [lemond_binary, cache_dir, "--port", str(port)],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            deadline = time.time() + 60
+            healthy = False
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    healthy = True
+                    break
+                time.sleep(1)
+
+            if not healthy:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"lemond with invalid download_rate_limit crashed or never "
+                    f"became healthy on port {port}.\n=== lemond log ===\n{log}"
+                )
+
+            cfg = requests.get(
+                f"http://localhost:{port}/internal/config",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            # The raw value is preserved verbatim in the config snapshot.
+            self.assertEqual(cfg.get("download_rate_limit"), "-1")
+
+            print(
+                "[OK] lemond stays healthy with an invalid download_rate_limit "
+                "in config.json"
+            )
+        finally:
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
+    def test_058_download_rate_limit_runtime_vs_persisted(self):
+        """The tray selects a rate via /api/v1/params (runtime only, like
+        Context Size); only /internal/set persists it to config.json. The
+        active cap (download_rate_limit) and the submenu options
+        (download_rate_limit_options) are independent."""
+        lemond_binary = _resolve_lemond_binary()
+        if not lemond_binary:
+            self.skipTest("lemond binary not found (build it or add it to PATH)")
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        port = _pick_free_port()
+        cache_dir = tempfile.mkdtemp(prefix="lemond_ratecfg_")
+        log_path = os.path.join(cache_dir, "lemond.log")
+        config_path = os.path.join(cache_dir, "config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "config_version": 2,
+                    "download_rate_limit": "10M",
+                    "download_rate_limit_options": ["10M", "50M", "100M"],
+                },
+                f,
+            )
+
+        proc = None
+        try:
+            with open(log_path, "w", encoding="utf-8") as log:
+                proc = subprocess.Popen(
+                    [lemond_binary, cache_dir, "--port", str(port)],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    env=os.environ.copy(),
+                )
+
+            deadline = time.time() + 60
+            healthy = False
+            while time.time() < deadline:
+                if proc.poll() is not None:
+                    break
+                if _lemond_health_ok(port, headers):
+                    healthy = True
+                    break
+                time.sleep(1)
+            self.assertTrue(
+                healthy,
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            params_url = f"http://localhost:{port}/api/v1/params"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "10M")
+            self.assertEqual(
+                cfg.get("download_rate_limit_options"), ["10M", "50M", "100M"]
+            )
+
+            # The tray selects a rate at runtime via /api/v1/params; the
+            # configured options are preserved and config.json on disk is untouched.
+            resp = requests.post(
+                params_url,
+                headers=headers,
+                json={"download_rate_limit": "50M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "50M")
+            self.assertEqual(
+                cfg.get("download_rate_limit_options"), ["10M", "50M", "100M"]
+            )
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["download_rate_limit"], "10M")
+
+            # Re-running /api/v1/params restores the runtime value; disk stays untouched.
+            resp = requests.post(
+                params_url,
+                headers=headers,
+                json={"download_rate_limit": "10M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "10M")
+
+            # /internal/set is the persistent channel; it updates the cap on disk.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "20M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "20M")
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f)["download_rate_limit"], "20M")
+
+            print(
+                "[OK] /api/v1/params selects a rate at runtime; "
+                "/internal/set persists it"
+            )
+        finally:
+            if proc is not None and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+            shutil.rmtree(cache_dir, ignore_errors=True)
+
     def test_037_model_update_check_lifecycle(self):
         """A staged stale provenance snapshot must not flag a false update.
 

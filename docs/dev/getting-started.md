@@ -641,8 +641,11 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `host` | string | HTTP rebind |
 | `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
+| `download_rate_limit` | string (`0`/`""` = unlimited) | Sets the active download-rate cap (curl-style byte rate); the tray submenu options stay in `download_rate_limit_options` |
 | `broadcast` | bool | Starts or stops UDP beacon |
 | `extra_models_dir` | string | Updates model manager search path |
+
+Setting `download_rate_limit` via `POST /api/v1/params` applies the change at runtime only (nothing is written to `config.json`); use `/internal/set` to persist it.
 
 **Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
 

@@ -13,6 +13,7 @@
 #include <cctype>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string_view>
 #include <vector>
 #include <mbedtls/md.h>
@@ -25,6 +26,11 @@ namespace utils {
 std::atomic<bool> g_download_cancelled{false};
 
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
+
+std::atomic<int64_t> HttpClient::download_rate_limit_bytes_per_second_{0};
+
+// Serializes transfers so concurrent downloads cannot exceed the cap in aggregate.
+static std::mutex g_download_gate;
 
 namespace {
 
@@ -817,6 +823,11 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(options.low_speed_limit));
     curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.low_speed_time));
 
+    const int64_t rate_limit = download_rate_limit_bytes_per_second_.load();
+    if (rate_limit > 0) {
+        curl_easy_setopt(curl, CURLOPT_MAX_RECV_SPEED_LARGE, static_cast<curl_off_t>(rate_limit));
+    }
+
     if (resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, static_cast<curl_off_t>(resume_from));
     } else if (initial_range_request) {
@@ -1168,9 +1179,16 @@ DownloadResult HttpClient::download_file(const std::string& url,
             options.force_initial_range_request ||
             (retrying_without_partial && options.range_retry_on_zero_byte_retry);
 
-        final_result = download_attempt(url, partial_path, resume_offset,
-                                        adjusted_callback, headers, options,
-                                        initial_range_request, policy);
+        {
+            // Released between attempts so retry backoff does not stall other downloads.
+            std::unique_ptr<std::lock_guard<std::mutex>> gate;
+            if (download_rate_limit_bytes_per_second_.load() > 0) {
+                gate = std::make_unique<std::lock_guard<std::mutex>>(g_download_gate);
+            }
+            final_result = download_attempt(url, partial_path, resume_offset,
+                                            adjusted_callback, headers, options,
+                                            initial_range_request, policy);
+        }
 
         // If cancelled by user, return immediately without retrying
         if (final_result.cancelled) {
