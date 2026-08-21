@@ -2304,11 +2304,10 @@ void ModelManager::build_cache() {
             json_recipe_options[key] = value["recipe_options"];
         }
 
-        // Built-ins declare their mode in server_models.json, and
-        // test_server_models_labels.py fails CI on one that names an illegal
-        // set, so this normally changes nothing — but it is what makes "an LLM
-        // always carries `chat`" hold for every ingest path rather than only
-        // for the ones that happen to call it.
+        // Built-ins declare their mode in server_models.json, so this normally
+        // changes nothing — but it is what makes "an LLM always carries `chat`"
+        // hold for every ingest path rather than only for the ones that happen
+        // to call it.
         std::string illegal =
             lemon::backends::illegal_deployment_labels(info.labels, info.recipe);
         if (!illegal.empty()) {

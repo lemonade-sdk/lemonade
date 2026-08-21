@@ -2478,6 +2478,9 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
+    target_compile_definitions(test_backend_mode_contract PRIVATE
+        SERVER_MODELS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
+    )
     target_link_libraries(test_backend_mode_contract PRIVATE
         nlohmann_json::nlohmann_json
         lemonade-httplib
