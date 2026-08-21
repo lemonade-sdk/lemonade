@@ -285,9 +285,9 @@ class TestGpuHangRecovery(unittest.TestCase):
             text=True,
         )
 
-        # Wait for lemond to be healthy
+        # Wait for lemond to be healthy (up to 60s for slow CI runners)
         healthy = False
-        for _ in range(30):
+        for _ in range(120):
             try:
                 resp = self.session.get(f"{self.base_url}/api/v1/health", timeout=1)
                 if resp.status_code == 200:
@@ -303,7 +303,13 @@ class TestGpuHangRecovery(unittest.TestCase):
                 self.lemond_proc.wait(timeout=2)
             except subprocess.TimeoutExpired:
                 self.lemond_proc.kill()
-            self.log_file.flush()
+            if getattr(self, "log_file", None):
+                try:
+                    self.log_file.flush()
+                    self.log_file.close()
+                    self.log_file = None
+                except Exception:
+                    pass
             with open(self.log_file_path, "r") as f:
                 print("Lemond output:", f.read())
             self.fail("lemond failed to start / respond to health check")
