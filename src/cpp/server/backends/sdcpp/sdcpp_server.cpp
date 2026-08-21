@@ -1,5 +1,6 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp.h"
+#include "lemon/backends/sdcpp/sdcpp_asset.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -52,32 +53,18 @@ std::string resolve_sdcpp_backend(const std::string& backend) {
     return backend;
 }
 
-std::string trim_version_prefix(const std::string& version) {
-    if (!version.empty() && version[0] == 'v') {
-        return version.substr(1);
-    }
-    return version;
-}
-
-std::string trim_to_major_minor(const std::string& version) {
-    // Trim to MAJOR.MINOR format (e.g., "7.12.0" -> "7.12")
-    std::string trimmed = trim_version_prefix(version);
-    size_t second_dot = trimmed.find('.', trimmed.find('.') + 1);
-    if (second_dot != std::string::npos) {
-        return trimmed.substr(0, second_dot);
-    }
-    return trimmed;
-}
-
 std::string get_therock_version() {
     auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
     if (!config.contains("therock") || !config["therock"].is_object() ||
         !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
         throw std::runtime_error("backend_versions.json is missing 'therock.version'");
     }
-    // stable-diffusion.cpp release assets include full ROCm runtime version in filenames
-    // (for example: rocm-7.12.0), so keep the patch component.
-    return trim_version_prefix(config["therock"]["version"].get<std::string>());
+    // sd.cpp assets embed the full ROCm runtime version (e.g. rocm-7.13.0).
+    std::string version = config["therock"]["version"].get<std::string>();
+    if (!version.empty() && version[0] == 'v') {
+        return version.substr(1);
+    }
+    return version;
 }
 
 int generate_random_seed() {
@@ -126,15 +113,14 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
                 SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
-#ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
-#elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
-                  get_therock_version() + ".zip";
-#else
-        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
-#endif
-        } else if (resolved_backend == "vulkan") {
+        // Only "latest" bin pins wildcard the ROCm runtime; pinned installs
+        // match the TheRock runtime exactly (see sdcpp_asset.h).
+        const bool wildcard_runtime =
+            BackendUtils::get_bin_config_value("sd-cpp", resolved_backend) == "latest";
+        params.filename = sdcpp::sdcpp_rocm_asset_pattern(
+            short_version, wildcard_runtime,
+            wildcard_runtime ? std::string() : get_therock_version());
+    } else if (resolved_backend == "vulkan") {
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
     #elif defined(__linux__)
