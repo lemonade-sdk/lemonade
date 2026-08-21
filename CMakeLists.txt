@@ -1186,9 +1186,8 @@ if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
 
     add_executable(test_mcp_client_config
         ${MCP_CLIENT_CONFIG_TEST_SOURCE}
-        src/cpp/server/mcp_client.cpp
     )
-    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads lemonade-httplib)
+    target_link_libraries(test_mcp_client_config PRIVATE lemonade-server-core)
 
     if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
         file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
@@ -1972,11 +1971,12 @@ if(UNIX AND NOT APPLE)
         RENAME lemond.service
     )
 
-    # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
+    # Install the optional environment-file template loaded by the unit via
+    # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/lemonade/conf.d
-        RENAME zz-secrets.conf
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
+        DESTINATION /etc/default
+        RENAME lemond
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ
     )
 
     # Create symlinks for KaTeX fonts if they exist on the system
@@ -2291,6 +2291,18 @@ if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_cpp_ci_test(CustomArgsTest CI ON COMMAND test_custom_args)
+endif()
+
+# Recipe custom-argument scope resolution.
+set(_RECIPE_ARG_RESOLVER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_arg_resolution.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_RECIPE_ARG_RESOLVER_TEST_SRC}")
+    add_executable(test_recipe_arg_resolution ${_RECIPE_ARG_RESOLVER_TEST_SRC})
+    target_include_directories(test_recipe_arg_resolution PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    add_cpp_ci_test(RecipeArgResolutionTest CI ON COMMAND test_recipe_arg_resolution)
 endif()
 
 set(_DIR_WATCHER_TEST_SRC
@@ -2805,6 +2817,18 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
+# Recipe hiding: a backend with every built-in model dropped by the system-memory
+# heuristic (and no user model left) is hidden from the recipe/backends listing.
+set(_RECIPE_HIDING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_hiding.cpp")
+if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
+    add_executable(test_recipe_hiding test/cpp/test_recipe_hiding.cpp)
+    target_link_libraries(test_recipe_hiding PRIVATE lemonade-server-core)
+    add_dependencies(test_recipe_hiding copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
+endif()
+
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
 # and persistence of ModelScope provenance in ModelInfo.
 set(_MODEL_REGISTRY_TEST_SRC
@@ -2875,8 +2899,9 @@ endif()
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
 if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
+    target_include_directories(test_telemetry_helpers PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server")
     target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
-    add_cpp_ci_test(TelemetryHelpersTest CI OFF COMMAND test_telemetry_helpers)
+    add_cpp_ci_test(TelemetryHelpersTest CI ON COMMAND test_telemetry_helpers)
 endif()
 
 set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")
@@ -2891,6 +2916,20 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_executable(test_config_migration test/cpp/test_config_migration.cpp)
     target_link_libraries(test_config_migration PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
+endif()
+
+set(_CONFIG_DIR_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_dir_migration.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DIR_MIGRATION_TEST_SRC}")
+    add_executable(test_config_dir_migration test/cpp/test_config_dir_migration.cpp)
+    target_link_libraries(test_config_dir_migration PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDirMigrationTest CI ON COMMAND test_config_dir_migration)
+endif()
+
+set(_CONFIG_MERGING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_merging.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONFIG_MERGING_TEST_SRC}")
+    add_executable(test_config_merging test/cpp/test_config_merging.cpp)
+    target_link_libraries(test_config_merging PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigMergingTest CI ON COMMAND test_config_merging)
 endif()
 
 set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")

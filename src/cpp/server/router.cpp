@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
@@ -27,6 +28,7 @@
 #include "lemon/eviction_engine.h"
 #include "lemon/suspend_inhibitor.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 namespace lemon {
 
@@ -1394,12 +1396,62 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
     json backend_json = tentative.get_option(backend_option);
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    // Second pass: rebuild defaults using the resolved backend.
-    // Per-architecture defaults sit between global config and model-level recipe_options.
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
+    RecipeOptions default_opt(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions arch_opts(model_info.recipe,
                             model_manager_->get_architecture_defaults(model_info.gguf.architecture));
-    return request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+    RecipeOptions effective =
+        request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+
+    const json model_json = model_info.recipe_options.to_json();
+    const json model_defaults_json =
+        model_manager_->get_model_default_options(model_info).to_json();
+    const json arch_json = arch_opts.to_json();
+    const json backend_defaults_json = default_opt.to_json();
+    const json merge_value = effective.get_option("merge_args");
+    const bool merge_args = merge_value.is_boolean() ? merge_value.get<bool>() : true;
+
+    auto args_value = [](const json& layer, const std::string& key) {
+        auto it = layer.find(key);
+        return it != layer.end() && it->is_string() ? it->get<std::string>() : "";
+    };
+
+    for (const auto& key : RecipeOptions::keys_for_recipe(model_info.recipe)) {
+        if (!utils::is_custom_args_option(key)) continue;
+
+        utils::CustomArgsRequestState request_state =
+            utils::CustomArgsRequestState::Omitted;
+        std::string request_args;
+        if (request_options.has_explicit_option(key)) {
+            const json raw_request = request_options.get_explicit_option(key);
+            if (raw_request.is_null()) {
+                request_state = utils::CustomArgsRequestState::Tombstone;
+            } else if (raw_request.is_string()) {
+                request_state = utils::CustomArgsRequestState::Value;
+                request_args = raw_request.get<std::string>();
+            } else {
+                throw std::invalid_argument("'" + key + "' must be a string or null");
+            }
+        }
+
+        const std::string resolved_args =
+            utils::resolve_scoped_custom_args({
+                args_value(backend_defaults_json, key),
+                args_value(arch_json, key),
+                args_value(model_defaults_json, key),
+                args_value(model_json, key),
+                request_state,
+                request_args,
+                merge_args,
+            });
+        // Keep empty results: explicit "" is a meaningful clear value and the
+        // effective layer is also used as replayable load input.
+        effective.set_option(key, resolved_args);
+    }
+
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        ops->resolve_runtime_options(model_info, effective);
+    }
+    return effective;
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {
@@ -1741,6 +1793,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     }
                 }
 
+                std::vector<telemetry::ToolCall> tool_calls;
                 if (response.contains("choices") && response["choices"].is_array() && !response["choices"].empty()) {
                     auto choice = response["choices"][0];
                     std::string reasoning_output = "";
@@ -1754,6 +1807,24 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                         if (msg.contains("content") && msg["content"].is_string()) {
                             text_output = msg["content"].get<std::string>();
                         }
+                        if (msg.contains("tool_calls") && msg["tool_calls"].is_array()) {
+                            for (const auto& tc : msg["tool_calls"]) {
+                                telemetry::ToolCall item;
+                                if (tc.contains("id") && tc["id"].is_string()) item.id = tc["id"].get<std::string>();
+                                if (tc.contains("function") && tc["function"].is_object()) {
+                                    auto fn = tc["function"];
+                                    if (fn.contains("name") && fn["name"].is_string()) item.function_name = fn["name"].get<std::string>();
+                                    if (fn.contains("arguments")) {
+                                        if (fn["arguments"].is_string()) {
+                                            item.function_arguments = fn["arguments"].get<std::string>();
+                                        } else {
+                                            item.function_arguments = fn["arguments"].dump();
+                                        }
+                                    }
+                                }
+                                tool_calls.push_back(std::move(item));
+                            }
+                        }
                     }
                     if (!reasoning_output.empty()) {
                         text_output = "<think>\n" + reasoning_output + "\n</think>\n" + text_output;
@@ -1766,7 +1837,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     url = active_server->get_additional_telemetry_url();
                     parser = active_server->get_additional_telemetry_parser();
                 }
-                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output);
+                telemetry::end_llm_span_async(span, url, parser, usage_payload, text_output, tool_calls);
             }
         }
         return response;
@@ -2414,16 +2485,17 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
 
     auto accumulated_text = std::make_shared<std::string>();
     auto accumulated_reasoning = std::make_shared<std::string>();
+    auto accumulated_tool_calls = std::make_shared<std::map<int, telemetry::ToolCall>>();
     auto line_buffer = std::make_shared<std::string>();
 
     httplib::DataSink telemetry_sink;
-    telemetry_sink.write = [accumulated_text, accumulated_reasoning, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
+    telemetry_sink.write = [accumulated_text, accumulated_reasoning, accumulated_tool_calls, line_buffer, &sink, hide_outputs, hide_thinking](const char* data, size_t len) -> bool {
         bool success = false;
         if (sink.write) {
             success = sink.write(data, len);
         }
         line_buffer->append(data, len);
-        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, hide_outputs, hide_thinking](const std::string& line) {
+        StreamingProxy::process_sse_lines(*line_buffer, [accumulated_text, accumulated_reasoning, accumulated_tool_calls, hide_outputs, hide_thinking](const std::string& line) {
             if (line.rfind("data: ", 0) == 0) {
                 std::string json_str = line.substr(6);
                 if (json_str.find("[DONE]") == std::string::npos) {
@@ -2441,6 +2513,24 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                             if (!hide_outputs) {
                                 if (delta.contains("content") && delta["content"].is_string()) {
                                     *accumulated_text += delta["content"].get<std::string>();
+                                }
+                                if (delta.contains("tool_calls") && delta["tool_calls"].is_array()) {
+                                    for (const auto& tc : delta["tool_calls"]) {
+                                        int idx = tc.value("index", 0);
+                                        auto& entry = (*accumulated_tool_calls)[idx];
+                                        if (tc.contains("id") && tc["id"].is_string()) {
+                                            entry.id = tc["id"].get<std::string>();
+                                        }
+                                        if (tc.contains("function") && tc["function"].is_object()) {
+                                            auto fn = tc["function"];
+                                            if (fn.contains("name") && fn["name"].is_string()) {
+                                                entry.function_name += fn["name"].get<std::string>();
+                                            }
+                                            if (fn.contains("arguments") && fn["arguments"].is_string()) {
+                                                entry.function_arguments += fn["arguments"].get<std::string>();
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -2485,7 +2575,7 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
             }
 
             server->forward_streaming_request("/v1/chat/completions", request_body, telemetry_sink, true, 0,
-                [this, identity, span, accumulated_text, accumulated_reasoning, server](
+                [this, identity, span, accumulated_text, accumulated_reasoning, accumulated_tool_calls, server](
                     const StreamingProxy::TelemetryData& telemetry) {
                     if (!telemetry.error_message.empty()) {
                         if (span) {
@@ -2507,13 +2597,18 @@ void Router::chat_completion_stream(const std::string& request_body, httplib::Da
                             final_output = "<think>\n" + *accumulated_reasoning + "\n</think>\n" + final_output;
                         }
 
+                        std::vector<telemetry::ToolCall> tool_calls;
+                        for (auto& [_, tc] : *accumulated_tool_calls) {
+                            tool_calls.push_back(std::move(tc));
+                        }
+
                         std::string url;
                         std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser;
                         if (server) {
                             url = server->get_additional_telemetry_url();
                             parser = server->get_additional_telemetry_parser();
                         }
-                        telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output);
+                        telemetry::end_llm_span_async(span, url, parser, usage_payload, final_output, tool_calls);
                     }
                 });
         }, span);

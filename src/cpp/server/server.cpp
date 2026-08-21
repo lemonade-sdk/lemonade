@@ -15,6 +15,7 @@
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -360,9 +361,12 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
+Server::Server(std::shared_ptr<RuntimeConfig> config,
+               const std::string& cache_dir,
+               const std::string& config_dir)
     : config_(config),
       cache_dir_(cache_dir),
+      config_dir_(config_dir),
       port_(config->port()), running_(false), udp_beacon_(),
       metrics_platform_(create_metrics_platform()) {
 
@@ -634,7 +638,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             job_states->erase(job_id);
         };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
-            lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
+            cache_dir_, config_dir_, lemon::jobs::build_op_registry(std::move(providers)));
     }
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -787,6 +791,9 @@ void Server::stop_http_listeners() {
 Server::~Server() {
     cancel_download_jobs();
     stop();
+    if (model_cache_warmup_thread_.joinable()) {
+        model_cache_warmup_thread_.join();
+    }
 }
 
 namespace {
@@ -882,6 +889,84 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
             telemetry::g_incoming_trace_id = trace_id;
             telemetry::g_incoming_parent_span_id = parent_id;
         }
+    }
+
+    telemetry::g_incoming_client_id.clear();
+    telemetry::g_incoming_session_id.clear();
+
+    auto trim = [](const std::string& str) -> std::string {
+        size_t s = str.find_first_not_of(" \t\r\n");
+        if (s == std::string::npos) return "";
+        size_t e = str.find_last_not_of(" \t\r\n");
+        return str.substr(s, e - s + 1);
+    };
+
+    std::string client_val;
+    if (config_) {
+        for (const auto& hdr : config_->telemetry_session_headers_client()) {
+            std::string cleaned_hdr = trim(hdr);
+            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
+                std::string val = trim(req.get_header_value(cleaned_hdr));
+                if (!val.empty()) {
+                    client_val = val;
+                    break;
+                }
+            }
+        }
+    }
+    if (client_val.empty()) {
+        static const char* kWellKnownClientHeaders[] = {
+            "x-opencode-client",
+            "x-client-id",
+            "x-client-name"
+        };
+        for (const char* hdr : kWellKnownClientHeaders) {
+            if (req.has_header(hdr)) {
+                std::string val = trim(req.get_header_value(hdr));
+                if (!val.empty()) {
+                    client_val = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    std::string session_val;
+    if (config_) {
+        for (const auto& hdr : config_->telemetry_session_headers_id()) {
+            std::string cleaned_hdr = trim(hdr);
+            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
+                std::string val = trim(req.get_header_value(cleaned_hdr));
+                if (!val.empty()) {
+                    session_val = val;
+                    break;
+                }
+            }
+        }
+    }
+    if (session_val.empty()) {
+        static const char* kWellKnownSessionHeaders[] = {
+            "x-opencode-session",
+            "x-session-id",
+            "x-client-session-id",
+            "mcp-session-id",
+            "x-conversation-id",
+            "session-id"
+        };
+        for (const char* hdr : kWellKnownSessionHeaders) {
+            if (req.has_header(hdr)) {
+                std::string val = trim(req.get_header_value(hdr));
+                if (!val.empty()) {
+                    session_val = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!session_val.empty()) {
+        telemetry::g_incoming_client_id = client_val;
+        telemetry::g_incoming_session_id = session_val;
     }
 
     // Check if path requires authentication (API routes and internal endpoints).
@@ -1358,7 +1443,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Server-side MCP client host foundation (admin-gated through the existing
     // /internal/* pre-routing auth). GUI3 and the web UI can both use these
     // endpoints via the normal Lemonade server connection.
-    register_mcp_client_routes(web_server, cache_dir_);
+    register_mcp_client_routes(web_server, cache_dir_, config_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -2446,12 +2531,13 @@ void Server::ensure_collection_loaded(const ModelInfo& info) {
             comp_info = model_manager_->get_model_info(component);
         }
         LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-        // Per the documented contract, per-model options like ctx_size or
-        // llamacpp_backend are NOT forwarded from the collection's load request
-        // to its components. Each component uses its own saved recipe_options.json
-        // entry.
-        router_->load_model(component, comp_info, comp_info.recipe_options, true,
-                            /*allow_reload_on_option_change=*/true);
+        // The collection load request does not become the component request
+        // layer. Router already reads the component's saved options from comp_info,
+        // so an empty request preserves normal model/architecture/backend scope
+        // semantics.
+        router_->load_model(
+            component, comp_info, RecipeOptions(comp_info.recipe, json::object()), true,
+            /*allow_reload_on_option_change=*/true);
     }
 }
 
@@ -5807,26 +5893,13 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto info = model_manager_->get_model_info(model_name);
 
         // Extract optional per-model settings. Omitted options keep saved values;
-        // explicit *_args keys mask them for this load, and null acts as a tombstone.
-        // ctx_size=-1 explicitly requests automatic sizing.
-        // ctx_size=-1 remains an explicit request for automatic sizing.
+        // null masks only its saved key for this load. Concrete *_args scope is
+        // resolved later by Router. ctx_size=-1 remains an explicit auto value.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         std::set<std::string> transient_saved_option_tombstones;
-        std::set<std::string> transient_saved_option_masks;
         for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
-            if (!request_json.contains(key)) {
-                continue;
-            }
-
-            if (request_json[key].is_null()) {
+            if (request_json.contains(key) && request_json[key].is_null()) {
                 transient_saved_option_tombstones.insert(key);
-                transient_saved_option_masks.insert(key);
-                continue;
-            }
-
-            if (key.size() >= 5 &&
-                key.compare(key.size() - 5, 5, "_args") == 0) {
-                transient_saved_option_masks.insert(key);
             }
         }
 
@@ -5863,18 +5936,14 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // ModelInfo::recipe_options contains the model-level defaults plus the
-        // recipe_options.json overlay. Rebuild that local copy with request-masked
-        // saved keys removed. Concrete *_args then override the saved same-key
-        // layer while merge_args can still combine model defaults and the lower
-        // architecture/backend/global layers. This load does not alter the
-        // persistent recipe_options.json entry.
-        if (!transient_saved_option_masks.empty()) {
+        // Null tombstones are load-local: remove only those saved keys from the
+        // local model layer without changing recipe_options.json.
+        if (!transient_saved_option_tombstones.empty()) {
             json per_model_options = model_manager_->get_model_default_options(info).to_json();
             const json saved = model_manager_->get_saved_model_options(model_name);
             if (saved.is_object()) {
                 for (const auto& [key, value] : saved.items()) {
-                    if (transient_saved_option_masks.count(key) == 0) {
+                    if (transient_saved_option_tombstones.count(key) == 0) {
                         per_model_options[key] = value;
                     }
                 }
@@ -6301,11 +6370,11 @@ void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) c
 }
 
 void Server::persist_cloud_providers() {
-    if (cache_dir_.empty() || !cloud_registry_) return;
+    if (config_dir_.empty() || !cloud_registry_) return;
     try {
-        json snap = config_->snapshot();
-        snap["cloud_providers"] = cloud_registry_->to_config_array();
-        ConfigFile::save(cache_dir_, snap);
+        json user_cfg = ConfigFile::load_raw(config_dir_);
+        user_cfg["cloud_providers"] = cloud_registry_->to_config_array();
+        ConfigFile::save(config_dir_, user_cfg);
     } catch (const std::exception& e) {
         // Persistence failure must not undo the in-memory change — the
         // registry is already updated and the provider is usable until
@@ -6622,6 +6691,22 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         enrich_recipes(system_info["recipes"]);
     }
 
+    // Surfaced as a separate host-specific field rather than by pruning
+    // `recipes`, which must stay canonical: the docs generator renders
+    // README/models.js from it and would otherwise drift with the generating
+    // machine's memory. Dynamic-model backends (cloud, flm) are never listed.
+    if (model_manager_) {
+        nlohmann::json unavailable = nlohmann::json::array();
+        for (const std::string& recipe : model_manager_->recipes_with_all_models_filtered()) {
+            const BackendDescriptor* desc = backends::descriptor_for(recipe);
+            if (desc && desc->dynamic_models) {
+                continue;
+            }
+            unavailable.push_back(recipe);
+        }
+        system_info["unavailable_recipes"] = std::move(unavailable);
+    }
+
     // Surface runtime config flags that affect client-side install/download UX.
     if (auto* cfg = RuntimeConfig::global()) {
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
@@ -6882,10 +6967,15 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
             apply_config_side_effects(applied);
         });
 
-        // Persist changes to config.json
-        if (!cache_dir_.empty()) {
+        if (!config_dir_.empty()) {
             try {
-                ConfigFile::save(cache_dir_, config_->snapshot());
+                json user_cfg = ConfigFile::load_raw(config_dir_);
+                if (result.contains("updated") && result["updated"].is_object()) {
+                    user_cfg = utils::JsonUtils::merge(user_cfg, result["updated"]);
+                }
+                json defaults = ConfigFile::get_defaults();
+                utils::JsonUtils::prune_matching(user_cfg, defaults);
+                ConfigFile::save(config_dir_, user_cfg);
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
             }
@@ -7025,25 +7115,27 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             if (new_port != current_port) {
                 LOG(INFO, "Server") << "Port change requested: " << current_port << " -> " << new_port << std::endl;
                 port_.store(new_port);
+                if (running_) {
+                    rebind_requested_ = true;
+                    udp_beacon_.stopBroadcasting();
+                    stop_http_listeners();
+                }
+            }
+        } else if (key == "host") {
+            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
+            if (running_) {
                 rebind_requested_ = true;
                 udp_beacon_.stopBroadcasting();
                 stop_http_listeners();
             }
-        } else if (key == "host") {
-            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
-            rebind_requested_ = true;
-            udp_beacon_.stopBroadcasting();
-            stop_http_listeners();
             // Restart websocket server with new host
-            if (websocket_server_) {
+            if (websocket_server_ && running_) {
                 websocket_server_->stop();
                 websocket_server_ = std::make_unique<WebSocketServer>(
                     router_.get(),
                     config_->host(),
                     config_->websocket_port());
-                if (running_) {
-                    websocket_server_->start();
-                }
+                websocket_server_->start();
             }
         } else if (key == "websocket_port") {
             if (websocket_server_) {

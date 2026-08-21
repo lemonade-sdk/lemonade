@@ -134,7 +134,7 @@ int run_tests() {
     set_test_env("LEMONADE_MCP_INIT_DELAY", "0");
 
     try {
-        McpClientManager manager(cache_dir.string());
+        McpClientManager manager(cache_dir.string(), cache_dir.string());
         const json created = manager.upsert_server_json(
             json{{"name", "Mock MCP"},
                  {"transport", "stdio"},

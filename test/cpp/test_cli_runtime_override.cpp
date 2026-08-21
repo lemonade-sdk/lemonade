@@ -57,7 +57,7 @@ int main() {
         parser.parse(6, const_cast<char**>(argv));
         auto cli_cfg = parser.get_config();
 
-        json loaded = ConfigFile::load(cli_cfg.cache_dir);
+        json loaded = ConfigFile::load(cli_cfg.cache_dir, cli_cfg.config_dir);
         check(loaded["port"] == 13305, "Loaded config before override has original port");
         check(loaded["host"] == "localhost", "Loaded config before override has original host");
 
@@ -82,7 +82,7 @@ int main() {
         ConfigFile::save(cli_cfg.cache_dir, runtime_cfg.snapshot());
 
         // Re-read from disk to ensure config.json was updated with log_level but did NOT leak port/host overrides
-        json disk_cfg = ConfigFile::load(cli_cfg.cache_dir);
+        json disk_cfg = ConfigFile::load(cli_cfg.cache_dir, cli_cfg.config_dir);
         check(disk_cfg["log_level"] == "debug", "config.json on disk updated log_level to debug");
         check(disk_cfg["port"] == 13305, "config.json on disk preserved original port 13305 after config set");
         check(disk_cfg["host"] == "localhost", "config.json on disk preserved original host localhost after config set");

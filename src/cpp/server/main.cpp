@@ -8,10 +8,11 @@
 #include <lemon/logging_config.h>
 #include <lemon/server.h>
 #include <lemon/system_info.h>
-#include <lemon/utils/http_client.h>
-#include <lemon/version.h>
-#include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/http_client.h>
+#include <lemon/utils/json_utils.h>
+#include <lemon/utils/path_utils.h>
+#include <lemon/version.h>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -81,9 +82,15 @@ int main(int argc, char** argv) {
         }
 
         utils::set_cache_dir(cli_config.cache_dir);
-        json config_json = ConfigFile::load(cli_config.cache_dir);
+        utils::set_config_dir(cli_config.config_dir);
+        utils::migrate_legacy_json_files_to_config_dir(cli_config.cache_dir,
+                                                       cli_config.config_dir);
+        json config_json = ConfigFile::load(cli_config.cache_dir,
+                                            cli_config.config_dir);
 
         auto config = std::make_shared<RuntimeConfig>(config_json);
+        RuntimeConfig::set_global(config.get());
+
         if (cli_config.port != -1) {
             config->set_port_override(cli_config.port);
         }
@@ -93,7 +100,6 @@ int main(int argc, char** argv) {
         if (cli_config.broadcast.has_value()) {
             config->set_broadcast_override(cli_config.broadcast);
         }
-        RuntimeConfig::set_global(config.get());
 
         // Initialize logging with the configured level — console + file + log hub
         configure_application_logging(config->log_level(), LoggingMode::direct_server);
@@ -103,6 +109,7 @@ int main(int argc, char** argv) {
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
         LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
         LOG(INFO) << "  Cache dir: " << cli_config.cache_dir << std::endl;
+        LOG(INFO) << "  Config dir: " << cli_config.config_dir << std::endl;
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
@@ -127,7 +134,7 @@ int main(int argc, char** argv) {
             LOG(INFO) << "  Telemetry: disabled" << std::endl;
         }
 
-        Server server(config, cli_config.cache_dir);
+        Server server(config, cli_config.cache_dir, cli_config.config_dir);
 
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);

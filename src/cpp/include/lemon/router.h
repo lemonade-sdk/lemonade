@@ -153,8 +153,10 @@ public:
         LoadPurpose load_purpose = LoadPurpose::UserInference,
         std::atomic<bool>* cancel_flag = nullptr);
 
-    // Collapse the option precedence chain — request > model > per-architecture
-    // > global config > built-in defaults — into the set a load would use.
+    // Collapse the option precedence chain into the set a load would use.
+    // *_args are resolved by scope: a concrete request replaces model/architecture
+    // args, backend/machine args are inherited only while merge_args is enabled,
+    // and overridable runtime defaults are materialized before this returns.
     // ctx_size may still be the -1 auto sentinel; the concrete value is only
     // resolved inside load_model, once eviction has freed memory.
     RecipeOptions resolve_effective_options(const ModelInfo& model_info,
