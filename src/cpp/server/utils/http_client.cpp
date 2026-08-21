@@ -14,6 +14,7 @@
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string_view>
 #include <vector>
 #include <mbedtls/md.h>
@@ -1181,9 +1182,10 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
         {
             // Released between attempts so retry backoff does not stall other downloads.
-            std::unique_ptr<std::lock_guard<std::mutex>> gate;
-            if (download_rate_limit_bytes_per_second_.load() > 0) {
-                gate = std::make_unique<std::lock_guard<std::mutex>>(g_download_gate);
+            const int64_t rate_limit = download_rate_limit_bytes_per_second_.load();
+            std::optional<std::lock_guard<std::mutex>> gate;
+            if (rate_limit > 0) {
+                gate.emplace(g_download_gate);
             }
             final_result = download_attempt(url, partial_path, resume_offset,
                                             adjusted_callback, headers, options,

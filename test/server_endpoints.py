@@ -20,6 +20,7 @@ Usage:
     python server_endpoints.py
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -101,6 +102,62 @@ def _lemond_health_ok(port, headers):
         return response.status_code == 200
     except requests.RequestException:
         return False
+
+
+@contextlib.contextmanager
+def _running_lemond(config=None, cache_prefix="lemond_test_"):
+    """Spawn lemond on a free port with the given config.json body.
+
+    Skips the calling test when no daemon binary is available. Yields
+    (proc, port, headers, log_path) and terminates the daemon plus removes
+    its cache directory on exit.
+    """
+    lemond_binary = _resolve_lemond_binary()
+    if not lemond_binary:
+        raise unittest.SkipTest("lemond binary not found (build it or add it to PATH)")
+
+    headers = {}
+    api_key = os.environ.get("LEMONADE_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    port = _pick_free_port()
+    cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
+    log_path = os.path.join(cache_dir, "lemond.log")
+    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump({"config_version": 2, **(config or {})}, f)
+
+    proc = None
+    try:
+        with open(log_path, "w", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                [lemond_binary, cache_dir, "--port", str(port)],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=os.environ.copy(),
+            )
+        yield proc, port, headers, log_path
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _wait_until_healthy(proc, port, headers, timeout_s=60):
+    """Poll /api/v1/health until lemond answers or the deadline expires."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            return False
+        if _lemond_health_ok(port, headers):
+            return True
+        time.sleep(1)
+    return False
 
 
 class EndpointTests(ServerTestBase):
@@ -7694,42 +7751,14 @@ class EndpointTests(ServerTestBase):
         /internal/set independently. Spawns its own lemond so it does not depend
         on an externally-managed server (unlike the shared-server assumption of
         ServerTestBase)."""
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        port = _pick_free_port()
-        cache_dir = tempfile.mkdtemp(prefix="lemond_ratecfg_")
-        log_path = os.path.join(cache_dir, "lemond.log")
-        with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump({"config_version": 2}, f)
-
-        proc = None
-        try:
-            with open(log_path, "w", encoding="utf-8") as log:
-                proc = subprocess.Popen(
-                    [lemond_binary, cache_dir, "--port", str(port)],
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    env=os.environ.copy(),
-                )
-
-            deadline = time.time() + 60
-            healthy = False
-            while time.time() < deadline:
-                if proc.poll() is not None:
-                    break
-                if _lemond_health_ok(port, headers):
-                    healthy = True
-                    break
-                time.sleep(1)
+        with _running_lemond(cache_prefix="lemond_ratecfg_") as (
+            proc,
+            port,
+            headers,
+            log_path,
+        ):
             self.assertTrue(
-                healthy,
+                _wait_until_healthy(proc, port, headers),
                 f"lemond never became healthy on port {port} (see {log_path})",
             )
 
@@ -7741,16 +7770,12 @@ class EndpointTests(ServerTestBase):
                 {"download_rate_limit": "10M5"},  # malformed rate string
                 {"download_rate_limit": -5},  # non-string / negative
                 {"download_rate_limit": "abc"},  # invalid rate string
-                {"download_rate_limit": {"default": "abc"}},  # old object form rejected
-                {"download_rate_limit": {"default": "10M5"}},
-                {"download_rate_limit": {"default": -5}},
-                {"download_rate_limit": {"rates": "notarray"}},
-                {"download_rate_limit": {"default": "10M", "rates": [123]}},
-                {"download_rate_limit": {"default": "10M", "unknown": 1}},
                 {"download_rate_limit_options": "notarray"},  # options not an array
                 {"download_rate_limit_options": ["10M5"]},  # malformed option
                 {"download_rate_limit_options": [123]},  # non-string option
                 {"download_rate_limit_options": ["10M", "bad"]},  # one malformed option
+                {"download_rate_limit_options": ["0"]},  # zero-rate option
+                {"download_rate_limit_options": [""]},  # empty option
             ]
             for body in bad_changes:
                 resp = requests.post(
@@ -7835,62 +7860,16 @@ class EndpointTests(ServerTestBase):
             print(
                 "[OK] download_rate_limit validates and round-trips via /internal/set"
             )
-        finally:
-            if proc is not None and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=10)
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_057_download_rate_limit_invalid_config_startup(self):
         """An invalid download_rate_limit in config.json must not crash
         lemond: the raw value is preserved in the snapshot and the server stays
         healthy (invalid caps are treated as unlimited)."""
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        port = _pick_free_port()
-        cache_dir = tempfile.mkdtemp(prefix="lemond_badcfg_")
-        log_path = os.path.join(cache_dir, "lemond.log")
-        with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "config_version": 2,
-                    "download_rate_limit": "-1",
-                },
-                f,
-            )
-
-        proc = None
-        try:
-            with open(log_path, "w", encoding="utf-8") as log:
-                proc = subprocess.Popen(
-                    [lemond_binary, cache_dir, "--port", str(port)],
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    env=os.environ.copy(),
-                )
-
-            deadline = time.time() + 60
-            healthy = False
-            while time.time() < deadline:
-                if proc.poll() is not None:
-                    break
-                if _lemond_health_ok(port, headers):
-                    healthy = True
-                    break
-                time.sleep(1)
-
-            if not healthy:
+        with _running_lemond(
+            config={"download_rate_limit": "-1"},
+            cache_prefix="lemond_badcfg_",
+        ) as (proc, port, headers, log_path):
+            if not _wait_until_healthy(proc, port, headers):
                 with open(log_path, "r", encoding="utf-8", errors="replace") as f:
                     log = f.read()
                 self.fail(
@@ -7910,65 +7889,22 @@ class EndpointTests(ServerTestBase):
                 "[OK] lemond stays healthy with an invalid download_rate_limit "
                 "in config.json"
             )
-        finally:
-            if proc is not None and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=10)
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_058_download_rate_limit_runtime_vs_persisted(self):
         """The tray selects a rate via /api/v1/params (runtime only, like
         Context Size); only /internal/set persists it to config.json. The
         active cap (download_rate_limit) and the submenu options
         (download_rate_limit_options) are independent."""
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        port = _pick_free_port()
-        cache_dir = tempfile.mkdtemp(prefix="lemond_ratecfg_")
-        log_path = os.path.join(cache_dir, "lemond.log")
-        config_path = os.path.join(cache_dir, "config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "config_version": 2,
-                    "download_rate_limit": "10M",
-                    "download_rate_limit_options": ["10M", "50M", "100M"],
-                },
-                f,
-            )
-
-        proc = None
-        try:
-            with open(log_path, "w", encoding="utf-8") as log:
-                proc = subprocess.Popen(
-                    [lemond_binary, cache_dir, "--port", str(port)],
-                    stdout=log,
-                    stderr=subprocess.STDOUT,
-                    env=os.environ.copy(),
-                )
-
-            deadline = time.time() + 60
-            healthy = False
-            while time.time() < deadline:
-                if proc.poll() is not None:
-                    break
-                if _lemond_health_ok(port, headers):
-                    healthy = True
-                    break
-                time.sleep(1)
+        with _running_lemond(
+            config={
+                "download_rate_limit": "10M",
+                "download_rate_limit_options": ["10M", "50M", "100M"],
+            },
+            cache_prefix="lemond_ratecfg_",
+        ) as (proc, port, headers, log_path):
+            config_path = os.path.join(os.path.dirname(log_path), "config.json")
             self.assertTrue(
-                healthy,
+                _wait_until_healthy(proc, port, headers),
                 f"lemond never became healthy on port {port} (see {log_path})",
             )
 
@@ -8035,15 +7971,6 @@ class EndpointTests(ServerTestBase):
                 "[OK] /api/v1/params selects a rate at runtime; "
                 "/internal/set persists it"
             )
-        finally:
-            if proc is not None and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait(timeout=10)
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_037_model_update_check_lifecycle(self):
         """A staged stale provenance snapshot must not flag a false update.

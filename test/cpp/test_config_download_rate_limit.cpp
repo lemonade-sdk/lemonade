@@ -91,6 +91,8 @@ int main() {
     check(set_throws(flat("10M", json::array()), json::object({{"download_rate_limit_options", json::array({"10M5"})}})), "rejects malformed option");
     check(set_throws(flat("10M", json::array()), json::object({{"download_rate_limit_options", json::array({123})}})), "rejects non-string option");
     check(set_throws(flat("10M", json::array()), json::object({{"download_rate_limit_options", json::array({"10M", "bad"})}})), "rejects one malformed option");
+    check(set_throws(flat("10M", json::array()), json::object({{"download_rate_limit_options", json::array({"0"})}})), "rejects zero-rate option (Unlimited is built-in)");
+    check(set_throws(flat("10M", json::array()), json::object({{"download_rate_limit_options", json::array({""})}})), "rejects empty option");
 
     // --- apply_changes keeps both keys independent ---
     {

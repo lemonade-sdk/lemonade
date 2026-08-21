@@ -498,7 +498,10 @@ void WindowsTray::on_command(WPARAM wparam) {
 
     auto it = menu_callbacks_.find(menu_id);
     if (it != menu_callbacks_.end() && it->second) {
-        it->second();  // Execute callback
+        // Handlers may rebuild the menu, which clears menu_callbacks_ and
+        // destroys the std::function currently executing; run a copy instead.
+        MenuCallback callback = it->second;
+        callback();
     }
 }
 

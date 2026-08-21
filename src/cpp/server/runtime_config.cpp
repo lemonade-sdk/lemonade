@@ -743,18 +743,17 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (utils::parse_rate_limit_to_bytes(value.get<std::string>()) < 0) {
             throw std::invalid_argument(
-                "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"1.5M\", or \"10G\" "
-                "(\"0\"/\"\" = unlimited)");
+                "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"10M\", etc. "
+                "Use \"\" for unlimited download speed");
         }
     } else if (key == "download_rate_limit_options") {
         if (!value.is_array()) {
             throw std::invalid_argument("'download_rate_limit_options' must be an array");
         }
         for (const auto& r : value) {
-            if (!r.is_string() || utils::parse_rate_limit_to_bytes(r.get<std::string>()) < 0) {
+            if (!r.is_string() || utils::parse_rate_limit_to_bytes(r.get<std::string>()) <= 0) {
                 throw std::invalid_argument(
-                    "'download_rate_limit_options' entries must be byte rates like \"512\", \"100K\", \"1.5M\", or \"10G\" "
-                    "(\"0\"/\"\" = unlimited)");
+                    "'download_rate_limit_options' entries must be positive byte rates like \"512\", \"100K\", \"10M\", etc.");
             }
         }
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
