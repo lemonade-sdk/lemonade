@@ -1,7 +1,11 @@
 #include <lemon/utils/process_platform.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/path_utils.h>
+#include <lemon/sandbox/env_scrubber.h>
+#include <nlohmann/json.hpp>
 
 #include <stdexcept>
+#include <filesystem>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -13,13 +17,12 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <spawn.h>
+#include <crt_externs.h>
 #include <cstring>
 #include <thread>
 #include <chrono>
 #include <algorithm>
 #include <cctype>
-
-extern char** environ;
 
 namespace lemon::utils {
 
@@ -59,7 +62,8 @@ public:
         const std::string& working_dir,
         bool inherit_output,
         bool filter_health_logs,
-        const std::vector<std::pair<std::string, std::string>>& env_vars) override;
+        const std::vector<std::pair<std::string, std::string>>& env_vars,
+        const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy = std::nullopt) override;
 
     void terminate(ProcessHandle handle) override;
     bool is_running(ProcessHandle handle) override;
@@ -87,7 +91,8 @@ ProcessHandle MacOSProcessPlatform::spawn(
     const std::string& working_dir,
     bool inherit_output,
     bool filter_health_logs,
-    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy) {
 
     ProcessHandle handle;
     handle.handle = nullptr;
@@ -119,8 +124,8 @@ ProcessHandle MacOSProcessPlatform::spawn(
     // Problem: lemond spawns llama-server via fork()+execvp(). On macOS, fork()
     // leaves the child with corrupted Mach-port and XPC-bootstrap state that
     // execvp() does not reset. llama.cpp b8884+ now runs a ggml-metal probe at
-    // startup that calls [MTLDevice newLibraryWithSource:] — which routes
-    // through MTLCompilerService XPC — and dies on the broken channel before
+    // startup that calls [MTLDevice newLibraryWithSource:], which routes
+    // through MTLCompilerService XPC, and dies on the broken channel before
     // the model is opened. Direct terminal runs work; only lemond-spawned
     // children fail (~130ms, exit code -1).
     //
@@ -157,24 +162,45 @@ ProcessHandle MacOSProcessPlatform::spawn(
     posix_spawnattr_setsigdefault(&attr, &default_signals);
     posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF);
 
-    // Build envp
     std::vector<std::string> env_strings;
-    for (char** e = environ; e && *e; ++e) {
-        bool override_existing = false;
-        for (const auto& env_pair : env_vars) {
-            std::string prefix = env_pair.first + "=";
-            if (std::strncmp(*e, prefix.c_str(), prefix.size()) == 0) {
-                override_existing = true;
-                break;
+    const bool should_sanitize = sandbox_policy.has_value() &&
+                                 sandbox_policy->mode != lemon::sandbox::SandboxMode::Disabled;
+    if (should_sanitize) {
+        std::vector<std::pair<std::string, std::string>> combined_env = env_vars;
+        for (const auto& kv : sandbox_policy->explicit_env_vars) {
+            combined_env.push_back(kv);
+        }
+        auto sanitized_env = lemon::sandbox::EnvScrubber::sanitize_environment(
+            combined_env, sandbox_policy->allowed_env_vars, true);
+
+        env_strings.reserve(sanitized_env.size());
+        for (const auto& env_pair : sanitized_env) {
+            env_strings.emplace_back(env_pair.first + "=" + env_pair.second);
+        }
+    } else {
+        // Inherit current environment and apply explicit env_vars
+        char** env_curr = (*_NSGetEnviron());
+        if (env_curr != nullptr) {
+            for (char** env = env_curr; *env != nullptr; ++env) {
+                env_strings.emplace_back(*env);
             }
         }
-        if (!override_existing) {
-            env_strings.emplace_back(*e);
+        for (const auto& env_pair : env_vars) {
+            std::string prefix = env_pair.first + "=";
+            bool found = false;
+            for (auto& entry : env_strings) {
+                if (entry.rfind(prefix, 0) == 0) {
+                    entry = prefix + env_pair.second;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                env_strings.emplace_back(prefix + env_pair.second);
+            }
         }
     }
-    for (const auto& env_pair : env_vars) {
-        env_strings.emplace_back(env_pair.first + "=" + env_pair.second);
-    }
+
     std::vector<char*> envp;
     envp.reserve(env_strings.size() + 1);
     for (auto& s : env_strings) {
@@ -182,16 +208,59 @@ ProcessHandle MacOSProcessPlatform::spawn(
     }
     envp.push_back(nullptr);
 
+    std::string exec_bin = executable;
+    std::vector<std::string> actual_args = args;
+    std::string policy_json_str;
+
+    if (sandbox_policy.has_value() &&
+        sandbox_policy->mode != lemon::sandbox::SandboxMode::Disabled &&
+        sandbox_policy->mode != lemon::sandbox::SandboxMode::ScrubbedOnly) {
+
+        std::string trampoline_path;
+        std::string candidate1 = lemon::utils::get_downloaded_bin_dir() + "/lemonade-sandbox-exec";
+        if (std::filesystem::exists(candidate1)) {
+            trampoline_path = candidate1;
+        } else if (std::filesystem::exists("/usr/local/bin/lemonade-sandbox-exec")) {
+            trampoline_path = "/usr/local/bin/lemonade-sandbox-exec";
+        } else if (std::filesystem::exists("/opt/homebrew/bin/lemonade-sandbox-exec")) {
+            trampoline_path = "/opt/homebrew/bin/lemonade-sandbox-exec";
+        }
+
+        if (!trampoline_path.empty()) {
+            nlohmann::json j = *sandbox_policy;
+            policy_json_str = j.dump();
+
+            exec_bin = trampoline_path;
+            actual_args.clear();
+            actual_args.push_back("--policy");
+            actual_args.push_back(policy_json_str);
+            actual_args.push_back("--");
+            actual_args.push_back(executable);
+            for (const auto& a : args) {
+                actual_args.push_back(a);
+            }
+        } else {
+            if (sandbox_policy->mode == lemon::sandbox::SandboxMode::Enforced) {
+                LOG(ERROR, "ProcessPlatform")
+                    << "Enforced macOS Seatbelt sandboxing requested, but lemonade-sandbox-exec not found; refusing to spawn unconfined." << std::endl;
+                throw std::runtime_error("lemonade-sandbox-exec helper missing for enforced sandbox");
+            } else {
+                LOG(WARNING, "ProcessPlatform")
+                    << "lemonade-sandbox-exec helper not found; falling back to environment scrubbing on macOS." << std::endl;
+            }
+        }
+    }
+
     std::vector<char*> argv_ptrs;
-    argv_ptrs.reserve(args.size() + 2);
-    argv_ptrs.push_back(const_cast<char*>(executable.c_str()));
-    for (const auto& arg : args) {
+    argv_ptrs.reserve(actual_args.size() + 2);
+    argv_ptrs.push_back(const_cast<char*>(exec_bin.c_str()));
+    for (const auto& arg : actual_args) {
         argv_ptrs.push_back(const_cast<char*>(arg.c_str()));
     }
     argv_ptrs.push_back(nullptr);
 
     pid_t pid = 0;
-    int spawn_rc = posix_spawnp(&pid, executable.c_str(), &file_actions, &attr,
+    int spawn_rc = posix_spawnp(&pid, exec_bin.c_str(), &file_actions, &attr,
                                 argv_ptrs.data(), envp.data());
 
     posix_spawn_file_actions_destroy(&file_actions);

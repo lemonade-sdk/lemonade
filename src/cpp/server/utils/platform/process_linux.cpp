@@ -1,5 +1,8 @@
 #include <lemon/utils/process_platform.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/sandbox/env_scrubber.h>
+#include <lemon/sandbox/nono_ffi.h>
+#include <lemon/sandbox/sandbox_engine.h>
 
 #include <stdexcept>
 #include <iostream>
@@ -101,7 +104,8 @@ public:
         const std::string& working_dir,
         bool inherit_output,
         bool filter_health_logs,
-        const std::vector<std::pair<std::string, std::string>>& env_vars) override;
+        const std::vector<std::pair<std::string, std::string>>& env_vars,
+        const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy = std::nullopt) override;
 
     void terminate(ProcessHandle handle) override;
     bool is_running(ProcessHandle handle) override;
@@ -132,7 +136,8 @@ protected:
         bool filter_health_logs,
         const std::vector<std::pair<std::string, std::string>>& env_vars,
         int stdout_pipe[2],
-        int stderr_pipe[2]);
+        int stderr_pipe[2],
+        const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy = std::nullopt);
 };
 
 // Linux implementation using fork/exec
@@ -144,25 +149,59 @@ pid_t LinuxProcessPlatform::spawn_process(
     bool filter_health_logs,
     const std::vector<std::pair<std::string, std::string>>& env_vars,
     int stdout_pipe[2],
-    int stderr_pipe[2]) {
+    int stderr_pipe[2],
+    const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy) {
+
+    // Sanitize environment before fork if running under sandbox policy (unless mode is explicitly disabled)
+    std::vector<std::pair<std::string, std::string>> sanitized_env;
+    const bool should_sanitize = sandbox_policy.has_value() &&
+                                 sandbox_policy->mode != lemon::sandbox::SandboxMode::Disabled;
+    if (should_sanitize) {
+        std::vector<std::pair<std::string, std::string>> combined_env = env_vars;
+        for (const auto& kv : sandbox_policy->explicit_env_vars) {
+            combined_env.push_back(kv);
+        }
+        sanitized_env = lemon::sandbox::EnvScrubber::sanitize_environment(
+            combined_env, sandbox_policy->allowed_env_vars, true);
+    }
+
+    // Pre-build capability set in parent process before fork to ensure strict async-signal-safety in child
+    nono_capability_set* prebuilt_caps = nullptr;
+    if (sandbox_policy.has_value() &&
+        sandbox_policy->mode != lemon::sandbox::SandboxMode::Disabled &&
+        sandbox_policy->mode != lemon::sandbox::SandboxMode::ScrubbedOnly) {
+        prebuilt_caps = nono_capability_set_new();
+        if (prebuilt_caps) {
+            lemon::sandbox::SandboxEngine::policy_to_nono_capabilities(*sandbox_policy, prebuilt_caps);
+        }
+    }
 
     pid_t pid = fork();
 
     if (pid < 0) {
+        if (prebuilt_caps) nono_capability_set_free(prebuilt_caps);
         throw std::runtime_error("Failed to fork process");
     }
 
     if (pid == 0) {
-        // Child process
+        // Child process - put into dedicated process group and setup death signal
+        setpgid(0, 0);
         prctl(PR_SET_PDEATHSIG, SIGTERM);
+
+        // Clear and replace environment before applying security boundaries
+        if (should_sanitize) {
+            clearenv();
+            for (const auto& [k, v] : sanitized_env) {
+                setenv(k.c_str(), v.c_str(), 1);
+            }
+        } else {
+            for (const auto& [k, v] : env_vars) {
+                setenv(k.c_str(), v.c_str(), 1);
+            }
+        }
 
         if (!working_dir.empty()) {
             chdir(working_dir.c_str());
-        }
-
-        // Set environment variables
-        for (const auto& env_pair : env_vars) {
-            setenv(env_pair.first.c_str(), env_pair.second.c_str(), 1);
         }
 
         // Redirect stdout/stderr to pipes if filtering
@@ -186,6 +225,18 @@ pid_t LinuxProcessPlatform::spawn_process(
         preserve_capabilities_for_exec();
 #endif
 
+        // Apply Sandbox Policy via pre-built capability set
+        if (prebuilt_caps != nullptr) {
+            nono_status status = nono_sandbox_apply(prebuilt_caps);
+            if (status != NONO_OK) {
+                bool is_enforced = (sandbox_policy.has_value() &&
+                                    sandbox_policy->mode == lemon::sandbox::SandboxMode::Enforced);
+                if (is_enforced || status != NONO_ERROR_UNSUPPORTED) {
+                    _exit(127);
+                }
+            }
+        }
+
         // Prepare argv
         std::vector<char*> argv_ptrs;
         argv_ptrs.push_back(const_cast<char*>(executable.c_str()));
@@ -197,8 +248,11 @@ pid_t LinuxProcessPlatform::spawn_process(
         execvp(executable.c_str(), argv_ptrs.data());
 
         // If execvp returns, it failed
-        std::cerr << "Failed to execute: " << executable << std::endl;
         _exit(1);
+    }
+
+    if (prebuilt_caps != nullptr) {
+        nono_capability_set_free(prebuilt_caps);
     }
 
     return pid;
@@ -210,7 +264,8 @@ ProcessHandle LinuxProcessPlatform::spawn(
     const std::string& working_dir,
     bool inherit_output,
     bool filter_health_logs,
-    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy) {
 
     ProcessHandle handle;
     handle.handle = nullptr;
@@ -239,7 +294,8 @@ ProcessHandle LinuxProcessPlatform::spawn(
     }
 
     pid_t pid = spawn_process(executable, args, working_dir, inherit_output,
-                              filter_health_logs, env_vars, stdout_pipe, stderr_pipe);
+                              filter_health_logs, env_vars, stdout_pipe, stderr_pipe,
+                              sandbox_policy);
 
     handle.pid = pid;
 
@@ -330,10 +386,13 @@ void LinuxProcessPlatform::terminate(ProcessHandle handle) {
 #endif
 
     errno = 0;
-    if (::kill(handle.pid, SIGTERM) != 0 && errno == ESRCH) {
-        LOG(INFO, "ProcessManager") << "Process PID " << handle.pid
-                                    << " was already gone before SIGTERM" << std::endl;
-        return;
+    // Send signal to process group first so multi-process backends (e.g. vLLM workers) are cleaned up
+    if (::kill(-handle.pid, SIGTERM) != 0 && errno == ESRCH) {
+        if (::kill(handle.pid, SIGTERM) != 0 && errno == ESRCH) {
+            LOG(INFO, "ProcessManager") << "Process PID " << handle.pid
+                                        << " was already gone before SIGTERM" << std::endl;
+            return;
+        }
     }
 
     int status = 0;
@@ -354,9 +413,10 @@ void LinuxProcessPlatform::terminate(ProcessHandle handle) {
     if (!exited_gracefully) {
         LOG(WARNING, "ProcessManager") << "Process did not respond to SIGTERM, using SIGKILL" << std::endl;
         errno = 0;
-        if (::kill(handle.pid, SIGKILL) == 0 || errno != ESRCH) {
-            waitpid(handle.pid, &status, 0);
+        if (::kill(-handle.pid, SIGKILL) != 0) {
+            ::kill(handle.pid, SIGKILL);
         }
+        waitpid(handle.pid, &status, 0);
     }
 
     LOG(INFO, "ProcessManager") << "Process terminated, waiting for GPU driver cleanup..." << std::endl;

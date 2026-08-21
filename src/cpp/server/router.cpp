@@ -200,13 +200,18 @@ bool Router::reload_model_after_watchdog_reset(const std::string& requested_mode
         ResidencyClass was_residency_class = ResidencyClass::Standard;
         {
             std::lock_guard<std::mutex> lock(load_mutex_);
-            auto* existing = find_server_by_model_name(requested_model);
+            auto* existing = find_server_by_model_name(resolve_model_name(requested_model));
             if (existing) {
+                if (existing->is_backend_alive() && !existing->was_watchdog_triggered()) {
+                    LOG(INFO, "Router") << "Model already reloaded and alive after watchdog reset: "
+                                        << requested_model << std::endl;
+                    return true;
+                }
                 was_pinned = existing->is_pinned();
                 was_residency_class = existing->get_residency_class();
             }
         }
-        load_model(requested_model, info, options, true, false, was_pinned,
+        load_model(requested_model, info, options, false, false, was_pinned,
                    load_purpose_for_residency_class(was_residency_class));
         return true;
     } catch (const std::exception& e) {
@@ -1505,9 +1510,9 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
     }
 
     // A watchdog reset should be transparent for non-streaming calls when the
-    // backend died before any response was returned. Retry exactly once after a
+    // backend died before any response was returned. Retry after a
     // lazy reload; streaming paths deliberately do not retry after partial data.
-    for (int attempt = 0; attempt < 2; ++attempt) {
+    for (int attempt = 0; attempt < 3; ++attempt) {
         WrappedServer* server = nullptr;
         RecipeOptions restart_options;
         std::string restart_model_name;
@@ -1537,7 +1542,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt < 2 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                 continue;
             }
             return ErrorResponse::create(
@@ -1554,14 +1559,14 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             const bool watchdog_reset =
                 server->was_watchdog_triggered() || is_watchdog_reset_response(response);
 
-            if (attempt == 0 && watchdog_reset) {
+            if (attempt < 2 && watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
             }
 
             server->release_inference();
 
-            if (attempt == 0 && watchdog_reset) {
+            if (attempt < 2 && watchdog_reset) {
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
@@ -1608,7 +1613,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
         return;
     }
 
-    for (int attempt = 0; attempt < 2; ++attempt) {
+    for (int attempt = 0; attempt < 3; ++attempt) {
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
@@ -1646,7 +1651,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt < 2 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                 continue;
             }
 
@@ -1692,7 +1697,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt < 2 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
                 continue;
             }
 

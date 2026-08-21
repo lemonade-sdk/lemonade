@@ -31,6 +31,7 @@
 #include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
+#include "lemon/sandbox/sandbox_engine.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
@@ -2596,6 +2597,16 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add update check status
     response["update_check_done"] = update_check_done_.load();
+
+    // Add sandbox posture information
+    auto sb_engine = lemon::sandbox::SandboxEngine::create_for_platform();
+    std::string sb_mode_str = config_ ? config_->sandbox_mode() : "auto";
+    nlohmann::json sb_info = {
+        {"mode", sb_mode_str},
+        {"backend", sb_engine ? sb_engine->get_backend_name() : "none"},
+        {"kernel_enforced", sb_engine ? sb_engine->is_kernel_enforced() : false}
+    };
+    response["sandbox"] = sb_info;
 
     res.set_content(response.dump(), "application/json");
 }

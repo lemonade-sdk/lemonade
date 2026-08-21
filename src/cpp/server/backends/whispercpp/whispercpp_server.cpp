@@ -322,13 +322,18 @@ void WhisperServer::load(const std::string& model_name,
     }
 #endif
 
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        exe_path, model_path_, whispercpp_backend);
+    sandbox_policy.add_write_path("/tmp");
+
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
         is_debug(),  // inherit_output
         false,  // filter_health_logs
-        env_vars
+        env_vars,
+        sandbox_policy
     );
     set_process_handle(started_handle, exe_path, args);
 

@@ -6,6 +6,7 @@
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
+#include <lemon/sandbox/sandbox_engine.h>
 #include <lemon/server.h>
 #include <lemon/system_info.h>
 #include <lemon/utils/aixlog.hpp>
@@ -113,6 +114,12 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        {
+            std::string sb_mode_str = config->sandbox_mode();
+            auto sb_mode = sandbox::parse_sandbox_mode(sb_mode_str);
+            std::string sb_desc = sandbox::SandboxEngine::get_platform_engine_description(sb_mode);
+            LOG(INFO) << "  Sandboxing: " << sb_desc << std::endl;
+        }
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }
