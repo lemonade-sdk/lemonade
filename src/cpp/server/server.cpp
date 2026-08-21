@@ -2849,10 +2849,8 @@ int64_t Server::resolve_context_length(const std::string& model_id, const ModelI
     };
 
     if (router_) {
-        // A live backend was started with a resolved ctx_size, so it answers
-        // exactly. An unloaded model yields empty options here, which resolve
-        // to the -1 default and fall through to the configured value below.
-        const int64_t loaded_ctx = ctx_size_of(router_->get_model_recipe_options(model_id));
+        const int64_t loaded_ctx =
+            ctx_size_of(router_->get_model_recipe_options(resolve_alias_target(model_id)));
         if (loaded_ctx > 0) {
             return loaded_ctx;
         }
@@ -2917,9 +2915,7 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["max_context_window"] = info.max_context_window;
     }
 
-    // OpenAI-compatible clients read context_length to budget a session.
-    // max_context_window is the GGUF training ceiling, not what the model runs
-    // with, so clients that fall back to it overflow mid-session.
+    // OpenAI-compatible clients use context_length to set token limits.
     const int64_t context_length = resolve_context_length(model_id, info);
     if (context_length > 0) {
         model_json["context_length"] = context_length;
