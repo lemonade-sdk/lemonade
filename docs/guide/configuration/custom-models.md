@@ -242,22 +242,22 @@ Advanced users can edit `user_models.json` and `recipe_options.json` directly. T
 
 ## Overview
 
-Custom model configuration involves two files, both located in the Lemonade cache directory:
+Custom model configuration involves two files, both located in the Lemonade config directory:
 
 | File | Purpose |
 |------|---------|
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-If you used an installer from a Lemonade release, the cache directory is typically:
+If you used an installer from a Lemonade release, the config directory is typically:
 
-| OS | Cache directory |
-|----|-----------------|
-| Linux systemd install | `/var/lib/lemonade/.cache/lemonade` |
-| Windows | `%USERPROFILE%\.cache\lemonade` |
-| macOS system install | `/Library/Application Support/lemonade/.cache` |
+| OS | Config directory |
+|----|------------------|
+| Linux systemd install | `/var/lib/lemonade` |
+| Windows | `%USERPROFILE%\.config\lemonade` |
+| macOS system install | `/Library/Application Support/lemonade/.config` |
 
-For a standalone `lemond` executable, the default is `~/.cache/lemonade` unless you pass an explicit `cache_dir` argument or set `LEMONADE_CACHE_DIR`.
+For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
 
 ## Model naming spec
 

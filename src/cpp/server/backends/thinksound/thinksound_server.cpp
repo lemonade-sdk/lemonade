@@ -111,16 +111,10 @@ void ThinkSoundServer::load(const std::string& model_name,
     };
     if (backend == "rocm") {
         const std::string arch = SystemInfo::get_rocm_arch();
-        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
         std::string dirs;
-        if (!therock_lib.empty()) {
-#ifdef _WIN32
-            const std::string llvm_bin =
-                (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
-            dirs = therock_lib + ";" + llvm_bin;
-#else
-            dirs = therock_lib + ":" + therock_lib + "/llvm/lib";
-#endif
+        if (!arch.empty()) {
+            dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {
@@ -131,7 +125,7 @@ void ThinkSoundServer::load(const std::string& model_name,
     LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path, args, "", is_debug(), false, env_vars);
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start thinksound-server process");
     }

@@ -145,7 +145,8 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
 
     bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
     set_process_handle(
-        ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
+        ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
+        executable, args);
 
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the

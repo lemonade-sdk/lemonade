@@ -2,32 +2,35 @@
 
 ## Overview
 
-Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade cache directory.
+Lemonade Server starts automatically with the OS after installation. Persistent JSON configuration is stored in Lemonade's config directory; caches and downloaded artifacts stay in the cache directory.
 
 ## config.json
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
-- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/var/lib/lemonade/config.json`
 
-  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+  > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), while cached models go to `/var/cache/huggingface` (CacheDirectory). For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
-- **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
+- **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
+- **macOS:** `/Library/Application Support/lemonade/.config/config.json`
 
-If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
+If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 
-> Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
+On startup, Lemonade automatically migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
 
-### Seeding defaults for packaged installs
+> Note: `config.json` is a sparse override file. It only contains settings you explicitly customize; all unspecified settings automatically inherit default values and receive upstream improvements across updates.
 
-On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+### Defaults Precedence & Layering
 
-1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
-2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+When `lemond` starts, effective configuration is resolved by deep-merging settings in increasing precedence:
 
-Values set in the user's `config.json` always take precedence over these seeded defaults.
+1. **Built-in Defaults**: Factory defaults baked into the release (`resources/defaults.json` and backend descriptors).
+2. **Distro / System Defaults**: On Linux, `lemond` merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship system-level defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+3. **Environment Defaults**: Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under `/usr/share`).
+4. **User Overrides (`config.json`)**: Values explicitly set in your `config.json` override defaults.
+5. **CLI Flags**: Arguments passed to `lemond` (e.g. `--port`, `--host`).
 
 ### Example config.json
 
@@ -44,8 +47,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
   "auto_check_model_updates": true,
   "broadcast": true,
   "cloud_providers": [],
-  "config_version": 1,
-  "ctx_size": 4096,
+  "config_version": 2,
+  "ctx_size": -1,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
   "ds4": {
@@ -57,7 +60,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "args": "",
     "prefer_system": false
   },
-  "global_timeout": 300,
+  "global_timeout": 600,
   "host": "localhost",
   "inhibit_suspend": true,
   "kokoro": {
@@ -97,7 +100,8 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "port": 13305,
-  "rocm_channel": "preview",
+  "rocm_channel": "stable",
+  "rocm_install_method": "auto",
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -135,6 +139,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
         "otel_genai"
       ],
       "send_batch_size": 100
+    },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
     },
     "trust_incoming_trace_context": false
   },
@@ -194,6 +204,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
+| `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through `POST /internal/set`. Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
@@ -253,6 +264,9 @@ Backend-specific settings are nested under their backend name:
 |-----|-------------|
 | `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `allow_insecure_http` | Whether this provider may receive its API key over `http://`. |
+| `auth_header_name` | Header the API key is sent in. Omitted when it is the default `Authorization`. |
+| `auth_header_prefix` | Value prefix before the key. Omitted when it is the default `"Bearer "`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
@@ -389,41 +403,44 @@ lemonade config set telemetry.otlp.semantics='["openinference"]'
 lemonade config set telemetry.otlp.headers='{"Authorization":"Bearer key"}'
 ```
 
-### lemond CLI arguments (fallback)
+### lemond CLI arguments (runtime overrides)
 
-If the server cannot start (e.g., invalid port in config.json), `lemond` accepts `--port` and `--host` as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:
+`lemond` accepts `--port` and `--host` as CLI arguments to provide ephemeral runtime overrides for that specific server process without modifying `config.json`:
 
 ```bash
 lemond --port 9000 --host 0.0.0.0
 ```
 
+Because CLI overrides are ephemeral and do not mutate `config.json` on disk, if the server cannot start due to an invalid port or host setting in `config.json`:
+1. Start `lemond` using the CLI override: `lemond --port 9000`
+2. Run `lemonade config set port=9000` against the running server to persist the fix for subsequent restarts.
+3. Alternatively, edit `config.json` directly as shown below.
+
 ### Edit config.json manually (last resort)
 
-If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
+If the server won't start and CLI tools aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux (Debian/Ubuntu)
-sudo nano /var/lib/lemonade/.cache/lemonade/config.json
-
-# Linux (Fedora/Red Hat)
-sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+# Linux (Debian/Ubuntu and Fedora/Red Hat)
+sudo nano /var/lib/lemonade/config.json
 
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
-# %USERPROFILE%\.cache\lemonade\config.json
+# %USERPROFILE%\.config\lemonade\config.json
 # Then quit and relaunch from the Start Menu
 ```
 
 ## lemond CLI
 
 ```
-lemond [cache_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
+lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 ```
 
-- **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
-- **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
-- **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **cache_dir** — Path to the lemonade cache/data directory. Optional; defaults to the platform-specific cache location.
+- **config_dir** — Path to the lemonade config directory for persistent JSON state. Optional; defaults to the platform-specific config location.
+- **--port** — Port to serve on (runtime override, does not mutate config.json).
+- **--host** — Address to bind (runtime override, does not mutate config.json).
 - **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
 
 ## API Key and Security

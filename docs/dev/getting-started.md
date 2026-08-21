@@ -712,7 +712,8 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 ./lemond --port 8080
 
 # Available options:
-#   [cache_dir]              Path to lemonade cache directory (optional)
+#   [cache_dir]              Path to lemonade cache/data directory (optional)
+#   [config_dir]             Path to lemonade config directory (optional)
 #   --port PORT              Port number (default: 13305)
 #   --host HOST              Bind address (default: localhost)
 #   --version, -v            Show version
