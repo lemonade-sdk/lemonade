@@ -1152,7 +1152,8 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
                                             const std::string& api_key,
                                             bool allow_insecure_http,
                                             const std::optional<std::string>& auth_header_name,
-                                            const std::optional<std::string>& auth_header_prefix) {
+                                            const std::optional<std::string>& auth_header_prefix,
+                                            const std::optional<std::string>& wire_format) {
     std::cout << "Installing cloud provider: " << provider
               << " (" << base_url << ")" << std::endl;
     try {
@@ -1172,6 +1173,9 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
         }
         if (auth_header_prefix) {
             body["auth_header_prefix"] = *auth_header_prefix;
+        }
+        if (wire_format) {
+            body["wire_format"] = *wire_format;
         }
         std::string response = make_request("/api/v1/install", "POST",
                                              body.dump(), "application/json");
@@ -1314,6 +1318,10 @@ int LemonadeClient::cloud_list() const {
                 // visible rather than indistinguishable from the default.
                 std::cout << "    auth header: " << header_name
                           << ": \"" << header_prefix << "\"<key>" << std::endl;
+            }
+            const std::string wire_format = p.value("wire_format", std::string("openai"));
+            if (wire_format != "openai") {
+                std::cout << "    wire format: " << wire_format << std::endl;
             }
             print_response_warnings(p, "    ");
         }

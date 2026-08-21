@@ -6730,6 +6730,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"allow_insecure_http", rec.allow_insecure_http},
                 {"auth_header_name", rec.auth_header_name},
                 {"auth_header_prefix", rec.auth_header_prefix},
+                {"wire_format", rec.wire_format},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -7676,7 +7677,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    auth_header_name / auth_header_prefix: see
+        //    auth_header_name / auth_header_prefix / wire_format: see
         //      CloudProviderRegistry::Record,
         //    api_key: "..."}
         //
@@ -7710,9 +7711,9 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
 
             CloudProviderRegistry::InstallOptions install_options;
-            auto read_header_field = [&](const char* field,
-                                         std::string (*validate)(const std::string&),
-                                         std::optional<std::string>& out) {
+            auto read_validated_field = [&](const char* field,
+                                            std::string (*validate)(const std::string&),
+                                            std::optional<std::string>& out) {
                 if (!request_json.contains(field)) return true;
                 if (!request_json[field].is_string()) {
                     reject(std::string(field) + " must be a string when provided");
@@ -7726,12 +7727,15 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 out = std::move(value);
                 return true;
             };
-            if (!read_header_field("auth_header_name",
-                                   CloudProviderRegistry::validate_auth_header_name,
-                                   install_options.auth_header_name) ||
-                !read_header_field("auth_header_prefix",
-                                   CloudProviderRegistry::validate_auth_header_prefix,
-                                   install_options.auth_header_prefix)) {
+            if (!read_validated_field("auth_header_name",
+                                      CloudProviderRegistry::validate_auth_header_name,
+                                      install_options.auth_header_name) ||
+                !read_validated_field("auth_header_prefix",
+                                      CloudProviderRegistry::validate_auth_header_prefix,
+                                      install_options.auth_header_prefix) ||
+                !read_validated_field("wire_format",
+                                      CloudProviderRegistry::validate_wire_format,
+                                      install_options.wire_format)) {
                 return;
             }
             if (request_json.contains("allow_insecure_http")) {
@@ -7791,6 +7795,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
                 {"auth_header_name", auth_header.name},
                 {"auth_header_prefix", auth_header.prefix},
+                {"wire_format", cloud_registry_->wire_format_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},
