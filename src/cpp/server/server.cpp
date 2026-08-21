@@ -3554,6 +3554,110 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
 }
 
+namespace {
+
+enum class RouteOnlyFlag { kAbsent, kEnabled, kInvalid };
+
+RouteOnlyFlag take_route_only_flag(nlohmann::json& request_json) {
+    if (!request_json.contains("route_only")) {
+        return RouteOnlyFlag::kAbsent;
+    }
+    if (!request_json["route_only"].is_boolean()) {
+        return RouteOnlyFlag::kInvalid;
+    }
+    const bool enabled = request_json["route_only"].get<bool>();
+    request_json.erase("route_only");
+    return enabled ? RouteOnlyFlag::kEnabled : RouteOnlyFlag::kAbsent;
+}
+
+void set_json_error(httplib::Response& res, int status, const std::string& message,
+                    const std::string& type, const std::string& param = std::string()) {
+    nlohmann::json error = {{"message", message}, {"type", type}};
+    if (!param.empty()) {
+        error["param"] = param;
+    }
+    res.status = status;
+    res.set_content(nlohmann::json{{"error", std::move(error)}}.dump(), "application/json");
+}
+
+} // namespace
+
+bool Server::try_respond_route_only(nlohmann::json& request_json, httplib::Response& res) {
+    switch (take_route_only_flag(request_json)) {
+        case RouteOnlyFlag::kAbsent:
+            return false;
+        case RouteOnlyFlag::kInvalid:
+            // route_only means "decision without inference" — an invalid value
+            // fails closed instead of degrading into a real completion.
+            set_json_error(res, 400, "'route_only' must be a boolean",
+                           "invalid_request_error", "route_only");
+            return true;
+        case RouteOnlyFlag::kEnabled:
+            break;
+    }
+
+    std::string model;
+    if (request_json.contains("model") && request_json["model"].is_string()) {
+        model = request_json["model"].get<std::string>();
+    }
+    if (model.empty()) {
+        set_json_error(res, 400, "route_only requires a 'model' field",
+                       "invalid_request_error", "model");
+        return true;
+    }
+    // routed: false is reserved for "exists and is not a router". Lookup and
+    // dispatch failures keep the same error behavior a real request would get.
+    if (!model_manager_->model_exists(model)) {
+        nlohmann::json error_response =
+            create_model_error(model, "Model not found: " + model);
+        res.status = get_http_status_from_error(
+            error_response["error"]["code"].get<std::string>());
+        res.set_content(error_response.dump(), "application/json");
+        return true;
+    }
+
+    // Resolve once and reuse for both the recipe check and dispatch, so the
+    // decision reflects a single registry snapshot under concurrent updates.
+    const ModelInfo info = model_manager_->get_model_info(model);
+    if (!is_router_collection_recipe(info.recipe)) {
+        nlohmann::json body = {
+            {"requested_model", model},
+            {"selected_model", model},
+            {"routed", false},
+        };
+        res.set_content(body.dump(), "application/json");
+        return true;
+    }
+
+    try {
+        std::optional<RouterDispatchResult> dispatch =
+            route_collection_request(request_json, info);
+        if (dispatch) {
+            dispatch->requested_model = model;
+            nlohmann::json body = {
+                {"requested_model", model},
+                {"selected_model", dispatch->selected_model},
+                {"routed", true},
+                {"decision", route_decision_to_json(dispatch->decision)},
+            };
+            attach_route_header(res, dispatch->decision);
+            res.set_content(body.dump(), "application/json");
+            return true;
+        }
+        set_json_error(res, 500,
+                       "router dispatch failed for '" + model +
+                           "': no routing decision (no parsed policy)",
+                       "server_error");
+    } catch (const RouterResidencyConflictException& e) {
+        set_router_residency_conflict_response(e, res);
+    } catch (const std::exception& e) {
+        set_json_error(res, 500,
+                       "router dispatch failed for '" + model + "': " + e.what(),
+                       "server_error");
+    }
+    return true;
+}
+
 std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     nlohmann::json& request_json) {
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
@@ -3634,6 +3738,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
+
+        if (try_respond_route_only(request_json, res)) {
+            return;
+        }
 
         // Debug: Check if tools are present
         if (request_json.contains("tools")) {
@@ -3822,6 +3930,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Must be done before any model_manager/router lookups and before forwarding
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
+
+        if (try_respond_route_only(request_json, res)) {
+            return;
+        }
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
@@ -5428,6 +5540,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         auto request_json = nlohmann::json::parse(req.body);
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
+
+        if (try_respond_route_only(request_json, res)) {
+            return;
+        }
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.
