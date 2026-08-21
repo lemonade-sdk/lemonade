@@ -47,6 +47,10 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+if any(flag in sys.argv for flag in ("--version", "-v", "--help", "-h")):
+    print("version: 3000 (mock)")
+    sys.exit(0)
+
 class ThreadedHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
