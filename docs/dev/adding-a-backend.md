@@ -19,6 +19,8 @@ That covers the backend's wiring. You still write an integration test ([Testing]
 
 Everything for one backend lives in `lemon::backends::<stem>`. The descriptor is header-only so it links into **both** the `lemonade` CLI and `lemond`; the server class and `create()` are server-only (compiled into `lemond`).
 
+> **Wrapping a new third-party engine?** This page covers the mechanics of wiring a backend in. Whether the engine gets admitted at all — and at which tier — is governed by the [Backend Admission Policy](./backend-admission-policy.md). Read that first; the value-proposition gate is the most common reason a proposal is declined.
+
 ## The descriptor — `<stem>/<stem>.h`
 
 Plain data. The single object the registry, CLI, `/system-info`, and docs all read.
