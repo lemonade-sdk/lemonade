@@ -90,9 +90,8 @@ bool is_backend_connection_failure(const std::string& message) {
 
 bool is_gpu_hang_or_compute_error(const std::string& message) {
     const std::string lowered = lower_copy(message);
-    return (lowered.find("compute error.") != std::string::npos ||
-            lowered.find("gpu hang") != std::string::npos) &&
-           lowered.find("server_error") != std::string::npos;
+    return lowered.find("compute error") != std::string::npos ||
+           lowered.find("gpu hang") != std::string::npos;
 }
 
 bool is_context_window_error(const std::string& message) {
