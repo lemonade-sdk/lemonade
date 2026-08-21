@@ -1,3 +1,20 @@
+// Windows header discipline — must precede all other includes.
+#ifdef _WIN32
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <mstcpip.h>
+#include <windows.h>
+#pragma comment(lib, "ws2_32.lib")
+#ifdef ERROR
+#undef ERROR
+#endif
+#endif
+
 #include "lemon/utils/network_utils.h"
 
 #include <cassert>
@@ -5,14 +22,12 @@
 #include <string>
 #include <thread>
 
-#ifdef _WIN32
-    #include <winsock2.h>
-    #include <ws2tcpip.h>
-#else
-    #include <arpa/inet.h>
-    #include <netinet/in.h>
-    #include <sys/socket.h>
-    #include <unistd.h>
+#ifndef _WIN32
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #endif
 
 struct TestResult {
@@ -260,6 +275,169 @@ static void test_listener_startup_state(TestResult& r) {
     }
 }
 
+static void test_configure_tcp_keepalive(TestResult& r) {
+#ifdef _WIN32
+    SOCKET listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(listener != INVALID_SOCKET);
+#else
+    int listener = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(listener >= 0);
+#endif
+
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    addr.sin_port = 0;
+
+    int bind_res = bind(listener, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    assert(bind_res == 0);
+    int listen_res = listen(listener, 1);
+    assert(listen_res == 0);
+
+    sockaddr_in bound_addr{};
+    socklen_t addr_len = sizeof(bound_addr);
+    int name_res = getsockname(listener, reinterpret_cast<sockaddr*>(&bound_addr), &addr_len);
+    assert(name_res == 0);
+
+#ifdef _WIN32
+    SOCKET client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(client != INVALID_SOCKET);
+#else
+    int client = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    assert(client >= 0);
+#endif
+
+    int conn_res = connect(client, reinterpret_cast<sockaddr*>(&bound_addr), sizeof(bound_addr));
+    assert(conn_res == 0);
+
+#ifdef _WIN32
+    SOCKET accepted = accept(listener, nullptr, nullptr);
+    if (accepted == INVALID_SOCKET) {
+        r.fail("configure_tcp_keepalive: accept socket");
+        closesocket(client);
+        closesocket(listener);
+        return;
+    }
+#else
+    int accepted = accept(listener, nullptr, nullptr);
+    if (accepted < 0) {
+        r.fail("configure_tcp_keepalive: accept socket");
+        close(client);
+        close(listener);
+        return;
+    }
+#endif
+
+    bool config_res = lemon::utils::configure_tcp_keepalive(accepted);
+    if (config_res) {
+        r.ok("configure_tcp_keepalive returns true on accepted socket");
+    } else {
+        r.fail("configure_tcp_keepalive returned false on accepted socket");
+    }
+
+    int opt = 0;
+    socklen_t optlen = sizeof(opt);
+#ifdef _WIN32
+    int res = getsockopt(accepted, SOL_SOCKET, SO_KEEPALIVE, reinterpret_cast<char*>(&opt), &optlen);
+#else
+    int res = getsockopt(accepted, SOL_SOCKET, SO_KEEPALIVE, &opt, &optlen);
+#endif
+
+    if (res == 0 && opt != 0) {
+        r.ok("SO_KEEPALIVE enabled on accepted socket");
+    } else {
+        r.fail("SO_KEEPALIVE not enabled on accepted socket");
+    }
+
+#ifdef __linux__
+    int idle = 0;
+    optlen = sizeof(idle);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPIDLE, &idle, &optlen) == 0 && idle == 15) {
+        r.ok("TCP_KEEPIDLE == 15 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPIDLE check failed");
+    }
+
+    int interval = 0;
+    optlen = sizeof(interval);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPINTVL, &interval, &optlen) == 0 && interval == 5) {
+        r.ok("TCP_KEEPINTVL == 5 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPINTVL check failed");
+    }
+
+    int count = 0;
+    optlen = sizeof(count);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPCNT, &count, &optlen) == 0 && count == 3) {
+        r.ok("TCP_KEEPCNT == 3 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPCNT check failed");
+    }
+#elif defined(__APPLE__)
+    int idle = 0;
+    optlen = sizeof(idle);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPALIVE, &idle, &optlen) == 0 && idle == 15) {
+        r.ok("TCP_KEEPALIVE == 15 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPALIVE check failed");
+    }
+
+    int interval = 0;
+    optlen = sizeof(interval);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPINTVL, &interval, &optlen) == 0 && interval == 5) {
+        r.ok("TCP_KEEPINTVL == 5 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPINTVL check failed");
+    }
+
+    int count = 0;
+    optlen = sizeof(count);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPCNT, &count, &optlen) == 0 && count == 3) {
+        r.ok("TCP_KEEPCNT == 3 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPCNT check failed");
+    }
+#elif defined(_WIN32)
+#ifdef TCP_KEEPIDLE
+    int idle = 0;
+    optlen = sizeof(idle);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPIDLE, reinterpret_cast<char*>(&idle), &optlen) == 0 && idle == 15) {
+        r.ok("TCP_KEEPIDLE == 15 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPIDLE check failed");
+    }
+#endif
+#ifdef TCP_KEEPINTVL
+    int interval = 0;
+    optlen = sizeof(interval);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPINTVL, reinterpret_cast<char*>(&interval), &optlen) == 0 && interval == 5) {
+        r.ok("TCP_KEEPINTVL == 5 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPINTVL check failed");
+    }
+#endif
+#ifdef TCP_KEEPCNT
+    int count = 0;
+    optlen = sizeof(count);
+    if (getsockopt(accepted, IPPROTO_TCP, TCP_KEEPCNT, reinterpret_cast<char*>(&count), &optlen) == 0 && count == 3) {
+        r.ok("TCP_KEEPCNT == 3 on accepted socket");
+    } else {
+        r.fail("TCP_KEEPCNT check failed");
+    }
+#endif
+#endif
+
+#ifdef _WIN32
+    closesocket(accepted);
+    closesocket(client);
+    closesocket(listener);
+#else
+    close(accepted);
+    close(client);
+    close(listener);
+#endif
+}
+
 int main() {
 #ifdef _WIN32
     WSADATA wsaData;
@@ -273,6 +451,7 @@ int main() {
     test_inactive_port(r);
     test_active_port(r);
     test_listener_startup_state(r);
+    test_configure_tcp_keepalive(r);
 
     printf("\n%d/%d tests passed\n", r.passed, r.passed + r.failed);
 

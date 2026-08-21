@@ -2531,12 +2531,13 @@ void Server::ensure_collection_loaded(const ModelInfo& info) {
             comp_info = model_manager_->get_model_info(component);
         }
         LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-        // Per the documented contract, per-model options like ctx_size or
-        // llamacpp_backend are NOT forwarded from the collection's load request
-        // to its components. Each component uses its own saved recipe_options.json
-        // entry.
-        router_->load_model(component, comp_info, comp_info.recipe_options, true,
-                            /*allow_reload_on_option_change=*/true);
+        // The collection load request does not become the component request
+        // layer. Router already reads the component's saved options from comp_info,
+        // so an empty request preserves normal model/architecture/backend scope
+        // semantics.
+        router_->load_model(
+            component, comp_info, RecipeOptions(comp_info.recipe, json::object()), true,
+            /*allow_reload_on_option_change=*/true);
     }
 }
 
@@ -5892,26 +5893,13 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto info = model_manager_->get_model_info(model_name);
 
         // Extract optional per-model settings. Omitted options keep saved values;
-        // explicit *_args keys mask them for this load, and null acts as a tombstone.
-        // ctx_size=-1 explicitly requests automatic sizing.
-        // ctx_size=-1 remains an explicit request for automatic sizing.
+        // null masks only its saved key for this load. Concrete *_args scope is
+        // resolved later by Router. ctx_size=-1 remains an explicit auto value.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         std::set<std::string> transient_saved_option_tombstones;
-        std::set<std::string> transient_saved_option_masks;
         for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
-            if (!request_json.contains(key)) {
-                continue;
-            }
-
-            if (request_json[key].is_null()) {
+            if (request_json.contains(key) && request_json[key].is_null()) {
                 transient_saved_option_tombstones.insert(key);
-                transient_saved_option_masks.insert(key);
-                continue;
-            }
-
-            if (key.size() >= 5 &&
-                key.compare(key.size() - 5, 5, "_args") == 0) {
-                transient_saved_option_masks.insert(key);
             }
         }
 
@@ -5948,18 +5936,14 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // ModelInfo::recipe_options contains the model-level defaults plus the
-        // recipe_options.json overlay. Rebuild that local copy with request-masked
-        // saved keys removed. Concrete *_args then override the saved same-key
-        // layer while merge_args can still combine model defaults and the lower
-        // architecture/backend/global layers. This load does not alter the
-        // persistent recipe_options.json entry.
-        if (!transient_saved_option_masks.empty()) {
+        // Null tombstones are load-local: remove only those saved keys from the
+        // local model layer without changing recipe_options.json.
+        if (!transient_saved_option_tombstones.empty()) {
             json per_model_options = model_manager_->get_model_default_options(info).to_json();
             const json saved = model_manager_->get_saved_model_options(model_name);
             if (saved.is_object()) {
                 for (const auto& [key, value] : saved.items()) {
-                    if (transient_saved_option_masks.count(key) == 0) {
+                    if (transient_saved_option_tombstones.count(key) == 0) {
                         per_model_options[key] = value;
                     }
                 }
