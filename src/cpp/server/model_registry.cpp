@@ -381,7 +381,8 @@ public:
         if (!requested_revision.empty() && revision != "main") {
             url += "/revision/" + percent_encode(revision, true);
         }
-        url += "?blobs=true";
+        url += "?blobs=true&expand%5B%5D=gguf&expand%5B%5D=pipeline_tag"
+               "&expand%5B%5D=sha&expand%5B%5D=siblings";
 
         const auto response = HttpClient::get(url, auth_headers());
         if (response.status_code == 404 || response.status_code == 401 || response.status_code == 403) {
@@ -621,7 +622,7 @@ RegistrySearchResponse normalize_registry_search_response(
     result.results.reserve(std::min<std::size_t>(items->size(), limit));
     for (const auto& item : *items) {
         RegistrySearchResult normalized = normalize_registry_search_result(source, item);
-        if (normalized.repo_id.empty() || excluded_generation_task(normalized.task)) continue;
+        if (normalized.repo_id.empty() || registry_task_is_excluded(normalized.task)) continue;
         // Provider list metadata is only a hint here. The request-specific
         // format filter is applied by search_registry_models below, while
         // /pull/variants remains the authoritative file compatibility check.
@@ -629,6 +630,10 @@ RegistrySearchResponse normalize_registry_search_response(
         if (result.results.size() >= limit) break;
     }
     return result;
+}
+
+bool registry_task_is_excluded(const std::string& task) {
+    return excluded_generation_task(task);
 }
 
 RegistrySearchResponse search_registry_models(RemoteRegistrySource source,

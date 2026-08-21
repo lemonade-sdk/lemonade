@@ -386,6 +386,14 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             "' manifest exported by 'lemonade export')");
     }
 
+    const std::string incompatibility = llamacpp_gguf_incompatibility(
+        repository.raw_metadata, remote_registry_source_name(source));
+    if (!incompatibility.empty()) {
+        throw std::invalid_argument(
+            "Repository " + checkpoint + " is not compatible with llama.cpp: " +
+            incompatibility);
+    }
+
     // Suggested labels. These are what the client previews before confirming
     // the pull, so they run through the same stamper that /pull applies at
     // registration; otherwise the preview and the registered model disagree.
@@ -420,6 +428,53 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     }
     out["variants"] = std::move(variants_json);
     return out;
+}
+
+std::string llamacpp_gguf_incompatibility(
+    const nlohmann::json& repository_metadata,
+    const std::string& registry_source) {
+    const std::string normalized_source = to_lower(registry_source);
+    if (!normalized_source.empty() &&
+        normalized_source != "huggingface" && normalized_source != "hf") {
+        return {};
+    }
+
+    auto task_it = repository_metadata.find("pipeline_tag");
+    if (task_it != repository_metadata.end() && task_it->is_string()) {
+        const std::string task = task_it->get<std::string>();
+        if (registry_task_is_excluded(task)) {
+            return "repository task '" + task + "' requires a different backend";
+        }
+    }
+
+    auto gguf_it = repository_metadata.find("gguf");
+    if (gguf_it == repository_metadata.end() || !gguf_it->is_object()) {
+        return {};
+    }
+
+    auto architecture_it = gguf_it->find("architecture");
+    if (architecture_it == gguf_it->end() || !architecture_it->is_string() ||
+        architecture_it->get_ref<const std::string&>().empty() ||
+        std::all_of(architecture_it->get_ref<const std::string&>().begin(),
+                    architecture_it->get_ref<const std::string&>().end(),
+                    [](unsigned char c) { return std::isspace(c); })) {
+        return "GGUF metadata does not declare a model architecture";
+    }
+
+    auto context_it = gguf_it->find("context_length");
+    bool has_positive_context = false;
+    if (context_it != gguf_it->end()) {
+        if (context_it->is_number_unsigned()) {
+            has_positive_context = context_it->get<std::uint64_t>() > 0;
+        } else if (context_it->is_number_integer()) {
+            has_positive_context = context_it->get<std::int64_t>() > 0;
+        }
+    }
+    if (!has_positive_context) {
+        return "GGUF metadata does not declare a positive text context length";
+    }
+
+    return {};
 }
 
 }  // namespace lemon
