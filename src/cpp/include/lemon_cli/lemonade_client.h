@@ -101,6 +101,7 @@ public:
 
     // Status commands
     int status(int display_port = 0) const;
+    nlohmann::json fetch_health() const;
     std::vector<ModelInfo> get_models(bool show_all) const;
 
     // Recipe/backend commands
