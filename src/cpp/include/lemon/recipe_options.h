@@ -17,6 +17,7 @@ public:
     std::string to_log_string(bool resolve_defaults=true) const;
     RecipeOptions inherit(const RecipeOptions& options) const;
     json get_option(const std::string& opt) const;
+    bool has_option(const std::string& opt) const;
     void set_option(const std::string& opt, const json& value);
     void remove_option(const std::string& opt);
     std::string get_recipe() const { return recipe_; };
@@ -30,6 +31,16 @@ public:
 
     /// Option names this recipe accepts, in declaration order.
     static std::vector<std::string> keys_for_recipe(const std::string& recipe);
+
+    /// Fold precedence layers into one RecipeOptions. Layers are given lowest
+    /// to highest precedence; each later layer's keys overwrite earlier ones
+    /// wholesale, including *_args (which are only token-merged by inherit()
+    /// between the Router's layers). Returns an empty RecipeOptions when all
+    /// layers are null/absent.
+    static RecipeOptions merge_precedence_layers(const std::string& recipe,
+                                                 const json& lowest,
+                                                 const json& middle,
+                                                 const json& highest);
 
     /// Every option the recipe accepts, with unset keys resolved to their
     /// defaults. Two option sets that resolve equal describe the same load,
