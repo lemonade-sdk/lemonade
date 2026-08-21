@@ -102,6 +102,8 @@ const tests = [
       assert.ok(source.includes("voiceMode === 'plain'"));
       assert.ok(source.includes('supportsVoiceClone'));
       assert.ok(source.includes('checkpoints?.voicegen'));
+      assert.ok(source.includes('supportsVoiceClone'));
+      assert.ok(source.includes('checkpoints?.voicegen'));
     },
   },
   {

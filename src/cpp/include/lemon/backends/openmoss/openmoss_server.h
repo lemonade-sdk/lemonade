@@ -68,6 +68,7 @@ private:
     std::shared_mutex request_mutex_;
     std::atomic<bool> process_swap_in_progress_{false};
     bool speech_uses_large_context_ = false;
+    bool speech_uses_large_context_ = false;
 };
 
 namespace openmoss {

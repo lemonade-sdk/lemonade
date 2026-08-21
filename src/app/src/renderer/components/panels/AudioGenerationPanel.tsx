@@ -331,6 +331,80 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
               </div>
             </details>
           )}
+          {generationControlParams.length > 0 && (
+            <details className="tts-speech-params">
+              <summary>Generation parameters</summary>
+              <div className="tts-speech-params-grid">
+                {generationControlParams.map(param => {
+                  const value = generationValues[param.name];
+                  return (
+                    <label key={param.name} className="tts-speech-param" title={param.help || undefined}>
+                      <span>{param.label}</span>
+                      {param.typeName === 'BOOL' ? (
+                        <input
+                          type="checkbox"
+                          checked={value === true}
+                          onChange={(e) => setGenerationValues(previous => ({
+                            ...previous, [param.name]: e.target.checked,
+                          }))}
+                          disabled={isBusy}
+                        />
+                      ) : param.typeName === 'ENUM' ? (
+                        <select
+                          value={typeof value === 'string' ? value : ''}
+                          onChange={(e) => setGenerationValues(previous => ({
+                            ...previous, [param.name]: e.target.value,
+                          }))}
+                          disabled={isBusy}
+                        >
+                          {param.enumValues.map(option => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      ) : param.typeName === 'MULTILINE' ? (
+                        <textarea
+                          value={typeof value === 'string' ? value : ''}
+                          onChange={(e) => setGenerationValues(previous => ({
+                            ...previous, [param.name]: e.target.value,
+                          }))}
+                          disabled={isBusy}
+                          rows={2}
+                        />
+                      ) : param.typeName === 'TEXT' ? (
+                        <input
+                          type="text"
+                          value={typeof value === 'string' ? value : ''}
+                          onChange={(e) => setGenerationValues(previous => ({
+                            ...previous, [param.name]: e.target.value,
+                          }))}
+                          disabled={isBusy}
+                        />
+                      ) : (
+                        <input
+                          type="number"
+                          min={param.min ?? undefined}
+                          max={param.max ?? undefined}
+                          step={param.step ?? undefined}
+                          value={typeof value === 'number' ? value : ''}
+                          placeholder={param.typeName === 'SEED' ? 'random' : undefined}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setGenerationValues(previous => {
+                              const next = { ...previous };
+                              if (raw === '') delete next[param.name];
+                              else next[param.name] = Number(raw);
+                              return next;
+                            });
+                          }}
+                          disabled={isBusy}
+                        />
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </details>
+          )}
           <InferenceControls
             isBusy={isBusy}
             isInferring={isInferring}
