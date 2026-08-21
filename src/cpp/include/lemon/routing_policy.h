@@ -66,6 +66,13 @@ struct RouteContext {
         bool has_tools = false;     // request carried a non-empty tools[] array
         bool has_images = false;    // request carried image content parts
         std::size_t chars = 0;      // UTF-8 byte count of `input`
+
+        // Conversation depth: the count of user-role turns in the request's
+        // `messages` (chat/completions) or `input` (Responses) array, at
+        // least 1 for any request that reaches the engine. Harness-agnostic
+        // (pure message count, no tool-call/error semantics) — see
+        // min_turns/max_turns.
+        std::size_t turn_count = 0;
     } params;
 
     // Routing inputs carried on the OpenAI `metadata` body field. List values

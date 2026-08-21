@@ -81,7 +81,8 @@ v1** (pinned in the schema field descriptions):
 | `regex` | **ECMAScript** dialect (`std::regex`), case-sensitive; pattern must be non-empty; patterns with a nested unbounded quantifier (`(X+)+` — catastrophic backtracking) are rejected at policy load |
 | `min_score` / `max_score` | **inclusive** band (`>=` / `<=`); default `min_score: 0.5` when neither bound is given |
 | `min_chars` / `max_chars` | input length in **UTF-8 bytes** (not code points) |
-| `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`) |
+| `min_turns` / `max_turns` | conversation depth: count of `role:"user"` turns in `messages`/`input`; harness-agnostic (pure message count) |
+| `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). `gte`/`lte` parse the value as a number instead. A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`, and never satisfies `gte`/`lte`); a non-numeric value likewise never satisfies `gte`/`lte` |
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
 | `routing.router` desugaring | expansion to one `llm` classifier + identity rules is deterministic and behavior-equivalent across versions |

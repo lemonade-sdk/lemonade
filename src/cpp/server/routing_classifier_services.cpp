@@ -376,6 +376,16 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
     if (request_json.contains("messages") && request_json["messages"].is_array()) {
         const auto& messages = request_json["messages"];
         for (const auto& msg : messages) {
+            if (msg.is_object() && msg.value("role", std::string()) == "user") {
+                ++ctx.params.turn_count;
+            }
+        }
+        // A non-empty conversation with no role:"user" entry at all (unusual,
+        // but not impossible) still reached the router as one turn.
+        if (ctx.params.turn_count == 0 && !messages.empty()) {
+            ctx.params.turn_count = 1;
+        }
+        for (const auto& msg : messages) {
             if (msg.is_object() && msg.contains("content") && content_has_image(msg["content"])) {
                 ctx.params.has_images = true;
                 break;
@@ -391,6 +401,8 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
         }
     } else if (request_json.contains("prompt")) {
         const auto& prompt = request_json["prompt"];
+        // Legacy completions has no multi-turn concept: the whole prompt is one turn.
+        ctx.params.turn_count = 1;
         if (prompt.is_string()) {
             ctx.input = prompt.get<std::string>();
         } else if (prompt.is_array()) {
@@ -404,7 +416,18 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
         const auto& input = request_json["input"];
         if (input.is_string()) {
             ctx.input = input.get<std::string>();
+            ctx.params.turn_count = 1;
         } else if (input.is_array()) {
+            for (const auto& item : input) {
+                if (item.is_object() && item.value("role", std::string()) == "user") {
+                    ++ctx.params.turn_count;
+                }
+            }
+            // Role-less bare-parts input (see the fallback below) still
+            // reached the router as one turn.
+            if (ctx.params.turn_count == 0 && !input.empty()) {
+                ctx.params.turn_count = 1;
+            }
             // Detect images anywhere in the input, mirroring how the chat path
             // scans every message.
             for (const auto& item : input) {

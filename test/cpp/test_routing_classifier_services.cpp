@@ -421,6 +421,59 @@ static void test_build_route_context_multi_turn_latest_user_turn_only() {
           ctx.input == "now write a poem");
     check("multi-turn: chars measures the latest turn, not the conversation",
           ctx.params.chars == std::string("now write a poem").size());
+    check("multi-turn: turn_count counts user turns across the WHOLE conversation "
+          "(unlike input/chars, which only see the latest one)",
+          ctx.params.turn_count == 2);
+}
+
+static void test_build_route_context_turn_count_ignores_non_user_roles() {
+    json request = {
+        {"model", "router"},
+        {"messages", json::array({
+            {{"role", "system"}, {"content", "be helpful"}},
+            {{"role", "user"}, {"content", "hi"}},
+            {{"role", "assistant"}, {"content", "hello"}},
+            {{"role", "tool"}, {"content", "tool result"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("turn_count counts only role:user entries, not system/assistant/tool",
+          ctx.params.turn_count == 1);
+}
+
+static void test_build_route_context_turn_count_responses_input() {
+    json request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"role", "user"}, {"content", "first"}},
+            {{"role", "assistant"}, {"content", "reply"}},
+            {{"role", "user"}, {"content", "second"}},
+            {{"role", "user"}, {"content", "third"}},
+        })},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("responses input: turn_count counts role:user entries", ctx.params.turn_count == 3);
+}
+
+static void test_build_route_context_turn_count_single_shot_inputs() {
+    json prompt_request = {{"model", "router"}, {"prompt", "translate this"}};
+    RouteContext prompt_ctx = lemon::build_route_context(prompt_request, "router");
+    check("legacy prompt has no multi-turn concept: turn_count == 1",
+          prompt_ctx.params.turn_count == 1);
+
+    json string_input_request = {{"model", "router"}, {"input", "plain text prompt"}};
+    RouteContext string_ctx = lemon::build_route_context(string_input_request, "router");
+    check("responses string input: turn_count == 1", string_ctx.params.turn_count == 1);
+
+    json bare_parts_request = {
+        {"model", "router"},
+        {"input", json::array({
+            {{"type", "input_text"}, {"text", "hello"}},
+        })},
+    };
+    RouteContext bare_ctx = lemon::build_route_context(bare_parts_request, "router");
+    check("responses role-less bare-parts input: turn_count == 1 (reached the router once)",
+          bare_ctx.params.turn_count == 1);
 }
 
 static void test_build_route_context_chat_typed_parts_and_image() {
@@ -716,6 +769,9 @@ int main() {
     test_build_route_context_responses_bare_parts();
     test_build_route_context_responses_string_input_no_image();
     test_build_route_context_responses_uses_last_user_message();
+    test_build_route_context_turn_count_ignores_non_user_roles();
+    test_build_route_context_turn_count_responses_input();
+    test_build_route_context_turn_count_single_shot_inputs();
     test_estimated_cost_attached_on_matched_rule();
     test_estimated_cost_attached_on_default();
     test_estimated_cost_omitted_when_candidate_has_no_cost_data();

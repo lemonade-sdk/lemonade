@@ -711,6 +711,35 @@ std::set<std::string> decode_metadata_tokens(const std::string& value) {
     return tokens;
 }
 
+// Parse a metadata value as a number for the gte/lte comparators. Metadata
+// values are always strings (the caller pre-computes and stringifies its own
+// signal, e.g. a tool_error_streak count); a blank value or one that isn't
+// ENTIRELY numeric (trailing ASCII whitespace aside — "3 " parses, "3abc"
+// doesn't) is treated as "no number here" rather than a parse error, so a
+// malformed metadata value fails the comparator (no match) instead of
+// throwing out of Condition::evaluate().
+std::optional<double> parse_metadata_number(const std::string& s) {
+    if (is_blank(s)) {
+        return std::nullopt;
+    }
+    std::size_t consumed = 0;
+    double value = 0.0;
+    try {
+        value = std::stod(s, &consumed);
+    } catch (...) {
+        return std::nullopt;
+    }
+    std::size_t end = s.size();
+    while (end > consumed && is_ascii_ws(s[end - 1])) --end;
+    if (consumed != end) {
+        return std::nullopt;
+    }
+    if (!std::isfinite(value)) {
+        return std::nullopt;
+    }
+    return value;
+}
+
 // keywords_any / keywords_all — case-insensitive substring over the input text.
 class KeywordsCondition final : public Condition {
 public:
@@ -887,6 +916,28 @@ private:
     Bound bound_;
 };
 
+// min_turns / max_turns — inclusive bound on conversation depth
+// (params.turn_count: user-role turns in messages/input, harness-agnostic).
+class TurnCountCondition final : public Condition {
+public:
+    enum class Bound { Min, Max };
+
+    TurnCountCondition(std::size_t threshold, Bound bound)
+        : threshold_(threshold), bound_(bound) {}
+
+    bool evaluate(EvalContext& ctx) const override {
+        const std::size_t n = ctx.request.params.turn_count;
+        const bool result =
+            bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
+        trace_leaf(ctx, bound_ == Bound::Min ? "min_turns" : "max_turns", result);
+        return result;
+    }
+
+private:
+    std::size_t threshold_;
+    Bound bound_;
+};
+
 // has_tools / has_images — boolean request feature equals the authored value.
 class BoolFeatureCondition final : public Condition {
 public:
@@ -910,14 +961,19 @@ private:
 
 // metadata — match a caller-supplied metadata key via exactly one comparator.
 // Frozen v1: case-sensitive; a missing/empty value matches only exists:false.
+// gte/lte read the value as a caller-precomputed number (e.g. a harness's own
+// tool_error_streak count) — a missing or non-numeric value never matches,
+// same "absent counts as no match" posture as equals/any.
 class MetadataCondition final : public Condition {
 public:
-    enum class Comparator { Equals, Any, Exists };
+    enum class Comparator { Equals, Any, Exists, Gte, Lte };
 
     MetadataCondition(std::string key, Comparator cmp, std::string equals_value,
-                      std::set<std::string> any_tokens, bool exists_expected)
+                      std::set<std::string> any_tokens, bool exists_expected,
+                      double threshold = 0.0)
         : key_(std::move(key)), cmp_(cmp), equals_value_(std::move(equals_value)),
-          any_tokens_(std::move(any_tokens)), exists_expected_(exists_expected) {}
+          any_tokens_(std::move(any_tokens)), exists_expected_(exists_expected),
+          threshold_(threshold) {}
 
     bool evaluate(EvalContext& ctx) const override {
         auto it = ctx.request.metadata.find(key_);
@@ -940,6 +996,16 @@ public:
                     }
                 }
                 break;
+            case Comparator::Gte:
+            case Comparator::Lte:
+                if (present) {
+                    std::optional<double> value = parse_metadata_number(it->second);
+                    if (value.has_value()) {
+                        result = cmp_ == Comparator::Gte ? (*value >= threshold_)
+                                                          : (*value <= threshold_);
+                    }
+                }
+                break;
         }
         trace_leaf(ctx, "metadata", result);
         return result;
@@ -951,6 +1017,7 @@ private:
     std::string equals_value_;
     std::set<std::string> any_tokens_;
     bool exists_expected_;
+    double threshold_;
 };
 
 // -- factory-side validation helpers ----------------------------------------
@@ -981,6 +1048,15 @@ ConditionPtr build_chars(const json& value, CharsCondition::Bound bound, const c
         static_cast<std::size_t>(value.get<long long>()), bound);
 }
 
+ConditionPtr build_turns(const json& value, TurnCountCondition::Bound bound, const char* op) {
+    if (!value.is_number_integer() || value.get<long long>() < 0) {
+        throw std::invalid_argument(std::string(op) +
+                                    " requires a non-negative integer");
+    }
+    return std::make_shared<TurnCountCondition>(
+        static_cast<std::size_t>(value.get<long long>()), bound);
+}
+
 ConditionPtr build_bool_feature(const json& value, BoolFeatureCondition::Feature feature,
                                 const char* op) {
     if (!value.is_boolean()) {
@@ -1001,10 +1077,12 @@ ConditionPtr build_metadata(const json& spec) {
 
     const int comparators = static_cast<int>(spec.contains("equals")) +
                             static_cast<int>(spec.contains("any")) +
-                            static_cast<int>(spec.contains("exists"));
+                            static_cast<int>(spec.contains("exists")) +
+                            static_cast<int>(spec.contains("gte")) +
+                            static_cast<int>(spec.contains("lte"));
     if (comparators != 1) {
         throw std::invalid_argument(
-            "metadata requires exactly one comparator (equals/any/exists)");
+            "metadata requires exactly one comparator (equals/any/exists/gte/lte)");
     }
 
     if (spec.contains("equals")) {
@@ -1032,6 +1110,22 @@ ConditionPtr build_metadata(const json& spec) {
         return std::make_shared<MetadataCondition>(
             key, MetadataCondition::Comparator::Any, std::string{}, std::move(tokens),
             false);
+    }
+    if (spec.contains("gte") || spec.contains("lte")) {
+        const bool is_gte = spec.contains("gte");
+        const json& value = spec[is_gte ? "gte" : "lte"];
+        if (!value.is_number()) {
+            throw std::invalid_argument(
+                std::string("metadata '") + (is_gte ? "gte" : "lte") + "' must be a number");
+        }
+        if (!std::isfinite(value.get<double>())) {
+            throw std::invalid_argument(
+                std::string("metadata '") + (is_gte ? "gte" : "lte") +
+                "' must be a finite number");
+        }
+        return std::make_shared<MetadataCondition>(
+            key, is_gte ? MetadataCondition::Comparator::Gte : MetadataCondition::Comparator::Lte,
+            std::string{}, std::set<std::string>{}, false, value.get<double>());
     }
     if (!spec["exists"].is_boolean()) {
         throw std::invalid_argument("metadata 'exists' must be a boolean");
@@ -1277,6 +1371,12 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     };
     factories["max_chars"] = [](const json& leaf) -> ConditionPtr {
         return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max, "max_chars");
+    };
+    factories["min_turns"] = [](const json& leaf) -> ConditionPtr {
+        return build_turns(leaf.at("min_turns"), TurnCountCondition::Bound::Min, "min_turns");
+    };
+    factories["max_turns"] = [](const json& leaf) -> ConditionPtr {
+        return build_turns(leaf.at("max_turns"), TurnCountCondition::Bound::Max, "max_turns");
     };
     factories["has_tools"] = [](const json& leaf) -> ConditionPtr {
         return build_bool_feature(leaf.at("has_tools"), BoolFeatureCondition::Feature::Tools,
