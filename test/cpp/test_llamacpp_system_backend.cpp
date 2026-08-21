@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -155,13 +156,15 @@ json test_devices() {
 json build_recipes(TestSystemInfo& system_info,
                    const fs::path& path_dir,
                    const std::string& configured_backend,
-                   bool prefer_system) {
+                   std::optional<bool> prefer_system_override) {
     // build_recipes_info() evaluates every recipe/backend row, so give
     // RuntimeConfig the same complete canonical shape used by production.
     // base_defaults() intentionally excludes host/distro overrides.
     json config_json = lemon::ConfigFile::base_defaults();
     config_json["llamacpp"]["backend"] = configured_backend;
-    config_json["llamacpp"]["prefer_system"] = prefer_system;
+    if (prefer_system_override.has_value()) {
+        config_json["llamacpp"]["prefer_system"] = *prefer_system_override;
+    }
     lemon::RuntimeConfig config(config_json);
     ScopedRuntimeConfig config_scope(&config);
     ScopedEnvVar path_scope("PATH");
@@ -267,6 +270,15 @@ int main() {
     hip_env.set(valid_hip.string());
     TestSystemInfo system_info;
 
+    // No override here: exercise the canonical prefer_system default shipped
+    // through ConfigFile::base_defaults().
+    const json default_preference = build_recipes(
+        system_info, system_bin, "auto", std::nullopt);
+    check_system_state(default_preference, "installed",
+                       "available system backend with default config");
+    check(default_preference["llamacpp"].value("default_backend", "") == "system",
+          "default config prefers an available system backend");
+
     const json not_preferred = build_recipes(
         system_info, system_bin, "auto", /*prefer_system=*/false);
     check_system_state(not_preferred, "installed",
@@ -299,6 +311,13 @@ int main() {
                       .find("llama-server not found in PATH") != std::string::npos,
               "missing system backend reports PATH discovery failure");
     }
+
+    const json unavailable_not_preferred = build_recipes(
+        system_info, empty_bin, "auto", /*prefer_system=*/false);
+    check_system_state(unavailable_not_preferred, "unsupported",
+                       "missing system backend with prefer_system=false");
+    check(unavailable_not_preferred["llamacpp"].value("default_backend", "") != "system",
+          "prefer_system=false also falls back when system llama-server is unavailable");
 
     if (failures != 0) {
         std::cerr << "Total failures: " << failures << std::endl;
