@@ -21,7 +21,7 @@ New endpoints, commands, and backends need at least one test that exercises them
 
 ### A test that isn't in CI doesn't exist
 
-A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be declared with `add_cpp_ci_test(<Name> CI ON COMMAND <target>)` in `CMakeLists.txt` so the `cpp-ci` CTest label picks them up. Guard the block with `if(BUILD_TESTING AND ...)` — distro packaging configures with `BUILD_TESTING=OFF` to avoid building test binaries it discards, and an unguarded declaration fails that build at configure time.
+A committed test file that no workflow runs is an incomplete contribution. New Python suites must be added to a CI job; new C++ tests must be declared with `add_cpp_ci_test(<Name> CI ON COMMAND <target>)` in `test/CMakeLists.txt` so the `cpp-ci` CTest label picks them up. Guard the block with `if(BUILD_TESTING AND ...)` — distro packaging configures with `BUILD_TESTING=OFF` to avoid building test binaries it discards, and an unguarded declaration fails that build at configure time.
 
 Most suites join the existing endpoint/CLI or hardware-matrix jobs in `cpp_server_build_test_release.yml`. A dedicated workflow is appropriate only when the suite has environment needs the existing jobs can't meet (real network downloads, a container, path-filtered smoke tests).
 
@@ -68,7 +68,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes streaming error handling | `test/server_streaming_errors.py` |
 | Changes model downloads or registry search | `test/server_downloads.py` |
 | Changes API key authentication | `test/server_cli_apikey.py`, `test/server_websocket_auth.py` |
-| Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, declared via `add_cpp_ci_test()` in `CMakeLists.txt` |
+| Adds pure C++ logic (parsers, arg resolvers, utilities) | `test/cpp/test_<thing>.cpp`, declared via `add_cpp_ci_test()` in `test/CMakeLists.txt` |
 | Changes `server_models.json` | Update `test/utils/test_models.py` and `test/utils/capabilities.py` if tests reference the affected models |
 | Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/app-regression/*.test.cjs` regression test where practical |
 | Fixes a bug | A numbered regression test in whichever suite above owns the surface |
@@ -89,6 +89,8 @@ python test/server_llm.py --wrapped-server llamacpp --backend vulkan
 ```
 
 The `lemonade` CLI binary is auto-discovered from your CMake build directory; override with `--cli-binary`.
+
+C++ sources stay in `test/cpp/`; their CMake targets and `add_cpp_ci_test()` declarations live in `test/CMakeLists.txt`. Shared registration/CI policy lives in `cmake/LemonadeTesting.cmake`.
 
 C++ unit tests — configure the build first (`./setup.sh` on Linux/macOS, `./setup.ps1` on Windows) if you haven't already.
 
