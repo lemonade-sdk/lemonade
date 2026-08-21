@@ -334,20 +334,17 @@ class OpenMossTTSTests(ServerTestBase):
             plain_response, "Speech entering during voice-design swap"
         )
 
-    def test_012_streaming_wav(self):
-        """A wav-only backend streams its own container instead of being rejected."""
+    def test_012_streaming_pcm(self):
+        """OpenMOSS native streaming uses PCM rather than a buffered WAV."""
         model = get_test_model("tts")
         payload = {
             "model": model,
-            "input": "Lemonade can stream speech from a wav-only backend.",
-            "stream_format": "audio",
+            "input": "Lemonade can stream speech through the OpenMOSS native path.",
+            "stream": True,
         }
 
-        print(f"[INFO] Requesting streamed speech from {model}")
+        print(f"[INFO] Requesting native streamed speech from {model}")
 
-        # Headers and body are read off the live response before any assertion:
-        # unittest evaluates a failure message eagerly, so touching response.text
-        # here would consume the stream and leave iter_content replaying a cache.
         with requests.post(
             f"{self.base_url}/audio/speech",
             json=payload,
@@ -364,17 +361,21 @@ class OpenMossTTSTests(ServerTestBase):
             f"Streamed speech failed with status {status}: {body[:1000]!r}",
         )
         self.assertIn(
-            "audio/wav",
+            "audio/pcm",
             content_type,
-            f"Streamed speech should keep the backend's WAV container, got '{content_type}'",
+            f"OpenMOSS streaming must use PCM, got '{content_type}'",
         )
-        self.assertTrue(
+        self.assertFalse(
             body[:4] == b"RIFF",
-            "Streamed body should be a valid WAV (RIFF) file",
+            "Native OpenMOSS streaming should not buffer a WAV container",
         )
-        self.assertGreater(len(body), 1000, "Streamed clip should be substantial")
+        self.assertFalse(
+            body.lstrip().startswith(b"{"),
+            "A backend JSON error must not be returned as successful audio",
+        )
+        self.assertGreater(len(body), 1000, "Streamed PCM should be substantial")
 
-        print(f"[OK] Streamed WAV received ({len(body)} bytes)")
+        print(f"[OK] Streamed PCM received ({len(body)} bytes)")
 
     def test_013_voice_field_does_not_trigger_design(self):
         """A plain `voice` value must speak, not design a voice by that name.

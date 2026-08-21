@@ -3524,7 +3524,9 @@ input::-webkit-calendar-picker-indicator {
     min-width: 0;
 }
 
-.tts-speech-param input {
+.tts-speech-param input,
+.tts-speech-param select,
+.tts-speech-param textarea {
     width: 100%;
     min-width: 0;
 }

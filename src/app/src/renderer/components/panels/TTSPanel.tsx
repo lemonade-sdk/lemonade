@@ -92,12 +92,17 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
     && param.exclusiveGroup
     && param.exclusiveGroup === cloneSampleParam?.exclusiveGroup
   ));
-  const supportsVoiceDesign = Boolean(voiceDesignParam && cloneSampleParam);
+  const supportsVoiceClone = Boolean(cloneSampleParam);
+  const supportsVoiceDesign = Boolean(
+    voiceDesignParam
+    && supportsVoiceClone
+    && modelsData?.[ttsModel]?.checkpoints?.voicegen,
+  );
   const advancedSpeechParams = ttsParams.filter(param => (
     param.group === 'advanced' && (param.typeName === 'NUMBER' || param.typeName === 'INT')
   ));
 
-  const cloneMissing = supportsVoiceDesign && voiceMode === 'clone' && !cloneWav;
+  const cloneMissing = supportsVoiceClone && voiceMode === 'clone' && !cloneWav;
   const describeMissing = supportsVoiceDesign && voiceMode === 'describe' && !voiceDescription.trim();
 
   const busy = isBusy;
@@ -107,6 +112,13 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
   useEffect(() => {
     void ensureSystemInfoLoaded();
   }, [ensureSystemInfoLoaded]);
+
+  useEffect(() => {
+    if ((voiceMode === 'describe' && !supportsVoiceDesign)
+        || (voiceMode === 'clone' && !supportsVoiceClone)) {
+      setVoiceMode('plain');
+    }
+  }, [voiceMode, supportsVoiceClone, supportsVoiceDesign]);
 
   useEffect(() => {
     const declared = modelsData?.[ttsModel]?.speech_defaults || {};
@@ -156,13 +168,13 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
       if (supportsVoiceDesign && voiceDesignParam && voiceMode === 'describe') {
         extra[voiceDesignParam.name] = styleNote;
         await synthAndRecord(text, ttsModel, '', undefined, extra);
-      } else if (supportsVoiceDesign && voiceMode === 'clone') {
+      } else if (supportsVoiceClone && voiceMode === 'clone') {
         await synthAndRecord(text, ttsModel, styleNote, cloneWav?.b64, extra);
       } else {
         await synthAndRecord(
           text,
           ttsModel,
-          supportsVoiceDesign ? styleNote : tts.currentVoice,
+          supportsVoiceClone ? styleNote : tts.currentVoice,
           undefined,
           extra,
         );
@@ -311,7 +323,7 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
 
       <div className="chat-input-container">
         <div className="chat-input-voice-selector">
-          {supportsVoiceDesign ? (
+          {supportsVoiceClone ? (
             <div className="tts-generation-panel">
               <div className="tts-generation-controls">
                 <div className="tts-mode-toggle">
@@ -320,11 +332,13 @@ const TTSPanel: React.FC<TTSPanelProps> = ({
                     onClick={() => setVoiceMode('plain')}
                     disabled={busy}
                   >Plain</button>
-                  <button
-                    className={`toggle-button${voiceMode === 'describe' ? ' active' : ''}`}
-                    onClick={() => setVoiceMode('describe')}
-                    disabled={busy}
-                  >Describe</button>
+                  {supportsVoiceDesign && (
+                    <button
+                      className={`toggle-button${voiceMode === 'describe' ? ' active' : ''}`}
+                      onClick={() => setVoiceMode('describe')}
+                      disabled={busy}
+                    >Describe</button>
+                  )}
                   <button
                     className={`toggle-button${voiceMode === 'clone' ? ' active' : ''}`}
                     onClick={() => setVoiceMode('clone')}

@@ -182,9 +182,10 @@ the generator instead. Prose outside the markers is preserved. -->
 
 ## Generation parameters
 
-Per-request controls each backend accepts, declared in its descriptor. A client
-renders a control per row and sends the value in the named request field, so a
-backend can add or change a parameter without a client change.
+Per-request controls each backend accepts, declared in its descriptor. Clients use
+these rows as the source for labels, bounds, defaults, and request field names instead
+of backend-name allowlists. Generic controls can be rendered directly; specialized
+composition controls may still choose a purpose-built presentation.
 
 <!-- BEGIN GENERATED: backend-generation-params -->
 #### `acestep` — ACE-Step
@@ -265,13 +266,13 @@ The model download fetches the DiT checkpoint variant plus three companions when
 
 ### OpenMOSS (`openmoss`)
 
-`moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
+`moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, `server_models.json` keeps `size` as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
 
 `request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. `start_speech_process()` therefore calls `stop_speech_process()` rather than `unload()` on a failed readiness wait, because `unload()` takes the same exclusive lock.
 
 The transient design process is polled for readiness through its own `/health` rather than the shared `wait_for_ready()`, since it does not own `port_`; the poll also checks `ProcessManager::is_running()` each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. `spawn()` uses `find_free_port()` instead of `choose_port()` for the same reason — `choose_port()` assigns `port_`, and the caller decides which process `port_` addresses.
 
-Reference-conditioned requests prefill the whole sample as audio tokens (roughly 12.5 frames/s times the number of codebooks), which overruns the server's default 8192 context and 512 batch for anything but a very short clip, so every process is spawned with `--n-ctx 32768 --n-batch 4096`.
+Reference-conditioned TTS requests can overrun the server's default 8192 context, so the resident speech process is spawned with `--n-ctx 32768`. OpenMOSS v0.3 chunks long prefills, so Lemonade leaves `n_batch` at the upstream default; the transient VoiceGen and sound-effect processes also keep upstream context defaults because they do not ingest reference-audio token prefixes.
 
 The server derives an audio length bound only for `n_vq < 32`. The delay family reports 32 and gets none, so a one-line prompt can run to `max_new_tokens` and emit minutes of audio. `audio_speech()` therefore derives `max_audio_frames` from the input text (about 5 frames per word at ~12.5 frames/s and ~2.5 words/s, clamped to 40-1000 tokens) unless the caller supplied `max_audio_frames` or `token_count`.
 

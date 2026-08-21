@@ -36,7 +36,12 @@ public:
 
     void audio_speech(const json& request, httplib::DataSink& sink) override;
     void audio_generations(const json& request, httplib::DataSink& sink) override;
-    std::vector<std::string> supported_audio_formats() const override { return {"wav"}; }
+    std::vector<std::string> supported_audio_formats() const override {
+        return {"wav", "pcm"};
+    }
+    std::vector<std::string> supported_streaming_audio_formats() const override {
+        return {"pcm"};
+    }
 
 private:
     struct Subprocess {
@@ -46,7 +51,7 @@ private:
     };
 
     std::string resolve_binary_path(const std::string& backend);
-    Subprocess spawn(const std::string& model_path);
+    Subprocess spawn(const std::string& model_path, bool large_context);
 
     void stop_speech_process();
     void start_speech_process();
@@ -62,6 +67,7 @@ private:
     std::vector<std::pair<std::string, std::string>> env_vars_;
     std::shared_mutex request_mutex_;
     std::atomic<bool> process_swap_in_progress_{false};
+    bool speech_uses_large_context_ = false;
 };
 
 namespace openmoss {

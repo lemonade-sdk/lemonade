@@ -2120,7 +2120,7 @@
         "labels": [
             "tts"
         ],
-        "size": 19.8,
+        "size": 12.5,
         "speech_defaults": {
             "audio_temperature": 1.7,
             "audio_top_p": 0.8,
@@ -2144,7 +2144,7 @@
         "labels": [
             "tts"
         ],
-        "size": 15.8,
+        "size": 8.5,
         "speech_defaults": {
             "audio_temperature": 1.5,
             "audio_top_p": 0.6,

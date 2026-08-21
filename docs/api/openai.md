@@ -917,7 +917,7 @@ Speech Generation API. You provide a text input and receive an audio file. Which
 
 > **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local`, both of which clone a voice from a reference WAV and can design one from a text description. Voice design is not a separate model: the voice generator ships as a component of the speech model, and a design request swaps it in just long enough to render the reference sample before the speech model is reloaded. That request therefore takes noticeably longer than a plain one, and the result is cached per description.
 >
-> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`, while OpenMOSS models natively produce `wav` only. A format the backend cannot encode is rejected with `400 Bad Request` listing the ones it does support. Streaming works for any TTS backend, but a backend's streamable set can be narrower than its buffered set — `kokoro-v1` streams `pcm` only, so an explicit `response_format` of `mp3` alongside `stream_format` is rejected rather than silently answered with PCM.
+> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS v0.3 encodes buffered `wav` or `pcm`. Native streaming is narrower for both backends and uses `pcm` only, so an explicit non-PCM `response_format` on a streaming request is rejected rather than mislabeled or silently transcoded.
 
 ### Parameters
 

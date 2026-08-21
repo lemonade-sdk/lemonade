@@ -100,6 +100,8 @@ const tests = [
       );
       assert.ok(source.includes("type VoiceMode = 'plain' | 'describe' | 'clone'"));
       assert.ok(source.includes("voiceMode === 'plain'"));
+      assert.ok(source.includes('supportsVoiceClone'));
+      assert.ok(source.includes('checkpoints?.voicegen'));
     },
   },
   {
@@ -151,6 +153,8 @@ const tests = [
       assert.ok(!panels.includes('openmoss'));
       assert.ok(!panels.includes('acestep'));
       assert.ok(panels.includes('generationparams'));
+      assert.ok(panels.includes('generationcontrolparams'));
+      assert.ok(panels.includes("param.typename === 'seed'"));
       assert.ok(panels.includes('max={durationmax}'));
     },
   },

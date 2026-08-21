@@ -57,7 +57,7 @@ inline const BackendDescriptor descriptor = {
 
 `supported_modes` is the backend's contract with the model registry. A model whose labels name no mode is stamped with `supported_modes[0]`; a model whose labels name a mode absent from the list is refused by `POST /pull` with a 400 rather than failing later at inference time. `BackendModeContractTest` fails the build if this list disagrees with the capability interfaces your server class implements.
 
-`generation_params` declares the per-request controls your backend accepts, one entry per (mode, request field). Clients render a control from each entry and send the value in the field it names, so adding a knob to a backend never requires a client change. Model-level `speech_defaults` / `audio_defaults` in `server_models.json` override the defaults declared here, and effective recipe options override both.
+`generation_params` declares the per-request controls your backend accepts, one entry per (mode, request field). Clients use these entries for labels, bounds, defaults, and request field names instead of branching on backend identity. The first-party app renders the generic scalar/text/enum controls from this metadata; specialized composition controls such as mutually exclusive voice description vs. reference audio still have panel-specific presentation. Model-level `speech_defaults` / `audio_defaults` in `server_models.json` override the defaults declared here, and effective recipe options override both.
 
 | Type | Control |
 |------|---------|
