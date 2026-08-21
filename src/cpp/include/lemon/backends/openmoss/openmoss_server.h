@@ -6,6 +6,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/wrapped_server.h"
 #include <atomic>
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
@@ -42,6 +43,7 @@ public:
     std::vector<std::string> supported_streaming_audio_formats() const override {
         return {"pcm"};
     }
+    AudioFormatMetadata audio_format_metadata(const std::string& response_format) const override;
 
 private:
     struct Subprocess {
@@ -54,11 +56,14 @@ private:
     Subprocess spawn(const std::string& model_path, bool large_context);
 
     void stop_speech_process();
-    void start_speech_process();
+    void start_speech_process(long timeout_seconds = 600);
 
-    std::string design_reference_sample(const std::string& voice_description);
-    std::string render_reference_sample(const std::string& voice_description);
-    json apply_voice_design(const json& request);
+    std::string design_reference_sample(const std::string& voice_description,
+                                        httplib::DataSink& sink);
+    std::string render_reference_sample(
+        const std::string& voice_description, httplib::DataSink& sink,
+        std::chrono::steady_clock::time_point deadline);
+    json apply_voice_design(const json& request, httplib::DataSink& sink);
 
     std::string exe_path_;
     std::string model_path_;
@@ -67,7 +72,8 @@ private:
     std::vector<std::pair<std::string, std::string>> env_vars_;
     std::shared_mutex request_mutex_;
     std::atomic<bool> process_swap_in_progress_{false};
-    bool speech_uses_large_context_ = false;
+    std::atomic<int> pcm_sample_rate_{0};
+    std::atomic<int> pcm_channels_{0};
     bool speech_uses_large_context_ = false;
 };
 

@@ -2202,6 +2202,11 @@ json Router::audio_transcriptions(const json& request) {
 
 void Router::audio_speech(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        if (server->get_model_type() != ModelType::TTS) {
+            throw InvalidRequestException(
+                "model '" + server->get_model_name() +
+                "' is not a text-to-speech model");
+        }
         auto tts_server = dynamic_cast<ITextToSpeechServer*>(server);
         if (!tts_server) {
             throw UnsupportedOperationException("Text to speech", device_type_to_string(server->get_device_type()));
@@ -2222,6 +2227,18 @@ std::vector<std::string> Router::audio_speech_supported_streaming_formats(const 
     auto tts_server = dynamic_cast<ITextToSpeechServer*>(
         find_server_by_model_name(resolve_model_name(model_name)));
     return tts_server ? tts_server->supported_streaming_audio_formats() : std::vector<std::string>{};
+}
+
+AudioFormatMetadata Router::audio_speech_format_metadata(
+    const std::string& model_name, const std::string& response_format) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (!server || server->get_model_type() != ModelType::TTS) {
+        return {};
+    }
+    auto* tts_server = dynamic_cast<ITextToSpeechServer*>(server);
+    return tts_server ? tts_server->audio_format_metadata(response_format)
+                      : AudioFormatMetadata{};
 }
 
 json Router::image_generations(const json& request) {
@@ -2262,6 +2279,11 @@ json Router::image_variations(const json& request) {
 
 void Router::audio_generations(const json& request, httplib::DataSink& sink) {
     execute_streaming(request.dump(), sink, [&](WrappedServer* server) {
+        if (server->get_model_type() != ModelType::AUDIO_GENERATION) {
+            throw InvalidRequestException(
+                "model '" + server->get_model_name() +
+                "' is not an audio-generation model");
+        }
         auto audio_server = dynamic_cast<IAudioGenerationServer*>(server);
         if (!audio_server) {
             throw UnsupportedOperationException("Audio generation", device_type_to_string(server->get_device_type()));
@@ -2275,6 +2297,18 @@ std::vector<std::string> Router::audio_generation_supported_formats(const std::s
     auto audio_server = dynamic_cast<IAudioGenerationServer*>(
         find_server_by_model_name(resolve_model_name(model_name)));
     return audio_server ? audio_server->supported_audio_formats() : std::vector<std::string>{};
+}
+
+AudioFormatMetadata Router::audio_generation_format_metadata(
+    const std::string& model_name, const std::string& response_format) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (!server || server->get_model_type() != ModelType::AUDIO_GENERATION) {
+        return {};
+    }
+    auto* audio_server = dynamic_cast<IAudioGenerationServer*>(server);
+    return audio_server ? audio_server->audio_format_metadata(response_format)
+                        : AudioFormatMetadata{};
 }
 
 void Router::model_3d_generations(const json& request, httplib::DataSink& sink) {

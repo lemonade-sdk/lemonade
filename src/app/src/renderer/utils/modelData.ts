@@ -53,6 +53,8 @@ export interface ModelInfo {
   image_defaults?: ImageDefaults;
   speech_defaults?: SpeechDefaults;
   audio_defaults?: AudioDefaults;
+  pcm_sample_rate?: number;
+  pcm_channels?: number;
   // Per-collection system prompt template (collection.omni only). Overrides the
   // global default in toolDefinitions.json when set. Keeps {tool_list} and
   // {tool_guidance} placeholders so runtime substitution still works.
@@ -302,6 +304,13 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         modelInfo.audio_defaults = { ...model.audio_defaults };
       }
 
+      if (typeof model.pcm_sample_rate === 'number' && Number.isFinite(model.pcm_sample_rate)) {
+        modelInfo.pcm_sample_rate = model.pcm_sample_rate;
+      }
+      if (typeof model.pcm_channels === 'number' && Number.isFinite(model.pcm_channels)) {
+        modelInfo.pcm_channels = model.pcm_channels;
+      }
+
       acc[model.id] = modelInfo;
       return acc;
     }, {} as ModelsData);
@@ -335,6 +344,10 @@ const EXPORT_KNOWN_KEYS = new Set([
   'model_name',
   'models',
   'image_defaults',
+  'speech_defaults',
+  'audio_defaults',
+  'pcm_sample_rate',
+  'pcm_channels',
   'labels',
   'recipe',
   'recipe_options',

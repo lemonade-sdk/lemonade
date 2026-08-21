@@ -1061,6 +1061,11 @@ jobs:
             extra_args: "--wrapped-server acestep"
             backends: "vulkan rocm"
             runner: [Windows, rocm, vulkan, lemon-prod]
+          - name: audio-gen-openmoss
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Windows, rocm, vulkan, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
@@ -1297,6 +1302,11 @@ jobs:
           - name: audio-gen-acestep
             script: server_audio_generation.py
             extra_args: "--wrapped-server acestep"
+            backends: "vulkan rocm"
+            runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: audio-gen-openmoss
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server openmoss"
             backends: "vulkan rocm"
             runner: [Linux, vulkan, rocm, lemon-prod]
           - name: whisper

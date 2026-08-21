@@ -180,6 +180,25 @@ defineTest('model export preserves remote registry provenance and drops local or
   assert.ok(!('registry_source' in local));
 });
 
+defineTest('regular model export preserves OpenMOSS generation and PCM metadata', () => {
+  const speechDefaults = { audio_temperature: 1.7, speed: 1.0 };
+  const audioDefaults = { seconds: 10, steps: 100, cfg_scale: 4.0 };
+  const raw = {
+    id: 'OpenMOSS-export-test', recipe: 'openmoss',
+    checkpoint: 'org/model:model.gguf',
+    checkpoints: { main: 'org/model:model.gguf' }, components: [],
+    speech_defaults: speechDefaults,
+    audio_defaults: audioDefaults,
+    pcm_sample_rate: 48000,
+    pcm_channels: 2,
+  };
+  const { payload } = modelDataUtils.normalizeModelExportPayload(raw);
+  assert.deepEqual(payload.speech_defaults, speechDefaults);
+  assert.deepEqual(payload.audio_defaults, audioDefaults);
+  assert.equal(payload.pcm_sample_rate, 48000);
+  assert.equal(payload.pcm_channels, 2);
+});
+
 defineTest('regular-model export carries no collection fields', () => {
   const raw = {
     id: 'planner', object: 'model', created: 1234567890, owned_by: 'lemonade',

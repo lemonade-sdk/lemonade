@@ -365,6 +365,8 @@ class OpenMossTTSTests(ServerTestBase):
             content_type,
             f"OpenMOSS streaming must use PCM, got '{content_type}'",
         )
+        self.assertEqual(response.headers.get("X-MOSS-Sample-Rate"), "24000")
+        self.assertEqual(response.headers.get("X-MOSS-Channels"), "1")
         self.assertFalse(
             body[:4] == b"RIFF",
             "Native OpenMOSS streaming should not buffer a WAV container",
@@ -399,6 +401,20 @@ class OpenMossTTSTests(ServerTestBase):
         self._assert_wav_response(response, "Plain voice field")
         print(
             f"[OK] `voice` was treated as an instruction ({len(response.content)} bytes)"
+        )
+
+    def test_014_tts_model_rejected_by_audio_generation_endpoint(self):
+        """A TTS deployment cannot be driven through /audio/generations."""
+        model = get_test_model("tts")
+        response = requests.post(
+            f"{self.base_url}/audio/generations",
+            json={"model": model, "prompt": "This is the wrong endpoint."},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+        self.assertEqual(
+            response.json().get("error", {}).get("code"), "model_not_applicable"
         )
 
 

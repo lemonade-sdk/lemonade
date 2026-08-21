@@ -2121,6 +2121,8 @@
             "tts"
         ],
         "size": 12.5,
+        "pcm_sample_rate": 24000,
+        "pcm_channels": 1,
         "speech_defaults": {
             "audio_temperature": 1.7,
             "audio_top_p": 0.8,
@@ -2145,6 +2147,8 @@
             "tts"
         ],
         "size": 8.5,
+        "pcm_sample_rate": 48000,
+        "pcm_channels": 2,
         "speech_defaults": {
             "audio_temperature": 1.5,
             "audio_top_p": 0.6,
@@ -2167,6 +2171,8 @@
             "audio-generation"
         ],
         "size": 6.6,
+        "pcm_sample_rate": 48000,
+        "pcm_channels": 1,
         "audio_defaults": {
             "seconds": 10,
             "steps": 100,

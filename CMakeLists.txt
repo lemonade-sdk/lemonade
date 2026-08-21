@@ -2487,21 +2487,6 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
-set(_OPENMOSS_TEXT_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_openmoss_text.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_OPENMOSS_TEXT_TEST_SRC}")
-    add_executable(test_openmoss_text
-        test/cpp/test_openmoss_text.cpp
-    )
-    target_include_directories(test_openmoss_text PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-    )
-
-    include(CTest)
-    add_cpp_ci_test(OpenMossTextTest CI ON COMMAND test_openmoss_text)
-endif()
-
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
 # resolution, and step-graph validation (forward-only ⇒ no loops). Header-only,
 # so these link only nlohmann/json.
