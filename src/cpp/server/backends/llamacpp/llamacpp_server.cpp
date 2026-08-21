@@ -2,6 +2,7 @@
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
+#include "llamacpp_system_utils.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -737,53 +738,20 @@ bool is_ggml_hip_plugin_available() {
 #ifdef __linux__
     // Allow distros/packagers that install outside the FHS paths below
     // (e.g. NixOS, custom prefixes) to point directly at libggml-hip.so.
-    if (const char* env = std::getenv("LEMONADE_GGML_HIP_PATH"); env && *env) {
-        // Require the basename to look like the HIP plugin (libggml-hip*.so*,
-        // case-insensitive, versioned sonames allowed). This is a sanity check,
-        // not a security boundary: the path is not forwarded to ggml's loader,
-        // so we cannot verify it is actually loadable. It only guards against an
-        // accidental override pointing at an unrelated existing file.
-        std::string name = fs::path(env).filename().string();
-        std::transform(name.begin(), name.end(), name.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        const bool name_matches = name.rfind("libggml-hip", 0) == 0 &&
-                                  name.find(".so") != std::string::npos;
-        // LEMONADE_GGML_HIP_PATH is user-controlled, so use the non-throwing
-        // filesystem overload: an odd or malformed path resolves to "not a
-        // regular file" (ec set) instead of raising a filesystem_error.
-        std::error_code hip_path_ec;
-        if (name_matches && fs::is_regular_file(env, hip_path_ec)) {
-            return true;
-        }
+    if (detail::ggml_hip_env_override_available()) {
+        return true;
     }
+
     // A self-built llama.cpp resolved from PATH ships libggml-hip.so next to
     // the binary (build tree) or in a sibling lib/ directory (installed tree).
     // find_executable_in_path() returns the bare name on POSIX, so walk PATH
     // here to recover the directory the binary actually lives in.
     if (const char* path_env = std::getenv("PATH"); path_env && *path_env) {
-        std::string path_str(path_env);
-        size_t start = 0;
-        while (start <= path_str.size()) {
-            size_t end = path_str.find(':', start);
-            std::string dir = path_str.substr(start, end == std::string::npos ? std::string::npos : end - start);
-            if (!dir.empty()) {
-                std::error_code plugin_ec;
-                fs::path bin_dir(dir);
-                fs::path llama_server = bin_dir / "llama-server";
-                if (fs::is_regular_file(llama_server, plugin_ec) &&
-                    access(llama_server.c_str(), X_OK) == 0) {
-                    plugin_ec.clear();
-                    if (fs::exists(bin_dir / "libggml-hip.so", plugin_ec) ||
-                        fs::exists(bin_dir.parent_path() / "lib" / "libggml-hip.so", plugin_ec)) {
-                        return true;
-                    }
-                    break;
-                }
-            }
-            if (end == std::string::npos) break;
-            start = end + 1;
+        if (detail::ggml_hip_plugin_near_llama_server(path_env)) {
+            return true;
         }
     }
+
     // On Linux x86_64, check common system library paths for the HIP plugin
     std::vector<std::string> possible_paths = {
         // Debian/Ubuntu multiarch path (most common)

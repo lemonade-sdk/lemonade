@@ -3002,6 +3002,21 @@ if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
+set(_LLAMACPP_SYSTEM_BACKEND_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_system_backend.cpp"
+)
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_SYSTEM_BACKEND_TEST_SRC}")
+    add_executable(test_llamacpp_system_backend
+        test/cpp/test_llamacpp_system_backend.cpp
+    )
+    target_include_directories(test_llamacpp_system_backend PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
+    )
+    target_link_libraries(test_llamacpp_system_backend PRIVATE lemonade-server-core)
+    add_dependencies(test_llamacpp_system_backend copy_resources)
+    add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
+endif()
+
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
 if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
     add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
