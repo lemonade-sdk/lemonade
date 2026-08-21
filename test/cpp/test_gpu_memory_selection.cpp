@@ -4,12 +4,14 @@
 
 using namespace lemon;
 
-static GPUInfo gpu(double vram_gb, double used_gb = 0.0, int index = -1) {
+static GPUInfo gpu(double vram_gb, double used_gb = 0.0, int index = -1,
+                   const std::string& uuid = "") {
     GPUInfo info;
     info.available = true;
     info.vram_gb = vram_gb;
     info.vram_used_gb = used_gb;
     info.index = index;
+    info.uuid = uuid;
     return info;
 }
 
@@ -46,6 +48,21 @@ int main() {
     check(cuda1.total_gb == 24.0 && cuda1.used_gb == 4.0 && cuda1.label == "NVIDIA CUDA1",
           "CUDA1 selects NVIDIA device 1");
 
+    std::vector<GPUInfo> filtered_nvidia{
+        gpu(8.0, 1.0, 0, "GPU-aaaa"), gpu(12.0, 2.0, 1, "GPU-bbbb"),
+        gpu(16.0, 3.0, 2, "GPU-cccc"), gpu(24.0, 4.0, 3, "GPU-dddd")};
+    auto filtered_cuda1 = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA1"), unavailable, amd,
+        filtered_nvidia, unavailable, "CUDA1", "2,3");
+    check(filtered_cuda1.total_gb == 24.0 && filtered_cuda1.used_gb == 4.0,
+          "CUDA1 follows CUDA_VISIBLE_DEVICES ordinal mapping");
+
+    auto uuid_filtered_cuda0 = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA0"), unavailable, amd,
+        filtered_nvidia, unavailable, "CUDA0", "GPU-dddd,GPU-cccc");
+    check(uuid_filtered_cuda0.total_gb == 24.0 && uuid_filtered_cuda0.used_gb == 4.0,
+          "CUDA0 follows UUID CUDA_VISIBLE_DEVICES ordering");
+
     GPUInfo amd_igpu = gpu(2.0, 0.5);
     amd_igpu.virtual_gb = 6.0;
     amd_igpu.virtual_used_gb = 1.5;
@@ -78,6 +95,34 @@ int main() {
         two_nvidia, unavailable, "CUDA0,CUDA1+2");
     check(partly_malformed_cuda.total_gb == 0.0,
           "malformed CUDA device list is not partially accepted");
+
+    auto bare_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA"), unavailable, amd, two_nvidia,
+        unavailable, "CUDA");
+    check(bare_cuda.total_gb == 8.0, "bare CUDA selects the first NVIDIA pool");
+
+    auto filtered_bare_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA"), unavailable, amd,
+        filtered_nvidia, unavailable, "CUDA", "2,3");
+    check(filtered_bare_cuda.total_gb == 16.0,
+          "bare CUDA selects the first visible NVIDIA pool");
+
+    auto hidden_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "CUDA0"), unavailable, amd,
+        filtered_nvidia, unavailable, "CUDA0", "-1");
+    check(hidden_cuda.total_gb == 0.0,
+          "CUDA_VISIBLE_DEVICES=-1 leaves no NVIDIA memory pool");
+
+    auto bare_rocm = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "ROCm"), amd_igpu, two_amd, nvidia,
+        unavailable, "ROCm");
+    check(bare_rocm.total_gb == 8.0, "bare ROCm selects the first AMD pool");
+
+    auto lowercase_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("SYSTEM", "cuda1"), unavailable, amd, two_nvidia,
+        unavailable, "cuda1");
+    check(lowercase_cuda.total_gb == 24.0,
+          "CUDA vendor and device matching is case-insensitive");
 
     GPUInfo amd_igpu_unknown_usage = gpu(2.0, 0.5);
     amd_igpu_unknown_usage.virtual_gb = 6.0;

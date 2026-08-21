@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <iomanip>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/model_manager.h>
@@ -100,9 +101,11 @@ inline double get_available_memory_gb(DeviceType device_type,
         auto amd_dgpus = si->get_amd_dgpu_devices();
         auto nvidia_gpus = si->get_nvidia_gpu_devices();
         auto apple_gpu = si->get_apple_silicon_device();
+        const char* cuda_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
         auto pool = select_gpu_memory_pool(gpu_vendor,
                                            amd_igpu, amd_dgpus, nvidia_gpus, apple_gpu,
-                                           gpu_device);
+                                           gpu_device,
+                                           cuda_visible_devices ? cuda_visible_devices : "");
         if (pool.total_gb > 0) {
             if (pool.used_gb >= 0.0) used_gb = pool.used_gb;
             double available = pool.label == "Metal"
