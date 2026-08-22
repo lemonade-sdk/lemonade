@@ -1339,6 +1339,7 @@ int main(int argc, char* argv[]) {
     cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
 
     CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
+    cloud_list_cmd->add_flag("--json", config.json_output, "Output providers as JSON");
 
     // Pull options
     pull_cmd->add_option("model", config.model,
@@ -1654,7 +1655,7 @@ int main(int argc, char* argv[]) {
             return client.cloud_auth_clear(config.cloud_provider);
         }
         if (cloud_list_cmd->count() > 0) {
-            return client.cloud_list();
+            return client.cloud_list(config.json_output);
         }
         // No subcommand specified: print help.
         std::cout << cloud_cmd->help() << std::endl;

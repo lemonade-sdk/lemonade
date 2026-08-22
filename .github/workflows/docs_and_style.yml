@@ -63,16 +63,6 @@ jobs:
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
 
-  model-registry-labels:
-    runs-on: ubuntu-latest
-    concurrency:
-      group: ${{ github.workflow }}-model-labels-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    steps:
-      - uses: actions/checkout@v5
-      - name: Check every model in server_models.json declares a modality
-        run: python3 test/test_server_models_labels.py
-
   pre-commit:
     runs-on: ubuntu-latest
     concurrency:
