@@ -1,0 +1,31 @@
+{
+  "//": "Generates cpp-httplib.pc because lemonade-cpp's cmake uses pkg_check_modules(cpp-httplib). Cleanup runs at bundle-assembly time (after all modules build), so the .pc is visible to consumers and removed from the final image — don't move the cleanup or the post-install.",
+  "name": "cpp-httplib",
+  "buildsystem": "cmake-ninja",
+  "config-opts": [
+    "-DHTTPLIB_REQUIRE_OPENSSL=ON",
+    "-DHTTPLIB_USE_OPENSSL_IF_AVAILABLE=ON",
+    "-DHTTPLIB_REQUIRE_ZLIB=OFF",
+    "-DHTTPLIB_USE_ZLIB_IF_AVAILABLE=OFF",
+    "-DHTTPLIB_REQUIRE_BROTLI=OFF",
+    "-DHTTPLIB_USE_BROTLI_IF_AVAILABLE=OFF",
+    "-DHTTPLIB_REQUIRE_ZSTD=OFF",
+    "-DHTTPLIB_USE_ZSTD_IF_AVAILABLE=OFF",
+    "-DHTTPLIB_COMPILE=ON",
+    "-DBUILD_SHARED_LIBS=OFF",
+    "-DHTTPLIB_TEST=OFF"
+  ],
+  "post-install": [
+    "install -d /app/lib/pkgconfig",
+    "printf 'Name: cpp-httplib\\nDescription: A C++ HTTP/HTTPS server and client library\\nVersion: 0.50.1\\nRequires: openssl\\nCflags: -I/app/include -DCPPHTTPLIB_OPENSSL_SUPPORT\\nLibs: -L/app/lib -lcpp-httplib\\n' > /app/lib/pkgconfig/cpp-httplib.pc"
+  ],
+  "cleanup": [ "/include", "/lib/cmake", "/lib/pkgconfig" ],
+  "sources": [
+    {
+      "type": "git",
+      "url": "https://github.com/yhirose/cpp-httplib.git",
+      "tag": "v0.50.1",
+      "commit": "62d899feac3cf9215a55f2b43da250fdd98d2156"
+    }
+  ]
+}

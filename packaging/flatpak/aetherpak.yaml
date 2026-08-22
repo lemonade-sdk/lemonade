@@ -1,0 +1,21 @@
+registry: ghcr.io
+oci_repository: lemonade-sdk/flatpak
+pages_url: https://lemonade-server.ai
+site_subpath: flatpak
+remote_name: lemonade
+repo_title: "Lemonade Flatpak Repository"
+repo_homepage: https://lemonade-server.ai/
+app_id: ai.lemonadeserver.app
+manifest: packaging/flatpak/ai.lemonadeserver.app.yaml
+branches:
+  - stable
+  - nightly
+default_branch: stable
+arches:
+  - x86_64
+  - aarch64
+
+defaults:
+  run_linter: false
+  builder_args:
+    - --install-deps-from=flathub

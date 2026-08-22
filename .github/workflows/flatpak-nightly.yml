@@ -1,0 +1,162 @@
+name: Flatpak Nightly 📦
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Daily at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: flatpak-nightly
+  cancel-in-progress: false
+
+jobs:
+  build-linux-binaries:
+    name: Build Linux Binaries (${{ matrix.arch-name }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            artifact-suffix: x86_64
+            flatpak-arch: x86_64
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            artifact-suffix: arm64
+            flatpak-arch: aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev \
+            libayatana-appindicator3-dev libgtk-3-dev libdbusmenu-glib-dev nodejs npm
+
+      - name: Build Lemonade Server & CLI
+        shell: bash
+        run: |
+          set -e
+          cmake --preset default -DBUILD_WEB_APP=ON -DREQUIRE_LINUX_TRAY=ON
+          cmake --build --preset default --target lemond lemonade
+
+      - name: Stage build binaries
+        shell: bash
+        run: |
+          set -e
+          mkdir -p _flatpak_stage/resources _flatpak_stage/icons
+          cp build/lemond _flatpak_stage/lemond
+          cp build/lemonade _flatpak_stage/lemonade
+          [ -f build/lemonade-tray ] && cp build/lemonade-tray _flatpak_stage/lemonade-tray || true
+          cp -r build/resources/* _flatpak_stage/resources/
+          cp data/lemonade-app.desktop _flatpak_stage/lemonade-app.desktop
+          cp data/ai.lemonadeserver.app.metainfo.xml _flatpak_stage/ai.lemonadeserver.app.metainfo.xml
+
+          if [ ! -f _flatpak_stage/lemonade-app ]; then
+            cat << 'EOF' > _flatpak_stage/lemonade-app
+          #!/bin/sh
+          exec /app/bin/lemond "$@"
+          EOF
+            chmod +x _flatpak_stage/lemonade-app
+          fi
+
+          if [ -d src/app/src-tauri/icons ]; then
+            cp src/app/src-tauri/icons/*.png _flatpak_stage/icons/ 2>/dev/null || true
+          fi
+
+      - name: Upload staged artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-stage-${{ matrix.artifact-suffix }}
+          path: _flatpak_stage/
+          retention-days: 1
+
+  publish-flatpak-nightly-oci:
+    name: Build & Push Nightly OCI (${{ matrix.flatpak-arch }})
+    needs: build-linux-binaries
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            artifact-suffix: x86_64
+            flatpak-arch: x86_64
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            artifact-suffix: arm64
+            flatpak-arch: aarch64
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download staged artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: flatpak-stage-${{ matrix.artifact-suffix }}
+          path: _flatpak_stage
+
+      - name: Cache Flatpak builder layers
+        uses: actions/cache@v4
+        with:
+          path: |
+            .flatpak-builder/cache
+            .flatpak-builder/downloads
+          key: flatpak-builder-${{ matrix.flatpak-arch }}-${{ hashFiles('packaging/flatpak/*.yaml', 'packaging/flatpak/modules/*.json') }}
+          restore-keys: |
+            flatpak-builder-${{ matrix.flatpak-arch }}-
+
+      - name: Log in to GitHub Container Registry with Podman
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Nightly OCI Layers with AetherPak
+        uses: aetherpak/actions@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          manifest-path: packaging/flatpak/ai.lemonadeserver.app.yaml
+          branch: nightly
+          arch: ${{ matrix.flatpak-arch }}
+          pages-url: https://lemonade-server.ai
+          site-subpath: flatpak
+          publish-oci: true
+          publish-pages: false
+
+  reconcile-nightly-pages:
+    name: Reconcile & Publish Nightly Pages
+    needs: publish-flatpak-nightly-oci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry with Podman
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reconcile Repository Index on GitHub Pages
+        uses: aetherpak/actions@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          manifest-path: packaging/flatpak/ai.lemonadeserver.app.yaml
+          branch: nightly
+          pages-url: https://lemonade-server.ai
+          site-subpath: flatpak
+          publish-oci: false
+          publish-pages: true
+          pages-branch: website

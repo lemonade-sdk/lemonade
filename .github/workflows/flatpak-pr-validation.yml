@@ -1,0 +1,125 @@
+name: Flatpak CI & ABI Smoke Test 📦
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flatpak-validation:
+    name: Flatpak Build & ABI Smoke Test (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Check for packaging or ABI-impacting changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            abi_packaging:
+              - 'packaging/flatpak/**'
+              - 'data/ai.lemonadeserver.app.metainfo.xml'
+              - 'data/lemonade-app.desktop'
+              - 'CMakeLists.txt'
+              - 'src/**/CMakeLists.txt'
+              - 'src/app/src-tauri/Cargo.toml'
+              - 'src/app/src-tauri/Cargo.lock'
+              - '.github/workflows/flatpak*.yml'
+
+      - name: Fast-exit notice
+        if: steps.changes.outputs.abi_packaging != 'true' && github.event_name != 'workflow_dispatch'
+        run: echo "No packaging, build system, or ABI-impacting changes detected. Fast-exiting."
+
+      - name: Cache Flatpak build directories
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        uses: actions/cache@v4
+        with:
+          path: |
+            .flatpak-builder/cache
+            .flatpak-builder/downloads
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: flatpak-pr-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yaml', 'packaging/flatpak/modules/*.json') }}
+          restore-keys: |
+            flatpak-pr-${{ runner.os }}-
+
+      - name: Install build dependencies
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev \
+            libayatana-appindicator3-dev libgtk-3-dev libdbusmenu-glib-dev nodejs npm
+
+      - name: Stage Flatpak artifacts
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: ./packaging/flatpak/flatpak-build.sh
+
+      - name: Build Flatpak with AetherPak Action
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        uses: aetherpak/actions/build@v3
+        with:
+          manifest-path: packaging/flatpak/ai.lemonadeserver.app.yaml
+          branch: unstable
+          run-linter: false
+          repo-path: _repo
+          builder-args: |
+            --install-deps-from=flathub
+            --disable-rofiles-fuse
+
+      - name: Install into local test repo
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -e
+          flatpak --user remote-add --no-gpg-verify test-repo _repo
+          flatpak install --user -y test-repo ai.lemonadeserver.app//unstable
+
+      - name: Verify Dynamic Shared Library (ABI/DLL) Dependencies
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -e
+          echo "=== Auditing dynamic shared library (.so) dependencies inside Flatpak runtime ==="
+
+          MISSING_DEPS=0
+          for bin in /app/bin/lemond /app/bin/lemonade /app/bin/lemonade-tray; do
+            if flatpak run --command=test ai.lemonadeserver.app//unstable -f "$bin"; then
+              echo "Auditing $bin:"
+              LDD_OUT=$(flatpak run --command=ldd ai.lemonadeserver.app//unstable "$bin" 2>&1 || true)
+              echo "$LDD_OUT"
+              if echo "$LDD_OUT" | grep -q "not found"; then
+                echo "❌ Missing shared library in $bin!"
+                MISSING_DEPS=1
+              fi
+            fi
+          done
+
+          if [ $MISSING_DEPS -ne 0 ]; then
+            echo "ABI Audit Failed: Unresolved dynamic libraries detected inside org.gnome.Platform."
+            exit 1
+          fi
+          echo "✅ All shared libraries resolved cleanly."
+
+      - name: Smoke test CLI and Server inside Flatpak sandbox
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -e
+          echo "=== Running Flatpak CLI smoke test ==="
+          flatpak run --command=lemonade ai.lemonadeserver.app//unstable --help
+
+          echo "=== Running Flatpak Server daemon smoke test ==="
+          flatpak run --command=lemond ai.lemonadeserver.app//unstable --help
+
+          echo "✅ Flatpak sandbox smoke tests passed successfully!"

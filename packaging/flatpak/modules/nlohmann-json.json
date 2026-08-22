@@ -1,0 +1,18 @@
+{
+  "name": "nlohmann-json",
+  "buildsystem": "cmake-ninja",
+  "config-opts": [
+    "-DJSON_BuildTests=OFF",
+    "-DJSON_Install=ON",
+    "-DBUILD_TESTING=OFF"
+  ],
+  "cleanup": [ "/include", "/lib/pkgconfig", "/lib/cmake", "/share/pkgconfig" ],
+  "sources": [
+    {
+      "type": "git",
+      "url": "https://github.com/nlohmann/json.git",
+      "tag": "v3.12.0",
+      "commit": "55f93686c01528224f448c19128836e7df245f72"
+    }
+  ]
+}
