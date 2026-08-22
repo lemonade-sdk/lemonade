@@ -433,9 +433,17 @@ public:
                                  const std::string& file_path) const override {
         std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
         if (endpoint.empty()) endpoint = "https://huggingface.co";
-        return endpoint + "/" + percent_encode(repo_id, true) + "/resolve/" +
+        std::string url = endpoint + "/" + percent_encode(repo_id, true) + "/resolve/" +
                percent_encode(revision.empty() ? default_revision() : revision, true) + "/" +
                percent_encode(file_path, true);
+        // HF_HUB_DISABLE_XET mirrors the Python huggingface_hub library: when
+        // set, append ?download=1 to bypass the Xet content-addressable storage
+        // bridge, which can stall on certain repo backends (issue #2416).
+        static const char* xet_disable = std::getenv("HF_HUB_DISABLE_XET");
+        if (xet_disable && (std::string(xet_disable) == "1" || std::string(xet_disable) == "true")) {
+            url += "?download=1";
+        }
+        return url;
     }
 };
 
