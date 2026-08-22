@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <lemon/gpu_device_memory.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
@@ -65,7 +66,7 @@ static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb) 
 /// Get the amount of memory currently in use by the platform.
 /// For GPU: VRAM in use. For CPU/NPU: system RAM in use.
 /// Returns 0.0 if not measurable.
-static double get_used_memory_gb(DeviceType device_type) {
+inline double get_used_memory_gb(DeviceType device_type) {
     auto metrics = create_metrics_platform();
     if (!metrics) return 0.0;
 
@@ -85,6 +86,10 @@ static double get_used_memory_gb(DeviceType device_type) {
 /// GPU  → VRAM (+ GTT for iGPU) minus currently-used VRAM
 /// CPU  → system RAM minus currently-used RAM
 /// NPU  → system RAM minus currently-used RAM
+///
+/// The GPU total here comes from the first available card while the used figure is
+/// machine-wide, so on a multi-GPU host the two can describe different cards. Prefer
+/// get_available_memory_detail(), which scopes both to one device when it can.
 inline double get_available_memory_gb(DeviceType device_type) {
     auto si = create_system_info();
 
@@ -192,6 +197,52 @@ inline double get_available_memory_gb(DeviceType device_type) {
     LOG(DEBUG, "AutoTune") << "get_available_memory_gb: could not determine memory, returning 0.0";
     return 0.0;  // Could not determine
 }
+
+/// Outcome of scoping the memory query to the GPU a model is being placed on.
+struct DeviceMemoryResult {
+    double available_gb = 0.0;
+    // False when the query fell back to the aggregate reading, which can misreport
+    // headroom once a second model is resident on another GPU.
+    bool per_device = false;
+    // Set when a pool was picked without the caller naming a device.
+    bool ambiguous = false;
+    std::string device_label;
+};
+
+/// Available memory for a model placement, scoped to the specific GPU when possible.
+///
+/// When `backend`/`device_string` identify a GPU and the platform reports per-device
+/// usage counters, both the capacity and the usage come from that one device.
+/// Otherwise this falls back to get_available_memory_gb() and reports per_device=false
+/// so the caller can say so.
+inline DeviceMemoryResult get_available_memory_detail(DeviceType device_type,
+                                                      const std::string& backend,
+                                                      const std::string& device_string) {
+    DeviceMemoryResult result;
+
+    if (device_type & DEVICE_GPU) {
+        auto si = create_system_info();
+        const auto amd = amd_memory_candidates(si->get_amd_igpu_device(),
+                                               si->get_amd_dgpu_devices());
+        const auto nvidia = nvidia_memory_candidates(si->get_nvidia_gpu_devices());
+        const GpuMemoryPool pool = select_gpu_memory_pool(amd, nvidia, backend, device_string);
+        if (pool.resolved) {
+            result.available_gb = pool.free_gb();
+            result.per_device = true;
+            result.ambiguous = pool.ambiguous;
+            result.device_label = pool.label;
+            LOG(DEBUG, "AutoTune") << "get_available_memory_detail: GPU (" << pool.label
+                                   << ") total=" << std::fixed << std::setprecision(2)
+                                   << pool.total_gb << " GB, used=" << pool.used_gb
+                                   << " GB → " << result.available_gb << " GB available ";
+            return result;
+        }
+    }
+
+    result.available_gb = get_available_memory_gb(device_type);
+    return result;
+}
+
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
                                           bool is_embedding = false) {
@@ -314,18 +365,66 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
-    double available_gb = get_available_memory_gb(model_info.device);
+
+    // Only llama.cpp exposes a device selection today; other recipes fall through with
+    // an empty target, which still narrows the search to the reachable GPUs.
+    const bool is_llamacpp = effective_options.get_recipe() == "llamacpp";
+    json device_json = is_llamacpp ? effective_options.get_option("llamacpp_device") : json();
+    json backend_json = is_llamacpp ? effective_options.get_option("llamacpp_backend") : json();
+    const std::string device_string = device_json.is_string() ? device_json.get<std::string>() : "";
+    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+
+    const DeviceMemoryResult memory =
+        get_available_memory_detail(model_info.device, backend, device_string);
+    const double available_gb = memory.available_gb;
+
+    // Without a per-device reading the headroom figure mixes one card's capacity with
+    // the machine's busiest-card usage, which understates free VRAM once a second
+    // model is resident on another GPU.
+    CtxMemoryScope scope;
+    scope.is_gpu = (model_info.device & DEVICE_GPU) != 0;
+    scope.per_device = memory.per_device;
+    scope.ambiguous = memory.ambiguous;
+    scope.device_named = !device_string.empty();
+    const CtxScopeWarning warning = classify_ctx_scope(scope);
+
+    if (warning == CtxScopeWarning::Unscoped) {
+        LOG(WARNING, "AutoTune") << model_info.model_name << ": could not scope VRAM headroom to '"
+                                 << device_string
+                                 << "'; auto-tuned ctx_size is based on a machine-wide estimate "
+                                    "and may be far smaller than this GPU can hold. "
+                                    "Pass --ctx-size to set it explicitly." << std::endl;
+    } else if (warning == CtxScopeWarning::Ambiguous) {
+        LOG(WARNING, "AutoTune") << model_info.model_name
+                                 << ": no target GPU specified; auto-tuning ctx_size against the "
+                                    "most constrained GPU (" << memory.device_label << "). "
+                                 << (is_llamacpp ? "Pass --llamacpp-device or --ctx-size"
+                                                 : "Pass --ctx-size")
+                                 << " to override." << std::endl;
+    }
 
     if (available_gb <= 0) {
         int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
-        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
-                               << " — memory undetectable, returning " << fallback;
+        LOG(WARNING, "AutoTune") << model_info.model_name
+                                 << ": available memory could not be determined; falling back to "
+                                    "ctx_size=" << fallback
+                                 << ". Pass --ctx-size to set it explicitly." << std::endl;
         return fallback;
     }
 
     int64_t result = compute_auto_context_size(model_info, available_gb, is_embedding);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
+
+    if (!is_embedding && result == AUTO_CTX_FALLBACK) {
+        LOG(WARNING, "AutoTune") << model_info.model_name << ": only " << std::fixed
+                                 << std::setprecision(2) << available_gb << " GB free on "
+                                 << (memory.device_label.empty() ? "the target device"
+                                                                 : memory.device_label)
+                                 << " — not enough for the model weights plus a larger KV cache, "
+                                    "so ctx_size fell back to " << AUTO_CTX_FALLBACK
+                                 << ". Free VRAM or pass --ctx-size to override." << std::endl;
+    }
     return result;
 }
 

@@ -2914,6 +2914,26 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
 endif()
 
+# GPU device memory: llama.cpp --device string parsing and per-device memory pool
+# selection. Header-only and hardware-independent — the GPU topology is supplied by
+# the test, so it covers multi-GPU cases this machine may not have.
+set(_GPU_DEVICE_MEMORY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_device_memory.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GPU_DEVICE_MEMORY_TEST_SRC}")
+    add_executable(test_gpu_device_memory
+        test/cpp/test_gpu_device_memory.cpp
+    )
+    target_include_directories(test_gpu_device_memory PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_gpu_device_memory PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(GpuDeviceMemoryTest CI ON COMMAND test_gpu_device_memory)
+endif()
+
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
 if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
