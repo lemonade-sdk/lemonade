@@ -1721,21 +1721,15 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
 
-    struct RequestCancelScope {
-        WrappedServer* server = nullptr;
-        ~RequestCancelScope() {
-            if (server) server->set_request_cancel_flag(nullptr);
-        }
-    } cancel_scope;
+    std::optional<WrappedServer::RequestCancelScope> cancel_scope;
+    if (cancel) {
+        cancel_scope.emplace(cancel);
+    }
 
     try {
         WrappedServer* active_server = nullptr;
         json response = execute_inference(request, [&](WrappedServer* server) {
             active_server = server;
-            if (cancel) {
-                server->set_request_cancel_flag(cancel);
-                cancel_scope.server = server;
-            }
             ModelTelemetryIdentity identity = get_telemetry_identity(server);
             if (span) {
                 span->set_attribute("llm.backend", identity.recipe);
