@@ -167,6 +167,7 @@
               <option value="" selected disabled>Select your distro...</option>
               <option value="arch">Arch Linux</option>
               <option value="debian-13">Debian 13</option>
+              <option value="fedora">Fedora (43+)</option>
               <option value="other">Other</option>
               <option value="ubuntu-24">Ubuntu 24.04</option>
               <option value="ubuntu-25">Ubuntu 25.10</option>
@@ -248,6 +249,18 @@
                   <div class="flm-code-block"><code>sudo apt install ./&lt;flm_package.deb&gt;</code></div>
                   <span class="flm-inline-note">Lemonade will auto-install the portable FLM binary if not in PATH.</span>
                 </li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="flm-distro-instructions" id="distro-fedora" style="display:none;">
+            <div class="flm-instruction-box">
+              <div class="flm-instruction-header">
+                <span class="flm-instruction-label">For Fedora</span>
+              </div>
+              <ol>
+                <li>Fedora ships with the <code>amdxdna</code> kernel driver in-tree, no additional setup is required.</li>
+                <li>Lemonade will auto-install the portable FLM binary (including the NPU plugin) on first use.</li>
               </ol>
             </div>
           </div>
@@ -401,7 +414,7 @@
       }
 
       const select = document.getElementById('distro-select');
-      const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'debian-13', 'arch', 'other'];
+      const ids = ['ubuntu-24', 'ubuntu-25', 'ubuntu-26', 'debian-13', 'fedora', 'arch', 'other'];
       const faq = document.getElementById('flm-faq-section');
 
       ids.forEach(function(id) {
