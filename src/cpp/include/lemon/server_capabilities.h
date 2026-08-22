@@ -1,13 +1,21 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
+#include <string>
 #include <type_traits>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 
 namespace lemon {
 
 using json = nlohmann::json;
+
+struct AudioFormatMetadata {
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+};
 
 class ICapability {
 public:
@@ -61,6 +69,10 @@ public:
     // buffered set — Kokoros hands back raw PCM on its streaming path whatever the
     // request asked for. Empty means the buffered list applies to both transports.
     virtual std::vector<std::string> supported_streaming_audio_formats() const { return {}; }
+    // Optional wire metadata for a selected encoded/raw format. Empty values
+    // keep the server-wide MIME mapping. Raw PCM backends use this to expose
+    // their actual sample rate/channel contract instead of being mislabeled.
+    virtual AudioFormatMetadata audio_format_metadata(const std::string&) const { return {}; }
 };
 
 // Text-classification capability (encoder classifiers: PII, prompt-safety,
@@ -88,6 +100,7 @@ public:
     virtual ~IAudioGenerationServer() = default;
     virtual void audio_generations(const json& request, httplib::DataSink& sink) = 0;
     virtual std::vector<std::string> supported_audio_formats() const { return {"wav"}; }
+    virtual AudioFormatMetadata audio_format_metadata(const std::string&) const { return {}; }
 };
 
 class IModel3DServer : public virtual ICapability {

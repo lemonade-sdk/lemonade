@@ -114,7 +114,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "pcm_sample_rate", "pcm_channels", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source"};
 
 static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
     std::string stem = fs::path(variant.primary_file).stem().string();
@@ -4872,6 +4872,18 @@ void ModelManager::download_from_registry(const ModelInfo& info,
             }
             files_to_download[repo_id].push_back(variant);
         }
+    }
+
+    for (auto& [repo_id, files] : files_to_download) {
+        (void)repo_id;
+        std::set<std::string> seen;
+        std::vector<std::string> unique_files;
+        for (auto& filename : files) {
+            if (seen.insert(filename).second) {
+                unique_files.push_back(filename);
+            }
+        }
+        files = std::move(unique_files);
     }
 
     int total_files = 0;
