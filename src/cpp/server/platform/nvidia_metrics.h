@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -13,6 +14,17 @@
 
 namespace lemon {
 
+struct NvidiaNvmlDevice {
+    int index = -1;
+    std::string uuid;
+    std::string name;
+    std::string compute_cap;
+    std::string driver_version;
+    double gpu_percent = -1.0;
+    double vram_total_gb = -1.0;
+    double vram_used_gb = -1.0;
+};
+
 struct NvidiaMetrics {
     double gpu_percent = -1.0;
     double vram_used_gb = -1.0;
@@ -20,10 +32,15 @@ struct NvidiaMetrics {
 
 namespace nvidia_metrics_detail {
 
-// Keep the NVML ABI local so driver telemetry does not add a build-time CUDA/NVML dependency.
+// Keep the minimal NVML ABI local so telemetry does not add a build-time
+// CUDA/NVML dependency.
 using nvmlReturn_t = int;
 using nvmlDevice_t = struct nvmlDevice_st*;
 constexpr nvmlReturn_t NVML_SUCCESS = 0;
+constexpr unsigned int NVML_DEVICE_NAME_BUFFER_SIZE = 96;
+constexpr unsigned int NVML_DEVICE_UUID_BUFFER_SIZE = 96;
+constexpr unsigned int NVML_DRIVER_VERSION_BUFFER_SIZE = 96;
+constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
 
 struct nvmlUtilization_t {
     unsigned int gpu;
@@ -36,30 +53,94 @@ struct nvmlMemory_t {
     unsigned long long used;
 };
 
-class NvmlProbe {
+class NvmlLibrary {
 public:
-    NvmlProbe() {
+    NvmlLibrary() {
         load();
     }
 
-    ~NvmlProbe() {
-        if (initialized_ && shutdown_) {
-            shutdown_();
-        }
-        unload_library();
-    }
-
-    NvidiaMetrics sample() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        const auto now = std::chrono::steady_clock::now();
-        if (has_cached_sample_ && now - cached_at_ < std::chrono::milliseconds(250)) {
-            return cached_sample_;
+    std::vector<NvidiaNvmlDevice> query_devices() const {
+        std::vector<NvidiaNvmlDevice> devices;
+        if (!ready_ || init_() != NVML_SUCCESS) {
+            return devices;
         }
 
-        cached_sample_ = sample_uncached();
-        cached_at_ = now;
-        has_cached_sample_ = true;
-        return cached_sample_;
+        // NVML documents init/shutdown as reference-counted and the library as
+        // thread-safe. Each query owns one balanced init reference, so there is
+        // no process-lifetime initialized singleton and no atexit shutdown race.
+        struct ShutdownGuard {
+            ShutdownFn shutdown;
+            ~ShutdownGuard() {
+                if (shutdown) {
+                    shutdown();
+                }
+            }
+        } shutdown_guard{shutdown_};
+
+        unsigned int count = 0;
+        if (get_count_(&count) != NVML_SUCCESS) {
+            return devices;
+        }
+
+        char driver_buffer[NVML_DRIVER_VERSION_BUFFER_SIZE] = {};
+        std::string driver_version;
+        if (get_driver_ &&
+            get_driver_(driver_buffer, sizeof(driver_buffer)) == NVML_SUCCESS) {
+            driver_version = driver_buffer;
+        }
+
+        devices.reserve(count);
+        for (unsigned int index = 0; index < count; ++index) {
+            nvmlDevice_t device = nullptr;
+            if (get_handle_(index, &device) != NVML_SUCCESS || !device) {
+                continue;
+            }
+
+            NvidiaNvmlDevice info;
+            info.index = static_cast<int>(index);
+            info.driver_version = driver_version;
+
+            if (get_name_) {
+                char name_buffer[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
+                if (get_name_(device, name_buffer, sizeof(name_buffer)) == NVML_SUCCESS) {
+                    info.name = name_buffer;
+                }
+            }
+
+            if (get_uuid_) {
+                char uuid_buffer[NVML_DEVICE_UUID_BUFFER_SIZE] = {};
+                if (get_uuid_(device, uuid_buffer, sizeof(uuid_buffer)) == NVML_SUCCESS) {
+                    info.uuid = uuid_buffer;
+                }
+            }
+
+            if (get_compute_cap_) {
+                int major = 0;
+                int minor = 0;
+                if (get_compute_cap_(device, &major, &minor) == NVML_SUCCESS) {
+                    info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
+                }
+            }
+
+            if (get_utilization_) {
+                nvmlUtilization_t utilization{};
+                if (get_utilization_(device, &utilization) == NVML_SUCCESS) {
+                    info.gpu_percent = static_cast<double>(utilization.gpu);
+                }
+            }
+
+            if (get_memory_) {
+                nvmlMemory_t memory{};
+                if (get_memory_(device, &memory) == NVML_SUCCESS) {
+                    info.vram_total_gb = static_cast<double>(memory.total) / BYTES_PER_GIB;
+                    info.vram_used_gb = static_cast<double>(memory.used) / BYTES_PER_GIB;
+                }
+            }
+
+            devices.push_back(info);
+        }
+
+        return devices;
     }
 
 private:
@@ -67,6 +148,10 @@ private:
     using ShutdownFn = nvmlReturn_t (*)();
     using GetCountFn = nvmlReturn_t (*)(unsigned int*);
     using GetHandleFn = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
+    using GetNameFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+    using GetUuidFn = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
+    using GetComputeCapFn = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
+    using GetDriverFn = nvmlReturn_t (*)(char*, unsigned int);
     using GetUtilizationFn = nvmlReturn_t (*)(nvmlDevice_t, nvmlUtilization_t*);
     using GetMemoryFn = nvmlReturn_t (*)(nvmlDevice_t, nvmlMemory_t*);
 
@@ -83,13 +168,13 @@ private:
     ShutdownFn shutdown_ = nullptr;
     GetCountFn get_count_ = nullptr;
     GetHandleFn get_handle_ = nullptr;
+    GetNameFn get_name_ = nullptr;
+    GetUuidFn get_uuid_ = nullptr;
+    GetComputeCapFn get_compute_cap_ = nullptr;
+    GetDriverFn get_driver_ = nullptr;
     GetUtilizationFn get_utilization_ = nullptr;
     GetMemoryFn get_memory_ = nullptr;
-    bool initialized_ = false;
-    bool has_cached_sample_ = false;
-    NvidiaMetrics cached_sample_{};
-    std::chrono::steady_clock::time_point cached_at_{};
-    std::mutex mutex_;
+    bool ready_ = false;
 
 #ifdef _WIN32
     static LibraryHandle open_library() {
@@ -117,13 +202,6 @@ private:
     RawSymbol symbol(const char* name) const {
         return library_ ? GetProcAddress(library_, name) : nullptr;
     }
-
-    void unload_library() {
-        if (library_) {
-            FreeLibrary(library_);
-            library_ = nullptr;
-        }
-    }
 #elif defined(__linux__)
     static LibraryHandle open_library() {
         for (const char* name : {"libnvidia-ml.so.1", "libnvidia-ml.so"}) {
@@ -133,15 +211,9 @@ private:
         }
         return nullptr;
     }
+
     RawSymbol symbol(const char* name) const {
         return library_ ? dlsym(library_, name) : nullptr;
-    }
-
-    void unload_library() {
-        if (library_) {
-            dlclose(library_);
-            library_ = nullptr;
-        }
     }
 #else
     static LibraryHandle open_library() {
@@ -151,8 +223,6 @@ private:
     RawSymbol symbol(const char*) const {
         return nullptr;
     }
-
-    void unload_library() {}
 #endif
 
     template <typename T>
@@ -178,82 +248,75 @@ private:
             "nvmlDeviceGetCount_v2", "nvmlDeviceGetCount");
         get_handle_ = load_symbol_with_fallback<GetHandleFn>(
             "nvmlDeviceGetHandleByIndex_v2", "nvmlDeviceGetHandleByIndex");
+        get_name_ = load_symbol<GetNameFn>("nvmlDeviceGetName");
+        get_uuid_ = load_symbol<GetUuidFn>("nvmlDeviceGetUUID");
+        get_compute_cap_ = load_symbol<GetComputeCapFn>("nvmlDeviceGetCudaComputeCapability");
+        get_driver_ = load_symbol<GetDriverFn>("nvmlSystemGetDriverVersion");
         get_utilization_ = load_symbol<GetUtilizationFn>("nvmlDeviceGetUtilizationRates");
         get_memory_ = load_symbol<GetMemoryFn>("nvmlDeviceGetMemoryInfo");
 
-        if (!init_ || !shutdown_ || !get_count_ || !get_handle_ ||
-            (!get_utilization_ && !get_memory_)) {
-            unload_library();
-            return;
-        }
-
-        initialized_ = init_() == NVML_SUCCESS;
-        if (!initialized_) {
-            unload_library();
-        }
-    }
-
-    NvidiaMetrics sample_uncached() const {
-        NvidiaMetrics best;
-        if (!initialized_) {
-            return best;
-        }
-
-        unsigned int count = 0;
-        if (get_count_(&count) != NVML_SUCCESS || count == 0) {
-            return best;
-        }
-
-        bool found = false;
-        double best_utilization = -1.0;
-        unsigned long long best_used_bytes = 0;
-        constexpr double bytes_per_gib = 1024.0 * 1024.0 * 1024.0;
-
-        for (unsigned int index = 0; index < count; ++index) {
-            nvmlDevice_t device = nullptr;
-            if (get_handle_(index, &device) != NVML_SUCCESS || !device) {
-                continue;
-            }
-
-            nvmlUtilization_t utilization{};
-            nvmlMemory_t memory{};
-            const bool has_utilization = get_utilization_
-                && get_utilization_(device, &utilization) == NVML_SUCCESS;
-            const bool has_memory = get_memory_
-                && get_memory_(device, &memory) == NVML_SUCCESS;
-            if (!has_utilization && !has_memory) {
-                continue;
-            }
-
-            const double gpu_percent = has_utilization
-                ? static_cast<double>(utilization.gpu)
-                : -1.0;
-            const unsigned long long used_bytes = has_memory ? memory.used : 0;
-            const bool better = !found
-                || gpu_percent > best_utilization
-                || (gpu_percent == best_utilization && used_bytes > best_used_bytes);
-            if (!better) {
-                continue;
-            }
-
-            found = true;
-            best_utilization = gpu_percent;
-            best_used_bytes = used_bytes;
-            best.gpu_percent = gpu_percent;
-            best.vram_used_gb = has_memory
-                ? static_cast<double>(memory.used) / bytes_per_gib
-                : -1.0;
-        }
-
-        return best;
+        ready_ = init_ && shutdown_ && get_count_ && get_handle_ &&
+            (get_name_ || get_utilization_ || get_memory_);
     }
 };
 
+inline NvmlLibrary& nvml_library() {
+    // Keep only the dlopen/LoadLibrary handle mapped for process lifetime. NVML
+    // itself is initialized only inside query_devices() and shut down before the
+    // query returns. Intentionally avoiding static destruction also prevents a
+    // late dlclose from racing another thread during process teardown.
+    static NvmlLibrary* library = new NvmlLibrary();
+    return *library;
+}
+
 } // namespace nvidia_metrics_detail
 
+inline std::vector<NvidiaNvmlDevice> query_nvidia_nvml_devices() {
+    return nvidia_metrics_detail::nvml_library().query_devices();
+}
+
+inline NvidiaMetrics aggregate_nvidia_metrics(
+    const std::vector<NvidiaNvmlDevice>& devices) {
+    NvidiaMetrics result;
+    double total_used_gb = 0.0;
+    bool have_memory = false;
+
+    for (const auto& device : devices) {
+        if (device.gpu_percent >= 0.0 &&
+            (result.gpu_percent < 0.0 || device.gpu_percent > result.gpu_percent)) {
+            result.gpu_percent = device.gpu_percent;
+        }
+        if (device.vram_used_gb >= 0.0) {
+            total_used_gb += device.vram_used_gb;
+            have_memory = true;
+        }
+    }
+
+    if (have_memory) {
+        result.vram_used_gb = total_used_gb;
+    }
+    return result;
+}
+
 inline NvidiaMetrics query_nvidia_metrics() {
-    static nvidia_metrics_detail::NvmlProbe probe;
-    return probe.sample();
+    struct Cache {
+        std::mutex mutex;
+        bool valid = false;
+        std::chrono::steady_clock::time_point sampled_at{};
+        NvidiaMetrics metrics{};
+    };
+    static Cache cache;
+
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    const auto now = std::chrono::steady_clock::now();
+    if (cache.valid && now - cache.sampled_at < std::chrono::milliseconds(250)) {
+        return cache.metrics;
+    }
+
+    cache.metrics = aggregate_nvidia_metrics(query_nvidia_nvml_devices());
+    cache.sampled_at = now;
+    cache.valid = true;
+    return cache.metrics;
 }
 
 } // namespace lemon

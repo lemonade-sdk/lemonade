@@ -32,6 +32,7 @@
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
 #include "lemon/system_info.h"
+#include "platform/nvidia_metrics.h"
 #include "lemon/version.h"
 #include <cctype>
 #include <cstdint>
@@ -7038,14 +7039,30 @@ double Server::get_cpu_usage() {
 #endif
 }
 
-// Get GPU usage percentage (AMD GPUs on Linux)
+// Get GPU usage percentage across available GPU telemetry
 double Server::get_gpu_usage() {
-    return metrics_platform_->get_gpu_usage();
+    const double platform_usage = metrics_platform_->get_gpu_usage();
+    const NvidiaMetrics nvidia = query_nvidia_metrics();
+    if (platform_usage < 0.0) {
+        return nvidia.gpu_percent;
+    }
+    if (nvidia.gpu_percent < 0.0) {
+        return platform_usage;
+    }
+    return (std::max)(platform_usage, nvidia.gpu_percent);
 }
 
-// Get VRAM/GTT usage in GB (AMD GPUs on Linux)
+// Get GPU memory usage in GB across available GPU telemetry
 double Server::get_vram_usage() {
-    return metrics_platform_->get_vram_usage_gb();
+    const double platform_vram_gb = metrics_platform_->get_vram_usage_gb();
+    const NvidiaMetrics nvidia = query_nvidia_metrics();
+    if (platform_vram_gb < 0.0) {
+        return nvidia.vram_used_gb;
+    }
+    if (nvidia.vram_used_gb < 0.0) {
+        return platform_vram_gb;
+    }
+    return platform_vram_gb + nvidia.vram_used_gb;
 }
 
 // Helper: Get NPU utilization (AMD NPU on Linux)

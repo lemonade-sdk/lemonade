@@ -1,5 +1,4 @@
 #include <lemon/system_metrics_platform.h>
-#include "nvidia_metrics.h"
 #include <windows.h>
 #include <cmath>
 
@@ -62,11 +61,13 @@ public:
     }
 
     double get_gpu_usage() override {
-        return query_nvidia_metrics().gpu_percent;
+        // GPU usage monitoring not implemented for Windows
+        return -1.0;
     }
 
     double get_vram_usage_gb() override {
-        return query_nvidia_metrics().vram_used_gb;
+        // VRAM monitoring not implemented for Windows
+        return -1.0;
     }
 
     double get_npu_utilization() override {
