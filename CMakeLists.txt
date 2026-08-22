@@ -2369,6 +2369,24 @@ if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
     add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
 endif()
 
+set(_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_whispercpp_multipart_fields.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC}")
+    add_executable(test_whispercpp_multipart_fields
+        test/cpp/test_whispercpp_multipart_fields.cpp
+    )
+    target_include_directories(test_whispercpp_multipart_fields PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/whispercpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_whispercpp_multipart_fields PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(WhisperCppMultipartFieldsTest CI ON COMMAND test_whispercpp_multipart_fields)
+endif()
+
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
