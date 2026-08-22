@@ -46,7 +46,7 @@ inline const BackendDescriptor descriptor = {
          "One WAV sample whose voice is cloned.", "", "voice_mode", ".wav", nullptr},
         {"voice", "tts", "Style note", "TEXT", nullptr, nullptr, nullptr, nullptr, {},
          "Optional delivery instruction; does not change the timbre.", "", "", "", nullptr},
-        {"audio_temperature", "tts", "Audio temp", "NUMBER", 1.5, 0.0, 3.0, 0.05, {}, "", "advanced", "", "", nullptr},
+        {"audio_temperature", "tts", "Audio temp", "NUMBER", 1.7, 0.0, 3.0, 0.05, {}, "", "advanced", "", "", nullptr},
         {"audio_top_p", "tts", "Audio top-p", "NUMBER", 0.8, 0.0, 1.0, 0.05, {}, "", "advanced", "", "", nullptr},
         {"audio_top_k", "tts", "Audio top-k", "INT", 25, 0, 200, 1, {}, "", "advanced", "", "", nullptr},
         {"audio_repetition_penalty", "tts", "Repetition", "NUMBER", 1.0, 1.0, 2.0, 0.05, {}, "", "advanced", "", "", nullptr},

@@ -186,9 +186,6 @@ void OpenMossServer::load(const std::string& model_name,
     if (!voicegen_path_.empty() && !std::filesystem::exists(voicegen_path_)) {
         voicegen_path_.clear();
     }
-    speech_uses_large_context_ =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "tts")
-        != model_info.labels.end();
     pcm_sample_rate_.store(model_info.extra<int>("pcm_sample_rate", 0),
                            std::memory_order_release);
     pcm_channels_.store(model_info.extra<int>("pcm_channels", 0),
@@ -198,8 +195,7 @@ void OpenMossServer::load(const std::string& model_name,
     start_speech_process();
 }
 
-OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path,
-                                                            bool large_context) {
+OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
     Subprocess proc;
     proc.port = utils::ProcessManager::find_free_port(8001);
     if (proc.port <= 0) {
@@ -211,9 +207,6 @@ OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path,
         "--host", "127.0.0.1",
         "--port", std::to_string(proc.port),
     };
-    if (large_context) {
-        proc.args.insert(proc.args.end(), {"--n-ctx", "32768"});
-    }
     proc.args.push_back("--no-webui");
 
     LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << proc.port << std::endl;
@@ -235,7 +228,7 @@ void OpenMossServer::stop_speech_process() {
 }
 
 void OpenMossServer::start_speech_process(long timeout_seconds) {
-    Subprocess proc = spawn(model_path_, speech_uses_large_context_);
+    Subprocess proc = spawn(model_path_);
     set_process_state(proc.handle, proc.port, exe_path_, proc.args);
     LOG(INFO, "openmoss-server") << "Process started with PID: " << proc.handle.pid << std::endl;
 
@@ -290,7 +283,7 @@ std::string OpenMossServer::design_reference_sample(
 std::string OpenMossServer::render_reference_sample(
     const std::string& voice_description, httplib::DataSink& sink,
     std::chrono::steady_clock::time_point deadline) {
-    Subprocess designer = spawn(voicegen_path_, /*large_context=*/false);
+    Subprocess designer = spawn(voicegen_path_);
     std::string sample;
     try {
         const std::string base = "http://127.0.0.1:" + std::to_string(designer.port);

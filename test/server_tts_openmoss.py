@@ -436,6 +436,91 @@ class OpenMossTTSTests(ServerTestBase):
             "MOSS-TTS-Local must export its native stereo PCM layout",
         )
 
+    def test_016_local_sampling_defaults_match_openmoss_v03(self):
+        """Local's live model metadata must use its OpenMOSS v0.3 defaults."""
+        response = requests.get(
+            f"{self.base_url}/models/MOSS-TTS-Local",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        defaults = response.json().get("speech_defaults", {})
+        expected = {
+            "audio_temperature": 1.7,
+            "audio_top_p": 0.8,
+            "audio_top_k": 25,
+            "audio_repetition_penalty": 1.0,
+            "text_temperature": 1.0,
+            "text_top_p": 1.0,
+            "text_top_k": 50,
+            "speed": 1.0,
+        }
+        for key, value in expected.items():
+            self.assertEqual(defaults.get(key), value, f"wrong Local default for {key}")
+
+    def test_017_descriptor_audio_temperature_matches_openmoss_v03(self):
+        """Generic/custom OpenMOSS TTS falls back to upstream audio temp 1.7."""
+        response = requests.get(
+            f"{self.base_url}/system-info",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        params = (
+            response.json()
+            .get("recipes", {})
+            .get("openmoss", {})
+            .get("generation_params", {})
+            .get("tts", [])
+        )
+        audio_temp = next(
+            (param for param in params if param.get("name") == "audio_temperature"),
+            None,
+        )
+        self.assertIsNotNone(
+            audio_temp, "OpenMOSS must expose audio_temperature metadata"
+        )
+        self.assertEqual(audio_temp.get("default"), 1.7)
+
+    def test_018_default_launch_does_not_force_large_context(self):
+        """Default TTS launch must leave n_ctx to OpenMOSS v0.3 (8192)."""
+        model = get_test_model("tts")
+
+        def loaded_model():
+            response = requests.get(
+                f"{self.base_url}/health",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            return next(
+                (
+                    entry
+                    for entry in response.json().get("all_models_loaded", [])
+                    if entry.get("model_name") == model
+                ),
+                None,
+            )
+
+        loaded = loaded_model()
+        if loaded is None:
+            # Keep this test useful when selected on its own. In the full suite
+            # an earlier speech test has already loaded the model, so this adds
+            # no extra generation work.
+            speech = requests.post(
+                f"{self.base_url}/audio/speech",
+                json={"model": model, "input": "Checking the default OpenMOSS launch."},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self._assert_wav_response(speech, "Context-default launch setup")
+            loaded = loaded_model()
+
+        self.assertIsNotNone(loaded, f"{model} should be loaded")
+        command = loaded.get("launch_command", [])
+        self.assertIsInstance(command, list)
+        self.assertNotIn(
+            "--n-ctx",
+            command,
+            f"Lemonade must not override OpenMOSS's default context: {command}",
+        )
+
 
 if __name__ == "__main__":
     run_server_tests(

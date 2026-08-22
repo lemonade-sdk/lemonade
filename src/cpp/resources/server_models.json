@@ -2150,11 +2150,11 @@
         "pcm_sample_rate": 48000,
         "pcm_channels": 2,
         "speech_defaults": {
-            "audio_temperature": 1.5,
-            "audio_top_p": 0.6,
-            "audio_top_k": 50,
-            "audio_repetition_penalty": 1.1,
-            "text_temperature": 1.5,
+            "audio_temperature": 1.7,
+            "audio_top_p": 0.8,
+            "audio_top_k": 25,
+            "audio_repetition_penalty": 1.0,
+            "text_temperature": 1.0,
             "text_top_p": 1.0,
             "text_top_k": 50,
             "speed": 1.0

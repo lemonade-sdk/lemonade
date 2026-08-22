@@ -53,7 +53,7 @@ private:
     };
 
     std::string resolve_binary_path(const std::string& backend);
-    Subprocess spawn(const std::string& model_path, bool large_context);
+    Subprocess spawn(const std::string& model_path);
 
     void stop_speech_process();
     void start_speech_process(long timeout_seconds = 600);
@@ -74,7 +74,6 @@ private:
     std::atomic<bool> process_swap_in_progress_{false};
     std::atomic<int> pcm_sample_rate_{0};
     std::atomic<int> pcm_channels_{0};
-    bool speech_uses_large_context_ = false;
 };
 
 namespace openmoss {
