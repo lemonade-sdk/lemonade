@@ -173,6 +173,18 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
+        /**
+         * After extracting a TheRock tarball into install_dir, locate the
+         * payload subdirectory (bin/ on Windows, lib/ on Linux). Upstream
+         * tarballs sometimes unpack under a wrapper directory whose name
+         * drifts from the URL (e.g. therock-dist-...-7.13.0rc2/), leaving the
+         * payload one level deep; when exactly one top-level subdirectory
+         * holds it, its contents are moved up into install_dir so the layout
+         * matches what every consumer expects. Returns the payload dir path,
+         * or "" when no usable payload is found.
+         */
+        static std::string normalize_therock_payload_dir(const std::string& install_dir);
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
@@ -201,6 +213,16 @@ namespace lemon::backends {
          *  only; returns 0 elsewhere. GetFileVersionInfoW returns stale data
          *  for system32 paths, so callers read versions from plain paths. */
         static uint64_t read_dll_version(const fs::path& dll);
+
+        /**
+         * Loader dir of the externally-resolved ROCm root (bin/ on Windows,
+         * lib/ or lib64/ on Linux), or "" when no external root resolves. When the user
+         * points ROCM_PATH at a hand-installed ROCm, that root's bin/ must be
+         * on the backend child's PATH/LD_LIBRARY_PATH or DLL/SO loading fails
+         * (rocsolver.dll not found, issue #2722). Use alongside (after)
+         * get_therock_lib_path so TheRock takes precedence when installed.
+         */
+        static std::string get_external_rocm_loader_dir();
 
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);

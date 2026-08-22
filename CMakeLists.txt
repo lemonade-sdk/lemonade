@@ -3056,6 +3056,13 @@ if(BUILD_TESTING AND EXISTS "${_GFX_ARCH_GATING_TEST_SRC}")
     add_cpp_ci_test(GfxArchGatingTest CI ON COMMAND test_gfx_arch_gating)
 endif()
 
+set(_THEROCK_2722_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_therock_2722.cpp")
+if(BUILD_TESTING AND EXISTS "${_THEROCK_2722_TEST_SRC}")
+    add_executable(test_therock_2722 test/cpp/test_therock_2722.cpp)
+    target_link_libraries(test_therock_2722 PRIVATE lemonade-server-core)
+    add_cpp_ci_test(TheRock2722Test CI ON COMMAND test_therock_2722)
+endif()
+
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
