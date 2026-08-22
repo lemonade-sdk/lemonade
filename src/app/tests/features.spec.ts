@@ -1142,6 +1142,53 @@ test.describe('Lemonade UI — Feature Parity', () => {
   });
 
 
+  test('Backend technical details stay hidden until enabled', async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        devices: { cpu: { name: 'Test CPU', available: true } },
+        recipes: {
+          llamacpp: {
+            default_backend: 'cpu',
+            backends: {
+              cpu: {
+                state: 'update_available',
+                version: '1.0.0',
+                message: 'Version 2.0.0 is available.',
+                action: '',
+                release_url: 'https://github.com/lemonade-sdk/lemonade/releases/tag/2.0.0',
+              },
+            },
+          },
+        },
+      },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({ json: { data: [] } }));
+
+    await page.goto('/#/backends');
+    await page.waitForSelector('[data-view="backends"]');
+
+    const backend = page.locator('[data-cell="llamacpp:cpu"]');
+    await expect(backend).toBeVisible();
+    await expect(backend.getByText('Update available', { exact: true })).toBeVisible();
+    await expect(backend.getByRole('button', { name: 'Update llama.cpp · cpu' })).toBeVisible();
+
+    // Version metadata and the server-provided update detail are technical
+    // information and must not leak while the toggle is off.
+    await expect(backend.locator('.backend-card__version')).toHaveCount(0);
+    await expect(backend.locator('.backend-card__note')).toHaveCount(0);
+
+    await page.getByRole('checkbox', { name: 'Show technical details' }).check();
+
+    await expect(backend.locator('.backend-card__version')).toHaveCount(2);
+    await expect(backend.locator('.backend-card__version').nth(0)).toContainText('1.0.0');
+    await expect(backend.locator('.backend-card__version').nth(1)).toContainText('2.0.0');
+    await expect(backend.locator('.backend-card__note')).toHaveText('Version 2.0.0 is available.');
+  });
+
+
   test('14 — Backends view shows matrix and device info', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
