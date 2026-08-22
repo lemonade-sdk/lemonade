@@ -2990,7 +2990,11 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["system_prompt"] = info.system_prompt;
     }
 
-    for (const char* key : {"speech_defaults", "audio_defaults"}) {
+    for (const char* key : {
+             "speech_defaults",
+             "audio_defaults",
+             "pcm_sample_rate",
+             "pcm_channels"}) {
         auto it = info.extras.find(key);
         if (it != info.extras.end() && !it->second.is_null()) {
             model_json[key] = it->second;

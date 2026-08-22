@@ -417,6 +417,25 @@ class OpenMossTTSTests(ServerTestBase):
             response.json().get("error", {}).get("code"), "model_not_applicable"
         )
 
+    def test_015_model_metadata_preserves_local_pcm_layout(self):
+        """The live /models object must retain 48 kHz stereo PCM metadata."""
+        response = requests.get(
+            f"{self.base_url}/models/MOSS-TTS-Local",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        model = response.json()
+        self.assertEqual(
+            model.get("pcm_sample_rate"),
+            48000,
+            "MOSS-TTS-Local must export its native 48 kHz PCM rate",
+        )
+        self.assertEqual(
+            model.get("pcm_channels"),
+            2,
+            "MOSS-TTS-Local must export its native stereo PCM layout",
+        )
+
 
 if __name__ == "__main__":
     run_server_tests(
