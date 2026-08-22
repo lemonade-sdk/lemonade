@@ -122,6 +122,7 @@ async function installTauriApi(): Promise<void> {
         // Ignore invalid URLs
       }
     },
+
     getSettings: () => invoke('get_app_settings'),
     saveSettings: (settings: unknown) => invoke('save_app_settings', { payload: settings }),
     onSettingsUpdated: (callback: (settings: unknown) => void) =>
