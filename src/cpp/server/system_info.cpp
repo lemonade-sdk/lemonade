@@ -1,5 +1,6 @@
 #include "lemon/system_info.h"
 #include "system_info_utils.h"
+#include "platform/nvidia_metrics.h"
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
 #include "lemon/backend_manager.h"
@@ -2596,10 +2597,18 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
 
             result.push_back(info);
         }
-    }
 
-    nvmlShutdown();
-    dlclose(handle);
+        NvidiaSmiGpuInfo info;
+        info.index = device.index;
+        info.uuid = device.uuid;
+        info.name = device.name;
+        info.compute_cap = device.compute_cap;
+        info.driver_version = device.driver_version;
+        if (device.vram_total_gb >= 0.0) {
+            info.vram_gb = device.vram_total_gb;
+        }
+        result.push_back(info);
+    }
     return result;
 }
 #endif
