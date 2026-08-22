@@ -1,0 +1,128 @@
+app-id: ai.lemonadeserver.app
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: lemonade-supervisor
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node24
+
+finish-args:
+  # Windowing & Graphics
+  - --share=ipc
+  - --socket=wayland
+  - --socket=x11
+
+  # Hardware Acceleration: GPU (Vulkan, ROCm) & NPU (XDNA/RyzenAI discovery)
+  - --device=dri
+  - --filesystem=/sys/class/kfd:ro
+  - --filesystem=/sys/class/accel:ro
+
+  # Network
+  - --share=network # Local API/WebSocket server and model downloads
+
+  # Audio (TTS & Voice via PulseAudio/PipeWire-Pulse emulation)
+  - --socket=pulseaudio
+
+  # Filesystem & Model Cache Access
+  - --filesystem=xdg-cache/lemonade:create
+  - --filesystem=xdg-cache/huggingface:create
+  - --filesystem=xdg-cache/modelscope:create
+  - --filesystem=xdg-download:ro
+  - --filesystem=xdg-documents:ro
+  - --filesystem=xdg-run/lemonade:create
+
+  # Desktop Integration, Tray & Single-Instance D-Bus
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  - --own-name=ai.lemonadeserver.app.*
+
+  # Environment
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+  - --env=LEMONADE_DISABLE_SYSTEMD_JOURNAL=1
+
+build-options:
+  build-args:
+    - --share=network
+  strip: true
+  no-debuginfo: true
+
+cleanup:
+  - /include
+  - /lib/pkgconfig
+  - /lib/cmake
+  - /share/man
+  - '*.a'
+  - '*.la'
+
+modules:
+  # 1. DRM hardware acceleration headers & library
+  - modules/libdrm.json
+
+  # 2. Realtime WebSocket library
+  - modules/libwebsockets.json
+
+  # 3. System Tray AppIndicator support
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+
+  # 4. Lemonade C++ Server, CLI, Tray, and Web App
+  - name: lemonade-cpp
+    buildsystem: cmake-ninja
+    builddir: true
+    no-make-install: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DCMAKE_PREFIX_PATH=/app
+      - -DREQUIRE_LINUX_TRAY=ON
+      - -DBUILD_TAURI_APP=OFF
+      - -DBUILD_WEB_APP=ON
+      - -DUSE_SYSTEM_NODEJS_MODULES=OFF
+    post-install:
+      - install -Dm755 lemond /app/bin/lemond
+      - install -Dm755 lemonade /app/bin/lemonade
+      - install -Dm755 lemonade-tray /app/bin/lemonade-tray
+      - install -d /app/share/lemonade-server/resources
+      - cp -r resources/. /app/share/lemonade-server/resources/
+      - ln -sf ../share/lemonade-server/resources /app/bin/resources
+    sources:
+      - &lemonade-source
+        type: git
+        url: ../..
+        branch: feat/flatpak-monorepo-integration
+        disable-lfs: true
+
+  # 5. Lemonade Desktop Tauri App (Frontend + Rust Host)
+  - name: lemonade-app
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/node24/bin:/usr/lib/sdk/rust-stable/bin
+      build-args:
+        - --share=network
+      env:
+        CARGO_HOME: /run/build/lemonade-app/.cargo
+        NPM_CONFIG_CACHE: /run/build/lemonade-app/.npm
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    build-commands:
+      - cd src/app && npm install
+      - cd src/app && npm run build:renderer:prod
+      - cd src/app/src-tauri && cargo build --release --features tauri/custom-protocol
+      - install -Dm755 src/app/src-tauri/target/release/lemonade-app /app/bin/lemonade-app
+    sources:
+      - *lemonade-source
+
+  # 6. Supervisor Script, Desktop Launcher, & Metadata
+  - name: lemonade-desktop-integration
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 packaging/flatpak/lemonade-supervisor.sh /app/bin/lemonade-supervisor
+      - install -Dm644 data/ai.lemonadeserver.app.metainfo.xml /app/share/metainfo/ai.lemonadeserver.app.metainfo.xml
+      - install -Dm644 data/lemonade-app.desktop /app/share/applications/ai.lemonadeserver.app.desktop
+      - sed -i 's/^Exec=lemonade-app %u/Exec=lemonade-supervisor %u/' /app/share/applications/ai.lemonadeserver.app.desktop
+      - install -Dm644 src/app/assets/logo.svg /app/share/icons/hicolor/scalable/apps/ai.lemonadeserver.app.svg
+      - install -Dm644 src/app/src-tauri/icons/icon.png /app/share/icons/hicolor/512x512/apps/ai.lemonadeserver.app.png
+      - install -Dm644 src/app/src-tauri/icons/icon.png /app/share/icons/hicolor/256x256/apps/ai.lemonadeserver.app.png
+      - install -Dm644 src/app/src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/ai.lemonadeserver.app.png
+      - install -Dm644 src/app/src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/ai.lemonadeserver.app.png
+    sources:
+      - *lemonade-source

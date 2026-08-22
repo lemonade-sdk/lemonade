@@ -710,10 +710,14 @@ std::string TrayUI::find_icon_path() {
         data_dirs.push_back("/opt/lemonade/share");
     }
     for (const auto& d : data_dirs) {
-        auto svg_clean = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonadeserver.Lemonade.svg";
-        if (fs::exists(svg_clean)) return svg_clean.string();
-        auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
-        if (fs::exists(svg)) return svg.string();
+        for (const char* app_id : {"ai.lemonadeserver.app", "ai.lemonadeserver.Lemonade", "ai.lemonade_server.Lemonade"}) {
+            auto svg = fs::path(d) / "icons/hicolor/scalable/apps" / (std::string(app_id) + ".svg");
+            if (fs::exists(svg)) return svg.string();
+            for (const char* sz : {"512x512", "256x256", "128x128", "32x32"}) {
+                auto png = fs::path(d) / "icons/hicolor" / sz / "apps" / (std::string(app_id) + ".png");
+                if (fs::exists(png)) return png.string();
+            }
+        }
         auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";
         if (fs::exists(ico)) return ico.string();
     }
