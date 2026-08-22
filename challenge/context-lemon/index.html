@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Context-Lemon gives AMD Lemonade private, citation-grounded memory over local files."
+    />
+    <title>Context-Lemon</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <main class="container">
+      <h1>Context-Lemon</h1>
+      <p class="subtitle">Private memory for Lemonade — grounded in your local files.</p>
+
+      <section>
+        <h2>Watched Folders</h2>
+        <ul id="folder-list"></ul>
+        <button id="add-folder-btn" type="button">+ Add Folder</button>
+        <p id="index-status"></p>
+      </section>
+
+      <section>
+        <h2>Ask</h2>
+        <form id="ask-form" class="ask-form">
+          <input id="ask-input" placeholder="Ask something about your files…" autocomplete="off" />
+          <button type="submit" id="ask-submit">Ask</button>
+        </form>
+        <div id="answer-box" class="answer-box" hidden>
+          <div id="answer-text" class="answer-content" aria-live="polite"></div>
+          <div id="sources-box" class="sources-box" hidden>
+            <h3>Sources</h3>
+            <ul id="sources-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Status</h2>
+        <p id="status-msg">Not connected to Lemonade yet.</p>
+      </section>
+    </main>
+  </body>
+</html>

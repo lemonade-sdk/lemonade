@@ -27,11 +27,14 @@
 
 <!-- FORK NOTE: The section below is specific to this fork and is not part of upstream lemonade-sdk/lemonade. -->
 
-## Developer Challenge Project
+## Developer Challenge Projects
 
-This fork contains **AI Campus Copilot Local**, an open-source student document assistant powered by Lemonade Server.
+This fork contains two open-source applications powered by Lemonade Server:
 
-Project location: `challenge/ai-campus-copilot-local/`
+- **AI Campus Copilot Local** — Jerome Prakash L's privacy-first student document assistant, located at `challenge/ai-campus-copilot-local/`.
+- **Context-Lemon** — Kenneth Aidan B's local, folder-aware RAG and memory layer, imported from [Kenneth-Aidan-B/Context-Lemon](https://github.com/Kenneth-Aidan-B/Context-Lemon) at v0.2.0 and located at `challenge/context-lemon/`.
+
+Context-Lemon retains its MIT license and upstream attribution. Its exact imported revision is recorded in `challenge/context-lemon/UPSTREAM.md`.
 
 <!-- END FORK NOTE -->
 

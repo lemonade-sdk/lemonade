@@ -1,0 +1,36 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Rust / Tauri build output
+src-tauri/target
+Cargo.lock.bak
+
+# Never commit a real vector index or its text blob — these are generated locally
+# from the user's own files and can be large; only the sample corpus ships.
+lemonade-context-engine.log
+*.bin
+*.bin.tmp
+*.bin.corrupt
+chunks.*.dat

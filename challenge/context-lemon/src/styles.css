@@ -1,0 +1,287 @@
+/* Without this, padding is added on top of every computed width: the container
+   becomes max-width + 3em, each folder row overflows by its own padding, and the ask
+   input's flex basis grows by 2.4em — which pushed the Remove and Ask buttons off the
+   right edge of the window. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  /* Nothing here should ever scroll sideways. */
+  overflow-x: hidden;
+}
+
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+
+  color: #0f0f0f;
+  background-color: #f6f6f6;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+.container {
+  margin: 0 auto;
+  max-width: 560px;
+  padding: 3em 1.5em;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 0.2em;
+}
+
+.subtitle {
+  text-align: center;
+  opacity: 0.7;
+  margin-top: 0;
+  margin-bottom: 2em;
+}
+
+section {
+  margin-bottom: 2em;
+}
+
+h2 {
+  font-size: 1.1em;
+  margin-bottom: 0.6em;
+}
+
+#folder-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1em 0;
+}
+
+#folder-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5em;
+  padding: 0.5em 0.8em;
+  border-radius: 8px;
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  margin-bottom: 0.4em;
+}
+
+/* Folder paths are long. Ellipsize the path instead of letting it wrap and squeeze
+   the Remove button out of the row; the full path is on the element's title. */
+#folder-list li > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#folder-list li.empty {
+  opacity: 0.6;
+  box-shadow: none;
+  background: transparent;
+  padding-left: 0;
+}
+
+input,
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  color: #0f0f0f;
+  background-color: #ffffff;
+  transition: border-color 0.25s;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #396cd8;
+}
+button:active {
+  border-color: #396cd8;
+  background-color: #e8e8e8;
+}
+
+.remove-btn {
+  font-size: 0.85em;
+  padding: 0.3em 0.7em;
+  box-shadow: none;
+  /* Never shrink or wrap: a long path must not clip the button to "Remov e". */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+#status-msg,
+#index-status {
+  opacity: 0.8;
+}
+
+.ask-form {
+  display: flex;
+  gap: 0.5em;
+}
+
+.ask-form input {
+  flex: 1;
+  /* Flex items default to min-width:auto and refuse to shrink below their intrinsic
+     size, which for an input is its `size` attribute (~20 chars). */
+  min-width: 0;
+}
+
+.answer-box {
+  margin-top: 1em;
+  padding: 1em 1.1em;
+  border-radius: 8px;
+  background-color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.answer-content {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.answer-content > :first-child {
+  margin-top: 0;
+}
+
+.answer-content > :last-child {
+  margin-bottom: 0;
+}
+
+.answer-content p {
+  margin: 0.65em 0;
+}
+
+.answer-content h3,
+.answer-content h4,
+.answer-content h5 {
+  line-height: 1.3;
+  margin: 1em 0 0.4em;
+}
+
+.answer-content h3 {
+  font-size: 1.05em;
+}
+
+.answer-content h4,
+.answer-content h5 {
+  font-size: 1em;
+}
+
+.answer-content ol,
+.answer-content ul {
+  margin: 0.6em 0;
+  padding-left: 1.5em;
+}
+
+.answer-content li + li {
+  margin-top: 0.35em;
+}
+
+.answer-content pre {
+  margin: 0.8em 0;
+  padding: 0.8em 0.9em;
+  overflow-x: auto;
+  border: 1px solid #d9dee7;
+  border-radius: 6px;
+  background: #f4f6f9;
+  white-space: pre;
+}
+
+.answer-content code,
+.sources-box code {
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.answer-content :not(pre) > code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: #eef1f5;
+}
+
+.sources-box {
+  margin-top: 1em;
+  padding-top: 0.8em;
+  border-top: 1px solid #d9dee7;
+}
+
+.sources-box h3 {
+  margin: 0 0 0.45em;
+  font-size: 0.9em;
+}
+
+.sources-box #sources-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85em;
+}
+
+.sources-box #sources-list li {
+  display: grid;
+  gap: 0.1em;
+  padding: 0.35em 0;
+}
+
+.sources-box #sources-list code {
+  overflow-wrap: anywhere;
+}
+
+.sources-box #sources-list span {
+  opacity: 0.65;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f6f6f6;
+    background-color: #2f2f2f;
+  }
+
+  #folder-list li,
+  .answer-box {
+    background-color: #0f0f0f98;
+  }
+
+  .answer-content pre {
+    border-color: #4a4a4a;
+    background: #171717;
+  }
+
+  .answer-content :not(pre) > code {
+    background: #1f1f1f;
+  }
+
+  .sources-box {
+    border-top-color: #4a4a4a;
+  }
+
+  input,
+  button {
+    color: #ffffff;
+    background-color: #0f0f0f98;
+  }
+  button:active {
+    background-color: #0f0f0f69;
+  }
+}

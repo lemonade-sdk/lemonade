@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+  rust:
+    name: Rust unit tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: src-tauri
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Report Rust toolchain
+        run: rustc --version; cargo --version
+
+      - name: Run deterministic library tests
+        run: cargo test --lib --locked

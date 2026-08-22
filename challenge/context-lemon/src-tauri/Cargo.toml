@@ -1,0 +1,38 @@
+[package]
+name = "lemonade-context-engine"
+version = "0.2.0"
+description = "A fully local folder-aware RAG and memory layer for AMD Lemonade"
+authors = ["Kenneth Aidan B"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/Kenneth-Aidan-B/Context-Lemon"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "lemonade_context_engine_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+reqwest = { version = "0.12", default-features = false, features = ["json", "http2"] }
+ignore = "0.4"
+bincode = "1"
+notify = "6"
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

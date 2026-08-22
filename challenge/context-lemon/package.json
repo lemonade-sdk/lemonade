@@ -1,0 +1,35 @@
+{
+  "name": "lemonade-context-engine",
+  "private": true,
+  "version": "0.2.0",
+  "description": "A fully local folder-aware RAG and memory layer for AMD Lemonade.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kenneth-Aidan-B/Context-Lemon.git"
+  },
+  "keywords": [
+    "amd",
+    "lemonade",
+    "local-ai",
+    "rag",
+    "rust",
+    "tauri"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "vite": "^6.0.3",
+    "typescript": "~5.6.2"
+  }
+}

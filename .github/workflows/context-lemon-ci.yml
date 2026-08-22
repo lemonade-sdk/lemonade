@@ -1,0 +1,61 @@
+name: Context-Lemon CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "challenge/context-lemon/**"
+      - ".github/workflows/context-lemon-ci.yml"
+  pull_request:
+    paths:
+      - "challenge/context-lemon/**"
+      - ".github/workflows/context-lemon-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-lemon-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: challenge/context-lemon
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: challenge/context-lemon/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+  rust:
+    name: Rust unit tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: challenge/context-lemon/src-tauri
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Report Rust toolchain
+        run: rustc --version; cargo --version
+
+      - name: Run deterministic library tests
+        run: cargo test --lib --locked
