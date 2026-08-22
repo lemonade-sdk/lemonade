@@ -1,19 +1,86 @@
-#include <lemon/system_metrics_platform.h>
-#include <fstream>
-#include <sstream>
-#include <filesystem>
-#include <cstring>
-#include <vector>
+#include "nvidia_metrics.h"
+
 #include <cmath>
+#include <cstring>
 #include <fcntl.h>
-#include <unistd.h>
-#include <sys/ioctl.h>
-#include <libdrm/drm.h>
+#include <filesystem>
+#include <fstream>
 #include <lemon/amdxdna_accel.h>
+#include <lemon/system_metrics_platform.h>
+#include <libdrm/drm.h>
+#include <sstream>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <vector>
 
 namespace fs = std::filesystem;
 
 namespace lemon {
+
+namespace {
+
+SystemGpuMetrics query_drm_system_gpu_metrics() {
+    SystemGpuMetrics result;
+
+    try {
+        const fs::path drm_path = "/sys/class/drm";
+        if (!fs::exists(drm_path)) {
+            return result;
+        }
+
+        for (const auto& entry : fs::directory_iterator(drm_path)) {
+            const std::string card_name = entry.path().filename().string();
+            if (card_name.find("card") != 0 ||
+                card_name.find("-") != std::string::npos) {
+                continue;
+            }
+
+            const fs::path device_path = entry.path() / "device";
+            SystemGpuMetrics sample;
+
+            std::ifstream busy_file(device_path / "gpu_busy_percent");
+            if (busy_file.is_open()) {
+                double gpu_usage = -1.0;
+                if (busy_file >> gpu_usage) {
+                    sample.gpu_percent = gpu_usage;
+                }
+            }
+
+            const bool is_dgpu = fs::exists(device_path / "board_info");
+
+            uint64_t vram_used = 0;
+            bool have_vram = false;
+            std::ifstream vram_file(device_path / "mem_info_vram_used");
+            if (vram_file.is_open() && (vram_file >> vram_used)) {
+                have_vram = true;
+            }
+
+            uint64_t gtt_used = 0;
+            bool have_gtt = false;
+            std::ifstream gtt_file(device_path / "mem_info_gtt_used");
+            if (gtt_file.is_open() && (gtt_file >> gtt_used)) {
+                have_gtt = true;
+            }
+
+            const bool have_memory =
+                is_dgpu ? have_vram : (have_vram || have_gtt);
+            if (have_memory) {
+                const uint64_t card_memory =
+                    is_dgpu ? vram_used : (vram_used + gtt_used);
+                sample.vram_used_gb =
+                    static_cast<double>(card_memory) / BYTES_PER_GIB;
+            }
+
+            system_metrics_detail::merge_max(result, sample);
+        }
+    } catch (...) {
+        return {};
+    }
+
+    return result;
+}
+
+} // namespace
 
 class LinuxMetricsPlatform : public SystemMetricsPlatform {
 public:
@@ -186,6 +253,12 @@ public:
         } catch (...) {
             return -1.0;
         }
+    }
+
+    SystemGpuMetrics get_system_gpu_metrics() override {
+        SystemGpuMetrics result = query_drm_system_gpu_metrics();
+        system_metrics_detail::merge_max(result, query_nvidia_metrics());
+        return result;
     }
 
     double get_npu_utilization() override {

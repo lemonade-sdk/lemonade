@@ -1,32 +1,33 @@
-#include "lemon/system_info.h"
-#include "system_info_utils.h"
-#include "platform/nvidia_metrics.h"
-#include "lemon/runtime_config.h"
-#include "lemon/version.h"
 #include "lemon/backend_manager.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/version_utils.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/recipe_backend_def.h"
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <regex>
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/version_utils.h"
+#include "lemon/version.h"
+#include "platform/nvidia_metrics.h"
+#include "system_info_utils.h"
+
 #include <algorithm>
 #include <cctype>
-#include <set>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <map>
 #include <mutex>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <vector>
-#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -2489,7 +2490,7 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
 // fails due to AppArmor restrictions in snap strict confinement.
 static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     std::vector<NvidiaSmiGpuInfo> result;
-    for (const auto& device : query_nvidia_nvml_devices()) {
+    for (const auto& device : query_nvidia_nvml_devices(false)) {
         if (device.name.empty()) {
             continue;
         }

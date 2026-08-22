@@ -5,11 +5,12 @@
 // Build: cmake --build --preset default --target test_system_info_helpers
 // Run:   ctest --test-dir build -R '^SystemInfoHelpersTest$' --output-on-failure
 
-#include "system_info_utils.h"
 #include "platform/nvidia_metrics.h"
+#include "system_info_utils.h"
 
 #include <cmath>
 #include <cstdio>
+#include <lemon/system_metrics_platform.h>
 #include <set>
 #include <string>
 #include <utility>
@@ -165,6 +166,37 @@ int main() {
         device_matches_constraint("gfx1151", {"gfx103X", "gfx110X"}), false);
 
 
+    // A busy low-memory GPU must not hide memory held by another device.
+    {
+        lemon::SystemGpuMetrics metrics;
+        lemon::system_metrics_detail::merge_max(metrics, {90.0, 1.0});
+        lemon::system_metrics_detail::merge_max(metrics, {0.0, 20.0});
+        lemon::system_metrics_detail::merge_max(metrics, {5.0, 10.0});
+
+        failures += !expect_double(
+            "system GPU merge keeps maximum utilization",
+            metrics.gpu_percent,
+            90.0);
+        failures += !expect_double(
+            "system GPU merge keeps maximum per-device VRAM",
+            metrics.vram_used_gb,
+            20.0);
+    }
+
+    {
+        lemon::SystemGpuMetrics metrics;
+        lemon::system_metrics_detail::merge_max(metrics, {0.0, 0.0});
+
+        failures += !expect_double(
+            "system GPU merge keeps valid zero utilization",
+            metrics.gpu_percent,
+            0.0);
+        failures += !expect_double(
+            "system GPU merge keeps valid zero VRAM",
+            metrics.vram_used_gb,
+            0.0);
+    }
+
     // NVIDIA metrics aggregation regression coverage.
     //
     // These cases deliberately exercise only aggregate_nvidia_metrics(), so the
@@ -182,9 +214,9 @@ int main() {
             metrics.gpu_percent,
             90.0);
         failures += !expect_double(
-            "NVIDIA multi-GPU sums VRAM usage",
+            "NVIDIA multi-GPU uses maximum VRAM usage",
             metrics.vram_used_gb,
-            21.0);
+            20.0);
     }
 
     {

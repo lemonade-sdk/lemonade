@@ -21,9 +21,6 @@ constexpr int64_t AUTO_CTX_FALLBACK = 4096;
 // No modern model supports less than this, and it prevents runaway allocation.
 constexpr int64_t AUTO_CTX_UNKNOWN_MAX = 32768;
 
-// Bytes per GiB (for unit conversion: GB → bytes)
-constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
-
 /// Estimate KV cache bytes-per-token from model size when GGUF metadata is unavailable.
 /// Assumes F16 KV cache, 16 KV heads, 128 head-dim across all model sizes.
 /// 16 KV heads is a conservative upper bound (most models use 2–8 with GQA).

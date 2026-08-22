@@ -1,6 +1,8 @@
+#include "nvidia_metrics.h"
+
+#include <cmath>
 #include <lemon/system_metrics_platform.h>
 #include <windows.h>
-#include <cmath>
 
 namespace lemon {
 
@@ -68,6 +70,10 @@ public:
     double get_vram_usage_gb() override {
         // VRAM monitoring not implemented for Windows
         return -1.0;
+    }
+
+    SystemGpuMetrics get_system_gpu_metrics() override {
+        return query_nvidia_metrics();
     }
 
     double get_npu_utilization() override {

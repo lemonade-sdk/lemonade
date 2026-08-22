@@ -2276,6 +2276,7 @@ set(_SYSTEM_INFO_HELPERS_TEST_SRC
 if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
     add_executable(test_system_info_helpers ${_SYSTEM_INFO_HELPERS_TEST_SRC})
     target_include_directories(test_system_info_helpers PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
     )
     add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)

@@ -32,7 +32,6 @@
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
 #include "lemon/system_info.h"
-#include "platform/nvidia_metrics.h"
 #include "lemon/version.h"
 #include <cctype>
 #include <cstdint>
@@ -440,11 +439,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             stats["cpu_percent"] =
                 cpu_percent >= 0 ? lemon::jobs::json(cpu_percent) : lemon::jobs::json();
             stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
-            const double gpu_percent = get_gpu_usage();
-            stats["gpu_percent"] =
-                gpu_percent >= 0 ? lemon::jobs::json(gpu_percent) : lemon::jobs::json();
-            const double vram_gb = get_vram_usage();
-            stats["vram_gb"] = vram_gb >= 0 ? lemon::jobs::json(vram_gb) : lemon::jobs::json();
+            const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+            stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
+                ? lemon::jobs::json(gpu_metrics.gpu_percent)
+                : lemon::jobs::json();
+            stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
+                ? lemon::jobs::json(gpu_metrics.vram_used_gb)
+                : lemon::jobs::json();
             const double npu_percent = get_npu_utilization();
             stats["npu_percent"] =
                 npu_percent >= 0 ? lemon::jobs::json(npu_percent) : lemon::jobs::json();
@@ -6940,8 +6941,9 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
     try {
         SystemMetrics system_metrics;
         system_metrics.cpu_percent = get_cpu_usage();
-        system_metrics.gpu_percent = get_gpu_usage();
-        system_metrics.vram_gb = get_vram_usage();
+        const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+        system_metrics.gpu_percent = gpu_metrics.gpu_percent;
+        system_metrics.vram_gb = gpu_metrics.vram_used_gb;
         system_metrics.npu_percent = get_npu_utilization();
 
         res.set_content(build_prometheus_metrics(*router_, system_metrics),
@@ -7039,32 +7041,6 @@ double Server::get_cpu_usage() {
 #endif
 }
 
-// Get GPU usage percentage across available GPU telemetry
-double Server::get_gpu_usage() {
-    const double platform_usage = metrics_platform_->get_gpu_usage();
-    const NvidiaMetrics nvidia = query_nvidia_metrics();
-    if (platform_usage < 0.0) {
-        return nvidia.gpu_percent;
-    }
-    if (nvidia.gpu_percent < 0.0) {
-        return platform_usage;
-    }
-    return (std::max)(platform_usage, nvidia.gpu_percent);
-}
-
-// Get GPU memory usage in GB across available GPU telemetry
-double Server::get_vram_usage() {
-    const double platform_vram_gb = metrics_platform_->get_vram_usage_gb();
-    const NvidiaMetrics nvidia = query_nvidia_metrics();
-    if (platform_vram_gb < 0.0) {
-        return nvidia.vram_used_gb;
-    }
-    if (nvidia.vram_used_gb < 0.0) {
-        return platform_vram_gb;
-    }
-    return platform_vram_gb + nvidia.vram_used_gb;
-}
-
 // Helper: Get NPU utilization (AMD NPU on Linux)
 double Server::get_npu_utilization() {
     return metrics_platform_->get_npu_utilization();
@@ -7086,13 +7062,13 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     // Get memory info
     stats["memory_gb"] = metrics_platform_->get_memory_usage_gb();
 
-    // GPU usage
-    double gpu_percent = get_gpu_usage();
-    stats["gpu_percent"] = (gpu_percent >= 0) ? nlohmann::json(gpu_percent) : nlohmann::json();
-
-    // VRAM usage
-    double vram_gb = get_vram_usage();
-    stats["vram_gb"] = (vram_gb >= 0) ? nlohmann::json(vram_gb) : nlohmann::json();
+    const auto gpu_metrics = metrics_platform_->get_system_gpu_metrics();
+    stats["gpu_percent"] = gpu_metrics.gpu_percent >= 0
+        ? nlohmann::json(gpu_metrics.gpu_percent)
+        : nlohmann::json();
+    stats["vram_gb"] = gpu_metrics.vram_used_gb >= 0
+        ? nlohmann::json(gpu_metrics.vram_used_gb)
+        : nlohmann::json();
 
     // NPU Utilization
     double npu_percent = get_npu_utilization();
