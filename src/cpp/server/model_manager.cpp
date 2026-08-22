@@ -2199,7 +2199,43 @@ static bool is_checkpoint_path_complete(const std::string& path_str) {
         return !safe_exists(path_from_utf8(path_str + ".partial"));
     }
 
-    return !has_partial_files(resolved);
+    if (has_partial_files(resolved)) return false;
+
+    // .completed sentinel: authoritative marker that a download finished
+    // successfully. Without it, a crash during download (between fs::rename
+    // and manifest removal) leaves a corrupt directory that appears complete
+    // by other checks alone.
+    fs::path completed_path = marker_dir / ".completed";
+    if (safe_exists(completed_path)) {
+        return true;
+    }
+
+    // Backward-compat: pre-existing downloads (before .completed was
+    // introduced) won't have the sentinel. If the directory has content
+    // and no manifest/partial files, write the sentinel and accept it.
+    // Also prevents re-download loops after upgrades. See #1999.
+    std::error_code ec;
+    bool has_content = false;
+    for (auto it = fs::directory_iterator(resolved, ec); it != fs::directory_iterator(); ++it) {
+        std::string name = it->path().filename().string();
+        // Skip sentinel files and partials
+        if (name != ".completed" && name != ".partial" &&
+            name.find(".partial") == std::string::npos) {
+            has_content = true;
+            break;
+        }
+        if (ec) break;
+    }
+
+    if (has_content) {
+        // Write .completed sentinel for future checks
+        std::ofstream cf(path_to_utf8(completed_path));
+        cf << "completed\n";
+        cf.close();
+        return true;
+    }
+
+    return false;
 }
 
 /**
