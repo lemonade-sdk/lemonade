@@ -5,8 +5,8 @@
 // Build: cmake --build --preset default --target test_system_info_helpers
 // Run:   ctest --test-dir build -R '^SystemInfoHelpersTest$' --output-on-failure
 
-#include "system_info_utils.h"
 #include "platform/nvidia_metrics.h"
+#include "system_info_utils.h"
 
 #include <cstdint>
 #include <cstdio>

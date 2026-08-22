@@ -6,6 +6,32 @@
 
 namespace lemon {
 
+inline constexpr double BYTES_PER_GIB =
+    1024.0 * 1024.0 * 1024.0;
+
+struct SystemGpuMetrics {
+    double gpu_percent = -1.0;
+    double vram_used_gb = -1.0;
+};
+
+namespace system_metrics_detail {
+
+inline void merge_max(SystemGpuMetrics& result,
+                      const SystemGpuMetrics& sample) {
+    if (sample.gpu_percent >= 0.0 &&
+        (result.gpu_percent < 0.0 ||
+         sample.gpu_percent > result.gpu_percent)) {
+        result.gpu_percent = sample.gpu_percent;
+    }
+    if (sample.vram_used_gb >= 0.0 &&
+        (result.vram_used_gb < 0.0 ||
+         sample.vram_used_gb > result.vram_used_gb)) {
+        result.vram_used_gb = sample.vram_used_gb;
+    }
+}
+
+} // namespace system_metrics_detail
+
 // Platform-specific system metrics collection
 class SystemMetricsPlatform {
 public:
@@ -28,6 +54,12 @@ public:
 
     // VRAM usage in GB, -1 if not available or unsupported
     virtual double get_vram_usage_gb() = 0;
+
+    // Multi-device monitoring is separate from the legacy scalar accessors so
+    // their single-device semantics remain stable.
+    virtual SystemGpuMetrics get_system_gpu_metrics() {
+        return {get_gpu_usage(), get_vram_usage_gb()};
+    }
 
     // NPU utilization percentage (0-100), -1 if not available or unsupported
     virtual double get_npu_utilization() = 0;

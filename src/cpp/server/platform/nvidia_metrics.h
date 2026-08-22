@@ -1,8 +1,7 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
-#include <mutex>
+#include <lemon/system_metrics_platform.h>
 #include <string>
 #include <vector>
 
@@ -25,10 +24,7 @@ struct NvidiaNvmlDevice {
     double vram_used_gb = -1.0;
 };
 
-struct NvidiaMetrics {
-    double gpu_percent = -1.0;
-    double vram_used_gb = -1.0;
-};
+using NvidiaMetrics = SystemGpuMetrics;
 
 namespace nvidia_metrics_detail {
 
@@ -40,7 +36,6 @@ constexpr nvmlReturn_t NVML_SUCCESS = 0;
 constexpr unsigned int NVML_DEVICE_NAME_BUFFER_SIZE = 96;
 constexpr unsigned int NVML_DEVICE_UUID_BUFFER_SIZE = 96;
 constexpr unsigned int NVML_DRIVER_VERSION_BUFFER_SIZE = 96;
-constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
 
 struct nvmlUtilization_t {
     unsigned int gpu;
@@ -59,7 +54,15 @@ public:
         load();
     }
 
-    std::vector<NvidiaNvmlDevice> query_devices() const {
+    ~NvmlLibrary() {
+        close_library();
+    }
+
+    NvmlLibrary(const NvmlLibrary&) = delete;
+    NvmlLibrary& operator=(const NvmlLibrary&) = delete;
+
+    std::vector<NvidiaNvmlDevice> query_devices(
+        bool include_utilization = true) const {
         std::vector<NvidiaNvmlDevice> devices;
         if (!ready_ || init_() != NVML_SUCCESS) {
             return devices;
@@ -122,7 +125,7 @@ public:
                 }
             }
 
-            if (get_utilization_) {
+            if (include_utilization && get_utilization_) {
                 nvmlUtilization_t utilization{};
                 if (get_utilization_(device, &utilization) == NVML_SUCCESS) {
                     info.gpu_percent = static_cast<double>(utilization.gpu);
@@ -132,8 +135,10 @@ public:
             if (get_memory_) {
                 nvmlMemory_t memory{};
                 if (get_memory_(device, &memory) == NVML_SUCCESS) {
-                    info.vram_total_gb = static_cast<double>(memory.total) / BYTES_PER_GIB;
-                    info.vram_used_gb = static_cast<double>(memory.used) / BYTES_PER_GIB;
+                    info.vram_total_gb =
+                        static_cast<double>(memory.total) / BYTES_PER_GIB;
+                    info.vram_used_gb =
+                        static_cast<double>(memory.used) / BYTES_PER_GIB;
                 }
             }
 
@@ -202,10 +207,30 @@ private:
     RawSymbol symbol(const char* name) const {
         return library_ ? GetProcAddress(library_, name) : nullptr;
     }
+
+    void close_library() {
+        if (library_) {
+            FreeLibrary(library_);
+            library_ = nullptr;
+        }
+    }
 #elif defined(__linux__)
     static LibraryHandle open_library() {
-        for (const char* name : {"libnvidia-ml.so.1", "libnvidia-ml.so"}) {
-            if (void* library = dlopen(name, RTLD_NOW | RTLD_LOCAL)) {
+        const char* candidates[] = {
+            "libnvidia-ml.so.1",
+            "/var/lib/snapd/lib/gl/libnvidia-ml.so.1",
+#if defined(__x86_64__)
+            "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
+            "/lib/x86_64-linux-gnu/libnvidia-ml.so.1",
+#elif defined(__aarch64__)
+            "/usr/lib/aarch64-linux-gnu/libnvidia-ml.so.1",
+            "/lib/aarch64-linux-gnu/libnvidia-ml.so.1",
+#endif
+            "/usr/lib64/libnvidia-ml.so.1",
+            "/lib64/libnvidia-ml.so.1",
+        };
+        for (const char* candidate : candidates) {
+            if (void* library = dlopen(candidate, RTLD_NOW | RTLD_LOCAL)) {
                 return library;
             }
         }
@@ -215,6 +240,13 @@ private:
     RawSymbol symbol(const char* name) const {
         return library_ ? dlsym(library_, name) : nullptr;
     }
+
+    void close_library() {
+        if (library_) {
+            dlclose(library_);
+            library_ = nullptr;
+        }
+    }
 #else
     static LibraryHandle open_library() {
         return nullptr;
@@ -222,6 +254,10 @@ private:
 
     RawSymbol symbol(const char*) const {
         return nullptr;
+    }
+
+    void close_library() {
+        library_ = nullptr;
     }
 #endif
 
@@ -260,63 +296,29 @@ private:
     }
 };
 
-inline NvmlLibrary& nvml_library() {
-    // Keep only the dlopen/LoadLibrary handle mapped for process lifetime. NVML
-    // itself is initialized only inside query_devices() and shut down before the
-    // query returns. Intentionally avoiding static destruction also prevents a
-    // late dlclose from racing another thread during process teardown.
-    static NvmlLibrary* library = new NvmlLibrary();
-    return *library;
-}
-
 } // namespace nvidia_metrics_detail
 
-inline std::vector<NvidiaNvmlDevice> query_nvidia_nvml_devices() {
-    return nvidia_metrics_detail::nvml_library().query_devices();
+inline std::vector<NvidiaNvmlDevice> query_nvidia_nvml_devices(
+    bool include_utilization = true) {
+    nvidia_metrics_detail::NvmlLibrary library;
+    return library.query_devices(include_utilization);
 }
 
 inline NvidiaMetrics aggregate_nvidia_metrics(
     const std::vector<NvidiaNvmlDevice>& devices) {
     NvidiaMetrics result;
-    double total_used_gb = 0.0;
-    bool have_memory = false;
 
+    // Independent device pools are not additive for this scalar API. Keep the
+    // largest observed value for each resource, independently of device activity.
     for (const auto& device : devices) {
-        if (device.gpu_percent >= 0.0 &&
-            (result.gpu_percent < 0.0 || device.gpu_percent > result.gpu_percent)) {
-            result.gpu_percent = device.gpu_percent;
-        }
-        if (device.vram_used_gb >= 0.0) {
-            total_used_gb += device.vram_used_gb;
-            have_memory = true;
-        }
-    }
-
-    if (have_memory) {
-        result.vram_used_gb = total_used_gb;
+        system_metrics_detail::merge_max(
+            result, {device.gpu_percent, device.vram_used_gb});
     }
     return result;
 }
 
 inline NvidiaMetrics query_nvidia_metrics() {
-    struct Cache {
-        std::mutex mutex;
-        bool valid = false;
-        std::chrono::steady_clock::time_point sampled_at{};
-        NvidiaMetrics metrics{};
-    };
-    static Cache cache;
-
-    std::lock_guard<std::mutex> lock(cache.mutex);
-    const auto now = std::chrono::steady_clock::now();
-    if (cache.valid && now - cache.sampled_at < std::chrono::milliseconds(250)) {
-        return cache.metrics;
-    }
-
-    cache.metrics = aggregate_nvidia_metrics(query_nvidia_nvml_devices());
-    cache.sampled_at = now;
-    cache.valid = true;
-    return cache.metrics;
+    return aggregate_nvidia_metrics(query_nvidia_nvml_devices());
 }
 
 } // namespace lemon
