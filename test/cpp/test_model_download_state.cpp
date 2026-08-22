@@ -213,6 +213,36 @@ static void test_collection_component_download_state(
           !manager.get_model_info("user.coll-test").downloaded);
 }
 
+static void test_optional_draft_checkpoint_not_required(
+    ModelManager& manager, const fs::path& root) {
+    // A `draft` checkpoint is optional acceleration (#2435): a model whose
+    // `main` checkpoint is present must still be reported as downloaded when
+    // its `draft` checkpoint is missing, so auto-load does not treat an absent
+    // drafter as a missing required file.
+    fs::path main_path = root / "optional-draft" / "main.gguf";
+    fs::path draft_path = root / "optional-draft" / "draft.gguf";
+
+    ModelInfo info;
+    info.recipe = "llamacpp";
+    info.checkpoints = {{"main", "main"}, {"draft", "draft"}};
+    info.resolved_paths = {
+        {"main", path_to_utf8(main_path)},
+        {"draft", path_to_utf8(draft_path)},
+    };
+
+    write_file(main_path, "GGUF");
+    check("optional draft: main present + draft missing is downloaded",
+          manager.checkpoints_complete(info));
+
+    write_file(draft_path, "GGUF");
+    check("optional draft: main + draft present is downloaded",
+          manager.checkpoints_complete(info));
+
+    fs::remove(main_path);
+    check("optional draft: main missing + draft present is incomplete",
+          !manager.checkpoints_complete(info));
+}
+
 int main() {
     fs::path temp = make_temp_dir();
     fs::path hf_root = temp / "hf";
@@ -231,6 +261,7 @@ int main() {
         test_hf_manifest_marks_variant_incomplete(manager, fixtures);
         test_variantless_snapshot_commit_state(manager, fixtures);
         test_collection_component_download_state(manager, fixtures);
+        test_optional_draft_checkpoint_not_required(manager, temp);
     }
 
     fs::remove_all(temp);
