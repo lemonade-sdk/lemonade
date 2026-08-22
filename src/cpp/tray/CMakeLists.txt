@@ -136,6 +136,7 @@ if(NOT WIN32)
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/path_utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/url_utils.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/json_utils.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../server/utils/rate_limit_utils.cpp
     )
     # Add platform-specific path implementation
     if(APPLE)

@@ -84,6 +84,7 @@ private:
     void on_change_port(int new_port);
     void on_change_context_size(int new_ctx_size);
     void on_change_max_loaded_models(int new_max);
+    void on_select_download_rate_limit(const std::string& rate);
     void on_show_logs();
     void on_open_documentation();
     void on_quit();
@@ -108,6 +109,8 @@ private:
     std::string host_;
     bool is_ssl_ = false;
     int max_loaded_models_ = 1;  // Mirrors server config; default 1 per configuration.md
+    std::vector<std::string> download_rate_limit_options_;  // Menu options, captured once
+    std::string download_rate_limit_;  // Active rate limit (runtime)
     bool silent_;  // Suppress startup notification
     std::unique_ptr<TrayInterface> tray_;
 
