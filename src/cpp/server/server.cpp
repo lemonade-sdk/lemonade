@@ -2926,6 +2926,32 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
     }
 }
 
+int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) const {
+    // ctx_size stores -1 for "size this automatically", so only a positive
+    // value answers; anything else falls through to the next source.
+    auto ctx_size_of = [](const RecipeOptions& options) -> int64_t {
+        const nlohmann::json ctx_json = options.get_option("ctx_size");
+        return ctx_json.is_number() ? ctx_json.get<int64_t>() : 0;
+    };
+
+    if (router_) {
+        const int64_t loaded_ctx =
+            ctx_size_of(router_->get_model_recipe_options(resolve_alias_target(model_id)));
+        if (loaded_ctx > 0) {
+            return loaded_ctx;
+        }
+
+        const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
+        const int64_t configured_ctx =
+            ctx_size_of(router_->resolve_effective_options(info, no_request_options));
+        if (configured_ctx > 0) {
+            return configured_ctx;
+        }
+    }
+
+    return info.max_context_window > 0 ? info.max_context_window : 0;
+}
+
 // Maximum collection-component nesting depth embedded in "models" arrays.
 // Collection components are normally leaf models, but nothing prevents
 // registering a collection as a component of another collection — including
@@ -2973,6 +2999,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     if (info.max_context_window > 0) {
         model_json["max_context_window"] = info.max_context_window;
+    }
+
+    // OpenAI-compatible clients use context_length to set token limits.
+    const int64_t context_length = resolve_context_length(model_id, info);
+    if (context_length > 0) {
+        model_json["context_length"] = context_length;
     }
 
     // Per-million-token pricing in USD, when the provider reported it (cloud
