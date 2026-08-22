@@ -11905,6 +11905,30 @@ a.backend-card__version:focus-visible {
   .logs-workspace--embedded { grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 }
 
+@media (max-width: 900px) {
+  .titlebar.titlebar--desktop {
+    column-gap: var(--space-1);
+    padding-inline: var(--space-2);
+  }
+
+  .titlebar--desktop .titlebar__right,
+  .titlebar--desktop .titlebar__utilities,
+  .titlebar--desktop .titlebar__utility-menu {
+    gap: var(--space-1);
+  }
+
+  .titlebar--desktop .titlebar__window-btn {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 820px) {
+  .titlebar--desktop .titlebar__nav {
+    transform: translateX(clamp(-44px, calc((100vw - 820px) * 0.2), 0px));
+  }
+}
+
 @media (max-width: 768px) {
   .connect--workspace,
   .logs-workspace,
@@ -12417,6 +12441,33 @@ a.backend-card__version:focus-visible {
     height: 30px;
     gap: 0;
     padding: 0;
+  }
+
+  .titlebar.titlebar--desktop {
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    column-gap: 2px;
+    padding-inline: var(--space-1);
+  }
+
+  .titlebar--desktop .titlebar__nav {
+    gap: 0;
+    padding: 2px;
+  }
+
+  .titlebar--desktop .titlebar__nav button {
+    width: 30px;
+    min-width: 30px;
+  }
+
+  .titlebar--desktop .titlebar__right,
+  .titlebar--desktop .titlebar__utilities,
+  .titlebar--desktop .titlebar__utility-menu {
+    gap: 2px;
+  }
+
+  .titlebar--desktop .titlebar__window-btn {
+    width: 30px;
+    height: 30px;
   }
 }
 
