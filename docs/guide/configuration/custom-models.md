@@ -81,12 +81,27 @@ lemonade pull user.MyCodingModel \
     --label tool-calling
 ```
 
+### Multi-Token Prediction (MTP) models
+
+Models with a separate MTP head / draft checkpoint file (e.g. Gemma 4) can be registered with an optional `draft` checkpoint. When the `draft` checkpoint is present, the `mtp` label enables `--spec-type draft-mtp` for speculative decoding acceleration. The `draft` checkpoint is optional — without it, the model loads and runs normally, just without MTP acceleration.
+
+```bash
+lemonade pull user.My-Gemma-4-MTP \
+    --checkpoint main unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q4_K_M \
+    --checkpoint draft unsloth/gemma-4-26B-A4B-it-GGUF:mtp-gemma-4-26B-A4B-it.gguf \
+    --checkpoint mmproj unsloth/gemma-4-26B-A4B-it-GGUF:mmproj-F16.gguf \
+    --recipe llamacpp \
+    --label mtp \
+    --label vision \
+    --label tool-calling
+```
+
 Supported registration flags:
 
 | Flag | Description |
 |------|-------------|
 | `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
-| `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
+| `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models. Known types: `main`, `mmproj`, `vae`, `draft`, `text_encoder`, `npu_cache`. |
 | `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
@@ -421,6 +436,7 @@ Supported checkpoint keys:
 | Key | Used by | Description |
 |-----|---------|-------------|
 | `main` | All | Primary model file |
+| `draft` | llamacpp | Optional MTP head / draft checkpoint for speculative decoding |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
