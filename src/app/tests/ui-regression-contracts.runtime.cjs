@@ -20,6 +20,7 @@ const files = {
 const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) => [key, fs.readFileSync(filename, 'utf8')]));
 const mcpClientHeader = fs.readFileSync(path.join(root, '../cpp/include/lemon/mcp_client.h'), 'utf8');
 const mcpClientSource = fs.readFileSync(path.join(root, '../cpp/server/mcp_client.cpp'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 
 for (const [key, filename] of Object.entries(files)) {
   const compiled = ts.transpileModule(sources[key], {
@@ -76,6 +77,13 @@ for (const stylesheet of ['src/styles/styles.css', 'src/styles/critical.generate
 assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/span>/);
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
+assert.match(sources.app, /className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
+assert.match(styles, /\.titlebar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?column-gap:\s*var\(--space-1\)/);
+assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav\s*\{[\s\S]*?transform:\s*translateX\(clamp\(-44px, calc\(\(100vw - 820px\) \* 0\.2\), 0px\)\)/);
+assert.match(styles, /\.titlebar--desktop \.titlebar__right,[\s\S]*?\.titlebar--desktop \.titlebar__utility-menu\s*\{\s*gap:\s*var\(--space-1\)/);
+assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav button\s*\{[\s\S]*?min-width:\s*30px/);
 
 assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="tools"[\s\S]*?aria-label="Tools"/);
 assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);

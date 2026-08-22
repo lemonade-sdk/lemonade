@@ -813,6 +813,71 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/12-responsive-mobile.png', fullPage: true });
   });
 
+  test('12a0 — Tauri Apps titlebar stays collision-free at narrow widths', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.api = { ...window.api, isWebApp: false };
+    });
+    await page.goto('/#/apps');
+
+    const titlebar = page.locator('.titlebar');
+    const nav = page.locator('.titlebar__nav');
+    const right = page.locator('.titlebar__right');
+    const search = page.locator('.titlebar__search');
+    const windowButtons = page.locator('.titlebar__window-btn');
+
+    await expect(titlebar).toHaveClass(/titlebar--desktop/);
+    await expect(page.getByRole('button', { name: 'Apps', exact: true })).toHaveClass(/is-active/);
+    await expect(windowButtons).toHaveCount(3);
+
+    for (const width of [1321, 1280, 900, 821, 800, 769, 480, 400]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(250);
+
+      const [titlebarBox, navBox, rightBox] = await Promise.all([
+        titlebar.boundingBox(),
+        nav.boundingBox(),
+        right.boundingBox(),
+      ]);
+      expect(titlebarBox, `titlebar box at ${width}px`).not.toBeNull();
+      expect(navBox, `nav box at ${width}px`).not.toBeNull();
+      expect(rightBox, `right controls box at ${width}px`).not.toBeNull();
+
+      expect(navBox!.x + navBox!.width, `nav/right overlap at ${width}px`)
+        .toBeLessThanOrEqual(rightBox!.x);
+      expect(rightBox!.x + rightBox!.width, `right controls overflow at ${width}px`)
+        .toBeLessThanOrEqual(titlebarBox!.x + titlebarBox!.width);
+
+      const minimumWindowButtonWidth = width <= 480 ? 30 : width <= 900 ? 32 : 34;
+      const windowButtonBoxes = await windowButtons.evaluateAll(buttons => (
+        buttons.map(button => button.getBoundingClientRect().width)
+      ));
+      for (const buttonWidth of windowButtonBoxes) {
+        expect(buttonWidth, `window control shrank at ${width}px`)
+          .toBeGreaterThanOrEqual(minimumWindowButtonWidth);
+      }
+
+      if (width >= 769) {
+        const searchBox = await search.boundingBox();
+        expect(searchBox, `Apps search box at ${width}px`).not.toBeNull();
+        if (width === 1321) {
+          expect(searchBox!.width, `Apps search field collapsed at ${width}px`)
+            .toBeGreaterThanOrEqual(176);
+        } else {
+          expect(searchBox!.width, `Apps search did not compact at ${width}px`)
+            .toBeLessThanOrEqual(32);
+        }
+      }
+    }
+
+    await page.setViewportSize({ width: 900, height: 800 });
+    const searchToggle = search.getByRole('button', { name: 'Search Lemonade' });
+    await expect(searchToggle).toBeVisible();
+    await searchToggle.click();
+    await expect(search.getByRole('combobox', { name: 'Search apps' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(search.getByRole('combobox', { name: 'Search apps' })).not.toBeVisible();
+  });
+
   test('12a — Every mobile workspace exposes its context panel', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');

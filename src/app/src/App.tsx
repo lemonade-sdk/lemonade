@@ -957,7 +957,7 @@ const App: React.FC = () => {
     <>
       <a href="#main-content" className="skip-link">Skip to main content</a>
       <div className="app">
-        <header className="titlebar" data-tauri-drag-region>
+        <header className={`titlebar${isDesktop ? ' titlebar--desktop' : ''}`} data-tauri-drag-region>
         <div className="titlebar__brand" data-tauri-drag-region>
           <span className="titlebar__brand-logo" data-tauri-drag-region>
             <span className="titlebar__brand-icon" aria-hidden="true" />
