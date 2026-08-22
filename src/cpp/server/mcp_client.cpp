@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cwchar>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -54,6 +55,8 @@ constexpr const char* kProtocolVersion20250618 = "2025-06-18";
 constexpr const char* kProtocolVersion20250326 = "2025-03-26";
 constexpr const char* kProtocolVersion20241105 = "2024-11-05";
 constexpr const char* kConfigFileName = "mcp_servers.json";
+constexpr const char* kStdioTransport = "stdio";
+constexpr const char* kStreamableHttpTransport = "streamable-http";
 constexpr int kDefaultTimeoutMs = 30000;
 constexpr int kMinTimeoutMs = 1000;
 constexpr int kMaxTimeoutMs = 300000;
@@ -136,6 +139,137 @@ std::string trim(std::string value) {
     return value;
 }
 
+std::string lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) { return ascii_to_lower(c); });
+    return value;
+}
+
+struct ParsedHttpEndpoint {
+    std::string scheme;
+    std::string host;
+    std::string base_url;
+    std::string path;
+    bool loopback = false;
+};
+
+bool is_loopback_host(const std::string& host) {
+    const std::string lowered = lower_ascii(host);
+    return lowered == "localhost" || lowered == "127.0.0.1" ||
+           lowered == "::1" || lowered == "[::1]";
+}
+
+void validate_http_port(const std::string& port) {
+    if (port.empty() ||
+        !std::all_of(port.begin(), port.end(), ascii_is_digit)) {
+        throw std::runtime_error("MCP URL contains an invalid port");
+    }
+    try {
+        const unsigned long value = std::stoul(port);
+        if (value == 0 || value > 65535) {
+            throw std::runtime_error("MCP URL port must be between 1 and 65535");
+        }
+    } catch (const std::invalid_argument&) {
+        throw std::runtime_error("MCP URL contains an invalid port");
+    } catch (const std::out_of_range&) {
+        throw std::runtime_error("MCP URL port must be between 1 and 65535");
+    }
+}
+
+ParsedHttpEndpoint parse_http_endpoint(const std::string& raw_url,
+                                       bool allow_insecure_http) {
+    const std::string url = trim(raw_url);
+    if (url.empty()) {
+        throw std::runtime_error("MCP Streamable HTTP config requires url");
+    }
+    if (has_control_char(url) || url.find('\0') != std::string::npos) {
+        throw std::runtime_error("MCP URL must not contain control characters");
+    }
+    if (url.find('#') != std::string::npos) {
+        throw std::runtime_error("MCP URL must not contain a fragment");
+    }
+
+    const std::size_t scheme_end = url.find("://");
+    if (scheme_end == std::string::npos) {
+        throw std::runtime_error("MCP URL must start with http:// or https://");
+    }
+    const std::string scheme = lower_ascii(url.substr(0, scheme_end));
+    if (scheme != "http" && scheme != "https") {
+        throw std::runtime_error("MCP URL must use http or https");
+    }
+
+    const std::size_t authority_begin = scheme_end + 3;
+    const std::size_t authority_end = url.find_first_of("/?", authority_begin);
+    const std::string authority = url.substr(
+        authority_begin,
+        authority_end == std::string::npos ? std::string::npos
+                                            : authority_end - authority_begin);
+    if (authority.empty() || authority.find('@') != std::string::npos) {
+        throw std::runtime_error(
+            "MCP URL must contain a host and must not embed credentials");
+    }
+    if (std::any_of(authority.begin(), authority.end(), [](unsigned char c) {
+            return std::isspace(c) || c == '\\';
+        })) {
+        throw std::runtime_error("MCP URL contains an invalid host");
+    }
+
+    std::string host;
+    if (authority.front() == '[') {
+        const std::size_t close = authority.find(']');
+        if (close == std::string::npos) {
+            throw std::runtime_error("MCP URL contains an invalid IPv6 host");
+        }
+        host = authority.substr(1, close - 1);
+        if (close + 1 < authority.size()) {
+            if (authority[close + 1] != ':' || close + 2 >= authority.size()) {
+                throw std::runtime_error("MCP URL contains an invalid port");
+            }
+            const std::string port = authority.substr(close + 2);
+            validate_http_port(port);
+        }
+    } else {
+        const std::size_t colon = authority.rfind(':');
+        if (colon != std::string::npos) {
+            if (authority.find(':') != colon) {
+                throw std::runtime_error(
+                    "IPv6 MCP URLs must wrap the host in brackets");
+            }
+            host = authority.substr(0, colon);
+            const std::string port = authority.substr(colon + 1);
+            if (host.empty()) {
+                throw std::runtime_error("MCP URL must contain a host");
+            }
+            validate_http_port(port);
+        } else {
+            host = authority;
+        }
+    }
+    if (host.empty()) {
+        throw std::runtime_error("MCP URL must contain a host");
+    }
+
+    const bool loopback = is_loopback_host(host);
+    if (scheme == "http" && !loopback && !allow_insecure_http) {
+        throw std::runtime_error(
+            "Plain HTTP is allowed only for localhost. Use HTTPS or explicitly "
+            "enable insecure HTTP for this endpoint");
+    }
+
+    ParsedHttpEndpoint endpoint;
+    endpoint.scheme = scheme;
+    endpoint.host = host;
+    endpoint.base_url = scheme + "://" + authority;
+    endpoint.path = authority_end == std::string::npos
+                        ? "/"
+                        : (url[authority_end] == '?'
+                               ? "/" + url.substr(authority_end)
+                               : url.substr(authority_end));
+    if (endpoint.path.empty()) endpoint.path = "/";
+    endpoint.loopback = loopback;
+    return endpoint;
+}
+
 bool valid_id(const std::string& id) {
     if (id.empty() || id.size() > 96) return false;
     return std::all_of(id.begin(), id.end(), [](unsigned char c) {
@@ -198,6 +332,12 @@ void validate_env_references(const McpServerConfig& config) {
                 "}; raw values are not persisted");
         }
     }
+    if (!config.bearer_token.empty() &&
+        !env_reference_name(config.bearer_token)) {
+        throw std::runtime_error(
+            "MCP bearer_token must be a ${VARIABLE} reference; raw tokens are "
+            "never persisted");
+    }
 }
 
 McpServerConfig resolve_env_references(McpServerConfig config) {
@@ -214,6 +354,20 @@ McpServerConfig resolve_env_references(McpServerConfig config) {
                 "Required MCP environment variable is not set: " + *ref);
         }
         value = env_value;
+    }
+    if (!config.bearer_token.empty()) {
+        const auto ref = env_reference_name(config.bearer_token);
+        if (!ref) {
+            throw std::runtime_error(
+                "MCP bearer_token is not a valid ${VARIABLE} reference");
+        }
+        const char* token = std::getenv(ref->c_str());
+        if (!token || !*token) {
+            throw std::runtime_error(
+                "Required MCP bearer token environment variable is not set: " +
+                *ref);
+        }
+        config.bearer_token = token;
     }
     return config;
 }
@@ -273,6 +427,355 @@ std::string json_rpc_error_message(const json& response) {
     if (err.is_object()) return err.value("message", err.dump());
     if (err.is_string()) return err.get<std::string>();
     return err.dump();
+}
+
+
+struct HttpMcpReply {
+    json message;
+    std::string session_id;
+};
+
+class McpHttpStatusError : public std::runtime_error {
+public:
+    McpHttpStatusError(int status_code, std::string message)
+        : std::runtime_error(std::move(message)),
+          status_code_(status_code) {}
+
+    int status_code() const noexcept { return status_code_; }
+
+private:
+    int status_code_;
+};
+
+class SseJsonDecoder {
+public:
+    std::vector<json> feed(const char* bytes, std::size_t size,
+                           bool finish = false) {
+        if (bytes && size > 0) pending_line_.append(bytes, size);
+
+        std::vector<json> messages;
+        std::size_t newline = 0;
+        while ((newline = pending_line_.find('\n')) != std::string::npos) {
+            std::string line = pending_line_.substr(0, newline);
+            pending_line_.erase(0, newline + 1);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            consume_line(line, messages);
+        }
+
+        if (finish) {
+            if (!pending_line_.empty()) {
+                std::string line = std::move(pending_line_);
+                pending_line_.clear();
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                consume_line(line, messages);
+            }
+            flush(messages);
+        }
+        return messages;
+    }
+
+private:
+    void consume_line(const std::string& line,
+                      std::vector<json>& messages) {
+        if (line.empty()) {
+            flush(messages);
+            return;
+        }
+        if (line.front() == ':') return;
+        if (line.rfind("data:", 0) != 0) return;
+
+        std::string chunk = line.substr(5);
+        if (!chunk.empty() && chunk.front() == ' ') chunk.erase(chunk.begin());
+        data_ += chunk;
+        data_.push_back('\n');
+    }
+
+    void flush(std::vector<json>& messages) {
+        if (data_.empty()) return;
+        if (data_.back() == '\n') data_.pop_back();
+        const std::string payload = trim(std::move(data_));
+        data_.clear();
+        if (payload.empty() || payload == "[DONE]") return;
+
+        json parsed = json::parse(payload);
+        if (parsed.is_array()) {
+            for (auto& item : parsed) messages.push_back(std::move(item));
+        } else {
+            messages.push_back(std::move(parsed));
+        }
+    }
+
+    std::string pending_line_;
+    std::string data_;
+};
+
+std::vector<json> parse_http_mcp_messages(const std::string& content_type,
+                                          const std::string& body) {
+    if (trim(body).empty()) return {};
+    if (content_type.find("text/event-stream") != std::string::npos ||
+        body.rfind("data:", 0) == 0 || body.rfind("event:", 0) == 0) {
+        SseJsonDecoder decoder;
+        return decoder.feed(body.data(), body.size(), true);
+    }
+
+    json parsed = json::parse(body);
+    std::vector<json> messages;
+    if (parsed.is_array()) {
+        for (auto& item : parsed) messages.push_back(std::move(item));
+    } else {
+        messages.push_back(std::move(parsed));
+    }
+    return messages;
+}
+
+bool json_rpc_is_response(const json& value) {
+    return value.is_object() && value.contains("id") &&
+           !value.contains("method") &&
+           (value.contains("result") || value.contains("error"));
+}
+
+bool json_rpc_is_request(const json& value) {
+    return value.is_object() && value.contains("id") &&
+           value.contains("method") && value["method"].is_string() &&
+           !value.contains("result") && !value.contains("error");
+}
+
+json json_rpc_client_response(const json& request) {
+    const std::string method = request["method"].get<std::string>();
+    if (method == "ping") {
+        return json{{"jsonrpc", "2.0"},
+                    {"id", request["id"]},
+                    {"result", json::object()}};
+    }
+    return json_rpc_method_not_found(request["id"], method);
+}
+
+bool json_rpc_id_matches(const json& value, std::int64_t expected) {
+    if (!json_rpc_is_response(value)) return false;
+    const json& id = value["id"];
+    if (id.is_number_integer()) return id.get<std::int64_t>() == expected;
+    if (id.is_number_unsigned()) {
+        const auto unsigned_id = id.get<std::uint64_t>();
+        return unsigned_id <=
+                   static_cast<std::uint64_t>(
+                       std::numeric_limits<std::int64_t>::max()) &&
+               static_cast<std::int64_t>(unsigned_id) == expected;
+    }
+    if (id.is_string()) return id.get<std::string>() == std::to_string(expected);
+    return false;
+}
+
+void configure_http_client(httplib::Client& client, int timeout_ms) {
+    const int clamped = clamp_timeout_ms(timeout_ms);
+    const time_t seconds = clamped / 1000;
+    const time_t microseconds = (clamped % 1000) * 1000;
+    client.set_connection_timeout(seconds, microseconds);
+    client.set_read_timeout(seconds, microseconds);
+    client.set_write_timeout(seconds, microseconds);
+    client.set_follow_location(false);
+    client.set_keep_alive(false);
+}
+
+httplib::Headers make_http_mcp_headers(const McpServerConfig& raw_config,
+                                       const std::string& session_id,
+                                       const std::string& protocol_version) {
+    const McpServerConfig resolved = resolve_env_references(raw_config);
+    httplib::Headers headers{{"Accept", "application/json, text/event-stream"}};
+    if (!protocol_version.empty()) {
+        headers.emplace("MCP-Protocol-Version", protocol_version);
+    }
+    if (!session_id.empty()) {
+        headers.emplace("Mcp-Session-Id", session_id);
+    }
+    if (!resolved.bearer_token.empty()) {
+        headers.emplace("Authorization", "Bearer " + resolved.bearer_token);
+    }
+    return headers;
+}
+
+HttpMcpReply http_mcp_post(const McpServerConfig& config,
+                           const std::string& session_id,
+                           const std::string& protocol_version,
+                           const json& message, int timeout_ms,
+                           std::optional<std::int64_t> expected_id) {
+    const ParsedHttpEndpoint endpoint =
+        parse_http_endpoint(config.url, config.allow_insecure_http);
+    httplib::Client client(endpoint.base_url);
+    configure_http_client(client, timeout_ms);
+    if (endpoint.scheme == "https") {
+        client.enable_server_certificate_verification(true);
+    }
+
+    HttpMcpReply reply;
+    int status = 0;
+    std::string content_type;
+    std::string body;
+    std::size_t received = 0;
+    bool notification_complete = false;
+    bool matching_response_received = false;
+    bool size_limit_exceeded = false;
+    std::exception_ptr receiver_error;
+    SseJsonDecoder sse_decoder;
+
+    auto handle_incoming_message = [&](const json& candidate) {
+        if (json_rpc_is_request(candidate)) {
+            const std::string active_session_id =
+                reply.session_id.empty() ? session_id : reply.session_id;
+            HttpMcpReply server_request_reply = http_mcp_post(
+                config, active_session_id, protocol_version,
+                json_rpc_client_response(candidate), timeout_ms,
+                std::nullopt);
+            if (!server_request_reply.session_id.empty()) {
+                reply.session_id =
+                    std::move(server_request_reply.session_id);
+            }
+            return false;
+        }
+        if (expected_id &&
+            json_rpc_id_matches(candidate, *expected_id)) {
+            reply.message = candidate;
+            matching_response_received = true;
+            return true;
+        }
+        return false;
+    };
+
+    httplib::Request request;
+    request.method = "POST";
+    request.path = endpoint.path;
+    request.headers =
+        make_http_mcp_headers(config, session_id, protocol_version);
+    request.headers.emplace("Content-Type", "application/json");
+    request.body = message.dump();
+
+    request.response_handler = [&](const httplib::Response& response) {
+        status = response.status;
+        content_type =
+            lower_ascii(response.get_header_value("Content-Type"));
+        reply.session_id = response.get_header_value("Mcp-Session-Id");
+
+        // Notifications normally return 202 without a body. Some servers keep
+        // an SSE response open for unrelated messages, so stop after receiving
+        // a successful response header rather than waiting for that stream.
+        if (!expected_id && status >= 200 && status < 300) {
+            notification_complete = true;
+            return false;
+        }
+        return true;
+    };
+
+    request.content_receiver =
+        [&](const char* data, std::size_t size, std::size_t,
+            std::size_t) {
+            if (size > kMaxMessageBytes - received) {
+                size_limit_exceeded = true;
+                return false;
+            }
+            received += size;
+
+            try {
+                if (expected_id &&
+                    content_type.find("text/event-stream") !=
+                        std::string::npos) {
+                    for (const auto& candidate :
+                         sse_decoder.feed(data, size)) {
+                        if (handle_incoming_message(candidate)) return false;
+                    }
+                } else {
+                    body.append(data, size);
+                }
+            } catch (...) {
+                receiver_error = std::current_exception();
+                return false;
+            }
+            return true;
+        };
+
+    auto response = client.send(request);
+
+    if (receiver_error) std::rethrow_exception(receiver_error);
+    if (size_limit_exceeded) {
+        throw std::runtime_error("MCP HTTP response exceeded the size limit");
+    }
+
+    if (status == 0 && response) {
+        status = response->status;
+        content_type =
+            lower_ascii(response->get_header_value("Content-Type"));
+        reply.session_id = response->get_header_value("Mcp-Session-Id");
+    }
+
+    const bool intentional_cancel =
+        notification_complete || matching_response_received;
+    if (!response && !intentional_cancel) {
+        throw std::runtime_error(
+            "Could not reach MCP endpoint " + config.url + " (" +
+            httplib::to_string(response.error()) + ")");
+    }
+    if (response.error() != httplib::Error::Success &&
+        response.error() != httplib::Error::Canceled) {
+        throw std::runtime_error(
+            "Could not read MCP HTTP response (" +
+            httplib::to_string(response.error()) + ")");
+    }
+    if (response.error() == httplib::Error::Canceled &&
+        !intentional_cancel) {
+        throw std::runtime_error(
+            "MCP HTTP response was cancelled before completion");
+    }
+
+    if (status == 401) {
+        throw std::runtime_error(
+            "MCP endpoint rejected authentication (HTTP 401)");
+    }
+    if (status == 403) {
+        throw std::runtime_error("MCP endpoint denied access (HTTP 403)");
+    }
+    if (status < 200 || status >= 300) {
+        std::string detail = trim(body);
+        if (detail.size() > 512) detail.resize(512);
+        throw McpHttpStatusError(
+            status,
+            "MCP endpoint returned HTTP " + std::to_string(status) +
+                (detail.empty() ? std::string() : ": " + detail));
+    }
+
+    if (!expected_id || matching_response_received) return reply;
+
+    if (content_type.find("text/event-stream") != std::string::npos) {
+        for (const auto& candidate : sse_decoder.feed(nullptr, 0, true)) {
+            if (handle_incoming_message(candidate)) return reply;
+        }
+    } else {
+        for (const auto& candidate :
+             parse_http_mcp_messages(content_type, body)) {
+            if (handle_incoming_message(candidate)) return reply;
+        }
+    }
+
+    throw std::runtime_error(
+        "MCP HTTP response did not contain the matching JSON-RPC response");
+}
+
+void http_mcp_delete_session(const McpServerConfig& config,
+                             const std::string& session_id,
+                             const std::string& protocol_version) {
+    if (session_id.empty()) return;
+    try {
+        const ParsedHttpEndpoint endpoint =
+            parse_http_endpoint(config.url, config.allow_insecure_http);
+        httplib::Client client(endpoint.base_url);
+        configure_http_client(client, std::min(config.timeout_ms, 2000));
+        if (endpoint.scheme == "https") {
+            client.enable_server_certificate_verification(true);
+        }
+        const httplib::Headers headers =
+            make_http_mcp_headers(config, session_id, protocol_version);
+        (void)client.Delete(endpoint.path, headers);
+    } catch (...) {
+        // Session termination is best-effort. The local connection state is
+        // already cleared and the remote server may not implement DELETE.
+    }
 }
 
 #ifdef _WIN32
@@ -1285,12 +1788,19 @@ struct McpClientManager::Runtime {
     std::string negotiated_protocol_version;
     json tools = json::array();
     std::shared_ptr<StdioProcess> process;
+    std::string http_session_id;
+    std::mutex http_mutex;
 
     std::atomic<std::int64_t> next_request_id{1};
     std::mutex waiters_mutex;
     std::map<std::int64_t, std::shared_ptr<Waiter>> waiters;
 
     void connect(const McpServerConfig& new_config) {
+        if (new_config.transport == kStreamableHttpTransport) {
+            connect_http(new_config);
+            return;
+        }
+
         // Capture the generation before waiting for the connect serializer. A
         // disconnect that happens while this call is queued therefore cancels
         // it instead of allowing it to reconnect after disconnect returns.
@@ -1346,6 +1856,7 @@ struct McpClientManager::Runtime {
                     server_capabilities = json::object();
                     negotiated_protocol_version.clear();
                     tools = json::array();
+                    http_session_id.clear();
                     process = candidate;
                 }
 
@@ -1445,12 +1956,18 @@ struct McpClientManager::Runtime {
 
     void disconnect() {
         std::shared_ptr<StdioProcess> old_process;
+        McpServerConfig old_config;
+        std::string old_http_session;
+        std::string old_protocol_version;
         {
             std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
             ++lifecycle_generation;
             {
                 std::lock_guard<std::mutex> state_lock(state_mutex);
                 old_process = std::move(process);
+                old_config = config;
+                old_http_session = std::move(http_session_id);
+                old_protocol_version = negotiated_protocol_version;
                 connected = false;
                 last_error.clear();
                 server_info = json::object();
@@ -1463,64 +1980,153 @@ struct McpClientManager::Runtime {
             }
         }
         if (old_process) old_process->stop();
+        if (old_config.transport == kStreamableHttpTransport &&
+            !old_http_session.empty()) {
+            http_mcp_delete_session(old_config, old_http_session,
+                                    old_protocol_version);
+        }
     }
 
     void refresh_tools() {
+        McpServerConfig active_config;
+        std::string session_id;
+        std::string protocol_version;
+        std::uint64_t generation = 0;
         std::shared_ptr<StdioProcess> source;
-        int timeout_ms = kDefaultTimeoutMs;
+        bool http = false;
         {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+            generation = lifecycle_generation;
             std::lock_guard<std::mutex> state_lock(state_mutex);
-            if (!connected || !process) {
+            if (!connected) {
                 throw std::runtime_error("MCP server is not connected");
             }
+            active_config = config;
+            http = active_config.transport == kStreamableHttpTransport;
             source = process;
-            timeout_ms = config.timeout_ms;
+            session_id = http_session_id;
+            protocol_version = negotiated_protocol_version;
             if (!server_capabilities.contains("tools")) {
                 tools = json::array();
                 return;
             }
+            if (!http && !source) {
+                throw std::runtime_error("MCP server is not connected");
+            }
         }
 
-        json discovered = fetch_tools(source, timeout_ms);
+        json discovered;
+        if (http) {
+            std::lock_guard<std::mutex> request_lock(http_mutex);
+            ensure_http_request_current(generation, session_id);
+            try {
+                discovered = fetch_tools_http(
+                    active_config, session_id, protocol_version,
+                    active_config.timeout_ms);
+            } catch (const McpHttpStatusError& error) {
+                if (error.status_code() == 404 && !session_id.empty()) {
+                    invalidate_expired_http_session(
+                        generation, session_id,
+                        "MCP HTTP session expired (HTTP 404); the next "
+                        "request will establish a new session");
+                }
+                throw;
+            }
+            update_http_session_after_request(generation, session_id);
+        } else {
+            discovered = fetch_tools(source, active_config.timeout_ms);
+        }
+
         {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
             std::lock_guard<std::mutex> state_lock(state_mutex);
-            if (!connected || process != source) {
+            if (lifecycle_generation != generation || !connected ||
+                config.transport != active_config.transport ||
+                (!http && process != source)) {
                 throw std::runtime_error(
                     "MCP server disconnected while refreshing tools");
             }
+            if (http) http_session_id = std::move(session_id);
             tools = std::move(discovered);
+            last_error.clear();
         }
     }
 
     json call_tool(const std::string& name, const json& arguments,
                    int timeout_ms) {
+        McpServerConfig active_config;
+        std::string session_id;
+        std::string protocol_version;
+        std::uint64_t generation = 0;
         std::shared_ptr<StdioProcess> source;
-        int configured_timeout = kDefaultTimeoutMs;
+        bool http = false;
         {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+            generation = lifecycle_generation;
             std::lock_guard<std::mutex> state_lock(state_mutex);
-            if (!connected || !process) {
+            if (!connected) {
                 throw std::runtime_error("MCP server is not connected");
             }
+            active_config = config;
+            http = active_config.transport == kStreamableHttpTransport;
             source = process;
-            configured_timeout = config.timeout_ms;
+            session_id = http_session_id;
+            protocol_version = negotiated_protocol_version;
             if (!server_capabilities.contains("tools")) {
                 throw std::runtime_error(
                     "MCP server did not advertise the tools capability");
+            }
+            if (!http && !source) {
+                throw std::runtime_error("MCP server is not connected");
             }
         }
 
         json params{{"name", name},
                     {"arguments",
                      arguments.is_object() ? arguments : json::object()}};
-        const json response = request(
-            source, "tools/call", std::move(params),
-            timeout_ms > 0 ? timeout_ms : configured_timeout);
+        json response;
+        const int effective_timeout =
+            timeout_ms > 0 ? timeout_ms : active_config.timeout_ms;
+        if (http) {
+            std::lock_guard<std::mutex> request_lock(http_mutex);
+            ensure_http_request_current(generation, session_id);
+            try {
+                response = request_http(
+                    active_config, session_id, protocol_version,
+                    "tools/call", std::move(params), effective_timeout);
+            } catch (const McpHttpStatusError& error) {
+                if (error.status_code() == 404 && !session_id.empty()) {
+                    invalidate_expired_http_session(
+                        generation, session_id,
+                        "MCP HTTP session expired (HTTP 404); the next "
+                        "request will establish a new session");
+                }
+                throw;
+            }
+            update_http_session_after_request(generation, session_id);
+        } else {
+            response = request(source, "tools/call", std::move(params),
+                               effective_timeout);
+        }
+
         if (response.contains("error")) {
             throw std::runtime_error(json_rpc_error_message(response));
         }
         if (!response.contains("result")) {
             throw std::runtime_error(
                 "MCP tools/call response is missing result");
+        }
+
+        if (http) {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+            std::lock_guard<std::mutex> state_lock(state_mutex);
+            if (lifecycle_generation != generation || !connected ||
+                config.transport != kStreamableHttpTransport) {
+                throw std::runtime_error(
+                    "MCP server disconnected while calling a tool");
+            }
+            http_session_id = std::move(session_id);
+            last_error.clear();
         }
         return response["result"];
     }
@@ -1540,6 +2146,266 @@ struct McpClientManager::Runtime {
     }
 
 private:
+    void ensure_http_request_current(
+        std::uint64_t generation,
+        const std::string& expected_session_id) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+        if (lifecycle_generation != generation) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed before the request was sent");
+        }
+        std::lock_guard<std::mutex> state_lock(state_mutex);
+        if (!connected ||
+            config.transport != kStreamableHttpTransport ||
+            http_session_id != expected_session_id) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed before the request was sent");
+        }
+    }
+
+    void update_http_session_after_request(
+        std::uint64_t generation,
+        const std::string& session_id) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+        if (lifecycle_generation != generation) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed while the request was running");
+        }
+        std::lock_guard<std::mutex> state_lock(state_mutex);
+        if (!connected ||
+            config.transport != kStreamableHttpTransport) {
+            throw std::runtime_error(
+                "MCP HTTP connection changed while the request was running");
+        }
+        http_session_id = session_id;
+    }
+
+    void invalidate_expired_http_session(
+        std::uint64_t generation,
+        const std::string& expired_session_id,
+        const std::string& message) {
+        std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+        if (lifecycle_generation != generation) return;
+        std::lock_guard<std::mutex> state_lock(state_mutex);
+        if (!connected ||
+            config.transport != kStreamableHttpTransport ||
+            http_session_id != expired_session_id) {
+            return;
+        }
+
+        ++lifecycle_generation;
+        connected = false;
+        http_session_id.clear();
+        negotiated_protocol_version.clear();
+        server_info = json::object();
+        server_capabilities = json::object();
+        tools = json::array();
+        last_error = message;
+    }
+
+    void connect_http(const McpServerConfig& new_config) {
+        std::uint64_t connect_generation = 0;
+        {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+            connect_generation = lifecycle_generation;
+        }
+
+        std::lock_guard<std::mutex> connect_lock(connect_mutex);
+        {
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+            if (lifecycle_generation != connect_generation) {
+                throw std::runtime_error(
+                    "MCP connection was cancelled before initialization");
+            }
+            std::lock_guard<std::mutex> state_lock(state_mutex);
+            if (connected) return;
+            config = new_config;
+            process.reset();
+            http_session_id.clear();
+            connected = false;
+            last_error.clear();
+            server_info = json::object();
+            server_capabilities = json::object();
+            negotiated_protocol_version.clear();
+            tools = json::array();
+        }
+
+        std::string session_id;
+        std::string negotiated_version;
+        try {
+            std::lock_guard<std::mutex> request_lock(http_mutex);
+            const json init = request_http(
+                new_config, session_id, std::string(), "initialize",
+                json{{"protocolVersion", kProtocolVersion},
+                     {"capabilities", json::object()},
+                     {"clientInfo",
+                      json{{"name", "lemonade-mcp-client"},
+                           {"title", "Lemonade MCP Client Host"},
+                           {"version", "1"}}}},
+                new_config.timeout_ms);
+            if (init.contains("error")) {
+                throw std::runtime_error(
+                    "initialize failed: " + json_rpc_error_message(init));
+            }
+            if (!init.contains("result") || !init["result"].is_object()) {
+                throw std::runtime_error(
+                    "MCP initialize response is missing an object result");
+            }
+
+            const json result = init["result"];
+            if (!result.contains("protocolVersion") ||
+                !result["protocolVersion"].is_string()) {
+                throw std::runtime_error(
+                    "MCP initialize result is missing protocolVersion");
+            }
+            const std::string protocol_version =
+                result["protocolVersion"].get<std::string>();
+            negotiated_version = protocol_version;
+            if (!supported_protocol_version(protocol_version)) {
+                throw std::runtime_error(
+                    "MCP server negotiated unsupported protocol version: " +
+                    protocol_version);
+            }
+
+            const json info = result.value("serverInfo", json::object());
+            const json capabilities =
+                result.value("capabilities", json::object());
+            if (!info.is_object() || !capabilities.is_object()) {
+                throw std::runtime_error(
+                    "MCP initialize result contains invalid server metadata");
+            }
+
+            notify_http(new_config, session_id, protocol_version,
+                        "notifications/initialized", json::object(),
+                        new_config.timeout_ms);
+
+            json discovered_tools = json::array();
+            if (capabilities.contains("tools")) {
+                if (!capabilities["tools"].is_object()) {
+                    throw std::runtime_error(
+                        "MCP tools capability must be an object");
+                }
+                discovered_tools = fetch_tools_http(
+                    new_config, session_id, protocol_version,
+                    new_config.timeout_ms);
+            }
+
+            {
+                std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+                if (lifecycle_generation != connect_generation) {
+                    throw std::runtime_error(
+                        "MCP connection was cancelled during initialization");
+                }
+                std::lock_guard<std::mutex> state_lock(state_mutex);
+                config = new_config;
+                http_session_id = std::move(session_id);
+                negotiated_protocol_version = protocol_version;
+                server_info = info;
+                server_capabilities = capabilities;
+                tools = std::move(discovered_tools);
+                connected = true;
+                last_error.clear();
+            }
+        } catch (const std::exception& error) {
+            if (!session_id.empty()) {
+                http_mcp_delete_session(new_config, session_id,
+                                        negotiated_version);
+            }
+            std::lock_guard<std::mutex> lifecycle_lock(lifecycle_mutex);
+            if (lifecycle_generation == connect_generation) {
+                std::lock_guard<std::mutex> state_lock(state_mutex);
+                connected = false;
+                http_session_id.clear();
+                negotiated_protocol_version.clear();
+                server_info = json::object();
+                server_capabilities = json::object();
+                tools = json::array();
+                last_error = error.what();
+            }
+            throw;
+        }
+    }
+
+    json request_http(const McpServerConfig& active_config,
+                      std::string& session_id,
+                      const std::string& protocol_version,
+                      const std::string& method, json params,
+                      int timeout_ms) {
+        const std::int64_t id = allocate_request_id();
+        HttpMcpReply reply = http_mcp_post(
+            active_config, session_id, protocol_version,
+            json_rpc_request(id, method, std::move(params)), timeout_ms, id);
+        if (!reply.session_id.empty()) session_id = std::move(reply.session_id);
+        return std::move(reply.message);
+    }
+
+    void notify_http(const McpServerConfig& active_config,
+                     std::string& session_id,
+                     const std::string& protocol_version,
+                     const std::string& method, json params,
+                     int timeout_ms) {
+        HttpMcpReply reply = http_mcp_post(
+            active_config, session_id, protocol_version,
+            json_rpc_notification(method, std::move(params)), timeout_ms,
+            std::nullopt);
+        if (!reply.session_id.empty()) session_id = std::move(reply.session_id);
+    }
+
+    json fetch_tools_http(const McpServerConfig& active_config,
+                          std::string& session_id,
+                          const std::string& protocol_version,
+                          int timeout_ms) {
+        json collected = json::array();
+        std::string cursor;
+        for (int page = 0; page < kMaxToolListPages; ++page) {
+            json params = json::object();
+            if (!cursor.empty()) params["cursor"] = cursor;
+            const json response = request_http(
+                active_config, session_id, protocol_version, "tools/list",
+                std::move(params), timeout_ms);
+            if (response.contains("error")) {
+                throw std::runtime_error(
+                    "tools/list failed: " +
+                    json_rpc_error_message(response));
+            }
+            if (!response.contains("result") ||
+                !response["result"].is_object()) {
+                throw std::runtime_error(
+                    "MCP tools/list response is missing an object result");
+            }
+
+            const json& result = response["result"];
+            if (result.contains("tools")) {
+                if (!result["tools"].is_array()) {
+                    throw std::runtime_error(
+                        "MCP tools/list result.tools must be an array");
+                }
+                for (const auto& tool : result["tools"]) {
+                    if (!tool.is_object() || !tool.contains("name") ||
+                        !tool["name"].is_string() ||
+                        tool["name"].get<std::string>().empty()) {
+                        throw std::runtime_error(
+                            "MCP tools/list returned an invalid tool entry");
+                    }
+                    collected.push_back(tool);
+                }
+            }
+
+            cursor.clear();
+            if (result.contains("nextCursor") &&
+                !result["nextCursor"].is_null()) {
+                if (!result["nextCursor"].is_string()) {
+                    throw std::runtime_error(
+                        "MCP tools/list nextCursor must be a string");
+                }
+                cursor = result["nextCursor"].get<std::string>();
+            }
+            if (cursor.empty()) return collected;
+        }
+        throw std::runtime_error(
+            "MCP tools/list exceeded the 32-page safety limit");
+    }
+
     bool is_current_process(
         const std::shared_ptr<StdioProcess>& source) const {
         std::lock_guard<std::mutex> state_lock(state_mutex);
@@ -1793,10 +2659,7 @@ private:
 
         if (message.contains("method") && message["method"].is_string() &&
             message.contains("id")) {
-            const std::string method =
-                message["method"].get<std::string>();
-            source->write_line(
-                json_rpc_method_not_found(message["id"], method).dump());
+            source->write_line(json_rpc_client_response(message).dump());
             return;
         }
 
@@ -1899,6 +2762,18 @@ void McpClientManager::register_routes(httplib::Server& server) {
                     }
                 });
 
+    server.Post("/internal/mcp/servers/test",
+                [self](const httplib::Request& req,
+                       httplib::Response& res) {
+                    json body;
+                    if (!parse_json_body(req, res, body)) return;
+                    try {
+                        set_json(res, self->test_server_json(body));
+                    } catch (const std::exception& e) {
+                        set_error(res, e.what(), 502);
+                    }
+                });
+
     server.Delete(
         R"(/internal/mcp/servers/([A-Za-z0-9_.-]+))",
         [self](const httplib::Request& req, httplib::Response& res) {
@@ -1987,7 +2862,18 @@ McpServerConfig McpClientManager::parse_server_config_json(
     McpServerConfig config;
     config.id = trim(read_string("id"));
     config.name = trim(read_string("name"));
-    config.transport = trim(read_string("transport", "stdio"));
+    config.transport = lower_ascii(trim(read_string("transport", "stdio")));
+    if (config.transport == "http") {
+        config.transport = kStreamableHttpTransport;
+    }
+    config.url = trim(read_string("url"));
+    if (value.contains("bearer_token") && value.contains("bearerToken")) {
+        throw std::runtime_error(
+            "Use only one of bearer_token or bearerToken");
+    }
+    config.bearer_token = trim(
+        value.contains("bearer_token") ? read_string("bearer_token")
+                                       : read_string("bearerToken"));
     config.command = trim(read_string("command"));
 
     if (value.contains("working_dir") && value.contains("workingDir")) {
@@ -2003,6 +2889,23 @@ McpServerConfig McpClientManager::parse_server_config_json(
             throw std::runtime_error("MCP enabled must be a boolean");
         }
         config.enabled = value["enabled"].get<bool>();
+    }
+
+    if (value.contains("allow_insecure_http") &&
+        value.contains("allowInsecureHttp")) {
+        throw std::runtime_error(
+            "Use only one of allow_insecure_http or allowInsecureHttp");
+    }
+    const char* insecure_field = value.contains("allow_insecure_http")
+                                     ? "allow_insecure_http"
+                                     : "allowInsecureHttp";
+    if (value.contains(insecure_field)) {
+        if (!value[insecure_field].is_boolean()) {
+            throw std::runtime_error(
+                "MCP allow_insecure_http must be a boolean");
+        }
+        config.allow_insecure_http =
+            value[insecure_field].get<bool>();
     }
 
     if (value.contains("timeout_ms") && value.contains("timeoutMs")) {
@@ -2067,9 +2970,12 @@ McpServerConfig McpClientManager::parse_server_config_json(
     }
 
     if (allow_missing_id && config.id.empty()) {
-        config.id = sanitize_id_seed(
-            !config.name.empty() ? config.name
-                                 : basename_like(config.command));
+        const std::string seed = !config.name.empty()
+                                     ? config.name
+                                     : config.transport == kStreamableHttpTransport
+                                           ? config.url
+                                           : basename_like(config.command);
+        config.id = sanitize_id_seed(seed);
     }
     if (!valid_id(config.id)) {
         throw std::runtime_error(
@@ -2080,23 +2986,38 @@ McpServerConfig McpClientManager::parse_server_config_json(
         throw std::runtime_error(
             "MCP server name must not contain control characters");
     }
-    if (config.transport != "stdio") {
+
+    if (config.transport == kStreamableHttpTransport) {
+        (void)parse_http_endpoint(config.url, config.allow_insecure_http);
+        if (!config.command.empty() || !config.args.empty() ||
+            !config.env.empty() || !config.working_dir.empty()) {
+            throw std::runtime_error(
+                "MCP Streamable HTTP configs must not include command, args, "
+                "env, or working_dir");
+        }
+    } else if (config.transport == kStdioTransport) {
+        if (config.command.empty()) {
+            throw std::runtime_error(
+                "MCP stdio server config requires command");
+        }
+        if (!config.url.empty() || !config.bearer_token.empty() ||
+            config.allow_insecure_http) {
+            throw std::runtime_error(
+                "MCP stdio configs must not include HTTP endpoint fields");
+        }
+        if (config.command.find('\0') != std::string::npos ||
+            has_control_char(config.command)) {
+            throw std::runtime_error(
+                "MCP command must not contain control characters");
+        }
+        if (config.working_dir.find('\0') != std::string::npos ||
+            has_control_char(config.working_dir)) {
+            throw std::runtime_error(
+                "MCP working_dir must not contain control characters");
+        }
+    } else {
         throw std::runtime_error(
-            "This MCP client host supports only stdio transport");
-    }
-    if (config.command.empty()) {
-        throw std::runtime_error(
-            "MCP stdio server config requires command");
-    }
-    if (config.command.find('\0') != std::string::npos ||
-        has_control_char(config.command)) {
-        throw std::runtime_error(
-            "MCP command must not contain control characters");
-    }
-    if (config.working_dir.find('\0') != std::string::npos ||
-        has_control_char(config.working_dir)) {
-        throw std::runtime_error(
-            "MCP working_dir must not contain control characters");
+            "MCP transport must be streamable-http or stdio");
     }
 
     validate_env_references(config);
@@ -2113,15 +3034,27 @@ json McpClientManager::config_to_json(const McpServerConfig& config,
                        ? value
                        : "***";
     }
-    return json{{"id", config.id},
-                {"name", config.name},
-                {"transport", config.transport},
-                {"command", config.command},
-                {"args", config.args},
-                {"env", env},
-                {"working_dir", config.working_dir},
-                {"enabled", config.enabled},
-                {"timeout_ms", config.timeout_ms}};
+    json out{{"id", config.id},
+             {"name", config.name},
+             {"transport", config.transport},
+             {"enabled", config.enabled},
+             {"timeout_ms", config.timeout_ms}};
+    if (config.transport == kStreamableHttpTransport) {
+        out["url"] = config.url;
+        out["bearer_token"] =
+            config.bearer_token.empty()
+                ? std::string()
+                : (include_env_values || env_reference_name(config.bearer_token)
+                       ? config.bearer_token
+                       : "***");
+        out["allow_insecure_http"] = config.allow_insecure_http;
+    } else {
+        out["command"] = config.command;
+        out["args"] = config.args;
+        out["env"] = std::move(env);
+        out["working_dir"] = config.working_dir;
+    }
+    return out;
 }
 
 std::string McpClientManager::make_chat_tool_name(
@@ -2268,6 +3201,17 @@ json McpClientManager::upsert_server_json(const json& body) {
     }
     if (old_runtime) old_runtime->disconnect();
     return json{{"server", config_to_json(config, false)}};
+}
+
+json McpClientManager::test_server_json(const json& body) {
+    const json& raw = body.contains("server") ? body["server"] : body;
+    McpServerConfig config = parse_server_config_json(raw, true);
+    auto runtime = std::make_shared<Runtime>(config);
+    runtime->connect(config);
+    json state = runtime->snapshot(false);
+    runtime->disconnect();
+    state["test_only"] = true;
+    return json{{"server", std::move(state)}};
 }
 
 json McpClientManager::remove_server_json(const std::string& id) {

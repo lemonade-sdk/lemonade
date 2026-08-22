@@ -15,13 +15,23 @@ using json = nlohmann::json;
 
 // Server-side MCP client host for external MCP servers.
 //
-// This foundation intentionally provides only stdio transport, persistent server
+// Supports Streamable HTTP endpoints and local stdio processes, with persistent
 // configuration, explicit connect/disconnect, tool discovery, and raw tool calls.
-// Chat-loop orchestration and GUI selection remain separate follow-up work.
+// Chat-loop orchestration and GUI selection remain separate.
 struct McpServerConfig {
     std::string id;
     std::string name;
+    // Existing configs remain stdio by default. New UI-created configs default
+    // to streamable-http explicitly.
     std::string transport = "stdio";
+
+    // Streamable HTTP configuration. `bearer_token` is persisted only as a
+    // ${VARIABLE} reference and resolved from the lemond environment at use time.
+    std::string url;
+    std::string bearer_token;
+    bool allow_insecure_http = false;
+
+    // Local stdio process configuration.
     std::string command;
     std::vector<std::string> args;
     // Values must be environment references in the form ${VARIABLE}. Raw values
@@ -53,6 +63,7 @@ public:
     json list_servers_json() const;
     json list_tools_json() const;
     json upsert_server_json(const json& body);
+    json test_server_json(const json& body);
     json remove_server_json(const std::string& id);
     json connect_server_json(const std::string& id);
     json disconnect_server_json(const std::string& id);
