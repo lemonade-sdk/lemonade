@@ -23,7 +23,7 @@ class TestMultiCheckpointCompleteness(unittest.TestCase):
         self.tmp_dir = tempfile.mkdtemp()
         self.lemond_bin = get_default_lemond_binary()
         self.cli_bin = get_default_cli_binary()
-        self.port = 13306
+        self.port = 13305
         self.server_proc = None
         self.server_stdout = ""
         self.server_stderr = ""
