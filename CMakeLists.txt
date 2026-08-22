@@ -1179,6 +1179,19 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
 endif()
 
+set(LLAMACPP_DRAFT_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_draft.cpp")
+if(BUILD_TESTING AND EXISTS "${LLAMACPP_DRAFT_TEST_SOURCE}")
+    add_executable(test_llamacpp_draft
+        ${LLAMACPP_DRAFT_TEST_SOURCE}
+        src/cpp/server/backends/llamacpp/llamacpp_draft.cpp
+    )
+    target_include_directories(test_llamacpp_draft PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    add_cpp_ci_test(llamacpp_draft CI ON COMMAND test_llamacpp_draft)
+endif()
+
 set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
 if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
     find_package(Python3 COMPONENTS Interpreter QUIET)
