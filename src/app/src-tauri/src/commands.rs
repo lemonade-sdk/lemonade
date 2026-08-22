@@ -6,7 +6,6 @@ use crate::settings::{self, AppSettings};
 use crate::tray_launcher;
 use serde::Serialize;
 use serde_json::Value;
-use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 // Note: `discover_server_port` deliberately does NOT spin up a second UDP
@@ -168,41 +167,6 @@ pub(crate) fn discover_server_port(_app: AppHandle) -> Option<u16> {
     // on actual changes, and unconditionally re-emitting would spam subscribers
     // with no-op updates.
     Some(beacon::get_cached_port())
-}
-
-#[tauri::command]
-pub(crate) fn open_external_models_folder(path: String) -> Result<(), String> {
-    let requested = PathBuf::from(path);
-    if !requested.is_absolute() {
-        return Err("The external models folder path is invalid.".to_string());
-    }
-
-    let folder = requested
-        .canonicalize()
-        .map_err(|_| "The external models folder is no longer available.".to_string())?;
-    if !folder.is_dir() {
-        return Err("The external models path is not a folder.".to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let explorer = std::env::var_os("WINDIR")
-            .or_else(|| std::env::var_os("SystemRoot"))
-            .map(PathBuf::from)
-            .map(|root| root.join("explorer.exe"))
-            .ok_or_else(|| "Windows Explorer is unavailable.".to_string())?;
-        std::process::Command::new(explorer)
-            .arg(&folder)
-            .spawn()
-            .map(|_| ())
-            .map_err(|_| "Could not start Windows Explorer.".to_string())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        tauri_plugin_opener::open_path(&folder, None::<&str>)
-            .map_err(|_| "Could not open the external models folder.".to_string())
-    }
 }
 
 // ---------- Misc ----------

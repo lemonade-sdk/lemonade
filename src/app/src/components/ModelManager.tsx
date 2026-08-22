@@ -45,12 +45,6 @@ const EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir';
 
 type ExternalModelDeleteNotice = {
   displayName: string;
-  folderPath: string | null;
-  folderOpenFailed: boolean;
-};
-
-type NativeFolderApi = {
-  openExternalModelsFolder?: (path: string) => Promise<void> | void;
 };
 
 function modelName(m: ModelInfo | null | undefined): string {
@@ -61,21 +55,6 @@ function modelName(m: ModelInfo | null | undefined): string {
 
 function isExtraModelsDirModel(model: ModelInfo): boolean {
   return String(model.source || '').toLowerCase() === EXTRA_MODELS_DIR_SOURCE;
-}
-
-function externalModelsFolderOpener(): ((path: string) => Promise<void> | void) | null {
-  if (typeof window === 'undefined') return null;
-  const hostApi = (window as unknown as { api?: NativeFolderApi }).api;
-  return hostApi?.openExternalModelsFolder || null;
-}
-
-function isLoopbackServer(baseUrl: string): boolean {
-  try {
-    const hostname = new URL(baseUrl).hostname.toLowerCase();
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
-  } catch {
-    return false;
-  }
 }
 
 function canonicalCustomModelName(m: ModelInfo | null | undefined): string {
@@ -1698,23 +1677,12 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
   };
 
-  const showExternalModelDeleteNotice = async (model: ModelInfo) => {
-    let folderPath: string | null = null;
-    if (externalModelsFolderOpener() && isLoopbackServer(api.baseUrl)) {
-      try {
-        folderPath = (await api.loadDirectorySettings()).extraModelsDir.trim() || null;
-      } catch (err) {
-        console.warn('Could not read the external models directory:', err);
-      }
-    }
-
+  const showExternalModelDeleteNotice = (model: ModelInfo) => {
     if (externalModelDeleteNoticeTimerRef.current != null) {
       window.clearTimeout(externalModelDeleteNoticeTimerRef.current);
     }
     setExternalModelDeleteNotice({
       displayName: String(model.display_name || modelName(model)),
-      folderPath,
-      folderOpenFailed: false,
     });
     externalModelDeleteNoticeTimerRef.current = window.setTimeout(() => {
       externalModelDeleteNoticeTimerRef.current = null;
@@ -1722,24 +1690,10 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }, 8000);
   };
 
-  const openExternalModelsFolder = () => {
-    const notice = externalModelDeleteNotice;
-    const openFolder = externalModelsFolderOpener();
-    if (!notice?.folderPath || !openFolder) return;
-
-    void Promise.resolve(openFolder(notice.folderPath)).catch((err) => {
-      console.warn('Could not open the external models directory:', err);
-      setExternalModelDeleteNotice(current => current && {
-        ...current,
-        folderOpenFailed: true,
-      });
-    });
-  };
-
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
     if (isExtraModelsDirModel(model)) {
-      await showExternalModelDeleteNotice(model);
+      showExternalModelDeleteNotice(model);
       return;
     }
     if (modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
@@ -2772,22 +2726,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       {externalModelDeleteNotice && (
         <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
           <span className="manager__toast-message">
-            {externalModelDeleteNotice.folderOpenFailed
-              ? 'Could not open the external models folder. Please open it manually and delete the model there.'
-              : `${externalModelDeleteNotice.displayName} is managed in your external models folder. Delete it directly from that folder.`}
+            {externalModelDeleteNotice.displayName} is managed in your external models folder. Delete it directly from that folder.
           </span>
-          {externalModelDeleteNotice.folderPath && (
-            <button
-              type="button"
-              className="manager__toast-folder-action"
-              onClick={openExternalModelsFolder}
-              aria-label={`Open external models folder for ${externalModelDeleteNotice.displayName}`}
-              title="Open external models folder"
-            >
-              <Icon name="folder" size={15} aria-hidden="true" />
-              <span>Open folder</span>
-            </button>
-          )}
           <button
             type="button"
             className="manager__toast-dismiss"

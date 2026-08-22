@@ -174,7 +174,6 @@ pub fn run() {
             commands::get_server_api_key,
             commands::get_server_port,
             commands::discover_server_port,
-            commands::open_external_models_folder,
             commands::get_platform,
             commands::get_local_marketplace_url,
             commands::renderer_ready,

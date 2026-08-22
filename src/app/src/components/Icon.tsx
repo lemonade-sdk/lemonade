@@ -14,7 +14,7 @@ export type IconName =
   | 'sun' | 'moon' | 'paperclip' | 'mic' | 'send' | 'stop' | 'copy' | 'check'
   | 'x' | 'eject' | 'tools' | 'chat' | 'omni' | 'image' | 'audio' | 'tts' | 'embedding'
   | 'reranking' | 'model' | 'globe' | 'file' | 'code' | 'vision' | 'logs'
-  | 'search' | 'search-check' | 'eye' | 'eye-off' | 'plus' | 'edit' | 'compose' | 'download' | 'file-up' | 'folder' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-up' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
+  | 'search' | 'search-check' | 'eye' | 'eye-off' | 'plus' | 'edit' | 'compose' | 'download' | 'file-up' | 'play' | 'pause' | 'trash' | 'rotate-ccw' | 'chevron-down' | 'chevron-up' | 'chevron-right' | 'plug' | 'box' | 'alert' | 'clock'
   | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
   | 'star' | 'hugging-face' | 'cloud' | 'cloud-off' | 'user-round-cog' | 'router'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
