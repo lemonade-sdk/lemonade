@@ -3115,8 +3115,15 @@ ${finalText}`
     const strip = event.currentTarget;
     if (strip.scrollWidth <= strip.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
 
+    const lineHeight = Number.parseFloat(window.getComputedStyle(strip).lineHeight) || 16;
+    const deltaScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+      ? lineHeight
+      : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+        ? strip.clientWidth
+        : 1;
+    const horizontalDelta = event.deltaY * deltaScale;
     const previousScrollLeft = strip.scrollLeft;
-    strip.scrollLeft += event.deltaY;
+    strip.scrollLeft += horizontalDelta;
     if (strip.scrollLeft !== previousScrollLeft && event.cancelable) {
       event.preventDefault();
     }
