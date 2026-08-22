@@ -55,7 +55,7 @@ public:
         if (!home.empty()) {
             return home + "/.cache/lemonade";
         }
-        throw std::runtime_error("HOME is not set; cannot resolve Lemonade cache directory");
+        throw std::runtime_error("Neither XDG_CACHE_HOME nor HOME is set; cannot resolve Lemonade cache directory");
     }
 
     std::string get_config_dir(const std::string& g_config_dir) override {
@@ -113,6 +113,7 @@ public:
 
     std::vector<std::string> get_install_prefixes() override {
         std::vector<std::string> prefixes = {
+            "/app/share/lemonade-server",
             "/usr/local/share/lemonade-server",
             "/opt/share/lemonade-server",
             "/usr/share/lemonade-server"
@@ -129,11 +130,16 @@ public:
     }
 
     std::string default_hf_cache_dir() override {
+        std::string xdg_cache = get_environment_variable_utf8("XDG_CACHE_HOME");
+        if (!xdg_cache.empty()) {
+            return xdg_cache + "/huggingface/hub";
+        }
+
         std::string home = get_environment_variable_utf8("HOME");
         if (!home.empty()) {
             return home + "/.cache/huggingface/hub";
         }
-        throw std::runtime_error("HOME is not set; cannot resolve HuggingFace cache directory");
+        throw std::runtime_error("Neither XDG_CACHE_HOME nor HOME is set; cannot resolve HuggingFace cache directory");
     }
 };
 
