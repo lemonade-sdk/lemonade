@@ -165,13 +165,49 @@ jobs:
           cd build
 
           echo "=== lemond dependencies ==="
-          ldd lemond
+          LEMOND_DEPS="$(ldd lemond)"
+          echo "$LEMOND_DEPS"
 
           echo ""
           echo "=== lemonade dependencies ==="
-          ldd lemonade
+          LEMONADE_DEPS="$(ldd lemonade)"
+          echo "$LEMONADE_DEPS"
+
+          # Prove this job really exercises the system-mbedTLS path.
+          # Otherwise a bundled fallback could make #3188 look fixed.
+          if ! pkg-config --exists mbedtls; then
+              echo "ERROR: system mbedTLS pkg-config module is unavailable"
+              exit 1
+          fi
+          MBEDTLS_VERSION="$(pkg-config --modversion mbedtls)"
+          echo "System mbedTLS version: $MBEDTLS_VERSION"
+
+          if [ "${{ matrix.distro }}" = "Arch" ]; then
+              MBEDTLS_MAJOR="${MBEDTLS_VERSION%%.*}"
+              case "$MBEDTLS_MAJOR" in
+                  ""|*[!0-9]*)
+                      echo "ERROR: could not parse Arch mbedTLS major version: $MBEDTLS_VERSION"
+                      exit 1
+                      ;;
+              esac
+              if [ "$MBEDTLS_MAJOR" -lt 4 ]; then
+                  echo "ERROR: Arch job is not exercising mbedTLS 4+: $MBEDTLS_VERSION"
+                  exit 1
+              fi
+          fi
+
+          MBEDTLS_SO_RE="lib(mbedtls|mbedx509|mbedcrypto|tfpsacrypto)\.so"
+          if ! grep -Eq "$MBEDTLS_SO_RE" <<<"$LEMOND_DEPS"; then
+              echo "ERROR: lemond is not dynamically linked to system mbedTLS on ${{ matrix.distro }}"
+              exit 1
+          fi
+          if ! grep -Eq "$MBEDTLS_SO_RE" <<<"$LEMONADE_DEPS"; then
+              echo "ERROR: lemonade is not dynamically linked to system mbedTLS on ${{ matrix.distro }}"
+              exit 1
+          fi
 
           echo ""
+          echo "System mbedTLS linkage verified on ${{ matrix.distro }}!"
           echo "All dependencies resolved successfully on ${{ matrix.distro }}!"
 
       - name: Setup Python virtual environment
