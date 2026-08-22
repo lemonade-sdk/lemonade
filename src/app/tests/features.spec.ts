@@ -1002,6 +1002,41 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(loadRequestBody?.ctx_size).toBe(-1);
   });
 
+  test('13c — External models show a local-file notice instead of calling the delete API', async ({ page }) => {
+    let deleteRequested = false;
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route(/\/api\/v1\/models(?:\?.*)?$/, route => route.fulfill({
+      json: {
+        data: [{
+          id: 'extra.external-directory-model',
+          name: 'extra.external-directory-model',
+          display_name: 'External Directory Model',
+          source: 'extra_models_dir',
+          labels: ['custom'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          checkpoint: 'C:\\Models\\External Directory Model.gguf',
+        }],
+      },
+    }));
+    await page.route('**/api/v1/delete', route => {
+      deleteRequested = true;
+      return route.fulfill({ json: { status: 'success' } });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'External Directory Model' }).click();
+    await page.getByRole('button', { name: 'Delete custom model definition for extra.external-directory-model' }).click();
+
+    const notice = page.locator('.manager__toast--external-model');
+    await expect(notice).toContainText('External Directory Model is managed in your external models folder. Delete it directly from that folder.');
+    await expect(page.getByRole('button', { name: 'Open external models folder for External Directory Model' })).toHaveCount(0);
+    expect(deleteRequested).toBe(false);
+  });
+
   test('13d — Detail header links the model source and Load applies unsaved settings', async ({ page }) => {
     let loadRequestBody: Record<string, unknown> | null = null;
     await page.addInitScript(() => {

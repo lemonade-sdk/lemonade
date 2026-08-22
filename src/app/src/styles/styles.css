@@ -3340,6 +3340,45 @@ optgroup {
   animation: toast-in var(--duration-base) var(--ease-out);
 }
 
+.manager__toast--external-model {
+  width: min(560px, calc(100vw - var(--space-8)));
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  line-height: var(--leading-normal);
+}
+
+.manager__toast-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.manager__toast-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.manager__toast-dismiss:hover {
+  background: var(--surface-3);
+}
+
+.manager__toast-dismiss {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(8px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
