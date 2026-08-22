@@ -284,6 +284,86 @@ static std::string read_processed_registry_snapshot_id(
     }
 }
 
+static bool get_file_verification_state(const fs::path& path,
+                                        uintmax_t& size_out,
+                                        int64_t& mtime_ns_out) {
+    std::error_code ec;
+    if (!fs::is_regular_file(path, ec) || ec) {
+        return false;
+    }
+
+    const auto size = fs::file_size(path, ec);
+    if (ec) {
+        return false;
+    }
+
+    const auto mtime = fs::last_write_time(path, ec);
+    if (ec) {
+        return false;
+    }
+
+    size_out = size;
+    mtime_ns_out = static_cast<int64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            mtime.time_since_epoch()).count());
+    return true;
+}
+
+static json read_registry_verified_files(const fs::path& model_cache_path) {
+    const fs::path provenance_path = model_cache_path / ".lemonade_registry.json";
+    if (!safe_exists(provenance_path)) {
+        return json::object();
+    }
+
+    try {
+        const json provenance = JsonUtils::load_from_file(path_to_utf8(provenance_path));
+        if (provenance.contains("verified_files") &&
+            provenance["verified_files"].is_object()) {
+            return provenance["verified_files"];
+        }
+    } catch (const std::exception&) {
+    }
+    return json::object();
+}
+
+static bool registry_verification_matches(const fs::path& file_path,
+                                          const std::string& filename,
+                                          const std::string& hash_algorithm,
+                                          const std::string& hash_value,
+                                          const json& verified_files) {
+    auto verified_it = verified_files.find(filename);
+    if (verified_it == verified_files.end() || !verified_it->is_object()) {
+        return false;
+    }
+
+    const auto& verified = *verified_it;
+    if (JsonUtils::get_or_default<std::string>(verified, "algorithm", "") != hash_algorithm ||
+        JsonUtils::get_or_default<std::string>(verified, "hash", "") != hash_value ||
+        JsonUtils::get_or_default<std::string>(verified, "path", "") !=
+            path_to_utf8(file_path.lexically_normal())) {
+        return false;
+    }
+
+    if (!verified.contains("size") || !verified["size"].is_number_unsigned() ||
+        !verified.contains("mtime_ns") || !verified["mtime_ns"].is_number_integer()) {
+        return false;
+    }
+
+    const fs::path partial_path = path_from_utf8(path_to_utf8(file_path) + ".partial");
+    if (safe_exists(partial_path)) {
+        return false;
+    }
+
+    uintmax_t current_size = 0;
+    int64_t current_mtime_ns = 0;
+    if (!get_file_verification_state(file_path, current_size, current_mtime_ns)) {
+        return false;
+    }
+
+    return current_size == verified["size"].get<uintmax_t>() &&
+           current_mtime_ns == verified["mtime_ns"].get<int64_t>();
+}
+
 static fs::path active_hf_snapshot_path(const fs::path& model_cache_path) {
     std::string ref = read_hf_ref_main(model_cache_path);
     if (ref.empty()) {
@@ -4642,6 +4722,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.low_speed_limit = 1000;
         download_opts.low_speed_time = 60;
         download_opts.connect_timeout = 60;
+        download_opts.verify_existing_hash = file_desc.value("verify_existing_hash", true);
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
             if (hash.contains("algorithm") && hash["algorithm"].is_string() &&
@@ -4981,6 +5062,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 
     for (const auto& [repo_id, files] : files_to_download) {
         const auto& repo = repositories.at(repo_id);
+        const json verified_files = read_registry_verified_files(repo_cache_paths.at(repo_id));
         std::map<std::string, RegistryFile> metadata;
         for (const auto& file : repo.files) metadata[file.path] = file;
 
@@ -4996,6 +5078,22 @@ void ModelManager::download_from_registry(const ModelInfo& info,
                     {"algorithm", it->second.hash_algorithm},
                     {"value", it->second.hash}
                 };
+
+                const fs::path existing_path =
+                    path_from_utf8(repo_download_paths.at(repo_id)) / path_from_utf8(filename);
+                const bool prior_verification_is_current = registry_verification_matches(
+                    existing_path, filename, it->second.hash_algorithm, it->second.hash,
+                    verified_files);
+                const bool reused_content_identical_snapshot =
+                    repos_reusing_previous_snapshot.count(repo_id) != 0;
+                const bool can_skip_existing_hash =
+                    prior_verification_is_current || reused_content_identical_snapshot;
+                entry["verify_existing_hash"] = !can_skip_existing_hash;
+                if (can_skip_existing_hash) {
+                    LOG(DEBUG, "ModelManager")
+                        << "Skipping repeat hash scan for unchanged cache file: "
+                        << filename << std::endl;
+                }
             }
             manifest["files"].push_back(std::move(entry));
         }
@@ -5024,6 +5122,7 @@ void ModelManager::download_from_registry(const ModelInfo& info,
 
         const fs::path provenance_path = cache_path / ".lemonade_registry.json";
         json processed_models = json::object();
+        json verified_files = json::object();
         if (safe_exists(provenance_path)) {
             try {
                 const json previous_provenance =
@@ -5031,6 +5130,10 @@ void ModelManager::download_from_registry(const ModelInfo& info,
                 if (previous_provenance.contains("processed_models") &&
                     previous_provenance["processed_models"].is_object()) {
                     processed_models = previous_provenance["processed_models"];
+                }
+                if (previous_provenance.contains("verified_files") &&
+                    previous_provenance["verified_files"].is_object()) {
+                    verified_files = previous_provenance["verified_files"];
                 }
             } catch (const std::exception&) {
                 // Replace invalid provenance after a successful download.
@@ -5045,12 +5148,45 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         }
 
         const auto& repo = repositories.at(repo_id);
+        std::map<std::string, RegistryFile> repo_metadata;
+        for (const auto& file : repo.files) {
+            repo_metadata[file.path] = file;
+        }
+        for (const auto& filename : files_to_download.at(repo_id)) {
+            const auto metadata_it = repo_metadata.find(filename);
+            if (metadata_it == repo_metadata.end() || metadata_it->second.hash.empty()) {
+                verified_files.erase(filename);
+                continue;
+            }
+
+            const fs::path verified_path =
+                path_from_utf8(repo_download_paths.at(repo_id)) / path_from_utf8(filename);
+            const fs::path partial_path =
+                path_from_utf8(path_to_utf8(verified_path) + ".partial");
+            uintmax_t verified_size = 0;
+            int64_t verified_mtime_ns = 0;
+            if (safe_exists(partial_path) ||
+                !get_file_verification_state(verified_path, verified_size, verified_mtime_ns)) {
+                verified_files.erase(filename);
+                continue;
+            }
+
+            verified_files[filename] = {
+                {"path", path_to_utf8(verified_path.lexically_normal())},
+                {"algorithm", metadata_it->second.hash_algorithm},
+                {"hash", metadata_it->second.hash},
+                {"size", verified_size},
+                {"mtime_ns", verified_mtime_ns}
+            };
+        }
+
         json provenance = {
             {"source", source_name},
             {"repo_id", repo_id},
             {"revision", repo.revision},
             {"snapshot_id", active_snapshot_id},
-            {"processed_models", std::move(processed_models)}
+            {"processed_models", std::move(processed_models)},
+            {"verified_files", std::move(verified_files)}
         };
         JsonUtils::save_to_file(provenance, path_to_utf8(provenance_path));
     }

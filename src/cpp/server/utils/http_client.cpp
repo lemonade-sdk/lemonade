@@ -1065,7 +1065,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
     // If a verified final file exists next to a stale .partial file, trust the
     // verified final file and remove the stale partial.
-    if (expected_hash.present() && fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
+    if (expected_hash.present() && options.verify_existing_hash &&
+        fs::exists(output_path_fs) && fs::exists(partial_path_fs)) {
         auto hash_result = verify_file_hash(output_path_fs, expected_hash);
         if (hash_result.ok) {
             std::error_code remove_partial_ec;
@@ -1088,10 +1089,10 @@ DownloadResult HttpClient::download_file(const std::string& url,
     }
 
     // Check if final file already exists and is complete. When the caller
-    // provided a content hash, the final path is only trusted if the hash
-    // matches; otherwise remove it and force a fresh download.
+    // provided a content hash, the final path is normally re-hashed. A caller
+    // with independent verification metadata may skip only that repeat scan;
     if (fs::exists(output_path_fs) && !fs::exists(partial_path_fs)) {
-        if (expected_hash.present()) {
+        if (expected_hash.present() && options.verify_existing_hash) {
             auto hash_result = verify_file_hash(output_path_fs, expected_hash);
             if (hash_result.ok) {
                 final_result.success = true;
@@ -1112,11 +1113,17 @@ DownloadResult HttpClient::download_file(const std::string& url,
                 return final_result;
             }
         } else {
-            // Final file exists with no partial - consider it complete when no
-            // stronger source-of-truth hash is available.
             final_result.success = true;
             final_result.bytes_downloaded = 0;
-            LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
+            if (expected_hash.present()) {
+                LOG(INFO, "Download")
+                    << "File already exists and prior verification is still valid; "
+                    << "skipping repeat hash scan: " << output_path << std::endl;
+            } else {
+                // Final file exists with no partial - consider it complete when no
+                // stronger source-of-truth hash is available.
+                LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
+            }
             return final_result;
         }
     }
