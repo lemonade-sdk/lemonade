@@ -6,7 +6,9 @@
 // Run:   ctest --test-dir build -R '^SystemInfoHelpersTest$' --output-on-failure
 
 #include "system_info_utils.h"
+#include "platform/nvidia_metrics.h"
 
+#include <cmath>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -37,6 +39,19 @@ static bool expect_bool(const char* name, bool actual, bool expected) {
         std::printf("  got:  %s\n  want: %s\n",
                     actual ? "true" : "false",
                     expected ? "true" : "false");
+    }
+    return ok;
+}
+
+
+static bool expect_double(const char* name,
+                          double actual,
+                          double expected) {
+    constexpr double epsilon = 1e-9;
+    const bool ok = std::fabs(actual - expected) <= epsilon;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  %.6f\n  want: %.6f\n", actual, expected);
     }
     return ok;
 }
@@ -148,6 +163,74 @@ int main() {
     failures += !expect_bool(
         "does not match any wildcard family",
         device_matches_constraint("gfx1151", {"gfx103X", "gfx110X"}), false);
+
+
+    // NVIDIA metrics aggregation regression coverage.
+    //
+    // These cases deliberately exercise only aggregate_nvidia_metrics(), so the
+    // test is deterministic and does not require NVIDIA hardware or NVML.
+    {
+        std::vector<lemon::NvidiaNvmlDevice> devices(2);
+        devices[0].gpu_percent = 90.0;
+        devices[0].vram_used_gb = 1.0;
+        devices[1].gpu_percent = 5.0;
+        devices[1].vram_used_gb = 20.0;
+
+        const auto metrics = lemon::aggregate_nvidia_metrics(devices);
+        failures += !expect_double(
+            "NVIDIA multi-GPU uses maximum utilization",
+            metrics.gpu_percent,
+            90.0);
+        failures += !expect_double(
+            "NVIDIA multi-GPU sums VRAM usage",
+            metrics.vram_used_gb,
+            21.0);
+    }
+
+    {
+        std::vector<lemon::NvidiaNvmlDevice> devices(1);
+        devices[0].gpu_percent = -1.0;
+        devices[0].vram_used_gb = 20.0;
+
+        const auto metrics = lemon::aggregate_nvidia_metrics(devices);
+        failures += !expect_double(
+            "NVIDIA VRAM survives unavailable utilization",
+            metrics.vram_used_gb,
+            20.0);
+        failures += !expect_double(
+            "NVIDIA unavailable utilization remains unavailable",
+            metrics.gpu_percent,
+            -1.0);
+    }
+
+    {
+        std::vector<lemon::NvidiaNvmlDevice> devices(1);
+        devices[0].gpu_percent = 70.0;
+        devices[0].vram_used_gb = -1.0;
+
+        const auto metrics = lemon::aggregate_nvidia_metrics(devices);
+        failures += !expect_double(
+            "NVIDIA utilization survives unavailable VRAM",
+            metrics.gpu_percent,
+            70.0);
+        failures += !expect_double(
+            "NVIDIA unavailable VRAM remains unavailable",
+            metrics.vram_used_gb,
+            -1.0);
+    }
+
+    {
+        const auto metrics =
+            lemon::aggregate_nvidia_metrics(std::vector<lemon::NvidiaNvmlDevice>{});
+        failures += !expect_double(
+            "NVIDIA empty aggregation has unavailable utilization",
+            metrics.gpu_percent,
+            -1.0);
+        failures += !expect_double(
+            "NVIDIA empty aggregation has unavailable VRAM",
+            metrics.vram_used_gb,
+            -1.0);
+    }
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
