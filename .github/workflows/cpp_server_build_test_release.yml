@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
   actions: read  # Required for SignPath to read workflow/job details
 
 concurrency:
@@ -2600,6 +2601,130 @@ jobs:
         uses: ./.github/actions/teardown-windows-ci-env
 
   # ========================================================================
+  # FLATPAK BUILD & PUBLISH (Stable Channel)
+  # ========================================================================
+
+  build-lemonade-flatpak:
+    name: Build Lemonade Flatpak (${{ matrix.arch-name }})
+    runs-on: ${{ matrix.runs-on }}
+    needs:
+      - build-lemonade-debian13
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            artifact-suffix: x86_64
+            flatpak-arch: x86_64
+            deb-arch: amd64
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            artifact-suffix: arm64
+            flatpak-arch: aarch64
+            deb-arch: arm64
+    env:
+      LEMONADE_VERSION: ${{ needs.build-lemonade-debian13.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+
+      - name: Download Lemonade .deb Package
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-debian13-${{ matrix.artifact-suffix }}
+          path: .
+
+      - name: Extract binaries for Flatpak staging
+        shell: bash
+        run: |
+          set -e
+          DEB_FILE=$(ls lemonade-server_*_*.deb | head -n1)
+          mkdir -p /tmp/deb_extracted _flatpak_stage/resources _flatpak_stage/icons
+          dpkg-deb -x "$DEB_FILE" /tmp/deb_extracted
+
+          cp /tmp/deb_extracted/usr/bin/lemond _flatpak_stage/lemond
+          cp /tmp/deb_extracted/usr/bin/lemonade _flatpak_stage/lemonade
+          [ -f /tmp/deb_extracted/usr/bin/lemonade-tray ] && cp /tmp/deb_extracted/usr/bin/lemonade-tray _flatpak_stage/lemonade-tray || true
+          [ -f /tmp/deb_extracted/usr/bin/lemonade-app ] && cp /tmp/deb_extracted/usr/bin/lemonade-app _flatpak_stage/lemonade-app || true
+          cp -r /tmp/deb_extracted/usr/share/lemonade-server/resources/* _flatpak_stage/resources/
+
+          if [ ! -f _flatpak_stage/lemonade-app ]; then
+            cat << 'EOF' > _flatpak_stage/lemonade-app
+          #!/bin/sh
+          exec /app/bin/lemond "$@"
+          EOF
+            chmod +x _flatpak_stage/lemonade-app
+          fi
+
+          cp packaging/flatpak/lemonade-supervisor.sh _flatpak_stage/lemonade-supervisor
+          chmod +x _flatpak_stage/lemonade-supervisor
+          cp data/lemonade-app.desktop _flatpak_stage/lemonade-app.desktop
+          sed -i 's/^Exec=lemonade-app %u/Exec=lemonade-supervisor %u/' _flatpak_stage/lemonade-app.desktop || true
+          cp data/ai.lemonadeserver.app.metainfo.xml _flatpak_stage/ai.lemonadeserver.app.metainfo.xml
+          if [ -d src/app/src-tauri/icons ]; then
+            cp src/app/src-tauri/icons/*.png _flatpak_stage/icons/ 2>/dev/null || true
+          fi
+
+      - name: Cache Flatpak builder layers
+        uses: actions/cache@v4
+        with:
+          path: |
+            .flatpak-builder/cache
+            .flatpak-builder/downloads
+          key: flatpak-builder-${{ matrix.flatpak-arch }}-${{ hashFiles('packaging/flatpak/*.yaml', 'packaging/flatpak/modules/*.json') }}
+          restore-keys: |
+            flatpak-builder-${{ matrix.flatpak-arch }}-
+
+      - name: Log in to GitHub Container Registry with Podman
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Stable OCI with AetherPak
+        uses: aetherpak/actions@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          manifest-path: packaging/flatpak/ai.lemonadeserver.app.yaml
+          branch: stable
+          arch: ${{ matrix.flatpak-arch }}
+          pages-url: https://lemonade-server.ai
+          site-subpath: flatpak
+          publish-oci: true
+          publish-pages: false
+          upload-bundle: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
+
+  reconcile-release-flatpak-pages:
+    name: Reconcile & Publish Release Flatpak Pages
+    needs: build-lemonade-flatpak
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry with Podman
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reconcile Repository Index on GitHub Pages
+        uses: aetherpak/actions@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          manifest-path: packaging/flatpak/ai.lemonadeserver.app.yaml
+          branch: stable
+          pages-url: https://lemonade-server.ai
+          site-subpath: flatpak
+          publish-oci: false
+          publish-pages: true
+          pages-branch: website
+
+  # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
 
@@ -2610,6 +2735,8 @@ jobs:
       - sign-msi-installers
       - build-lemonade-rpm
       - build-lemonade-debian13
+      - build-lemonade-flatpak
+      - reconcile-release-flatpak-pages
       - test-lemonade-debian13-smoke
       - build-lemonade-macos-dmg
       - build-lemonade-embeddable-linux
@@ -2692,6 +2819,18 @@ jobs:
           name: lemonade-embeddable-macos
           path: .
 
+      - name: Download Lemonade Flatpak Packages (x86_64)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-flatpak-x86_64
+          path: .
+
+      - name: Download Lemonade Flatpak Packages (ARM64)
+        uses: actions/download-artifact@v4
+        with:
+          name: lemonade-flatpak-arm64
+          path: .
+
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -2702,6 +2841,7 @@ jobs:
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb
           ls -lh *.pkg
+          ls -lh Lemonade-*.flatpak
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
@@ -2728,6 +2868,7 @@ jobs:
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_arm64.deb
             *.pkg
+            Lemonade-*.flatpak
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
