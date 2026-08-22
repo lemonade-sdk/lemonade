@@ -860,45 +860,9 @@ namespace lemon::backends {
             if (root.empty() || !fs::exists(root, ec)) {
                 return std::nullopt;
             }
-#ifdef _WIN32
-            // ROCm 5.x/6.x ship bin\amdhip64.dll; ROCm 7.x version-suffixes it
-            // (bin\amdhip64_7.dll). Accept amdhip64.dll or amdhip64_<digits>.dll,
-            // not arbitrary suffixes like amdhip64_backup.dll.
-            const auto is_hip_runtime = [](const std::string& name) {
-                if (name == "amdhip64.dll") {
-                    return true;
-                }
-                static const std::string prefix = "amdhip64_";
-                static const std::string suffix = ".dll";
-                if (name.size() <= prefix.size() + suffix.size() ||
-                    name.compare(0, prefix.size(), prefix) != 0 ||
-                    name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
-                    return false;
-                }
-                const auto digits = name.substr(
-                    prefix.size(), name.size() - prefix.size() - suffix.size());
-                return std::all_of(digits.begin(), digits.end(),
-                                   [](unsigned char c) { return std::isdigit(c); });
-            };
-            for (const char* subdir : {"bin", "lib"}) {
-                const fs::path dir = root / subdir;
-                if (!fs::is_directory(dir, ec)) {
-                    continue;
-                }
-                for (fs::directory_iterator it(dir, ec), end; it != end && !ec; it.increment(ec)) {
-                    if (it->is_regular_file(ec) &&
-                        is_hip_runtime(it->path().filename().string())) {
-                        return root;
-                    }
-                }
+            if (BackendUtils::has_hip_runtime_payload(root.string())) {
+                return root;
             }
-#else
-            for (const char* lib_subdir : {"lib", "lib64"}) {
-                if (fs::exists(root / lib_subdir / "libamdhip64.so", ec)) {
-                    return root;
-                }
-            }
-#endif
             return std::nullopt;
         }
 
@@ -1602,6 +1566,54 @@ namespace lemon::backends {
 #endif
     }
 
+    bool BackendUtils::has_hip_runtime_payload(const std::string& dir) {
+#if !defined(__linux__) && !defined(_WIN32)
+        return false;
+#else
+        std::error_code ec;
+#ifdef _WIN32
+        // ROCm 5.x/6.x ship bin\amdhip64.dll; ROCm 7.x version-suffixes it
+        // (bin\amdhip64_7.dll). Accept amdhip64.dll or amdhip64_<digits>.dll,
+        // not arbitrary suffixes like amdhip64_backup.dll.
+        const auto is_hip_runtime = [](const std::string& name) {
+            if (name == "amdhip64.dll") {
+                return true;
+            }
+            static const std::string prefix = "amdhip64_";
+            static const std::string suffix = ".dll";
+            if (name.size() <= prefix.size() + suffix.size() ||
+                name.compare(0, prefix.size(), prefix) != 0 ||
+                name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                return false;
+            }
+            const auto digits = name.substr(
+                prefix.size(), name.size() - prefix.size() - suffix.size());
+            return std::all_of(digits.begin(), digits.end(),
+                               [](unsigned char c) { return std::isdigit(c); });
+        };
+        for (const char* subdir : {"bin", "lib"}) {
+            const fs::path d = fs::path(dir) / subdir;
+            if (!fs::is_directory(d, ec)) {
+                continue;
+            }
+            for (fs::directory_iterator it(d, ec), end; it != end && !ec; it.increment(ec)) {
+                if (it->is_regular_file(ec) &&
+                    is_hip_runtime(it->path().filename().string())) {
+                    return true;
+                }
+            }
+        }
+#else
+        for (const char* lib_subdir : {"lib", "lib64"}) {
+            if (fs::exists(fs::path(dir) / lib_subdir / "libamdhip64.so", ec)) {
+                return true;
+            }
+        }
+#endif
+        return false;
+#endif
+    }
+
     void BackendUtils::install_therock(const std::string& arch, const std::string& version,
                                        DownloadProgressCallback progress_cb) {
 #if !defined(__linux__) && !defined(_WIN32)
@@ -1610,13 +1622,18 @@ namespace lemon::backends {
         std::string install_dir = get_therock_install_dir(arch, version);
         std::string version_file = (fs::path(install_dir) / "version.txt").string();
 
+        // version.txt alone can survive a corrupt install; require the HIP
+        // runtime payload too (has_hip_runtime_payload) so repair re-downloads.
         if (fs::exists(install_dir) && fs::exists(version_file)) {
             std::string installed_version;
             std::ifstream vf(version_file);
             std::getline(vf, installed_version);
             vf.close();
 
-            if (installed_version == version) {
+            const bool payload_present =
+                BackendUtils::has_hip_runtime_payload(install_dir);
+
+            if (installed_version == version && payload_present) {
                 LOG(DEBUG, "BackendUtils") << "TheRock " << arch << "-" << version << " already installed" << std::endl;
                 return;
             }

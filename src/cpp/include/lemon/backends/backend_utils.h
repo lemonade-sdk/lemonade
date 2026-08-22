@@ -173,6 +173,17 @@ namespace lemon::backends {
                                             std::string& filename,
                                             size_t& bytes_total);
 
+        /**
+         * True when dir holds a concrete, usable HIP runtime payload for the
+         * current platform: libamdhip64.so on Linux (lib/ or lib64/), or
+         * amdhip64.dll / amdhip64_<digits>.dll on Windows (bin/ or lib/).
+         * A lib/ or bin/ directory skeleton without the actual runtime files
+         * is NOT a valid install — callers must not treat it as installed.
+         * Shared by the TheRock installed-check and ROCm-root validation so
+         * both paths agree on what "installed" means.
+         */
+        static bool has_hip_runtime_payload(const std::string& dir);
+
         /** Download and install TheRock ROCm tarball for the specified architecture (Linux only) */
         static void install_therock(const std::string& arch, const std::string& version,
                                    DownloadProgressCallback progress_cb = nullptr);
