@@ -11,24 +11,6 @@ export interface ImageDefaults {
   flow_shift?: number;
 }
 
-export interface SpeechDefaults {
-  audio_temperature?: number;
-  audio_top_p?: number;
-  audio_top_k?: number;
-  audio_repetition_penalty?: number;
-  text_temperature?: number;
-  text_top_p?: number;
-  text_top_k?: number;
-  speed?: number;
-}
-
-export interface AudioDefaults {
-  seconds?: number;
-  steps?: number;
-  cfg_scale?: number;
-  sigma_shift?: number;
-}
-
 export interface ModelInfo {
   checkpoint: string;
   checkpoints?: Record<string, string>;
@@ -51,10 +33,6 @@ export interface ModelInfo {
   downloaded?: boolean;
   update_available?: boolean;
   image_defaults?: ImageDefaults;
-  speech_defaults?: SpeechDefaults;
-  audio_defaults?: AudioDefaults;
-  pcm_sample_rate?: number;
-  pcm_channels?: number;
   // Per-collection system prompt template (collection.omni only). Overrides the
   // global default in toolDefinitions.json when set. Keeps {tool_list} and
   // {tool_guidance} placeholders so runtime substitution still works.
@@ -68,6 +46,15 @@ export interface ModelInfo {
 export interface ModelsData {
   [key: string]: ModelInfo;
 }
+
+export type TtsVoiceMode = 'fixed' | 'clone' | 'design';
+
+export const getTtsVoiceMode = (info?: ModelInfo | null): TtsVoiceMode => {
+  if (!info) return 'fixed';
+  if ((info.labels || []).includes('voice-design')) return 'design';
+  if (info.recipe === 'openmoss') return 'clone';
+  return 'fixed';
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -296,21 +283,6 @@ const fetchBuiltInModelsFromAPI = async (): Promise<ModelsData> => {
         };
       }
 
-      if (model.speech_defaults && typeof model.speech_defaults === 'object' && !Array.isArray(model.speech_defaults)) {
-        modelInfo.speech_defaults = { ...model.speech_defaults };
-      }
-
-      if (model.audio_defaults && typeof model.audio_defaults === 'object' && !Array.isArray(model.audio_defaults)) {
-        modelInfo.audio_defaults = { ...model.audio_defaults };
-      }
-
-      if (typeof model.pcm_sample_rate === 'number' && Number.isFinite(model.pcm_sample_rate)) {
-        modelInfo.pcm_sample_rate = model.pcm_sample_rate;
-      }
-      if (typeof model.pcm_channels === 'number' && Number.isFinite(model.pcm_channels)) {
-        modelInfo.pcm_channels = model.pcm_channels;
-      }
-
       acc[model.id] = modelInfo;
       return acc;
     }, {} as ModelsData);
@@ -344,10 +316,6 @@ const EXPORT_KNOWN_KEYS = new Set([
   'model_name',
   'models',
   'image_defaults',
-  'speech_defaults',
-  'audio_defaults',
-  'pcm_sample_rate',
-  'pcm_channels',
   'labels',
   'recipe',
   'recipe_options',

@@ -41,11 +41,6 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
-    /*generation_params*/ {
-        {"voice", "tts", "Voice", "TEXT", "coral", nullptr, nullptr, nullptr, {},
-         "Kokoro voice id; OpenAI voice names are accepted as aliases.", "", "", "", nullptr},
-        {"speed", "tts", "Speed", "NUMBER", 1.0, 0.25, 4.0, 0.05, {}, "", "advanced", "", "", nullptr},
-    },
 };
 
 }  // namespace kokoro

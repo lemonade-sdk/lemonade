@@ -2,12 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useModels } from '../../hooks/useModels';
 import { Modality } from '../../hooks/useInferenceState';
-import { useSystem } from '../../hooks/useSystem';
-import {
-  generationParamDefault,
-  generationParams,
-  resolveGenerationSeed,
-} from '../../utils/generationParams';
 import { ModelsData } from '../../utils/modelData';
 import { AppSettings } from '../../utils/appSettings';
 import { serverFetch } from '../../utils/serverConfig';
@@ -49,70 +43,23 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
   isBusy, isPreFlight, isInferring, activeModality, runPreFlight, reset, showError,
 }) => {
   const { selectedModel, modelsData } = useModels();
-  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
 
   const [prompt, setPrompt] = useState('');
   const [lyrics, setLyrics] = useState('');
   const [vocalLanguage, setVocalLanguage] = useState('en');
-  const [negativePrompt, setNegativePrompt] = useState('');
   const [showLyricsHelp, setShowLyricsHelp] = useState(false);
   const [duration, setDuration] = useState(10);
-  const [generationValues, setGenerationValues] = useState<Record<string, unknown>>({});
   const [clips, setClips] = useState<GeneratedClip[]>([]);
   const clipsRef = useRef<GeneratedClip[]>([]);
   clipsRef.current = clips;
 
   useEffect(() => () => { clipsRef.current.forEach(c => URL.revokeObjectURL(c.url)); }, []);
-  useEffect(() => {
-    void ensureSystemInfoLoaded();
-  }, [ensureSystemInfoLoaded]);
 
   const audioRecipe = modelsData?.[selectedModel]?.recipe || '';
-  const audioDefaults = modelsData?.[selectedModel]?.audio_defaults;
-  const audioParams = React.useMemo(
-    () => generationParams(systemInfo, audioRecipe, 'audio-generation'),
-    [systemInfo, audioRecipe],
-  );
-  const durationParam = audioParams.find(param => param.name === 'duration' || param.name === 'seconds');
-  const lyricsParam = audioParams.find(param => param.name === 'lyrics');
-  const vocalLanguageParam = audioParams.find(param => param.name === 'vocal_language');
-  const negativePromptParam = audioParams.find(param => param.name === 'negative_prompt');
-  const handledParamNames = new Set(
-    [durationParam?.name, lyricsParam?.name, vocalLanguageParam?.name, negativePromptParam?.name]
-      .filter((name): name is string => Boolean(name)),
-  );
-  const generationControlParams = audioParams.filter(param => (
-    !handledParamNames.has(param.name)
-    && ['NUMBER', 'INT', 'SEED', 'TEXT', 'MULTILINE', 'BOOL', 'ENUM'].includes(param.typeName)
-  ));
-  const isMusic = Boolean(lyricsParam);
-  const durationMin = durationParam?.min ?? 1;
-  const durationMax = durationParam?.max ?? 600;
-  const durationStep = durationParam?.step ?? 1;
-  const audioDefaultsKey = JSON.stringify(audioDefaults || {});
-  const audioParamsKey = JSON.stringify(audioParams);
+  const isMusic = audioRecipe === 'acestep';
   useEffect(() => {
-    const modelDefaults = audioDefaults || {};
-    const declaredDuration = durationParam
-      ? generationParamDefault(durationParam, modelDefaults)
-      : undefined;
-    setDuration(typeof declaredDuration === 'number' ? declaredDuration : 10);
-
-    if (vocalLanguageParam) {
-      const declaredLanguage = generationParamDefault(vocalLanguageParam, modelDefaults);
-      setVocalLanguage(typeof declaredLanguage === 'string' ? declaredLanguage : 'en');
-    }
-
-    const nextValues: Record<string, unknown> = {};
-    for (const param of generationControlParams) {
-      // Blank seed means "random". resolveGenerationSeed() translates that to
-      // either the backend sentinel or a concrete unsigned seed at submit time.
-      if (param.typeName === 'SEED') continue;
-      const value = generationParamDefault(param, modelDefaults);
-      if (value !== undefined && value !== null) nextValues[param.name] = value;
-    }
-    setGenerationValues(nextValues);
-  }, [audioRecipe, audioDefaultsKey, audioParamsKey]);
+    setDuration(isMusic ? 150 : 10);
+  }, [audioRecipe]);
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isBusy || !selectedModel) return;
@@ -122,37 +69,16 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
 
     try {
       const trimmedLyrics = lyrics.trim();
-      const trimmedNegative = negativePrompt.trim();
-      const generationOptions: Record<string, unknown> = {};
-      for (const param of generationControlParams) {
-        const value = generationValues[param.name];
-        if (param.typeName === 'SEED') {
-          generationOptions[param.name] =
-            typeof value === 'number' && Number.isFinite(value)
-              ? value
-              : resolveGenerationSeed(param);
-        } else if (value !== undefined && value !== null && value !== '') {
-          generationOptions[param.name] = value;
-        }
-      }
-      if (negativePromptParam && trimmedNegative) {
-        generationOptions[negativePromptParam.name] = trimmedNegative;
-      }
-      if (lyricsParam && trimmedLyrics) {
-        generationOptions[lyricsParam.name] = lyrics;
-        if (vocalLanguageParam) {
-          generationOptions[vocalLanguageParam.name] = vocalLanguage.trim() || 'en';
-        }
-      }
-
       const response = await serverFetch('/audio/generations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: selectedModel,
           prompt,
-          [durationParam?.name || 'duration']: duration,
-          ...generationOptions,
+          duration,
+          ...(isMusic && trimmedLyrics
+            ? { lyrics, vocal_language: vocalLanguage.trim() || 'en' }
+            : {}),
         }),
       });
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -236,100 +162,14 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
               </div>
             </>
           ) : (
-            <>
-              <textarea
-                className="chat-input"
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe the music or sound effect to generate..."
-                rows={1}
-              />
-              {negativePromptParam && (
-                <input
-                  type="text"
-                  className="chat-input"
-                  value={negativePrompt}
-                  onChange={(e) => setNegativePrompt(e.target.value)}
-                  placeholder="Negative prompt (optional) — what the clip should avoid"
-                  disabled={isBusy}
-                />
-              )}
-            </>
-          )}
-          {generationControlParams.length > 0 && (
-            <details className="tts-speech-params">
-              <summary>Generation parameters</summary>
-              <div className="tts-speech-params-grid">
-                {generationControlParams.map(param => {
-                  const value = generationValues[param.name];
-                  return (
-                    <label key={param.name} className="tts-speech-param" title={param.help || undefined}>
-                      <span>{param.label}</span>
-                      {param.typeName === 'BOOL' ? (
-                        <input
-                          type="checkbox"
-                          checked={value === true}
-                          onChange={(e) => setGenerationValues(previous => ({
-                            ...previous, [param.name]: e.target.checked,
-                          }))}
-                          disabled={isBusy}
-                        />
-                      ) : param.typeName === 'ENUM' ? (
-                        <select
-                          value={typeof value === 'string' ? value : ''}
-                          onChange={(e) => setGenerationValues(previous => ({
-                            ...previous, [param.name]: e.target.value,
-                          }))}
-                          disabled={isBusy}
-                        >
-                          {param.enumValues.map(option => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      ) : param.typeName === 'MULTILINE' ? (
-                        <textarea
-                          value={typeof value === 'string' ? value : ''}
-                          onChange={(e) => setGenerationValues(previous => ({
-                            ...previous, [param.name]: e.target.value,
-                          }))}
-                          disabled={isBusy}
-                          rows={2}
-                        />
-                      ) : param.typeName === 'TEXT' ? (
-                        <input
-                          type="text"
-                          value={typeof value === 'string' ? value : ''}
-                          onChange={(e) => setGenerationValues(previous => ({
-                            ...previous, [param.name]: e.target.value,
-                          }))}
-                          disabled={isBusy}
-                        />
-                      ) : (
-                        <input
-                          type="number"
-                          min={param.min ?? undefined}
-                          max={param.max ?? undefined}
-                          step={param.step ?? undefined}
-                          value={typeof value === 'number' ? value : ''}
-                          placeholder={param.typeName === 'SEED' ? 'random' : undefined}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            setGenerationValues(previous => {
-                              const next = { ...previous };
-                              if (raw === '') delete next[param.name];
-                              else next[param.name] = Number(raw);
-                              return next;
-                            });
-                          }}
-                          disabled={isBusy}
-                        />
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-            </details>
+            <textarea
+              className="chat-input"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe the music or sound effect to generate..."
+              rows={1}
+            />
           )}
           <InferenceControls
             isBusy={isBusy}
@@ -344,14 +184,10 @@ const AudioGenerationPanel: React.FC<AudioGenerationPanelProps> = ({
                 Duration
                 <input
                   type="number"
-                  min={durationMin}
-                  max={durationMax}
-                  step={durationStep}
+                  min={1}
+                  max={600}
                   value={duration}
-                  onChange={(e) => setDuration(Math.max(
-                    durationMin,
-                    Math.min(durationMax, Number(e.target.value) || durationMin),
-                  ))}
+                  onChange={(e) => setDuration(Math.max(1, Math.min(600, Number(e.target.value) || 1)))}
                   disabled={isBusy}
                 /> s
               </label>

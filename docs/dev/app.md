@@ -88,14 +88,6 @@ src/app/
 └────────────────────────────────────────────────┘
 ```
 
-## Speech and audio-generation panels
-
-The TTS panel and the audio-generation panel seed their controls from the model's declared `speech_defaults` / `audio_defaults`, which arrive with the model list from `/v1/models`. Both effects are keyed on the value of those defaults rather than on the model list's identity: the list is re-fetched on every poll, and keying on it would overwrite a duration or temperature the user had just set.
-
-The TTS panel owns per-request speech fields that `useTTS` forwards to `/audio/speech` verbatim. OpenMOSS voice design is opt-in through `voice_design_description` — the backend runs the whole design cascade itself, so the panel never switches models, and `voice` keeps its OpenAI-compatible meaning as a style note that only directs delivery. Because an OpenMOSS speech model both clones a sample and designs a voice from a description, there is no separate voice-design model for the renderer to discover.
-
-OpenMOSS sound-effect seeds are unsigned, and `0` is a real seed rather than a "random" sentinel, so an omitted seed renders the identical clip on every request. The audio-generation panel draws a seed per request instead.
-
 ## Prerequisites
 
 - **Node.js** 20 or higher (webpack)

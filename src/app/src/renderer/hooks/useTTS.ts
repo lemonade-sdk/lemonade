@@ -3,27 +3,14 @@ import { LOADING, PAUSED, PLAYING } from '../AudioButton';
 import { AppSettings } from '../utils/appSettings';
 import { serverFetch } from '../utils/serverConfig';
 import { ensureModelReady, DownloadAbortError } from '../utils/backendInstaller';
-import { getTtsVoiceMode } from '../utils/generationParams';
-import { ModelsData } from '../utils/modelData';
+import { ModelsData, getTtsVoiceMode } from '../utils/modelData';
 import { MessageContent } from '../utils/chatTypes';
-import { useSystem } from './useSystem';
-
-export interface SpeechOptions {
-  model?: string;
-  referenceWavB64?: string;
-  extra?: Record<string, unknown>;
-}
 
 export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) {
-  const { systemInfo, ensureSystemInfoLoaded } = useSystem();
   const [currentVoice, setVoice] = useState('');
   const [audioState, setAudioState] = useState<number>(0);
   const [pressedAudioButton, setPressedAudioButton] = useState<number>(-1);
   const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(null);
-
-  useEffect(() => {
-    void ensureSystemInfoLoaded();
-  }, [ensureSystemInfoLoaded]);
 
   // Sync voice with settings
   useEffect(() => {
@@ -65,7 +52,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
   const doTextToSpeech = async (
     message: MessageContent,
     ttsVoice: string,
-    opts?: SpeechOptions,
+    opts?: { model?: string; referenceWavB64?: string },
   ) => {
     setAudioState(LOADING);
 
@@ -81,7 +68,6 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     };
     if (ttsVoice) requestBody.voice = ttsVoice;
     if (opts?.referenceWavB64) requestBody.reference_wav_b64 = opts.referenceWavB64;
-    if (opts?.extra) Object.assign(requestBody, opts.extra);
 
     const response = await serverFetch('/audio/speech', {
       method: 'POST',
@@ -102,7 +88,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
   const synthesizeSpeech = async (
     message: MessageContent,
     ttsVoice: string,
-    opts?: SpeechOptions,
+    opts?: { model?: string; referenceWavB64?: string },
   ): Promise<string> => {
     let textMessage: any = message;
     if (textMessage instanceof Array) {
@@ -113,7 +99,6 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     const requestBody: any = { model: textToSpeechModel, input: textMessage };
     if (ttsVoice) requestBody.voice = ttsVoice;
     if (opts?.referenceWavB64) requestBody.reference_wav_b64 = opts.referenceWavB64;
-    if (opts?.extra) Object.assign(requestBody, opts.extra);
 
     const response = await serverFetch('/audio/speech', {
       method: 'POST',
@@ -162,7 +147,7 @@ export function useTTS(appSettings: AppSettings | null, modelsData: ModelsData) 
     }
 
     if (role && appSettings) {
-      if (getTtsVoiceMode(systemInfo, modelsData?.[appSettings.tts.model.value]) === 'clone') {
+      if (getTtsVoiceMode(modelsData?.[appSettings.tts.model.value]) === 'clone') {
         referenceWavB64 = (role === 'assistant')
           ? appSettings.tts.assistantVoiceSample.value
           : appSettings.tts.userVoiceSample.value;

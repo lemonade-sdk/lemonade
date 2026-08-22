@@ -180,75 +180,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp_args` | `--whispercpp-args` | ARGS | "" | Custom arguments to pass to whisper-server |
 <!-- END GENERATED: backend-options -->
 
-## Generation parameters
-
-Per-request controls each backend accepts, declared in its descriptor. Clients use
-these rows as the source for labels, bounds, defaults, and request field names instead
-of backend-name allowlists. Generic controls can be rendered directly; specialized
-composition controls may still choose a purpose-built presentation.
-
-<!-- BEGIN GENERATED: backend-generation-params -->
-#### `acestep` — ACE-Step
-
-`audio-generation`
-
-| Field | Label | Type | Default | Range | Group | Description |
-|-------|-------|------|---------|-------|-------|-------------|
-| `duration` | Duration | NUMBER | 150 | 1…600 | — |  |
-| `steps` | Steps | INT | 50 | 1…200 | — |  |
-| `seed` | Seed | SEED | -1 | -1… | — |  |
-| `vocal_language` | Lyrics language | TEXT | "en" | — | — |  |
-| `lyrics` | Lyrics | MULTILINE | null | — | — | Leave empty for an instrumental track. |
-
-#### `kokoro` — Kokoro
-
-`tts`
-
-| Field | Label | Type | Default | Range | Group | Description |
-|-------|-------|------|---------|-------|-------|-------------|
-| `voice` | Voice | TEXT | "coral" | — | — | Kokoro voice id; OpenAI voice names are accepted as aliases. |
-| `speed` | Speed | NUMBER | 1.0 | 0.25…4.0 | advanced |  |
-
-#### `openmoss` — OpenMOSS TTS
-
-`audio-generation`
-
-| Field | Label | Type | Default | Range | Group | Description |
-|-------|-------|------|---------|-------|-------|-------------|
-| `seconds` | Duration | NUMBER | 10 | 1…300 | — |  |
-| `steps` | Steps | INT | 100 | 1…200 | — |  |
-| `cfg_scale` | CFG | NUMBER | 4.0 | 0.0…30.0 | — |  |
-| `sigma_shift` | Sigma shift | NUMBER | 5.0 | 0.0…20.0 | — |  |
-| `negative_prompt` | Negative prompt | TEXT | null | — | — |  |
-| `seed` | Seed | SEED | null | 0…4294967295 | — | Unsigned; 0 is a real seed, so a blank box draws a random one. |
-
-`tts`
-
-| Field | Label | Type | Default | Range | Group | Description |
-|-------|-------|------|---------|-------|-------|-------------|
-| `voice_design_description` | Describe voice | TEXT | null | — | voice_mode | Lemonade renders a short sample in the described voice and speaks with it. |
-| `reference_wav_b64` | Clone WAV sample | AUDIO_B64 | null | — | voice_mode | One WAV sample whose voice is cloned. |
-| `voice` | Style note | TEXT | null | — | — | Optional delivery instruction; does not change the timbre. |
-| `audio_temperature` | Audio temp | NUMBER | 1.5 | 0.0…3.0 | advanced |  |
-| `audio_top_p` | Audio top-p | NUMBER | 0.8 | 0.0…1.0 | advanced |  |
-| `audio_top_k` | Audio top-k | INT | 25 | 0…200 | advanced |  |
-| `audio_repetition_penalty` | Repetition | NUMBER | 1.0 | 1.0…2.0 | advanced |  |
-| `text_temperature` | Text temp | NUMBER | 1.5 | 0.0…3.0 | advanced |  |
-| `text_top_p` | Text top-p | NUMBER | 1.0 | 0.0…1.0 | advanced |  |
-| `text_top_k` | Text top-k | INT | 50 | 0…200 | advanced |  |
-| `speed` | Speed | NUMBER | 1.0 | 0.25…4.0 | advanced |  |
-
-#### `thinksound` — ThinkSound
-
-`audio-generation`
-
-| Field | Label | Type | Default | Range | Group | Description |
-|-------|-------|------|---------|-------|-------|-------------|
-| `duration` | Duration | NUMBER | 10 | 1…300 | — |  |
-| `steps` | Steps | INT | 50 | 1…200 | — |  |
-| `cfg` | CFG | NUMBER | 4.5 | 0.0…30.0 | — |  |
-| `seed` | Seed | SEED | -1 | -1… | — |  |
-<!-- END GENERATED: backend-generation-params -->
 
 ## Implementation notes
 
@@ -268,11 +199,13 @@ The model download fetches the DiT checkpoint variant plus three companions when
 
 `moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, `server_models.json` keeps `size` as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
 
+The legacy `MOSS-VoiceGen` registry entry remains as a compatibility model for existing clients; integrated voice design on `OpenMOSS-TTS` and `MOSS-TTS-Local` does not depend on that standalone entry.
+
 `request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. `start_speech_process()` therefore calls `stop_speech_process()` rather than `unload()` on a failed readiness wait, because `unload()` takes the same exclusive lock.
 
 The transient design process is polled for readiness through its own `/health` rather than the shared `wait_for_ready()`, since it does not own `port_`; the poll also checks `ProcessManager::is_running()` each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. `spawn()` uses `find_free_port()` instead of `choose_port()` for the same reason — `choose_port()` assigns `port_`, and the caller decides which process `port_` addresses.
 
-Reference-conditioned TTS requests can overrun the server's default 8192 context, so the resident speech process is spawned with `--n-ctx 32768`. OpenMOSS v0.3 chunks long prefills, so Lemonade leaves `n_batch` at the upstream default; the transient VoiceGen and sound-effect processes also keep upstream context defaults because they do not ingest reference-audio token prefixes.
+Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit `n_ctx`; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.
 
 Lemonade does not inject `max_audio_frames` into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.
 

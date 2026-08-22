@@ -20,30 +20,6 @@ struct BackendOption {
     std::string group;                // CLI help group, e.g. "General Options"
 };
 
-// A per-request generation parameter a backend accepts. Declared so a client can
-// render a control for it without knowing which backend it is talking to; the
-// same list tells the client which request field to send the value in.
-struct GenerationParam {
-    std::string name;              // request field, e.g. "sigma_shift"
-    std::string mode;              // deployment mode it applies to, e.g. "tts"
-    std::string label;             // control label, e.g. "Sigma shift"
-    std::string type_name;         // NUMBER | INT | TEXT | MULTILINE | BOOL | ENUM | SEED | AUDIO_B64
-    nlohmann::json default_value = nullptr;
-    nlohmann::json min_value     = nullptr;
-    nlohmann::json max_value     = nullptr;
-    nlohmann::json step          = nullptr;
-    std::vector<std::string> enum_values;
-    std::string help;
-    std::string group;             // "" = primary controls, "advanced" = collapsed
-    std::string exclusive_group;   // params sharing an id are alternatives; the client picks one
-    std::string accept;            // AUDIO_B64 only: file filter, e.g. ".wav"
-
-    // SEED only. The value the backend reads as "pick a random seed"; null when
-    // it has none, which tells the client to draw a seed itself rather than send
-    // a sentinel the backend would take literally.
-    nlohmann::json random_sentinel = nullptr;
-};
-
 // How a backend shares the accelerator.
 enum class SlotPolicy {
     Standard,      // counts toward the LRU slots, no device exclusivity (llamacpp, sd-cpp)
@@ -137,10 +113,6 @@ struct BackendDescriptor {
     std::vector<std::string> arg_variants;         // each emits `<variant>_args: ""`
     std::vector<std::string> bin_variants;         // each emits `<variant>_bin: "builtin"`
     nlohmann::json config_extra = nlohmann::json::object();  // fixed extras (e.g. prefer_system, image defaults)
-
-    // Per-request generation parameters, one entry per (mode, field). Model-level
-    // speech_defaults / audio_defaults override the defaults declared here.
-    std::vector<GenerationParam> generation_params;
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

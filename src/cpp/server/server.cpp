@@ -2991,8 +2991,6 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     }
 
     for (const char* key : {
-             "speech_defaults",
-             "audio_defaults",
              "pcm_sample_rate",
              "pcm_channels"}) {
         auto it = info.extras.find(key);

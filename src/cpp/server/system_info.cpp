@@ -1658,27 +1658,6 @@ json SystemInfo::build_recipes_info(const json& devices) {
             options.push_back(o);
         }
         entry["options"] = options;
-
-        json generation_params = json::object();
-        for (const auto& param : desc->generation_params) {
-            json p = {
-                {"name", param.name},
-                {"label", param.label},
-                {"type_name", param.type_name},
-                {"default", param.default_value},
-                {"min", param.min_value},
-                {"max", param.max_value},
-                {"step", param.step},
-                {"enum_values", param.enum_values},
-                {"help", param.help},
-                {"group", param.group},
-                {"exclusive_group", param.exclusive_group},
-                {"accept", param.accept},
-                {"random_sentinel", param.random_sentinel},
-            };
-            generation_params[param.mode].push_back(std::move(p));
-        }
-        entry["generation_params"] = generation_params;
     }
 
     return recipes;

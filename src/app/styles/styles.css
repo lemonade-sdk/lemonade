@@ -3485,53 +3485,14 @@ input::-webkit-calendar-picker-indicator {
     box-sizing: border-box;
 }
 
-.tts-generation-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
-}
-
-.tts-generation-controls {
+.model3d-source-toggle {
+.tts-openmoss-controls {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.tts-speech-params > summary {
-    cursor: pointer;
-    font-size: 0.7rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-secondary);
-    user-select: none;
-}
-
-.tts-speech-params-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-    gap: 6px 10px;
-    padding-top: 6px;
-}
-
-.tts-speech-param {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 0.7rem;
-    color: var(--text-secondary);
-    min-width: 0;
-}
-
-.tts-speech-param input,
-.tts-speech-param select,
-.tts-speech-param textarea {
-    width: 100%;
-    min-width: 0;
-}
-
-.tts-generation-controls .form-input {
+.tts-openmoss-controls .form-input {
     flex: 1;
     min-width: 0;
 }
@@ -3548,6 +3509,9 @@ input::-webkit-calendar-picker-indicator {
 .model3d-source-toggle .toggle-button {
     flex: 0 0 auto;
     white-space: nowrap;
+}
+
+    flex: 0 0 auto;
 }
 
 .tts-clone-row {

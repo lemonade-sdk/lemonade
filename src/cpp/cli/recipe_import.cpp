@@ -29,8 +29,6 @@ const std::vector<std::string> kKnownKeys = {
     "model_name",
     "models",
     "image_defaults",
-    "speech_defaults",
-    "audio_defaults",
     "pcm_sample_rate",
     "pcm_channels",
     "labels",

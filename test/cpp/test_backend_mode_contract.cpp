@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -55,12 +54,6 @@ constexpr uint32_t kChatCompatible = lemon::CAP_EMBEDDINGS | lemon::CAP_RERANKIN
                                      lemon::CAP_TRANSCRIPTION |
                                      lemon::CAP_STREAMING_TRANSCRIPTION;
 constexpr uint32_t kExclusiveModalities = lemon::CAP_ALL & ~kChatCompatible;
-
-// The control vocabulary a client is expected to render. A descriptor naming a
-// type outside this set would reach the composer as an unrenderable control.
-const std::set<std::string> kGenerationParamTypes = {
-    "NUMBER", "INT", "TEXT", "MULTILINE", "BOOL", "ENUM", "SEED", "AUDIO_B64",
-};
 
 std::string join(const std::vector<std::string>& items) {
     std::string out;
@@ -134,46 +127,9 @@ int main() {
                   !deployment_mode_of(capability, type));
         }
 
-        std::set<std::pair<std::string, std::string>> seen_params;
-        std::map<std::string, std::vector<std::string>> exclusive_groups;
-        for (const auto& param : desc.generation_params) {
-            const std::string where = recipe + ": generation param '" + param.name + "'";
-            check(where + " names a field", !param.name.empty());
-            check(where + " has a label", !param.label.empty());
-            check(where + " declares a mode this backend serves",
-                  declared.count(param.mode) != 0);
-            check(where + " uses a known type",
-                  kGenerationParamTypes.count(param.type_name) != 0);
-            check(where + " is declared once per mode",
-                  seen_params.insert({param.mode, param.name}).second);
-
-            const bool is_enum = param.type_name == "ENUM";
-            check(where + " declares choices only when it is an ENUM",
-                  is_enum == !param.enum_values.empty());
-            check(where + " declares a file filter only when it takes a file",
-                  (param.type_name == "AUDIO_B64") == !param.accept.empty());
-            check(where + " declares a random sentinel only when it is a SEED",
-                  param.random_sentinel.is_null() || param.type_name == "SEED");
-            if (param.type_name == "SEED") {
-                check(where + " has a numeric or absent random sentinel",
-                      param.random_sentinel.is_null() || param.random_sentinel.is_number());
-            }
-            if (!param.exclusive_group.empty()) {
-                exclusive_groups[param.mode + "/" + param.exclusive_group].push_back(param.name);
-            }
-        }
-
-        // A one-member exclusive group is a typo, not a choice: the client would
-        // render a selector the user cannot select anything else in.
-        for (const auto& [group, members] : exclusive_groups) {
-            check(recipe + ": exclusive group '" + group + "' offers an alternative",
-                  members.size() >= 2);
-        }
-
-        std::printf("     %s: modes [%s] capabilities [%s] generation params [%zu]\n", recipe.c_str(),
+        std::printf("     %s: modes [%s] capabilities [%s]\n", recipe.c_str(),
                     join(desc.supported_modes).c_str(),
-                    join(desc.default_capabilities).c_str(),
-                    desc.generation_params.size());
+                    join(desc.default_capabilities).c_str());
     }
 
     // Ingest: a label set either describes a model this backend can deploy, or

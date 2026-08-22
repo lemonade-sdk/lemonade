@@ -2122,17 +2122,7 @@
         ],
         "size": 12.5,
         "pcm_sample_rate": 24000,
-        "pcm_channels": 1,
-        "speech_defaults": {
-            "audio_temperature": 1.7,
-            "audio_top_p": 0.8,
-            "audio_top_k": 25,
-            "audio_repetition_penalty": 1.0,
-            "text_temperature": 1.5,
-            "text_top_p": 1.0,
-            "text_top_k": 50,
-            "speed": 1.0
-        }
+        "pcm_channels": 1
     },
     "MOSS-TTS-Local": {
         "checkpoints": {
@@ -2148,17 +2138,22 @@
         ],
         "size": 8.5,
         "pcm_sample_rate": 48000,
-        "pcm_channels": 2,
-        "speech_defaults": {
-            "audio_temperature": 1.7,
-            "audio_top_p": 0.8,
-            "audio_top_k": 25,
-            "audio_repetition_penalty": 1.0,
-            "text_temperature": 1.0,
-            "text_top_p": 1.0,
-            "text_top_k": 50,
-            "speed": 1.0
-        }
+        "pcm_channels": 2
+    },
+    "MOSS-VoiceGen": {
+        "checkpoints": {
+            "main": "ilintar/moss-voicegen-gguf:moss-voicegen.gguf",
+            "main_extras": "ilintar/moss-voicegen-gguf:moss-voicegen.extras.gguf"
+        },
+        "recipe": "openmoss",
+        "suggested": true,
+        "labels": [
+            "tts",
+            "voice-design"
+        ],
+        "size": 7.3,
+        "pcm_sample_rate": 24000,
+        "pcm_channels": 1
     },
     "MOSS-SoundEffect": {
         "checkpoints": {
@@ -2172,13 +2167,7 @@
         ],
         "size": 6.6,
         "pcm_sample_rate": 48000,
-        "pcm_channels": 1,
-        "audio_defaults": {
-            "seconds": 10,
-            "steps": 100,
-            "cfg_scale": 4.0,
-            "sigma_shift": 5.0
-        }
+        "pcm_channels": 1
     },
     "Anima-Base": {
         "checkpoints": {

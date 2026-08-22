@@ -915,7 +915,7 @@ A typical workflow is to generate an image first, then upscale it:
 
 Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.
 
-> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local`, both of which clone a voice from a reference WAV and can design one from a text description. Voice design is not a separate model: the voice generator ships as a component of the speech model, and a design request swaps it in just long enough to render the reference sample before the speech model is reloaded. That request therefore takes noticeably longer than a plain one, and the result is cached per description.
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local` support cloning and integrated voice design. `MOSS-VoiceGen` remains available as a legacy compatibility model while existing GUI/settings paths migrate to the integrated design flow.
 >
 > **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS v0.3 encodes buffered `wav` or `pcm`. Native streaming is narrower for both backends and uses `pcm` only, so an explicit non-PCM `response_format` on a streaming request is rejected rather than mislabeled or silently transcoded. OpenMOSS raw PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels`, because its native format is model-dependent (24 kHz mono for OpenMOSS-TTS and 48 kHz stereo for MOSS-TTS-Local).
 
@@ -1054,9 +1054,6 @@ curl http://localhost:13305/v1/models?show_all=true
     - `cfg_scale` - Classifier-free guidance scale (e.g., 1.0 for turbo models, 7.5 for standard models)
     - `width` - Default image width in pixels
     - `height` - Default image height in pixels
-  - `speech_defaults` / `audio_defaults` values are the model's overrides for the parameters its recipe declares in `recipes[<recipe>].generation_params` on [`/v1/system-info`](./lemonade.md#get-v1system-info); that declaration is what tells a client which controls to render and which request field each one belongs to.
-  - `speech_defaults` - (Speech models only) Model-declared defaults for the `/v1/audio/speech` generation parameters the model accepts, keyed by parameter name (e.g. `audio_temperature`, `audio_top_p`, `speed`). Clients seed their controls from these instead of guessing. Omitted when the model declares none.
-  - `audio_defaults` - (Audio-generation models only) Model-declared defaults for `/v1/audio/generations`, keyed by parameter name (e.g. `steps`, `cfg_scale`, `sigma_shift`, `seconds`). Omitted when the model declares none.
   - `components` - (Omni collections only, `recipe: "collection.omni"`) Ordered array of the component model names that make up the collection
   - `models` - (Omni collections only) Ordered array embedding each component's full model object (same shape as the entries in this list), parallel to `components`. This makes a collection's `/v1/models/{model_id}` response self-contained — exporting it produces a file that can be imported elsewhere via [`/v1/pull`](./lemonade.md#post-v1pull)
 
