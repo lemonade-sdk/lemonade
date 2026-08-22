@@ -77,6 +77,18 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 }
 
+std::string lower_copy(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+bool is_gpu_hang_or_compute_error(const std::string& message) {
+    const std::string lowered = lower_copy(message);
+    return lowered.find("compute error") != std::string::npos ||
+           lowered.find("gpu hang") != std::string::npos;
+}
+
 } // namespace
 
 
@@ -126,15 +138,15 @@ void StreamingProxy::forward_sse_stream(
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
          &start_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
-            if (on_chunk) {
-                on_chunk();
-            }
-
             if (backend_status != 200) {
                 if (error_body.size() < max_error_body) {
                     error_body.append(data, std::min(length, max_error_body - error_body.size()));
                 }
                 return true;
+            }
+
+            if (on_chunk) {
+                on_chunk();
             }
 
             line_buffer.append(data, length);
@@ -196,11 +208,16 @@ void StreamingProxy::forward_sse_stream(
 
     if (!client_disconnected &&
         (result.status_code != 200 || backend_status != 200)) {
-        stream_error = true;
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error: " << status
                                      << (error_body.empty() ? "" : ": " + error_body) << std::endl;
         telemetry.error_message = "Backend returned error status code: " + std::to_string(status);
+
+        if (is_gpu_hang_or_compute_error(error_body)) {
+            throw std::runtime_error("backend compute error / GPU hang during streaming: " + error_body);
+        }
+
+        stream_error = true;
 
         // The response is already committed as 200 text/event-stream, so an
         // unframed error body is dropped by every spec-compliant client parser.
@@ -292,15 +309,15 @@ void StreamingProxy::forward_byte_stream(
         backend_url,
         request_body,
         [&sink, &on_chunk, &backend_status, &error_body](const char* data, size_t length) {
-            if (on_chunk) {
-                on_chunk();
-            }
-
             if (backend_status != 200) {
                 if (error_body.size() < max_error_body) {
                     error_body.append(data, std::min(length, max_error_body - error_body.size()));
                 }
                 return true;
+            }
+
+            if (on_chunk) {
+                on_chunk();
             }
 
             if (!sink.write(data, length)) {
@@ -335,10 +352,15 @@ void StreamingProxy::forward_byte_stream(
     }
 
     if (result.status_code != 200 || backend_status != 200) {
-        stream_error = true;
         const int status = backend_status != 200 ? backend_status : result.status_code;
         LOG(ERROR, "StreamingProxy") << "Backend returned error " << status
                                      << (error_body.empty() ? "" : ": " + error_body) << std::endl;
+
+        if (is_gpu_hang_or_compute_error(error_body)) {
+            throw std::runtime_error("backend compute error / GPU hang during byte stream: " + error_body);
+        }
+
+        stream_error = true;
 
         json payload;
         try {
