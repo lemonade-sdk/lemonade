@@ -19,6 +19,7 @@ const files = {
 const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) => [key, fs.readFileSync(filename, 'utf8')]));
 const mcpClientHeader = fs.readFileSync(path.join(root, '../cpp/include/lemon/mcp_client.h'), 'utf8');
 const mcpClientSource = fs.readFileSync(path.join(root, '../cpp/server/mcp_client.cpp'), 'utf8');
+const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 
 for (const [key, filename] of Object.entries(files)) {
   const compiled = ts.transpileModule(sources[key], {
@@ -81,6 +82,12 @@ assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);
 assert.match(sources.chat, /const openMcpPicker = useCallback\(\(\) => \{[\s\S]*?setMcpPickerOpen\(true\)/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?Lemonade tools[\s\S]*?<\/button>/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?External MCP servers[\s\S]*?<\/button>/);
+assert.match(sources.chat, /handleAttachmentWheel[\s\S]*?scrollLeft \+= event\.deltaY/);
+assert.match(sources.chat, /className="composer__images"[\s\S]*?aria-label="Image attachments"[\s\S]*?onWheel=\{handleAttachmentWheel\}/);
+const composerImagesRule = styles.match(/\.composer__images\s*\{([^}]*)\}/)?.[1] || '';
+assert.match(composerImagesRule, /max-width:\s*var\(--max-content-width\)/);
+assert.match(composerImagesRule, /margin:\s*0 auto/);
+assert.match(composerImagesRule, /overflow-x:\s*auto/);
 
 assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
 assert.doesNotMatch(sources.connect, /AppsView|app-directory/);

@@ -3111,6 +3111,17 @@ ${finalText}`
     setPendingImages(prev => prev.filter((_, i) => i !== index));
   }, []);
 
+  const handleAttachmentWheel = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
+    const strip = event.currentTarget;
+    if (strip.scrollWidth <= strip.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+    const previousScrollLeft = strip.scrollLeft;
+    strip.scrollLeft += event.deltaY;
+    if (strip.scrollLeft !== previousScrollLeft && event.cancelable) {
+      event.preventDefault();
+    }
+  }, []);
+
   const removeAudio = useCallback(() => {
     setPendingAudioFiles([]);
   }, []);
@@ -4103,9 +4114,15 @@ ${finalText}`
           </div>
         )}
         {pendingImages.length > 0 && (
-          <div className="composer__images">
+          <div
+            className="composer__images"
+            role="list"
+            aria-label="Image attachments"
+            tabIndex={0}
+            onWheel={handleAttachmentWheel}
+          >
             {pendingImages.map((src, i) => (
-              <div key={i} className="composer__image-thumb">
+              <div key={i} className="composer__image-thumb" role="listitem">
                 <img src={src} alt={`Attachment ${i + 1}`} />
                 <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label="Remove image">×</button>
               </div>

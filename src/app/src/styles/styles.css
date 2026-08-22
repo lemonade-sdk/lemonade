@@ -4818,10 +4818,17 @@ optgroup {
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 .composer__images {
+  width: 100%;
+  max-width: var(--max-content-width);
+  min-width: 0;
+  margin: 0 auto;
+  box-sizing: border-box;
   display: flex;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
 }
 
 .composer__image-thumb {
