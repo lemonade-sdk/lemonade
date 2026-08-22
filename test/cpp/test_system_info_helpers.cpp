@@ -6,6 +6,7 @@
 // Run:   ctest --test-dir build -R '^SystemInfoHelpersTest$' --output-on-failure
 
 #include "system_info_utils.h"
+#include "platform/nvidia_metrics.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -43,6 +44,19 @@ static bool expect_bool(const char* name, bool actual, bool expected) {
         std::printf("  got:  %s\n  want: %s\n",
                     actual ? "true" : "false",
                     expected ? "true" : "false");
+    }
+    return ok;
+}
+
+
+static bool expect_double(const char* name,
+                          double actual,
+                          double expected) {
+    constexpr double epsilon = 1e-9;
+    const bool ok = std::fabs(actual - expected) <= epsilon;
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  %.6f\n  want: %.6f\n", actual, expected);
     }
     return ok;
 }
