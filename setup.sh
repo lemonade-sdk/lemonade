@@ -173,7 +173,12 @@ if command_exists pkg-config; then
     print_success "pkg-config is installed"
 
     # Check for required libraries using pkg-config
-    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap" "libwebsockets" "mbedtls")
+    libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap" "libwebsockets")
+    # Linux distro/package builds intentionally exercise system mbedTLS.
+    # Portable artifacts select bundled runtime dependencies at CMake configure time.
+    if [ "$OS" = "linux" ]; then
+        libs_to_check+=("mbedtls")
+    fi
     missing_libs=()
 
     for lib in "${libs_to_check[@]}"; do
