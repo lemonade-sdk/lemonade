@@ -39,14 +39,17 @@ corpus reads as a checklist against the v1 semantics table in
   # l2_semantic/              # stubbed semantic_similarity — to be added
   # l3_classifier/            # stubbed classifier             — to be added
   # l0a_router/               # stubbed llm router + desugaring — to be added
+  # l0b_cost_router/          # stubbed cost router + desugaring — to be added
 2/ # coming in a later version
   ...
 ```
 
 The `l1_conditions_*` and `l1_resolution` groups are **deterministic** — they replay with an
-empty `ClassifierServices` (no model backend). The `l2` / `l3` / `l0a` groups are
-**stubbed model-backed** cases (pinned fake `ClassifierServices`); they are *to be
-added* and will carry per-case stub outputs.
+empty `ClassifierServices` (no model backend). The `l2` / `l3` / `l0a` / `l0b` groups are
+**stubbed model-backed** cases (pinned fake `ClassifierServices` / `CostServices`); they are
+*to be added* and will carry per-case stub outputs. No per-case stub-injection mechanism
+exists yet for any of these four groups — the runner (`test/cpp/test_routing_conformance_corpus.cpp`)
+currently wires only an empty `ClassifierServices` and has no `CostServices` hook at all.
 
 ## `cases.jsonl` line schema
 

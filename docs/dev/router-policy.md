@@ -80,6 +80,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `semantic_similarity` | Cosine similarity of the input against labelled `reference_phrases`, via an embedding model. |
 | `classifier` | A `{label: score}` classifier — an encoder model via the `onnxruntime` backend (`/v1/classify`), or any model as an LLM-as-classifier via chat. |
 | `llm` | An LLM picks exactly one of the declared `labels` for the request (with a rationale); the chosen label scores `1.0`, the rest `0`. You supply the `model` and a `prompt` describing when to choose each label. |
+| `cost` | Deterministic, no model needed despite living in this table: ranks the declared `labels` by cost (`cost_input_per_million + cost_output_per_million`) and reports the cheapest as the winning label (`1.0`). No `model`/`prompt`. See [Cost-based routing](#cost-based-routing-routingroutertype-cost_select). |
 
 A classifier condition is a band test: `{ "classifier": "<id>", "label": "<name>",
 "min_score": 0.5, "max_score": 1.0 }` (omitting both bounds defaults to
@@ -151,6 +152,14 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+>
+> The same split exists for cost: a `type: "cost"` classifier and
+> [`routing.router.type: "cost_select"`](#cost-based-routing-routingroutertype-cost_select)
+> are the two cost forms. `cost_select` is shorthand for a single `cost`
+> classifier whose labels are the candidates; a standalone `type: "cost"`
+> classifier just produces a label — you can combine it with other conditions,
+> e.g. "route to the cheapest candidate, but only when the request carries no
+> tools."
 
 ## Registering and invoking
 
@@ -240,3 +249,38 @@ The router `model` must be one of `components`. At request time the engine asks 
 to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
+
+## Cost-based routing (`routing.router.type: "cost_select"`)
+
+Instead of an LLM or hand-written rules, you can route automatically to
+whichever candidate is cheapest. Provide a `routing.router` block with no
+`model`/`prompt`:
+
+```json
+"routing": {
+  "candidates": ["Cheap-GGUF", "Mid-GGUF", "cloud.expensive"],
+  "default_model": "Mid-GGUF",
+  "router": {
+    "type": "cost_select"
+  }
+}
+```
+
+At request time the engine ranks every candidate by `cost_input_per_million +
+cost_output_per_million` — the same per-million prices behind
+`outputs.estimated_cost` (see the [cloud guide](../guide/configuration/cloud.md)
+for where those numbers come from) — and routes to the cheapest. This is
+deterministic: no helper model, no `model`/`prompt` fields, and it desugars
+into the same first-match engine and `Decision`/trace as every other router
+form. The chosen candidate's own cost is still surfaced on
+`outputs.estimated_cost` exactly as it would be for a rule- or LLM-chosen
+`route_to` — cost reporting and cost selection compose.
+
+A candidate that's missing either per-million price (most local GGUF models
+have no cloud pricing at all), or reports a negative/non-finite price, is
+excluded from ranking rather than treated as free. If **no** candidate in the
+list has cost data, the router falls open to `default_model` — the same
+fail-open contract as the `"llm"` router when it can't use a reply.
+`routing.router.type` must be `"llm"` or `"cost_select"`, and the block
+remains **mutually exclusive** with `routing.rules` and
+`routing.classifiers`.
