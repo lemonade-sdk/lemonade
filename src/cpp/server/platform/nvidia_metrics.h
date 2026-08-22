@@ -131,10 +131,8 @@ private:
                 return library;
             }
         }
-        return dlopen(
-            "/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
+        return nullptr;
     }
-
     RawSymbol symbol(const char* name) const {
         return library_ ? dlsym(library_, name) : nullptr;
     }
