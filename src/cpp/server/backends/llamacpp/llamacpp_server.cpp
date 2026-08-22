@@ -1,8 +1,10 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_draft.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "llamacpp_system_utils.h"
+#include "lemon/backends/hf_cache_util.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
@@ -101,16 +103,6 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
-static bool is_dflash_draft_checkpoint(std::string checkpoint) {
-    std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    size_t separator = checkpoint.find_last_of("/:\\");
-    std::string filename = separator == std::string::npos
-                               ? checkpoint
-                               : checkpoint.substr(separator + 1);
-    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
-}
-
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
                                                  const std::string& custom_args,
                                                  bool merge_args) {
@@ -118,19 +110,18 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
 
     std::vector<RuntimeArgDefault> defaults;
 
-    const std::string draft_checkpoint = model_info.checkpoint("draft");
-    const bool has_dflash_label =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") !=
-        model_info.labels.end();
-    const bool is_dflash_draft =
-        !draft_checkpoint.empty() && is_dflash_draft_checkpoint(draft_checkpoint);
-    const bool uses_mtp =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") !=
-        model_info.labels.end();
+    const std::string draft_path = model_info.resolved_path("draft");
+    const bool draft_file_present =
+        !draft_path.empty() &&
+        hf_cache::exists(path_from_utf8(draft_path));
+    const DraftActivation draft_activation = compute_draft_activation(
+        model_info.labels,
+        model_info.checkpoint("draft"),
+        draft_file_present);
 
-    if (is_dflash_draft && has_dflash_label) {
+    if (draft_activation.spec_type == "draft-dflash") {
         defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
-    } else if (uses_mtp) {
+    } else if (draft_activation.spec_type == "draft-mtp") {
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
 
@@ -362,14 +353,18 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_reserved(reserved_flags, "--mmproj", std::vector<std::string>{"-mm", "-mmu", "--mmproj-url", "--no-mmproj", "--mmproj-auto", "--no-mmproj-auto"});
 
-    const bool has_dflash_label =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") != model_info.labels.end();
-    const bool is_dflash_draft =
-        !draft_path.empty() && is_dflash_draft_checkpoint(model_info.checkpoint("draft"));
-    const bool use_draft_checkpoint =
-        !draft_path.empty() && (!is_dflash_draft || has_dflash_label);
+    // A `draft` checkpoint is optional acceleration. Registration (the `draft`
+    // checkpoint) and activation (the `mtp` / `dflash` label) are separate
+    // concerns: the label is the switch that enables speculative decoding, and
+    // a drafter is only wired into the llama-server invocation when it is both
+    // present on disk and enabled by its matching label (see #2435).
+    const DraftActivation draft_activation = compute_draft_activation(
+        model_info.labels,
+        model_info.checkpoint("draft"),
+        !draft_path.empty() &&
+            lemon::backends::hf_cache::exists(path_from_utf8(draft_path)));
 
-    if (use_draft_checkpoint) {
+    if (draft_activation.use_draft_checkpoint) {
         push_arg(args, reserved_flags, "--model-draft", draft_path);
     }
     push_reserved(reserved_flags, "--model-draft", std::vector<std::string>{"-md", "--spec-draft-model"});
