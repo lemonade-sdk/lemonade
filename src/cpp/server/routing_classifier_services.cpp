@@ -376,9 +376,10 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
     // Prefer `max_tokens` (also the alias target for `max_completion_tokens`
     // elsewhere in the server, see JsonUtils::add_legacy_max_tokens_alias);
     // fall back to `max_completion_tokens` directly since this function reads
-    // the caller's raw body, upstream of that aliasing. A non-positive or
+    // the caller's raw body, upstream of that aliasing. `max_output_tokens` is
+    // /v1/responses' own name for the same limit. A non-positive or
     // non-integer value is treated the same as absent.
-    for (const char* key : {"max_tokens", "max_completion_tokens"}) {
+    for (const char* key : {"max_tokens", "max_completion_tokens", "max_output_tokens"}) {
         if (request_json.contains(key) && request_json[key].is_number_integer() &&
             request_json[key].get<long long>() > 0) {
             ctx.params.expected_output_tokens =

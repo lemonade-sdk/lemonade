@@ -532,6 +532,19 @@ static void test_build_route_context_max_tokens_wins_over_max_completion_tokens(
           *ctx.params.expected_output_tokens == 128);
 }
 
+static void test_build_route_context_reads_max_output_tokens_for_responses() {
+    json request = {
+        {"model", "router"},
+        {"input", "summarize this"},
+        {"max_output_tokens", 256},
+    };
+    RouteContext ctx = lemon::build_route_context(request, "router");
+    check("build_route_context: /v1/responses' max_output_tokens populates "
+          "expected_output_tokens",
+          ctx.params.expected_output_tokens.has_value() &&
+          *ctx.params.expected_output_tokens == 256);
+}
+
 static void test_build_route_context_expected_output_tokens_absent_when_unset() {
     json request = {
         {"model", "router"},
@@ -796,6 +809,7 @@ int main() {
     test_build_route_context_reads_max_tokens();
     test_build_route_context_reads_max_completion_tokens_when_max_tokens_absent();
     test_build_route_context_max_tokens_wins_over_max_completion_tokens();
+    test_build_route_context_reads_max_output_tokens_for_responses();
     test_build_route_context_expected_output_tokens_absent_when_unset();
     test_build_route_context_ignores_non_positive_or_non_integer_max_tokens();
     test_estimated_cost_attached_on_matched_rule();
