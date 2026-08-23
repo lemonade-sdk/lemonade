@@ -62,13 +62,26 @@ static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb) 
 /// Get the amount of memory currently in use by the platform.
 /// For GPU: VRAM in use. For CPU/NPU: system RAM in use.
 /// Returns 0.0 if not measurable.
-static double get_used_memory_gb(DeviceType device_type) {
+static double get_used_memory_gb(
+    DeviceType device_type,
+    bool selected_gpu_is_nvidia = false) {
     auto metrics = create_metrics_platform();
     if (!metrics) return 0.0;
 
     if (device_type & DEVICE_GPU) {
-        double vram_used = metrics->get_vram_usage_gb();
-        if (vram_used > 0) return vram_used;
+        bool use_legacy_gpu_vram = true;
+#ifdef _WIN32
+        // Windows' legacy GPU scalar is NVIDIA-specific. Before auto-tune has
+        // selected a vendor, consuming it could subtract NVIDIA usage from an
+        // AMD capacity on hybrid systems.
+        use_legacy_gpu_vram = selected_gpu_is_nvidia;
+#else
+        (void)selected_gpu_is_nvidia;
+#endif
+        if (use_legacy_gpu_vram) {
+            const double vram_used = metrics->get_vram_usage_gb();
+            if (vram_used >= 0.0) return vram_used;
+        }
     }
 
     // CPU / NPU / fallback: system RAM in use
@@ -121,10 +134,13 @@ inline double get_available_memory_gb(DeviceType device_type) {
         auto nvidia_gpus = si->get_nvidia_gpu_devices();
         for (const auto& gpu : nvidia_gpus) {
             if (gpu.available && gpu.vram_gb > 0) {
-                double available = (std::max)(0.0, gpu.vram_gb - used_gb);
+                const double nvidia_used_gb =
+                    get_used_memory_gb(device_type, true);
+                double available =
+                    (std::max)(0.0, gpu.vram_gb - nvidia_used_gb);
                 LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (NVIDIA) total="
                                        << std::fixed << std::setprecision(2) << gpu.vram_gb
-                                       << " GB, used=" << used_gb
+                                       << " GB, used=" << nvidia_used_gb
                                        << " GB → " << available << " GB available"  << " ";
                 return available;
             }

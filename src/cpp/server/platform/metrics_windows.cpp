@@ -63,13 +63,11 @@ public:
     }
 
     double get_gpu_usage() override {
-        // GPU usage monitoring not implemented for Windows
-        return -1.0;
+        return query_primary_nvidia_metrics().gpu_percent;
     }
 
     double get_vram_usage_gb() override {
-        // VRAM monitoring not implemented for Windows
-        return -1.0;
+        return query_primary_nvidia_metrics().vram_used_gb;
     }
 
     SystemGpuMetrics get_system_gpu_metrics() override {

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <lemon/system_metrics_platform.h>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -62,15 +65,18 @@ public:
     NvmlLibrary& operator=(const NvmlLibrary&) = delete;
 
     std::vector<NvidiaNvmlDevice> query_devices(
-        bool include_utilization = true) const {
+        bool include_utilization = true, bool* runtime_ok = nullptr) const {
         std::vector<NvidiaNvmlDevice> devices;
+        if (runtime_ok) {
+            *runtime_ok = false;
+        }
         if (!ready_ || init_() != NVML_SUCCESS) {
             return devices;
         }
 
-        // NVML documents init/shutdown as reference-counted and the library as
-        // thread-safe. Each query owns one balanced init reference, so there is
-        // no process-lifetime initialized singleton and no atexit shutdown race.
+        // Each query owns one balanced NVML init reference. The shared object
+        // only caches dlopen/dlsym state, so process shutdown never has to race
+        // a process-lifetime nvmlShutdown against an in-flight request.
         struct ShutdownGuard {
             ShutdownFn shutdown;
             ~ShutdownGuard() {
@@ -83,6 +89,9 @@ public:
         unsigned int count = 0;
         if (get_count_(&count) != NVML_SUCCESS) {
             return devices;
+        }
+        if (runtime_ok) {
+            *runtime_ok = true;
         }
 
         char driver_buffer[NVML_DRIVER_VERSION_BUFFER_SIZE] = {};
@@ -99,16 +108,16 @@ public:
                 continue;
             }
 
+            char name_buffer[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
+            if (get_name_(device, name_buffer, sizeof(name_buffer)) != NVML_SUCCESS ||
+                name_buffer[0] == '\0') {
+                continue;
+            }
+
             NvidiaNvmlDevice info;
             info.index = static_cast<int>(index);
+            info.name = name_buffer;
             info.driver_version = driver_version;
-
-            if (get_name_) {
-                char name_buffer[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
-                if (get_name_(device, name_buffer, sizeof(name_buffer)) == NVML_SUCCESS) {
-                    info.name = name_buffer;
-                }
-            }
 
             if (get_uuid_) {
                 char uuid_buffer[NVML_DEVICE_UUID_BUFFER_SIZE] = {};
@@ -146,6 +155,10 @@ public:
         }
 
         return devices;
+    }
+
+    bool ready() const {
+        return ready_;
     }
 
 private:
@@ -291,17 +304,86 @@ private:
         get_utilization_ = load_symbol<GetUtilizationFn>("nvmlDeviceGetUtilizationRates");
         get_memory_ = load_symbol<GetMemoryFn>("nvmlDeviceGetMemoryInfo");
 
-        ready_ = init_ && shutdown_ && get_count_ && get_handle_ &&
-            (get_name_ || get_utilization_ || get_memory_);
+        ready_ = init_ && shutdown_ && get_count_ && get_handle_ && get_name_;
     }
 };
+
+struct NvmlLibraryCache {
+    std::mutex mutex;
+    std::shared_ptr<NvmlLibrary> library;
+    std::chrono::steady_clock::time_point retry_after{};
+};
+
+inline NvmlLibraryCache& nvml_library_cache() {
+    // Avoid static destruction of the cached driver handle. The OS reclaims it
+    // at process exit; runtime failures explicitly invalidate it while running.
+    static auto* cache = new NvmlLibraryCache();
+    return *cache;
+}
+
+inline std::shared_ptr<NvmlLibrary> acquire_nvml_library() {
+    auto& cache = nvml_library_cache();
+    const auto now = std::chrono::steady_clock::now();
+    std::lock_guard<std::mutex> lock(cache.mutex);
+
+    if (cache.library) {
+        return cache.library;
+    }
+    if (now < cache.retry_after) {
+        return {};
+    }
+
+    auto library = std::make_shared<NvmlLibrary>();
+    if (!library->ready()) {
+        cache.retry_after = now + std::chrono::seconds(30);
+        return {};
+    }
+
+    cache.library = library;
+    cache.retry_after = {};
+    return library;
+}
+
+inline void invalidate_nvml_library(
+    const std::shared_ptr<NvmlLibrary>& library) {
+    auto& cache = nvml_library_cache();
+    std::lock_guard<std::mutex> lock(cache.mutex);
+    if (cache.library == library) {
+        cache.library.reset();
+        cache.retry_after =
+            std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    }
+}
 
 } // namespace nvidia_metrics_detail
 
 inline std::vector<NvidiaNvmlDevice> query_nvidia_nvml_devices(
     bool include_utilization = true) {
-    nvidia_metrics_detail::NvmlLibrary library;
-    return library.query_devices(include_utilization);
+    auto library = nvidia_metrics_detail::acquire_nvml_library();
+    if (!library) {
+        return {};
+    }
+
+    bool runtime_ok = false;
+    auto devices = library->query_devices(include_utilization, &runtime_ok);
+    if (!runtime_ok) {
+        nvidia_metrics_detail::invalidate_nvml_library(library);
+    }
+    return devices;
+}
+
+inline NvidiaMetrics primary_nvidia_metrics(
+    const std::vector<NvidiaNvmlDevice>& devices) {
+    for (const auto& device : devices) {
+        if (!device.name.empty()) {
+            return {device.gpu_percent, device.vram_used_gb};
+        }
+    }
+    return {};
+}
+
+inline NvidiaMetrics query_primary_nvidia_metrics() {
+    return primary_nvidia_metrics(query_nvidia_nvml_devices());
 }
 
 inline NvidiaMetrics aggregate_nvidia_metrics(
@@ -311,6 +393,9 @@ inline NvidiaMetrics aggregate_nvidia_metrics(
     // Independent device pools are not additive for this scalar API. Keep the
     // largest observed value for each resource, independently of device activity.
     for (const auto& device : devices) {
+        if (device.name.empty()) {
+            continue;
+        }
         system_metrics_detail::merge_max(
             result, {device.gpu_percent, device.vram_used_gb});
     }

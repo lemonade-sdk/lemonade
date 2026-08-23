@@ -203,8 +203,10 @@ int main() {
     // test is deterministic and does not require NVIDIA hardware or NVML.
     {
         std::vector<lemon::NvidiaNvmlDevice> devices(2);
+        devices[0].name = "GPU 0";
         devices[0].gpu_percent = 90.0;
         devices[0].vram_used_gb = 1.0;
+        devices[1].name = "GPU 1";
         devices[1].gpu_percent = 5.0;
         devices[1].vram_used_gb = 20.0;
 
@@ -221,6 +223,7 @@ int main() {
 
     {
         std::vector<lemon::NvidiaNvmlDevice> devices(1);
+        devices[0].name = "GPU 0";
         devices[0].gpu_percent = -1.0;
         devices[0].vram_used_gb = 20.0;
 
@@ -237,6 +240,7 @@ int main() {
 
     {
         std::vector<lemon::NvidiaNvmlDevice> devices(1);
+        devices[0].name = "GPU 0";
         devices[0].gpu_percent = 70.0;
         devices[0].vram_used_gb = -1.0;
 
@@ -249,6 +253,45 @@ int main() {
             "NVIDIA unavailable VRAM remains unavailable",
             metrics.vram_used_gb,
             -1.0);
+    }
+
+    {
+        std::vector<lemon::NvidiaNvmlDevice> devices(2);
+        devices[0].gpu_percent = 99.0;
+        devices[0].vram_used_gb = 99.0;
+        devices[1].name = "GPU 1";
+        devices[1].gpu_percent = 12.0;
+        devices[1].vram_used_gb = 8.0;
+
+        const auto metrics = lemon::aggregate_nvidia_metrics(devices);
+        failures += !expect_double(
+            "NVIDIA aggregation ignores unnamed devices",
+            metrics.gpu_percent,
+            12.0);
+        failures += !expect_double(
+            "NVIDIA unnamed device cannot contribute VRAM",
+            metrics.vram_used_gb,
+            8.0);
+    }
+
+    {
+        std::vector<lemon::NvidiaNvmlDevice> devices(2);
+        devices[0].name = "GPU 0";
+        devices[0].gpu_percent = 4.0;
+        devices[0].vram_used_gb = 3.0;
+        devices[1].name = "GPU 1";
+        devices[1].gpu_percent = 80.0;
+        devices[1].vram_used_gb = 20.0;
+
+        const auto metrics = lemon::primary_nvidia_metrics(devices);
+        failures += !expect_double(
+            "primary NVIDIA scalar uses first device utilization",
+            metrics.gpu_percent,
+            4.0);
+        failures += !expect_double(
+            "primary NVIDIA scalar uses first device VRAM",
+            metrics.vram_used_gb,
+            3.0);
     }
 
     {
