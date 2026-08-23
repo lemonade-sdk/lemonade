@@ -248,6 +248,7 @@ class TestGpuHangRecovery(unittest.TestCase):
                 "vulkan_bin": mock_exe,
                 "cuda_bin": mock_exe,
                 "rocm_bin": mock_exe,
+                "metal_bin": mock_exe,
             },
         }
         try:
