@@ -117,7 +117,10 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     const DraftActivation draft_activation = compute_draft_activation(
         model_info.labels,
         model_info.checkpoint("draft"),
-        draft_file_present);
+        draft_file_present,
+        model_info.gguf.architecture,
+        model_info.resolved_path("mmproj"),
+        model_info.extra<bool>("hf_load", false));
 
     if (draft_activation.spec_type == "draft-dflash") {
         defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
@@ -362,7 +365,10 @@ void LlamaCppServer::load(const std::string& model_name,
         model_info.labels,
         model_info.checkpoint("draft"),
         !draft_path.empty() &&
-            lemon::backends::hf_cache::exists(path_from_utf8(draft_path)));
+            lemon::backends::hf_cache::exists(path_from_utf8(draft_path)),
+        model_info.gguf.architecture,
+        model_info.resolved_path("mmproj"),
+        model_info.extra<bool>("hf_load", false));
 
     if (draft_activation.use_draft_checkpoint) {
         push_arg(args, reserved_flags, "--model-draft", draft_path);

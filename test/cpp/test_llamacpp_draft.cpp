@@ -13,6 +13,18 @@ using lemon::backends::DraftActivation;
 using lemon::backends::compute_draft_activation;
 using lemon::backends::is_dflash_draft_checkpoint;
 
+// Defaults that keep the GLM4-MOE mmproj guard out of the way for the
+// non-GLM4 cases below.
+static DraftActivation act(const std::vector<std::string>& labels,
+                           const std::string& checkpoint,
+                           bool draft_present,
+                           const std::string& arch = "qwen3",
+                           const std::string& mmproj_path = "",
+                           bool hf_load = false) {
+    return compute_draft_activation(labels, checkpoint, draft_present,
+                                    arch, mmproj_path, hf_load);
+}
+
 static bool expect_activation(const char* name,
                               const DraftActivation& actual,
                               bool want_use_draft,
@@ -49,47 +61,88 @@ int main() {
     // The three activation cases called out in review of PR #3253.
     failures += !expect_activation(
         "draft present + no mtp label -> inactive",
-        compute_draft_activation({}, "mtp-drafter.gguf", /*draft_file_present=*/true),
+        act({}, "mtp-drafter.gguf", /*draft_file_present=*/true),
         false, "");
 
     failures += !expect_activation(
         "draft missing + mtp label -> inactive",
-        compute_draft_activation({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/false),
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/false),
         false, "");
 
     failures += !expect_activation(
         "draft present + mtp label -> --model-draft + --spec-type draft-mtp",
-        compute_draft_activation({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
         true, "draft-mtp");
 
     // DFlash stays gated on its own label.
     failures += !expect_activation(
         "dflash draft present + dflash label -> draft-dflash",
-        compute_draft_activation({"dflash"}, "dflash-v2.gguf", /*draft_file_present=*/true),
+        act({"dflash"}, "dflash-v2.gguf", /*draft_file_present=*/true),
         true, "draft-dflash");
 
     failures += !expect_activation(
         "dflash draft present + mtp label only -> inactive",
-        compute_draft_activation({"mtp"}, "dflash.gguf", /*draft_file_present=*/true),
+        act({"mtp"}, "dflash.gguf", /*draft_file_present=*/true),
         false, "");
 
     failures += !expect_activation(
         "dflash draft present + no label -> inactive",
-        compute_draft_activation({}, "dflash.gguf", /*draft_file_present=*/true),
+        act({}, "dflash.gguf", /*draft_file_present=*/true),
         false, "");
 
     // A plain (non-dflash) drafter with a dflash label but no mtp label must
     // not activate MTP either: the label has to match the drafter kind.
     failures += !expect_activation(
         "mtp draft present + dflash label only -> inactive",
-        compute_draft_activation({"dflash"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
+        act({"dflash"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
         false, "");
 
     // Unrelated labels must not trigger activation.
     failures += !expect_activation(
         "draft present + unrelated labels -> inactive",
-        compute_draft_activation({"chat", "vision"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
+        act({"chat", "vision"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
         false, "");
+
+    // GLM4-MOE without mmproj must stay MTP-inactive (crash guard, #2451).
+    failures += !expect_activation(
+        "glm4-moe + mtp label + no mmproj -> inactive (crash guard)",
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
+            /*arch=*/"glm4-moe"),
+        false, "");
+
+    failures += !expect_activation(
+        "chatglm4 + mtp label + no mmproj -> inactive (crash guard)",
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
+            /*arch=*/"chatglm4"),
+        false, "");
+
+    // GLM4-MOE with an mmproj present is fine: MTP activates.
+    failures += !expect_activation(
+        "glm4-moe + mtp label + mmproj present -> draft-mtp",
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
+            /*arch=*/"glm4-moe", /*mmproj_path=*/"/models/mmproj-f16.gguf"),
+        true, "draft-mtp");
+
+    // GLM4-MOE loaded via -hf: llama-server resolves mmproj itself -> MTP ok.
+    failures += !expect_activation(
+        "glm4-moe + mtp label + hf_load -> draft-mtp",
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
+            /*arch=*/"glm4-moe", /*mmproj_path=*/"", /*hf_load=*/true),
+        true, "draft-mtp");
+
+    // Case-insensitive architecture matching (GLM4 vs glm4).
+    failures += !expect_activation(
+        "GLM4 (uppercase) + mtp label + no mmproj -> inactive",
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
+            /*arch=*/"GLM4"),
+        false, "");
+
+    // Non-GLM4 architectures are unaffected by the crash guard.
+    failures += !expect_activation(
+        "gemma-4 + mtp label + no mmproj -> draft-mtp (text-only ok)",
+        act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
+            /*arch=*/"gemma4"),
+        true, "draft-mtp");
 
     // DFlash checkpoint-name detection (filename only, path separators ignored).
     failures += !expect_dflash_checkpoint("dflash.gguf", "dflash.gguf", true);
