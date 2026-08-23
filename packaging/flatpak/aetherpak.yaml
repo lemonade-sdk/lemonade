@@ -1,0 +1,34 @@
+registry: ghcr.io
+oci_repository: lemonade-sdk/flatpak
+pages_url: https://lemonade-server.ai
+site_subpath: flatpak
+remote_name: lemonade
+repo_title: "Lemonade Flatpak Repository"
+repo_homepage: https://lemonade-server.ai/
+app_id: ai.lemonadeserver.app
+manifest: packaging/flatpak/ai.lemonadeserver.app.yaml
+branches:
+  - stable
+  - nightly
+default_branch: stable
+arches:
+  - x86_64
+  - aarch64
+
+defaults:
+  run_linter: true
+  builder_args:
+    - --install-deps-from=flathub
+
+apps:
+  - id: ai.lemonadeserver.app
+    manifest: packaging/flatpak/ai.lemonadeserver.app.yaml
+    linter:
+      exceptions:
+        # Shared host cache access: Lemonade intentionally shares model weights (HF_HOME, ModelScope)
+        # and server cache with host CLI and Python tools to prevent duplicating 50GB+ model files.
+        - finish-args-unnecessary-xdg-cache-lemonade-rw-access
+        - finish-args-unnecessary-xdg-cache-modelscope-rw-access
+        - finish-args-unnecessary-xdg-cache-huggingface-rw-access
+        # AppStream screenshot: appstreamcli compose skips remote screenshot validation in offline build sandboxes.
+        - appstream-missing-screenshots
