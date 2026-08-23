@@ -19,6 +19,7 @@
 using lemon::system_info_detail::compute_cap_to_sm;
 using lemon::system_info_detail::cuda_supported_archs;
 using lemon::system_info_detail::device_matches_constraint;
+using lemon::system_info_detail::extract_compute_capability;
 using lemon::system_info_detail::gfx_target_version_to_arch;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
@@ -132,6 +133,25 @@ static bool expect_device_memory(const char* name,
 
 int main() {
     int failures = 0;
+
+    const std::vector<std::pair<nlohmann::json, std::string>> extract_cases = {
+        {nlohmann::json{{"compute_capability", "8.9"}}, "8.9"},
+        {nlohmann::json{{"compute_capability", "8.6"}}, "8.6"},
+        {nlohmann::json{{"compute_capability", 8.9}}, "8.9"},
+        {nlohmann::json{{"compute_capability", 8.0}}, "8.0"},
+        {nlohmann::json{{"compute_capability", 8}}, "8"},
+        {nlohmann::json{{"other", "value"}}, ""},
+        {nlohmann::json{{"compute_capability", nullptr}}, ""},
+        {nlohmann::json{{"compute_capability", true}}, ""},
+        {nlohmann::json{{"compute_capability", nlohmann::json::array()}}, ""},
+        {nlohmann::json{{"compute_capability", nlohmann::json::object()}}, ""},
+        {nlohmann::json("not an object"), ""},
+    };
+    for (size_t i = 0; i < extract_cases.size(); ++i) {
+        const auto& [gpu_json, expected] = extract_cases[i];
+        const std::string name = "extract_compute_capability case " + std::to_string(i);
+        failures += !expect_string(name.c_str(), extract_compute_capability(gpu_json), expected);
+    }
 
     const std::vector<std::pair<std::string, std::string>> compute_cap_cases = {
         {"7.5", "sm_75"},
