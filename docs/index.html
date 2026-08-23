@@ -74,6 +74,10 @@
             <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/snapcraft.png" alt="Snap" />
             <span class="gs-platform-name">Snap</span>
           </button>
+          <button class="gs-platform" type="button" data-platform="flatpak">
+            <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/flatpak.png" alt="Flatpak" />
+            <span class="gs-platform-name">Flatpak</span>
+          </button>
           <button class="gs-platform" type="button" data-platform="ubuntu">
             <img src="https://raw.githubusercontent.com/lemonade-sdk/assets/main/platforms/ubuntu.png" alt="Ubuntu" />
             <span class="gs-platform-name">Ubuntu</span>
@@ -341,6 +345,27 @@
             break;
           case 'snap':
             html = gsConsoleHtml(['sudo snap install lemonade']);
+            break;
+          case 'flatpak':
+            html = '<div class="gs-fedora-cols">' +
+              '<div class="gs-fedora-col">' +
+                '<p class="gs-fedora-label">Stable</p>' +
+                gsConsoleHtml([
+                  'flatpak remote-add --if-not-exists lemonade https://lemonade-server.ai/flatpak/lemonade.flatpakrepo',
+                  'flatpak install lemonade ai.lemonadeserver.app'
+                ]) +
+              '</div>' +
+              '<div class="gs-fedora-col">' +
+                '<p class="gs-fedora-label">Nightly</p>' +
+                gsConsoleHtml([
+                  'flatpak remote-add --if-not-exists lemonade https://lemonade-server.ai/flatpak/lemonade.flatpakrepo',
+                  'flatpak install lemonade ai.lemonadeserver.app//nightly'
+                ]) +
+              '</div>' +
+            '</div>' +
+            '<div class="gs-install-block">' +
+              gsConsoleHtml(['flatpak run ai.lemonadeserver.app']) +
+            '</div>';
             break;
           case 'ubuntu':
             html = gsConsoleHtml([
