@@ -217,16 +217,21 @@ static void test_negative_or_nonfinite_price_excluded_from_ranking() {
           s.ok && s.score_of("Mid-GGUF") == 1.0);
 }
 
-static void test_ranking_is_memoized_across_evaluate_calls() {
+static void test_ranking_reflects_a_price_change_on_the_next_evaluate_call() {
+    // The classifier itself must not cache across evaluate() calls: it is
+    // shared (via RoutePolicy::classifiers' shared_ptr) by every request's
+    // engine for as long as the collection's policy is loaded, so a
+    // classifier-level cache would freeze the winner at whatever it was on
+    // first use. Any request-scale caching belongs in CostServices::cost_of,
+    // which is free to memoize as long as it invalidates on real changes.
     auto cost = make_cost({"Cheap-GGUF", "Mid-GGUF"});
-    auto call_count = std::make_shared<int>(0);
+    auto price = std::make_shared<double>(0.1);
     CostServices services;
-    services.cost_of = [call_count](const std::string& candidate) -> CostInfo {
-        ++*call_count;
+    services.cost_of = [price](const std::string& candidate) -> CostInfo {
         CostInfo info;
         if (candidate == "Cheap-GGUF") {
-            info.cost_input_per_million = 0.1;
-            info.cost_output_per_million = 0.2;
+            info.cost_input_per_million = *price;
+            info.cost_output_per_million = *price;
         } else if (candidate == "Mid-GGUF") {
             info.cost_input_per_million = 1.0;
             info.cost_output_per_million = 2.0;
@@ -234,12 +239,11 @@ static void test_ranking_is_memoized_across_evaluate_calls() {
         return info;
     };
     ClassifierContext ctx{make_route("hi"), ClassifierServices{}, services};
-    Score s1 = cost->evaluate(ctx);
-    Score s2 = cost->evaluate(ctx);
-    Score s3 = cost->evaluate(ctx);
-    check("cost: repeated evaluate() calls reuse the memoized ranking (cost_of called once per candidate)",
-          *call_count == 2 && s1.score_of("Cheap-GGUF") == 1.0 &&
-          s2.score_of("Cheap-GGUF") == 1.0 && s3.score_of("Cheap-GGUF") == 1.0);
+    Score before = cost->evaluate(ctx);
+    *price = 10.0;  // Cheap-GGUF just got more expensive than Mid-GGUF.
+    Score after = cost->evaluate(ctx);
+    check("cost: a price change is reflected on the very next evaluate() call",
+          before.score_of("Cheap-GGUF") == 1.0 && after.score_of("Mid-GGUF") == 1.0);
 }
 
 static void test_rationale_uses_locale_independent_formatting() {
@@ -399,7 +403,7 @@ int main() {
     test_mixed_priced_and_unpriced_candidates();
     test_partial_price_data_treated_as_no_data();
     test_negative_or_nonfinite_price_excluded_from_ranking();
-    test_ranking_is_memoized_across_evaluate_calls();
+    test_ranking_reflects_a_price_change_on_the_next_evaluate_call();
     test_rationale_uses_locale_independent_formatting();
     test_throwing_candidate_excluded_not_a_failure();
     test_unset_cost_services_is_classifier_failure();

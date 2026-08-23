@@ -477,14 +477,14 @@ std::string format_cost(double value) {
 // The deterministic cost classifier backing `router.type: "cost_select"`
 // (see routing_policy_parser.cpp for how it's desugared alongside `llm`).
 // Scores each candidate via CostServices::cost_of and reports the cheapest
-// (argmin) as the sole winning label.
+// (argmin) as the sole winning label. Re-ranks on every evaluate() call, but
+// cheaply: cost_of is backed by a cache that only misses on a genuine
+// registry change, not per request.
 //
 // A candidate with no usable cost data is excluded from ranking rather than
 // failing the classifier; if none has cost data the classifier reports an
 // empty Score so the engine falls open to default_model. Only a wholly unset
-// cost_services.cost_of is a classifier-level failure. The ranking depends
-// only on `labels` + `cost_services` (fixed for the engine's lifetime), so
-// it's memoized after the first evaluate() call.
+// cost_services.cost_of is a classifier-level failure.
 class CostClassifier final : public Classifier {
 public:
     CostClassifier(std::string id, std::string type, OnError on_error,
@@ -501,11 +501,6 @@ public:
     Score evaluate(const ClassifierContext& ctx) const override {
         if (!ctx.cost_services.cost_of) {
             return failed_score();
-        }
-
-        std::lock_guard<std::mutex> lock(cache_mutex_);
-        if (cached_result_.has_value()) {
-            return *cached_result_;
         }
 
         const auto& candidates = labels();
@@ -543,13 +538,8 @@ public:
                                 "falling open to default_model";
         }
 
-        cached_result_ = result;
         return result;
     }
-
-private:
-    mutable std::mutex cache_mutex_;
-    mutable std::optional<Score> cached_result_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {

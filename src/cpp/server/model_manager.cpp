@@ -1048,6 +1048,10 @@ uint64_t ModelManager::next_notify_generation() {
     return ++notify_generation_;
 }
 
+uint64_t ModelManager::current_notify_generation() const {
+    return notify_generation_.load();
+}
+
 void ModelManager::notify_models_changed() {
     // A callback that reads the registry can trigger a cache rebuild; block any
     // same-thread re-entry so that can never recursively re-fire this.
@@ -3088,69 +3092,80 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         return 0;
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
-    // Reseed: drop this provider's previously-registered entries before
-    // inserting the fresh list, so a model the provider stopped exposing
-    // disappears. Other providers' entries are untouched.
-    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
-        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = models_cache_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
     size_t added = 0;
-    for (const auto& m : models) {
-        if (m.recipe != "cloud" || m.model_name.empty()) continue;
-        // Match build_cache()'s precedence exactly: emplace, don't overwrite.
-        // Any pre-existing entry under the same bare cache key wins - whether
-        // it's an FLM model, another cloud provider that discovered first, or
-        // a builtin/extra/user record. This provider's previously-registered
-        // entries are already cleared above, so emplace here is symmetric
-        // with build_cache and immune to a fast /cloud/auth racing past an
-        // already-populated cache.
-        ModelInfo info = m;
-        // discover_models() populates name/checkpoint/labels/context/cost but
-        // not recipe_options; Router needs it to construct CloudServer.
-        info.recipe_options = RecipeOptions("cloud", json::object());
-        auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
-        if (!inserted) {
-            LOG(INFO, "ModelManager")
-                << "Cloud discovery for '" << provider << "' skipping '"
-                << it->first << "': name already held (recipe="
-                << it->second.recipe << ")" << std::endl;
-            continue;
-        }
-        ++added;
-    }
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-    rebuild_public_model_aliases_locked();
+        // Reseed: drop this provider's previously-registered entries before
+        // inserting the fresh list, so a model the provider stopped exposing
+        // disappears. Other providers' entries are untouched.
+        for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+            if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+                it = models_cache_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        for (const auto& m : models) {
+            if (m.recipe != "cloud" || m.model_name.empty()) continue;
+            // Match build_cache()'s precedence exactly: emplace, don't overwrite.
+            // Any pre-existing entry under the same bare cache key wins - whether
+            // it's an FLM model, another cloud provider that discovered first, or
+            // a builtin/extra/user record. This provider's previously-registered
+            // entries are already cleared above, so emplace here is symmetric
+            // with build_cache and immune to a fast /cloud/auth racing past an
+            // already-populated cache.
+            ModelInfo info = m;
+            // discover_models() populates name/checkpoint/labels/context/cost but
+            // not recipe_options; Router needs it to construct CloudServer.
+            info.recipe_options = RecipeOptions("cloud", json::object());
+            auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
+            if (!inserted) {
+                LOG(INFO, "ModelManager")
+                    << "Cloud discovery for '" << provider << "' skipping '"
+                    << it->first << "': name already held (recipe="
+                    << it->second.recipe << ")" << std::endl;
+                continue;
+            }
+            ++added;
+        }
+
+        rebuild_public_model_aliases_locked();
+    }
 
     LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
                                << provider << "': " << added << " model(s)"
                                << std::endl;
+    // Registry-generation consumers (e.g. the routing-policy cost cache, the
+    // routing-helper reconciler) need to see freshly-discovered pricing and
+    // catalog changes without waiting for an on-disk edit or a restart.
+    notify_models_changed();
     return added;
 }
 
 size_t ModelManager::evict_cloud_models(const std::string& provider) {
     if (provider.empty()) return 0;
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
     size_t removed = 0;
-    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
-        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = models_cache_.erase(it);
-            ++removed;
-        } else {
-            ++it;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+            if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+                it = models_cache_.erase(it);
+                ++removed;
+            } else {
+                ++it;
+            }
+        }
+        if (removed > 0) {
+            rebuild_public_model_aliases_locked();
         }
     }
     if (removed > 0) {
-        rebuild_public_model_aliases_locked();
         LOG(DEBUG, "ModelManager") << "Evicted " << removed
                                     << " cloud model(s) for provider '"
                                     << provider << "'" << std::endl;
+        notify_models_changed();
     }
     return removed;
 }

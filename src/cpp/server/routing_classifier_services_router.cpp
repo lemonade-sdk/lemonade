@@ -1,5 +1,6 @@
 #include "lemon/routing_classifier_services.h"
 
+#include "lemon/model_manager.h"
 #include "lemon/router.h"
 
 #include <map>
@@ -19,19 +20,24 @@ ClassifierServices make_router_classifier_services(
         [&router](const std::string& model) { return router.get_model_type(model); });
 }
 
-CostServices make_router_cost_services(Router& router) {
-    // Process-lifetime memo: cost metadata is effectively static per model name
-    // for a running lemond. Avoids a registry/build_cache hit on every routed
-    // request. Not invalidated on mid-process catalog rebuild (prices rarely
-    // change without a restart); revisit if ModelManager gains a generation
-    // counter consumers can subscribe to.
+CostServices make_router_cost_services(Router& router, ModelManager& model_manager) {
+    // Memo keyed by candidate name, valid for one registry-change generation:
+    // avoids a registry/build_cache hit on every routed request while still
+    // picking up a price the moment it changes (model add/edit/remove, cloud
+    // discovery, on-disk edit) instead of only on restart.
     static std::mutex cache_mu;
     static std::map<std::string, CostInfo> cache;
+    static uint64_t cached_generation = 0;
 
     CostServices services;
-    services.cost_of = [&router](const std::string& candidate) -> CostInfo {
+    services.cost_of = [&router, &model_manager](const std::string& candidate) -> CostInfo {
+        const uint64_t generation = model_manager.current_notify_generation();
         {
             std::lock_guard<std::mutex> lock(cache_mu);
+            if (generation != cached_generation) {
+                cache.clear();
+                cached_generation = generation;
+            }
             auto it = cache.find(candidate);
             if (it != cache.end()) {
                 return it->second;

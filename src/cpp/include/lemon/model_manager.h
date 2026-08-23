@@ -208,6 +208,11 @@ public:
     // seed) use this so their publication participates in the same ordering.
     uint64_t next_notify_generation();
 
+    // Peek the current registry-change generation without reserving a new
+    // one (see make_router_cost_services in
+    // routing_classifier_services_router.cpp for why a caller needs this).
+    uint64_t current_notify_generation() const;
+
     // Get all supported models from server_models.json
     std::map<std::string, ModelInfo> get_supported_models();
 
