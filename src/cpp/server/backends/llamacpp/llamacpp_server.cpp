@@ -131,7 +131,21 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     if (is_dflash_draft && has_dflash_label) {
         defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
     } else if (uses_mtp) {
-        defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
+        // MTP speculative decoding: only guard for architectures whose draft
+        // generation accesses vision tensors (e.g. GLM4-MOE / glm4-moe.cpp).
+        // Text-only MTP models (Gemma-4, Qwen3.x) are fine without mmproj.
+        // See #2451, #2458.
+        const bool is_glm4_moe =
+            model_info.gguf.architecture.find("glm4") != std::string::npos
+            || model_info.gguf.architecture.find("chatglm4") != std::string::npos;
+        const std::string mmproj_path = model_info.resolved_path("mmproj");
+        if (is_glm4_moe && mmproj_path.empty()
+            && !model_info.extra<bool>("hf_load", false)) {
+            LOG(WARNING, "LlamaCpp") << "Model has MTP capability but no mmproj found; "
+                                     << "skipping speculative decoding to avoid crash" << std::endl;
+        } else {
+            defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
+        }
     }
 
     return append_runtime_arg_defaults(custom_args, defaults);
