@@ -3819,6 +3819,15 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 auto& first_choice = response["choices"][0];
                 if (first_choice.contains("message")) {
                     auto& message = first_choice["message"];
+                    // Ensure content field is present alongside reasoning_content:
+                    // standard OpenAI-compatible clients expect content to always
+                    // be present (#1370).
+                    const bool has_reasoning = message.contains("reasoning_content") &&
+                                               message["reasoning_content"].is_string();
+                    const bool has_content = message.contains("content") && !message["content"].is_null();
+                    if (has_reasoning && !has_content) {
+                        message["content"] = "";
+                    }
                     if (message.contains("tool_calls")) {
                         LOG(DEBUG, "Server") << "Response contains tool_calls: " << message["tool_calls"].dump() << std::endl;
                     } else {

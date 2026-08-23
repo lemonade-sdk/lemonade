@@ -11,6 +11,96 @@ namespace lemon {
 
 namespace {
 
+// Normalize a single `data: {...}` SSE line for chat.completion.chunk
+// objects. Applies two fixes for OpenAI API compliance (#1370):
+//
+// 1. Role normalization: some backends emit null or missing `delta.role` on
+//    content chunks. Injects `"role": "assistant"` when the delta contains
+//    assistant-type fields (content, reasoning_content, thinking, tool_calls,
+//    function_call) but role is absent or null.
+//
+// 2. Content normalization: backends that emit `reasoning_content` often omit
+//    the standard `content` field entirely. Injects `"content": ""` to
+//    prevent OpenAI-compatible clients (e.g. @ai-sdk/openai-compatible) from
+//    resetting the connection when content is expected but absent.
+std::string normalize_data_line(const std::string& line) {
+    const std::string prefix = "data: ";
+    if (line.rfind(prefix, 0) != 0) {
+        return line;
+    }
+
+    // Preserve trailing \r if present (some SSE implementations send \r\n)
+    std::string suffix;
+    std::string payload = line.substr(prefix.size());
+    if (!payload.empty() && payload.back() == '\r') {
+        suffix = "\r";
+        payload.pop_back();
+    }
+
+    if (payload.empty() || payload == "[DONE]") {
+        return line;
+    }
+
+    try {
+        auto chunk = json::parse(payload);
+        // Only normalize chat.completion.chunk objects — leave text_completion,
+        // error frames, and other SSE events untouched.
+        if (!chunk.is_object() ||
+            !chunk.contains("object") ||
+            !chunk["object"].is_string() ||
+            chunk["object"].get<std::string>() != "chat.completion.chunk" ||
+            !chunk.contains("choices") ||
+            !chunk["choices"].is_array()) {
+            return line;
+        }
+
+        bool changed = false;
+        for (auto& choice : chunk["choices"]) {
+            if (!choice.is_object() || !choice.contains("delta") || !choice["delta"].is_object()) {
+                continue;
+            }
+
+            auto& delta = choice["delta"];
+
+            // --- Fix 1: Role normalization ---
+            const bool role_is_null = delta.contains("role") && delta["role"].is_null();
+            const bool role_is_missing = !delta.contains("role");
+            const bool has_assistant_delta =
+                delta.contains("content") ||
+                delta.contains("reasoning_content") ||
+                delta.contains("thinking") ||
+                delta.contains("tool_calls") ||
+                delta.contains("function_call");
+
+            if (role_is_null || (role_is_missing && has_assistant_delta)) {
+                delta["role"] = "assistant";
+                changed = true;
+            }
+
+            // --- Fix 2: Content normalization ---
+            // If delta has reasoning_content but content is missing or null,
+            // inject empty content string for OpenAI compatibility.
+            const bool has_reasoning = delta.contains("reasoning_content") &&
+                                       delta["reasoning_content"].is_string();
+            const bool has_content = delta.contains("content") && !delta["content"].is_null();
+
+            if (has_reasoning && !has_content) {
+                delta["content"] = "";
+                changed = true;
+            }
+        }
+
+        if (!changed) {
+            return line;
+        }
+
+        return prefix + chunk.dump() + suffix;
+    } catch (...) {
+        // Malformed JSON — pass through unchanged
+        return line;
+    }
+}
+
 void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::TelemetryData& telemetry) {
     nlohmann::json usage;
     if (chunk.contains("usage")) {
@@ -79,6 +169,28 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
 
 } // namespace
 
+// Normalize every `data: {...}` line in a raw SSE chunk (which may contain
+// zero, one, or many lines) for OpenAI chat-completion compatibility. See
+// normalize_data_line() above.
+std::string StreamingProxy::normalize_chat_completion_chunk(const std::string& sse_chunk) {
+    std::string output;
+    size_t pos = 0;
+
+    while (pos < sse_chunk.size()) {
+        size_t newline = sse_chunk.find('\n', pos);
+        if (newline == std::string::npos) {
+            output += normalize_data_line(sse_chunk.substr(pos));
+            break;
+        }
+
+        output += normalize_data_line(sse_chunk.substr(pos, newline - pos));
+        output.push_back('\n');
+        pos = newline + 1;
+    }
+
+    return output;
+}
+
 
 void StreamingProxy::forward_sse_stream(
     const std::string& backend_url,
@@ -140,9 +252,6 @@ void StreamingProxy::forward_sse_stream(
                 return true;
             }
 
-            line_buffer.append(data, length);
-            process_sse_lines(line_buffer, process_line);
-
             std::string chunk(data, length);
             if (!has_first_token && chunk.find("data: ") != std::string::npos) {
                 has_first_token = true;
@@ -154,8 +263,33 @@ void StreamingProxy::forward_sse_stream(
                 has_done_marker = true;
             }
 
-            if (!sink.write(data, length)) {
-                return false;
+            // Accumulate bytes and flush only complete (newline-terminated) lines:
+            // each complete line feeds telemetry extraction, then is normalized
+            // for OpenAI compatibility before being forwarded to the client
+            // (#1370). Partial trailing lines stay buffered for the next chunk.
+            line_buffer.append(chunk);
+            std::string output;
+            size_t pos = 0;
+            size_t newline;
+            while ((newline = line_buffer.find('\n', pos)) != std::string::npos) {
+                std::string line = line_buffer.substr(pos, newline - pos + 1);
+                std::string telemetry_line = line;
+                if (!telemetry_line.empty() && telemetry_line.back() == '\n') {
+                    telemetry_line.pop_back();
+                }
+                if (!telemetry_line.empty() && telemetry_line.back() == '\r') {
+                    telemetry_line.pop_back();
+                }
+                process_line(telemetry_line);
+                output.append(StreamingProxy::normalize_chat_completion_chunk(line));
+                pos = newline + 1;
+            }
+            line_buffer.erase(0, pos);
+
+            if (!output.empty()) {
+                if (!sink.write(output.data(), output.size())) {
+                    return false; // Client disconnected
+                }
             }
 
             return true;

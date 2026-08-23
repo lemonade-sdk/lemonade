@@ -3118,6 +3118,14 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
     add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
 endif()
 
+set(_STREAMING_PROXY_REASONING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_reasoning_content.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_REASONING_TEST_SRC}")
+    add_executable(test_streaming_proxy_reasoning_content
+        test/cpp/test_streaming_proxy_reasoning_content.cpp)
+    target_link_libraries(test_streaming_proxy_reasoning_content PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingProxyReasoningContentTest CI ON COMMAND test_streaming_proxy_reasoning_content)
+endif()
+
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
 if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)

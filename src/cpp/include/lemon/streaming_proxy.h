@@ -68,6 +68,14 @@ public:
 
     static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);
 
+    // Normalize streaming chat.completion.chunk SSE deltas for OpenAI API
+    // compatibility. Injects `role: "assistant"` on assistant deltas that
+    // omit it, and `content: ""` when a delta carries reasoning_content but
+    // no content — clients like @ai-sdk/openai-compatible reset the
+    // connection when content is expected but absent (#1370). Non-chat SSE
+    // lines pass through unchanged.
+    static std::string normalize_chat_completion_chunk(const std::string& sse_chunk);
+
     static TelemetryData parse_telemetry(const std::string& buffer);
 
     // Extract telemetry from a complete (non-streaming) response body or a
