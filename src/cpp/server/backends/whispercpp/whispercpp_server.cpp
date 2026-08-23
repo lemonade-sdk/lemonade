@@ -303,9 +303,10 @@ void WhisperServer::load(const std::string& model_name,
     if (whispercpp_backend == "rocm") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
-            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
-            if (!therock_lib.empty()) {
-                lib_path = therock_lib + ":" + lib_path;
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
             }
         }
     }
@@ -329,7 +330,7 @@ void WhisperServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start whisper-server process");

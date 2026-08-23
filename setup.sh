@@ -843,4 +843,4 @@ echo "  Build the Tauri desktop app: cmake --build --preset default --target tau
 echo "    (first build downloads ~80 Rust crates and may take several minutes)"
 echo "  Hot-reload the desktop UI during development: cd src/app && npm run dev"
 echo ""
-print_info "For more information, see the docs/dev-getting-started.md file"
+print_info "For more information, see the docs/dev/getting-started.md file"
