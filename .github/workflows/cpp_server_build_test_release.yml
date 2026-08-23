@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
   actions: read  # Required for SignPath to read workflow/job details
 
 concurrency:
@@ -2916,6 +2917,18 @@ jobs:
           app-private-key: ${{ secrets.RELEASE_BRANCH_APP_PRIVATE_KEY }}
 
   # ========================================================================
+  # FLATPAK BUILD & PUBLISH (Stable Channel)
+  # ========================================================================
+
+  build-lemonade-flatpak:
+    name: Build & Publish Release Flatpak
+    uses: ./.github/workflows/flatpak-build-publish.yml
+    if: startsWith(github.ref, 'refs/tags/v')
+    with:
+      channel: stable
+      upload-bundle: true
+
+  # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
 
@@ -2926,6 +2939,7 @@ jobs:
       - sign-msi-installers
       - build-lemonade-rpm
       - build-lemonade-debian13
+      - build-lemonade-flatpak
       - test-lemonade-debian13-smoke
       - build-lemonade-macos-dmg
       - build-lemonade-embeddable-linux
@@ -3040,6 +3054,14 @@ jobs:
           name: lemonade-embeddable-macos
           path: .
 
+      - name: Download Lemonade Flatpak Packages
+        if: env.CANDIDATE == 'false'
+        uses: actions/download-artifact@v7
+        with:
+          pattern: flatpak-bundle-*
+          path: .
+          merge-multiple: true
+
       - name: Download Lemonade source tarball
         uses: actions/download-artifact@v7
         with:
@@ -3059,6 +3081,7 @@ jobs:
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb
           ls -lh *.pkg
+          if [ "$CANDIDATE" = "false" ]; then ls -lh ai.lemonadeserver.app_*.flatpak; fi
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
@@ -3073,6 +3096,32 @@ jobs:
           repo: ${{ github.repository }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Candidate builds skip the tag-gated Flatpak job, so the asset list is
+      # assembled at runtime rather than hardcoded.
+      - name: Collect release files
+        id: release-files
+        run: |
+          set -euo pipefail
+          {
+            echo 'files<<EOF'
+            echo 'lemonade-server-minimal.msi'
+            echo 'lemonade.msi'
+            echo 'lemonade-server-*.x86_64.rpm'
+            echo 'lemonade-server-*.aarch64.rpm'
+            echo "lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb"
+            echo "lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb"
+            echo '*.pkg'
+            if [ "$CANDIDATE" = "false" ]; then
+              echo 'ai.lemonadeserver.app_*.flatpak'
+            fi
+            echo "lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz"
+            echo "lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz"
+            echo "lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip"
+            echo "lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz"
+            echo "lemonade-${LEMONADE_VERSION}.tar.gz"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -3080,17 +3129,5 @@ jobs:
           name: ${{ env.CANDIDATE == 'true' && format('v{0} (release candidate)', env.LEMONADE_VERSION) || github.ref_name }}
           prerelease: ${{ env.CANDIDATE == 'true' }}
           body_path: ${{ steps.release-notes.outputs.release_notes_file }}
-          files: |
-            lemonade-server-minimal.msi
-            lemonade.msi
-            lemonade-server-*.x86_64.rpm
-            lemonade-server-*.aarch64.rpm
-            lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
-            lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_arm64.deb
-            *.pkg
-            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
-            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
-            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
-            lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
-            lemonade-${{ env.LEMONADE_VERSION }}.tar.gz
+          files: ${{ steps.release-files.outputs.files }}
           fail_on_unmatched_files: true

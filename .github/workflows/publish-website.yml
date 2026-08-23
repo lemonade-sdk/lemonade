@@ -8,6 +8,11 @@ on:
   repository_dispatch:
     types: [marketplace-updated]
 
+# Shared with the Flatpak index publisher, which also commits to `website`.
+concurrency:
+  group: website-branch
+  cancel-in-progress: false
+
 jobs:
     build-n-publish-website:
       name: Build and publish lemonade-server.ai website
