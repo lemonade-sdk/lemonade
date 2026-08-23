@@ -683,10 +683,11 @@ void TrayUI::open_web_app(const std::string& route) {
 
 std::string TrayUI::find_icon_path() {
     fs::path exe_dir = lemon::utils::get_executable_dir();
+    std::error_code ec;
 
 #ifdef __APPLE__
     std::string path = "/Library/Application Support/lemonade/resources/static/favicon.ico";
-    if (fs::exists(path)) return path;
+    if (fs::exists(path, ec) && !ec) return path;
 #elif defined(__linux__)
     // Search XDG data directories
     std::vector<std::string> data_dirs;
@@ -705,17 +706,22 @@ std::string TrayUI::find_icon_path() {
             if (!d.empty()) data_dirs.push_back(d);
         }
     } else {
+        data_dirs.push_back("/app/share");
         data_dirs.push_back("/usr/local/share");
         data_dirs.push_back("/usr/share");
         data_dirs.push_back("/opt/lemonade/share");
     }
     for (const auto& d : data_dirs) {
-        auto svg_clean = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonadeserver.Lemonade.svg";
-        if (fs::exists(svg_clean)) return svg_clean.string();
-        auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
-        if (fs::exists(svg)) return svg.string();
+        for (const char* app_id : {"ai.lemonadeserver.app", "ai.lemonadeserver.Lemonade", "ai.lemonade_server.Lemonade"}) {
+            auto svg = fs::path(d) / "icons/hicolor/scalable/apps" / (std::string(app_id) + ".svg");
+            if (fs::exists(svg, ec) && !ec) return svg.string();
+            for (const char* sz : {"512x512", "256x256", "128x128", "32x32"}) {
+                auto png = fs::path(d) / "icons/hicolor" / sz / "apps" / (std::string(app_id) + ".png");
+                if (fs::exists(png, ec) && !ec) return png.string();
+            }
+        }
         auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";
-        if (fs::exists(ico)) return ico.string();
+        if (fs::exists(ico, ec) && !ec) return ico.string();
     }
 #endif
 
@@ -726,12 +732,12 @@ std::string TrayUI::find_icon_path() {
             exe_dir / "resources" / "favicon.ico",
         };
         for (const auto& p : paths) {
-            if (fs::exists(p)) return p.string();
+            if (fs::exists(p, ec) && !ec) return p.string();
         }
     }
 
     // CWD fallback
-    if (fs::exists("resources/static/favicon.ico")) {
+    if (fs::exists("resources/static/favicon.ico", ec) && !ec) {
         return "resources/static/favicon.ico";
     }
 

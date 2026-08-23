@@ -22,7 +22,7 @@
       <li>Privacy-focused: all processing happens locally</li>
     </ul>
   </description>
-  <launchable type="desktop-id">lemonade-app.desktop</launchable>
+  <launchable type="desktop-id">ai.lemonadeserver.app.desktop</launchable>
   <url type="homepage">https://lemonade-server.ai</url>
   <url type="bugtracker">https://github.com/lemonade-sdk/lemonade/issues</url>
   <url type="help">https://lemonade-server.ai/docs/</url>
@@ -43,9 +43,17 @@
   </keywords>
   <provides>
     <binary>lemonade-app</binary>
+    <binary>lemond</binary>
+    <binary>lemonade</binary>
   </provides>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Lemonade Chat and Model Management Interface</caption>
+      <image>https://raw.githubusercontent.com/lemonade-sdk/assets/main/screenshots/chat_light.png</image>
+    </screenshot>
+  </screenshots>
   <releases>
-    <release version="11.6.0" date="2026-08-13"/>
+    <release version="11.7.0" date="2026-08-22"/>
   </releases>
   <content_rating type="oars-1.1"/>
 </component>

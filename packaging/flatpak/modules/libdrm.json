@@ -1,0 +1,16 @@
+{
+  "name": "libdrm",
+  "buildsystem": "meson",
+  "builddir": true,
+  "config-opts": [
+    "-Dtests=false"
+  ],
+  "sources": [
+    {
+      "type": "git",
+      "url": "https://gitlab.freedesktop.org/mesa/libdrm.git",
+      "tag": "libdrm-2.4.134",
+      "commit": "e984d448b8b17aab853369e6c203e53719f46de1"
+    }
+  ]
+}
