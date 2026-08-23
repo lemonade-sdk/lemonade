@@ -681,11 +681,23 @@ lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
 | `PROVIDER` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `--base-url URL` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
 | `--api-key KEY` | No | Optional. Stored in `lemond` process memory only. |
+| `--allow-insecure-http` | No | Explicitly permit sending this provider's API key over `http://`. |
+| `--auth-header-name HEADER` | No | Header carrying the API key. Default `Authorization`. |
+| `--auth-header-prefix PREFIX` | No | Value prefix before the key. Default `Bearer `; pass `""` for none. |
+
+Omitted options keep the provider's current setting, so re-running `cloud install` to change only the base URL won't reset a custom auth header.
 
 Example:
 
 ```bash
 lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
+```
+
+Some gateways front an OpenAI-shaped API but expect the key in a differently-named header with no prefix:
+
+```bash
+lemonade cloud install acme --base-url https://gateway.example.com/v1 \
+  --auth-header-name X-Api-Key --auth-header-prefix ""
 ```
 
 ### `cloud uninstall`
@@ -721,11 +733,17 @@ lemonade cloud clear PROVIDER
 
 ### `cloud list`
 
-Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered.
+Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered. A non-default auth header is printed on its own line.
 
 ```bash
-lemonade cloud list
+lemonade cloud list [--json]
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json` | Emit the provider list as a JSON array instead of human-readable text | Human-readable text |
+
+With `--json`, stdout is a JSON array of provider objects (the same `cloud.providers` payload from `/v1/system-info`). An empty installation emits `[]`. Fields include `name`, `base_url`, `allow_insecure_http`, `env_var`, `env_var_set`, `runtime_key_set`, and `models_discovered`. API keys are never included.
 
 ## Options for scan
 

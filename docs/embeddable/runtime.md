@@ -140,7 +140,7 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 
 #### `GET /internal/config/defaults`
 
-Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
+Returns the canonical default configuration baked into the release, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
 
 **Example:**
 === "Windows (cmd.exe)"

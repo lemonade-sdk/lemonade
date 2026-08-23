@@ -17,7 +17,7 @@ import AudioGenerationPanel from './components/panels/AudioGenerationPanel';
 import Model3DPanel from './components/panels/Model3DPanel';
 import LLMChatPanel from './components/panels/LLMChatPanel';
 import { RefreshIcon } from './components/Icons';
-import { isCollectionModel, getCollectionComponents } from './utils/collectionModels';
+import { isCollectionModel, isRouterCollection, getCollectionComponents } from './utils/collectionModels';
 import AddModelPanel, { AddModelInitialValues, ModelInstallData } from './AddModelPanel';
 
 interface ChatWindowProps {
@@ -113,7 +113,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isVisible, width }) => {
     return isCollectionModel(modelsData[selectedModel]);
   }, [selectedModel, modelsData]);
 
-  const collectionMode = activeModelType === 'llm' && isCollectionSelected;
+  // Router collections are plain chat targets - the server routes each request
+  // to a component. The agentic tool loop is a collection.omni feature; running
+  // it against a router would attach tools and a system prompt to every turn,
+  // skewing has_tools / length conditions in the routing policy.
+  const collectionMode = activeModelType === 'llm' && isCollectionSelected &&
+    !isRouterCollection(selectedModel ? modelsData[selectedModel] : undefined);
 
   // Use refs so the mount-once effect can read current values without re-running
   const selectedModelRef = useRef(selectedModel);

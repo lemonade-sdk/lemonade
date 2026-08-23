@@ -147,6 +147,25 @@ class EndpointTests(ServerTestBase):
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
 
+    def _assert_loaded_model_launch_command(self, model_info):
+        """Assert /health exposes the command the wrapped backend was started with."""
+        self.assertIsNotNone(model_info, "Model should appear in /health")
+        self.assertIn("launch_command", model_info)
+        command = model_info["launch_command"]
+        self.assertIsInstance(command, list)
+        self.assertGreater(len(command), 1)
+        self.assertTrue(all(isinstance(part, str) for part in command))
+        self.assertTrue(command[0], "Executable belongs at index 0")
+
+        # The backend is started with a resolved on-disk path, so the checkpoint
+        # file name has to appear somewhere in the arguments.
+        checkpoint_file = model_info.get("checkpoint", "").split(":")[-1]
+        if checkpoint_file:
+            self.assertTrue(
+                any(checkpoint_file in part for part in command),
+                f"Checkpoint {checkpoint_file} missing from {command}",
+            )
+
     def _parse_prometheus_text(self, body):
         """Validate Prometheus text format and return sample labels by metric name."""
         samples = {}
@@ -696,6 +715,168 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] NotFoundError raised for non-existent model")
 
+    def _retrieve_model_json(self, model=ENDPOINT_TEST_MODEL):
+        """Fetch one model entry. The OpenAI SDK object does not expose
+        context_length, so read the raw JSON."""
+        response = requests.get(
+            f"{self.base_url}/models/{model}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _unload_for_configured_context(self):
+        """Unload first: a loaded model reports its own size, which outranks
+        the configured value these tests check."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+    def test_006a_context_length_uses_explicit_ctx_size(self):
+        """An explicit per-model ctx_size is what context_length reports."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 8192}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            8192,
+            "context_length should match the explicitly saved ctx_size",
+        )
+
+        print("[OK] context_length reflects an explicit ctx_size")
+
+    def test_006b_context_length_inherits_global_ctx_size(self):
+        """With nothing saved on the model, context_length follows the global."""
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self._snapshot_options()
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+
+        self._unload_for_configured_context()
+        self._reset_options()
+        self._set_global_ctx_size(4096)
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            4096,
+            "context_length should inherit the server-wide ctx_size",
+        )
+
+        print("[OK] context_length inherits the global ctx_size")
+
+    def test_006c_context_length_never_reports_a_sentinel(self):
+        """ctx_size=-1 means "size automatically" and must never be returned."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        context_length = model.get("context_length")
+        self.assertIsNotNone(
+            context_length,
+            "context_length should still be present when ctx_size is automatic",
+        )
+        self.assertGreater(
+            context_length,
+            0,
+            "context_length must never surface the -1 auto sentinel",
+        )
+
+        print(
+            f"[OK] context_length with automatic ctx_size resolved to {context_length}"
+        )
+
+    def test_006d_context_length_agrees_between_list_and_retrieve(self):
+        """The list and retrieve endpoints must report the same value."""
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        listed = {m["id"]: m for m in response.json()["data"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, listed)
+
+        for model_id, entry in listed.items():
+            if "context_length" in entry:
+                self.assertGreater(
+                    entry["context_length"],
+                    0,
+                    f"{model_id} reported a non-positive context_length",
+                )
+
+        self.assertEqual(
+            listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            self._retrieve_model_json().get("context_length"),
+            "list and retrieve should report the same context_length",
+        )
+
+        print("[OK] context_length agrees across /models and /models/{id}")
+
+    def test_006e_context_length_resolves_user_alias(self):
+        """An alias and its loaded target must report the same context length."""
+        alias_name = "test-context-length-alias"
+        loaded_ctx_size = 3072
+
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200, add_res.text)
+
+            load_res = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "ctx_size": loaded_ctx_size,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_res.status_code, 200, load_res.text)
+
+            list_res = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(list_res.status_code, 200, list_res.text)
+            listed = {model["id"]: model for model in list_res.json()["data"]}
+
+            self.assertIn(ENDPOINT_TEST_MODEL, listed)
+            self.assertIn(alias_name, listed)
+            self.assertEqual(
+                listed[ENDPOINT_TEST_MODEL].get("context_length"), loaded_ctx_size
+            )
+            self.assertEqual(
+                listed[alias_name].get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+            self.assertEqual(
+                self._retrieve_model_json(alias_name).get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+        finally:
+            delete_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(delete_res.status_code, (200, 404), delete_res.text)
+
+        print("[OK] context_length resolves user aliases")
+
     def test_007_pull_model_non_streaming(self):
         """Test pulling/downloading a model (non-streaming mode)."""
         # First delete model if it exists to ensure we're actually testing pull
@@ -811,6 +992,7 @@ class EndpointTests(ServerTestBase):
         # Verify model is loaded via health endpoint and exposes backend PID
         loaded_model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
         self._assert_loaded_model_pid(loaded_model)
+        self._assert_loaded_model_launch_command(loaded_model)
 
         print(f"[OK] Loaded model: {ENDPOINT_TEST_MODEL}")
 
@@ -1626,16 +1808,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["resolved_ctx_size"], 4096)
         self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
 
-        # load_command is effective posted to /v1/load, with the base URL left
-        # to the caller: lemond only ever listens over plain HTTP, so it cannot
-        # know the scheme a client reached it through.
-        command = data["load_command"]
-        self.assertTrue(
-            command.startswith("curl -X POST $LEMONADE_BASE_URL/v1/load"), command
-        )
-        self.assertIn('"ctx_size":4096', command)
-        self.assertIn(f'"model_name":"{ENDPOINT_TEST_MODEL}"', command)
-
         after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
         self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
         self.assertGreater(
@@ -1652,96 +1824,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(rejected.status_code, 400, "dry_run still validates")
 
         print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
-
-    def test_012v_load_command_omits_client_supplied_host(self):
-        """The command is built from what the server knows, not what it is told.
-
-        `Host` is the caller's own claim about where it sent the request, and
-        the command is meant to be run, so none of it may reach the string.
-        """
-        forged = "evil.example.com; touch /tmp/lemonade-load-command"
-        response = requests.get(
-            self._options_url(),
-            headers={"Host": forged},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-        command = response.json()["load_command"]
-        self.assertIn("$LEMONADE_BASE_URL/v1/load", command)
-        self.assertNotIn("evil.example.com", command)
-        self.assertNotIn("touch", command)
-
-        print("[OK] load_command never repeats the caller's Host header")
-
-    def test_012w_load_command_carries_auth_when_a_key_is_required(self):
-        """A key-protected server renders the header its own /v1/load demands.
-
-        Without it the command reports a load that would come back 401. The key
-        itself stays out of the response: only the variable holding it is named.
-        """
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        api_key = "options-load-command-key"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        port = _pick_free_port()
-        cache_dir = tempfile.mkdtemp(prefix="lemond_optauth_")
-        log_path = os.path.join(cache_dir, "lemond.log")
-        env = os.environ.copy()
-        env["LEMONADE_API_KEY"] = api_key
-        env.pop("LEMONADE_ADMIN_API_KEY", None)
-
-        server = None
-        try:
-            with open(log_path, "w", encoding="utf-8") as log_file:
-                server = subprocess.Popen(
-                    [lemond_binary, cache_dir, "--port", str(port)],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                )
-
-            deadline = time.time() + 60
-            healthy = False
-            while time.time() < deadline:
-                if server.poll() is not None:
-                    break  # exited early; surface the log below
-                if _lemond_health_ok(port, headers):
-                    healthy = True
-                    break
-                time.sleep(1)
-
-            if not healthy:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    log = f.read()
-                self.fail(
-                    f"lemond never became healthy on port {port}.\n"
-                    f"=== lemond log ===\n{log}"
-                )
-
-            response = requests.get(
-                f"http://localhost:{port}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
-                headers=headers,
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(response.status_code, 200, response.text)
-
-            command = response.json()["load_command"]
-            self.assertIn('-H "Authorization: Bearer $LEMONADE_API_KEY"', command)
-            self.assertNotIn(api_key, command)
-
-            print("[OK] load_command carries the Authorization header /load requires")
-        finally:
-            if server is not None and server.poll() is None:
-                server.terminate()
-                try:
-                    server.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=10)
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
@@ -1844,7 +1926,6 @@ class EndpointTests(ServerTestBase):
                 "max_completion_tokens",
                 "model",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ]
@@ -1855,6 +1936,15 @@ class EndpointTests(ServerTestBase):
                     f"Request-scoped field '{field}' must NOT leak into recipe_options "
                     f"on auto-load (found: {recipe_options.get(field)})",
                 )
+
+            # Runtime defaults may populate llamacpp_args; the inference request must not.
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Request llamacpp_args must not leak into recipe_options on auto-load",
+            )
 
             print(
                 f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "

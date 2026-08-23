@@ -183,6 +183,10 @@ struct CliConfig {
     std::string cloud_base_url;
     std::string cloud_api_key;
     bool cloud_allow_insecure_http = false;
+    // Unset means "don't send the field", so the server keeps the provider's
+    // current value instead of resetting it to the Authorization/Bearer default.
+    std::optional<std::string> cloud_auth_header_name;
+    std::optional<std::string> cloud_auth_header_prefix;
 
     // Alias management options
     std::string alias_name;
@@ -1312,6 +1316,13 @@ int main(int argc, char* argv[]) {
         ->type_name("KEY");
     cloud_install_cmd->add_flag("--allow-insecure-http", config.cloud_allow_insecure_http,
         "Explicitly allow sending this provider's API key over http://.");
+    cloud_install_cmd->add_option("--auth-header-name", config.cloud_auth_header_name,
+        "Custom auth header name, for gateways that don't use 'Authorization' (default: Authorization)")
+        ->type_name("HEADER");
+    cloud_install_cmd->add_option("--auth-header-prefix", config.cloud_auth_header_prefix,
+        "Custom auth header value prefix; pass an empty string for gateways with no "
+        "'Bearer ' prefix (default: 'Bearer ')")
+        ->type_name("PREFIX");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1328,6 +1339,7 @@ int main(int argc, char* argv[]) {
     cloud_clear_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
 
     CLI::App* cloud_list_cmd = cloud_cmd->add_subcommand("list", "List installed cloud providers")->group("Subcommands");
+    cloud_list_cmd->add_flag("--json", config.json_output, "Output providers as JSON");
 
     // Pull options
     pull_cmd->add_option("model", config.model,
@@ -1604,7 +1616,9 @@ int main(int argc, char* argv[]) {
             return client.install_cloud_provider(config.cloud_provider,
                                                   config.cloud_base_url,
                                                   config.cloud_api_key,
-                                                  config.cloud_allow_insecure_http);
+                                                  config.cloud_allow_insecure_http,
+                                                  config.cloud_auth_header_name,
+                                                  config.cloud_auth_header_prefix);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);
@@ -1641,7 +1655,7 @@ int main(int argc, char* argv[]) {
             return client.cloud_auth_clear(config.cloud_provider);
         }
         if (cloud_list_cmd->count() > 0) {
-            return client.cloud_list();
+            return client.cloud_list(config.json_output);
         }
         // No subcommand specified: print help.
         std::cout << cloud_cmd->help() << std::endl;
