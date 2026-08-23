@@ -434,13 +434,18 @@ sys.exit(0)
                 or "No models available" in line
             ):
                 continue
-            parts = line.split()
-            if len(parts) >= 2:
-                name = parts[0]
-                downloaded = parts[1] == "Yes"
-                details = parts[2] if len(parts) > 2 else ""
+
+            match = re.search(
+                r"^(.*?)\s*(Yes|No)\s+(>?\d+(?:\.\d+)?|N/A)(?:\s+[KMG]?B)?(?:\s+(.*))?$",
+                line,
+            )
+            if match:
                 parsed_models.append(
-                    {"name": name, "downloaded": downloaded, "details": details}
+                    {
+                        "name": match.group(1).strip(),
+                        "downloaded": match.group(2) == "Yes",
+                        "details": match.group(4).strip() if match.group(4) else "",
+                    }
                 )
         return parsed_models
 
@@ -519,6 +524,139 @@ sys.exit(0)
                     name,
                     downloaded_names,
                     f"Non-downloaded model {name} should not be in --downloaded list",
+                )
+
+    def test_022_list_json_format(self):
+        """Test list --json flag output and structure."""
+        result = self.assertCommandSucceeds(["list", "--json"])
+        output = result.stdout + result.stderr
+        try:
+            models_list = json.loads(output)
+        except Exception as e:
+            self.fail(f"list --json did not output valid JSON: {e}")
+
+        self.assertIsInstance(models_list, list)
+        if len(models_list) > 0:
+            first_model = models_list[0]
+            self.assertIn("id", first_model)
+            self.assertIn("checkpoint", first_model)
+            self.assertIn("recipe", first_model)
+            self.assertIn("downloaded", first_model)
+            self.assertIn("suggested", first_model)
+            self.assertIn("labels", first_model)
+            self.assertIn("source", first_model)
+            self.assertIn("type", first_model)
+            self.assertIn("device", first_model)
+            self.assertIn("recipe_options", first_model)
+            self.assertIn("size_gb", first_model)
+
+    def test_023_list_filters(self):
+        """Test list filtering by type, source, device, suggested, labels, backend, name filter, and case-insensitivity."""
+        # Query JSON list to analyze models
+        all_models = json.loads(self.assertCommandSucceeds(["list", "--json"]).stdout)
+
+        # Test --downloaded with --json
+        downloaded_json = json.loads(
+            self.assertCommandSucceeds(["list", "--downloaded", "--json"]).stdout
+        )
+        for m in downloaded_json:
+            self.assertTrue(m["downloaded"])
+
+        # Test --type filter
+        types = set(m["type"] for m in all_models if m.get("type"))
+        for t in types:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--type", t, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertEqual(m["type"], t)
+
+        # Test case-insensitivity for --type
+        if types:
+            sample_type = list(types)[0]
+            filtered_upper = json.loads(
+                self.assertCommandSucceeds(
+                    ["list", "--type", sample_type.upper(), "--json"]
+                ).stdout
+            )
+            for m in filtered_upper:
+                self.assertEqual(m["type"], sample_type)
+
+        # Test --source filter
+        sources = set(m["source"] for m in all_models if m.get("source"))
+        for s in sources:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--source", s, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertEqual(m["source"], s)
+
+        # Test --device filter
+        devices = set(m["device"] for m in all_models if m.get("device"))
+        for d in devices:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--device", d, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertIn(d, m["device"])
+
+        # Test --suggested filter
+        filtered_suggested = json.loads(
+            self.assertCommandSucceeds(["list", "--suggested", "--json"]).stdout
+        )
+        for m in filtered_suggested:
+            self.assertTrue(m["suggested"])
+
+        # Test --backend filter
+        backends = set(m["recipe"] for m in all_models if m.get("recipe"))
+        for b in backends:
+            filtered = json.loads(
+                self.assertCommandSucceeds(["list", "--backend", b, "--json"]).stdout
+            )
+            for m in filtered:
+                self.assertEqual(m["recipe"], b)
+
+        # Test --label filter
+        labels = set()
+        for m in all_models:
+            if m.get("labels"):
+                labels.update(m["labels"])
+        if labels:
+            test_label = list(labels)[0]
+            filtered = json.loads(
+                self.assertCommandSucceeds(
+                    ["list", "--label", test_label, "--json"]
+                ).stdout
+            )
+            for m in filtered:
+                self.assertIn(test_label, m["labels"])
+
+        # Test multi-label AND conjunction filter if a model has >= 2 labels
+        multi_label_model = next(
+            (m for m in all_models if len(m.get("labels", [])) >= 2), None
+        )
+        if multi_label_model:
+            l1, l2 = multi_label_model["labels"][0], multi_label_model["labels"][1]
+            multi_filtered = json.loads(
+                self.assertCommandSucceeds(
+                    ["list", "--label", l1, "--label", l2, "--json"]
+                ).stdout
+            )
+            for m in multi_filtered:
+                self.assertIn(l1, m["labels"])
+                self.assertIn(l2, m["labels"])
+
+        # Test positional name_filter with wildcard
+        if len(all_models) > 0:
+            sample_name = all_models[0]["id"]
+            prefix = sample_name[:4]
+            wildcard_filtered = json.loads(
+                self.assertCommandSucceeds(["list", f"{prefix}*", "--json"]).stdout
+            )
+            for m in wildcard_filtered:
+                self.assertTrue(
+                    m["id"].lower().startswith(prefix.lower())
+                    or prefix.lower() in m["id"].lower()
                 )
 
     # =============================================================================
