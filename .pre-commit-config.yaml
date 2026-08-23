@@ -30,8 +30,8 @@ repos:
     hooks:
       - id: comment-slop
         name: comment slop (repeated explanations, oversized blocks)
-        entry: tools/check_comment_slop.py
-        language: script
+        entry: python tools/check_comment_slop.py
+        language: python
         pass_filenames: false
         require_serial: true
         types_or: [c, c++, python]

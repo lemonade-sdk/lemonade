@@ -1,5 +1,5 @@
 import type { ModelInfo, ModelsData } from './modelData';
-import { isCollectionRecipe } from './recipeNames';
+import { COLLECTION_ROUTER_MODEL_RECIPE, isCollectionRecipe } from './recipeNames';
 import { isChatPlannerCandidate } from './modelLabels';
 
 export { NON_LLM_LABELS, NON_CHAT_PLANNER_LABELS, isChatPlannerCandidate } from './modelLabels';
@@ -63,8 +63,18 @@ export const getCollectionImageModel = (selectedModel: string, modelsData: Model
   return imageModel || null;
 };
 
+export const isRouterCollection = (info?: ModelInfo): boolean => {
+  return info?.recipe === COLLECTION_ROUTER_MODEL_RECIPE;
+};
+
 export const getCollectionPrimaryChatModel = (selectedModel: string, modelsData: ModelsData): string => {
   const info = modelsData[selectedModel];
+  // A collection.router must be addressed by its own name: the server's routing
+  // engine picks the component per request, so resolving to a component here
+  // would silently bypass routing.
+  if (isRouterCollection(info)) {
+    return selectedModel;
+  }
   const components = getCollectionComponents(info);
   if (components.length === 0) {
     return selectedModel;
