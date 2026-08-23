@@ -1527,23 +1527,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const source = String((model as any).registry_source || (model as any).source || '').toLowerCase();
       return !source || source === provider;
     };
+    const activeDownloadForRegisteredModel = (model: ModelInfo): DownloadListItem | undefined => {
+      const name = modelName(model);
+      return activeDownloadForModel(downloadItems, name)
+        || activeDownloadForModel(downloadItems, `user.${name}`);
+    };
     const registered = allModels.find(model => {
       const checkpoint = modelCheckpoint(model);
       return sourceMatches(model)
         && (checkpoint === modelId || checkpoint.startsWith(`${modelId}:`))
-        && Boolean(activeDownloadForModel(downloadItems, modelName(model)));
+        && Boolean(activeDownloadForRegisteredModel(model));
     });
     if (registered) {
       const name = modelName(registered);
-      const download = activeDownloadForModel(downloadItems, name);
+      const download = activeDownloadForRegisteredModel(registered);
       if (download) return { modelName: name, percent: download.percent, downloadId: download.id };
     }
 
-    for (const variant of variants?.variants || []) {
-      const name = resolveRemoteModelName(provider, modelId, variant.name, variants?.recipe || '', variants);
-      const download = activeDownloadForModel(downloadItems, name);
-      if (download) return { modelName: name, percent: download.percent, downloadId: download.id };
-    }
     return null;
   };
 
