@@ -117,21 +117,27 @@ See [Router Policies](../dev/router-policy.md) for authoring the policy.
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
 Evaluate a routing policy document against a prompt and return the decision the
-engine would make, without registering the policy or sending a completion
-request. This is the endpoint behind the Router Builder's **Test Prompt** tab: it
-lets a policy be iterated on before it is attached to a `collection.router`
-model.
+engine would make, without registering the policy or dispatching the user
+request to the selected candidate. This is the endpoint behind the Router
+Builder's **Test Prompt** tab: it lets a policy be iterated on before it is
+attached to a `collection.router` model.
 
-The policy is validated exactly as registration would validate it — every
+The endpoint performs parser-level structural policy validation: every
 `candidates` entry, `default_model`, rule `route_to`, and classifier model must
-be listed in `components` — with one relaxation: component names are accepted
-as-is instead of being resolved against the live model registry, so a policy can
-be tested before its candidates are downloaded.
+be listed in `components`. It does not consult the live model registry:
+component names are accepted as-is, so a policy can be tested before its
+candidates are downloaded. Because names and component model types are not
+resolved through the registry, registration-time registry checks (for example,
+whether a `semantic_similarity` model can embed or a `classifier` model can
+classify/chat) are not performed by this endpoint.
 
 Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)
-are evaluated locally. A `classifier` condition loads and runs the classifier
-model it names, so those requests are as slow as the model is and can fail if
-the model is unavailable.
+are evaluated locally. Model-backed conditions (`semantic_similarity`,
+`classifier`, and `llm`, including `routing.router`) may load and run their
+referenced models. A model-evaluation failure is handled by the classifier's
+`on_error` policy (`match_false` by default), so routing normally continues to a
+later rule or falls through to `default_model` rather than treating the policy
+as invalid.
 
 The endpoint is available at:
 
@@ -144,7 +150,7 @@ The endpoint is available at:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `policy` | object | yes | A routing policy document, the same shape [`POST /v1/pull`](#post-v1pull) accepts for a `collection.router` model. See [Router Policies](../dev/router-policy.md). |
+| `policy` | object | yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). |
 | `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars`/`metadata` rules. |
 | `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
 | `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
