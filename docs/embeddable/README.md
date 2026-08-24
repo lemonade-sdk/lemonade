@@ -45,9 +45,9 @@ While you can ship Embeddable Lemonade as-is, there many opportunities to custom
 
 ### How it Works
 
-Many of the customization options rely of `lemond`'s `config.json` file, a persistent store of settings. Learn more about the individual settings in the [configuration guide](../guide/configuration/README.md).
+Many of the customization options rely on `lemond`'s `config.json` file, a persistent store of custom settings and overrides. Learn more about the individual settings in the [configuration guide](../guide/configuration/README.md).
 
-`config.json` is automatically generated based on the values in `resources/defaults.json` the first time `lemond` starts. The positional arg `lemond DIR` determines where `config.json` and other runtime files (e.g., backend binaries) will be located.
+`config.json` stores your explicit overrides on top of `resources/defaults.json`. The positional arg `lemond DIR` determines where `config.json` and other runtime files (e.g., backend binaries) will be located.
 
 In the examples in this guide, we start `lemond ./` to place these files in the same directory as `lemond` itself. Then:
 

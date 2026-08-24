@@ -452,7 +452,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register and Install a Model**
 
-Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade cache (default: `~/.cache/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
+Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade config directory (default: `~/.config/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
 
 The `recipe` field defines which software framework and device will be used to load and run the model.
 
@@ -953,7 +953,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 > Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
-Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
+Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. For `*_args`, a concrete value replaces the model/architecture args scope for that load; backend/machine args remain only when `merge_args` is true. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
 
 ### Parameters
 
@@ -971,7 +971,7 @@ Recipe option fields on `/v1/load` have three-state semantics. Omitting a field 
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
-| `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
+| `merge_args` | No | All | Boolean. If true (default), backend/machine `*_args` are inherited; concrete request `*_args` replace model/architecture args while keeping backend args. If false, no inherited custom args or overridable runtime defaults are applied. |
 
 **Setting Priority:**
 
@@ -984,7 +984,7 @@ When loading a model, settings are applied in this priority order:
 
 ### Per-model options
 
-You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). The available options depend on the model's recipe:
+You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade config directory (default: `~/.config/lemonade`). The available options depend on the model's recipe:
 
 ```json
 {
@@ -1270,6 +1270,12 @@ curl http://localhost:13305/v1/health
       "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
+      "launch_command": [
+        "~/.cache/lemonade/bin/ryzenai/npu/ryzenai-server.exe",
+        "-m", "~/.cache/lemonade/models/Llama-3.2-1B-Instruct-Hybrid",
+        "--port", "8001",
+        "--ctx-size", "4096"
+      ],
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -1284,6 +1290,13 @@ curl http://localhost:13305/v1/health
       "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
+      "launch_command": [
+        "~/.cache/lemonade/bin/llamacpp/rocm-stable/llama-server.exe",
+        "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size", "8192",
+        "--port", "8002",
+        "--no-mmap"
+      ],
       "recipe_options": {
         "ctx_size": 8192,
         "llamacpp_args": "--no-mmap",
@@ -1332,6 +1345,7 @@ curl http://localhost:13305/v1/health
   - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
+  - `launch_command` - *(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included.
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
