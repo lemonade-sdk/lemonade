@@ -614,6 +614,8 @@ static void test_build_route_context_total_chars_responses_input_array() {
     RouteContext bare_ctx = lemon::build_route_context(bare, "router");
     check("responses bare parts: images contribute nothing to total_chars",
           bare_ctx.params.total_chars == std::string("hello").size());
+}
+
 static void test_build_route_context_reads_max_tokens() {
     json request = {
         {"model", "router"},
