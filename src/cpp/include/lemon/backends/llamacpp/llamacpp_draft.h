@@ -19,21 +19,15 @@ struct DraftActivation {
 bool is_dflash_draft_checkpoint(const std::string& checkpoint);
 
 // Compute draft activation from the model's labels, the raw draft checkpoint
-// reference, whether the resolved draft file actually exists on disk, and the
-// GGUF architecture (used to gate GLM4-MOE, see below).
+// reference, whether the resolved draft file exists on disk, the GGUF
+// architecture, the mmproj path, and hf_load.
 //
 // Registration and activation are kept separate: the `draft` checkpoint only
 // describes where the drafter lives, while the `mtp` / `dflash` label is the
-// switch that enables speculative decoding. A drafter present on disk without
-// its matching label does not activate anything, and a label without a present
-// drafter also stays inactive (the base model runs normally).
-//
-// GLM4-MOE / ChatGLM4 models embed MTP layers in the GGUF but their draft
-// context construction accesses vision tensors that only exist when an mmproj
-// file is present; without one, MTP speculative decoding crashes llama-server
-// (see #2451). For those architectures MTP stays inactive unless the mmproj
-// path resolves (or the model is loaded via -hf, where llama-server resolves
-// the companion itself). Text-only MTP models (Gemma-4, Qwen3.x) are unaffected.
+// switch that enables speculative decoding. An `mtp` label without an external
+// drafter means the MTP weights are embedded in the main GGUF: emit
+// --spec-type draft-mtp without --model-draft. GLM4-MOE embedded MTP crashes
+// without an mmproj companion (see #2451).
 DraftActivation compute_draft_activation(const std::vector<std::string>& labels,
                                          const std::string& draft_checkpoint,
                                          bool draft_file_present,

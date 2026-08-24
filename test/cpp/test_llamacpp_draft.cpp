@@ -58,14 +58,14 @@ static bool expect_dflash_checkpoint(const char* name,
 int main() {
     int failures = 0;
 
-    // The three activation cases called out in review of PR #3253.
+    // The four activation cases called out in review of PR #3253.
     failures += !expect_activation(
         "draft present + no mtp label -> inactive",
         act({}, "mtp-drafter.gguf", /*draft_file_present=*/true),
         false, "");
 
     failures += !expect_activation(
-        "draft missing + mtp label -> inactive",
+        "configured draft missing + mtp label -> inactive",
         act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/false),
         false, "");
 
@@ -73,6 +73,19 @@ int main() {
         "draft present + mtp label -> --model-draft + --spec-type draft-mtp",
         act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true),
         true, "draft-mtp");
+
+    // Embedded MTP: an mtp label without any external draft checkpoint means
+    // the MTP weights live in the main GGUF (Qwen3.5/3.6-*-MTP-GGUF, ...).
+    // Emit --spec-type draft-mtp only, no --model-draft.
+    failures += !expect_activation(
+        "mtp label + no external draft -> embedded MTP (spec-type only)",
+        act({"mtp"}, "", /*draft_file_present=*/false),
+        false, "draft-mtp");
+
+    failures += !expect_activation(
+        "mtp label + no external draft + draft present on disk -> still embedded (no --model-draft)",
+        act({"mtp"}, "", /*draft_file_present=*/true),
+        false, "draft-mtp");
 
     // DFlash stays gated on its own label.
     failures += !expect_activation(
@@ -115,6 +128,26 @@ int main() {
         act({"mtp"}, "mtp-drafter.gguf", /*draft_file_present=*/true,
             /*arch=*/"chatglm4"),
         false, "");
+
+    // GLM4-MOE embedded MTP (no external draft) without mmproj must stay
+    // MTP-inactive (crash guard, #2451).
+    failures += !expect_activation(
+        "glm4-moe embedded mtp + no mmproj -> inactive (crash guard)",
+        act({"mtp"}, "", /*draft_file_present=*/false,
+            /*arch=*/"glm4-moe"),
+        false, "");
+
+    failures += !expect_activation(
+        "glm4-moe embedded mtp + mmproj present -> draft-mtp (spec-type only)",
+        act({"mtp"}, "", /*draft_file_present=*/false,
+            /*arch=*/"glm4-moe", /*mmproj_path=*/"/models/mmproj-f16.gguf"),
+        false, "draft-mtp");
+
+    failures += !expect_activation(
+        "glm4-moe embedded mtp + hf_load -> draft-mtp (spec-type only)",
+        act({"mtp"}, "", /*draft_file_present=*/false,
+            /*arch=*/"glm4-moe", /*mmproj_path=*/"", /*hf_load=*/true),
+        false, "draft-mtp");
 
     // GLM4-MOE with an mmproj present is fine: MTP activates.
     failures += !expect_activation(
