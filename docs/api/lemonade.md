@@ -31,7 +31,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
-| `POST` | [`/v1/install/dry-run`](#post-v1installdry-run) | Resolve the asset URL an install would download, without downloading it |
+| `POST` | [`/v1/install/dry-run`](#post-v1installdry-run) | Resolve backend install metadata without downloading the backend asset |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
 | `POST` | [`/v1/cloud/auth`](#post-v1cloudauth) | Set an in-memory API key for a cloud provider |
 | `DELETE` | [`/v1/cloud/auth/{provider}`](#delete-v1cloudauthprovider) | Clear the in-memory API key for a cloud provider |
@@ -1787,16 +1787,21 @@ Response format:
 ## `POST /v1/install/dry-run`
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
-Resolve the backend asset that [`POST /v1/install`](#post-v1install) *would*
-download for a recipe/backend pair, and return the URL without fetching any
-bytes. Nothing is installed and no existing installation is touched.
+Resolve the backend install metadata that [`POST /v1/install`](#post-v1install)
+would use for a recipe/backend pair, without downloading or installing the
+backend asset. Nothing is installed and no existing installation is modified.
 
-The `arch` parameter mocks the detected GPU architecture for the duration of the
-call, so an asset URL can be resolved for hardware that is not present in the
-machine running `lemond`. This is what makes the endpoint useful in CI: a stale
-target name or version pin shows up as a `404` on the resolved URL, and that can
-be checked for every published architecture from one runner. See
-`test/server_gfx_topology.py` for that usage.
+Resolution uses the normal backend install-parameter machinery. It may consult
+local configuration and, if a backend version is configured as `latest`, query
+GitHub release metadata. The endpoint does not download the backend asset and
+does not check whether the returned asset URL exists.
+
+The `arch` parameter mocks ROCm GPU architecture detection while the install
+parameters are resolved. This makes the endpoint useful in CI for checking
+architecture-to-asset resolution on hardware that is not present on the runner.
+The repository's `test/server_gfx_topology.py` uses the endpoint for this
+resolution step and separately checks the resulting release URLs or
+split-archive manifests.
 
 The endpoint is available at:
 
@@ -1809,9 +1814,9 @@ The endpoint is available at:
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `recipe` | Yes | Recipe name (for example, `llamacpp`, `whispercpp`, `vllm`) |
-| `backend` | Yes | Backend name within the recipe (for example, `vulkan`, `rocm`, `rocm-nightly`) |
-| `arch` | No | GPU architecture to resolve for (for example, `gfx1201`). Overrides ROCm architecture detection for this call only. When omitted, the host's own detection is used and `supported` is always `true`. |
+| `recipe` | Yes | Recipe name, for example `llamacpp`, `whispercpp`, or `vllm`. |
+| `backend` | Yes | Backend name within the recipe, for example `vulkan`, `rocm`, or `rocm-nightly`. |
+| `arch` | No | ROCm GPU architecture to use for this call, for example `gfx1201`. When provided, it overrides ROCm architecture detection while install parameters are resolved. When omitted, normal host detection is used; if resolution succeeds, `arch` is returned as `""` and `supported` is `true`. |
 
 ### Example request
 
@@ -1843,21 +1848,31 @@ curl -X POST http://localhost:13305/v1/install/dry-run \
 
 | Field | Description |
 |-------|-------------|
-| `repo`, `version`, `filename` | The GitHub repo, release tag, and asset name resolved from `backend_versions.json`. |
-| `url` | The full release-download URL `install` would fetch. |
-| `supported` | Whether the backend publishes an asset for the requested `arch`. `true` when `arch` is omitted. A resolved `url` is still returned when `false`, so an unsupported combination can be inspected rather than guessed at. |
-| `supports_split_archive` | Whether the backend's asset may be published as a multi-part archive. When `true`, the real download consults a `.partcount` manifest alongside `url`. |
+| `recipe`, `backend`, `arch` | Echo the requested values. If `arch` was omitted, it is returned as an empty string. |
+| `repo`, `version`, `filename` | Install parameters produced by the backend-specific resolver. The default version pin comes from `backend_versions.json`; runtime version policy can override it. |
+| `url` | GitHub release-download URL constructed from `repo`, `version`, and `filename`. The endpoint does not check this URL. |
+| `supported` | Whether Lemonade's local recipe/backend support matrix accepts the requested `arch`. This is not a release-asset existence check. When `arch` is omitted, it is `true` on a successful response. |
+| `supports_split_archive` | Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest. |
 
-Note that a device ISA resolves to the **family** target name the release repo
-publishes under — `gfx1201` above resolves to a `gfx120X` asset. That mapping
-lives in `rocm_asset_families` in `backend_versions.json`.
+A device ISA may resolve to a family target name used by the release repository.
+For example, `gfx1201` resolves to the `gfx120X` family used in the Whisper
+filename above. That mapping is defined by `rocm_asset_families` in
+`backend_versions.json`.
+
+An explicit architecture outside Lemonade's support matrix can still produce
+install metadata; in that case `supported` is `false`. Callers that need to
+verify the release asset itself must check the returned URL, or the corresponding
+split-archive manifest, separately.
 
 ### Error responses
 
 | Status | Condition |
 |--------|-----------|
 | `400` | `recipe` or `backend` is missing or empty. |
-| `500` | The body is not valid JSON, or the recipe/backend pair is unknown; the `error` field carries the reason, plus `arch` when one was requested. |
+| `500` | The body is invalid JSON or install-parameter resolution fails, for example because the recipe/backend pair is unknown, the platform is unsupported, required architecture detection is unavailable, or version resolution fails. |
+
+Error responses contain an `error` string. If `arch` was parsed before the
+failure, the response may also include that `arch` value.
 
 ## `POST /v1/uninstall`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
