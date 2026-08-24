@@ -2292,7 +2292,7 @@
         ],
         "size": 0.067
     },
-    "RealESRGAN-4x-lsdir-TheNoise": {
+    "LSDIR-4x-TheNoise": {
         "checkpoints": {
             "main": "mikkoph/upscalers:esrgan/4x-lsdir-v1.safetensors"
         },
@@ -2304,7 +2304,7 @@
         ],
         "size": 0.067
     },
-    "RealESRGAN-4x-nmkd-TheNoise": {
+    "NMKD-Siax-CX-200k-TheNoise": {
         "checkpoints": {
             "main": "mikkoph/upscalers:esrgan/4x-nmkd-siax-cx-200k.safetensors"
         },
@@ -2328,7 +2328,7 @@
         ],
         "size": 0.067
     },
-    "RealESRGAN-4x-remacri-TheNoise": {
+    "Remacri-4x-TheNoise": {
         "checkpoints": {
             "main": "mikkoph/upscalers:esrgan/4x-remacri.safetensors"
         },
