@@ -58,14 +58,22 @@ struct RouteContext {
     // The text the classifiers/conditions see (typically the latest user turn).
     std::string input;
 
-    // Cheap, deterministic request features. `chars` is a UTF-8 byte count (the
-    // frozen v1 unit for min_chars/max_chars; token-based length is deferred to
-    // a future min_tokens/max_tokens, never a redefinition of chars).
+    // Cheap, deterministic request features. `chars` and `total_chars` are both
+    // UTF-8 byte counts (the frozen v1 unit for min_chars/max_chars and
+    // min_total_chars/max_total_chars; token-based length is deferred to a
+    // future min_tokens/max_tokens, never a redefinition of chars).
+    //
+    // `chars` measures the routing input alone — the latest user turn — while
+    // `total_chars` measures every text part the request carries, across all
+    // roles and items, as a tokenizer-free proxy for prefill size. They differ
+    // only for multi-turn requests: a long history with a short final turn has a
+    // small `chars` and a large `total_chars`.
     struct Params {
-        std::string model;          // the collection.router model name addressed
-        bool has_tools = false;     // request carried a non-empty tools[] array
-        bool has_images = false;    // request carried image content parts
-        std::size_t chars = 0;      // UTF-8 byte count of `input`
+        std::string model;           // the collection.router model name addressed
+        bool has_tools = false;      // request carried a non-empty tools[] array
+        bool has_images = false;     // request carried image content parts
+        std::size_t chars = 0;       // UTF-8 byte count of `input`
+        std::size_t total_chars = 0; // UTF-8 byte count of all request text
 
         // The caller's requested output-length ceiling (OpenAI `max_tokens` /
         // `max_completion_tokens`), when present. This is a ceiling, not an
@@ -422,10 +430,10 @@ LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classi
                               NamedLeafFactories deterministic_factories = {});
 
 // Deterministic leaf conditions (#2380): keywords_any/keywords_all, regex,
-// min_chars/max_chars, has_tools/has_images, metadata. Pure CPU, no model, no
-// tokenizer; each implements the frozen v1 semantics pinned in
-// route_policy.schema.json. Pass the result as make_leaf_factory's
-// deterministic_factories so rules can use these ops.
+// min_chars/max_chars, min_total_chars/max_total_chars, has_tools/has_images,
+// metadata. Pure CPU, no model, no tokenizer; each implements the frozen v1
+// semantics pinned in route_policy.schema.json. Pass the result as
+// make_leaf_factory's deterministic_factories so rules can use these ops.
 NamedLeafFactories make_deterministic_leaf_factories();
 
 // ---------------------------------------------------------------------------
