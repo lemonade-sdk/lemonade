@@ -1,6 +1,7 @@
 // Standalone test for RecipeOptions precedence. The full ladder is documented
 // in SDServer::build_extra_args(); these cases pin merge_precedence_layers()
-// (model-level) and inherit() (server-level).
+// Custom-argument scope merging is handled separately by
+// resolve_scoped_custom_args().
 
 #include <lemon/recipe_options.h>
 
@@ -158,25 +159,19 @@ int main() {
             std::to_string(merged.get_option("cfg_scale").get<float>()), "7.0");
     }
 
-    // B2: *_args keys token-merge between router layers, higher layer wins on
-    // conflict; unique flags from the lower layer are added
+    // B2: *_args follow normal inherit precedence here. Scope-aware custom-arg
+    // merging is handled separately by resolve_scoped_custom_args().
     {
         json higher = {{"sdcpp_args", "--threads 8 --cache-type q8_0"}};
         json lower = {{"sdcpp_args", "--threads 4 --mmap"}};
-
         RecipeOptions a("sd-cpp", higher);
         RecipeOptions b("sd-cpp", lower);
         RecipeOptions merged = a.inherit(b);
-
         std::string args = merged.get_option("sdcpp_args").get<std::string>();
-        failures += fail("args: higher-layer --threads 8 wins over lower --threads 4",
-            args.find("--threads 8") != std::string::npos &&
-            args.find("--threads 4") == std::string::npos,
-            args, "--threads 8 (no --threads 4)");
-        failures += fail("args: lower-layer --mmap added",
-            args.find("--mmap") != std::string::npos, args, "contains --mmap");
-        failures += fail("args: higher-layer --cache-type preserved",
-            args.find("--cache-type q8_0") != std::string::npos, args, "contains --cache-type q8_0");
+        failures += fail(
+            "inherit: higher-layer sdcpp_args wins wholesale",
+            args == "--threads 8 --cache-type q8_0",
+            args, "--threads 8 --cache-type q8_0");
     }
 
     // B3: an empty higher layer does not override the lower layer
