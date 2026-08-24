@@ -40,16 +40,11 @@ public:
     json image_variations(const json& request) override;
 
 private:
-    // image_defaults from the currently loaded model's server_models.json entry.
-    // Applied when a request doesn't specify size / steps / cfg_scale / etc.
-    ImageDefaults image_defaults_;
-
-    // Build the /text2image request body. Precedence: request -> image_defaults_
-    // -> recipe_options_.
+    // Precedence and fall-through are documented in build_request().
     nlohmann::json build_request(const nlohmann::json& request) const;
 
-    // Resolve the output size from `size: "WxH"`, `width`/`height`, or
-    // image_defaults. Returns "" if nothing can be resolved.
+    // Resolve the output size from `size: "WxH"`, `width`/`height`, or the
+    // effective recipe options. Returns "" if nothing can be resolved.
     std::string resolve_size(const nlohmann::json& request) const;
 };
 
