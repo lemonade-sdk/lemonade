@@ -350,6 +350,99 @@ nlohmann::json get_model_storage_stats(const std::string& model_storage_path) {
     };
 }
 
+std::string mcp_model_result_text(const nlohmann::json& payload) {
+    if (payload.is_object()) {
+        auto error = payload.find("error");
+        if (error != payload.end()) {
+            if (error->is_string()) return error->get<std::string>();
+            if (error->is_object()) {
+                auto message = error->find("message");
+                if (message != error->end() && message->is_string()) {
+                    return message->get<std::string>();
+                }
+            }
+        }
+        auto message = payload.find("message");
+        if (message != payload.end() && message->is_string()) {
+            return message->get<std::string>();
+        }
+    }
+    if (payload.is_string()) return payload.get<std::string>();
+    return payload.dump();
+}
+
+nlohmann::json mcp_model_tool_result(nlohmann::json payload,
+                                     bool is_error,
+                                     const std::string& message = "") {
+    nlohmann::json structured = payload.is_object()
+        ? payload
+        : nlohmann::json{{"result", std::move(payload)}};
+    const std::string text = message.empty()
+        ? mcp_model_result_text(structured)
+        : message;
+    return {
+        {"content", nlohmann::json::array({{
+            {"type", "text"},
+            {"text", text},
+        }})},
+        {"structuredContent", std::move(structured)},
+        {"isError", is_error},
+    };
+}
+
+nlohmann::json mcp_model_http_result(const httplib::Response& response) {
+    nlohmann::json payload;
+    if (response.body.empty()) {
+        payload = nlohmann::json::object();
+    } else {
+        try {
+            payload = nlohmann::json::parse(response.body);
+        } catch (const std::exception&) {
+            payload = {{"body", response.body}};
+        }
+    }
+    if (!payload.is_object()) {
+        payload = {{"result", std::move(payload)}};
+    }
+    if (response.status > 0) {
+        payload["http_status"] = response.status;
+    }
+    return mcp_model_tool_result(std::move(payload), response.status >= 400);
+}
+
+void validate_mcp_model_arguments(
+        const nlohmann::json& arguments,
+        const std::set<std::string>& allowed) {
+    if (!arguments.is_object()) {
+        throw std::invalid_argument("Tool arguments must be an object");
+    }
+    for (const auto& [key, value] : arguments.items()) {
+        (void)value;
+        if (allowed.count(key) == 0) {
+            throw std::invalid_argument("Unknown argument: " + key);
+        }
+    }
+}
+
+std::string required_mcp_model_string(const nlohmann::json& arguments,
+                                      const char* key) {
+    auto value = arguments.find(key);
+    if (value == arguments.end() || !value->is_string()) {
+        throw std::invalid_argument(std::string("Missing or non-string argument: ") + key);
+    }
+    std::string result = value->get<std::string>();
+    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }));
+    result.erase(std::find_if(result.rbegin(), result.rend(), [](unsigned char ch) {
+        return !std::isspace(ch);
+    }).base(), result.end());
+    if (result.empty()) {
+        throw std::invalid_argument(std::string("Argument must not be empty: ") + key);
+    }
+    return result;
+}
+
 } // namespace
 
 
@@ -1092,6 +1185,363 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 }
 
 
+
+nlohmann::json Server::handle_mcp_server_tool(
+        const std::string& tool_name,
+        const nlohmann::json& arguments) {
+    using JsonHandler = void (Server::*)(const httplib::Request&, httplib::Response&);
+
+    auto call_json_handler = [this](const nlohmann::json& body, JsonHandler handler) {
+        httplib::Request request;
+        request.method = "POST";
+        request.body = body.dump();
+        request.headers.emplace("Content-Type", "application/json");
+        httplib::Response response;
+        (this->*handler)(request, response);
+        return mcp_model_http_result(response);
+    };
+
+    auto call_get_handler = [this](JsonHandler handler) {
+        httplib::Request request;
+        request.method = "GET";
+        httplib::Response response;
+        (this->*handler)(request, response);
+        return mcp_model_http_result(response);
+    };
+
+    auto call_binary_handler = [this](const nlohmann::json& body,
+                                      JsonHandler handler,
+                                      const std::string& label) {
+        httplib::Request request;
+        request.method = "POST";
+        request.body = body.dump();
+        request.headers.emplace("Content-Type", "application/json");
+        httplib::Response response;
+        (this->*handler)(request, response);
+        if (response.status >= 400) {
+            return mcp_model_http_result(response);
+        }
+        const std::string mime_type = response.get_header_value("Content-Type");
+        const std::string encoded = utils::JsonUtils::base64_encode(response.body);
+        nlohmann::json payload = {
+            {"mime_type", mime_type.empty() ? "application/octet-stream" : mime_type},
+            {"data_base64", encoded},
+        };
+        nlohmann::json content = nlohmann::json::array();
+        if (mime_type.rfind("audio/", 0) == 0) {
+            content.push_back({
+                {"type", "audio"},
+                {"data", encoded},
+                {"mimeType", mime_type},
+            });
+        } else if (mime_type.rfind("image/", 0) == 0) {
+            content.push_back({
+                {"type", "image"},
+                {"data", encoded},
+                {"mimeType", mime_type},
+            });
+        } else {
+            content.push_back({
+                {"type", "text"},
+                {"text", label},
+            });
+        }
+        return nlohmann::json{
+            {"content", std::move(content)},
+            {"structuredContent", std::move(payload)},
+            {"isError", false},
+        };
+    };
+
+    auto resolve_media_model = [this](const nlohmann::json& args,
+                                      ModelType type,
+                                      const char* type_name) -> std::string {
+        if (args.contains("model")) {
+            if (!args["model"].is_string()) {
+                throw std::invalid_argument("model must be a string");
+            }
+            std::string model = args["model"].get<std::string>();
+            if (!model.empty()) return model;
+        }
+        const std::string wanted_type = model_type_to_string(type);
+        for (const auto& loaded : router_->get_all_loaded_models()) {
+            if (loaded.value("type", std::string()) == wanted_type) {
+                const std::string model = loaded.value("model_name", std::string());
+                if (!model.empty()) return model;
+            }
+        }
+        for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
+            if (info.type == type) return name;
+        }
+        throw std::invalid_argument(
+            std::string("No loaded/downloaded ") + type_name +
+            " model is available; pass an explicit model or pull one first");
+    };
+
+    try {
+        if (tool_name == "lemonade_get_model_info") {
+            validate_mcp_model_arguments(arguments, {"model_name"});
+            const std::string requested = required_mcp_model_string(arguments, "model_name");
+            if (!model_manager_->model_exists(requested)) {
+                return mcp_model_tool_result({
+                    {"error", "Model not found: " + requested},
+                    {"model_name", requested},
+                }, true);
+            }
+            const std::string model_name = model_manager_->resolve_model_name(requested);
+            const ModelInfo info = model_manager_->get_model_info(model_name);
+            const std::string public_name = model_manager_->get_public_model_name(model_name);
+            const std::string response_name = public_name.empty() ? requested : public_name;
+            nlohmann::json payload = model_info_to_json(response_name, info);
+            payload["model_name"] = response_name;
+            return mcp_model_tool_result(std::move(payload), false);
+        }
+
+        if (tool_name == "lemonade_load_model") {
+            validate_mcp_model_arguments(
+                arguments, {"model_name", "ctx_size", "pinned", "options"});
+            nlohmann::json body = {
+                {"model_name", required_mcp_model_string(arguments, "model_name")},
+                {"save_options", false},
+            };
+
+            if (arguments.contains("ctx_size")) {
+                if (!arguments["ctx_size"].is_number_integer()) {
+                    throw std::invalid_argument("ctx_size must be an integer");
+                }
+                body["ctx_size"] = arguments["ctx_size"];
+            }
+            if (arguments.contains("pinned")) {
+                if (!arguments["pinned"].is_boolean()) {
+                    throw std::invalid_argument("pinned must be a boolean");
+                }
+                body["pinned"] = arguments["pinned"];
+            }
+            if (arguments.contains("options")) {
+                if (!arguments["options"].is_object()) {
+                    throw std::invalid_argument("options must be an object");
+                }
+                for (const auto& [key, value] : arguments["options"].items()) {
+                    if (key == "model" || key == "model_name" ||
+                        key == "save_options" || key == "pinned") {
+                        throw std::invalid_argument(
+                            "options must contain recipe options only; reserved key: " + key);
+                    }
+                    if (key == "ctx_size" && arguments.contains("ctx_size")) {
+                        throw std::invalid_argument(
+                            "ctx_size must be provided either at top level or in options, not both");
+                    }
+                    body[key] = value;
+                }
+            }
+            return call_json_handler(body, &Server::handle_load);
+        }
+
+        if (tool_name == "lemonade_unload_model") {
+            validate_mcp_model_arguments(arguments, {"model_name"});
+            const nlohmann::json body = {
+                {"model_name", required_mcp_model_string(arguments, "model_name")},
+            };
+            return call_json_handler(body, &Server::handle_unload);
+        }
+
+        if (tool_name == "lemonade_pull_model") {
+            validate_mcp_model_arguments(
+                arguments,
+                {"model_name", "checkpoint", "recipe", "source", "do_not_upgrade"});
+            nlohmann::json body = {
+                {"model_name", required_mcp_model_string(arguments, "model_name")},
+                {"stream", false},
+            };
+            for (const char* key : std::vector<const char*>{"checkpoint", "recipe", "source"}) {
+                if (!arguments.contains(key)) continue;
+                if (!arguments[key].is_string()) {
+                    throw std::invalid_argument(std::string(key) + " must be a string");
+                }
+                body[key] = arguments[key];
+            }
+            if (arguments.contains("do_not_upgrade")) {
+                if (!arguments["do_not_upgrade"].is_boolean()) {
+                    throw std::invalid_argument("do_not_upgrade must be a boolean");
+                }
+                body["do_not_upgrade"] = arguments["do_not_upgrade"];
+            }
+            return call_json_handler(body, &Server::handle_pull);
+        }
+
+        if (tool_name == "lemonade_delete_model") {
+            validate_mcp_model_arguments(arguments, {"model_name", "confirm"});
+            const std::string requested = required_mcp_model_string(arguments, "model_name");
+            if (!arguments.contains("confirm") || !arguments["confirm"].is_boolean() ||
+                !arguments["confirm"].get<bool>()) {
+                return mcp_model_tool_result({
+                    {"error", "Deletion requires confirm=true"},
+                    {"model_name", requested},
+                    {"required", "confirm=true"},
+                }, true);
+            }
+
+            if (!model_manager_->model_exists(requested)) {
+                return mcp_model_tool_result({
+                    {"error", "Model not found: " + requested},
+                    {"model_name", requested},
+                }, true);
+            }
+            return call_json_handler(
+                nlohmann::json{{"model_name", requested}}, &Server::handle_delete);
+        }
+
+        if (tool_name == "lemonade_get_loaded_models") {
+            validate_mcp_model_arguments(arguments, {});
+            nlohmann::json models = router_->get_all_loaded_models();
+            return mcp_model_tool_result({
+                {"models", models},
+                {"count", models.size()},
+            }, false);
+        }
+
+        if (tool_name == "lemonade_get_server_health") {
+            validate_mcp_model_arguments(arguments, {});
+            return call_get_handler(&Server::handle_health);
+        }
+
+        if (tool_name == "lemonade_get_system_info") {
+            validate_mcp_model_arguments(arguments, {});
+            return call_get_handler(&Server::handle_system_info);
+        }
+
+        if (tool_name == "lemonade_list_backends") {
+            validate_mcp_model_arguments(arguments, {});
+            httplib::Request request;
+            request.method = "GET";
+            httplib::Response response;
+            handle_system_info(request, response);
+            if (response.status >= 400) return mcp_model_http_result(response);
+            nlohmann::json system_info = nlohmann::json::parse(response.body);
+            nlohmann::json payload = {
+                {"recipes", system_info.value("recipes", nlohmann::json::object())},
+                {"unavailable_recipes", system_info.value(
+                    "unavailable_recipes", nlohmann::json::array())},
+                {"no_fetch_executables", system_info.value("no_fetch_executables", false)},
+            };
+            return mcp_model_tool_result(std::move(payload), false);
+        }
+
+        if (tool_name == "lemonade_install_backend") {
+            validate_mcp_model_arguments(arguments, {"recipe", "backend", "force"});
+            nlohmann::json body = {
+                {"recipe", required_mcp_model_string(arguments, "recipe")},
+                {"backend", required_mcp_model_string(arguments, "backend")},
+                {"stream", false},
+            };
+            if (arguments.contains("force")) {
+                if (!arguments["force"].is_boolean()) {
+                    throw std::invalid_argument("force must be a boolean");
+                }
+                body["force"] = arguments["force"];
+            }
+            return call_json_handler(body, &Server::handle_install);
+        }
+
+        if (tool_name == "lemonade_edit_image") {
+            validate_mcp_model_arguments(
+                arguments, {"prompt", "image", "model", "size", "steps",
+                            "cfg_scale", "seed", "n"});
+            nlohmann::json body;
+            body["model"] = resolve_media_model(arguments, ModelType::IMAGE, "image");
+            body["prompt"] = required_mcp_model_string(arguments, "prompt");
+            std::string image = required_mcp_model_string(arguments, "image");
+            const auto comma = image.find(',');
+            if (image.rfind("data:", 0) == 0) {
+                if (comma == std::string::npos) {
+                    throw std::invalid_argument("image data URL is missing its base64 payload");
+                }
+                image = image.substr(comma + 1);
+            }
+            body["image_data"] = image;
+            body["image_filename"] = "image.png";
+            for (const char* key : {"size", "steps", "cfg_scale", "seed", "n"}) {
+                if (arguments.contains(key)) body[key] = arguments[key];
+            }
+            httplib::Response response;
+            handle_image_edit_json(body, response);
+            if (response.status >= 400) return mcp_model_http_result(response);
+            nlohmann::json payload = nlohmann::json::parse(response.body);
+            nlohmann::json content = nlohmann::json::array();
+            if (payload.contains("data") && payload["data"].is_array()) {
+                for (const auto& item : payload["data"]) {
+                    if (item.contains("b64_json") && item["b64_json"].is_string()) {
+                        content.push_back({
+                            {"type", "image"},
+                            {"data", item["b64_json"]},
+                            {"mimeType", "image/png"},
+                        });
+                    }
+                }
+            }
+            if (content.empty()) {
+                content.push_back({{"type", "text"}, {"text", "Image edit completed."}});
+            }
+            return {
+                {"content", std::move(content)},
+                {"structuredContent", std::move(payload)},
+                {"isError", false},
+            };
+        }
+
+        if (tool_name == "lemonade_generate_audio") {
+            validate_mcp_model_arguments(
+                arguments, {"prompt", "model", "duration", "steps", "cfg", "seed",
+                            "lyrics", "vocal_language", "response_format"});
+            nlohmann::json body = {
+                {"model", resolve_media_model(
+                    arguments, ModelType::AUDIO_GENERATION, "audio-generation")},
+                {"prompt", required_mcp_model_string(arguments, "prompt")},
+            };
+            for (const char* key : {"duration", "steps", "cfg", "seed", "lyrics",
+                                    "vocal_language", "response_format"}) {
+                if (arguments.contains(key)) body[key] = arguments[key];
+            }
+            return call_binary_handler(
+                body, &Server::handle_audio_generations, "Generated audio.");
+        }
+
+        if (tool_name == "lemonade_text_to_speech") {
+            validate_mcp_model_arguments(
+                arguments, {"input", "model", "voice", "speed", "response_format"});
+            nlohmann::json body = {
+                {"model", resolve_media_model(arguments, ModelType::TTS, "TTS")},
+                {"input", required_mcp_model_string(arguments, "input")},
+                {"stream", false},
+            };
+            for (const char* key : {"voice", "speed", "response_format"}) {
+                if (arguments.contains(key)) body[key] = arguments[key];
+            }
+            return call_binary_handler(
+                body, &Server::handle_audio_speech, "Generated speech audio.");
+        }
+
+        if (tool_name == "lemonade_generate_3d") {
+            validate_mcp_model_arguments(
+                arguments, {"image", "model", "resolution", "bg_removal", "seed", "uv"});
+            nlohmann::json body = {
+                {"model", resolve_media_model(arguments, ModelType::MESH, "3D")},
+                {"image", required_mcp_model_string(arguments, "image")},
+                {"response_format", "glb"},
+            };
+            for (const char* key : {"resolution", "bg_removal", "seed", "uv"}) {
+                if (arguments.contains(key)) body[key] = arguments[key];
+            }
+            return call_binary_handler(
+                body, &Server::handle_3d_generations, "Generated GLB model.");
+        }
+
+        return mcp_model_tool_result({{"error", "Unknown Lemonade server tool: " + tool_name}}, true);
+    } catch (const std::exception& e) {
+        return mcp_model_tool_result({{"error", e.what()}}, true);
+    }
+}
+
 void Server::setup_routes(httplib::Server &web_server) {
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
@@ -1532,7 +1982,10 @@ void Server::setup_routes(httplib::Server &web_server) {
     auto mcp_server = std::make_shared<McpServer>(
         router_.get(),
         model_manager_.get(),
-        [this](const std::string& m) { auto_load_model_if_needed(m); });
+        [this](const std::string& m) { auto_load_model_if_needed(m); },
+        [this](const std::string& tool_name, const json& arguments) {
+            return handle_mcp_server_tool(tool_name, arguments);
+        });
     mcp_server->register_routes(web_server);
 
     // Setup static file serving for web UI
@@ -5297,6 +5750,35 @@ bool Server::load_image_model(const nlohmann::json& request_json, httplib::Respo
     return true;
 }
 
+void Server::handle_image_edit_json(
+        const nlohmann::json& request_json,
+        httplib::Response& res) {
+    if (!request_json.contains("prompt") || !request_json["prompt"].is_string()) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", "Missing or non-string 'prompt' field in request"},
+            {"type", "invalid_request_error"}
+        }}}.dump(), "application/json");
+        return;
+    }
+    if (!request_json.contains("image_data") || !request_json["image_data"].is_string()) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", {
+            {"message", "Missing image data"},
+            {"type", "invalid_request_error"}
+        }}}.dump(), "application/json");
+        return;
+    }
+    if (!load_image_model(request_json, res)) return;
+
+    auto response = router_->image_edits(request_json);
+    if (response.contains("error")) {
+        LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
+        res.status = 500;
+    }
+    res.set_content(response.dump(), "application/json");
+}
+
 void Server::handle_image_edits(const httplib::Request& req, httplib::Response& res) {
     try {
         LOG(INFO, "Server") << "POST /api/v1/images/edits" << std::endl;
@@ -5401,24 +5883,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             }
         }
 
-        if (!request_json.contains("prompt")) {
-            res.status = 400;
-            nlohmann::json error = {{"error", {
-                {"message", "Missing 'prompt' field in request"},
-                {"type", "invalid_request_error"}
-            }}};
-            res.set_content(error.dump(), "application/json");
-            return;
-        }
-
-        if (!load_image_model(request_json, res)) return;
-
-        auto response = router_->image_edits(request_json);
-        if (response.contains("error")) {
-            LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
-            res.status = 500;
-        }
-        res.set_content(response.dump(), "application/json");
+        handle_image_edit_json(request_json, res);
 
     } catch (const nlohmann::json::exception& e) {
         LOG(ERROR, "Server") << "JSON parse error in handle_image_edits: " << e.what() << std::endl;

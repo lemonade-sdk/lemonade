@@ -3,8 +3,10 @@ Integration tests for the MCP gateway endpoint (POST /mcp).
 
 Requires a Lemonade server to already be running on port 13305.
 
-Covers the JSON-RPC 2.0 envelope plus the four tools exposed by the gateway:
-- lemonade_list_models
+Covers the JSON-RPC 2.0 envelope plus inference and model-management tools:
+- lemonade_list_models / lemonade_get_model_info
+- lemonade_load_model / lemonade_unload_model
+- lemonade_pull_model / lemonade_delete_model
 - lemonade_chat
 - lemonade_transcribe_audio   (smoke-tested via schema only; needs Whisper)
 - lemonade_generate_image     (smoke-tested via schema only; needs SD)
@@ -52,6 +54,44 @@ def _post(payload, timeout=TIMEOUT_DEFAULT):
         headers=_auth_headers(),
         timeout=timeout,
     )
+
+
+def _call_tool(name, arguments, request_id=100, timeout=TIMEOUT_DEFAULT):
+    """Call one MCP tool and return the decoded tool result."""
+    response = _post(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()["result"]
+
+
+MCP_HUB_EXPECTED_TOOLS = {
+    "lemonade_list_models",
+    "lemonade_get_model_info",
+    "lemonade_load_model",
+    "lemonade_unload_model",
+    "lemonade_get_loaded_models",
+    "lemonade_get_server_health",
+    "lemonade_pull_model",
+    "lemonade_delete_model",
+    "lemonade_get_system_info",
+    "lemonade_list_backends",
+    "lemonade_install_backend",
+    "lemonade_generate_image",
+    "lemonade_edit_image",
+    "lemonade_generate_audio",
+    "lemonade_text_to_speech",
+    "lemonade_transcribe_audio",
+    "lemonade_generate_3d",
+    "lemonade_chat",
+    "lemonade_omni",
+}
 
 
 class McpGatewayTests(ServerTestBase):
@@ -225,13 +265,7 @@ class McpGatewayTests(ServerTestBase):
         body = response.json()
         tools = body["result"]["tools"]
         names = {tool["name"] for tool in tools}
-        expected = {
-            "lemonade_list_models",
-            "lemonade_chat",
-            "lemonade_transcribe_audio",
-            "lemonade_generate_image",
-            "lemonade_omni",
-        }
+        expected = MCP_HUB_EXPECTED_TOOLS
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
         for tool in tools:
             self.assertIn("description", tool)
@@ -246,9 +280,149 @@ class McpGatewayTests(ServerTestBase):
         self.assertIn("model", omni["inputSchema"]["properties"])
         self.assertIn("output_dir", omni["inputSchema"]["properties"])
 
+        unload = next(t for t in tools if t["name"] == "lemonade_unload_model")
+        self.assertEqual(unload["inputSchema"].get("required"), ["model_name"])
+        delete = next(t for t in tools if t["name"] == "lemonade_delete_model")
+        self.assertEqual(
+            set(delete["inputSchema"].get("required", [])), {"model_name", "confirm"}
+        )
+        self.assertEqual(
+            delete["inputSchema"]["properties"]["confirm"].get("enum"), [True]
+        )
+
+        install = next(t for t in tools if t["name"] == "lemonade_install_backend")
+        self.assertEqual(
+            set(install["inputSchema"].get("required", [])), {"recipe", "backend"}
+        )
+        edit = next(t for t in tools if t["name"] == "lemonade_edit_image")
+        self.assertEqual(
+            set(edit["inputSchema"].get("required", [])), {"prompt", "image"}
+        )
+        model3d = next(t for t in tools if t["name"] == "lemonade_generate_3d")
+        self.assertEqual(model3d["inputSchema"].get("required"), ["image"])
+        self.assertEqual(
+            model3d["inputSchema"]["properties"]["bg_removal"].get("enum"),
+            ["threshold", "birefnet"],
+        )
+
     # ---------------------------------------------------------------------
     # tools/call error paths
     # ---------------------------------------------------------------------
+
+    def test_024_get_model_info_tool(self):
+        """Named model detail is available through MCP without a duplicate listing tool."""
+        result = _call_tool(
+            "lemonade_get_model_info",
+            {"model_name": ENDPOINT_TEST_MODEL},
+            request_id=24,
+        )
+        self.assertFalse(result["isError"], msg=str(result))
+        self.assertEqual(result["structuredContent"]["model_name"], ENDPOINT_TEST_MODEL)
+        self.assertIn("recipe", result["structuredContent"])
+
+    def test_025_unload_requires_explicit_model_name(self):
+        """Missing model_name must never fall through to REST's unload-all behavior."""
+        base = f"http://localhost:{PORT}/api/v1"
+        load = requests.post(
+            f"{base}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load.status_code, 200, load.text)
+
+        result = _call_tool("lemonade_unload_model", {}, request_id=25)
+        self.assertTrue(result["isError"], msg=str(result))
+
+        health = requests.get(
+            f"{base}/health", headers=_auth_headers(), timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(health.status_code, 200, health.text)
+        loaded = {item["model_name"] for item in health.json()["all_models_loaded"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, loaded)
+
+    def test_026_load_and_unload_tools(self):
+        """Explicit MCP load/unload round-trips through the existing server handlers."""
+        loaded = _call_tool(
+            "lemonade_load_model", {"model_name": ENDPOINT_TEST_MODEL}, request_id=26
+        )
+        self.assertFalse(loaded["isError"], msg=str(loaded))
+        self.assertEqual(loaded["structuredContent"]["status"], "success")
+
+        unloaded = _call_tool(
+            "lemonade_unload_model", {"model_name": ENDPOINT_TEST_MODEL}, request_id=27
+        )
+        self.assertFalse(unloaded["isError"], msg=str(unloaded))
+        self.assertEqual(unloaded["structuredContent"]["status"], "success")
+
+    def test_027_pull_existing_model_tool(self):
+        """Pull reuses /pull; the already-cached endpoint model makes this deterministic."""
+        result = _call_tool(
+            "lemonade_pull_model",
+            {"model_name": ENDPOINT_TEST_MODEL, "do_not_upgrade": True},
+            request_id=28,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertFalse(result["isError"], msg=str(result))
+
+    def test_028_delete_requires_confirmation(self):
+        """Delete is exact and requires confirm=true before calling the REST handler."""
+        canonical_name = f"user.McpDelete-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}/api/v1"
+        try:
+            register = requests.post(
+                f"{base}/pull",
+                json={
+                    "model_name": canonical_name,
+                    "recipe": "collection.omni",
+                    "components": [ENDPOINT_TEST_MODEL],
+                },
+                headers=_auth_headers(),
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(register.status_code, 200, register.text)
+
+            refused = _call_tool(
+                "lemonade_delete_model",
+                {"model_name": canonical_name, "confirm": False},
+                request_id=29,
+            )
+            self.assertTrue(refused["isError"], msg=str(refused))
+
+            still_there = _call_tool(
+                "lemonade_get_model_info", {"model_name": canonical_name}, request_id=30
+            )
+            self.assertFalse(still_there["isError"], msg=str(still_there))
+
+            deleted = _call_tool(
+                "lemonade_delete_model",
+                {"model_name": canonical_name, "confirm": True},
+                request_id=31,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertFalse(deleted["isError"], msg=str(deleted))
+        finally:
+            try:
+                requests.post(
+                    f"{base}/delete",
+                    json={"model_name": canonical_name},
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+            except Exception:
+                pass
+
+    def test_012_all_advertised_tools_have_dispatch(self):
+        """Every tools/list entry must resolve to a real tools/call dispatch."""
+        listed = _post({"jsonrpc": "2.0", "id": 120, "method": "tools/list"}).json()[
+            "result"
+        ]["tools"]
+        self.assertEqual({tool["name"] for tool in listed}, MCP_HUB_EXPECTED_TOOLS)
+        for index, tool in enumerate(listed, start=121):
+            result = _call_tool(tool["name"], {}, request_id=index)
+            text = json.dumps(result)
+            self.assertNotIn("Unknown tool:", text, msg=tool["name"])
+            self.assertNotIn("Unknown Lemonade server tool:", text, msg=tool["name"])
 
     def test_013_list_models_emits_prefixed_collection_id(self):
         """lemonade_list_models emits the canonical `user.` collection id (issue #2788).
