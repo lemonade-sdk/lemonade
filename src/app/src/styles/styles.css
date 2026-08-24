@@ -544,7 +544,6 @@ input[type="checkbox"]:disabled {
 }
 
 .titlebar__window-icon[data-icon='x'] {
-  transform: scale(0.9);
 }
 
 .titlebar__window-btn--close:hover {
