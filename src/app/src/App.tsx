@@ -1150,13 +1150,13 @@ const App: React.FC = () => {
           {isDesktop && (
             <>
               <button
-                className="titlebar__window-btn"
+                className="titlebar__window-btn titlebar__window-btn--minimize"
                 data-tauri-drag-region="false"
                 onClick={() => window.api?.minimizeWindow?.()}
                 aria-label="Minimize"
                 title="Minimize"
               >
-                <Icon name="minimize-2" size={14} />
+                <Icon name="minus" size={15} className="titlebar__window-icon" />
               </button>
               <button
                 className="titlebar__window-btn"
@@ -1165,7 +1165,7 @@ const App: React.FC = () => {
                 aria-label="Maximize"
                 title="Maximize"
               >
-                <Icon name="maximize-2" size={14} />
+                <Icon name="square" size={15} className="titlebar__window-icon" />
               </button>
               <button
                 className="titlebar__window-btn titlebar__window-btn--close"
@@ -1174,7 +1174,7 @@ const App: React.FC = () => {
                 aria-label="Cancel"
                 title="Cancel"
               >
-                <Icon name="x" size={14} />
+                <Icon name="x" size={15} className="titlebar__window-icon" />
               </button>
             </>
           )}

@@ -18,8 +18,8 @@ export type IconName =
   | 'sliders-horizontal' | 'flame' | 'wrench' | 'brain' | 'rocket' | 'pin'
   | 'star' | 'hugging-face' | 'cloud' | 'cloud-off' | 'user-round-cog' | 'router'
   | 'speech' | 'book-open' | 'newspaper' | 'github' | 'discord' | 'funnel' | 'info'
-  | 'thermometer' | 'gem' | 'gauge' | 'timer' | 'hard-drive' | 'library' | 'scan-eye' | 'minimize-2'
-  | 'panel-left-close' | 'panel-left-open' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
+  | 'thermometer' | 'gem' | 'gauge' | 'timer' | 'hard-drive' | 'library' | 'scan-eye' | 'minus' | 'minimize-2'
+  | 'panel-left-close' | 'panel-left-open' | 'square' | 'maximize-2' | 'brain-off' | 'brain-cog' | 'brain-circuit' | 'wrench-off' | 'terminal-square' | 'settings' | 'layers'
   | 'menu' | 'flask-conical' | 'external-link'
   | 'model-details';
 

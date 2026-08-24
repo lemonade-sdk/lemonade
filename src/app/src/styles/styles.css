@@ -472,6 +472,12 @@ input[type="checkbox"]:disabled {
   color: var(--text-primary);
 }
 
+.titlebar--desktop .titlebar__utilities-toggle,
+.titlebar--desktop .titlebar__utilities-toggle:hover,
+.titlebar--desktop .titlebar__utilities-toggle[aria-expanded="true"] {
+  border-color: transparent;
+}
+
 .titlebar__utility-label { display: none; }
 .titlebar__utility-status,
 .titlebar__utility-value { display: none; }
@@ -506,9 +512,35 @@ input[type="checkbox"]:disabled {
               color var(--duration-fast) var(--ease-out);
 }
 
+.titlebar--desktop .titlebar__window-btn--minimize {
+  position: relative;
+}
+
+.titlebar--desktop .titlebar__window-btn--minimize::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: -1px;
+  width: 1px;
+  height: 25px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--border-strong) 70%, transparent) 50%,
+    transparent 100%
+  );
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 .titlebar__window-btn:hover {
   background: var(--surface-2);
   color: var(--text-primary);
+}
+
+.titlebar__window-icon {
+  stroke-width: 1.5;
 }
 
 .titlebar__window-btn--close:hover {
@@ -11955,6 +11987,10 @@ a.backend-card__version:focus-visible {
   .titlebar.titlebar--desktop {
     column-gap: var(--space-1);
     padding-inline: var(--space-2);
+  }
+
+  .titlebar--desktop .titlebar__brand {
+    margin-inline-start: var(--space-1);
   }
 
   .titlebar--desktop .titlebar__right,

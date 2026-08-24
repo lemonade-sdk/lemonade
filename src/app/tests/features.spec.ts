@@ -824,12 +824,25 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const right = page.locator('.titlebar__right');
     const search = page.locator('.titlebar__search');
     const windowButtons = page.locator('.titlebar__window-btn');
+    const minimizeButton = page.getByRole('button', { name: 'Minimize', exact: true });
+    const appControls = page.getByRole('button', { name: 'App controls', exact: true });
+    const brandIcon = page.locator('.titlebar__brand-icon');
+    const mobileMenuButton = page.locator('.workspace-mobile-menu-button');
 
     await expect(titlebar).toHaveClass(/titlebar--desktop/);
     await expect(page.getByRole('button', { name: 'Apps', exact: true })).toHaveClass(/is-active/);
     await expect(windowButtons).toHaveCount(3);
-
-    for (const width of [1321, 1280, 900, 821, 800, 769, 480, 400]) {
+    await expect(minimizeButton).toHaveClass(/titlebar__window-btn--minimize/);
+    await expect(windowButtons.nth(0).locator('[data-icon="minus"]')).toHaveCount(1);
+    await expect(windowButtons.nth(1).locator('[data-icon="square"]')).toHaveCount(1);
+    await expect(windowButtons.nth(2).locator('[data-icon="x"]')).toHaveCount(1);
+    for (const iconName of ['minus', 'square', 'x']) {
+      const icon = windowButtons.locator(`[data-icon="${iconName}"]`);
+      await expect(icon).toHaveAttribute('width', '15');
+      await expect(icon).toHaveAttribute('height', '15');
+    }
+    let brandLeft: number | null = null;
+    for (const width of [1321, 1280, 901, 900, 821, 800, 769, 768, 480, 400]) {
       await page.setViewportSize({ width, height: 800 });
       await page.waitForTimeout(250);
 
@@ -848,6 +861,25 @@ test.describe('Lemonade UI — Feature Parity', () => {
         .toBeLessThanOrEqual(titlebarBox!.x + titlebarBox!.width);
 
       const minimumWindowButtonWidth = width <= 480 ? 30 : width <= 900 ? 32 : 34;
+      const dividerStyle = await minimizeButton.evaluate(element => {
+        const style = getComputedStyle(element, '::before');
+        return {
+          content: style.content,
+          width: style.width,
+          height: style.height,
+          insetInlineStart: style.insetInlineStart,
+          backgroundImage: style.backgroundImage,
+          pointerEvents: style.pointerEvents,
+        };
+      });
+      expect(dividerStyle.content, `window divider content at ${width}px`).toBe('""');
+      expect(dividerStyle.width, `window divider width at ${width}px`).toBe('1px');
+      expect(dividerStyle.height, `window divider height at ${width}px`).toBe('25px');
+      expect(dividerStyle.insetInlineStart, `window divider offset at ${width}px`).toBe('-1px');
+      expect(dividerStyle.backgroundImage, `window divider gradient missing at ${width}px`)
+        .toContain('linear-gradient');
+      expect(dividerStyle.pointerEvents, `window divider intercepts input at ${width}px`).toBe('none');
+
       const windowButtonBoxes = await windowButtons.evaluateAll(buttons => (
         buttons.map(button => button.getBoundingClientRect().width)
       ));
@@ -857,6 +889,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
       }
 
       if (width >= 769) {
+        const brandBox = await brandIcon.boundingBox();
+        expect(brandBox, `brand icon box at ${width}px`).not.toBeNull();
+        brandLeft ??= brandBox!.x;
+        expect(brandBox!.x, `brand icon moved at ${width}px`).toBeCloseTo(brandLeft, 1);
+
         const searchBox = await search.boundingBox();
         expect(searchBox, `Apps search box at ${width}px`).not.toBeNull();
         if (width === 1321) {
@@ -866,6 +903,14 @@ test.describe('Lemonade UI — Feature Parity', () => {
           expect(searchBox!.width, `Apps search did not compact at ${width}px`)
             .toBeLessThanOrEqual(32);
         }
+      } else {
+        await expect(brandIcon).toBeHidden();
+        await expect(mobileMenuButton).toBeVisible();
+        await expect(appControls).toBeVisible();
+        await expect(appControls).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+        const menuButtonBox = await mobileMenuButton.boundingBox();
+        expect(menuButtonBox, `mobile menu box at ${width}px`).not.toBeNull();
+        expect(menuButtonBox!.x, `brand/menu handoff moved at ${width}px`).toBeCloseTo(brandLeft!, 1);
       }
     }
 
@@ -884,7 +929,13 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.waitForSelector('.titlebar');
 
     const appControls = page.getByRole('button', { name: 'App controls', exact: true });
+    await expect(page.locator('.titlebar__window-btn--minimize')).toHaveCount(0);
     await expect(appControls).toBeVisible();
+    const browserAppControlsBorder = await appControls.evaluate(element => (
+      getComputedStyle(element).borderTopColor
+    ));
+    expect(browserAppControlsBorder).not.toBe('rgba(0, 0, 0, 0)');
+    expect(browserAppControlsBorder).not.toBe('transparent');
     await expect(appControls.locator('[data-icon="sliders-horizontal"]')).toBeVisible();
     await appControls.click();
     await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);

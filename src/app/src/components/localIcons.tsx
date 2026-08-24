@@ -198,6 +198,10 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"m14 10 7-7\"></path><path d=\"M20 10h-6V4\"></path><path d=\"m3 21 7-7\"></path><path d=\"M4 14h6v6\"></path>"
   },
+  "minus": {
+    "viewBox": "0 0 24 24",
+    "body": "<path d=\"M5.5 12h13\"></path>"
+  },
   "moon": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401\"></path>"
@@ -285,6 +289,10 @@ export const LOCAL_ICON_DEFINITIONS: Record<string, LocalIconDefinition> = {
   "speech": {
     "viewBox": "0 0 24 24",
     "body": "<path d=\"M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.164-2.1V8.3A5.37 5.37 0 0 0 2 8.25c0 2.8.656 3.054 1 4.55a5.77 5.77 0 0 1 .029 2.758L2 20\"></path><path d=\"M19.8 17.8a7.5 7.5 0 0 0 .003-10.603\"></path><path d=\"M17 15a3.5 3.5 0 0 0-.025-4.975\"></path>"
+  },
+  "square": {
+    "viewBox": "0 0 24 24",
+    "body": "<rect width=\"14\" height=\"14\" x=\"5\" y=\"5\" rx=\"0.5\"></rect>"
   },
   "stop": {
     "viewBox": "0 0 24 24",
