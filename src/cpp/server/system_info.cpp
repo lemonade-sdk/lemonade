@@ -823,13 +823,15 @@ static std::string get_expected_backend_version(const std::string& recipe, const
 
     // The expected version must resolve the SAME per-arch override that install used,
     // or these GPUs report update_required forever: versions_match tolerates the
-    // "-{family}" suffix but not a different base. The CDNA overrides are
-    // stable-line pins applied only on the stable channel (see
-    // VLLMServer::get_install_params), so mirror that gate here.
-    if (recipe == "vllm" && resolved_backend == "rocm-stable") {
+    // "-{family}" suffix but not a different base. CDNA publishes its own line per
+    // channel, so resolve the override for whatever channel is active (see
+    // VLLMServer::get_install_params). RDNA families return empty here and fall
+    // through to the default pin.
+    if (recipe == "vllm" &&
+        (resolved_backend == "rocm-stable" || resolved_backend == "rocm-nightly")) {
         std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
         if (!asset_family.empty()) {
-            std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);
+            std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family, resolved_backend);
             if (!override_version.empty()) {
                 return override_version;
             }
@@ -2098,7 +2100,8 @@ std::string SystemInfo::rocm_asset_family(const std::string& arch) {
     return arch;
 }
 
-std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_family) {
+std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_family,
+                                                   const std::string& resolved_backend) {
     static const json overrides = []() -> json {
         try {
             std::string config_path = utils::get_resource_path("resources/backend_versions.json");
@@ -2113,8 +2116,12 @@ std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_fami
         }
     }();
 
-    if (auto it = overrides.find(asset_family); it != overrides.end() && it->is_string()) {
-        return it->get<std::string>();
+    auto arch_it = overrides.find(asset_family);
+    if (arch_it == overrides.end() || !arch_it->is_object()) {
+        return "";
+    }
+    if (auto ch = arch_it->find(resolved_backend); ch != arch_it->end() && ch->is_string()) {
+        return ch->get<std::string>();
     }
     return "";
 }

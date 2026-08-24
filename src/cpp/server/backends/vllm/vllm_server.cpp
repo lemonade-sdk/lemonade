@@ -324,18 +324,16 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
             );
         }
 #ifdef __linux__
-        const bool is_stable_channel = (resolved_backend != "rocm-nightly");
         // The per-arch override replaces ONLY the builtin default base, so an explicit
-        // vllm.rocm_bin pin is not silently clobbered on an MI300X host.
-        // The CDNA overrides are stable-line pins, so they apply only on the stable channel;
-        // a nightly host keeps the resolved nightly base for its arch.
-        std::string arch_override = SystemInfo::vllm_rocm_version_override(target_arch);
+        // vllm.rocm_bin pin is not silently clobbered on a CDNA host.
+        // CDNA publishes its own vLLM/ROCm line per channel, so the override is resolved for the active channel.
+        // RDNA families have no override and keep the resolved default base.
+        std::string arch_override =
+            SystemInfo::vllm_rocm_version_override(target_arch, resolved_backend);
         std::string default_pin = BackendUtils::get_backend_version("vllm", resolved_backend);
         const bool on_builtin_default = version.empty() || version == default_pin;
         const std::string& effective_version =
-            (!arch_override.empty() && on_builtin_default && is_stable_channel)
-                ? arch_override
-                : version;
+            (!arch_override.empty() && on_builtin_default) ? arch_override : version;
         // One release per GPU target since 0.19.1 (vllm0.20.1-rocm7.12.0-gfx1151): a bare
         // base gets the detected suffix appended. An already-suffixed pin is rejected
         // unless it matches, so a cross-arch pin cannot install against the wrong line.
