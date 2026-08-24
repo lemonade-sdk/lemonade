@@ -3920,7 +3920,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
-        bool request_modified = false;
         std::optional<RouterDispatchResult> route_dispatch;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
@@ -4015,22 +4014,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use original request body - each backend (FLM, llamacpp, etc.) handles
-        // model name transformation internally via their forward methods.
-        // Note: request_json was already normalized at the top of this function
-        std::string request_body = req.body;
-
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
-        request_modified = normalize_thinking_controls(request_json) || request_modified;
-
-        // If we modified the request (or normalized the model name earlier), serialize to string
-        // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
-        // so we always use request_json for the body to ensure model name normalization is applied
-        request_body = request_json.dump();
+        normalize_thinking_controls(request_json);
 
         if (is_streaming) {
             try {
+                std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
@@ -4160,11 +4150,9 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use normalized request - model name was already normalized at the top
-        std::string request_body = request_json.dump();
-
         if (is_streaming) {
             try {
+                std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
@@ -5734,12 +5722,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Re-serialize so any collection.router model rewrite reaches the backend
-        // (streaming forwards this body verbatim).
-        std::string request_body = request_json.dump();
-
         if (is_streaming) {
             try {
+                // Re-serialize so any collection.router model rewrite reaches the backend.
+                std::string request_body = request_json.dump();
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
                 set_route_decision_sse_content_provider(
