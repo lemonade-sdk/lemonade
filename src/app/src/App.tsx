@@ -1150,7 +1150,7 @@ const App: React.FC = () => {
           {isDesktop && (
             <>
               <button
-                className="titlebar__window-btn"
+                className="titlebar__window-btn titlebar__window-btn--minimize"
                 data-tauri-drag-region="false"
                 onClick={() => window.api?.minimizeWindow?.()}
                 aria-label="Minimize"

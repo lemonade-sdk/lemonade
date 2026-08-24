@@ -78,7 +78,12 @@ assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/spa
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
 assert.match(sources.app, /className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
+assert.match(sources.app, /className="titlebar__window-btn titlebar__window-btn--minimize"[\s\S]*?onClick=\{\(\) => window\.api\?\.minimizeWindow\?\.\(\)\}[\s\S]*?aria-label="Minimize"/);
 assert.match(styles, /\.titlebar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+assert.match(styles, /\.titlebar__utilities-toggle\s*\{[\s\S]*?border:\s*1px solid var\(--border-subtle\)/);
+assert.match(styles, /\.titlebar--desktop \.titlebar__utilities-toggle,[\s\S]*?\.titlebar--desktop \.titlebar__utilities-toggle:hover,[\s\S]*?\.titlebar--desktop \.titlebar__utilities-toggle\[aria-expanded="true"\]\s*\{\s*border-color:\s*transparent/);
+assert.match(styles, /\.titlebar--desktop \.titlebar__window-btn--minimize\s*\{\s*position:\s*relative/);
+assert.match(styles, /\.titlebar--desktop \.titlebar__window-btn--minimize::before\s*\{[\s\S]*?content:\s*'';[\s\S]*?position:\s*absolute;[\s\S]*?inset-inline-start:\s*-1px;[\s\S]*?width:\s*1px;[\s\S]*?height:\s*25px;[\s\S]*?background:\s*linear-gradient\([\s\S]*?transparent 0%,[\s\S]*?color-mix\(in srgb, var\(--border-strong\) 70%, transparent\) 50%,[\s\S]*?transparent 100%[\s\S]*?pointer-events:\s*none/);
 assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?column-gap:\s*var\(--space-1\)/);
 assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.titlebar--desktop \.titlebar__brand\s*\{[\s\S]*?margin-inline-start:\s*var\(--space-1\)/);
 assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav\s*\{[\s\S]*?transform:\s*translateX\(clamp\(-44px, calc\(\(100vw - 820px\) \* 0\.2\), 0px\)\)/);
