@@ -67,6 +67,7 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ true,
 };
 
 inline bool publishes_for_os(const std::string& os) {
