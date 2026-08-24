@@ -358,9 +358,9 @@ void LlamaCppServer::load(const std::string& model_name,
 
     // A `draft` checkpoint is optional acceleration. Registration (the `draft`
     // checkpoint) and activation (the `mtp` / `dflash` label) are separate
-    // concerns: the label is the switch that enables speculative decoding, and
-    // a drafter is only wired into the llama-server invocation when it is both
-    // present on disk and enabled by its matching label (see #2435).
+    // concerns: --model-draft is only emitted when the drafter file is present
+    // on disk and enabled by its matching label. Embedded MTP (mtp label,
+    // no external drafter) emits --spec-type draft-mtp only (see #2435).
     const DraftActivation draft_activation = compute_draft_activation(
         model_info.labels,
         model_info.checkpoint("draft"),
