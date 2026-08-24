@@ -630,6 +630,7 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `POST` | `/internal/pin` | Pin or unpin a loaded model |
 | `POST` | `/internal/models/sync` | Sync/update downloaded models to the latest version (async or dry-run) |
 | `GET`  | `/internal/models/sync/status` | Retrieve status/progress of background model synchronization |
+| `POST` | `/internal/simulate-vram-pressure` | Test hook: synchronously run one eviction-engine evaluation |
 
 #### `POST /internal/set`
 
@@ -687,6 +688,31 @@ Returns the canonical default configuration — the values a brand-new `config.j
 ```bash
 curl http://localhost:13305/internal/config/defaults
 ```
+
+#### `POST /internal/simulate-vram-pressure`
+
+Test/admin hook for the [dynamic VRAM management](../guide/configuration/multi-model.md) path. Fires the VRAM pressure callback the eviction engine registers, synchronously and on the calling thread, without waiting for — or depending on — a real VRAM reading. The response returns only after the eviction pass has finished, which is what lets a test assert on the outcome instead of polling.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pct` | number | No | The VRAM utilization to report, as a fraction in `[0, 1]`. Defaults to `0.0`. A value of `-1` requests an idle-only evaluation instead. |
+
+Behavior by `pct`:
+
+- **`pct >= auto_evict_threshold_pct`** — runs a pressure eviction pass, evicting the best candidate as if the monitor had observed that utilization.
+- **`0 <= pct < auto_evict_threshold_pct`** — no eviction, matching what the real monitor does below the threshold.
+- **`pct == -1`** — runs one idle-only evaluation: the same sweep the engine's background timer performs, evicting or downsizing models that are past their idle timeouts.
+
+The pass honors every normal protection: pinned models are never touched, models whose `auto_evict` option is off are skipped, and an active exclusive job session defers the evaluation entirely.
+
+**Example:**
+```bash
+curl -X POST http://localhost:13305/internal/simulate-vram-pressure \
+  -H "Content-Type: application/json" \
+  -d '{"pct": 0.95}'
+```
+
+Returns `{"status": "ok"}` whenever the request is well-formed — including when nothing was evicted — or `400` with an `error` field if the body is not valid JSON or `pct` is not a number.
 
 ### Dependencies
 
