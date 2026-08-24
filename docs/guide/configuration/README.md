@@ -149,6 +149,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "thenoise": {
     "backend": "auto",
     "lora_dir": "",
+    "rocm_bin": "builtin",
     "upscaler_dir": ""
   },
   "thinksound": {
