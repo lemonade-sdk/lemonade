@@ -2,7 +2,7 @@
 Integration tests for the OpenInference telemetry feature (Option B).
 
 Covers:
-- Configuration validation (POST /v1/params).
+- Configuration validation (POST /internal/set).
 - Out-of-band tracing for chat completions (non-streaming).
 - Out-of-band tracing for chat completions (streaming).
 - Trace context validation (span name, kind, attributes, traceId, spanId).
@@ -297,7 +297,7 @@ class TelemetryTestBase(ServerTestBase):
     def tearDownClass(cls):
         try:
             cls._auth_post(
-                f"http://localhost:{PORT}/api/v1/params",
+                f"http://localhost:{PORT}/internal/set",
                 {"telemetry": {"enabled": False}},
             )
         except Exception:
@@ -357,7 +357,7 @@ class TelemetryTestBase(ServerTestBase):
                 otlp_params[k] = v
 
         payload = {"telemetry": {**telemetry_params, "otlp": otlp_params}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 200, res.text)
 
     def _wait_for_span(self, span_name=None, timeout=5.0, queue=None):
@@ -456,54 +456,54 @@ class ConfigTests(TelemetryTestBase):
                 },
             }
         }
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 200, res.text)
 
         # Invalid: enabled is not a boolean
         payload = {"telemetry": {"enabled": "yes"}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("enabled", res.json()["error"])
 
         # Invalid: endpoint is not a string
         payload = {"telemetry": {"otlp": {"endpoint": 123}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("endpoint", res.json()["error"])
 
         # Invalid: headers is not an object
         payload = {"telemetry": {"otlp": {"headers": "Bearer token"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("headers", res.json()["error"])
 
         # Invalid: protocol is not a string
         payload = {"telemetry": {"otlp": {"protocol": 123}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("protocol", res.json()["error"])
 
         # Invalid: protocol value is not supported
         payload = {"telemetry": {"otlp": {"protocol": "http/xml"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("protocol", res.json()["error"])
 
         # Invalid: max_retries is not an integer
         payload = {"telemetry": {"otlp": {"max_retries": "3"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("max_retries", res.json()["error"])
 
         # Invalid: max_retries is negative
         payload = {"telemetry": {"otlp": {"max_retries": -1}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("max_retries", res.json()["error"])
 
         # Invalid: semantics is not an array
         payload = {"telemetry": {"otlp": {"semantics": "openinference"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("semantics", res.json()["error"])
 
@@ -511,7 +511,7 @@ class ConfigTests(TelemetryTestBase):
         payload = {
             "telemetry": {"otlp": {"semantics": ["openinference", "custom_fmt"]}}
         }
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("semantics", res.json()["error"])
 
@@ -527,8 +527,8 @@ class ConfigTests(TelemetryTestBase):
             res.json().get("updated", {}).get("telemetry", {}).get("enabled")
         )
 
-        # 2. Get params to verify it is disabled
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        # 2. Read the config back to verify it is disabled
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertFalse(res.json().get("telemetry", {}).get("enabled"))
 
@@ -542,8 +542,8 @@ class ConfigTests(TelemetryTestBase):
             res.json().get("updated", {}).get("telemetry", {}).get("enabled")
         )
 
-        # 4. Get params to verify it is enabled again
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        # 4. Read the config back to verify it is enabled again
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertTrue(res.json().get("telemetry", {}).get("enabled"))
 
@@ -584,7 +584,7 @@ class ConfigTests(TelemetryTestBase):
         self.assertEqual(res.status_code, 200, res.text)
 
         # 3. Verify settings are preserved
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200)
         telemetry = res.json().get("telemetry", {})
         self.assertFalse(telemetry.get("enabled"))
@@ -600,7 +600,7 @@ class ConfigTests(TelemetryTestBase):
         self.assertEqual(res.status_code, 200)
 
         # 5. Verify settings are still preserved and semantics is still otel_genai
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200)
         telemetry = res.json().get("telemetry", {})
         self.assertTrue(telemetry.get("enabled"))
@@ -609,7 +609,7 @@ class ConfigTests(TelemetryTestBase):
 
         # 6. Verify unknown telemetry keys are rejected
         res = self._auth_post(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/set",
             {"telemetry": {"unknown_field": True}},
         )
         self.assertEqual(res.status_code, 400)
@@ -617,7 +617,7 @@ class ConfigTests(TelemetryTestBase):
 
         # 7. Verify unknown OTLP keys are rejected
         res = self._auth_post(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/set",
             {"telemetry": {"otlp": {"unknown_otlp_field": "val"}}},
         )
         self.assertEqual(res.status_code, 400)
@@ -1295,7 +1295,7 @@ class ReliabilityTests(TelemetryTestBase):
                 }
             }
             res = self._auth_post(
-                f"http://localhost:{temp_port}/api/v1/params", config_payload
+                f"http://localhost:{temp_port}/internal/set", config_payload
             )
             self.assertEqual(res.status_code, 200, res.text)
 

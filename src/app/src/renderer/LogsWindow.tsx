@@ -250,10 +250,10 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     setIsSettingLogLevel(true);
 
     try {
-      const response = await serverFetch('/log-level', {
+      const response = await serverFetch('/internal/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level: nextLevel }),
+        body: JSON.stringify({ log_level: nextLevel }),
       });
 
       if (!response.ok) {
@@ -261,8 +261,9 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       }
 
       const data = await response.json();
-      if (isLogLevel(data.level)) {
-        setLogLevel(data.level);
+      const applied = data?.updated?.log_level;
+      if (isLogLevel(applied)) {
+        setLogLevel(applied);
       }
     } catch (error) {
       console.error('Failed to update log level:', error);
