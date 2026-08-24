@@ -261,9 +261,14 @@ int main() {
         expect(SystemInfo::collect_rocm_arches(unknown).empty(),
                "an unrecognized GPU arch yields an empty list");
 
-        // Non-array input is tolerated.
-        expect(SystemInfo::collect_rocm_arches(nlohmann::json::object()).empty(),
-               "non-array input yields an empty list");
+        // Non-array input is a caller bug and must throw.
+        bool threw = false;
+        try {
+            SystemInfo::collect_rocm_arches(nlohmann::json::object());
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        expect(threw, "non-array input throws std::invalid_argument");
 
         // The per-thread override short-circuits probing entirely.
         SystemInfo::set_rocm_arch_override("gfx942");

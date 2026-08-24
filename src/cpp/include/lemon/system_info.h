@@ -120,9 +120,9 @@ public:
     // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
     static std::string select_rocm_arch(const json& amd_gpu_devices);
 
-    // Map an "amd_gpu" device array to ALL ROCm architectures, deduplicated and
-    // ordered discrete-first then integrated, so front() is the single arch a
-    // hybrid host should use (matches select_rocm_arch()). Pure — no probing.
+    // Pure version of get_rocm_arches() over a caller-supplied "amd_gpu" device
+    // array — same ordering/dedup contract, no probing. Throws
+    // std::invalid_argument on non-array input (caller bug).
     static std::vector<std::string> collect_rocm_arches(const json& amd_gpu_devices);
 
     // Collapse a concrete ROCm ISA (e.g. gfx1201) to the family target name the

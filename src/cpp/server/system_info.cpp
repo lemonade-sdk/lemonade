@@ -24,6 +24,7 @@
 #include <set>
 #include <map>
 #include <mutex>
+#include <stdexcept>
 #include <vector>
 #include <cmath>
 
@@ -2151,14 +2152,16 @@ std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
 }
 
 std::vector<std::string> SystemInfo::collect_rocm_arches(const json& amd_gpu_devices) {
-    // Pure mapping from the "amd_gpu" device array to ALL supported ROCm
-    // architectures, deduplicated and ordered discrete-first then integrated,
-    // so front() matches what select_rocm_arch() picks on a hybrid host.
+    if (!amd_gpu_devices.is_array()) {
+        throw std::invalid_argument(
+            "collect_rocm_arches() expects an \"amd_gpu\" device array");
+    }
+    // Ordering/dedup contract as documented on get_rocm_arches(): discrete
+    // first, then integrated, unique. The buckets exist because an iGPU and a
+    // dGPU can report the SAME arch (e.g. gfx1151 on both); the cross-bucket
+    // merge below dedups that case while keeping the discrete-first order.
     std::vector<std::string> discrete;
     std::vector<std::string> integrated;
-    if (!amd_gpu_devices.is_array()) {
-        return discrete;
-    }
     for (const auto& gpu : amd_gpu_devices) {
         if (!gpu.value("available", false)) {
             continue;
@@ -2178,8 +2181,6 @@ std::vector<std::string> SystemInfo::collect_rocm_arches(const json& amd_gpu_dev
             bucket.push_back(arch);
         }
     }
-    // Dedup across buckets (e.g. identical iGPU/dGPU arch strings), keeping
-    // the discrete-first preference.
     for (const auto& arch : integrated) {
         if (std::find(discrete.begin(), discrete.end(), arch) == discrete.end()) {
             discrete.push_back(arch);
