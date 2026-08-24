@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <cstring>
 #include <random>
 #include <sstream>
 #include <set>
@@ -638,15 +639,101 @@ json SDServer::image_variations(const json& request) {
 std::string SDServer::upscale_via_cli(
     const std::string& b64_image,
     const std::string& upscale_model_path,
-    const std::string& cli_exe_path,
-    const std::vector<std::pair<std::string, std::string>>& env_vars,
-    bool debug) {
+    double /* upscale_factor */) {
 
-    if (!fs::exists(cli_exe_path)) {
+    std::string backend;
+    if (auto* cfg = RuntimeConfig::global()) {
+        json recipe_opts = cfg->recipe_options("");
+        if (recipe_opts.contains("sd-cpp_backend") &&
+            recipe_opts["sd-cpp_backend"].is_string()) {
+            backend = recipe_opts["sd-cpp_backend"].get<std::string>();
+        }
+    }
+    if (backend.empty()) {
+        auto supported = SystemInfo::get_supported_backends("sd-cpp");
+        backend = supported.backends.empty() ? "cpu" : supported.backends[0];
+    }
+
+    std::string exe_dir = BackendUtils::get_backend_binary_path(*sdcpp::spec(), backend);
+    std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
+#ifdef _WIN32
+        "sd-cli.exe";
+#else
+        "sd-cli";
+#endif
+
+    if (!fs::exists(cli_exe)) {
         LOG(ERROR, "SDServer") << "sd-cli binary not found at: "
-            << cli_exe_path << std::endl;
+            << cli_exe.string() << std::endl;
         return "";
     }
+
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    std::filesystem::path cli_dir = cli_exe.parent_path();
+
+    std::string resolved_backend = backend;
+    if (backend == "rocm") {
+        std::string channel = "stable";
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel_for_recipe("sd-cpp");
+        }
+        resolved_backend = "rocm-" + channel;
+    }
+#ifndef _WIN32
+    std::string lib_path = cli_dir.string();
+
+    if (resolved_backend == "rocm-stable") {
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        if (!rocm_arch.empty()) {
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
+            }
+        }
+    }
+
+    const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+    if (existing_ld_path && strlen(existing_ld_path) > 0) {
+        lib_path = lib_path + ":" + std::string(existing_ld_path);
+    }
+    env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#else
+    if (resolved_backend == "rocm-stable") {
+        std::string new_path = cli_dir.string();
+        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        std::vector<std::string> therock_dirs;
+        if (!rocm_arch.empty()) {
+            therock_dirs =
+                BackendUtils::get_therock_lib_paths(rocm_arch);
+            for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                if (!it->empty()) {
+                    new_path = *it + ";" + new_path;
+                }
+            }
+        }
+
+        const char* existing_path = std::getenv("PATH");
+        if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
+        env_vars.push_back({"PATH", new_path});
+
+        if (!therock_dirs.empty()) {
+            fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
+            fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
+            if (fs::exists(therock_dll)) {
+                std::error_code ec;
+                fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                if (!ec) {
+                    LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to "
+                        << path_to_utf8(target_dll) << std::endl;
+                } else {
+                    LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: "
+                        << ec.message() << std::endl;
+                }
+            }
+        }
+    }
+#endif
 
     std::string raw = JsonUtils::base64_decode(b64_image);
 
@@ -709,7 +796,7 @@ std::string SDServer::upscale_via_cli(
     // inherit_output = true so subprocess stderr/stdout is visible in server
     // logs for debugging failed upscale operations
     auto proc = ProcessManager::start_process(
-        cli_exe_path, cli_args, "", true, false, env_vars);
+        cli_exe.string(), cli_args, "", true, false, env_vars);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
 
@@ -725,7 +812,7 @@ std::string SDServer::upscale_via_cli(
     } else {
         LOG(WARNING, "SDServer") << "ESRGAN upscale failed (exit code: "
             << exit_code << ", model: " << upscale_model_path
-            << ", cli: " << cli_exe_path << ")" << std::endl;
+            << ", cli: " << cli_exe.string() << ")" << std::endl;
     }
 
     return result;

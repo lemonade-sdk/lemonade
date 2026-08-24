@@ -2280,6 +2280,66 @@
         ],
         "size": 0.017
     },
+    "RealESRGAN-2xplus-TheNoise": {
+        "checkpoints": {
+            "main": "mikkoph/upscalers:esrgan/2x-real-esrgan-plus.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "upscaling",
+            "image"
+        ],
+        "size": 0.067
+    },
+    "RealESRGAN-4x-lsdir-TheNoise": {
+        "checkpoints": {
+            "main": "mikkoph/upscalers:esrgan/4x-lsdir-v1.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "upscaling",
+            "image"
+        ],
+        "size": 0.067
+    },
+    "RealESRGAN-4x-nmkd-TheNoise": {
+        "checkpoints": {
+            "main": "mikkoph/upscalers:esrgan/4x-nmkd-siax-cx-200k.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "upscaling",
+            "image"
+        ],
+        "size": 0.067
+    },
+    "RealESRGAN-4xplus-TheNoise": {
+        "checkpoints": {
+            "main": "mikkoph/upscalers:esrgan/4x-real-esrgan-plus.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "upscaling",
+            "image"
+        ],
+        "size": 0.067
+    },
+    "RealESRGAN-4x-remacri-TheNoise": {
+        "checkpoints": {
+            "main": "mikkoph/upscalers:esrgan/4x-remacri.safetensors"
+        },
+        "recipe": "thenoise",
+        "suggested": true,
+        "labels": [
+            "upscaling",
+            "image"
+        ],
+        "size": 0.067
+    },
     "Qwen3.5-0.8B-FP16-vLLM": {
         "checkpoint": "Qwen/Qwen3.5-0.8B",
         "recipe": "vllm",

@@ -49,9 +49,7 @@ public:
     static std::string upscale_via_cli(
         const std::string& b64_image,
         const std::string& upscale_model_path,
-        const std::string& cli_exe_path,
-        const std::vector<std::pair<std::string, std::string>>& env_vars,
-        bool debug = false);
+        double upscale_factor = 0.0);
 
 private:
     // Precedence and fall-through are documented in build_extra_args().
