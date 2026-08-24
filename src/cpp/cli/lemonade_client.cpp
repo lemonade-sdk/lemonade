@@ -578,6 +578,29 @@ int LemonadeClient::update_models(const std::vector<std::string>& models, bool c
     }
 }
 
+// Shared by status() and status_json() so an unreachable/erroring server
+// prints the exact same message on both paths.
+static int print_health_fetch_error(const json::exception& e) {
+    std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
+    return 1;
+}
+
+static int print_health_fetch_error(const HttpError& e) {
+    std::cerr << "Error fetching health status: " << extract_server_error_message(e)
+              << std::endl;
+    return 1;
+}
+
+static int print_health_fetch_error(const std::exception& e) {
+    const std::string error = e.what();
+    if (error.find("Connection failed:") == 0) {
+        std::cerr << "Server is not running" << std::endl;
+    } else {
+        std::cerr << "Error fetching health status: " << error << std::endl;
+    }
+    return 1;
+}
+
 int LemonadeClient::status(int display_port) const {
     try {
         auto json_response = fetch_health();
@@ -648,20 +671,50 @@ int LemonadeClient::status(int display_port) const {
         return 0;
 
     } catch (const json::exception& e) {
-        std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
-        return 1;
+        return print_health_fetch_error(e);
     } catch (const HttpError& e) {
-        std::cerr << "Error fetching health status: " << extract_server_error_message(e)
-                  << std::endl;
-        return 1;
+        return print_health_fetch_error(e);
     } catch (const std::exception& e) {
-        const std::string error = e.what();
-        if (error.find("Connection failed:") == 0) {
-            std::cerr << "Server is not running" << std::endl;
-        } else {
-            std::cerr << "Error fetching health status: " << error << std::endl;
+        return print_health_fetch_error(e);
+    }
+}
+
+int LemonadeClient::status_json(int display_port) const {
+    try {
+        auto health = fetch_health();
+
+        json out;
+        out["port"] = display_port > 0 ? display_port : port_;
+        out["version"] = health.value("version", "");
+        out["websocket_port"] = health.value("websocket_port", 0);
+        out["models"] = json::array();
+
+        for (const auto& model : health.value("all_models_loaded", json::array())) {
+            if (!model.is_object()) continue;
+
+            json entry;
+            entry["model_name"] = model.value("model_name", "");
+            entry["checkpoint"] = model.value("checkpoint", "");
+            entry["type"] = model.value("type", "");
+            entry["device"] = model.value("device", "");
+            entry["recipe"] = model.value("recipe", "");
+            entry["recipe_options"] = model.value("recipe_options", json::object());
+            entry["status"] = model.value("status", "");
+            entry["pinned"] = model.value("pinned", false);
+            entry["pid"] = model.value("pid", 0);
+            entry["backend_url"] = model.value("backend_url", "");
+            out["models"].push_back(entry);
         }
-        return 1;
+
+        std::cout << out.dump(2) << std::endl;
+        return 0;
+
+    } catch (const json::exception& e) {
+        return print_health_fetch_error(e);
+    } catch (const HttpError& e) {
+        return print_health_fetch_error(e);
+    } catch (const std::exception& e) {
+        return print_health_fetch_error(e);
     }
 }
 
