@@ -699,12 +699,16 @@ Test/admin hook for the [dynamic VRAM management](../guide/configuration/multi-m
 
 Behavior by `pct`:
 
-- **`pct >= auto_evict_threshold_pct`** — runs one evaluation with pressure eviction enabled. A model already past its hard idle timeout takes priority; otherwise the highest-scoring eligible eviction candidate is selected.
+- **`pct >= auto_evict_threshold_pct`** — runs one evaluation with pressure eviction enabled. The first eligible model encountered in loaded-model order that is already past its `evict_idle_timeout` is selected immediately; if none has reached that timeout, the highest-scoring eligible pressure candidate is selected.
 - **`0 <= pct < auto_evict_threshold_pct`** — the callback returns without running an eviction-engine evaluation, so this does not force an idle-timeout sweep.
-- **`pct == -1`** — runs one idle-only evaluation: the same sweep the engine's background timer performs, evicting or downsizing models that are past their idle timeouts.
+- **`pct == -1`** — runs one idle-only evaluation, the same sweep used by the engine's background timer. Models past `evict_idle_timeout` can be evicted, while ready models past `downsize_idle_timeout` can be downsized.
 - **Other negative numeric values** — are accepted by the HTTP handler but do not trigger an evaluation.
 
-The evaluation respects the normal protections: pinned models are never touched, models whose `auto_evict` option is off are skipped, models currently in use are not selected for eviction, and an active exclusive job session defers the evaluation entirely.
+Eligibility starts with the global `auto_evict` setting and is overridden by a model's boolean `auto_evict` option when present. A per-model `false` therefore excludes that model even when the global setting is on; a per-model `true` can opt that model in even when the global setting is off.
+
+For pressure selection, the eviction score is `idle_time_ms / (load_duration_ms * evict_weight_factor)`. Higher scores are more disposable: longer-idle and faster-loading models rank higher, while a larger `evict_weight_factor` protects a model. If the recorded load duration is not positive, the engine uses `1000 ms`; a non-positive weight factor is treated as `1.0`.
+
+Pinned models are never auto-evicted or downsized, and models currently in use are not selected for eviction. If an exclusive job session is active when an evaluation begins, the evaluation is skipped and the hook does not reschedule it. The endpoint still returns `200`, so a successful response means the callback completed, not necessarily that an evaluation ran.
 
 **Example:**
 ```bash
@@ -713,7 +717,7 @@ curl -X POST http://localhost:13305/internal/simulate-vram-pressure \
   -d '{"pct": 0.95}'
 ```
 
-Returns `{"status": "ok"}` after the callback completes for a valid JSON object when `pct` is absent or numeric, including when nothing was evicted. Returns `400` with an `error` field if the body is invalid JSON, is not a JSON object, or contains a non-numeric `pct`.
+Returns `{"status": "ok"}` after the callback completes for a valid JSON object when `pct` is absent or numeric, including when no evaluation ran or nothing was evicted. Returns `400` with an `error` field if the body is invalid JSON, is not a JSON object, or contains a non-numeric `pct`.
 
 ### Dependencies
 
