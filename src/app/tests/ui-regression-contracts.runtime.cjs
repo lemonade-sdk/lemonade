@@ -90,6 +90,10 @@ assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);
 assert.match(sources.chat, /const openMcpPicker = useCallback\(\(\) => \{[\s\S]*?setMcpPickerOpen\(true\)/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?Lemonade tools[\s\S]*?<\/button>/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?External MCP servers[\s\S]*?<\/button>/);
+const composerImagesRule = styles.match(/\.composer__images\s*\{([^}]*)\}/)?.[1] || '';
+assert.match(composerImagesRule, /max-width:\s*var\(--max-content-width\)/);
+assert.match(composerImagesRule, /margin:\s*0 auto/);
+assert.match(composerImagesRule, /overflow-x:\s*auto/);
 
 assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
 assert.doesNotMatch(sources.connect, /AppsView|app-directory/);

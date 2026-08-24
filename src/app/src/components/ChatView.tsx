@@ -4103,9 +4103,13 @@ ${finalText}`
           </div>
         )}
         {pendingImages.length > 0 && (
-          <div className="composer__images">
+          <div
+            className="composer__images"
+            role="list"
+            aria-label="Image attachments"
+          >
             {pendingImages.map((src, i) => (
-              <div key={i} className="composer__image-thumb">
+              <div key={i} className="composer__image-thumb" role="listitem">
                 <img src={src} alt={`Attachment ${i + 1}`} />
                 <button className="composer__image-remove" onClick={() => removeImage(i)} aria-label="Remove image">×</button>
               </div>
