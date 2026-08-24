@@ -188,6 +188,9 @@ static void test_classifier_prompt_carries_contract() {
           seen_prompt.find("\"rationale\"") != std::string::npos);
     check("llm: composed prompt describes the structured input and history policy",
           seen_prompt.find("latest user turn only") != std::string::npos);
+    check("llm: composed prompt disclaims has_tools/has_images as format, not content",
+          seen_prompt.find("FORMAT ONLY") != std::string::npos &&
+          seen_prompt.find("not evidence about") != std::string::npos);
 }
 
 static void test_classifier_fenced_json_is_tolerated() {

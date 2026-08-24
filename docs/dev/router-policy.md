@@ -146,6 +146,15 @@ and every entry's `model` must be one of `components`:
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to `default_model`.
 
+  The context includes `has_tools`/`has_images`, disclaimed to the judge as
+  request-format flags, not content signals — but a small judge (under ~2B) can
+  still read their mere presence as a cue and mislabel unrelated text. Write
+  `prompt` with an explicit criterion (as `risk` does above: "risk for tool
+  execution", not just "risk") and, where a request feature should genuinely
+  affect routing, prefer composing the deterministic `has_tools`/`has_images`
+  leaf alongside the classifier — as `risky-tool-calls-stay-local` does — rather
+  than trusting the judge to weigh it correctly on its own.
+
 > A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
 > block are the two LLM forms. `routing.router` picks the final candidate itself
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose

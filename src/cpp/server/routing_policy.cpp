@@ -359,13 +359,25 @@ private:
     // input format, candidate vocabulary, and the required JSON shape — is
     // appended here so every llm router speaks the same protocol regardless
     // of authoring.
+    //
+    // has_tools/has_images are explicitly disclaimed as format-only, not
+    // content signals: an unqualified small judge otherwise reads
+    // "has_tools: true" as evidence the request itself is about performing
+    // some risky action. A rule can still condition on either field directly
+    // via the deterministic has_tools/has_images leaf, composed alongside
+    // this classifier — that path never asks a model to interpret them.
     std::string effective_prompt() const {
         std::string suffix =
             "The user message is a JSON object describing the request to "
             "route: {\"text\": latest user turn only, \"has_tools\": whether "
-            "the request carries tools, \"has_images\": whether it carries "
-            "images, \"chars\": byte length of text, \"metadata\": caller "
-            "routing hints}. You must choose exactly one of these models: ";
+            "the API call includes a tools parameter, \"has_images\": whether "
+            "it includes an image parameter, \"chars\": byte length of text, "
+            "\"metadata\": caller routing hints}. has_tools and has_images "
+            "describe the request's FORMAT ONLY — they are not evidence about "
+            "the text's content, intent, or risk, and must not influence a "
+            "content-based label by themselves. Judge the request using "
+            "\"text\" against the routing criteria above. You must choose "
+            "exactly one of these models: ";
         for (std::size_t i = 0; i < labels().size(); ++i) {
             if (i > 0) suffix += ", ";
             suffix += labels()[i];
