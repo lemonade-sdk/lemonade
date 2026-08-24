@@ -80,6 +80,7 @@ assert.match(sources.app, /aria-activedescendant=/);
 assert.match(sources.app, /className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
 assert.match(styles, /\.titlebar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
 assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?column-gap:\s*var\(--space-1\)/);
+assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.titlebar--desktop \.titlebar__brand\s*\{[\s\S]*?margin-inline-start:\s*var\(--space-1\)/);
 assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav\s*\{[\s\S]*?transform:\s*translateX\(clamp\(-44px, calc\(\(100vw - 820px\) \* 0\.2\), 0px\)\)/);
 assert.match(styles, /\.titlebar--desktop \.titlebar__right,[\s\S]*?\.titlebar--desktop \.titlebar__utility-menu\s*\{\s*gap:\s*var\(--space-1\)/);
 assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);

@@ -511,6 +511,14 @@ input[type="checkbox"]:disabled {
   color: var(--text-primary);
 }
 
+.titlebar__window-icon {
+  stroke-width: 1.5;
+}
+
+.titlebar__window-icon[data-icon='x'] {
+  transform: scale(0.9);
+}
+
 .titlebar__window-btn--close:hover {
   background: var(--danger);
   color: var(--danger-on);
@@ -11948,6 +11956,10 @@ a.backend-card__version:focus-visible {
   .titlebar.titlebar--desktop {
     column-gap: var(--space-1);
     padding-inline: var(--space-2);
+  }
+
+  .titlebar--desktop .titlebar__brand {
+    margin-inline-start: var(--space-1);
   }
 
   .titlebar--desktop .titlebar__right,

@@ -824,12 +824,27 @@ test.describe('Lemonade UI — Feature Parity', () => {
     const right = page.locator('.titlebar__right');
     const search = page.locator('.titlebar__search');
     const windowButtons = page.locator('.titlebar__window-btn');
+    const brandIcon = page.locator('.titlebar__brand-icon');
+    const mobileMenuButton = page.locator('.workspace-mobile-menu-button');
 
     await expect(titlebar).toHaveClass(/titlebar--desktop/);
     await expect(page.getByRole('button', { name: 'Apps', exact: true })).toHaveClass(/is-active/);
     await expect(windowButtons).toHaveCount(3);
+    await expect(windowButtons.nth(0).locator('[data-icon="minus"]')).toHaveCount(1);
+    await expect(windowButtons.nth(1).locator('[data-icon="square"]')).toHaveCount(1);
+    await expect(windowButtons.nth(2).locator('[data-icon="x"]')).toHaveCount(1);
+    for (const iconName of ['minus', 'square', 'x']) {
+      const icon = windowButtons.locator(`[data-icon="${iconName}"]`);
+      await expect(icon).toHaveAttribute('width', '15');
+      await expect(icon).toHaveAttribute('height', '15');
+    }
+    await expect(windowButtons.nth(2).locator('[data-icon="x"]')).toHaveCSS(
+      'transform',
+      'matrix(0.9, 0, 0, 0.9, 0, 0)',
+    );
 
-    for (const width of [1321, 1280, 900, 821, 800, 769, 480, 400]) {
+    let brandLeft: number | null = null;
+    for (const width of [1321, 1280, 901, 900, 821, 800, 769, 768, 480, 400]) {
       await page.setViewportSize({ width, height: 800 });
       await page.waitForTimeout(250);
 
@@ -857,6 +872,11 @@ test.describe('Lemonade UI — Feature Parity', () => {
       }
 
       if (width >= 769) {
+        const brandBox = await brandIcon.boundingBox();
+        expect(brandBox, `brand icon box at ${width}px`).not.toBeNull();
+        brandLeft ??= brandBox!.x;
+        expect(brandBox!.x, `brand icon moved at ${width}px`).toBeCloseTo(brandLeft, 1);
+
         const searchBox = await search.boundingBox();
         expect(searchBox, `Apps search box at ${width}px`).not.toBeNull();
         if (width === 1321) {
@@ -866,6 +886,12 @@ test.describe('Lemonade UI — Feature Parity', () => {
           expect(searchBox!.width, `Apps search did not compact at ${width}px`)
             .toBeLessThanOrEqual(32);
         }
+      } else {
+        await expect(brandIcon).toBeHidden();
+        await expect(mobileMenuButton).toBeVisible();
+        const menuButtonBox = await mobileMenuButton.boundingBox();
+        expect(menuButtonBox, `mobile menu box at ${width}px`).not.toBeNull();
+        expect(menuButtonBox!.x, `brand/menu handoff moved at ${width}px`).toBeCloseTo(brandLeft!, 1);
       }
     }
 
