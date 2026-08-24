@@ -921,7 +921,11 @@ void WebSocketServer::broadcast_span(const json& span) {
                     std::string payload = filtered_span.dump(-1, ' ', false, json::error_handler_t::replace);
                     auto it = connection_websockets_.find(conn_id);
                     if (it != connection_websockets_.end() && it->second != nullptr) {
-                        message_queues_[conn_id].push(std::move(payload));
+                        auto& q = message_queues_[conn_id];
+                        while (q.size() >= 100) {
+                            q.pop();
+                        }
+                        q.push(std::move(payload));
                         writable_dispatch_pending_.store(true);
                     }
                 } catch (const std::exception& e) {
