@@ -49,7 +49,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq '.tag_name')
+          # ggml-org/llama.cpp now publishes semver milestone releases (vX.Y.Z)
+          # as `releases/latest`; those are tag-only and carry no binaries (just
+          # a nightly-tag.txt pointing at the corresponding build). All binary
+          # assets live under the `b[NUM]` nightly tags, which the asset checks
+          # and pin updates below expect. Resolve the newest `b[NUM]` release
+          # instead of `releases/latest` so the resolved tag always has assets.
+          RELEASE=$(gh api "repos/ggml-org/llama.cpp/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false and (.tag_name | test("^b[0-9]+$"))) | .tag_name][0]')
+          if [ -z "$RELEASE" ]; then
+            echo "::error::Could not resolve a b[NUM] llama.cpp release tag."
+            exit 1
+          fi
           echo "Latest llama.cpp release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
