@@ -1643,9 +1643,15 @@ input[type="checkbox"]:disabled {
   font-weight: var(--weight-medium);
 }
 
-.composer__bar {
+.composer__entry {
+  width: 100%;
   max-width: var(--max-content-width);
+  min-width: 0;
   margin: 0 auto;
+}
+
+.composer__bar {
+  width: 100%;
   display: flex;
   gap: var(--space-2);
   background: var(--surface-1);
@@ -4819,9 +4825,7 @@ optgroup {
 
 .composer__images {
   width: 100%;
-  max-width: var(--max-content-width);
   min-width: 0;
-  margin: 0 auto;
   box-sizing: border-box;
   display: flex;
   gap: var(--space-2);

@@ -20,6 +20,7 @@ const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) =
 const mcpClientHeader = fs.readFileSync(path.join(root, '../cpp/include/lemon/mcp_client.h'), 'utf8');
 const mcpClientSource = fs.readFileSync(path.join(root, '../cpp/server/mcp_client.cpp'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
+const criticalStyles = fs.readFileSync(path.join(root, 'src/styles/critical.generated.css'), 'utf8');
 
 for (const [key, filename] of Object.entries(files)) {
   const compiled = ts.transpileModule(sources[key], {
@@ -82,10 +83,19 @@ assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);
 assert.match(sources.chat, /const openMcpPicker = useCallback\(\(\) => \{[\s\S]*?setMcpPickerOpen\(true\)/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?Lemonade tools[\s\S]*?<\/button>/);
 assert.match(sources.chat, /role="tab"[\s\S]*?>[\s\S]*?External MCP servers[\s\S]*?<\/button>/);
-const composerImagesRule = styles.match(/\.composer__images\s*\{([^}]*)\}/)?.[1] || '';
-assert.match(composerImagesRule, /max-width:\s*var\(--max-content-width\)/);
-assert.match(composerImagesRule, /margin:\s*0 auto/);
-assert.match(composerImagesRule, /overflow-x:\s*auto/);
+for (const [label, stylesheet] of [['full', styles], ['critical', criticalStyles]]) {
+  const composerEntryRule = stylesheet.match(/\.composer__entry\s*\{([^}]*)\}/)?.[1] || '';
+  assert.match(composerEntryRule, /width:\s*100%/, `${label} styles must size the shared composer entry`);
+  assert.match(composerEntryRule, /max-width:\s*var\(--max-content-width\)/, `${label} styles must bound the shared composer entry`);
+  assert.match(composerEntryRule, /margin:\s*0 auto/, `${label} styles must center the shared composer entry`);
+
+  const composerImagesRule = stylesheet.match(/\.composer__images\s*\{([^}]*)\}/)?.[1] || '';
+  assert.match(composerImagesRule, /width:\s*100%/, `${label} styles must fill the shared composer entry with previews`);
+  assert.match(composerImagesRule, /overflow-x:\s*auto/, `${label} styles must retain native narrow-layout overflow`);
+
+  const composerBarRule = stylesheet.match(/\.composer__bar\s*\{([^}]*)\}/)?.[1] || '';
+  assert.match(composerBarRule, /width:\s*100%/, `${label} styles must fill the shared composer entry with the message bar`);
+}
 
 assert.doesNotMatch(sources.navigation, /defineSection\('app-directory'/);
 assert.doesNotMatch(sources.connect, /AppsView|app-directory/);

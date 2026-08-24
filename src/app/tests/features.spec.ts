@@ -455,6 +455,75 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/02-chat-view.png', fullPage: true });
   });
 
+  test('02a — image attachments share the message composer bounds', async ({ page }) => {
+    const modelName = 'Vision Layout Model';
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: {
+        status: 'ok',
+        version: 'test',
+        all_models_loaded: [{
+          model_name: modelName,
+          checkpoint: 'test/vision-layout-model',
+          recipe: 'llamacpp',
+          device: 'cpu',
+          backend_url: 'http://127.0.0.1:8081',
+          pid: 4242,
+          type: 'llm',
+          labels: ['chat', 'vision'],
+          input_modalities: ['text', 'image'],
+          last_use: Date.now(),
+        }],
+      },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [{
+          id: modelName,
+          name: modelName,
+          checkpoint: 'test/vision-layout-model',
+          recipe: 'llamacpp',
+          downloaded: true,
+          labels: ['chat', 'vision'],
+          input_modalities: ['text', 'image'],
+        }],
+      },
+    }));
+
+    await page.setViewportSize({ width: 1440, height: 800 });
+    await page.goto('/');
+    await expect(page.locator('.composer__input')).toBeVisible();
+    const fileInput = page.locator('.composer input[type="file"]');
+    await expect(fileInput).toHaveAttribute('accept', /image\/\*/);
+    await fileInput.setInputFiles('src-tauri/icons/32x32.png');
+
+    const entry = page.locator('.composer__entry');
+    const previews = page.getByRole('list', { name: 'Image attachments' });
+    const messageBar = page.locator('.composer__bar');
+    await expect(previews).toBeVisible();
+
+    const expectSharedBounds = async () => {
+      const [entryBox, previewBox, barBox] = await Promise.all([
+        entry.boundingBox(),
+        previews.boundingBox(),
+        messageBar.boundingBox(),
+      ]);
+      expect(entryBox).not.toBeNull();
+      expect(previewBox).not.toBeNull();
+      expect(barBox).not.toBeNull();
+      expect(Math.abs(previewBox!.x - entryBox!.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(previewBox!.width - entryBox!.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(barBox!.x - entryBox!.x)).toBeLessThanOrEqual(1);
+      expect(Math.abs(barBox!.width - entryBox!.width)).toBeLessThanOrEqual(1);
+    };
+
+    await expectSharedBounds();
+    await page.setViewportSize({ width: 956, height: 700 });
+    await expectSharedBounds();
+  });
+
   test('03 — Models view shows model grid', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
