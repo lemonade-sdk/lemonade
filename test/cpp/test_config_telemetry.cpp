@@ -113,5 +113,73 @@ int main() {
     check(cli_updates["telemetry"]["otlp"]["headers"].is_object(), "CLI parses JSON object for headers");
     check(cli_updates["telemetry"]["otlp"]["headers"]["Authorization"] == "Bearer test-key", "CLI parsed object field matches");
 
+    // 4. Test telemetry.session.headers.(id|client) config, validation and snapshot
+    json session_cfg = {
+        {"telemetry", {
+            {"session", {
+                {"headers", {
+                    {"id", json::array({"x-custom-session", "x-alt-session"})},
+                    {"client", json::array({"x-custom-client"})}
+                }}
+            }}
+        }}
+    };
+    config.set(session_cfg);
+    snapshot = config.snapshot();
+    check(snapshot["telemetry"]["session"]["headers"]["id"].is_array(), "telemetry.session.headers.id is array in snapshot");
+    check(snapshot["telemetry"]["session"]["headers"]["id"].size() == 2, "telemetry.session.headers.id has 2 entries");
+    check(config.telemetry_session_headers_id().size() == 2, "telemetry_session_headers_id returns 2 headers");
+    check(config.telemetry_session_headers_id()[0] == "x-custom-session", "telemetry_session_headers_id first header matches");
+    check(config.telemetry_session_headers_client().size() == 1, "telemetry_session_headers_client returns 1 header");
+    check(config.telemetry_session_headers_client()[0] == "x-custom-client", "telemetry_session_headers_client header matches");
+
+    // Test rejection of non-string elements in array
+    bool threw_invalid_element = false;
+    try {
+        json invalid_sess = {
+            {"telemetry", {
+                {"session", {
+                    {"headers", {
+                        {"id", json::array({123})}
+                    }}
+                }}
+            }}
+        };
+        config.set(invalid_sess);
+    } catch (const std::invalid_argument& e) {
+        threw_invalid_element = true;
+        std::printf("Expected exception caught: %s\n", e.what());
+    }
+    check(threw_invalid_element, "rejects non-string elements in telemetry.session.headers.id");
+
+    // Test single string format for id and client
+    json single_str_sess = {
+        {"telemetry", {
+            {"session", {
+                {"headers", {
+                    {"id", "x-single-session"},
+                    {"client", "x-single-client"}
+                }}
+            }}
+        }}
+    };
+    config.set(single_str_sess);
+    check(config.telemetry_session_headers_id().size() == 1, "telemetry_session_headers_id accepts single string header");
+    check(config.telemetry_session_headers_id()[0] == "x-single-session", "single header matches");
+    check(config.telemetry_session_headers_client().size() == 1, "telemetry_session_headers_client accepts single string client header");
+    check(config.telemetry_session_headers_client()[0] == "x-single-client", "single client header matches");
+
+    // Test CLI parsing with dotted syntax
+    std::vector<std::string> session_cli_args = {
+        "telemetry.session.headers.id=[\"x-cli-session\"]",
+        "telemetry.session.headers.client=x-cli-client"
+    };
+    json session_cli_updates = parse_cli_args(session_cli_args);
+    config.set(session_cli_updates);
+    check(config.telemetry_session_headers_id().size() == 1, "CLI sets telemetry.session.headers.id");
+    check(config.telemetry_session_headers_id()[0] == "x-cli-session", "CLI session header matches");
+    check(config.telemetry_session_headers_client().size() == 1, "CLI sets telemetry.session.headers.client");
+    check(config.telemetry_session_headers_client()[0] == "x-cli-client", "CLI client header matches");
+
     return test_helpers::report_results("C++ config/telemetry");
 }

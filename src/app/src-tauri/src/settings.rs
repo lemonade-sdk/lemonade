@@ -1,4 +1,4 @@
-//! App-settings persistence. Reads and writes `~/.cache/lemonade/app_settings.json`,
+//! App-settings persistence. Reads and writes `~/.config/lemonade/app_settings.json`,
 //! sanitizing values and applying defaults for missing/invalid fields before
 //! handing the struct back to the renderer. The JSON shape matches what the
 //! existing React renderer expects (each user-tunable field is a
@@ -203,7 +203,52 @@ impl Default for AppSettings {
 // ---------- Path helpers ----------
 
 fn settings_file_path() -> Option<PathBuf> {
-    Some(dirs::home_dir()?.join(".cache").join("lemonade").join(SETTINGS_FILE_NAME))
+    Some(
+        dirs::config_dir()?
+            .join("lemonade")
+            .join(SETTINGS_FILE_NAME),
+    )
+}
+
+fn legacy_settings_file_path() -> Option<PathBuf> {
+    Some(
+        dirs::home_dir()?
+            .join(".cache")
+            .join("lemonade")
+            .join(SETTINGS_FILE_NAME),
+    )
+}
+
+fn migrate_legacy_settings_file() {
+    let (Some(new_path), Some(old_path)) = (settings_file_path(), legacy_settings_file_path())
+    else {
+        return;
+    };
+    if new_path == old_path || !old_path.exists() || new_path.exists() {
+        return;
+    }
+    if let Some(parent) = new_path.parent() {
+        if let Err(err) = fs::create_dir_all(parent) {
+            log::warn!("Failed to create app settings directory during migration: {err}");
+            return;
+        }
+    }
+    match fs::rename(&old_path, &new_path) {
+        Ok(_) => {}
+        Err(rename_err) => {
+            if let Err(copy_err) = fs::copy(&old_path, &new_path) {
+                log::warn!(
+                    "Failed to migrate legacy app settings file (rename: {rename_err}, copy: {copy_err})"
+                );
+                return;
+            }
+            if let Err(remove_err) = fs::remove_file(&old_path) {
+                log::warn!(
+                    "Migrated app settings file but could not remove legacy copy: {remove_err}"
+                );
+            }
+        }
+    }
 }
 
 // ---------- Sanitize helpers ----------
@@ -262,16 +307,31 @@ fn extract_clamped_i64(min: i64, max: i64) -> impl Fn(&Value) -> Option<Value> {
 pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
     let mut s = AppSettings::default();
 
-    apply_typed_setting(incoming, "temperature", &mut s.temperature, extract_clamped_f64(0.0, 2.0));
+    apply_typed_setting(
+        incoming,
+        "temperature",
+        &mut s.temperature,
+        extract_clamped_f64(0.0, 2.0),
+    );
     apply_typed_setting(incoming, "topK", &mut s.top_k, extract_clamped_i64(1, 100));
-    apply_typed_setting(incoming, "topP", &mut s.top_p, extract_clamped_f64(0.0, 1.0));
+    apply_typed_setting(
+        incoming,
+        "topP",
+        &mut s.top_p,
+        extract_clamped_f64(0.0, 1.0),
+    );
     apply_typed_setting(
         incoming,
         "repeatPenalty",
         &mut s.repeat_penalty,
         extract_clamped_f64(1.0, 2.0),
     );
-    apply_typed_setting(incoming, "enableThinking", &mut s.enable_thinking, extract_bool);
+    apply_typed_setting(
+        incoming,
+        "enableThinking",
+        &mut s.enable_thinking,
+        extract_bool,
+    );
     apply_typed_setting(
         incoming,
         "collapseThinkingByDefault",
@@ -294,7 +354,10 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
         }
 
         set_bool("isChatVisible", &mut s.layout.is_chat_visible);
-        set_bool("isModelManagerVisible", &mut s.layout.is_model_manager_visible);
+        set_bool(
+            "isModelManagerVisible",
+            &mut s.layout.is_model_manager_visible,
+        );
         set_bool("isLogsVisible", &mut s.layout.is_logs_visible);
 
         if let Some(view) = raw_layout.get("leftPanelView").and_then(Value::as_str) {
@@ -310,7 +373,12 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
                 }
             }
         };
-        clamp_size("modelManagerWidth", 200, 500, &mut s.layout.model_manager_width);
+        clamp_size(
+            "modelManagerWidth",
+            200,
+            500,
+            &mut s.layout.model_manager_width,
+        );
         clamp_size("chatWidth", 250, 800, &mut s.layout.chat_width);
         clamp_size("logsHeight", 100, 400, &mut s.layout.logs_height);
     }
@@ -349,6 +417,7 @@ pub(crate) fn sanitize_app_settings(incoming: &Value) -> AppSettings {
 // ---------- Read / write ----------
 
 pub(crate) fn read_app_settings() -> AppSettings {
+    migrate_legacy_settings_file();
     let Some(path) = settings_file_path() else {
         return AppSettings::default();
     };
@@ -370,6 +439,7 @@ pub(crate) fn read_app_settings() -> AppSettings {
 }
 
 pub(crate) fn write_app_settings(incoming: &Value) -> Result<AppSettings, String> {
+    migrate_legacy_settings_file();
     let path = settings_file_path()
         .ok_or_else(|| "Unable to locate the Lemonade home directory".to_string())?;
 
@@ -379,8 +449,8 @@ pub(crate) fn write_app_settings(incoming: &Value) -> Result<AppSettings, String
         fs::create_dir_all(parent).map_err(|e| format!("create_dir_all failed: {e}"))?;
     }
 
-    let json = serde_json::to_string_pretty(&sanitized)
-        .map_err(|e| format!("serialize failed: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(&sanitized).map_err(|e| format!("serialize failed: {e}"))?;
     fs::write(&path, json).map_err(|e| format!("write failed: {e}"))?;
 
     Ok(sanitized)
@@ -464,13 +534,28 @@ mod tests {
 
         // The output must use exactly the keys the renderer expects.
         assert!(serialized.get("baseURL").is_some(), "baseURL key missing");
-        assert!(serialized.get("baseUrl").is_none(), "baseUrl (lowercase) leaked");
+        assert!(
+            serialized.get("baseUrl").is_none(),
+            "baseUrl (lowercase) leaked"
+        );
 
-        let tts = serialized.get("tts").and_then(|v| v.as_object()).expect("tts object");
+        let tts = serialized
+            .get("tts")
+            .and_then(|v| v.as_object())
+            .expect("tts object");
         assert!(tts.contains_key("enableTTS"), "enableTTS key missing");
-        assert!(tts.contains_key("enableUserTTS"), "enableUserTTS key missing");
-        assert!(!tts.contains_key("enableTts"), "enableTts (lowercase) leaked");
-        assert!(!tts.contains_key("enableUserTts"), "enableUserTts (lowercase) leaked");
+        assert!(
+            tts.contains_key("enableUserTTS"),
+            "enableUserTTS key missing"
+        );
+        assert!(
+            !tts.contains_key("enableTts"),
+            "enableTts (lowercase) leaked"
+        );
+        assert!(
+            !tts.contains_key("enableUserTts"),
+            "enableUserTts (lowercase) leaked"
+        );
 
         let layout = serialized
             .get("layout")
@@ -509,7 +594,10 @@ mod tests {
             "layout": { "leftPanelView": "definitely-not-a-real-view" }
         });
         let sanitized = sanitize_app_settings(&incoming);
-        assert_eq!(sanitized.layout.left_panel_view, "models", "fell back to default");
+        assert_eq!(
+            sanitized.layout.left_panel_view, "models",
+            "fell back to default"
+        );
     }
 
     #[test]
@@ -521,7 +609,10 @@ mod tests {
             "layout": { "leftPanelView": "prompt-debugger" }
         });
         let sanitized = sanitize_app_settings(&incoming);
-        assert_eq!(sanitized.layout.left_panel_view, "models", "prompt-debugger view no longer exists");
+        assert_eq!(
+            sanitized.layout.left_panel_view, "models",
+            "prompt-debugger view no longer exists"
+        );
     }
 
     #[test]

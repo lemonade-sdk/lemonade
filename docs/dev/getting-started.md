@@ -591,7 +591,7 @@ A GUI application for desktop users that exposes the server via a system tray ic
 The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`, `/internal/models/sync`, `/internal/models/sync/status`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -628,6 +628,8 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
 | `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
 | `POST` | `/internal/pin` | Pin or unpin a loaded model |
+| `POST` | `/internal/models/sync` | Sync/update downloaded models to the latest version (async or dry-run) |
+| `GET`  | `/internal/models/sync/status` | Retrieve status/progress of background model synchronization |
 
 #### `POST /internal/set`
 
@@ -712,7 +714,8 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 ./lemond --port 8080
 
 # Available options:
-#   [cache_dir]              Path to lemonade cache directory (optional)
+#   [cache_dir]              Path to lemonade cache/data directory (optional)
+#   [config_dir]             Path to lemonade config directory (optional)
 #   --port PORT              Port number (default: 13305)
 #   --host HOST              Bind address (default: localhost)
 #   --version, -v            Show version

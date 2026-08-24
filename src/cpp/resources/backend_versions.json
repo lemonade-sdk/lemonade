@@ -47,7 +47,7 @@
   },
   "llamacpp": {
     "vulkan": "b10375",
-    "rocm-stable": "b10397",
+    "rocm-stable": "b10470",
     "rocm-nightly": "b1311",
     "cuda": "b10397",
     "metal": "b10375",
@@ -61,14 +61,14 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-721-8caa3f9",
-    "rocm-stable": "master-721-8caa3f9",
-    "vulkan": "master-721-8caa3f9",
-    "cuda": "master-726-db48014",
-    "metal": "master-721-8caa3f9"
+    "cpu": "master-827-97d2990",
+    "rocm-stable": "master-827-97d2990",
+    "vulkan": "master-827-97d2990",
+    "cuda": "master-827-e2329c3",
+    "metal": "master-827-97d2990"
   },
   "therock": {
-    "version": "7.13.0",
+    "version": "7.14.0",
     "architectures": [
       "gfx908",
       "gfx90a",
@@ -81,6 +81,7 @@
       "gfx1150",
       "gfx1151",
       "gfx1152",
+      "gfx1153",
       "gfx1200",
       "gfx1201",
       "gfx1010",
@@ -98,8 +99,6 @@
       "gfx120X"
     ],
     "url_mapping": {
-      "gfx908": "gfx90X-dcgpu",
-      "gfx90a": "gfx90X-dcgpu",
       "gfx942": "gfx94X-dcgpu",
       "gfx950": "gfx950-dcgpu",
       "gfx103X": "gfx103X-all",
@@ -112,6 +111,7 @@
       "gfx1150": "gfx1150",
       "gfx1151": "gfx1151",
       "gfx1152": "gfx1152",
+      "gfx1153": "gfx1153",
       "gfx1200": "gfx120X-all",
       "gfx1201": "gfx120X-all",
       "gfx1010": "gfx101X-dgpu",
@@ -130,7 +130,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.1"
+    "npu": "v1.0.2"
   },
   "kokoro": {
     "cpu": "b17",
@@ -146,7 +146,7 @@
   },
   "thenoise": {
     "comment": "TheNoise release tag. The portable bundle publishes per-GPU-target archives (<tag>-gfxNNNN-x64.tar.gz) under this tag; the host arch picks the matching archive.",
-    "rocm": "thenoise-0.2.1-rocm7.14.0"
+    "rocm": "thenoise-0.3.0-rocm7.14.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

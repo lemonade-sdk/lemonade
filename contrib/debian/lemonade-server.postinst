@@ -28,6 +28,48 @@ if [ "$1" = "configure" ]; then
 	if getent group render > /dev/null; then
 		usermod -a -G render lemonade
 	fi
+
+	# Create /var/lib/lemonade (writable state + config for lemonade user).
+	# Ensure ownership even if usermod -m didn't move existing data.
+	if [ ! -d /var/lib/lemonade ]; then
+		mkdir -p /var/lib/lemonade
+	fi
+	chown -R lemonade:lemonade /var/lib/lemonade 2>/dev/null || true
+	chmod 0750 /var/lib/lemonade
+
+	# Create FHS cache directories for the service (owned by the service user).
+	# Systemd CacheDirectory= handles these at runtime on fresh boots, but we
+	# create them here to set correct ownership immediately after install.
+	for d in /var/cache/lemonade /var/cache/huggingface; do
+		if [ ! -d "$d" ]; then
+			mkdir -p "$d"
+		fi
+		chown lemonade:lemonade "$d"
+		chmod 0755 "$d"
+	done
+
+	# Migrate split environment files from /etc/lemonade/conf.d/*.conf to /etc/default/lemond
+	if [ -d /etc/lemonade/conf.d ]; then
+		if [ -f /etc/default/lemond ]; then
+			# Append old conf.d files to existing /etc/default/lemond
+			for conf in /etc/lemonade/conf.d/*.conf; do
+				[ -f "$conf" ] || continue
+				echo "" >> /etc/default/lemond
+				echo "# Migrated from $conf" >> /etc/default/lemond
+				cat "$conf" >> /etc/default/lemond
+			done
+		else
+			# Create /etc/default/lemond by merging all conf.d files
+			for conf in /etc/lemonade/conf.d/*.conf; do
+				[ -f "$conf" ] || continue
+				cat "$conf" >> /etc/default/lemond
+				echo "" >> /etc/default/lemond
+			done
+			chmod 0640 /etc/default/lemond
+			chown root:root /etc/default/lemond
+		fi
+		echo "Migrated environment files from /etc/lemonade/conf.d/ to /etc/default/lemond"
+	fi
 fi
 
 # #2125: migrate pre-fix upgrades — disable per-user lemond.service and stop
