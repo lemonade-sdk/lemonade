@@ -802,9 +802,31 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             complete_progress.complete = true;
             progress_cb(complete_progress);
         }
+    } catch (const std::exception& e) {
+        // A failed backend update must not block model loading when a usable
+        // backend was already installed: log and fall back to the existing
+        // binary.
+        if (has_existing_backend && !force) {
+            LOG(WARNING, "BackendManager")
+                << "Backend update for " << recipe << ":" << resolved_backend
+                << " failed (" << e.what() << "); falling back to installed backend";
+            report_backend_ready(recipe, resolved_backend, progress_cb);
+            return;
+        }
+
+        if (!backend_install_dir_existed_before) {
+            std::error_code cleanup_ec;
+            fs::remove_all(backend_install_dir, cleanup_ec);
+        }
+        throw;
     } catch (...) {
-        // If the backend was newly created and a required runtime fails, roll
-        // back the backend so the status does not look ready with missing deps.
+        if (has_existing_backend && !force) {
+            LOG(WARNING, "BackendManager")
+                << "Backend update for " << recipe << ":" << resolved_backend
+                << " failed; falling back to installed backend";
+            report_backend_ready(recipe, resolved_backend, progress_cb);
+            return;
+        }
         if (!backend_install_dir_existed_before) {
             std::error_code cleanup_ec;
             fs::remove_all(backend_install_dir, cleanup_ec);
