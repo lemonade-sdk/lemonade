@@ -736,10 +736,29 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const bool backend_install_dir_existed_before = fs::exists(backend_install_dir);
 
     bool completion_reported = false;
+    bool backend_committed = false;
+
+    auto handle_install_failure = [&](const std::string& message) -> bool {
+        if (backend_committed || !has_existing_backend || force) {
+            if (!backend_install_dir_existed_before) {
+                std::error_code cleanup_ec;
+                fs::remove_all(backend_install_dir, cleanup_ec);
+            }
+            return false;
+        }
+        LOG(WARNING, "BackendManager")
+            << "Backend update for " << recipe << ":" << resolved_backend
+            << " failed (" << message << "); falling back to installed backend";
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return true;
+    };
 
     try {
         backends::BackendUtils::install_from_github(
             *spec, params.version, params.repo, params.filename, resolved_backend, backend_progress_cb);
+        // install_from_github only returns after atomically swapping the new
+        // backend into place; from here on the working install is the new one.
+        backend_committed = true;
 
         const int logical_total_files = backend_total_files + static_cast<int>(runtime_steps.size());
         for (size_t i = 0; i < runtime_steps.size(); ++i) {
@@ -807,34 +826,10 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             progress_cb(complete_progress);
         }
     } catch (const std::exception& e) {
-        // A failed backend update must not block model loading when a usable
-        // backend was already installed: log and fall back to the existing
-        // binary.
-        if (has_existing_backend && !force) {
-            LOG(WARNING, "BackendManager")
-                << "Backend update for " << recipe << ":" << resolved_backend
-                << " failed (" << e.what() << "); falling back to installed backend";
-            report_backend_ready(recipe, resolved_backend, progress_cb);
-            return;
-        }
-
-        if (!backend_install_dir_existed_before) {
-            std::error_code cleanup_ec;
-            fs::remove_all(backend_install_dir, cleanup_ec);
-        }
+        if (handle_install_failure(e.what())) return;
         throw;
     } catch (...) {
-        if (has_existing_backend && !force) {
-            LOG(WARNING, "BackendManager")
-                << "Backend update for " << recipe << ":" << resolved_backend
-                << " failed; falling back to installed backend";
-            report_backend_ready(recipe, resolved_backend, progress_cb);
-            return;
-        }
-        if (!backend_install_dir_existed_before) {
-            std::error_code cleanup_ec;
-            fs::remove_all(backend_install_dir, cleanup_ec);
-        }
+        if (handle_install_failure("unknown")) return;
         throw;
     }
 }
