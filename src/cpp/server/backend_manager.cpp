@@ -415,7 +415,8 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
         return "";
     }
 
-    const std::string url = "https://api.github.com/repos/" + repo + "/releases/latest";
+    // Include pre-releases to handle the new release scheme of llama.cpp
+    const std::string url = "https://api.github.com/repos/" + repo + "/releases?per_page=1";
 
     LOG(DEBUG, "BackendManager") << "Resolving 'latest' for " << repo << " via " << url << std::endl;
     utils::HttpResponse resp;
@@ -442,8 +443,11 @@ std::string BackendManager::fetch_latest_github_tag(const std::string& repo,
 
     std::string tag;
     try {
-        auto body = json::parse(resp.body);
-        tag = body.at("tag_name").get<std::string>();
+        auto releases = json::parse(resp.body);
+        if (!releases.is_array() || releases.empty()) {
+            throw std::runtime_error("expected a non-empty JSON array of releases");
+        }
+        tag = releases[0]["tag_name"].get<std::string>();
     } catch (const std::exception& e) {
         if (throw_on_failure) {
             throw std::runtime_error(
