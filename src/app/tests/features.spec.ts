@@ -813,6 +813,71 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await page.screenshot({ path: 'screenshots/12-responsive-mobile.png', fullPage: true });
   });
 
+  test('12a0 — Tauri Apps titlebar stays collision-free at narrow widths', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.api = { ...window.api, isWebApp: false };
+    });
+    await page.goto('/#/apps');
+
+    const titlebar = page.locator('.titlebar');
+    const nav = page.locator('.titlebar__nav');
+    const right = page.locator('.titlebar__right');
+    const search = page.locator('.titlebar__search');
+    const windowButtons = page.locator('.titlebar__window-btn');
+
+    await expect(titlebar).toHaveClass(/titlebar--desktop/);
+    await expect(page.getByRole('button', { name: 'Apps', exact: true })).toHaveClass(/is-active/);
+    await expect(windowButtons).toHaveCount(3);
+
+    for (const width of [1321, 1280, 900, 821, 800, 769, 480, 400]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(250);
+
+      const [titlebarBox, navBox, rightBox] = await Promise.all([
+        titlebar.boundingBox(),
+        nav.boundingBox(),
+        right.boundingBox(),
+      ]);
+      expect(titlebarBox, `titlebar box at ${width}px`).not.toBeNull();
+      expect(navBox, `nav box at ${width}px`).not.toBeNull();
+      expect(rightBox, `right controls box at ${width}px`).not.toBeNull();
+
+      expect(navBox!.x + navBox!.width, `nav/right overlap at ${width}px`)
+        .toBeLessThanOrEqual(rightBox!.x);
+      expect(rightBox!.x + rightBox!.width, `right controls overflow at ${width}px`)
+        .toBeLessThanOrEqual(titlebarBox!.x + titlebarBox!.width);
+
+      const minimumWindowButtonWidth = width <= 480 ? 30 : width <= 900 ? 32 : 34;
+      const windowButtonBoxes = await windowButtons.evaluateAll(buttons => (
+        buttons.map(button => button.getBoundingClientRect().width)
+      ));
+      for (const buttonWidth of windowButtonBoxes) {
+        expect(buttonWidth, `window control shrank at ${width}px`)
+          .toBeGreaterThanOrEqual(minimumWindowButtonWidth);
+      }
+
+      if (width >= 769) {
+        const searchBox = await search.boundingBox();
+        expect(searchBox, `Apps search box at ${width}px`).not.toBeNull();
+        if (width === 1321) {
+          expect(searchBox!.width, `Apps search field collapsed at ${width}px`)
+            .toBeGreaterThanOrEqual(176);
+        } else {
+          expect(searchBox!.width, `Apps search did not compact at ${width}px`)
+            .toBeLessThanOrEqual(32);
+        }
+      }
+    }
+
+    await page.setViewportSize({ width: 900, height: 800 });
+    const searchToggle = search.getByRole('button', { name: 'Search Lemonade' });
+    await expect(searchToggle).toBeVisible();
+    await searchToggle.click();
+    await expect(search.getByRole('combobox', { name: 'Search apps' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(search.getByRole('combobox', { name: 'Search apps' })).not.toBeVisible();
+  });
+
   test('12a — Every mobile workspace exposes its context panel', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/');
@@ -1000,6 +1065,41 @@ test.describe('Lemonade UI — Feature Parity', () => {
     // Auto tune is the explicit -1, not an omission: an omitted ctx_size means
     // "use whatever is saved", which is not what the panel is showing.
     expect(loadRequestBody?.ctx_size).toBe(-1);
+  });
+
+  test('13c — External models show a local-file notice instead of calling the delete API', async ({ page }) => {
+    let deleteRequested = false;
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route(/\/api\/v1\/models(?:\?.*)?$/, route => route.fulfill({
+      json: {
+        data: [{
+          id: 'extra.external-directory-model',
+          name: 'extra.external-directory-model',
+          display_name: 'External Directory Model',
+          source: 'extra_models_dir',
+          labels: ['custom'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          checkpoint: 'C:\\Models\\External Directory Model.gguf',
+        }],
+      },
+    }));
+    await page.route('**/api/v1/delete', route => {
+      deleteRequested = true;
+      return route.fulfill({ json: { status: 'success' } });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'External Directory Model' }).click();
+    await page.getByRole('button', { name: 'Delete custom model definition for extra.external-directory-model' }).click();
+
+    const notice = page.locator('.manager__toast--external-model');
+    await expect(notice).toContainText('External Directory Model is managed in your external models folder. Delete it directly from that folder.');
+    await expect(page.getByRole('button', { name: 'Open external models folder for External Directory Model' })).toHaveCount(0);
+    expect(deleteRequested).toBe(false);
   });
 
   test('13d — Detail header links the model source and Load applies unsaved settings', async ({ page }) => {

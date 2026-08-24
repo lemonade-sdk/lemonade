@@ -41,11 +41,20 @@ export async function preloadModelManagerSecondary(): Promise<void> {
 
 const EMPTY_MODELS: ModelInfo[] = [];
 const EMPTY_LOADED_MODELS: LoadedModel[] = [];
+const EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir';
+
+type ExternalModelDeleteNotice = {
+  displayName: string;
+};
 
 function modelName(m: ModelInfo | null | undefined): string {
   if (!m) return '';
   const raw = (m as any).model_name ?? m.name ?? m.id ?? '';
   return String(raw).trim();
+}
+
+function isExtraModelsDirModel(model: ModelInfo): boolean {
+  return String(model.source || '').toLowerCase() === EXTRA_MODELS_DIR_SOURCE;
 }
 
 function canonicalCustomModelName(m: ModelInfo | null | undefined): string {
@@ -1112,6 +1121,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [editingCustomModelName, setEditingCustomModelName] = useState<string | null>(null);
   const [customError, setCustomError] = useState<string | null>(null);
   const [customJsonNotice, setCustomJsonNotice] = useState<string | null>(null);
+  const [externalModelDeleteNotice, setExternalModelDeleteNotice] = useState<ExternalModelDeleteNotice | null>(null);
   const [customDraft, setCustomDraft] = useState<CustomModelDraftState>(() => createEmptyCustomDraft());
   const [dynamicRecipeOptions, setDynamicRecipeOptions] = useState<Partial<Record<CustomModelCapability, CustomRecipeOption[]>>>({});
   const [customRecipeAvailabilityLoaded, setCustomRecipeAvailabilityLoaded] = useState(false);
@@ -1124,10 +1134,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   // Real disk usage for the storage meter (null until/unless lemond exposes it).
   const [storageInfo, setStorageInfo] = useState<import('../api').StorageInfo | null>(null);
   const customJsonInputRef = useRef<HTMLInputElement>(null);
+  const externalModelDeleteNoticeTimerRef = useRef<number | null>(null);
 
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState<number>(DEFAULT_CONTEXT_SIZE);
 
   useEffect(() => downloadStore.subscribe(setDownloadItems), []);
+
+  useEffect(() => () => {
+    if (externalModelDeleteNoticeTimerRef.current != null) {
+      window.clearTimeout(externalModelDeleteNoticeTimerRef.current);
+    }
+  }, []);
 
   // The full catalog uses /models?show_all=true and can take noticeably longer
   // than the optimized downloaded-only endpoint.  On a cold Models mount, show
@@ -1660,8 +1677,25 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
   };
 
+  const showExternalModelDeleteNotice = (model: ModelInfo) => {
+    if (externalModelDeleteNoticeTimerRef.current != null) {
+      window.clearTimeout(externalModelDeleteNoticeTimerRef.current);
+    }
+    setExternalModelDeleteNotice({
+      displayName: String(model.display_name || modelName(model)),
+    });
+    externalModelDeleteNoticeTimerRef.current = window.setTimeout(() => {
+      externalModelDeleteNoticeTimerRef.current = null;
+      setExternalModelDeleteNotice(null);
+    }, 8000);
+  };
+
   const handleDelete = async (model: ModelInfo) => {
     const name = modelName(model);
+    if (isExtraModelsDirModel(model)) {
+      showExternalModelDeleteNotice(model);
+      return;
+    }
     if (modelIsCustom(model) && String((model as any).recipe || '').toLowerCase() === ROUTER_RECIPE) {
       setRouterDeleteError(null);
       setRouterDeleteCandidate(model);
@@ -2689,6 +2723,22 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     >
       {mobileRail.isOpen && <div className="workspace-mobile-rail-backdrop" onClick={mobileRail.close} aria-hidden="true" />}
       {customJsonNotice && <div className="manager__toast" role="status" aria-live="polite">{customJsonNotice}</div>}
+      {externalModelDeleteNotice && (
+        <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
+          <span className="manager__toast-message">
+            {externalModelDeleteNotice.displayName} is managed in your external models folder. Delete it directly from that folder.
+          </span>
+          <button
+            type="button"
+            className="manager__toast-dismiss"
+            onClick={() => setExternalModelDeleteNotice(null)}
+            aria-label="Dismiss notification"
+            title="Dismiss"
+          >
+            <Icon name="x" size={14} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <WorkspaceMobileMenuButton
         menuLabel="Open model filters"
         panelId="model-nav-rail"

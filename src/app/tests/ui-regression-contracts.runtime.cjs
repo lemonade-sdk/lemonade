@@ -10,6 +10,7 @@ const files = {
   connect: path.join(root, 'src/components/ConnectView.tsx'),
   apps: path.join(root, 'src/components/AppsView.tsx'),
   backendManager: path.join(root, 'src/components/BackendManager.tsx'),
+  modelManager: path.join(root, 'src/components/ModelManager.tsx'),
   catalogLayout: path.join(root, 'src/components/WorkspaceCatalogLayout.tsx'),
   mcpPanel: path.join(root, 'src/components/McpPanel.tsx'),
   api: path.join(root, 'src/api.ts'),
@@ -76,6 +77,13 @@ for (const stylesheet of ['src/styles/styles.css', 'src/styles/critical.generate
 assert.match(sources.app, /<span className="titlebar__brand-name">lemonade<\/span>/);
 assert.match(sources.app, /type="search"[\s\S]*?role="combobox"[\s\S]*?aria-expanded=\{navigationSearchOpen\}/);
 assert.match(sources.app, /aria-activedescendant=/);
+assert.match(sources.app, /className=\{`titlebar\$\{isDesktop \? ' titlebar--desktop' : ''\}`\}/);
+assert.match(styles, /\.titlebar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+assert.match(styles, /@media \(max-width: 900px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?column-gap:\s*var\(--space-1\)/);
+assert.match(styles, /@media \(max-width: 820px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav\s*\{[\s\S]*?transform:\s*translateX\(clamp\(-44px, calc\(\(100vw - 820px\) \* 0\.2\), 0px\)\)/);
+assert.match(styles, /\.titlebar--desktop \.titlebar__right,[\s\S]*?\.titlebar--desktop \.titlebar__utility-menu\s*\{\s*gap:\s*var\(--space-1\)/);
+assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar\.titlebar--desktop\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto minmax\(0, 1fr\)/);
+assert.match(styles, /@media \(max-width: 480px\)[\s\S]*?\.titlebar--desktop \.titlebar__nav button\s*\{[\s\S]*?min-width:\s*30px/);
 
 assert.match(sources.chat, /role="menuitem"[\s\S]*?data-mcp-entry="tools"[\s\S]*?aria-label="Tools"/);
 assert.doesNotMatch(sources.chat, /data-mcp-entry="(?:lemonade|external)"/);
@@ -99,6 +107,11 @@ assert.match(sources.backendManager, /const \[showLogos, setShowLogos\] = useSta
 assert.match(sources.backendManager, /data-backends-unsupported-toggle[\s\S]*?data-backends-logo-toggle/);
 assert.match(sources.backendManager, /checked=\{showLogos\}[\s\S]*?<span>Show logos<\/span>/);
 assert.match(sources.backendManager, /showLogos \? \([\s\S]*?data-backend-logo[\s\S]*?: \([\s\S]*?workspace-card__name backend-card__name/);
+
+assert.match(sources.modelManager, /EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir'/);
+assert.match(sources.modelManager, /isExtraModelsDirModel\(model\)[\s\S]*?showExternalModelDeleteNotice\(model\)[\s\S]*?return;/);
+assert.match(sources.modelManager, /managed in your external models folder\. Delete it directly from that folder\./);
+assert.doesNotMatch(sources.modelManager, /openExternalModelsFolder|manager__toast-folder-action/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />HTTP endpoint</);
