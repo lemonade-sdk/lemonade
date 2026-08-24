@@ -392,14 +392,24 @@ double RuntimeConfig::auto_evict_threshold_pct() const {
 }
 
 bool RuntimeConfig::offline() const {
-
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
 }
 
 bool RuntimeConfig::auto_check_model_updates() const {
     std::shared_lock lock(mutex_);
-    return config_.value("auto_check_model_updates", true);
+    if (config_.contains("auto_check_model_updates")) {
+        return config_["auto_check_model_updates"].get<bool>();
+    }
+    return true;
+}
+
+bool RuntimeConfig::auto_update_models() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_update_models")) {
+        return config_["auto_update_models"].get<bool>();
+    }
+    return false;
 }
 
 bool RuntimeConfig::no_fetch_executables() const {
@@ -725,6 +735,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
+               key == "auto_update_models" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {

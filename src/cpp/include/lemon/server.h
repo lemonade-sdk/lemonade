@@ -126,6 +126,8 @@ private:
         bool local_import);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync_status(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_model_options_get(const httplib::Request& req, httplib::Response& res);
     void handle_model_options_post(const httplib::Request& req, httplib::Response& res);
@@ -340,6 +342,12 @@ private:
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info,
                                       int depth = 0);
 
+    // Effective context window, or 0 when nothing knows it: a loaded backend's
+    // own ctx_size, else the resolved options, else max_context_window.
+    // Deliberately skips the VRAM auto-tuner, which probes the system on every
+    // call and would do so once per model across a full listing.
+    int64_t resolve_context_length(const std::string& model_id, const ModelInfo& info) const;
+
     // Warm model list cache in the background after startup dependencies are initialized
     void start_model_cache_warmup();
 
@@ -359,6 +367,12 @@ private:
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
     std::thread model_cache_warmup_thread_;
+    struct SyncTaskThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::vector<SyncTaskThread> background_sync_threads_;
+    std::mutex background_sync_mutex_;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port
