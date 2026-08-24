@@ -841,11 +841,6 @@ test.describe('Lemonade UI — Feature Parity', () => {
       await expect(icon).toHaveAttribute('width', '15');
       await expect(icon).toHaveAttribute('height', '15');
     }
-    await expect(windowButtons.nth(2).locator('[data-icon="x"]')).toHaveCSS(
-      'transform',
-      'matrix(0.9, 0, 0, 0.9, 0, 0)',
-    );
-
     let brandLeft: number | null = null;
     for (const width of [1321, 1280, 901, 900, 821, 800, 769, 768, 480, 400]) {
       await page.setViewportSize({ width, height: 800 });

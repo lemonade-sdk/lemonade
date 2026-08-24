@@ -543,9 +543,6 @@ input[type="checkbox"]:disabled {
   stroke-width: 1.5;
 }
 
-.titlebar__window-icon[data-icon='x'] {
-}
-
 .titlebar__window-btn--close:hover {
   background: var(--danger);
   color: var(--danger-on);

@@ -24,7 +24,6 @@ assert.match(localIconSource, /"github"/);
 assert.match(localIconSource, /"discord"/);
 assert.match(stylesSource, /\.composer__tools-toggle\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?white-space:\s*nowrap;/);
 assert.match(stylesSource, /\.titlebar__window-icon\s*\{[\s\S]*?stroke-width:\s*1\.5;/);
-assert.match(stylesSource, /\.titlebar__window-icon\[data-icon='x'\]\s*\{[\s\S]*?transform:\s*scale\(0\.9\);/);
 assert.match(localIconSource, /"minus":\s*\{[\s\S]*?"body":\s*"<path d=\\"M5\.5 12h13\\"><\/path>"/);
 assert.match(localIconSource, /"square":\s*\{[\s\S]*?"body":\s*"<rect width=\\"14\\" height=\\"14\\" x=\\"5\\" y=\\"5\\" rx=\\"0\.5\\"><\/rect>"/);
 assert.match(appSource, /onClick=\{\(\) => window\.api\?\.minimizeWindow\?\.\(\)\}[\s\S]*?<Icon name="minus" size=\{15\} className="titlebar__window-icon" \/>/);
