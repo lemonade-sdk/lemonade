@@ -49,7 +49,8 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
 
     // TheNoise publishes one portable bundle per GPU target (gfx1150 / gfx1151)
     // under the same release tag. Pick the archive matching this host.
-    std::string target_arch = SystemInfo::get_rocm_arch();
+    const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+    const std::string target_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
 
     InstallParams params;
     params.repo = "lemonade-sdk/thenoise";

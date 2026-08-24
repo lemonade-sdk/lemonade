@@ -825,7 +825,9 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     // or these GPUs report update_required forever: versions_match tolerates the
     // "-{family}" suffix but not a different base.
     if (recipe == "vllm" && resolved_backend == "rocm") {
-        std::string asset_family = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+        const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+        const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
+        std::string asset_family = SystemInfo::rocm_asset_family(rocm_arch);
         if (!asset_family.empty()) {
             std::string override_version = SystemInfo::vllm_rocm_version_override(asset_family);
             if (!override_version.empty()) {
@@ -2066,7 +2068,7 @@ std::string identify_npu_arch() {
 }
 
 namespace {
-    // Per-thread arch override consumed by get_rocm_arch(). Empty = probe hardware.
+    // Per-thread arch override consumed by get_rocm_arches(). Empty = probe hardware.
     thread_local std::string g_rocm_arch_override;
 }
 
@@ -2148,60 +2150,65 @@ std::string SystemInfo::select_rocm_arch(const json& amd_gpu_devices) {
     return integrated_fallback;  // empty if no supported AMD GPU found
 }
 
-std::string SystemInfo::get_rocm_arch() {
-    if (!g_rocm_arch_override.empty()) {
-        return g_rocm_arch_override;
+std::vector<std::string> SystemInfo::collect_rocm_arches(const json& amd_gpu_devices) {
+    // Pure mapping from the "amd_gpu" device array to ALL supported ROCm
+    // architectures, deduplicated and ordered discrete-first then integrated,
+    // so front() matches what select_rocm_arch() picks on a hybrid host.
+    std::vector<std::string> discrete;
+    std::vector<std::string> integrated;
+    if (!amd_gpu_devices.is_array()) {
+        return discrete;
     }
-    try {
-        // Use cached system info to avoid re-detecting GPUs
-        json system_info = SystemInfoCache::get_system_info_with_cache();
-
-        if (!system_info.contains("devices")) {
-            return "";
+    for (const auto& gpu : amd_gpu_devices) {
+        if (!gpu.value("available", false)) {
+            continue;
         }
-
-        const auto& devices = system_info["devices"];
-        if (devices.contains("amd_gpu")) {
-            return select_rocm_arch(devices["amd_gpu"]);
+        // Prefer the family captured at detection time; fall back to
+        // re-deriving from the name (matches select_rocm_arch()).
+        std::string arch = gpu.value("family", "");
+        if (arch.empty()) {
+            arch = identify_rocm_arch_from_name(gpu.value("name", ""));
         }
-    } catch (...) {
-        // Detection failed
+        if (arch.empty()) {
+            continue;
+        }
+        std::vector<std::string>& bucket =
+            gpu.value("integrated", false) ? integrated : discrete;
+        if (std::find(bucket.begin(), bucket.end(), arch) == bucket.end()) {
+            bucket.push_back(arch);
+        }
     }
-
-    return "";  // No supported architecture found
+    // Dedup across buckets (e.g. identical iGPU/dGPU arch strings), keeping
+    // the discrete-first preference.
+    for (const auto& arch : integrated) {
+        if (std::find(discrete.begin(), discrete.end(), arch) == discrete.end()) {
+            discrete.push_back(arch);
+        }
+    }
+    return discrete;
 }
 
 std::vector<std::string> SystemInfo::get_rocm_arches() {
-    // Returns ALL detected AMD GPU ROCm architectures.
-    // Ordered: iGPU first, then dGPUs (same order as the amd_gpu array).
-    // Used to ensure ROCm backends are downloaded for every GPU on the system.
-    std::vector<std::string> arches;
+    // A per-thread override (set_rocm_arch_override) short-circuits hardware
+    // probing so backend asset URLs can be resolved for an arbitrary GPU
+    // topology with no GPU present.
+    if (!g_rocm_arch_override.empty()) {
+        return {g_rocm_arch_override};
+    }
     try {
         json system_info = SystemInfoCache::get_system_info_with_cache();
         if (!system_info.contains("devices")) {
-            return arches;
+            return {};
         }
         const auto& devices = system_info["devices"];
-        if (devices.contains("amd_gpu") && devices["amd_gpu"].is_array()) {
-            for (const auto& gpu : devices["amd_gpu"]) {
-                if (gpu.value("available", false)) {
-                    std::string name = gpu.value("name", "");
-                    if (!name.empty()) {
-                        std::string arch = identify_rocm_arch_from_name(name);
-                        if (!arch.empty()) {
-                            // Avoid duplicates (e.g., identical iGPU/dGPU arch strings)
-                            if (std::find(arches.begin(), arches.end(), arch) == arches.end()) {
-                                arches.push_back(arch);
-                            }
-                        }
-                    }
-                }
-            }
+        if (!devices.contains("amd_gpu") || !devices["amd_gpu"].is_array()) {
+            return {};
         }
+        return collect_rocm_arches(devices["amd_gpu"]);
     } catch (...) {
         // Detection failed — return empty list
+        return {};
     }
-    return arches;
 }
 
 static int cuda_sm_value(const std::string& arch) {
@@ -3957,7 +3964,7 @@ static bool s_recipes_computed = false;
 
 // True while THIS thread is inside build_recipes_info(). That computation can
 // call back into get_system_info_with_cache() on the same thread (e.g.
-// SystemInfo::get_rocm_arch() while resolving a backend's install params).
+// SystemInfo::get_rocm_arches() while resolving a backend's install params).
 // Because the outer call holds s_system_info_mutex, the nested call must not
 // try to re-lock it. thread_local (not a shared atomic) is deliberate: only the
 // recursing thread short-circuits — genuinely concurrent threads still block on
@@ -4024,7 +4031,7 @@ json SystemInfoCache::get_system_info_with_cache() {
     // Compute recipes if not cached (or invalidated)
     if (!s_recipes_computed) {
         // Mark this thread as building recipes so any re-entrant call (via
-        // get_rocm_arch() etc.) short-circuits instead of re-locking. The guard
+        // get_rocm_arches() etc.) short-circuits instead of re-locking. The guard
         // clears on every exit path, including exceptions.
         struct RecipeBuildGuard {
             ~RecipeBuildGuard() { s_building_recipes = false; }

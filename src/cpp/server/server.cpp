@@ -5597,7 +5597,8 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         std::string lib_path = cli_dir.string();
 
         if (resolved_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+            const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
             if (!rocm_arch.empty()) {
                 std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
                     lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch));
@@ -5615,7 +5616,8 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 #else
         if (resolved_backend == "rocm-stable") {
             std::string new_path = cli_dir.string();
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+            const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
             std::vector<std::string> therock_dirs;
             if (!rocm_arch.empty()) {
                 therock_dirs =

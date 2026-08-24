@@ -102,7 +102,8 @@ void OpenMossServer::load(const std::string& model_name,
 #endif
     };
     if (backend == "rocm") {
-        const std::string arch = SystemInfo::get_rocm_arch();
+        const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+        const std::string arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
         std::string dirs;
         if (!arch.empty()) {
             dirs = BackendUtils::join_runtime_dirs(

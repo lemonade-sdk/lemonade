@@ -207,6 +207,72 @@ int main() {
                "an unavailable discrete GPU falls back to the available iGPU");
     }
 
+    // get_rocm_arches()/collect_rocm_arches() must return ALL arches,
+    // discrete-first, deduplicated — the backend download path installs the
+    // ROCm runtime for every GPU, while front() keeps single-arch semantics.
+    {
+        auto arch_list = [](const std::vector<std::string>& v) {
+            std::string out;
+            for (const auto& a : v) {
+                if (!out.empty()) out += ",";
+                out += a;
+            }
+            return out;
+        };
+
+        nlohmann::json igpu_only = nlohmann::json::array();
+        igpu_only.push_back({{"name", "AMD Radeon 8060S"}, {"family", "gfx1151"}, {"integrated", true}, {"available", true}});
+        nlohmann::json dgpu_only = nlohmann::json::array();
+        dgpu_only.push_back({{"name", "AMD Instinct MI300X"}, {"family", "gfx942"}, {"integrated", false}, {"available", true}});
+        nlohmann::json unavailable_dgpu = nlohmann::json::array();
+        unavailable_dgpu.push_back({{"name", "AMD Radeon 8060S"}, {"family", "gfx1151"}, {"integrated", true}, {"available", true}});
+        unavailable_dgpu.push_back({{"name", "AMD Instinct MI300X"}, {"family", "gfx942"}, {"integrated", false}, {"available", false}});
+
+        nlohmann::json hybrid = nlohmann::json::array();
+        hybrid.push_back({{"name", "AMD Radeon 8060S"}, {"family", "gfx1151"}, {"integrated", true}, {"available", true}});
+        hybrid.push_back({{"name", "AMD Instinct MI300X"}, {"family", "gfx942"}, {"integrated", false}, {"available", true}});
+        auto hybrid_arches = SystemInfo::collect_rocm_arches(hybrid);
+        expect(hybrid_arches.size() == 2 && hybrid_arches[0] == "gfx942" && hybrid_arches[1] == "gfx1151",
+               "hybrid iGPU(gfx1151)+dGPU(gfx942): BOTH arches returned, discrete first");
+
+        // Identical arch on iGPU and dGPU must be deduplicated.
+        nlohmann::json same_arch = nlohmann::json::array();
+        same_arch.push_back({{"name", "AMD Radeon 8060S"}, {"family", "gfx1151"}, {"integrated", true}, {"available", true}});
+        same_arch.push_back({{"name", "AMD Radeon RX 8000"}, {"family", "gfx1151"}, {"integrated", false}, {"available", true}});
+        auto same_arches = SystemInfo::collect_rocm_arches(same_arch);
+        expect(same_arches.size() == 1 && same_arches[0] == "gfx1151",
+               "identical iGPU/dGPU arch (gfx1151/gfx1151) is deduplicated to one entry");
+
+        expect(SystemInfo::collect_rocm_arches(igpu_only).size() == 1 &&
+               SystemInfo::collect_rocm_arches(igpu_only)[0] == "gfx1151",
+               "iGPU-only host lists just its integrated arch");
+        expect(SystemInfo::collect_rocm_arches(dgpu_only).size() == 1 &&
+               SystemInfo::collect_rocm_arches(dgpu_only)[0] == "gfx942",
+               "dGPU-only host lists just its discrete arch");
+
+        // Unavailable GPUs are skipped entirely.
+        auto unavail = SystemInfo::collect_rocm_arches(unavailable_dgpu);
+        expect(unavail.size() == 1 && unavail[0] == "gfx1151",
+               "unavailable discrete GPU is skipped, only the available iGPU is listed");
+
+        // A device with no recognizable arch is skipped, not fatal.
+        nlohmann::json unknown = nlohmann::json::array();
+        unknown.push_back({{"name", "AMD Something Unknown"}, {"family", ""}, {"integrated", false}, {"available", true}});
+        expect(SystemInfo::collect_rocm_arches(unknown).empty(),
+               "an unrecognized GPU arch yields an empty list");
+
+        // Non-array input is tolerated.
+        expect(SystemInfo::collect_rocm_arches(nlohmann::json::object()).empty(),
+               "non-array input yields an empty list");
+
+        // The per-thread override short-circuits probing entirely.
+        SystemInfo::set_rocm_arch_override("gfx942");
+        auto overridden = SystemInfo::get_rocm_arches();
+        SystemInfo::set_rocm_arch_override("");
+        expect(overridden.size() == 1 && overridden[0] == "gfx942",
+               "a set rocm arch override makes get_rocm_arches() return just that arch");
+    }
+
     // Status must resolve the SAME per-arch override install writes, or gfx942 reads
     // update_required forever (the RDNA pin cannot prefix-match the dcgpu base).
     {

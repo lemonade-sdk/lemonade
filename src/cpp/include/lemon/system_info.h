@@ -108,19 +108,22 @@ public:
     static std::vector<RecipeStatus> get_all_recipe_statuses();
 
     // Device support detection
-    // Return the first (primary) ROCm architecture — typically the iGPU.
-    // Used for rocm_channel selection and single-arch contexts.
-    static std::string get_rocm_arch();
-
-    // Return ALL detected AMD GPU ROCm architectures, ordered iGPU first
-    // then dGPUs. Used by backend download paths to install ROCm binaries
-    // for every GPU on the system, not just the first one detected.
+    // Return ALL detected AMD GPU ROCm architectures (deduplicated). The list
+    // is ordered discrete-first, then integrated, so front() is the arch a
+    // single-arch consumer should use — matching select_rocm_arch()'s
+    // preference on a hybrid host. Used by backend download paths to install
+    // ROCm binaries for every GPU on the system, not just the first one.
     static std::vector<std::string> get_rocm_arches();
     static std::string get_cuda_arch();
 
     // Picks the ROCm compute target from an "amd_gpu" device array: a discrete GPU wins
     // over an integrated one on a hybrid host (e.g. Strix Halo APU + MI300X dGPU).
     static std::string select_rocm_arch(const json& amd_gpu_devices);
+
+    // Map an "amd_gpu" device array to ALL ROCm architectures, deduplicated and
+    // ordered discrete-first then integrated, so front() is the single arch a
+    // hybrid host should use (matches select_rocm_arch()). Pure — no probing.
+    static std::vector<std::string> collect_rocm_arches(const json& amd_gpu_devices);
 
     // Collapse a concrete ROCm ISA (e.g. gfx1201) to the family target name the
     // GitHub release repos publish their assets under (e.g. gfx120X), per the
@@ -134,10 +137,10 @@ public:
     // therock.url_mapping, which maps it to gfx94X-dcgpu.
     static std::string vllm_rocm_version_override(const std::string& asset_family);
 
-    // When set non-empty on the calling thread, get_rocm_arch() returns this
-    // value instead of probing hardware, so backend asset URLs can be resolved
-    // for an arbitrary GPU topology with no GPU present. Per-thread so it cannot
-    // affect concurrent requests.
+    // When set non-empty on the calling thread, get_rocm_arches() returns just
+    // this value instead of probing hardware, so backend asset URLs can be
+    // resolved for an arbitrary GPU topology with no GPU present. Per-thread so
+    // it cannot affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
 
     // True if (recipe, backend) is published for the given ROCm family/ISA, per

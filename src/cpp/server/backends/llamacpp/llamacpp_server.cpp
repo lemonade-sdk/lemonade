@@ -184,8 +184,10 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #endif
     } else if (resolved_backend == "rocm-nightly") {
         params.repo = "lemonade-sdk/llamacpp-rocm";
+        const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+        const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
         std::string target_arch =
-            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+            SystemInfo::rocm_asset_family(rocm_arch);
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("llamacpp", "rocm-nightly")
@@ -413,7 +415,8 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string lib_path = exe_dir.string();
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+            const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
             if (!rocm_arch.empty()) {
                 std::string therock_dirs = BackendUtils::join_runtime_dirs(
                     BackendUtils::get_therock_lib_paths(rocm_arch));
@@ -453,7 +456,8 @@ void LlamaCppServer::load(const std::string& model_name,
         std::string new_path;
 
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+            const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
             if (!rocm_arch.empty()) {
                 // Prepend ALL TheRock runtime dirs (not just _rocm_sdk_core/bin) so
                 // HIP + BLAS DLLs resolve; _rocm_sdk_core/bin alone → STATUS_DLL_NOT_FOUND.
@@ -477,14 +481,17 @@ void LlamaCppServer::load(const std::string& model_name,
         // System32 amdhip64_7.dll shadows the TheRock runtime on PATH. Copying
         // to the exe directory overrides both.
         if (llamacpp_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
+            const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+            const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
             if (!rocm_arch.empty()) {
                 BackendUtils::stage_therock_hip_runtime(
                     rocm_arch, fs::path(executable).parent_path());
             }
         }
 
-        std::string arch = lemon::SystemInfo::get_rocm_arch();
+        const std::vector<std::string> rocm_arches = lemon::SystemInfo::get_rocm_arches();
+        const std::string arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
+
         if ((arch == "gfx1151") || (arch == "gfx1152")){
             env_vars.push_back({"OCL_SET_SVM_SIZE", "262144"});
             LOG(DEBUG, "LlamaCpp") << "Setting OCL_SET_SVM_SIZE=262144 for gfx1151/gfx1152 (enables loading larger models)" << std::endl;

@@ -98,8 +98,9 @@ InstallParams WhisperServer::get_install_params(const std::string& backend, cons
         throw std::runtime_error("Unsupported platform for whisper.cpp cpu backend");
 #endif
     } else if (backend == "rocm") {
-        std::string rocm_arch =
-            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+        const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+        const std::string primary_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
+        std::string rocm_arch = SystemInfo::rocm_asset_family(primary_arch);
         if (rocm_arch.empty()) {
             throw std::runtime_error(SystemInfo::get_unsupported_backend_error("whispercpp", "rocm"));
         }
@@ -301,7 +302,8 @@ void WhisperServer::load(const std::string& model_name,
     // on LD_LIBRARY_PATH, exactly as llamacpp_server.cpp and sd_server.cpp do.
     // Without this it aborts at startup (dlopen libamd_comgr.so.3) on gfx1151.
     if (whispercpp_backend == "rocm") {
-        std::string rocm_arch = SystemInfo::get_rocm_arch();
+        const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+        const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
         if (!rocm_arch.empty()) {
             std::string therock_dirs = BackendUtils::join_runtime_dirs(
                 BackendUtils::get_therock_lib_paths(rocm_arch));

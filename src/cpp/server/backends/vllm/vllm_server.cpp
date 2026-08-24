@@ -297,8 +297,10 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
 
     if (backend == "rocm") {
         params.repo = "lemonade-sdk/vllm-rocm";
+        const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+        const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
         std::string target_arch =
-            SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
+            SystemInfo::rocm_asset_family(rocm_arch);
         if (target_arch.empty()) {
             throw std::runtime_error(
                 SystemInfo::get_unsupported_backend_error("vllm", "rocm")
@@ -420,8 +422,10 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
+    const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+    const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
     const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
-        SystemInfo::get_rocm_arch(), resolved_vllm_args.has_memory_budget_arg,
+        rocm_arch, resolved_vllm_args.has_memory_budget_arg,
         resolved_vllm_args.has_enforce_eager);
     if (launch_policy.enforce_eager) {
         args.push_back("--enforce-eager");

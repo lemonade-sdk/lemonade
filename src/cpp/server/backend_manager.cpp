@@ -232,8 +232,9 @@ bool will_install_therock(const std::string& os, const json& backend_versions) {
         return false;
     }
 
-    // Get ROCm architecture
-    std::string rocm_arch = SystemInfo::get_rocm_arch();
+    // Get the primary ROCm architecture (first detected, discrete preferred)
+    const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+    const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
     if (rocm_arch.empty()) {
         return false;
     }
@@ -263,7 +264,8 @@ bool is_therock_installed_for_current_arch(const json& backend_versions) {
     }
 
     const std::string version = backend_versions["therock"]["version"].get<std::string>();
-    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+    const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+    const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
     if (rocm_arch.empty()) {
         return false;
     }
@@ -333,18 +335,10 @@ void install_therock_if_needed(const std::string& os, const json& backend_versio
 
     std::string version = backend_versions["therock"]["version"].get<std::string>();
 
+    // Install the ROCm runtime for every detected GPU architecture, not just
+    // the first one — each GPU needs its own binaries. An empty list means no
+    // AMD GPU was detected, so there is nothing to install.
     const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
-    if (rocm_arches.empty()) {
-        // Fall back to single-arch detection for backward compatibility.
-        std::string single_arch = SystemInfo::get_rocm_arch();
-        if (!single_arch.empty()) {
-            backends::BackendUtils::install_rocm_runtime(single_arch, version, progress_cb);
-        }
-        return;
-    }
-
-    // Install the ROCm runtime for every detected GPU architecture (iGPU first,
-    // then dGPUs), not just the first one — each GPU needs its own binaries.
     for (const auto& rocm_arch : rocm_arches) {
         backends::BackendUtils::install_rocm_runtime(rocm_arch, version, progress_cb);
     }
@@ -667,7 +661,8 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
             "TheRock runtime",
             [this, os, rocm_runtime_update_required](DownloadProgressCallback runtime_progress_cb) {
                 if (rocm_runtime_update_required) {
-                    const std::string rocm_arch = SystemInfo::get_rocm_arch();
+                    const std::vector<std::string> rocm_arches = SystemInfo::get_rocm_arches();
+                    const std::string rocm_arch = rocm_arches.empty() ? std::string() : rocm_arches.front();
                     if (rocm_arch.empty()) {
                         throw std::runtime_error("Cannot repair TheRock runtime: ROCm architecture could not be detected");
                     }
