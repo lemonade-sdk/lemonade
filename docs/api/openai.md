@@ -39,6 +39,39 @@ Chat Completions API. You provide a list of messages and receive a completion. T
 | `tools`       | No | A list of tools the model may call. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_completion_tokens`. This value is now deprecated by OpenAI in favor of `max_completion_tokens` | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `max_completion_tokens` | No | An upper bound for the number of tokens that can be generated for a completion. Mutually exclusive with `max_tokens`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `smart_thinking` | No | Lemonade server extension for strict verified execution with one native fallback trajectory. | <sub>![Status](https://img.shields.io/badge/experimental-yellow)</sub> |
+
+### Smart Thinking
+
+Smart Thinking first attempts deterministic execution for a strictly recognized,
+versioned contract. Arithmetic state programs, dispatch event programs, and
+constrained selections are supported. If no contract matches, `verified_auto`
+forwards one native request after removing only the `smart_thinking` field and
+applying the selected completion budget. Requests with active tools preserve
+native tool routing and their original token limit.
+
+`Smart` uses a balanced single-trajectory fallback:
+
+```json
+{"smart_thinking":{"mode":"auto","budget":1,"execution_policy":"verified_auto"}}
+```
+
+`Smart Extra` uses one longer fallback trajectory. It does not branch, vote,
+judge, repair, or issue hidden retries:
+
+```json
+{"smart_thinking":{"mode":"deep","budget":2,"execution_policy":"verified_auto"}}
+```
+
+`verified_required` is a developer option. It returns an error when the input
+is not a supported valid contract and never calls the model:
+
+```json
+{"smart_thinking":{"mode":"deep","execution_policy":"verified_required","debug":true}}
+```
+
+Streaming is preserved for native fallback requests. A verified result is
+returned as a valid final Chat Completions SSE sequence.
 
 ### Example request
 
