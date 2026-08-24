@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "model_name": "user.Llm-OnError",
+  "recipe": "collection.router",
+  "components": ["TinyLLM", "BigLLM", "DefaultLLM", "RouterLLM"],
+  "routing": {
+    "candidates": ["TinyLLM", "BigLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "router", "type": "llm", "model": "RouterLLM",
+        "prompt": "Route it.", "labels": ["TinyLLM", "BigLLM"], "on_error": "match_true" }
+    ],
+    "rules": [
+      { "id": "route-BigLLM", "match": { "classifier": "router", "label": "BigLLM", "min_score": 1.0 }, "route_to": "BigLLM" }
+    ]
+  }
+}

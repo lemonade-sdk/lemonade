@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Router-L0a-Core-Form",
+  "recipe": "collection.router",
+  "components": ["TinyLLM", "BigLLM", "DefaultLLM", "RouterLLM"],
+  "routing": {
+    "candidates": ["TinyLLM", "BigLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "router", "type": "llm", "model": "RouterLLM",
+        "prompt": "Route everyday questions to TinyLLM; hard reasoning to BigLLM.",
+        "labels": ["TinyLLM", "BigLLM", "DefaultLLM"] }
+    ],
+    "rules": [
+      { "id": "route-TinyLLM",    "match": { "classifier": "router", "label": "TinyLLM",    "min_score": 1.0 }, "route_to": "TinyLLM" },
+      { "id": "route-BigLLM",     "match": { "classifier": "router", "label": "BigLLM",     "min_score": 1.0 }, "route_to": "BigLLM" },
+      { "id": "route-DefaultLLM", "match": { "classifier": "router", "label": "DefaultLLM", "min_score": 1.0 }, "route_to": "DefaultLLM" }
+    ]
+  }
+}

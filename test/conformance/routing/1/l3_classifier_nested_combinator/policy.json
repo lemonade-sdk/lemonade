@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "model_name": "user.Classifier-NestedCombinator",
+  "recipe": "collection.router",
+  "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelP", "ModelQ", "ModelR", "ModelS"],
+  "routing": {
+    "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "clsP", "type": "classifier", "model": "ModelP", "labels": ["code"] },
+      { "id": "clsQ", "type": "classifier", "model": "ModelQ", "labels": ["code"] },
+      { "id": "clsR", "type": "classifier", "model": "ModelR", "labels": ["code"] },
+      { "id": "clsS", "type": "classifier", "model": "ModelS", "labels": ["code"] }
+    ],
+    "rules": [
+      { "id": "not-any-P-Q", "match": { "not": { "any": [ { "classifier": "clsP", "label": "code", "min_score": 0.5 }, { "classifier": "clsQ", "label": "code", "min_score": 0.5 } ] } }, "route_to": "CodingLLM" },
+      { "id": "any-not-R-S", "match": { "any": [ { "not": { "classifier": "clsR", "label": "code", "min_score": 0.5 } }, { "classifier": "clsS", "label": "code", "min_score": 0.5 } ] }, "route_to": "MathLLM" }
+    ]
+  }
+}

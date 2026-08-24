@@ -2787,6 +2787,7 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
     )
     target_include_directories(test_routing_conformance_corpus PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
     target_link_libraries(test_routing_conformance_corpus PRIVATE nlohmann_json::nlohmann_json)
@@ -2801,6 +2802,24 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_CORPUS_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RoutingConformanceCorpusTest CI ON COMMAND test_routing_conformance_corpus)
+endif()
+
+# Self-test for the conformance corpus runner's pure row guards (issue #2425):
+# locks the in-memory checks (unknown key / missing or duplicate name / unknown
+# service) so a regression that neutered a guard fails CI instead of silently
+# eroding coverage.
+set(_ROUTING_CONFORMANCE_ROW_CHECKS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_conformance_row_checks.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_ROW_CHECKS_TEST_SRC}")
+    add_executable(test_conformance_row_checks test/cpp/test_conformance_row_checks.cpp)
+    target_include_directories(test_conformance_row_checks PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+    )
+    target_link_libraries(test_conformance_row_checks PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(ConformanceRowChecksTest CI ON COMMAND test_conformance_row_checks)
 endif()
 
 # ModelManager collection validation for collection.router registration:

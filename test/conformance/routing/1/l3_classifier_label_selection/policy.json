@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "model_name": "user.Classifier-LabelSelection",
+  "recipe": "collection.router",
+  "components": ["MathLLM", "CodingLLM", "DefaultLLM", "TopicModel"],
+  "routing": {
+    "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+    "default_model": "DefaultLLM",
+    "classifiers": [
+      { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code", "math"] }
+    ],
+    "rules": [
+      { "id": "code-rule", "match": { "classifier": "topic", "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
+      { "id": "math-rule", "match": { "classifier": "topic", "label": "math", "min_score": 0.5 }, "route_to": "MathLLM" }
+    ]
+  }
+}
