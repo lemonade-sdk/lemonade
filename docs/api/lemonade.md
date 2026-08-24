@@ -20,6 +20,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/classify`](#post-v1classify) | Classify input text with an encoder classifier (label scores) |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Evaluate an ad-hoc routing policy against a prompt without registering it |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
@@ -111,6 +112,105 @@ The decision is reported on the response:
   attached to the first SSE event.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
+## `POST /v1/routing/validate`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Evaluate a routing policy document against a prompt and return the decision the
+engine would make, without registering the policy or sending a completion
+request. This is the endpoint behind the Router Builder's **Test Prompt** tab: it
+lets a policy be iterated on before it is attached to a `collection.router`
+model.
+
+The policy is validated exactly as registration would validate it — every
+`candidates` entry, `default_model`, rule `route_to`, and classifier model must
+be listed in `components` — with one relaxation: component names are accepted
+as-is instead of being resolved against the live model registry, so a policy can
+be tested before its candidates are downloaded.
+
+Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)
+are evaluated locally. A `classifier` condition loads and runs the classifier
+model it names, so those requests are as slow as the model is and can fail if
+the model is unavailable.
+
+The endpoint is available at:
+
+- `/v1/routing/validate`
+- `/api/v1/routing/validate`
+- `/v0/routing/validate`
+- `/api/v0/routing/validate`
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `policy` | object | yes | A routing policy document, the same shape [`POST /v1/pull`](#post-v1pull) accepts for a `collection.router` model. See [Router Policies](../dev/router-policy.md). |
+| `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars`/`metadata` rules. |
+| `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
+| `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
+| `metadata` | object | no | String-valued metadata pairs matched by `metadata` conditions. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/api/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{
+           "policy": {
+             "version": "1",
+             "recipe": "collection.router",
+             "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+             "routing": {
+               "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+               "default_model": "Qwen3-8B-GGUF",
+               "rules": [
+                 {
+                   "id": "code-to-big",
+                   "match": {"keywords_any": ["def ", "function", "compile"]},
+                   "route_to": "vllm.qwen3-32b"
+                 }
+               ]
+             }
+           },
+           "prompt": "please write a def to reverse a list"
+         }'
+```
+
+### Response format
+
+```json
+{
+  "decision": {
+    "version": "1",
+    "route_to": "vllm.qwen3-32b",
+    "matched_rule": "code-to-big",
+    "default_used": false,
+    "outputs": {},
+    "trace": [
+      { "condition": "keywords_any", "result": true }
+    ]
+  },
+  "normalized_policy": { }
+}
+```
+
+`decision` has the same shape as the `x_lemonade_route` object a routed
+completion returns with `route_trace: true`, and the trace is always included
+here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
+and `route_to` is the policy's `default_model`.
+
+`normalized_policy` echoes the policy as it was actually evaluated, with any
+`routing.router` shorthand desugared into the explicit `classifiers`/`rules` it
+expands to (generated rules are named `__route_0`, `__route_1`, …). Match
+`decision.matched_rule` against this document rather than the one you sent — a
+policy authored with only `routing.router` has no `routing.rules` of its own.
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400` | Body is not valid JSON, `policy` is missing or not an object, `prompt` is not a string, `has_images`/`has_tools` are not booleans, or `metadata` is not an object of string values. |
+| `400` | The policy document is invalid or internally inconsistent; the `error` field is prefixed with `Invalid routing policy:`. |
 
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
