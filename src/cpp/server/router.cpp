@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
+#include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
@@ -27,6 +28,7 @@
 #include "lemon/eviction_engine.h"
 #include "lemon/suspend_inhibitor.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 namespace lemon {
 
@@ -186,25 +188,47 @@ bool Router::is_watchdog_reset_response(const json& response) const {
         error["details"]["code"] == "backend_watchdog_reset") {
         return true;
     }
+
+    if (error.contains("message") && error["message"].is_string()) {
+        std::string message = error["message"].get<std::string>();
+        std::string lowered = message;
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lowered.find("compute error") != std::string::npos ||
+            lowered.find("gpu hang") != std::string::npos) {
+            return true;
+        }
+    }
+
     return false;
 }
 
-bool Router::reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options) {
+bool Router::reload_model_after_watchdog_reset(const std::string& requested_model, const RecipeOptions& options, uint64_t failed_instance_id) {
     try {
         LOG(WARNING, "Router") << "Reloading model after backend watchdog reset: "
                                 << requested_model << std::endl;
-        auto info = model_manager_->get_model_info(requested_model);
+        const std::string canonical_model_name = resolve_model_name(requested_model);
+        auto info = model_manager_->get_model_info(canonical_model_name);
         bool was_pinned = false;
         ResidencyClass was_residency_class = ResidencyClass::Standard;
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
-            auto* existing = find_server_by_model_name(requested_model);
+            std::unique_lock<std::mutex> lock(load_mutex_);
+            while (is_loading_) {
+                load_cv_.wait(lock);
+            }
+            auto* existing = find_server_by_model_name(canonical_model_name);
             if (existing) {
+                if (failed_instance_id != 0 && existing->get_instance_id() != failed_instance_id) {
+                    LOG(INFO, "Router") << "Model '" << requested_model
+                                        << "' already reloaded by another thread. Skipping reload."
+                                        << std::endl;
+                    return true;
+                }
                 was_pinned = existing->is_pinned();
                 was_residency_class = existing->get_residency_class();
             }
         }
-        load_model(requested_model, info, options, true, false, was_pinned,
+        load_model(canonical_model_name, info, options, true, false, was_pinned,
                    load_purpose_for_residency_class(was_residency_class));
         return true;
     } catch (const std::exception& e) {
@@ -841,11 +865,9 @@ void Router::load_model(const std::string& model_name,
         // Check if model is already loaded. Watchdog-reset or otherwise dead
         // entries are evicted first so auto-load performs a real lazy restart.
         WrappedServer* existing = find_server_by_model_name(canonical_model_name);
-        if (existing && !existing->is_backend_alive()) {
+        if (existing && (!existing->is_backend_alive() || existing->was_watchdog_triggered())) {
             LOG(WARNING, "Router") << "Existing backend for " << canonical_model_name
-                                    << " is unavailable (state="
-                                    << existing->get_backend_health_state()
-                                    << "), evicting before reload" << std::endl;
+                                    << " is unavailable or watchdog triggered, evicting before reload" << std::endl;
             evict_server(existing);
             existing = nullptr;
         }
@@ -1394,12 +1416,62 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
     json backend_json = tentative.get_option(backend_option);
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    // Second pass: rebuild defaults using the resolved backend.
-    // Per-architecture defaults sit between global config and model-level recipe_options.
-    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
+    RecipeOptions default_opt(model_info.recipe, config_->recipe_options(backend));
     RecipeOptions arch_opts(model_info.recipe,
                             model_manager_->get_architecture_defaults(model_info.gguf.architecture));
-    return request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+    RecipeOptions effective =
+        request_options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+
+    const json model_json = model_info.recipe_options.to_json();
+    const json model_defaults_json =
+        model_manager_->get_model_default_options(model_info).to_json();
+    const json arch_json = arch_opts.to_json();
+    const json backend_defaults_json = default_opt.to_json();
+    const json merge_value = effective.get_option("merge_args");
+    const bool merge_args = merge_value.is_boolean() ? merge_value.get<bool>() : true;
+
+    auto args_value = [](const json& layer, const std::string& key) {
+        auto it = layer.find(key);
+        return it != layer.end() && it->is_string() ? it->get<std::string>() : "";
+    };
+
+    for (const auto& key : RecipeOptions::keys_for_recipe(model_info.recipe)) {
+        if (!utils::is_custom_args_option(key)) continue;
+
+        utils::CustomArgsRequestState request_state =
+            utils::CustomArgsRequestState::Omitted;
+        std::string request_args;
+        if (request_options.has_explicit_option(key)) {
+            const json raw_request = request_options.get_explicit_option(key);
+            if (raw_request.is_null()) {
+                request_state = utils::CustomArgsRequestState::Tombstone;
+            } else if (raw_request.is_string()) {
+                request_state = utils::CustomArgsRequestState::Value;
+                request_args = raw_request.get<std::string>();
+            } else {
+                throw std::invalid_argument("'" + key + "' must be a string or null");
+            }
+        }
+
+        const std::string resolved_args =
+            utils::resolve_scoped_custom_args({
+                args_value(backend_defaults_json, key),
+                args_value(arch_json, key),
+                args_value(model_defaults_json, key),
+                args_value(model_json, key),
+                request_state,
+                request_args,
+                merge_args,
+            });
+        // Keep empty results: explicit "" is a meaningful clear value and the
+        // effective layer is also used as replayable load input.
+        effective.set_option(key, resolved_args);
+    }
+
+    if (const auto* ops = backends::ops_for(model_info.recipe)) {
+        ops->resolve_runtime_options(model_info, effective);
+    }
+    return effective;
 }
 
 RecipeOptions Router::get_model_recipe_options(const std::string& model_name) const {
@@ -1460,6 +1532,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
+        uint64_t failed_instance_id = 0;
 
         {
             std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1469,7 +1542,9 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 return ErrorResponse::from_exception(ModelNotLoadedException(requested_model));
             }
 
-            if (!server->is_backend_alive()) {
+            failed_instance_id = server->get_instance_id();
+
+            if (server->was_watchdog_triggered() || !server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
@@ -1485,7 +1560,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
             return ErrorResponse::create(
@@ -1499,12 +1574,18 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 
         try {
             auto response = inference_func(server);
+
+            if (!server->was_watchdog_triggered() && is_watchdog_reset_response(response)) {
+                server->request_backend_reset_from_watchdog("GPU Hang / compute error detected");
+            }
+
             const bool watchdog_reset =
                 server->was_watchdog_triggered() || is_watchdog_reset_response(response);
 
             if (attempt == 0 && watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
+                failed_instance_id = server->get_instance_id();
             }
 
             server->release_inference();
@@ -1513,7 +1594,7 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                if (reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+                if (reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                     continue;
                 }
             }
@@ -1535,7 +1616,6 @@ auto Router::execute_inference(const json& request, Func&& inference_func) -> de
 // Template method for streaming execution
 template<typename Func>
 void Router::execute_streaming(const std::string& request_body, httplib::DataSink& sink, Func&& streaming_func, std::shared_ptr<telemetry::InferenceSpan> span) {
-    WrappedServer* server = nullptr;
     std::string requested_model;
 
     try {
@@ -1557,9 +1637,11 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
     }
 
     for (int attempt = 0; attempt < 2; ++attempt) {
+        WrappedServer* server = nullptr;
         RecipeOptions restart_options;
         std::string restart_model_name;
         bool should_reload_before_request = false;
+        uint64_t failed_instance_id = 0;
 
         {
             std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1573,7 +1655,9 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 return;
             }
 
-            if (!server->is_backend_alive()) {
+            failed_instance_id = server->get_instance_id();
+
+            if (server->was_watchdog_triggered() || !server->is_backend_alive()) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
                 should_reload_before_request = true;
@@ -1594,7 +1678,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
 
@@ -1618,6 +1702,7 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
             if (watchdog_reset) {
                 restart_options = server->get_recipe_options();
                 restart_model_name = server->get_model_name();
+                failed_instance_id = server->get_instance_id();
             }
 
             server->release_inference();
@@ -1629,18 +1714,20 @@ void Router::execute_streaming(const std::string& request_body, httplib::DataSin
                 if (restart_model_name.empty()) {
                     restart_model_name = requested_model;
                 }
-                reload_model_after_watchdog_reset(restart_model_name, restart_options);
+                reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id);
             }
             return;
         } catch (const BackendStreamRetryableReset& e) {
             restart_options = server->get_recipe_options();
             restart_model_name = server->get_model_name();
+            failed_instance_id = server->get_instance_id();
+
             server->release_inference();
 
             if (restart_model_name.empty()) {
                 restart_model_name = requested_model;
             }
-            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options)) {
+            if (attempt == 0 && reload_model_after_watchdog_reset(restart_model_name, restart_options, failed_instance_id)) {
                 continue;
             }
 

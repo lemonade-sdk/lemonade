@@ -492,7 +492,7 @@ int main() {
             {"port", 13305},
             {"host", "localhost"},
             {"telemetry", {
-                {"enabled", true},
+                {"enabled", false},
                 {"max_attribute_length", 20},
                 {"otlp", {
                     {"semantics", {"openinference", "otel_genai"}}
@@ -579,7 +579,7 @@ int main() {
             {"port", 13305},
             {"host", "localhost"},
             {"telemetry", {
-                {"enabled", true},
+                {"enabled", false},
                 {"hide_outputs", false},
                 {"hide_thinking", true},
                 {"otlp", {
@@ -601,7 +601,7 @@ int main() {
             {"port", 13305},
             {"host", "localhost"},
             {"telemetry", {
-                {"enabled", true},
+                {"enabled", false},
                 {"hide_outputs", true},
                 {"otlp", {
                     {"semantics", {"openinference", "otel_genai"}}
@@ -627,7 +627,7 @@ int main() {
                 {"port", 13305},
                 {"host", "localhost"},
                 {"telemetry", {
-                    {"enabled", true},
+                    {"enabled", false},
                     {"max_attribute_length", bound},
                     {"otlp", {
                         {"semantics", {"openinference"}}
@@ -645,11 +645,14 @@ int main() {
                 nlohmann::json p = nlohmann::json::parse(bound_args, nullptr, false);
                 check_bool("InferenceSpan unicode args valid JSON", p.is_discarded(), false);
             }
+            lemon::RuntimeConfig::set_global(nullptr);
         }
 
         // Clean up
         lemon::telemetry::unregister_span_listener();
         lemon::RuntimeConfig::set_global(nullptr);
+        lemon::telemetry::flush();
+        lemon::telemetry::shutdown();
     }
 
     std::printf("===========================================\n");
