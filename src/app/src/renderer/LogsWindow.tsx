@@ -61,9 +61,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       setIsInitialized(true);
 
       try {
-        // Using serverFetch with the full URL to reach the root-level /internal/config
-        // endpoint while benefiting from automatic authentication and init-waiting.
-        const response = await serverFetch(`${url}/internal/config`);
+        const response = await serverFetch('/internal/config');
         if (!response.ok) return;
 
         const config = await response.json();
