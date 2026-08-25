@@ -5,10 +5,11 @@
 ### 1. **What is Lemonade and what does it include?**
 
    Lemonade is an open-source local LLM solution that:
-      - Gets you started in minutes with one-click installers.
-      - Auto-configures optimized inference engines for your PC.
-      - Provides a convenient app to get set up and test out LLMs.
-      - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
+   
+   - Gets you started in minutes with one-click installers.
+   - Auto-configures optimized inference engines for your PC.
+   - Provides a convenient app to get set up and test out LLMs.
+   - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
 
 ### 2. **What are the use cases for different audiences?**
 

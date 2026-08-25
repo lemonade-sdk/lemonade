@@ -866,25 +866,37 @@ void reject_catastrophic_regex(const std::string& pattern) {
     }
 }
 
-// min_chars / max_chars — inclusive bound on input length in UTF-8 bytes.
+// min_chars / max_chars — inclusive bound on routing-input length in UTF-8
+// bytes — and min_total_chars / max_total_chars, the same bound over every text
+// part the request carries.
 class CharsCondition final : public Condition {
 public:
     enum class Bound { Min, Max };
+    enum class Source { Input, Total };
 
-    CharsCondition(std::size_t threshold, Bound bound)
-        : threshold_(threshold), bound_(bound) {}
+    CharsCondition(std::size_t threshold, Bound bound, Source source = Source::Input)
+        : threshold_(threshold), bound_(bound), source_(source) {}
 
     bool evaluate(EvalContext& ctx) const override {
-        const std::size_t n = ctx.request.params.chars;
+        const std::size_t n = source_ == Source::Input ? ctx.request.params.chars
+                                                       : ctx.request.params.total_chars;
         const bool result =
             bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
-        trace_leaf(ctx, bound_ == Bound::Min ? "min_chars" : "max_chars", result);
+        trace_leaf(ctx, op_name(), result);
         return result;
     }
 
 private:
+    const char* op_name() const {
+        if (source_ == Source::Input) {
+            return bound_ == Bound::Min ? "min_chars" : "max_chars";
+        }
+        return bound_ == Bound::Min ? "min_total_chars" : "max_total_chars";
+    }
+
     std::size_t threshold_;
     Bound bound_;
+    Source source_;
 };
 
 // has_tools / has_images — boolean request feature equals the authored value.
@@ -972,13 +984,14 @@ ConditionPtr build_keywords(const json& arr, bool require_all, const char* op) {
     return std::make_shared<KeywordsCondition>(std::move(keywords), require_all);
 }
 
-ConditionPtr build_chars(const json& value, CharsCondition::Bound bound, const char* op) {
+ConditionPtr build_chars(const json& value, CharsCondition::Bound bound,
+                         CharsCondition::Source source, const char* op) {
     if (!value.is_number_integer() || value.get<long long>() < 0) {
         throw std::invalid_argument(std::string(op) +
                                     " requires a non-negative integer");
     }
     return std::make_shared<CharsCondition>(
-        static_cast<std::size_t>(value.get<long long>()), bound);
+        static_cast<std::size_t>(value.get<long long>()), bound, source);
 }
 
 ConditionPtr build_bool_feature(const json& value, BoolFeatureCondition::Feature feature,
@@ -1273,10 +1286,20 @@ NamedLeafFactories make_deterministic_leaf_factories() {
         }
     };
     factories["min_chars"] = [](const json& leaf) -> ConditionPtr {
-        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min, "min_chars");
+        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min,
+                           CharsCondition::Source::Input, "min_chars");
     };
     factories["max_chars"] = [](const json& leaf) -> ConditionPtr {
-        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max, "max_chars");
+        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max,
+                           CharsCondition::Source::Input, "max_chars");
+    };
+    factories["min_total_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("min_total_chars"), CharsCondition::Bound::Min,
+                           CharsCondition::Source::Total, "min_total_chars");
+    };
+    factories["max_total_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("max_total_chars"), CharsCondition::Bound::Max,
+                           CharsCondition::Source::Total, "max_total_chars");
     };
     factories["has_tools"] = [](const json& leaf) -> ConditionPtr {
         return build_bool_feature(leaf.at("has_tools"), BoolFeatureCondition::Feature::Tools,
