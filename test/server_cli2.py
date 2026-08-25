@@ -6,6 +6,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - list
 - export
 - backends
+- cloud
 - import (from JSON file)
 - pull with labels and checkpoints
 - load
@@ -578,6 +579,51 @@ sys.exit(0)
         print(f"Backends uninstall exit code: {result.returncode}")
 
     # =============================================================================
+    # Cloud Tests
+    # =============================================================================
+
+    def test_046_cloud_list_json(self):
+        """Test `cloud list --json` emits the provider array from system-info."""
+        result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+        providers = json.loads(result.stdout)
+        self.assertIsInstance(providers, list)
+
+        provider = "clijsonprobe"
+        base_url = "https://example.invalid/v1"
+        try:
+            self.assertCommandSucceeds(
+                ["cloud", "install", provider, "--base-url", base_url]
+            )
+            result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+            providers = json.loads(result.stdout)
+            self.assertIsInstance(providers, list)
+            entry = next((p for p in providers if p.get("name") == provider), None)
+            self.assertIsNotNone(entry, f"{provider} missing from {providers}")
+            for key in (
+                "name",
+                "base_url",
+                "env_var",
+                "env_var_set",
+                "runtime_key_set",
+                "models_discovered",
+                "allow_insecure_http",
+            ):
+                self.assertIn(key, entry)
+            self.assertEqual(entry["base_url"], base_url)
+            self.assertEqual(entry["env_var"], "LEMONADE_CLIJSONPROBE_API_KEY")
+            self.assertFalse(entry["env_var_set"])
+            self.assertFalse(entry["runtime_key_set"])
+            self.assertEqual(entry["models_discovered"], 0)
+            self.assertFalse(entry["allow_insecure_http"])
+
+            human = self.assertCommandSucceeds(["cloud", "list"])
+            with self.assertRaises(json.JSONDecodeError):
+                json.loads(human.stdout)
+            self.assertIn(provider, human.stdout)
+        finally:
+            run_cli_command(["cloud", "uninstall", provider])
+
+    # =============================================================================
     # Runtime Config Tests
     # =============================================================================
 
@@ -688,9 +734,9 @@ sys.exit(0)
         )
         print(f"Config set output: {result.stdout}")
 
-        # 2. Query the params to verify it parsed correctly and merged
+        # 2. Read the config back to verify it parsed correctly and merged
         response = requests.get(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/config",
             headers=_auth_headers(),
             timeout=10,
         )
@@ -719,7 +765,7 @@ sys.exit(0)
 
             # Verify it is set to false on the server
             response = requests.get(
-                f"http://localhost:{PORT}/api/v1/params",
+                f"http://localhost:{PORT}/internal/config",
                 headers=_auth_headers(),
                 timeout=10,
             )
@@ -737,7 +783,7 @@ sys.exit(0)
                 ]
             )
             response = requests.get(
-                f"http://localhost:{PORT}/api/v1/params",
+                f"http://localhost:{PORT}/internal/config",
                 headers=_auth_headers(),
                 timeout=10,
             )
@@ -2179,6 +2225,33 @@ sys.exit(0)
             f"repo3 should be deleted after removing Model B: {repo3_path}",
         )
         print("[OK] After deleting B: all repo directories cleaned up")
+
+    def test_models_sync_command(self):
+        """Test the 'update-models' CLI subcommand dry-run check and execution."""
+        # 1. Run update-models dry-run check (using --check)
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check"]
+        )
+        self.assertIn("Checked", result.stdout)
+        self.assertIn("update(s) available", result.stdout)
+
+        # 3. Run update-models with --check --json option
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check", "--json"]
+        )
+        self.assertIn("checked_count", result.stdout)
+
+        # 4. Run update-models on nonexistent model with --check --json, expecting exit code 1
+        result = run_cli_command(
+            ["update-models", "nonexistent-model-test-xyz", "--check", "--json"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            result.returncode,
+            1,
+            f"update-models nonexistent model with --json should fail, got returncode {result.returncode}",
+        )
+        self.assertIn("failed_models", result.stdout)
 
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):

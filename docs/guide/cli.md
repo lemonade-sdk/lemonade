@@ -57,6 +57,7 @@ The `lemonade` CLI is the primary tool for interacting with Lemonade Server from
 | `unload [MODEL_NAME]` | Unload a model. If no model name is provided, unload all loaded models. |
 | `pin MODEL_NAME`    | Pin a loaded model to prevent auto-eviction. See options [below](#options-for-pin-and-unpin). |
 | `unpin MODEL_NAME`  | Unpin a loaded model to allow auto-eviction. See options [below](#options-for-pin-and-unpin). |
+| `update-models [MODEL_NAME ...]` | Sync/update downloaded models to the latest version. Use `--check` to preview updates without downloading. |
 | `export MODEL_NAME` | Export model information to JSON format. See command options [below](#options-for-export). |
 
 ### Benchmarking
@@ -422,7 +423,7 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### TheNoise ROCm (experimental) (`thenoise` recipe)
+#### TheNoise ROCm (`thenoise` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -553,6 +554,42 @@ lemonade export Qwen3-0.6B-GGUF --output my-model.json
 # Export and view the JSON output
 lemonade export Qwen3-0.6B-GGUF --output model.json && cat model.json
 ```
+
+## Options for update-models
+
+
+The `update-models` command checks and updates downloaded models against upstream repositories. By default, model synchronization runs in the background.
+
+> [!NOTE]
+> Because model synchronization operates as an administrative control routing, executing `lemonade update-models` requires appropriate credentials when server-side API authentication is enabled. The client will automatically propagate the `LEMONADE_ADMIN_API_KEY` (or the standard `LEMONADE_API_KEY` if no distinct administrative key is configured) as a bearer token.
+
+```bash
+lemonade update-models [MODEL_NAME ...] [-w|--wait] [--check] [--json]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `MODEL_NAME ...` | Optional model name(s), recipe names (`user.*`), or HF checkpoints to update | Update all downloaded models |
+| `-w, --wait` | Wait for server model synchronization task to complete | `false` |
+| `--check` | Dry-run mode: check for available updates without downloading | `false` |
+| `--json` | Output update results in JSON format | `false` |
+
+**Examples:**
+
+```bash
+# Dispatch model update in the background (default)
+lemonade update-models
+
+# Check for available model updates without downloading (dry run)
+lemonade update-models --check
+
+# Update models and wait for completion
+lemonade update-models --wait
+
+# Wait for a specific model update to complete
+lemonade update-models Gemma-4-E4B-it -w
+```
+
 
 ## Options for backends
 
@@ -737,8 +774,14 @@ lemonade cloud clear PROVIDER
 Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered. A non-default auth header or wire format is printed on its own line.
 
 ```bash
-lemonade cloud list
+lemonade cloud list [--json]
 ```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--json` | Emit the provider list as a JSON array instead of human-readable text | Human-readable text |
+
+With `--json`, stdout is a JSON array of provider objects (the same `cloud.providers` payload from `/v1/system-info`). An empty installation emits `[]`. Fields include `name`, `base_url`, `allow_insecure_http`, `env_var`, `env_var_set`, `runtime_key_set`, and `models_discovered`. API keys are never included.
 
 ## Options for scan
 

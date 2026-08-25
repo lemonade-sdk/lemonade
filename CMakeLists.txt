@@ -2478,6 +2478,9 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
     )
+    target_compile_definitions(test_backend_mode_contract PRIVATE
+        SERVER_MODELS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
+    )
     target_link_libraries(test_backend_mode_contract PRIVATE
         nlohmann_json::nlohmann_json
         lemonade-httplib
@@ -2817,6 +2820,21 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
+set(_MODEL_DOWNLOAD_STATE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_download_state.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_DOWNLOAD_STATE_TEST_SRC}")
+    add_executable(test_model_download_state
+        test/cpp/test_model_download_state.cpp
+    )
+    target_link_libraries(test_model_download_state PRIVATE lemonade-server-core)
+    add_dependencies(test_model_download_state copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelDownloadStateTest CI ON COMMAND test_model_download_state)
+endif()
+
+
 # Recipe hiding: a backend with every built-in model dropped by the system-memory
 # heuristic (and no user model left) is hidden from the recipe/backends listing.
 set(_RECIPE_HIDING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_hiding.cpp")
@@ -2827,6 +2845,18 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
+endif()
+
+# Streaming memory filter: backends that stream the model from storage are
+# size-filtered on their resident working set vs the device pool, not full size.
+set(_STREAMING_MEM_FILTER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_memory_filter.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_MEM_FILTER_TEST_SRC}")
+    add_executable(test_streaming_memory_filter test/cpp/test_streaming_memory_filter.cpp)
+    target_link_libraries(test_streaming_memory_filter PRIVATE lemonade-server-core)
+    add_dependencies(test_streaming_memory_filter copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(StreamingMemoryFilterTest CI ON COMMAND test_streaming_memory_filter)
 endif()
 
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
@@ -3002,6 +3032,21 @@ if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
+set(_LLAMACPP_SYSTEM_BACKEND_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_system_backend.cpp"
+)
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_SYSTEM_BACKEND_TEST_SRC}")
+    add_executable(test_llamacpp_system_backend
+        test/cpp/test_llamacpp_system_backend.cpp
+    )
+    target_include_directories(test_llamacpp_system_backend PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
+    )
+    target_link_libraries(test_llamacpp_system_backend PRIVATE lemonade-server-core)
+    add_dependencies(test_llamacpp_system_backend copy_resources)
+    add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
+endif()
+
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
 if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
     add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
@@ -3092,6 +3137,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
     add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
 endif()
 
+set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
+    add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)
+    target_link_libraries(test_streaming_heartbeat PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingHeartbeatTest CI ON COMMAND test_streaming_heartbeat)
+endif()
+
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
@@ -3127,6 +3179,54 @@ if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_cpp_ci_test(OriginUtilsTest CI ON COMMAND test_origin_utils)
 endif()
 
+# RecipeOptions precedence: verify that values are merged in the correct order:
+#   1. Per-request settings (highest)
+#   2. User-saved recipe options
+#   3. Model recipe_options (registry entry)
+#   4. Model image_defaults
+#   5. Architecture defaults
+#   6. Global config defaults (lowest)
+set(_RECIPE_OPTIONS_PRECEDENCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_options_precedence.cpp")
+if(BUILD_TESTING AND EXISTS "${_RECIPE_OPTIONS_PRECEDENCE_TEST_SRC}")
+    add_executable(test_recipe_options_precedence test/cpp/test_recipe_options_precedence.cpp)
+    target_link_libraries(test_recipe_options_precedence PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RecipeOptionsPrecedence CI ON COMMAND test_recipe_options_precedence)
+endif()
+
+set(_GLIBC_MALLOPT_PROBE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/glibc_mallopt_probe.cpp"
+)
+set(_GLIBC_ALLOCATOR_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_glibc_allocator_policy.py"
+)
+if(BUILD_TESTING AND
+   CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   EXISTS "${_GLIBC_MALLOPT_PROBE_SRC}" AND
+   EXISTS "${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_library(test_glibc_mallopt_probe SHARED
+            ${_GLIBC_MALLOPT_PROBE_SRC}
+        )
+        add_cpp_ci_test(
+            GlibcAllocatorPolicyTest
+            CI ON
+            COMMAND
+                ${Python3_EXECUTABLE}
+                ${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}
+                --lemond $<TARGET_FILE:${EXECUTABLE_NAME}>
+                --probe $<TARGET_FILE:test_glibc_mallopt_probe>
+            DEPENDS
+                ${EXECUTABLE_NAME}
+                test_glibc_mallopt_probe
+        )
+        set_tests_properties(
+            GlibcAllocatorPolicyTest
+            PROPERTIES SKIP_RETURN_CODE 77
+        )
+    endif()
+endif()
+
 if(BUILD_TESTING)
     add_cpp_ci_test(HttplibDetection_config_only CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_config_only -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=config_only -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
     add_cpp_ci_test(HttplibDetection_old_header CI OFF COMMAND ${CMAKE_COMMAND} -B ${CMAKE_CURRENT_BINARY_DIR}/test_httplib_old_header -S ${CMAKE_CURRENT_SOURCE_DIR}/test/cmake -DTEST_CASE=old_header -DDETECTION_MACRO_PATH=${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
@@ -3160,4 +3260,14 @@ if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_executable(test_launch_command test/cpp/test_launch_command.cpp)
     target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
     add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
+endif()
+
+set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_and_auto_update.cpp")
+if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
+    add_executable(test_model_sync_and_auto_update test/cpp/test_model_sync_and_auto_update.cpp)
+    target_link_libraries(test_model_sync_and_auto_update PRIVATE lemonade-server-core)
+    add_dependencies(test_model_sync_and_auto_update copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
 endif()

@@ -239,6 +239,39 @@ class EndpointTests(ServerTestBase):
 
         session.close()
 
+    def test_000b_retired_endpoints_removed(self):
+        """Verify the retired routes stay gone on every prefix."""
+        session = requests.Session()
+        headers = _auth_headers()
+
+        for endpoint in ["params", "log-level", "test"]:
+            for prefix in ["/api/v0", "/api/v1", "/v0", "/v1"]:
+                url = f"http://localhost:{PORT}{prefix}/{endpoint}"
+                for response in (
+                    session.get(url, headers=headers, timeout=TIMEOUT_DEFAULT),
+                    session.post(
+                        url, json={}, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ),
+                ):
+                    self.assertEqual(
+                        response.status_code,
+                        404,
+                        f"Retired endpoint {prefix}/{endpoint} still responds",
+                    )
+
+        response = session.get(
+            f"http://localhost:{PORT}/status", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 404, "Retired /status still responds")
+
+        # The legacy status page is still served at its documented location.
+        response = session.get(
+            f"http://localhost:{PORT}/api/v1", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        session.close()
+
     def test_000a_register_model_definition_without_pull(self):
         """Register a user model definition without downloading its checkpoint."""
         canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
@@ -714,6 +747,168 @@ class EndpointTests(ServerTestBase):
             client.models.retrieve("non-existent-model-xyz-123")
 
         print("[OK] NotFoundError raised for non-existent model")
+
+    def _retrieve_model_json(self, model=ENDPOINT_TEST_MODEL):
+        """Fetch one model entry. The OpenAI SDK object does not expose
+        context_length, so read the raw JSON."""
+        response = requests.get(
+            f"{self.base_url}/models/{model}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _unload_for_configured_context(self):
+        """Unload first: a loaded model reports its own size, which outranks
+        the configured value these tests check."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+    def test_006a_context_length_uses_explicit_ctx_size(self):
+        """An explicit per-model ctx_size is what context_length reports."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 8192}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            8192,
+            "context_length should match the explicitly saved ctx_size",
+        )
+
+        print("[OK] context_length reflects an explicit ctx_size")
+
+    def test_006b_context_length_inherits_global_ctx_size(self):
+        """With nothing saved on the model, context_length follows the global."""
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self._snapshot_options()
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+
+        self._unload_for_configured_context()
+        self._reset_options()
+        self._set_global_ctx_size(4096)
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            4096,
+            "context_length should inherit the server-wide ctx_size",
+        )
+
+        print("[OK] context_length inherits the global ctx_size")
+
+    def test_006c_context_length_never_reports_a_sentinel(self):
+        """ctx_size=-1 means "size automatically" and must never be returned."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        context_length = model.get("context_length")
+        self.assertIsNotNone(
+            context_length,
+            "context_length should still be present when ctx_size is automatic",
+        )
+        self.assertGreater(
+            context_length,
+            0,
+            "context_length must never surface the -1 auto sentinel",
+        )
+
+        print(
+            f"[OK] context_length with automatic ctx_size resolved to {context_length}"
+        )
+
+    def test_006d_context_length_agrees_between_list_and_retrieve(self):
+        """The list and retrieve endpoints must report the same value."""
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        listed = {m["id"]: m for m in response.json()["data"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, listed)
+
+        for model_id, entry in listed.items():
+            if "context_length" in entry:
+                self.assertGreater(
+                    entry["context_length"],
+                    0,
+                    f"{model_id} reported a non-positive context_length",
+                )
+
+        self.assertEqual(
+            listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            self._retrieve_model_json().get("context_length"),
+            "list and retrieve should report the same context_length",
+        )
+
+        print("[OK] context_length agrees across /models and /models/{id}")
+
+    def test_006e_context_length_resolves_user_alias(self):
+        """An alias and its loaded target must report the same context length."""
+        alias_name = "test-context-length-alias"
+        loaded_ctx_size = 3072
+
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200, add_res.text)
+
+            load_res = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "ctx_size": loaded_ctx_size,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_res.status_code, 200, load_res.text)
+
+            list_res = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(list_res.status_code, 200, list_res.text)
+            listed = {model["id"]: model for model in list_res.json()["data"]}
+
+            self.assertIn(ENDPOINT_TEST_MODEL, listed)
+            self.assertIn(alias_name, listed)
+            self.assertEqual(
+                listed[ENDPOINT_TEST_MODEL].get("context_length"), loaded_ctx_size
+            )
+            self.assertEqual(
+                listed[alias_name].get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+            self.assertEqual(
+                self._retrieve_model_json(alias_name).get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+        finally:
+            delete_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(delete_res.status_code, (200, 404), delete_res.text)
+
+        print("[OK] context_length resolves user aliases")
 
     def test_007_pull_model_non_streaming(self):
         """Test pulling/downloading a model (non-streaming mode)."""
@@ -4431,6 +4626,57 @@ class EndpointTests(ServerTestBase):
         self.assertTrue(decision["default_used"])
         print("[OK] /routing/validate fell through to the default model")
 
+    def test_021zta_routing_validate_total_chars_uses_prompt_length(self):
+        """A test prompt is a single turn with no history, so `min_total_chars`
+        measures the prompt itself — the same equality the history-less
+        completions form gives. A context that left the total at 0 would make
+        every whole-conversation rule untestable in the Router Builder."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "long-conversation-to-big",
+                        "match": {"min_total_chars": 100},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        long_prompt = "tell me more about this topic. " * 10  # 310 chars
+        self.assertGreater(len(long_prompt), 100)
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": long_prompt},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "long-conversation-to-big")
+        self.assertFalse(decision["default_used"])
+        self.assertTrue(
+            any(
+                entry.get("condition") == "min_total_chars"
+                and entry.get("result") is True
+                for entry in decision.get("trace", [])
+            ),
+            f"trace must include the matched min_total_chars condition: {decision}",
+        )
+
+        short_response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(short_response.status_code, 200, short_response.text)
+        self.assertTrue(short_response.json()["decision"]["default_used"])
+        print("[OK] /routing/validate measures min_total_chars on the test prompt")
+
     def test_021zu_routing_validate_bad_policy_returns_400(self):
         """A malformed policy (missing the required 'routing' key) is rejected
         with a 400 and a clear error message, not a crash."""
@@ -7795,6 +8041,113 @@ class EndpointTests(ServerTestBase):
                 provenance_file.write(original_provenance)
 
         print("[OK] /models/check-updates ignores stale provenance snapshots")
+
+    def test_056_models_sync_internal_security_boundary(self):
+        """Verify that model sync routes are exclusively administrative internal routes and public routes return 404."""
+        # 1. Verify GET /internal/models/sync/status returns the status JSON
+        status_url = f"http://localhost:{PORT}/internal/models/sync/status"
+        resp = requests.get(status_url, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync/status failed: {resp.text}"
+        )
+        status_json = resp.json()
+        self.assertIn("status", status_json)
+        self.assertIn("sync_id", status_json)
+        self.assertIn("completed_sync_id", status_json)
+        self.assertIn("checked_count", status_json)
+        self.assertIn("models_updated", status_json)
+        self.assertIn("terminal_error", status_json)
+
+        # 2. Verify POST /internal/models/sync dry_run returns dry_run: true
+        sync_url = f"http://localhost:{PORT}/internal/models/sync"
+        resp = requests.post(
+            sync_url,
+            json={"dry_run": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync dry run failed: {resp.text}"
+        )
+        sync_json = resp.json()
+        self.assertTrue(sync_json.get("dry_run"))
+        self.assertIn("checked_count", sync_json)
+
+        # 3. Verify POST /internal/models/sync async returns 202 Accepted
+        resp = requests.post(
+            sync_url,
+            json={"async": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            202,
+            f"/internal/models/sync async dispatch failed: {resp.text}",
+        )
+        async_json = resp.json()
+        self.assertTrue(async_json.get("async"))
+        self.assertIn("sync_id", async_json)
+
+        # 4. Verify querying status by sync_id
+        target_sync_id = async_json.get("sync_id")
+        if target_sync_id:
+            resp = requests.get(
+                f"{status_url}?sync_id={target_sync_id}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                resp.status_code,
+                200,
+                f"/internal/models/sync/status?sync_id={target_sync_id} failed: {resp.text}",
+            )
+            sync_id_json = resp.json()
+            self.assertEqual(sync_id_json.get("sync_id"), target_sync_id)
+
+        # 5. Verify public quad-prefix route /api/v1/models/sync returns 404
+        public_url = f"{self.base_url}/models/sync"
+        resp = requests.post(
+            public_url, json={"dry_run": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            404,
+            f"public /api/v1/models/sync should not exist, got {resp.status_code}",
+        )
+
+        # 5. Verify invalid payload types return 400 Bad Request
+        resp = requests.post(
+            sync_url, json={"models": "invalid_not_array"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-array models, got {resp.status_code}",
+        )
+
+        resp = requests.post(sync_url, json={"models": [123]}, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-string model item, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"dry_run": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool dry_run, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"async": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool async, got {resp.status_code}",
+        )
+
+        print("[OK] /internal/models/sync security boundary is secure")
 
 
 if __name__ == "__main__":

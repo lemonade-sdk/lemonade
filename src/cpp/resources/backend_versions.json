@@ -61,11 +61,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-820-de298c2",
-    "rocm-stable": "master-820-de298c2",
-    "vulkan": "master-820-de298c2",
-    "cuda": "master-789-65745b4",
-    "metal": "master-820-de298c2"
+    "cpu": "master-827-97d2990",
+    "rocm-stable": "master-827-97d2990",
+    "vulkan": "master-827-97d2990",
+    "cuda": "master-827-e2329c3",
+    "metal": "master-827-97d2990"
   },
   "therock": {
     "version": "7.14.0",
@@ -146,7 +146,7 @@
   },
   "thenoise": {
     "comment": "TheNoise release tag. The portable bundle publishes per-GPU-target archives (<tag>-gfxNNNN-x64.tar.gz) under this tag; the host arch picks the matching archive.",
-    "rocm": "thenoise-0.3.0-rocm7.14.0"
+    "rocm": "thenoise-0.4.1-rocm7.14.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",

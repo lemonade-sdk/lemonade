@@ -3,6 +3,7 @@
 #include <lemon/utils/custom_args.h>
 #include <nlohmann/json.hpp>
 #include <map>
+#include <optional>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
 #else
@@ -25,6 +26,7 @@ static const json& common_defaults() {
         {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
         {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
         {"pinned", false},
+        {"auto_update", nullptr},
     };
     return d;
 }
@@ -83,6 +85,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     keys.push_back("downsize_idle_timeout");
     keys.push_back("evict_weight_factor");
     keys.push_back("pinned");
+    keys.push_back("auto_update");
 
     return keys;
 }
@@ -193,6 +196,20 @@ static std::string format_option_for_logging(const json& opt) {
     return opt;
 }
 
+RecipeOptions RecipeOptions::merge_precedence_layers(const std::string& recipe,
+                                                     const json& lowest,
+                                                     const json& middle,
+                                                     const json& highest) {
+    json merged = lowest.is_object() ? lowest : json::object();
+    for (const json* layer : {&middle, &highest}) {
+        if (!layer->is_object()) continue;
+        for (auto it = layer->begin(); it != layer->end(); ++it) {
+            merged[it.key()] = it.value();
+        }
+    }
+    return RecipeOptions(recipe, merged);
+}
+
 json RecipeOptions::to_json() const {
     return options_;
 }
@@ -238,6 +255,10 @@ json RecipeOptions::get_option(const std::string& opt) const {
     }
 #endif
     return get_defaults().contains(opt) ? get_defaults()[opt] : json();
+}
+
+bool RecipeOptions::has_option(const std::string& opt) const {
+    return options_.contains(opt);
 }
 
 void RecipeOptions::set_option(const std::string& opt, const json& value) {

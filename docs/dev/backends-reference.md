@@ -18,7 +18,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `thenoise` | TheNoise ROCm (experimental) | yes | no | rocm |
+| `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
@@ -135,7 +135,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
-#### `thenoise` — TheNoise ROCm (experimental)
+#### `thenoise` — TheNoise ROCm
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
