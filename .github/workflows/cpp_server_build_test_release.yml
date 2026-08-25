@@ -817,10 +817,10 @@ jobs:
         uses: ./.github/actions/get-version
 
       - name: Install minimal build dependencies
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+        uses: ./.github/actions/retry-apt-get
+        with:
+          command: install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+          use-sudo: 'true'
 
       - name: Build embeddable archive
         shell: bash
@@ -851,21 +851,34 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+    # Reuses the same multi-arch build-environment image as build-lemonade-deb
+    # instead of apt-get-installing a minimal toolchain on the bare runner —
+    # avoids hitting the arm64 ports.ubuntu.com mirror at job runtime at all.
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
 
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
       - name: Get version from CMakeLists.txt
         id: get_version
         uses: ./.github/actions/get-version
 
       - name: Install build dependencies
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+        # Mirrors cpp-unit-tests: the image already has these Build-Depends
+        # baked in, so this only catches ones added since the last nightly
+        # image publish.
+        uses: ./.github/actions/retry-apt-get
+        with:
+          command: build-dep ./contrib -y
 
       - name: Build
         run: |
