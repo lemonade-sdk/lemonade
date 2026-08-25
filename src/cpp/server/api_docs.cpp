@@ -34,7 +34,13 @@ std::string load_api_docs(const std::string& docs_dir, const std::string& versio
             LOG(WARNING, "Server") << "API doc file missing: " << file_path.string() << std::endl;
             continue;
         }
-        out << file.rdbuf() << "\n\n";
+        // Read into a throwaway stream first: operator<<(ostream&, streambuf*)
+        // sets failbit on the destination when it extracts zero bytes, which
+        // would silently poison `out` (and drop every file appended after
+        // it) the first time an empty file is encountered.
+        std::ostringstream content;
+        content << file.rdbuf();
+        out << content.str() << "\n\n";
     }
 
     return out.str();
