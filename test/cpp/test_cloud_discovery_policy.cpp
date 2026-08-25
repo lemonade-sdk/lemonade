@@ -1,18 +1,9 @@
-// Unit tests for the CloudServer statics that decide how an outbound provider
-// request is addressed: discovery_policy(), which selects the HTTP trust
-// boundary, and upstream_headers(), which builds the header map.
+// Unit tests for the CloudServer statics that address an outbound provider
+// request: discovery_policy(), upstream_headers(), and upstream_url().
 //
-// discovery_policy(): the AllowInsecureHttp opt-in must only apply to plaintext
-// http:// providers; an https:// provider must stay HTTPS-only even when
-// allow_insecure_http is stale or accidentally set, since the discovery request
-// carries an Authorization: Bearer header.
-//
-// upstream_headers(): an anthropic-wire-format provider needs anthropic-version
-// on every request, discovery included; a provider that configures no auth
-// header must still get exactly Authorization: Bearer <key>.
-//
-// upstream_url(): the "/v1" on an endpoint is lemonade's own, not the
-// provider's, so it must be stripped before joining.
+// The invariant worth guarding: the AllowInsecureHttp opt-in must apply only to
+// plaintext http:// providers. An https:// provider stays HTTPS-only even when
+// allow_insecure_http is stale, since the request carries the API key.
 //
 // Checks use an explicit pass/fail counter (not assert()) so the test stays
 // effective under the Release build the CI `default` preset uses, where

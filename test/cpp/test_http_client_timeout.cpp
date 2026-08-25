@@ -1,15 +1,13 @@
 // Unit tests for the timeout convention shared by lemon::utils::HttpClient's
 // request methods. A loopback handler that never responds stands in for a
-// silent upstream, so each method can be checked for whether it actually
-// abandons the transfer.
+// silent upstream.
 //
-// The regression these guard: curl reads CURLOPT_TIMEOUT 0 as "no timeout",
-// so a method that forwarded 0 straight through blocked forever and parked the
+// The regression these guard: curl reads CURLOPT_TIMEOUT 0 as "no timeout", so
+// a method that forwarded 0 straight through blocked forever and parked the
 // calling httplib worker with it.
 //
 // Checks use an explicit pass/fail counter (not assert()) so the test stays
-// effective under the Release build the CI `default` preset uses, where
-// -DNDEBUG would compile assert() to a no-op.
+// effective under the Release CI build, where -DNDEBUG no-ops assert().
 
 #include <atomic>
 #include <chrono>
