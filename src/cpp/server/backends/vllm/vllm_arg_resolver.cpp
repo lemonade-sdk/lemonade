@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <map>
 #include <regex>
 #include <set>
@@ -356,24 +357,40 @@ DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
     };
 }
 
-double shared_memory_gpu_utilization(double global_vram_usage_pct) {
+double shared_memory_gpu_utilization(uint64_t free_bytes, uint64_t total_bytes) {
     // vLLM refuses to start unless `gpu_memory_utilization` of the *total* pool is free,
-    // a pre-flight check the kv-cache cap does not relax. On a device whose memory is
-    // shared with the rest of the system, scaling the request down to what is actually
-    // free keeps a co-tenant process from blocking a model that comfortably fits.
+    // a pre-flight check the kv-cache cap does not relax. Scaling the request down to
+    // what this device has free keeps a co-tenant process from blocking a model that
+    // fits; a machine-wide pressure reading would not, since it can describe a GPU vLLM
+    // never touches.
     constexpr double vllm_default = 0.92;
+    // vLLM re-reads free memory after this process does; without a margin the request
+    // races the very reading it was derived from.
     constexpr double headroom = 0.05;
-    constexpr double minimum = 0.10;
 
-    // Rejects NaN as well as out-of-range readings.
-    if (!(global_vram_usage_pct >= 0.0) || global_vram_usage_pct > 1.0) {
+    if (total_bytes == 0 || free_bytes > total_bytes) {
         return -1.0;
     }
-    const double available = 1.0 - global_vram_usage_pct - headroom;
-    if (available >= vllm_default) {
+
+    const double free_fraction =
+        static_cast<double>(free_bytes) / static_cast<double>(total_bytes);
+    // A device with room to spare keeps the budget vLLM chose for itself.
+    if (free_fraction >= vllm_default) {
         return -1.0;
     }
-    return std::max(minimum, available);
+
+    // Truncated rather than rounded to two decimals, because the flag is emitted at that
+    // precision and rounding up would ask for memory the reading says is not there.
+    const double available = std::floor((free_fraction - headroom) * 100.0) / 100.0;
+
+    // A budget below the cap emitted beside it cannot hold even the cache, and vLLM's own
+    // error names the byte counts -- better than a request known in advance to fail.
+    if (available <= 0.0 ||
+        static_cast<double>(total_bytes) * available <=
+            static_cast<double>(kKvCacheCapBytes)) {
+        return -1.0;
+    }
+    return available;
 }
 
 } // namespace backends

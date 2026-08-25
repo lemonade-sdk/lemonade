@@ -1818,20 +1818,12 @@ std::string identify_rocm_arch_from_name(const std::string& device_name) {
     // Linux will pass the ISA from KFD, transform it to what the rest of lemonade expects
     if (!device_lower.empty() &&
         std::all_of(device_lower.begin(), device_lower.end(), ::isdigit)) {
-        int v;
-        try {
-            v = std::stoi(device_lower);
-        } catch (const std::exception& e) {
+        std::string arch = system_info_detail::gfx_target_version_to_arch(device_lower);
+        if (arch.empty()) {
             throw std::runtime_error(
-                "Failed to parse gfx_target_version '" + device_lower + "': " + e.what());
+                "Failed to parse gfx_target_version '" + device_lower + "'");
         }
-        int major = v / 10000;
-        int minor = (v / 100) % 100;
-        int step  = v % 100;
-
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "gfx%d%x%x", major, minor, step);
-        return std::string(buf);
+        return arch;
     }
 
     if (device_lower.find("radeon") == std::string::npos &&
@@ -4258,6 +4250,14 @@ double SystemInfo::get_global_vram_usage_pct() {
 #endif
 
     return highest_ratio;
+}
+
+bool SystemInfo::get_rocm_device_memory(const std::string& arch,
+                                        uint64_t& free_bytes,
+                                        uint64_t& total_bytes) {
+    return system_info_detail::rocm_device_memory_from_sysfs(
+        "/sys/class/kfd/kfd/topology/nodes", "/sys/class/drm",
+        arch, free_bytes, total_bytes);
 }
 
 } // namespace lemon
