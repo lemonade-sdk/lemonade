@@ -8,6 +8,16 @@
 #include <utility>
 
 namespace lemon {
+namespace {
+
+// A caller can name arbitrary candidate strings (e.g. /v1/routing/validate's
+// identity resolver), so without a cap, requests naming a steady stream of
+// unique names would grow make_router_cost_services' cache without limit.
+// File-scope rather than a lambda-local constexpr: MSVC requires an explicit
+// capture for the latter (error C3493), unlike GCC/Clang.
+constexpr std::size_t kMaxCachedCandidates = 4096;
+
+} // namespace
 
 ClassifierServices make_router_classifier_services(
     Router& router,
@@ -24,13 +34,10 @@ CostServices make_router_cost_services(Router& router, ModelManager& model_manag
     // Memo keyed by candidate name, valid for one registry-change generation:
     // avoids a registry/build_cache hit on every routed request while still
     // picking up a price the moment it changes (model add/edit/remove, cloud
-    // discovery, on-disk edit) instead of only on restart. Bounded: a caller
-    // can name arbitrary candidate strings (e.g. /v1/routing/validate's
-    // identity resolver), so without a cap, requests naming a steady stream
-    // of unique names would grow this process-global map without limit.
-    // Past the cap, a new name just isn't cached — it costs a repeat lookup
-    // on every use rather than evicting an already-cached real model.
-    constexpr std::size_t kMaxCachedCandidates = 4096;
+    // discovery, on-disk edit) instead of only on restart. Bounded (see
+    // kMaxCachedCandidates above); past the cap, a new name just isn't
+    // cached — it costs a repeat lookup on every use rather than evicting an
+    // already-cached real model.
     static std::mutex cache_mu;
     static std::map<std::string, CostInfo> cache;
     static uint64_t cached_generation = 0;
