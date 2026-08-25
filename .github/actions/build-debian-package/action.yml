@@ -22,14 +22,10 @@ runs:
   using: composite
   steps:
     - name: Install build dependencies
-      shell: bash
-      run: |
-        set -e
-        if [ "${{ inputs.arch-only }}" = "true" ]; then
-          apt-get update && apt-get build-dep --arch-only . -y
-        else
-          apt-get update && apt-get build-dep . -y
-        fi
+      uses: ./.github/actions/retry-apt-get
+      with:
+        command: >-
+          ${{ inputs.arch-only == 'true' && 'build-dep --arch-only . -y' || 'build-dep . -y' }}
 
     - name: Build Debian package
       id: build
