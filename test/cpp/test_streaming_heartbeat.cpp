@@ -10,6 +10,11 @@
 
 using namespace std::chrono_literals;
 
+// Heartbeats are emitted from libcurl's CURLOPT_XFERINFOFUNCTION progress
+// callback, which libcurl invokes only about once per second.
+static constexpr auto kIdleWindow = 4000ms;
+static constexpr long kHeartbeatIntervalMs = 250;
+
 static int g_failures = 0;
 
 static void check(bool condition, const char* name) {
@@ -33,7 +38,7 @@ static void test_heartbeat_emission_during_prefill() {
             res.set_chunked_content_provider(
                 "text/event-stream",
                 [&](size_t, httplib::DataSink& sink) {
-                    const auto deadline = std::chrono::steady_clock::now() + 2200ms;
+                    const auto deadline = std::chrono::steady_clock::now() + kIdleWindow;
                     while (std::chrono::steady_clock::now() < deadline) {
                         if (release_backend.load(std::memory_order_acquire)) {
                             return false;
@@ -98,7 +103,7 @@ static void test_heartbeat_emission_during_prefill() {
         },
         10,
         nullptr,
-        1000
+        kHeartbeatIntervalMs
     );
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -112,7 +117,8 @@ static void test_heartbeat_emission_during_prefill() {
     check(data_chunk_count == 1, "data chunk received intact after prefill");
     check(done_count == 1, "done marker received");
     check(telemetry_result.error_message.empty(), "stream completed without error");
-    check(telemetry_result.time_to_first_token >= 2.0, "telemetry TTFT measured accurately");
+    const double min_ttft = std::chrono::duration<double>(kIdleWindow).count() * 0.8;
+    check(telemetry_result.time_to_first_token >= min_ttft, "telemetry TTFT measured accurately");
 
     std::printf(
         "Prefill test completed in %lld ms with %d heartbeats\n",
@@ -131,7 +137,7 @@ static void test_heartbeat_emission_during_pause_between_tokens() {
                     const std::string chunk1 = "data: {\"choices\":[{\"delta\":{\"content\":\"Chunk1\"}}]}\n\n";
                     sink.write(chunk1.data(), chunk1.size());
 
-                    const auto deadline = std::chrono::steady_clock::now() + 2200ms;
+                    const auto deadline = std::chrono::steady_clock::now() + kIdleWindow;
                     while (std::chrono::steady_clock::now() < deadline) {
                         if (release_backend.load(std::memory_order_acquire)) {
                             return false;
@@ -191,7 +197,7 @@ static void test_heartbeat_emission_during_pause_between_tokens() {
         },
         10,
         nullptr,
-        1000
+        kHeartbeatIntervalMs
     );
 
     release_backend.store(true, std::memory_order_release);
@@ -262,7 +268,7 @@ static void test_heartbeat_client_disconnect_aborts_upstream() {
         },
         10,
         nullptr,
-        1000
+        kHeartbeatIntervalMs
     );
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
