@@ -401,6 +401,9 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--sdcpp BACKEND` | SD.cpp backend to use | Auto-detected |
 | `--sdcpp-args ARGS` | Custom arguments to pass to sd-server (must not conflict with managed args) | `""` |
+| `--diffusion-fa BOOL` | Enable fused-attention | `false` |
+| `--diffusion-conv-direct BOOL` | Enable direct convolution | `false` |
+| `--vae-conv-direct BOOL` | Enable VAE direct convolution | `false` |
 
 #### FastFlowLM NPU (`flm` recipe)
 

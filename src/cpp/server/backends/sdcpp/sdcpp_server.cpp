@@ -1,5 +1,6 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -16,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <map>
 #include <random>
 #include <sstream>
 #include <set>
@@ -197,7 +199,8 @@ void SDServer::load(const std::string& model_name,
         backend = supported.backends.empty() ? "cpu" : supported.backends[0];
     }
     std::string resolved_backend = resolve_sdcpp_backend(backend);
-    std::string sdcpp_args = options.get_option("sdcpp_args");
+
+    std::string sdcpp_args = build_merged_sdcpp_args(options, backend);
 
     RuntimeConfig::validate_backend_choice("sdcpp", backend);
 
@@ -258,13 +261,6 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    if (resolved_backend == "vulkan") {
-        LOG(INFO, "SDServer")
-            << "Applying Vulkan SD workaround: --vae-tiling --diffusion-fa"
-            << std::endl;
-        args.push_back("--vae-tiling");
-        args.push_back("--diffusion-fa");
-    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -511,6 +507,94 @@ std::string SDServer::resolve_size(const json& request) const {
     int h = static_cast<int>(recipe_options_.get_option("height"));
     if (w <= 0 || h <= 0) return "";
     return std::to_string(w) + "x" + std::to_string(h);
+}
+
+std::string SDServer::build_merged_sdcpp_args(
+    const RecipeOptions& options, const std::string& backend) const {
+    const auto* desc = backends::descriptor_for("sd-cpp");
+    if (!desc) return options.get_option("sdcpp_args");
+
+    struct BoolOption {
+        std::string name;
+        std::string cli_flag;
+    };
+    std::vector<BoolOption> bool_opts;
+    for (const auto& opt : desc->options) {
+        if (opt.type_name == "BOOL" && !opt.cli_flag.empty()) {
+            bool_opts.push_back({opt.name, opt.cli_flag});
+        }
+    }
+    if (bool_opts.empty()) {
+        return options.get_option("sdcpp_args");
+    }
+
+    std::set<std::string> known_flags;
+    for (const auto& bo : bool_opts) {
+        known_flags.insert(bo.cli_flag);
+    }
+
+    auto is_backend_forced = [&](const std::string& flag) {
+        if (flag == "--diffusion-fa" && backend == "vulkan") return true;
+        if (flag == "--vae-tiling" && backend == "vulkan") return true;
+        return false;
+    };
+
+    // --vae-tiling is Vulkan-only and not a user-exposed option; inject it here
+    // rather than as a descriptor BOOL so it stays backend-gated.
+    auto effective_bool_opts = bool_opts;
+    if (backend == "vulkan") {
+        effective_bool_opts.push_back({"__vae_tiling", "--vae-tiling"});
+        known_flags.insert("--vae-tiling");
+    }
+
+    // Legacy configs spell boolean options directly in sdcpp_args
+    // (e.g. "--diffusion-fa"); remember them so they survive the rebuild.
+    // A spelled boolean flag is dropped together with its value so the value
+    // doesn't survive as a stray argument.
+    std::string recipe_args = options.get_option("sdcpp_args");
+    auto all_tokens = lemon::utils::parse_custom_args(recipe_args, true);
+    std::vector<std::string> other_args;
+    std::map<std::string, bool> spelled_flags;
+    for (size_t i = 0; i < all_tokens.size(); ++i) {
+        const auto& token = all_tokens[i];
+        if (known_flags.find(token) != known_flags.end()) {
+            bool enabled = true;
+            if (i + 1 < all_tokens.size() && all_tokens[i + 1][0] != '-') {
+                const auto& value = all_tokens[i + 1];
+                enabled = value != "0" && value != "false";
+                ++i;
+            }
+            spelled_flags[token] = enabled;
+        } else {
+            other_args.push_back(token);
+        }
+    }
+
+    // A spelled-out flag overrides the typed option for backward compatibility.
+    std::vector<std::string> merged_list = other_args;
+    for (const auto& bo : effective_bool_opts) {
+        bool enabled = false;
+        if (bo.name == "__vae_tiling") {
+            enabled = true;  // always on for Vulkan (backend-forced)
+        } else {
+            auto opt_val = options.get_option(bo.name);
+            enabled = opt_val.is_boolean() && opt_val.get<bool>();
+        }
+        auto spelled_it = spelled_flags.find(bo.cli_flag);
+        if (spelled_it != spelled_flags.end()) {
+            enabled = spelled_it->second;
+        }
+        if (is_backend_forced(bo.cli_flag)) enabled = true;
+        if (enabled) merged_list.push_back(bo.cli_flag);
+    }
+
+    std::string merged;
+    for (size_t i = 0; i < merged_list.size(); ++i) {
+        if (i > 0) merged += " ";
+        merged += merged_list[i];
+    }
+
+    return merged;
 }
 
 // ICompletionServer implementation - not supported for image generation

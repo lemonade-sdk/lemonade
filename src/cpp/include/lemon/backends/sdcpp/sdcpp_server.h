@@ -64,6 +64,12 @@ private:
     // OpenAI-style `size: "WxH"` field -- top-level width/height are ignored.
     // Returns "" if no size can be resolved.
     std::string resolve_size(const nlohmann::json& request) const;
+
+    // Merge boolean recipe options into sdcpp_args. Legacy sdcpp_args spellings
+    // of BOOL flags are preserved (unless given an explicit false value), and
+    // backend-forced flags (--diffusion-fa, --vae-tiling for Vulkan) always win.
+    std::string build_merged_sdcpp_args(const RecipeOptions& options,
+                                        const std::string& backend) const;
 };
 
 namespace sdcpp {
