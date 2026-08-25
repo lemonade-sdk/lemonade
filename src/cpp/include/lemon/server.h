@@ -310,14 +310,19 @@ private:
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
     // Auto-upscale the response image(s) if the source model has an "upscale_model"
-    // recipe option configured. Images that fail to upscale are returned unchanged
-    // (original resolution), so a transient upscale failure never discards a
-    // successful generation. If skip_upscale_request is true, skip auto-upscale even
-    // if configured (per-request override).
+    // recipe option configured, or if upscale_model_override names one (per-request
+    // selection across either backend). Images that fail to upscale are returned
+    // unchanged (original resolution), so a transient upscale failure never discards
+    // a successful generation. If skip_upscale_request is true, skip auto-upscale even
+    // if configured (per-request override). upscale_requested marks that the caller
+    // explicitly asked for upscaling (legacy `upscale=true`), so a missing upscaler
+    // is logged rather than passed over silently.
     void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
-        bool skip_upscale_request = false);
+        bool skip_upscale_request = false,
+        const std::string& upscale_model_override = "",
+        bool upscale_requested = false);
 
     // Internal helper: resolve upscale model path, pick backend, run sd-cli.
     // Returns the upscaled base64 image on success, or std::nullopt on failure
