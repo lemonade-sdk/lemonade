@@ -2990,13 +2990,10 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["system_prompt"] = info.system_prompt;
     }
 
-    for (const char* key : {
-             "pcm_sample_rate",
-             "pcm_channels"}) {
-        auto it = info.extras.find(key);
-        if (it != info.extras.end() && !it->second.is_null()) {
-            model_json[key] = it->second;
-        }
+    auto audio_defaults = info.extras.find("audio_defaults");
+    if (audio_defaults != info.extras.end() &&
+        audio_defaults->second.is_object()) {
+        model_json["audio_defaults"] = audio_defaults->second;
     }
 
     // Add image_defaults if present (for sd-cpp models)

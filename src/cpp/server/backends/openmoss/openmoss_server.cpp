@@ -186,10 +186,16 @@ void OpenMossServer::load(const std::string& model_name,
     if (!voicegen_path_.empty() && !std::filesystem::exists(voicegen_path_)) {
         voicegen_path_.clear();
     }
-    pcm_sample_rate_.store(model_info.extra<int>("pcm_sample_rate", 0),
-                           std::memory_order_release);
-    pcm_channels_.store(model_info.extra<int>("pcm_channels", 0),
-                        std::memory_order_release);
+    const json audio_defaults =
+        model_info.extra<json>("audio_defaults", json::object());
+    pcm_sample_rate_.store(
+        utils::JsonUtils::get_or_default<int>(
+            audio_defaults, "pcm_sample_rate", 0),
+        std::memory_order_release);
+    pcm_channels_.store(
+        utils::JsonUtils::get_or_default<int>(
+            audio_defaults, "pcm_channels", 0),
+        std::memory_order_release);
     reference_cache_.clear();
 
     start_speech_process();

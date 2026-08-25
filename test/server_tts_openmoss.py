@@ -425,16 +425,20 @@ class OpenMossTTSTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200, response.text[:1000])
         model = response.json()
+        audio_defaults = model.get("audio_defaults", {})
+        self.assertIsInstance(audio_defaults, dict)
         self.assertEqual(
-            model.get("pcm_sample_rate"),
+            audio_defaults.get("pcm_sample_rate"),
             48000,
             "MOSS-TTS-Local must export its native 48 kHz PCM rate",
         )
         self.assertEqual(
-            model.get("pcm_channels"),
+            audio_defaults.get("pcm_channels"),
             2,
             "MOSS-TTS-Local must export its native stereo PCM layout",
         )
+        self.assertNotIn("pcm_sample_rate", model)
+        self.assertNotIn("pcm_channels", model)
 
     def test_016_default_launch_does_not_force_large_context(self):
         """Default TTS launch must leave n_ctx to OpenMOSS v0.3 (8192)."""

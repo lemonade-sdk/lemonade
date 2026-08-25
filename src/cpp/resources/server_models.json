@@ -2121,8 +2121,10 @@
             "tts"
         ],
         "size": 12.5,
-        "pcm_sample_rate": 24000,
-        "pcm_channels": 1
+        "audio_defaults": {
+            "pcm_sample_rate": 24000,
+            "pcm_channels": 1
+        }
     },
     "MOSS-TTS-Local": {
         "checkpoints": {
@@ -2137,8 +2139,10 @@
             "tts"
         ],
         "size": 8.5,
-        "pcm_sample_rate": 48000,
-        "pcm_channels": 2
+        "audio_defaults": {
+            "pcm_sample_rate": 48000,
+            "pcm_channels": 2
+        }
     },
     "MOSS-VoiceGen": {
         "checkpoints": {
@@ -2152,8 +2156,10 @@
             "voice-design"
         ],
         "size": 7.3,
-        "pcm_sample_rate": 24000,
-        "pcm_channels": 1
+        "audio_defaults": {
+            "pcm_sample_rate": 24000,
+            "pcm_channels": 1
+        }
     },
     "MOSS-SoundEffect": {
         "checkpoints": {
@@ -2166,8 +2172,10 @@
             "audio-generation"
         ],
         "size": 6.6,
-        "pcm_sample_rate": 48000,
-        "pcm_channels": 1
+        "audio_defaults": {
+            "pcm_sample_rate": 48000,
+            "pcm_channels": 1
+        }
     },
     "Anima-Base": {
         "checkpoints": {
