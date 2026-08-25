@@ -78,19 +78,21 @@ While each maintainer is welcome to work on any part of the Lemonade codebase, e
 
 "Admin maintainer" means that individual is a repository admin who can tag releases and take other administrative actions.
 
-| Maintainer      | Admin | Subject Areas                                                                                                                                    |
-|-----------------|-------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| @jeremyfowers   | Yes   | new endpoints, new backends, large new features, GUI design language, new CLI commands, website, governance, Lemonade Mix (LMX) omni models, ci  |
-| @kenvandine     | Yes   | snaps, linux, new backends, hardware vendor support, Nvidia CUDA, ARM                                                                            |
-| @ramkrishna2910 | Yes   | new backends, new modalities, vLLM, whisper, stable diffusion, smart router and orchestration, cloud API integration, external partnerships, NPU |
-| @superm1        | Yes   | ROCm, linux packaging, system info, security, Docker, containers, llamacpp, NPU , FastFlowLM                                                     |
-| @abn            |       | telemetry, sandboxing, http                                                                                                                      |
-| @bitgamma       |       | thenoise, cli, recipes, new backends, benchmarking, new models                                                                                   |
-| @fl0rianr       |       | Lemonade Mix (LMX) omni models, GUI, ci                                                                                                          |
-| @Geramy         |       | sockets, tcp/ip, udp, named pipes, mac, security, Nexus mesh compute                                                                             |
-| @kpoineal       |       | GUI, app, a11y, Windows, LemonAIde                                                                                                               |
-| @pwilkin        |       | Trellis, OpenMOSS, ACE-Step, ThinkSound, llamacpp                                                                                                |
-| @sawansri       |       | agents, tui, cli, new backends, launch, vLLM, new models                                                                                                                 |
-| @siavashhub     |       | MCP, chat repl, Docker, containers                                                                                                               |
-| @sofiageo       |       | linux packaging, flatpak, GUI design language, benchmarking                                                                                      |
-| @valiabhay      |       | Fedora                                                                                                                                           |
+| Maintainer        | Admin | Subject Areas                                                                                                                                    |
+|-------------------|-------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| @jeremyfowers     | Yes   | new endpoints, new backends, large new features, GUI design language, new CLI commands, website, governance, Lemonade Mix (LMX) omni models, ci  |
+| @kenvandine       | Yes   | snaps, linux, new backends, hardware vendor support, Nvidia CUDA, ARM                                                                            |
+| @ramkrishna2910   | Yes   | new backends, new modalities, vLLM, whisper, stable diffusion, smart router and orchestration, cloud API integration, external partnerships, NPU |
+| @superm1          | Yes   | ROCm, linux packaging, system info, security, Docker, containers, llamacpp, NPU , FastFlowLM                                                     |
+| @abn              |       | telemetry, sandboxing, http                                                                                                                      |
+| @bitgamma         |       | thenoise, cli, recipes, new backends, benchmarking, new models                                                                                   |
+| @eddierichter-amd |       | smart router                                                                                                                                     |
+| @fl0rianr         |       | Lemonade Mix (LMX) omni models, GUI, ci, smart router                                                                                            |
+| @Geramy           |       | sockets, tcp/ip, udp, named pipes, mac, security, Nexus mesh compute                                                                             |
+| @kpoineal         |       | GUI, app, a11y, Windows, LemonAIde                                                                                                               |
+| @pwilkin          |       | Trellis, OpenMOSS, ACE-Step, ThinkSound, llamacpp                                                                                                |
+| @sawansri         |       | agents, tui, cli, new backends, launch, vLLM, new models                                                                                         |
+| @siavashhub       |       | MCP, chat repl, Docker, containers                                                                                                               |
+| @SlawomirNowaczyk |       | smart router                                                                                                                                     |
+| @sofiageo         |       | linux packaging, flatpak, GUI design language, benchmarking                                                                                      |
+| @valiabhay        |       | Fedora                                                                                                                                           |
