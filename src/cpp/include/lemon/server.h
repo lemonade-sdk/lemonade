@@ -314,15 +314,12 @@ private:
     // selection across either backend). Images that fail to upscale are returned
     // unchanged (original resolution), so a transient upscale failure never discards
     // a successful generation. If skip_upscale_request is true, skip auto-upscale even
-    // if configured (per-request override). upscale_requested marks that the caller
-    // explicitly asked for upscaling (legacy `upscale=true`), so a missing upscaler
-    // is logged rather than passed over silently.
+    // if configured (per-request override).
     void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
         bool skip_upscale_request = false,
-        const std::string& upscale_model_override = "",
-        bool upscale_requested = false);
+        const std::string& upscale_model_override = "");
 
     // Internal helper: resolve upscale model path, pick backend, run sd-cli.
     // Returns the upscaled base64 image on success, or std::nullopt on failure
