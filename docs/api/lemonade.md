@@ -11,6 +11,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 |--------|----------|-------------|
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `POST` | [`/v1/models/register`](#post-v1modelsregister) | Register or update a user model definition without downloading it |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Evaluate an ad-hoc routing policy against a prompt without registering it |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
 | `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
@@ -20,7 +21,6 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/classify`](#post-v1classify) | Classify input text with an encoder classifier (label scores) |
-| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Evaluate an ad-hoc routing policy against a prompt without registering it |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
@@ -151,7 +151,7 @@ The endpoint is available at:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `policy` | object | yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). |
-| `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars`/`metadata` rules. |
+| `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. |
 | `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
 | `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
 | `metadata` | object | no | String-valued metadata pairs matched by `metadata` conditions. |
@@ -196,7 +196,22 @@ curl -X POST http://localhost:13305/api/v1/routing/validate \
       { "condition": "keywords_any", "result": true }
     ]
   },
-  "normalized_policy": { }
+  "normalized_policy": {
+    "version": "1",
+    "recipe": "collection.router",
+    "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "routing": {
+      "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+      "default_model": "Qwen3-8B-GGUF",
+      "rules": [
+        {
+          "id": "code-to-big",
+          "match": {"keywords_any": ["def ", "function", "compile"]},
+          "route_to": "vllm.qwen3-32b"
+        }
+      ]
+    }
+  }
 }
 ```
 
@@ -205,11 +220,57 @@ completion returns with `route_trace: true`, and the trace is always included
 here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
 and `route_to` is the policy's `default_model`.
 
-`normalized_policy` echoes the policy as it was actually evaluated, with any
-`routing.router` shorthand desugared into the explicit `classifiers`/`rules` it
-expands to (generated rules are named `__route_0`, `__route_1`, …). Match
-`decision.matched_rule` against this document rather than the one you sent — a
-policy authored with only `routing.router` has no `routing.rules` of its own.
+`normalized_policy` echoes the policy as it was actually evaluated. The policy
+above uses explicit `routing.rules`, so it comes back unchanged. The field earns
+its place when a policy uses the `routing.router` shorthand: that sugar is
+desugared into an explicit `llm` classifier plus one identity rule per
+candidate, so a `routing` block authored as:
+
+```json
+{
+  "router": {
+    "type": "llm",
+    "model": "Qwen3-8B-GGUF",
+    "prompt": "Pick the best model for this request."
+  },
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF"
+}
+```
+
+is echoed back with `router` removed and synthesized `classifiers`/`rules`:
+
+```json
+{
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF",
+  "classifiers": [
+    {
+      "id": "__router",
+      "type": "llm",
+      "model": "Qwen3-8B-GGUF",
+      "prompt": "Pick the best model for this request.",
+      "labels": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "__route_0",
+      "match": {"classifier": "__router", "label": "Qwen3-8B-GGUF", "min_score": 1.0},
+      "route_to": "Qwen3-8B-GGUF"
+    },
+    {
+      "id": "__route_1",
+      "match": {"classifier": "__router", "label": "vllm.qwen3-32b", "min_score": 1.0},
+      "route_to": "vllm.qwen3-32b"
+    }
+  ]
+}
+```
+
+Match `decision.matched_rule` against this document rather than the one you
+sent — a policy authored with only `routing.router` has no `routing.rules` of
+its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
 
 ### Error responses
 
