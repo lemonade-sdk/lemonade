@@ -3110,8 +3110,10 @@ endif()
 # ds4 install params: upstream ds4 ships no binaries, so assets come from
 # lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
 # plus the detected ISA. Only gfx1151 is validated upstream.
+# Linux-gated: ds4 publishes no build for any other OS, so get_install_params
+# throws on the host and the test aborts rather than reporting a failure.
 set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
-if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
     add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
     target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
     add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
