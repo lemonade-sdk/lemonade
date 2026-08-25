@@ -18,6 +18,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <random>
 #include <regex>
 #include <sstream>
@@ -473,6 +474,20 @@ void VLLMServer::load(const std::string& model_name,
     if (launch_policy.cap_kv_cache) {
         args.push_back("--kv-cache-memory-bytes");
         args.push_back("4G");
+
+        // The cap above bounds what vLLM uses, but not what it demands be free before it
+        // will start. Track the free share of the pool so a co-tenant process can't
+        // reject a model that fits.
+        const double utilization =
+            shared_memory_gpu_utilization(SystemInfo::get_global_vram_usage_pct());
+        if (utilization > 0.0) {
+            std::ostringstream formatted;
+            formatted << std::fixed << std::setprecision(2) << utilization;
+            LOG(DEBUG, "vLLM") << "Scaling --gpu-memory-utilization to "
+                               << formatted.str() << " for available memory" << std::endl;
+            args.push_back("--gpu-memory-utilization");
+            args.push_back(formatted.str());
+        }
     }
 
     // Emitted as its own argv element, never through vllm_args: that tokenizer strips quotes

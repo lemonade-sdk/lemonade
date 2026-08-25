@@ -356,5 +356,25 @@ DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
     };
 }
 
+double shared_memory_gpu_utilization(double global_vram_usage_pct) {
+    // vLLM refuses to start unless `gpu_memory_utilization` of the *total* pool is free,
+    // a pre-flight check the kv-cache cap does not relax. On a device whose memory is
+    // shared with the rest of the system, scaling the request down to what is actually
+    // free keeps a co-tenant process from blocking a model that comfortably fits.
+    constexpr double vllm_default = 0.92;
+    constexpr double headroom = 0.05;
+    constexpr double minimum = 0.10;
+
+    // Rejects NaN as well as out-of-range readings.
+    if (!(global_vram_usage_pct >= 0.0) || global_vram_usage_pct > 1.0) {
+        return -1.0;
+    }
+    const double available = 1.0 - global_vram_usage_pct - headroom;
+    if (available >= vllm_default) {
+        return -1.0;
+    }
+    return std::max(minimum, available);
+}
+
 } // namespace backends
 } // namespace lemon

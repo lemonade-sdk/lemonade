@@ -43,5 +43,10 @@ DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
                                                    bool has_memory_budget_arg,
                                                    bool has_enforce_eager = false);
 
+// The --gpu-memory-utilization to emit alongside the shared-memory kv-cache cap, or a
+// negative value to leave vLLM's own default in place. `global_vram_usage_pct` is
+// used/total in [0, 1] (SystemInfo::get_global_vram_usage_pct), or negative if unknown.
+double shared_memory_gpu_utilization(double global_vram_usage_pct);
+
 } // namespace backends
 } // namespace lemon

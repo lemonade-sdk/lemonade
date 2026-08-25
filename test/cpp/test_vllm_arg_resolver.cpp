@@ -4,6 +4,7 @@
 
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
 
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <string>
@@ -11,6 +12,7 @@
 
 using lemon::backends::VLLMArgResolution;
 using lemon::backends::resolve_vllm_args;
+using lemon::backends::shared_memory_gpu_utilization;
 using nlohmann::json;
 
 static json test_config() {
@@ -111,6 +113,15 @@ static bool expect_error(const char* name,
 
     std::printf("[FAIL] %s\n  expected error containing: %s\n", name, expected_substring.c_str());
     return false;
+}
+
+static bool expect_utilization(const char* name, double usage_pct, double expected) {
+    double actual = shared_memory_gpu_utilization(usage_pct);
+    // A negative expectation only asserts "omit the flag", not an exact value.
+    bool ok = expected < 0.0 ? actual < 0.0 : std::fabs(actual - expected) < 1e-9;
+    std::printf("[%s] %s\n  got:  %.4f\n  want: %.4f\n",
+                ok ? "PASS" : "FAIL", name, actual, expected);
+    return ok;
 }
 
 int main() {
@@ -316,6 +327,24 @@ int main() {
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--quantization gptq"),
         true,
         "gptq");
+
+    // shared_memory_gpu_utilization scales vLLM's startup free-memory demand to what is
+    // actually free, so a co-tenant process cannot reject a model that fits.
+    failures += !expect_utilization(
+        "an idle pool leaves vLLM's own default in place", 0.02, -1.0);
+
+    failures += !expect_utilization(
+        "no usable reading leaves vLLM's own default in place", -1.0, -1.0);
+
+    failures += !expect_utilization(
+        "an out-of-range reading leaves vLLM's own default in place", 1.5, -1.0);
+
+    // The gfx1151 CI case: ~4.9 of 32 GiB held by another process.
+    failures += !expect_utilization(
+        "a busy pool scales the request below what is free", 0.154, 1.0 - 0.154 - 0.05);
+
+    failures += !expect_utilization(
+        "an exhausted pool clamps to the floor rather than going negative", 1.0, 0.10);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
