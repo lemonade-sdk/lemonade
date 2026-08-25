@@ -27,6 +27,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/models/{id}/options`](#get-v1modelsidoptions) | Read a model's saved, effective, and default recipe options |
 | `POST` | [`/v1/models/{id}/options`](#post-v1modelsidoptions) | Save recipe options for a model without loading it |
 | `DELETE` | [`/v1/models/{id}/options`](#delete-v1modelsidoptions) | Reset a model's recipe options to defaults |
+| `GET` | [`/v1/docs`](#get-v1docs) | Read this API reference from the running server |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -1404,6 +1405,48 @@ curl -X POST http://localhost:13305/v1/3d/generations \
       }" \
   --output model.glb
 ```
+
+## `GET /v1/docs`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Return the Lemonade-specific API reference as markdown. The documentation is bundled with the server, so it describes the version you are actually running and requires no internet access.
+
+The response concatenates this page with the llama.cpp-specific and MCP gateway references. The OpenAI- and Ollama-compatible surfaces are omitted, since those are documented by their respective upstream projects.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/docs
+```
+
+### Response format
+
+Markdown text, served as `Content-Type: text/markdown`, beginning with a version header:
+
+```markdown
+# Lemonade Server API Reference (11.7.0)
+
+# Lemonade API
+...
+```
+
+### Reading the files directly
+
+The same files are installed on disk, so they can be read without a running server:
+
+| Platform | Path |
+|----------|------|
+| Windows (per-user) | `%LOCALAPPDATA%\lemonade_server\bin\resources\api-docs\` |
+| Windows (all users) | `C:\Program Files\Lemonade Server\bin\resources\api-docs\` |
+| macOS | `/Library/Application Support/Lemonade/resources/api-docs/` |
+| Linux (local) | `/usr/local/share/lemonade-server/resources/api-docs/` |
+| Linux (system) | `/usr/share/lemonade-server/resources/api-docs/` |
+| Linux (optional prefix) | `/opt/share/lemonade-server/resources/api-docs/` |
+| Linux (per-user) | `~/.local/share/lemonade-server/resources/api-docs/` |
 
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

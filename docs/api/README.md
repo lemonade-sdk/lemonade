@@ -18,3 +18,5 @@ This spec details all supported endpoints. It is organized into pages that corre
 | [MCP Gateway](./mcp.md) | Use this to expose Lemonade as a Model Context Protocol server (POST /mcp). |
 | [llama.cpp-Specific API](./llamacpp.md) | Reference for llama.cpp-specific compatibility and conventions. |
 | [Lemonade-Specific API](./lemonade.md) | Local-first API for managing lifecycle, configuration, backends, etc. |
+
+A running server also serves the Lemonade-specific pages of this spec at [`GET /v1/docs`](./lemonade.md#get-v1docs), so the reference always matches the installed version and stays available offline.
