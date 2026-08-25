@@ -15,6 +15,7 @@
 #include "lemon/mcp_server.h"
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -235,7 +236,8 @@ bool is_quiet_polling_path(const std::string& path) {
            path == "/api/v0/system-stats" || path == "/api/v1/system-stats" ||
            path == "/v0/system-stats" || path == "/v1/system-stats" ||
            path == "/api/v0/stats" || path == "/api/v1/stats" ||
-           path == "/v0/stats" || path == "/v1/stats";
+           path == "/v0/stats" || path == "/v1/stats" ||
+           path == "/internal/models/sync" || path == "/internal/models/sync/status";
 }
 
 std::string join_warnings(const std::vector<std::string>& warnings) {
@@ -360,9 +362,12 @@ static const json MIME_TYPES = {
     {"pcm",  "audio/l16;rate=24000;endianness=little-endian"}
 };
 
-Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
+Server::Server(std::shared_ptr<RuntimeConfig> config,
+               const std::string& cache_dir,
+               const std::string& config_dir)
     : config_(config),
       cache_dir_(cache_dir),
+      config_dir_(config_dir),
       port_(config->port()), running_(false), udp_beacon_(),
       metrics_platform_(create_metrics_platform()) {
 
@@ -410,6 +415,12 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
     const std::set<std::string> seed_needed = active_policy_helper_models();
     router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
+    model_manager_->set_model_updated_callback([this](const std::string& model_name) {
+        if (router_ && router_->is_model_loaded(model_name)) {
+            LOG(INFO, "Server") << "Evicting updated model from memory: " << model_name << std::endl;
+            router_->unload_model(model_name);
+        }
+    });
     {
         lemon::jobs::OpProviders providers;
         struct JobModelState {
@@ -634,7 +645,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             job_states->erase(job_id);
         };
         job_manager_ = std::make_unique<lemon::jobs::JobManager>(
-            lemon::utils::get_cache_dir(), lemon::jobs::build_op_registry(std::move(providers)));
+            cache_dir_, config_dir_, lemon::jobs::build_op_registry(std::move(providers)));
     }
 
     LOG(DEBUG, "Server") << "Debug logging enabled - subprocess output will be visible" << std::endl;
@@ -680,8 +691,30 @@ void Server::start_model_cache_warmup() {
         if (config_->auto_check_model_updates()) {
             try {
                 LOG(DEBUG, "Server") << "Checking downloaded models for updates..." << std::endl;
-                (void)model_manager_->check_for_model_updates();
+                auto check_res = model_manager_->check_for_model_updates();
                 LOG(DEBUG, "Server") << "Model update check complete" << std::endl;
+
+                for (const auto& [model_name, err] : check_res.failed_models) {
+                    LOG(WARNING, "Server") << "Model update check failed for " << model_name << ": " << err << std::endl;
+                }
+
+                std::vector<std::string> auto_update_targets;
+                for (const auto& public_name : check_res.updated_models) {
+
+                    try {
+                        std::string canonical_name = model_manager_->resolve_model_name(public_name);
+                        ModelInfo info = model_manager_->get_model_info(canonical_name);
+                        if (model_manager_->should_auto_update(info)) {
+                            auto_update_targets.push_back(public_name);
+                        }
+                    } catch (...) {}
+                }
+
+
+                if (!auto_update_targets.empty()) {
+                    LOG(INFO, "Server") << "Auto-updating " << auto_update_targets.size() << " model(s)..." << std::endl;
+                    (void)model_manager_->sync_models(auto_update_targets, /*dry_run=*/false);
+                }
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Model update check failed: " << e.what() << std::endl;
             } catch (...) {
@@ -786,8 +819,24 @@ void Server::stop_http_listeners() {
 
 Server::~Server() {
     cancel_download_jobs();
+    if (model_manager_) {
+        model_manager_->cancel_sync();
+    }
     stop();
+    if (model_cache_warmup_thread_.joinable()) {
+        model_cache_warmup_thread_.join();
+    }
+
+    std::lock_guard<std::mutex> lock(background_sync_mutex_);
+    for (auto& entry : background_sync_threads_) {
+        if (entry.thread.joinable()) {
+            entry.thread.join();
+        }
+    }
+    background_sync_threads_.clear();
 }
+
+
 
 namespace {
 
@@ -882,6 +931,84 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
             telemetry::g_incoming_trace_id = trace_id;
             telemetry::g_incoming_parent_span_id = parent_id;
         }
+    }
+
+    telemetry::g_incoming_client_id.clear();
+    telemetry::g_incoming_session_id.clear();
+
+    auto trim = [](const std::string& str) -> std::string {
+        size_t s = str.find_first_not_of(" \t\r\n");
+        if (s == std::string::npos) return "";
+        size_t e = str.find_last_not_of(" \t\r\n");
+        return str.substr(s, e - s + 1);
+    };
+
+    std::string client_val;
+    if (config_) {
+        for (const auto& hdr : config_->telemetry_session_headers_client()) {
+            std::string cleaned_hdr = trim(hdr);
+            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
+                std::string val = trim(req.get_header_value(cleaned_hdr));
+                if (!val.empty()) {
+                    client_val = val;
+                    break;
+                }
+            }
+        }
+    }
+    if (client_val.empty()) {
+        static const char* kWellKnownClientHeaders[] = {
+            "x-opencode-client",
+            "x-client-id",
+            "x-client-name"
+        };
+        for (const char* hdr : kWellKnownClientHeaders) {
+            if (req.has_header(hdr)) {
+                std::string val = trim(req.get_header_value(hdr));
+                if (!val.empty()) {
+                    client_val = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    std::string session_val;
+    if (config_) {
+        for (const auto& hdr : config_->telemetry_session_headers_id()) {
+            std::string cleaned_hdr = trim(hdr);
+            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
+                std::string val = trim(req.get_header_value(cleaned_hdr));
+                if (!val.empty()) {
+                    session_val = val;
+                    break;
+                }
+            }
+        }
+    }
+    if (session_val.empty()) {
+        static const char* kWellKnownSessionHeaders[] = {
+            "x-opencode-session",
+            "x-session-id",
+            "x-client-session-id",
+            "mcp-session-id",
+            "x-conversation-id",
+            "session-id"
+        };
+        for (const char* hdr : kWellKnownSessionHeaders) {
+            if (req.has_header(hdr)) {
+                std::string val = trim(req.get_header_value(hdr));
+                if (!val.empty()) {
+                    session_val = val;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!session_val.empty()) {
+        telemetry::g_incoming_client_id = client_val;
+        telemetry::g_incoming_session_id = session_val;
     }
 
     // Check if path requires authentication (API routes and internal endpoints).
@@ -1344,6 +1471,12 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Post("/internal/simulate-vram-pressure", [this](const httplib::Request& req, httplib::Response& res) {
         handle_simulate_vram_pressure(req, res);
     });
+    web_server.Post("/internal/models/sync", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_models_sync(req, res);
+    });
+    web_server.Get("/internal/models/sync/status", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_models_sync_status(req, res);
+    });
 
     web_server.Get("/internal/aliases", [this](const httplib::Request& req, httplib::Response& res) {
         handle_aliases_get(req, res);
@@ -1358,7 +1491,7 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Server-side MCP client host foundation (admin-gated through the existing
     // /internal/* pre-routing auth). GUI3 and the web UI can both use these
     // endpoints via the normal Lemonade server connection.
-    register_mcp_client_routes(web_server, cache_dir_);
+    register_mcp_client_routes(web_server, cache_dir_, config_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -2173,13 +2306,11 @@ void Server::stop() {
         running_ = false;
         shutdown_requested_ = false;  // Reset for potential future use
 
-        // Stop WebSocket server
         if (websocket_server_) {
             LOG(INFO, "Server") << "Stopping WebSocket server..." << std::endl;
             websocket_server_->stop();
         }
 
-        // Explicitly clean up router (unload models, stop backend servers)
         if (router_) {
             LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
             try {
@@ -2195,8 +2326,22 @@ void Server::stop() {
         LOG(INFO, "Server") << "Cleanup complete" << std::endl;
     }
 
+    if (model_manager_) {
+        model_manager_->cancel_sync();
+    }
+
     if (model_cache_warmup_thread_.joinable()) {
         model_cache_warmup_thread_.join();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(background_sync_mutex_);
+        for (auto& task : background_sync_threads_) {
+            if (task.thread.joinable()) {
+                task.thread.join();
+            }
+        }
+        background_sync_threads_.clear();
     }
 }
 
@@ -2446,12 +2591,13 @@ void Server::ensure_collection_loaded(const ModelInfo& info) {
             comp_info = model_manager_->get_model_info(component);
         }
         LOG(INFO, "Server") << "Loading component: " << component << std::endl;
-        // Per the documented contract, per-model options like ctx_size or
-        // llamacpp_backend are NOT forwarded from the collection's load request
-        // to its components. Each component uses its own saved recipe_options.json
-        // entry.
-        router_->load_model(component, comp_info, comp_info.recipe_options, true,
-                            /*allow_reload_on_option_change=*/true);
+        // The collection load request does not become the component request
+        // layer. Router already reads the component's saved options from comp_info,
+        // so an empty request preserves normal model/architecture/backend scope
+        // semantics.
+        router_->load_model(
+            component, comp_info, RecipeOptions(comp_info.recipe, json::object()), true,
+            /*allow_reload_on_option_change=*/true);
     }
 }
 
@@ -2542,18 +2688,203 @@ void Server::handle_model_update_check(const httplib::Request& req, httplib::Res
     }
 
     try {
-        auto updated_models = model_manager_->check_for_model_updates();
+        auto check_res = model_manager_->check_for_model_updates();
+
         nlohmann::json response = {
-            {"status", "success"},
-            {"updates_available", updated_models.size()},
-            {"models", updated_models}
+            {"status", check_res.failed_models.empty() ? "success" : "failed"},
+            {"updates_available", check_res.updated_models.size()},
+            {"models", check_res.updated_models},
+            {"failed_models", check_res.failed_models}
         };
+
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Manual model update check failed: " << e.what() << std::endl;
         res.status = 500;
         res.set_content(
             nlohmann::json{{"error", std::string("Model update check failed: ") + e.what()}}.dump(),
+            "application/json");
+    }
+}
+
+void Server::handle_models_sync(const httplib::Request& req, httplib::Response& res) {
+    if (config_->offline()) {
+        res.status = 409;
+        res.set_content(
+            nlohmann::json{{"error", "Cannot sync model updates while offline=true"}}.dump(),
+            "application/json");
+        return;
+    }
+
+    std::vector<std::string> target_models;
+    bool dry_run = false;
+    bool async_dispatch = true;
+    bool async_specified = false;
+    bool attach_if_running = false;
+
+    if (!req.body.empty()) {
+        try {
+            auto body_json = nlohmann::json::parse(req.body);
+            if (!body_json.is_object()) {
+                res.status = 400;
+                res.set_content(
+                    nlohmann::json{{"error", "Request body must be a JSON object"}}.dump(),
+                    "application/json");
+                return;
+            }
+            if (body_json.contains("models")) {
+                if (!body_json["models"].is_array()) {
+                    res.status = 400;
+                    res.set_content(
+                        nlohmann::json{{"error", "'models' must be an array of strings"}}.dump(),
+                        "application/json");
+                    return;
+                }
+                for (const auto& item : body_json["models"]) {
+                    if (!item.is_string()) {
+                        res.status = 400;
+                        res.set_content(
+                            nlohmann::json{{"error", "Each item in 'models' must be a string"}}.dump(),
+                            "application/json");
+                        return;
+                    }
+                    target_models.push_back(item.get<std::string>());
+                }
+            }
+            if (body_json.contains("dry_run")) {
+                if (!body_json["dry_run"].is_boolean()) {
+                    res.status = 400;
+                    res.set_content(
+                        nlohmann::json{{"error", "'dry_run' must be a boolean"}}.dump(),
+                        "application/json");
+                    return;
+                }
+                dry_run = body_json["dry_run"].get<bool>();
+            }
+            if (body_json.contains("async")) {
+                if (!body_json["async"].is_boolean()) {
+                    res.status = 400;
+                    res.set_content(
+                        nlohmann::json{{"error", "'async' must be a boolean"}}.dump(),
+                        "application/json");
+                    return;
+                }
+                async_dispatch = body_json["async"].get<bool>();
+                async_specified = true;
+            }
+            if (body_json.contains("attach_if_running")) {
+                if (!body_json["attach_if_running"].is_boolean()) {
+                    res.status = 400;
+                    res.set_content(
+                        nlohmann::json{{"error", "'attach_if_running' must be a boolean"}}.dump(),
+                        "application/json");
+                    return;
+                }
+                attach_if_running = body_json["attach_if_running"].get<bool>();
+            }
+        } catch (const std::exception& e) {
+            res.status = 400;
+            res.set_content(
+                nlohmann::json{{"error", std::string("Invalid JSON body: ") + e.what()}}.dump(),
+                "application/json");
+            return;
+        }
+    }
+
+    if (dry_run) {
+        try {
+            nlohmann::json sync_result = model_manager_->sync_models(target_models, true);
+            res.set_content(sync_result.dump(), "application/json");
+            res.status = 200;
+        } catch (const std::exception& e) {
+            LOG(WARNING, "Server") << "Model sync dry-run failed: " << e.what() << std::endl;
+            res.status = 500;
+            res.set_content(
+                nlohmann::json{{"error", std::string("Model sync dry-run failed: ") + e.what()}}.dump(),
+                "application/json");
+        }
+        return;
+    }
+
+    if (!async_specified || async_dispatch) {
+        auto enqueue_res = model_manager_->enqueue_sync(target_models, attach_if_running);
+        if (enqueue_res.already_running) {
+            nlohmann::json status = model_manager_->get_sync_status(enqueue_res.sync_id);
+            res.set_content(status.dump(), "application/json");
+            res.status = 200;
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(background_sync_mutex_);
+
+        for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end(); ) {
+            if (it->finished->load() && it->thread.joinable()) {
+                it->thread.join();
+                it = background_sync_threads_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        auto finished_flag = std::make_shared<std::atomic<bool>>(false);
+        std::thread worker([this, finished_flag]() {
+            try {
+                LOG(INFO, "Server") << "Background model sync thread started" << std::endl;
+                model_manager_->execute_sync();
+                LOG(INFO, "Server") << "Background model sync thread completed successfully" << std::endl;
+            } catch (const std::exception& e) {
+                LOG(WARNING, "Server") << "Background model sync failed: " << e.what() << std::endl;
+            }
+            finished_flag->store(true);
+        });
+
+        background_sync_threads_.push_back({std::move(worker), finished_flag});
+
+        nlohmann::json dispatched_result = model_manager_->get_sync_status(enqueue_res.sync_id);
+        dispatched_result["message"] = "Model synchronization dispatched in background";
+        dispatched_result["async"] = true;
+        dispatched_result["already_in_progress"] = false;
+        res.set_content(dispatched_result.dump(), "application/json");
+        res.status = 202;
+        return;
+    }
+
+
+    try {
+        nlohmann::json sync_result = model_manager_->sync_models(target_models, false, attach_if_running);
+        res.set_content(sync_result.dump(), "application/json");
+        res.status = 200;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Model sync failed: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(
+            nlohmann::json{{"error", std::string("Model sync failed: ") + e.what()}}.dump(),
+            "application/json");
+    }
+}
+
+void Server::handle_models_sync_status(const httplib::Request& req, httplib::Response& res) {
+    try {
+        uint64_t sync_id = 0;
+        if (req.has_param("sync_id")) {
+            try {
+                sync_id = std::stoull(req.get_param_value("sync_id"));
+            } catch (...) {
+                res.status = 400;
+                res.set_content(
+                    nlohmann::json{{"error", "Invalid sync_id parameter"}}.dump(),
+                    "application/json");
+                return;
+            }
+        }
+        nlohmann::json status = model_manager_->get_sync_status(sync_id);
+        res.set_content(status.dump(), "application/json");
+        res.status = 200;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Failed to get sync status: " << e.what() << std::endl;
+        res.status = 500;
+        res.set_content(
+            nlohmann::json{{"error", std::string("Failed to get sync status: ") + e.what()}}.dump(),
             "application/json");
     }
 }
@@ -2840,6 +3171,32 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
     }
 }
 
+int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) const {
+    // ctx_size stores -1 for "size this automatically", so only a positive
+    // value answers; anything else falls through to the next source.
+    auto ctx_size_of = [](const RecipeOptions& options) -> int64_t {
+        const nlohmann::json ctx_json = options.get_option("ctx_size");
+        return ctx_json.is_number() ? ctx_json.get<int64_t>() : 0;
+    };
+
+    if (router_) {
+        const int64_t loaded_ctx =
+            ctx_size_of(router_->get_model_recipe_options(resolve_alias_target(model_id)));
+        if (loaded_ctx > 0) {
+            return loaded_ctx;
+        }
+
+        const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
+        const int64_t configured_ctx =
+            ctx_size_of(router_->resolve_effective_options(info, no_request_options));
+        if (configured_ctx > 0) {
+            return configured_ctx;
+        }
+    }
+
+    return info.max_context_window > 0 ? info.max_context_window : 0;
+}
+
 // Maximum collection-component nesting depth embedded in "models" arrays.
 // Collection components are normally leaf models, but nothing prevents
 // registering a collection as a component of another collection — including
@@ -2887,6 +3244,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
 
     if (info.max_context_window > 0) {
         model_json["max_context_window"] = info.max_context_window;
+    }
+
+    // OpenAI-compatible clients use context_length to set token limits.
+    const int64_t context_length = resolve_context_length(model_id, info);
+    if (context_length > 0) {
+        model_json["context_length"] = context_length;
     }
 
     // Per-million-token pricing in USD, when the provider reported it (cloud
@@ -3442,6 +3805,11 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         RouteContext ctx;
         ctx.input = prompt;
         ctx.params.chars = prompt.size();
+        // A test prompt is a single turn with no history, so its whole-request
+        // total is the prompt itself — the same equality build_route_context
+        // gives the history-less `prompt` form. Leaving this at 0 would make
+        // every min_total_chars rule silently untestable here.
+        ctx.params.total_chars = prompt.size();
         ctx.params.has_images = has_images;
         ctx.params.has_tools = has_tools;
         ctx.metadata = std::move(metadata);
@@ -3557,7 +3925,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
-        bool request_modified = false;
         std::optional<RouterDispatchResult> route_dispatch;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
@@ -3652,22 +4019,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use original request body - each backend (FLM, llamacpp, etc.) handles
-        // model name transformation internally via their forward methods.
-        // Note: request_json was already normalized at the top of this function
-        std::string request_body = req.body;
-
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
-        request_modified = normalize_thinking_controls(request_json) || request_modified;
-
-        // If we modified the request (or normalized the model name earlier), serialize to string
-        // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
-        // so we always use request_json for the body to ensure model name normalization is applied
-        request_body = request_json.dump();
+        normalize_thinking_controls(request_json);
 
         if (is_streaming) {
             try {
+                std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
@@ -3797,11 +4155,9 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use normalized request - model name was already normalized at the top
-        std::string request_body = request_json.dump();
-
         if (is_streaming) {
             try {
+                std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
@@ -5371,12 +5727,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Re-serialize so any collection.router model rewrite reaches the backend
-        // (streaming forwards this body verbatim).
-        std::string request_body = request_json.dump();
-
         if (is_streaming) {
             try {
+                // Re-serialize so any collection.router model rewrite reaches the backend.
+                std::string request_body = request_json.dump();
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
                 set_route_decision_sse_content_provider(
@@ -5807,26 +6161,13 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
         auto info = model_manager_->get_model_info(model_name);
 
         // Extract optional per-model settings. Omitted options keep saved values;
-        // explicit *_args keys mask them for this load, and null acts as a tombstone.
-        // ctx_size=-1 explicitly requests automatic sizing.
-        // ctx_size=-1 remains an explicit request for automatic sizing.
+        // null masks only its saved key for this load. Concrete *_args scope is
+        // resolved later by Router. ctx_size=-1 remains an explicit auto value.
         RecipeOptions options = RecipeOptions(info.recipe, request_json);
         std::set<std::string> transient_saved_option_tombstones;
-        std::set<std::string> transient_saved_option_masks;
         for (const auto& key : RecipeOptions::keys_for_recipe(info.recipe)) {
-            if (!request_json.contains(key)) {
-                continue;
-            }
-
-            if (request_json[key].is_null()) {
+            if (request_json.contains(key) && request_json[key].is_null()) {
                 transient_saved_option_tombstones.insert(key);
-                transient_saved_option_masks.insert(key);
-                continue;
-            }
-
-            if (key.size() >= 5 &&
-                key.compare(key.size() - 5, 5, "_args") == 0) {
-                transient_saved_option_masks.insert(key);
             }
         }
 
@@ -5863,18 +6204,14 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             info = model_manager_->get_model_info(model_name);
         }
 
-        // ModelInfo::recipe_options contains the model-level defaults plus the
-        // recipe_options.json overlay. Rebuild that local copy with request-masked
-        // saved keys removed. Concrete *_args then override the saved same-key
-        // layer while merge_args can still combine model defaults and the lower
-        // architecture/backend/global layers. This load does not alter the
-        // persistent recipe_options.json entry.
-        if (!transient_saved_option_masks.empty()) {
+        // Null tombstones are load-local: remove only those saved keys from the
+        // local model layer without changing recipe_options.json.
+        if (!transient_saved_option_tombstones.empty()) {
             json per_model_options = model_manager_->get_model_default_options(info).to_json();
             const json saved = model_manager_->get_saved_model_options(model_name);
             if (saved.is_object()) {
                 for (const auto& [key, value] : saved.items()) {
-                    if (transient_saved_option_masks.count(key) == 0) {
+                    if (transient_saved_option_tombstones.count(key) == 0) {
                         per_model_options[key] = value;
                     }
                 }
@@ -6301,11 +6638,11 @@ void Server::normalize_and_resolve_request_model(nlohmann::json& request_json) c
 }
 
 void Server::persist_cloud_providers() {
-    if (cache_dir_.empty() || !cloud_registry_) return;
+    if (config_dir_.empty() || !cloud_registry_) return;
     try {
-        json snap = config_->snapshot();
-        snap["cloud_providers"] = cloud_registry_->to_config_array();
-        ConfigFile::save(cache_dir_, snap);
+        json user_cfg = ConfigFile::load_raw(config_dir_);
+        user_cfg["cloud_providers"] = cloud_registry_->to_config_array();
+        ConfigFile::save(config_dir_, user_cfg);
     } catch (const std::exception& e) {
         // Persistence failure must not undo the in-memory change — the
         // registry is already updated and the provider is usable until
@@ -6376,7 +6713,7 @@ void Server::handle_cloud_auth_set(const httplib::Request& req, httplib::Respons
                 return;
             }
             if (allow_insecure_http && !already_allowed) {
-                cloud_registry_->install(provider, base_url, true);
+                cloud_registry_->set_allow_insecure_http(provider, true);
                 persist_cloud_providers();
             }
         }
@@ -6622,6 +6959,22 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         enrich_recipes(system_info["recipes"]);
     }
 
+    // Surfaced as a separate host-specific field rather than by pruning
+    // `recipes`, which must stay canonical: the docs generator renders
+    // README/models.js from it and would otherwise drift with the generating
+    // machine's memory. Dynamic-model backends (cloud, flm) are never listed.
+    if (model_manager_) {
+        nlohmann::json unavailable = nlohmann::json::array();
+        for (const std::string& recipe : model_manager_->recipes_with_all_models_filtered()) {
+            const BackendDescriptor* desc = backends::descriptor_for(recipe);
+            if (desc && desc->dynamic_models) {
+                continue;
+            }
+            unavailable.push_back(recipe);
+        }
+        system_info["unavailable_recipes"] = std::move(unavailable);
+    }
+
     // Surface runtime config flags that affect client-side install/download UX.
     if (auto* cfg = RuntimeConfig::global()) {
         system_info["no_fetch_executables"] = cfg->no_fetch_executables();
@@ -6643,6 +6996,8 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"name", rec.name},
                 {"base_url", rec.base_url},
                 {"allow_insecure_http", rec.allow_insecure_http},
+                {"auth_header_name", rec.auth_header_name},
+                {"auth_header_prefix", rec.auth_header_prefix},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -6879,10 +7234,15 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
             apply_config_side_effects(applied);
         });
 
-        // Persist changes to config.json
-        if (!cache_dir_.empty()) {
+        if (!config_dir_.empty()) {
             try {
-                ConfigFile::save(cache_dir_, config_->snapshot());
+                json user_cfg = ConfigFile::load_raw(config_dir_);
+                if (result.contains("updated") && result["updated"].is_object()) {
+                    user_cfg = utils::JsonUtils::merge(user_cfg, result["updated"]);
+                }
+                json defaults = ConfigFile::get_defaults();
+                utils::JsonUtils::prune_matching(user_cfg, defaults);
+                ConfigFile::save(config_dir_, user_cfg);
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
             }
@@ -7022,25 +7382,27 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             if (new_port != current_port) {
                 LOG(INFO, "Server") << "Port change requested: " << current_port << " -> " << new_port << std::endl;
                 port_.store(new_port);
+                if (running_) {
+                    rebind_requested_ = true;
+                    udp_beacon_.stopBroadcasting();
+                    stop_http_listeners();
+                }
+            }
+        } else if (key == "host") {
+            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
+            if (running_) {
                 rebind_requested_ = true;
                 udp_beacon_.stopBroadcasting();
                 stop_http_listeners();
             }
-        } else if (key == "host") {
-            LOG(INFO, "Server") << "Host change requested to: " << config_->host() << std::endl;
-            rebind_requested_ = true;
-            udp_beacon_.stopBroadcasting();
-            stop_http_listeners();
             // Restart websocket server with new host
-            if (websocket_server_) {
+            if (websocket_server_ && running_) {
                 websocket_server_->stop();
                 websocket_server_ = std::make_unique<WebSocketServer>(
                     router_.get(),
                     config_->host(),
                     config_->websocket_port());
-                if (running_) {
-                    websocket_server_->start();
-                }
+                websocket_server_->start();
             }
         } else if (key == "websocket_port") {
             if (websocket_server_) {
@@ -7582,47 +7944,78 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    api_key: "..."}  // optional
+        //    auth_header_name / auth_header_prefix: see
+        //      CloudProviderRegistry::Record,
+        //    api_key: "..."}
+        //
+        // Every field after base_url is optional and applied only when
+        // present, so a re-install that omits one (the desktop add-provider
+        // form posts just backend / provider / base_url / api_key) keeps the
+        // stored value.
         if (request_json.value("backend", "") == "cloud") {
             const std::string provider = request_json.value("provider", "");
             const std::string base_url = request_json.value("base_url", "");
             const std::string api_key = request_json.value("api_key", "");
-            bool allow_insecure_http = false;
-            if (request_json.contains("allow_insecure_http")) {
-                if (!request_json["allow_insecure_http"].is_boolean()) {
-                    res.status = 400;
-                    nlohmann::json error = {{"error", {
-                        {"message", "allow_insecure_http must be a boolean when provided"},
-                        {"type", "invalid_request_error"}}}};
-                    res.set_content(error.dump(), "application/json");
-                    return;
-                }
-                allow_insecure_http = request_json["allow_insecure_http"].get<bool>();
-            }
-            if (provider.empty() || base_url.empty()) {
+
+            auto reject = [&](const std::string& message) {
                 res.status = 400;
                 nlohmann::json error = {{"error", {
-                    {"message", "Cloud install requires 'provider' and 'base_url' string fields"},
+                    {"message", message},
                     {"type", "invalid_request_error"}}}};
                 res.set_content(error.dump(), "application/json");
+            };
+            if (provider.empty() || base_url.empty()) {
+                reject("Cloud install requires 'provider' and 'base_url' string fields");
                 return;
             }
             if (auto err = CloudProviderRegistry::validate_provider_name(provider); !err.empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", err},
-                    {"type", "invalid_request_error"}}}};
-                res.set_content(error.dump(), "application/json");
+                reject(err);
                 return;
             }
             if (auto err = CloudProviderRegistry::validate_base_url(base_url); !err.empty()) {
-                res.status = 400;
-                nlohmann::json error = {{"error", {
-                    {"message", err},
-                    {"type", "invalid_request_error"}}}};
-                res.set_content(error.dump(), "application/json");
+                reject(err);
                 return;
             }
+
+            CloudProviderRegistry::InstallOptions install_options;
+            auto read_header_field = [&](const char* field,
+                                         std::string (*validate)(const std::string&),
+                                         std::optional<std::string>& out) {
+                if (!request_json.contains(field)) return true;
+                if (!request_json[field].is_string()) {
+                    reject(std::string(field) + " must be a string when provided");
+                    return false;
+                }
+                auto value = request_json[field].get<std::string>();
+                if (auto err = validate(value); !err.empty()) {
+                    reject(err);
+                    return false;
+                }
+                out = std::move(value);
+                return true;
+            };
+            if (!read_header_field("auth_header_name",
+                                   CloudProviderRegistry::validate_auth_header_name,
+                                   install_options.auth_header_name) ||
+                !read_header_field("auth_header_prefix",
+                                   CloudProviderRegistry::validate_auth_header_prefix,
+                                   install_options.auth_header_prefix)) {
+                return;
+            }
+            if (request_json.contains("allow_insecure_http")) {
+                if (!request_json["allow_insecure_http"].is_boolean()) {
+                    reject("allow_insecure_http must be a boolean when provided");
+                    return;
+                }
+                install_options.allow_insecure_http =
+                    request_json["allow_insecure_http"].get<bool>();
+            }
+            // The http:// opt-in gate below reflects the effective state: an
+            // omitted flag on a re-install keeps whatever was stored.
+            const bool allow_insecure_http =
+                install_options.allow_insecure_http.value_or(
+                    cloud_registry_->allow_insecure_http_for(provider));
+
             const auto env_state = cloud_registry_->auth_state(provider);
             if (CloudProviderRegistry::is_http_base_url(base_url) &&
                 !allow_insecure_http &&
@@ -7639,7 +8032,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
             LOG(INFO, "Server") << "Installing cloud provider '" << provider
                                   << "' with base_url " << base_url << std::endl;
-            cloud_registry_->install(provider, base_url, allow_insecure_http);
+            cloud_registry_->install(provider, base_url, install_options);
             persist_cloud_providers();
 
             // Best-effort optional auth: if api_key was supplied, treat this
@@ -7656,6 +8049,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             // call /v1/system-info later to see how many models showed up.
             size_t models_after = model_manager_->refresh_cloud_models(provider);
             const auto state = cloud_registry_->auth_state(provider);
+            const auto auth_header = cloud_registry_->auth_header_for(provider);
 
             nlohmann::json response = {
                 {"status", "success"},
@@ -7663,6 +8057,8 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"provider", provider},
                 {"base_url", cloud_registry_->base_url_for(provider)},
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
+                {"auth_header_name", auth_header.name},
+                {"auth_header_prefix", auth_header.prefix},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},

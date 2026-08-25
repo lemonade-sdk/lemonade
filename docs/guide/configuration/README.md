@@ -2,32 +2,35 @@
 
 ## Overview
 
-Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single `config.json` file stored in the lemonade cache directory.
+Lemonade Server starts automatically with the OS after installation. Persistent JSON configuration is stored in Lemonade's config directory; caches and downloaded artifacts stay in the cache directory.
 
 ## config.json
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.cache/lemonade/config.json`
-- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.cache/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/var/lib/lemonade/config.json`
 
-  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+  > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), while cached models go to `/var/cache/huggingface` (CacheDirectory). For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
-- **Windows:** `%USERPROFILE%\.cache\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.cache/config.json`
+- **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
+- **macOS:** `/Library/Application Support/lemonade/.config/config.json`
 
-If you are using a standalone `lemond` exectable, the default location is `~/.cache/lemonade/config.json`.
+If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 
-> Note: If `config.json` doesn't exist, it's created automatically with default values on first run.
+On startup, Lemonade automatically migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
 
-### Seeding defaults for packaged installs
+> Note: `config.json` is a sparse override file. It only contains settings you explicitly customize; all unspecified settings automatically inherit default values and receive upstream improvements across updates.
 
-On first run, `config.json` is initialized from the defaults baked into the release (`resources/defaults.json`). Packagers can override those defaults without editing the release, in increasing precedence:
+### Defaults Precedence & Layering
 
-1. On Linux, `lemond` also merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship their own defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
-2. Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under `/usr/share`.
+When `lemond` starts, effective configuration is resolved by deep-merging settings in increasing precedence:
 
-Values set in the user's `config.json` always take precedence over these seeded defaults.
+1. **Built-in Defaults**: Factory defaults baked into the release (`resources/defaults.json` and backend descriptors).
+2. **Distro / System Defaults**: On Linux, `lemond` merges `/usr/share/lemonade/defaults.json` if it exists, so distro packages can ship system-level defaults (e.g. backend `*_bin` paths pointing at system-installed binaries).
+3. **Environment Defaults**: Set the `LEMONADE_DEFAULTS_PATH` environment variable to a `defaults.json` at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under `/usr/share`).
+4. **User Overrides (`config.json`)**: Values explicitly set in your `config.json` override defaults.
+5. **CLI Flags**: Arguments passed to `lemond` (e.g. `--port`, `--host`).
 
 ### Example config.json
 
@@ -42,6 +45,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
     "vulkan_bin": "builtin"
   },
   "auto_check_model_updates": true,
+  "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
@@ -134,6 +138,12 @@ Values set in the user's `config.json` always take precedence over these seeded 
       ],
       "send_batch_size": 100
     },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
+    },
     "trust_incoming_trace_context": false
   },
   "thenoise": {
@@ -187,6 +197,7 @@ Values set in the user's `config.json` always take precedence over these seeded 
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
+| `auto_update_models` | bool | false | Automatically download model updates when available. Can be overridden per model via `auto_update` in model options. |
 | `no_fetch_executables` | bool | false | Prevent downloading backend executable artifacts; backends must already be installed or use the system backend |
 | `disable_model_filtering` | bool | false | Show all models regardless of hardware capabilities |
 | `inhibit_suspend` | bool | true | Prevent the OS from suspending while inference is active. Linux only (uses systemd-logind); no-op on Windows/macOS/non-systemd environments. |
@@ -252,6 +263,9 @@ Backend-specific settings are nested under their backend name:
 |-----|-------------|
 | `name` | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `base_url` | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
+| `allow_insecure_http` | Whether this provider may receive its API key over `http://`. |
+| `auth_header_name` | Header the API key is sent in. Omitted when it is the default `Authorization`. |
+| `auth_header_prefix` | Value prefix before the key. Omitted when it is the default `"Bearer "`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 
@@ -388,41 +402,44 @@ lemonade config set telemetry.otlp.semantics='["openinference"]'
 lemonade config set telemetry.otlp.headers='{"Authorization":"Bearer key"}'
 ```
 
-### lemond CLI arguments (fallback)
+### lemond CLI arguments (runtime overrides)
 
-If the server cannot start (e.g., invalid port in config.json), `lemond` accepts `--port` and `--host` as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:
+`lemond` accepts `--port` and `--host` as CLI arguments to provide ephemeral runtime overrides for that specific server process without modifying `config.json`:
 
 ```bash
 lemond --port 9000 --host 0.0.0.0
 ```
 
+Because CLI overrides are ephemeral and do not mutate `config.json` on disk, if the server cannot start due to an invalid port or host setting in `config.json`:
+1. Start `lemond` using the CLI override: `lemond --port 9000`
+2. Run `lemonade config set port=9000` against the running server to persist the fix for subsequent restarts.
+3. Alternatively, edit `config.json` directly as shown below.
+
 ### Edit config.json manually (last resort)
 
-If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
+If the server won't start and CLI tools aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux (Debian/Ubuntu)
-sudo nano /var/lib/lemonade/.cache/lemonade/config.json
-
-# Linux (Fedora/Red Hat)
-sudo nano /opt/var/lib/lemonade/.cache/lemonade/config.json
+# Linux (Debian/Ubuntu and Fedora/Red Hat)
+sudo nano /var/lib/lemonade/config.json
 
 sudo systemctl restart lemond
 
 # Windows — edit with your preferred text editor:
-# %USERPROFILE%\.cache\lemonade\config.json
+# %USERPROFILE%\.config\lemonade\config.json
 # Then quit and relaunch from the Start Menu
 ```
 
 ## lemond CLI
 
 ```
-lemond [cache_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
+lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 ```
 
-- **cache_dir** — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.
-- **--port** — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.
-- **--host** — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.
+- **cache_dir** — Path to the lemonade cache/data directory. Optional; defaults to the platform-specific cache location.
+- **config_dir** — Path to the lemonade config directory for persistent JSON state. Optional; defaults to the platform-specific config location.
+- **--port** — Port to serve on (runtime override, does not mutate config.json).
+- **--host** — Address to bind (runtime override, does not mutate config.json).
 - **--broadcast** / **--no-broadcast** — Enable or disable UDP broadcasting for server discovery (non-persistent override).
 
 ## API Key and Security
@@ -465,6 +482,29 @@ The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web or
   > [!WARNING]
   > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
 - **Local/Loopback & Desktop Access**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) and custom desktop application schemes (`file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for local client connections. Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `LEMONADE_ALLOWED_ORIGINS` to prevent CSWSH attacks.
+
+## Model Synchronization & Auto-Updates
+
+Lemonade supports manual model synchronization via `lemonade update-models` as well as automatic background updates.
+
+
+### Configuration
+- **Global Config**: Set `auto_update_models: true` in server configuration or via `lemonade config set auto_update_models=true`.
+- **Per-Model Override**: Include `"auto_update": true` or `"auto_update": false` in custom model recipes (`user.*`) to override the global default on a per-model basis.
+- **Administrative Authorization**: Because model synchronization endpoints are administrative (`/internal/*`), manual synchronization via the CLI or direct API requests requires the appropriate admin credentials (`LEMONADE_ADMIN_API_KEY`, falling back to `LEMONADE_API_KEY` if the admin key is not explicitly configured) when server-side authentication is enabled.
+
+### Risks of Automatic Model Updates
+
+> [!WARNING]
+> Enabling automatic updates (`auto_update_models: true` or per-model `"auto_update": true`) introduces operational risks that should be carefully considered:
+>
+> 1. **Output & Behavioral Drift**: Upstream Hugging Face or ModelScope repositories can release updated weights, revised tokenizers, or altered chat templates. These changes can alter model responses, reasoning characteristics, and prompt compatibility.
+> 2. **High Bandwidth & Disk Consumption**: Model updates involve downloading multi-gigabyte file revisions (e.g. GGUF quantizations). Unattended updates can unexpectedly consume substantial network bandwidth and disk space.
+> 3. **Startup & Inference Delays**: Automatic update downloads trigger on server startup when upstream revisions are detected, delaying server readiness and inference availability.
+> 4. **Quantization & Recipe Shifts**: Remote repository changes may alter file naming or tensor layouts, requiring updated recipe configurations.
+>
+> **Recommendation**: Leave `auto_update_models` set to `false` (default) in production environments. Use manual sync (`lemonade update-models --check` followed by `lemonade update-models`) to inspect and control model updates.
+
 
 ## Remote Server Connection
 

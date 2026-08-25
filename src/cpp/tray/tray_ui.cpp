@@ -710,6 +710,8 @@ std::string TrayUI::find_icon_path() {
         data_dirs.push_back("/opt/lemonade/share");
     }
     for (const auto& d : data_dirs) {
+        auto svg_clean = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonadeserver.Lemonade.svg";
+        if (fs::exists(svg_clean)) return svg_clean.string();
         auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
         if (fs::exists(svg)) return svg.string();
         auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";

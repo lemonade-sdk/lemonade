@@ -54,15 +54,9 @@ public:
         bool debug = false);
 
 private:
-    // image_defaults from the currently loaded model's server_models.json entry.
-    // Applied when a request doesn't specify size / steps / cfg_scale / etc.
-    // Needed because sd-server's own defaults are fixed at process startup and
-    // OmniRouter tool calls arrive without these fields.
-    ImageDefaults image_defaults_;
-
-    // Build the <sd_cpp_extra_args> JSON. Precedence: request -> image_defaults_
-    // -> recipe_options_. `include_flow_shift` is true for /v1/images/generations
-    // and /v1/images/edits; false for /v1/images/variations (which strips prompt).
+    // Precedence and fall-through are documented in build_extra_args().
+    // `include_flow_shift` is true for /v1/images/generations and
+    // /v1/images/edits; false for /v1/images/variations.
     nlohmann::json build_extra_args(const nlohmann::json& request,
                                     bool include_flow_shift = true) const;
 

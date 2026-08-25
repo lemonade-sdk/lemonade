@@ -192,6 +192,16 @@ namespace lemon::backends {
          *  get_therock_lib_paths). Returns "" for empty input. */
         static std::string join_runtime_dirs(const std::vector<std::string>& dirs);
 
+        /** Stage TheRock's amdhip64_7.dll next to a ROCm backend exe, unless
+         *  System32 already ships a newer runtime. No-op off Windows. */
+        static bool stage_therock_hip_runtime(const std::string& rocm_arch,
+                                              const fs::path& target_dir);
+
+        /** Read a DLL's VS_FIXEDFILEINFO version (packed MS<<32|LS). Windows
+         *  only; returns 0 elsewhere. GetFileVersionInfoW returns stale data
+         *  for system32 paths, so callers read versions from plain paths. */
+        static uint64_t read_dll_version(const fs::path& dll);
+
         /** Get the path to the backend's binary. Gives precedence to the path set through environment variables, if set. Throws if not found. */
         static std::string get_backend_binary_path(const BackendSpec& spec, const std::string& backend);
 
