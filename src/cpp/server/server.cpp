@@ -5252,7 +5252,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
                 LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
                 res.status = 500;
             }
-            bool skip_upscale = request_json.value("skip_upscale", false);
+            bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
             apply_upscale_if_configured(requested_model, response, skip_upscale,
                                         pixel_upscaler, request_upscale);
             res.set_content(response.dump(), "application/json");
@@ -5498,7 +5498,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             res.status = 500;
         }
         apply_upscale_if_configured(edit_model_name, response,
-                                    parse_bool_form_field(req.form, "skip_upscale"),
+                                    parse_bool_form_field(req.form, "skip_implicit_upscaling"),
                                     edit_pixel_upscaler, edit_upscale);
         res.set_content(response.dump(), "application/json");
 
@@ -5565,7 +5565,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             res.status = 500;
         }
         apply_upscale_if_configured(var_model_name, response,
-                                    parse_bool_form_field(req.form, "skip_upscale"),
+                                    parse_bool_form_field(req.form, "skip_implicit_upscaling"),
                                     var_pixel_upscaler, var_upscale);
         res.set_content(response.dump(), "application/json");
 
@@ -5616,7 +5616,7 @@ void Server::apply_upscale_if_configured(
     // Per-request override: caller can opt out of model-level auto-upscale
     if (skip_upscale_request) {
         LOG(INFO, "Server") << "Skipping auto-upscale for model '" << model_name
-                            << "' (per-request skip_upscale=true)" << std::endl;
+                            << "' (per-request skip_implicit_upscaling=true)" << std::endl;
         return;
     }
 
