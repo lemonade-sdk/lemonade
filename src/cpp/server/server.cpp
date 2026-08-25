@@ -1157,7 +1157,7 @@ void Server::setup_routes(httplib::Server &web_server) {
         web_server.Post("/api/v1/" + endpoint, handler);
         web_server.Post("/v0/" + endpoint, handler);
         web_server.Post("/v1/" + endpoint, handler);
-        if (endpoint != "params" && endpoint != "jobs") {
+        if (endpoint != "jobs") {
             web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
                 res.status = 405;
                 res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
@@ -1398,14 +1398,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_delete(req, res);
     });
 
-    register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_params(req, res);
-    });
-
-    register_get("params", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_config_get(req, res);
-    });
-
     // Backend management endpoints
     register_post("install", [this](const httplib::Request& req, httplib::Response& res) {
         handle_install(req, res);
@@ -1430,10 +1422,6 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_system_stats(req, res);
-    });
-
-    register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_log_level(req, res);
     });
 
 
@@ -1514,12 +1502,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Delete(R"(/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cloud_auth_clear(req, res);
-    });
-
-    // Test endpoint to verify POST works
-    web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
-        LOG(INFO, "Server") << "TEST POST endpoint hit!" << std::endl;
-        res.set_content("{\"test\": \"ok\"}", "application/json");
     });
 
     // Register Ollama-compatible API routes
@@ -1629,10 +1611,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
         res.set_content(html_template, "text/html");
     };
 
-    // Keep status page at /status endpoint
-    web_server.Get("/status", serve_index_html);
-
-    // Also serve index.html at /api/v1 for compatibility
+    // Serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
 
     // Mount static files directory for status page assets (CSS, JS, images)
@@ -6802,32 +6781,6 @@ void Server::handle_cloud_auth_clear(const httplib::Request& req, httplib::Respo
     }
 }
 
-void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
-    try {
-        auto body = nlohmann::json::parse(req.body);
-
-        // Delegate to RuntimeConfig — accepts all known recipe option keys
-        auto result = config_->set(body, [this](const json& applied) {
-            apply_config_side_effects(applied);
-        });
-        res.set_content(result.dump(), "application/json");
-    } catch (const nlohmann::json::parse_error& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
-        res.status = 400;
-        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::invalid_argument& e) {
-        res.status = 400;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::exception& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_params: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    }
-}
-
 // Called by handle_pull when local_import=true
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
@@ -7073,31 +7026,6 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     stats["npu_percent"] = (npu_percent >= 0) ? nlohmann::json(npu_percent) : nlohmann::json();
 
     res.set_content(stats.dump(), "application/json");
-}
-
-void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
-    try {
-        auto request_json = nlohmann::json::parse(req.body);
-
-        // Translate {"level":"debug"} -> config_->set({"log_level":"debug"})
-        json changes = {{"log_level", request_json["level"]}};
-        config_->set(changes, [this](const json& applied) {
-            apply_config_side_effects(applied);
-        });
-
-        // Return same response format for backward compatibility
-        nlohmann::json response = {{"status", "success"}, {"level", config_->log_level()}};
-        res.set_content(response.dump(), "application/json");
-    } catch (const std::invalid_argument& e) {
-        res.status = 400;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::exception& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_log_level: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    }
 }
 
 void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res) {

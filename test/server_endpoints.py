@@ -239,6 +239,39 @@ class EndpointTests(ServerTestBase):
 
         session.close()
 
+    def test_000b_retired_endpoints_removed(self):
+        """Verify the retired routes stay gone on every prefix."""
+        session = requests.Session()
+        headers = _auth_headers()
+
+        for endpoint in ["params", "log-level", "test"]:
+            for prefix in ["/api/v0", "/api/v1", "/v0", "/v1"]:
+                url = f"http://localhost:{PORT}{prefix}/{endpoint}"
+                for response in (
+                    session.get(url, headers=headers, timeout=TIMEOUT_DEFAULT),
+                    session.post(
+                        url, json={}, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ),
+                ):
+                    self.assertEqual(
+                        response.status_code,
+                        404,
+                        f"Retired endpoint {prefix}/{endpoint} still responds",
+                    )
+
+        response = session.get(
+            f"http://localhost:{PORT}/status", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 404, "Retired /status still responds")
+
+        # The legacy status page is still served at its documented location.
+        response = session.get(
+            f"http://localhost:{PORT}/api/v1", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        session.close()
+
     def test_000a_register_model_definition_without_pull(self):
         """Register a user model definition without downloading its checkpoint."""
         canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
