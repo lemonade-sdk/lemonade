@@ -191,8 +191,6 @@ void SDServer::load(const std::string& model_name,
     LOG(INFO, "SDServer") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "SDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    image_defaults_ = model_info.image_defaults;
-
     std::string backend = options.get_option("sd-cpp_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("sd-cpp");
@@ -392,7 +390,7 @@ void SDServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, process_exe_path, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start sd-server process");
@@ -415,22 +413,20 @@ void SDServer::unload() {
         LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(handle);
     }
-    image_defaults_ = ImageDefaults{};
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {
     // sd-server reads these from inside <sd_cpp_extra_args>{...}</sd_cpp_extra_args>
-    // in the prompt (via SDGenerationParams::from_json_str). Top-level copies on
-    // the HTTP body are ignored for everything except `size` / `n` / `prompt`, so
-    // this is the only channel for step count, cfg scale, etc.
-    //
-    // sd-cpp master nests sample_steps / sample_method / scheduler / flow_shift
-    // under a "sample_params" object, and cfg scale under "sample_params.guidance".
-    // The old flat keys (`steps`, `cfg_scale`) are silently ignored, which is why
-    // setting them at the top level of extra_args has no effect.
-    //
-    // Precedence for each value: request override -> model image_defaults
-    // -> recipe_options.
+    // in the prompt (via SDGenerationParams::from_json_str); top-level copies on
+    // the HTTP body are ignored except for `size` / `n` / `prompt`. sd-cpp
+    // master nests steps/method/scheduler/flow_shift under "sample_params" and
+    // cfg scale under "sample_params.guidance"; the old flat keys (`steps`,
+    // `cfg_scale`) are silently ignored.
+    // Per-value precedence, highest → lowest: per-request body fields, then the
+    // effective recipe options, which already fold user-saved > model
+    // recipe_options > image_defaults > architecture > global config (via
+    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
+    // every layer is omitted, letting sd-server apply its own defaults.
     json extra_args;
     json sample_params = json::object();
     json guidance = json::object();
@@ -441,61 +437,43 @@ json SDServer::build_extra_args(const json& request, bool include_flow_shift) co
         }
         return fallback;
     };
-    auto resolve_float = [&](const std::string& key, float fallback) -> float {
-        if (request.contains(key) && request[key].is_number()) {
-            return request[key].get<float>();
-        }
-        return fallback;
-    };
     auto resolve_string = [&](const std::string& key, const std::string& fallback) -> std::string {
         if (request.contains(key) && request[key].is_string()) {
             return request[key].get<std::string>();
         }
         return fallback;
     };
+    auto option_int = [&](const std::string& key) -> int {
+        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
+    };
+    auto option_string = [&](const std::string& key) -> std::string {
+        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
+    };
 
     // steps -> sample_params.sample_steps
-    int steps = image_defaults_.has_defaults
-                  ? image_defaults_.steps
-                  : static_cast<int>(recipe_options_.get_option("steps"));
-    steps = resolve_int("steps", steps);
-    if (steps > 0) {
-        sample_params["sample_steps"] = steps;
-    }
+    int steps = resolve_int("steps", option_int("steps"));
+    if (steps > 0) sample_params["sample_steps"] = steps;
 
     // cfg_scale -> sample_params.guidance.txt_cfg
-    float cfg_scale = image_defaults_.has_defaults
-                        ? image_defaults_.cfg_scale
-                        : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    cfg_scale = resolve_float("cfg_scale", cfg_scale);
-    if (cfg_scale > 0.0f) {
-        guidance["txt_cfg"] = cfg_scale;
+    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
+    // when it is absent from every layer so sd-server applies its own default.
+    if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
+        guidance["txt_cfg"] = request["cfg_scale"].get<float>();
+    } else if (recipe_options_.has_option("cfg_scale")) {
+        guidance["txt_cfg"] = static_cast<float>(recipe_options_.get_option("cfg_scale"));
     }
 
     // sample_method -> sample_params.sample_method
-    std::string sample_method;
-    if (image_defaults_.has_defaults && !image_defaults_.sampling_method.empty()) {
-        sample_method = image_defaults_.sampling_method;
-    } else {
-        sample_method = recipe_options_.get_option("sampling_method");
-    }
-    sample_method = resolve_string("sample_method", sample_method);
-    if (!sample_method.empty()) {
-        sample_params["sample_method"] = sample_method;
-    }
+    std::string sample_method = resolve_string("sample_method", option_string("sampling_method"));
+    if (!sample_method.empty()) sample_params["sample_method"] = sample_method;
 
     // flow_shift -> sample_params.flow_shift
+    // Like cfg_scale, 0.0 is a real value here; only omit when unset everywhere.
     if (include_flow_shift) {
-        float flow_shift = 0.0f;
-        if (image_defaults_.has_defaults && image_defaults_.flow_shift > 0.0f) {
-            flow_shift = image_defaults_.flow_shift;
-        } else {
-            float fs = recipe_options_.get_option("flow_shift");
-            if (fs > 0.0f) flow_shift = fs;
-        }
-        flow_shift = resolve_float("flow_shift", flow_shift);
-        if (flow_shift > 0.0f) {
-            sample_params["flow_shift"] = flow_shift;
+        if (request.contains("flow_shift") && request["flow_shift"].is_number()) {
+            sample_params["flow_shift"] = request["flow_shift"].get<float>();
+        } else if (recipe_options_.has_option("flow_shift")) {
+            sample_params["flow_shift"] = static_cast<float>(recipe_options_.get_option("flow_shift"));
         }
     }
 
@@ -526,11 +504,13 @@ std::string SDServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (image_defaults_.has_defaults) {
-        return std::to_string(image_defaults_.width) + "x"
-             + std::to_string(image_defaults_.height);
-    }
-    return "";
+    // Fall back to the effective recipe options (ladder in build_extra_args()).
+    // Return "" when unset so sd-server picks its own native defaults.
+    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
+    int w = static_cast<int>(recipe_options_.get_option("width"));
+    int h = static_cast<int>(recipe_options_.get_option("height"));
+    if (w <= 0 || h <= 0) return "";
+    return std::to_string(w) + "x" + std::to_string(h);
 }
 
 // ICompletionServer implementation - not supported for image generation

@@ -1,8 +1,10 @@
 """
-Tests for the 'system' LlamaCpp backend and llamacpp.prefer_system config.
+Process/server integration tests for the external 'system' LlamaCpp backend.
 
-Each test needs a fresh server with different PATH/config, so this file
-manages its own server lifecycle independently of ServerTestBase.
+Pure PATH discovery, prefer_system selection/fallback, and HIP plugin resolution
+are covered directly in C++ by test/cpp/test_llamacpp_system_backend.cpp. This
+suite keeps the behavior that genuinely crosses the lemond/llama-server process
+boundary and shares one server lifecycle across those assertions.
 
 Usage:
     python test/test_llamacpp_system_backend.py
@@ -37,17 +39,6 @@ from utils.test_models import (
 
 args = parse_args()  # Initialize global _config
 
-# Define a dummy executable content (e.g., a simple shell script)
-# On Linux/macOS, a shell script that exits 0
-# On Windows, a batch file that exits 0
-DUMMY_LLAMA_SERVER_LINUX_MAC = """#!/bin/bash
-exit 0
-"""
-
-DUMMY_LLAMA_SERVER_WINDOWS = """@echo off
-exit 0
-"""
-
 MOCK_LLAMA_SERVER_PYTHON = """#!/usr/bin/env python3
 import json
 import os
@@ -64,8 +55,8 @@ def get_arg(flag, default):
 
 
 # lemond detects the system llama-server version by running
-# `llama-server --version` and reading one line of stdout (see
-# SystemInfo::get_system_llamacpp_version in src/cpp/server/system_info.cpp).
+# `llama-server --version` and reading one line of stdout from the llamacpp
+# backend resolver in src/cpp/server/backends/llamacpp/llamacpp_server.cpp.
 # The real binary prints a version line and exits immediately. We must mirror
 # that: otherwise the probe blocks forever on our long-lived HTTP server and
 # /internal/set hangs until the client times out.
@@ -79,8 +70,7 @@ class ReusableHTTPServer(ThreadingHTTPServer):
 
 
 capture_path = os.environ.get("MOCK_LLAMA_REQUEST_PATH", "")
-error_status = int(os.environ.get("MOCK_LLAMA_ERROR_STATUS", "0") or "0")
-error_response = os.environ.get("MOCK_LLAMA_ERROR_RESPONSE", "")
+control_path = os.environ.get("MOCK_LLAMA_CONTROL_PATH", "")
 port = int(get_arg("--port", "13305"))
 
 
@@ -110,8 +100,20 @@ class Handler(BaseHTTPRequestHandler):
             with open(capture_path, "w", encoding="utf-8") as handle:
                 handle.write(body)
 
+        control = {}
+        if control_path:
+            try:
+                with open(control_path, "r", encoding="utf-8") as handle:
+                    control = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                control = {}
+
+        error_response = control.get("error_response")
         if error_response:
-            self._send_json(json.loads(error_response), status=error_status or 400)
+            self._send_json(
+                error_response,
+                status=int(control.get("error_status", 400) or 400),
+            )
             return
 
         request_json = json.loads(body)
@@ -202,13 +204,8 @@ def _get_lemond_binary():
 def _pick_free_port():
     """Return an unused TCP port assigned by the OS on the IPv4 loopback.
 
-    Each lemond instance this test starts uses a fresh OS-assigned port. That
-    sidesteps a TCP rebind hazard: lemond (the server) initiates the close on
-    shutdown, so its accepted socket on the listen port lingers in FIN_WAIT2 /
-    TIME_WAIT. Once the process is gone that socket is orphaned and, on Linux,
-    can keep the port un-bindable for up to ~60s even with SO_REUSEADDR. Because
-    this test restarts lemond many times in quick succession, reusing one fixed
-    port makes startup flaky in CI; a fresh port is always immediately bindable.
+    This suite owns one lemond instance. An OS-assigned port avoids colliding
+    with another test/server while retaining retry-on-startup-failure behavior.
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -245,23 +242,11 @@ def _server_healthy(port=PORT):
 
 
 def _start_server(wrapped_server=None, backend=None, config_updates=None):
-    """Start a fresh lemond on a new OS-assigned port and wait until ready.
-
-    Each call binds a brand-new port (see _pick_free_port) and republishes it as
-    the module-level ``PORT`` so the rest of the test talks to the current
-    instance. Binding a fresh port every time means the rapid restarts this test
-    performs never contend for a port still held in a lingering TCP teardown
-    state by a previously stopped instance.
-    """
+    """Start the suite's lemond on a fresh OS-assigned port and wait until ready."""
     global PORT
 
     lemond_binary = _get_lemond_binary()
     cache_dir = LlamaCppSystemBackendTests.cache_dir
-
-    # Stop the instance we previously started, if any, so it releases its
-    # resources before we launch the next one.
-    if _is_server_running(PORT):
-        _stop_server()
 
     # Redirect output to a log file rather than a PIPE: lemond runs with
     # debug logging here, and an undrained PIPE can fill its buffer and block
@@ -317,326 +302,132 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
         print(last_log)
         raise RuntimeError(f"lemond failed to start after {max_attempts} attempts")
 
-    runtime_config = {}
-    if wrapped_server == "llamacpp" and backend:
-        runtime_config["llamacpp"] = {"backend": backend}
-    if config_updates:
-        runtime_config.update(config_updates)
-    if runtime_config:
-        set_server_config(runtime_config, port=PORT)
+    try:
+        runtime_config = {}
+        if wrapped_server == "llamacpp" and backend:
+            runtime_config["llamacpp"] = {"backend": backend}
+        if config_updates:
+            runtime_config.update(config_updates)
+        if runtime_config:
+            set_server_config(runtime_config, port=PORT)
+    except Exception:
+        # lemond may already be healthy here; never leak it if post-start
+        # configuration fails during suite setup.
+        _stop_server()
+        raise
 
     print("Server started successfully")
 
 
 class LlamaCppSystemBackendTests(unittest.TestCase):
-    """
-    Tests for the 'system' LlamaCpp backend and the llamacpp.prefer_system config option.
-
-    Each test needs a fresh server with different PATH/config,
-    so this class manages its own server lifecycle.
-    """
-
-    _model_pulled = False
+    """Process/HTTP integration coverage for the external system llama-server."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        # Create a temporary directory for our dummy llama-server executable
-        cls.temp_bin_dir = tempfile.mkdtemp()
-        cls.dummy_llama_server_path = os.path.join(cls.temp_bin_dir, "llama-server")
-        if os.name == "nt":
-            cls.dummy_llama_server_path += ".exe"
-        cls._write_llama_server(
-            DUMMY_LLAMA_SERVER_WINDOWS
-            if os.name == "nt"
-            else DUMMY_LLAMA_SERVER_LINUX_MAC
-        )
+        cls._active = False
+        cls._linux_setup = sys.platform.startswith("linux")
+        if not cls._linux_setup:
+            return
 
-        # Dedicated cache_dir so the test doesn't disturb the user's real cache.
-        # log_level=debug surfaces backend behavior in the logs.
+        cls.temp_bin_dir = tempfile.mkdtemp(prefix="lemonade_llamacpp_mock_bin_")
         cls.cache_dir = tempfile.mkdtemp(prefix="lemonade_llamacpp_test_")
-        with open(os.path.join(cls.cache_dir, "config.json"), "w") as cf:
-            json.dump({"log_level": "debug"}, cf)
+        cls.dummy_llama_server_path = os.path.join(cls.temp_bin_dir, "llama-server")
+        cls.capture_path = os.path.join(cls.temp_bin_dir, "captured_chat_request.json")
+        cls.control_path = os.path.join(cls.temp_bin_dir, "mock_control.json")
+        cls.original_env = {
+            name: os.environ.get(name)
+            for name in ("PATH", "MOCK_LLAMA_REQUEST_PATH", "MOCK_LLAMA_CONTROL_PATH")
+        }
 
-        # Store original PATH to restore later
-        cls.original_path = os.environ.get("PATH", "")
+        try:
+            cls._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
+
+            # Keep the external-system integration deterministic on AMD hosts as
+            # well: production accepts the plugin beside a PATH llama-server.
+            with open(
+                os.path.join(cls.temp_bin_dir, "libggml-hip.so"),
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                handle.write("stub")
+
+            with open(os.path.join(cls.cache_dir, "config.json"), "w") as cf:
+                json.dump({"log_level": "debug"}, cf)
+
+            original_path = cls.original_env["PATH"] or ""
+            os.environ["PATH"] = cls.temp_bin_dir + os.pathsep + original_path
+            os.environ["MOCK_LLAMA_REQUEST_PATH"] = cls.capture_path
+            os.environ["MOCK_LLAMA_CONTROL_PATH"] = cls.control_path
+            cls._write_mock_control({})
+
+            # One lemond and one spawned mock llama-server are enough for all
+            # process-boundary assertions in this file.
+            _start_server(wrapped_server="llamacpp", backend="system")
+            cls._active = True
+            pull_model_with_retry(ENDPOINT_TEST_MODEL, port=PORT)
+
+            load_response = requests.post(
+                f"http://localhost:{PORT}/api/v1/load",
+                json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            if load_response.status_code != 200:
+                raise RuntimeError(
+                    "Failed to load system llamacpp integration model: "
+                    f"{load_response.status_code} {load_response.text}"
+                )
+        except Exception:
+            if cls._active:
+                _stop_server()
+            cls._restore_environment()
+            shutil.rmtree(cls.temp_bin_dir, ignore_errors=True)
+            shutil.rmtree(cls.cache_dir, ignore_errors=True)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        # Stop any server we started
-        _stop_server()
-        # Clean up temporary directories and restore PATH
-        shutil.rmtree(cls.temp_bin_dir)
-        shutil.rmtree(cls.cache_dir, ignore_errors=True)
-        os.environ["PATH"] = cls.original_path
+        if getattr(cls, "_linux_setup", False):
+            if cls._active:
+                _stop_server()
+            shutil.rmtree(cls.temp_bin_dir, ignore_errors=True)
+            shutil.rmtree(cls.cache_dir, ignore_errors=True)
+            cls._restore_environment()
         super().tearDownClass()
+
+    @classmethod
+    def _restore_environment(cls):
+        for name, value in cls.original_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
 
     @classmethod
     def _write_llama_server(cls, script_contents):
         with open(cls.dummy_llama_server_path, "w", encoding="utf-8") as handle:
             handle.write(script_contents)
-        if os.name != "nt":
-            os.chmod(
-                cls.dummy_llama_server_path,
-                os.stat(cls.dummy_llama_server_path).st_mode | stat.S_IEXEC,
-            )
+        os.chmod(
+            cls.dummy_llama_server_path,
+            os.stat(cls.dummy_llama_server_path).st_mode | stat.S_IEXEC,
+        )
+
+    @classmethod
+    def _write_mock_control(cls, control):
+        with open(cls.control_path, "w", encoding="utf-8") as handle:
+            json.dump(control, handle)
 
     def setUp(self):
         print(f"\n=== Starting test: {self._testMethodName} ===")
-        _stop_server()
-        os.environ.pop("MOCK_LLAMA_REQUEST_PATH", None)
-        os.environ.pop("MOCK_LLAMA_ERROR_STATUS", None)
-        os.environ.pop("MOCK_LLAMA_ERROR_RESPONSE", None)
-        os.environ["PATH"] = self.original_path  # Ensure PATH is clean before each test
-        self._write_llama_server(
-            DUMMY_LLAMA_SERVER_WINDOWS
-            if os.name == "nt"
-            else DUMMY_LLAMA_SERVER_LINUX_MAC
-        )
-
-    def _add_dummy_llama_server_to_path(self):
-        """Adds the directory containing the dummy llama-server to PATH."""
-        os.environ["PATH"] = self.temp_bin_dir + os.pathsep + self.original_path
-
-    def _remove_dummy_llama_server_from_path(self):
-        """Removes the dummy llama-server directory from PATH."""
-        os.environ["PATH"] = self.original_path
-
-    def _get_llamacpp_backends(self):
-        """Fetches the list of supported llamacpp backends from the server."""
-        response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("recipes", data)
-        self.assertIn("llamacpp", data["recipes"])
-        self.assertIn("backends", data["recipes"]["llamacpp"])
-        return data["recipes"]["llamacpp"]["backends"]
-
-    @classmethod
-    def _ensure_model_pulled(cls):
-        if cls._model_pulled:
-            return
-
-        pull_model_with_retry(ENDPOINT_TEST_MODEL, port=PORT)
-        cls._model_pulled = True
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_001_system_llamacpp_not_in_path(self):
-        """
-        Verify that is_llamacpp_installed('system') is False when llama-server is not in PATH.
-        """
-        self._remove_dummy_llama_server_from_path()  # Ensure it's not in PATH
-        _start_server(config_updates={"llamacpp": {"prefer_system": False}})
-
-        backends = self._get_llamacpp_backends()
-        self.assertIn("system", backends)
-        # In the new backend manager, state is 'unsupported' if not in PATH
-        self.assertEqual(backends["system"]["state"], "unsupported")
-        self.assertIn("message", backends["system"])
-        self.assertIn("llama-server not found in PATH", backends["system"]["message"])
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_002_system_llamacpp_in_path(self):
-        """
-        Verify that is_llamacpp_installed('system') is True when llama-server is in PATH.
-        """
-        self._add_dummy_llama_server_to_path()  # Add dummy to PATH
-        _start_server(config_updates={"llamacpp": {"prefer_system": False}})
-
-        backends = self._get_llamacpp_backends()
-        self.assertIn("system", backends)
-        self.assertEqual(backends["system"]["state"], "installed")
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_003_prefer_system_llamacpp_enabled_and_available(self):
-        """
-        Verify 'system' backend is preferred when llamacpp.prefer_system=true in config
-        and llama-server is in PATH.
-        """
-        self._add_dummy_llama_server_to_path()
-        _start_server(config_updates={"llamacpp": {"prefer_system": True}})
-
-        response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
-        data = response.json()
-
-        self.assertIn("recipes", data)
-        self.assertIn("llamacpp", data["recipes"])
-        self.assertEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
-
-        backends = self._get_llamacpp_backends()
-        self.assertIn("system", backends)
-        self.assertEqual(backends["system"]["state"], "installed")
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_004_prefer_system_llamacpp_enabled_but_not_available(self):
-        """
-        Verify fallback to another backend when llamacpp.prefer_system=true in config
-        but llama-server is NOT in PATH.
-        """
-        self._remove_dummy_llama_server_from_path()  # Ensure it's not in PATH
-        _start_server(config_updates={"llamacpp": {"prefer_system": True}})
-
-        response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
-        data = response.json()
-
-        self.assertIn("recipes", data)
-        self.assertIn("llamacpp", data["recipes"])
-        # Should not be system
-        self.assertNotEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
-
-        backends = self._get_llamacpp_backends()
-        self.assertIn("system", backends)
-        self.assertEqual(backends["system"]["state"], "unsupported")
-        self.assertIn("llama-server not found in PATH", backends["system"]["message"])
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_005_prefer_system_llamacpp_disabled_or_unset(self):
-        """
-        Verify behavior of llamacpp.prefer_system config when llama-server is in PATH.
-        - When unset or false: system should NOT be default (explicitly disabled by default)
-        - When set to true: system backend is preferred if available
-        """
-        self._add_dummy_llama_server_to_path()
-        # Test with unset (default behavior) - system should NOT be default (it's disabled by default)
-        _start_server(config_updates={"llamacpp": {"prefer_system": False}})
-
-        response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
-        data = response.json()
-        self.assertIn("recipes", data)
-        self.assertIn("llamacpp", data["recipes"])
-        # By default, system backend is not preferred, should fall back to next backend
-        self.assertNotEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
-
-        backends = self._get_llamacpp_backends()
-        self.assertIn("system", backends)
-        self.assertEqual(backends["system"]["state"], "installed")
-
-        _stop_server()
-
-        # Test with false - system backend should be explicitly skipped (same as default)
-        _start_server(config_updates={"llamacpp": {"prefer_system": False}})
-
-        response = requests.get(f"http://localhost:{PORT}/api/v1/system-info")
-        data = response.json()
-        self.assertIn("recipes", data)
-        self.assertIn("llamacpp", data["recipes"])
-        # When explicitly set to false, system should not be default (same as unset)
-        self.assertNotEqual(data["recipes"]["llamacpp"]["default_backend"], "system")
-
-        backends = self._get_llamacpp_backends()
-        self.assertIn("system", backends)
-        self.assertEqual(backends["system"]["state"], "installed")
-
-    def _require_system_backend_blocked_by_hip_plugin(self):
-        """Skip unless the running server reports the 'system' llamacpp backend
-        as blocked by a missing HIP plugin.
-
-        LEMONADE_GGML_HIP_PATH only affects is_ggml_hip_plugin_available(),
-        which system_info.cpp consults solely for the 'system' backend, only
-        when an AMD GPU is present (/sys/class/kfd) and llama-server is in PATH.
-        Its only observable effect is the system backend's "HIP plugin
-        libggml-hip.so not installed" message. Callers must add llama-server to
-        PATH and start the server before calling this.
-        """
-        system = self._get_llamacpp_backends().get("system", {})
-        if "HIP plugin" not in system.get("message", ""):
-            self.skipTest(
-                "Requires an AMD GPU without an FHS-installed HIP plugin; "
-                f"system backend reported: {system}"
-            )
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_005a_hip_path_override_satisfies_hip_plugin_check(self):
-        """A valid LEMONADE_GGML_HIP_PATH satisfies the HIP-plugin check that
-        otherwise blocks the 'system' backend on AMD GPU hosts."""
-        if not os.path.exists("/sys/class/kfd"):
-            self.skipTest("Requires an AMD GPU (/sys/class/kfd present)")
-        self._add_dummy_llama_server_to_path()
-
-        # Baseline: without the override the system backend is blocked by a
-        # missing HIP plugin, otherwise the override has nothing to satisfy.
-        _start_server()
-        self._require_system_backend_blocked_by_hip_plugin()
-        _stop_server()
-
-        valid_so = os.path.join(self.temp_bin_dir, "libggml-hip.so")
-        with open(valid_so, "w", encoding="utf-8") as handle:
-            handle.write("stub")
-
-        # _start_server() launches lemond with os.environ.copy(), so set the
-        # override in this process's environment and clean it up afterwards.
-        self.addCleanup(os.environ.pop, "LEMONADE_GGML_HIP_PATH", None)
-        os.environ["LEMONADE_GGML_HIP_PATH"] = valid_so
-        _start_server()
-        system = self._get_llamacpp_backends().get("system", {})
-        self.assertNotIn("HIP plugin", system.get("message", ""), system)
-
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "System backend only supported on Linux"
-    )
-    def test_005b_hip_path_override_invalid_is_ignored(self):
-        """An invalid LEMONADE_GGML_HIP_PATH (nonexistent file or directory) is
-        ignored: the 'system' backend stays blocked by the missing HIP plugin."""
-        if not os.path.exists("/sys/class/kfd"):
-            self.skipTest("Requires an AMD GPU (/sys/class/kfd present)")
-        self._add_dummy_llama_server_to_path()
-
-        _start_server()
-        self._require_system_backend_blocked_by_hip_plugin()
-        _stop_server()
-
-        self.addCleanup(os.environ.pop, "LEMONADE_GGML_HIP_PATH", None)
-
-        # Nonexistent file: the override is ignored.
-        os.environ["LEMONADE_GGML_HIP_PATH"] = os.path.join(
-            self.temp_bin_dir, "missing", "libggml-hip.so"
-        )
-        _start_server()
-        system = self._get_llamacpp_backends().get("system", {})
-        self.assertIn("HIP plugin", system.get("message", ""), system)
-        _stop_server()
-
-        # A directory is not a regular file and must also be ignored.
-        os.environ["LEMONADE_GGML_HIP_PATH"] = self.temp_bin_dir
-        _start_server()
-        system = self._get_llamacpp_backends().get("system", {})
-        self.assertIn("HIP plugin", system.get("message", ""), system)
+        if os.path.exists(self.capture_path):
+            os.remove(self.capture_path)
+        self._write_mock_control({})
 
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
     def test_006_thinking_false_maps_to_no_think_for_chat_streams(self):
         """Verify thinking:false is mapped to /no_think prefix on the last user message."""
-        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
-        self._add_dummy_llama_server_to_path()
-
-        capture_path = os.path.join(self.temp_bin_dir, "captured_chat_request.json")
-        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
-
-        _stop_server()
-        _start_server(wrapped_server="llamacpp", backend="system")
-        self._ensure_model_pulled()
-
-        load_response = requests.post(
-            f"http://localhost:{PORT}/api/v1/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load_response.status_code, 200)
-
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/chat/completions",
             json={
@@ -658,7 +449,35 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         ]
         self.assertTrue(any("[DONE]" in line for line in lines))
 
-        with open(capture_path, "r", encoding="utf-8") as handle:
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(
+            forwarded_request["messages"][-1]["content"],
+            "/no_think\nSay hello.",
+        )
+        self.assertNotIn("thinking", forwarded_request)
+        self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006a_thinking_false_maps_to_no_think_for_non_streaming_chat(self):
+        """Verify non-streaming chat preserves thinking-control normalization."""
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "stream": False,
+                "thinking": False,
+                "max_tokens": 8,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
             forwarded_request = json.load(handle)
 
         self.assertEqual(
@@ -673,26 +492,6 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     )
     def test_007_enable_thinking_takes_precedence_over_thinking_false(self):
         """Verify enable_thinking:true takes precedence over thinking:false."""
-        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
-        self._add_dummy_llama_server_to_path()
-
-        capture_path = os.path.join(
-            self.temp_bin_dir, "captured_chat_request_precedence.json"
-        )
-        os.environ["MOCK_LLAMA_REQUEST_PATH"] = capture_path
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_REQUEST_PATH", None)
-
-        _stop_server()
-        _start_server(wrapped_server="llamacpp", backend="system")
-        self._ensure_model_pulled()
-
-        load_response = requests.post(
-            f"http://localhost:{PORT}/api/v1/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load_response.status_code, 200)
-
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/chat/completions",
             json={
@@ -707,7 +506,7 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
 
-        with open(capture_path, "r", encoding="utf-8") as handle:
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
             forwarded_request = json.load(handle)
 
         self.assertEqual(forwarded_request["messages"][-1]["content"], "Say hello.")
@@ -719,30 +518,21 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     )
     def test_008_backend_context_error_preserves_http_status(self):
         """Verify backend context-window errors stay HTTP 400 and OpenAI-shaped."""
-        self._write_llama_server(MOCK_LLAMA_SERVER_PYTHON)
-        self._add_dummy_llama_server_to_path()
-
         error_message = (
             "request (67311 tokens) exceeds the available context size "
             "(65536 tokens), try increasing it"
         )
-        os.environ["MOCK_LLAMA_ERROR_STATUS"] = "400"
-        os.environ["MOCK_LLAMA_ERROR_RESPONSE"] = json.dumps(
-            {"error": {"message": error_message, "type": "invalid_request_error"}}
+        self._write_mock_control(
+            {
+                "error_status": 400,
+                "error_response": {
+                    "error": {
+                        "message": error_message,
+                        "type": "invalid_request_error",
+                    }
+                },
+            }
         )
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_ERROR_STATUS", None)
-        self.addCleanup(os.environ.pop, "MOCK_LLAMA_ERROR_RESPONSE", None)
-
-        _stop_server()
-        _start_server(wrapped_server="llamacpp", backend="system")
-        self._ensure_model_pulled()
-
-        load_response = requests.post(
-            f"http://localhost:{PORT}/api/v1/load",
-            json={"model_name": ENDPOINT_TEST_MODEL, "llamacpp_backend": "system"},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(load_response.status_code, 200)
 
         response = requests.post(
             f"http://localhost:{PORT}/api/v1/chat/completions",

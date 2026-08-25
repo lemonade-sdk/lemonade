@@ -351,7 +351,10 @@ class TelemetryTestBase(ServerTestBase):
         }
 
         for k, v in kwargs.items():
-            otlp_params[k] = v
+            if k == "session":
+                telemetry_params["session"] = v
+            else:
+                otlp_params[k] = v
 
         payload = {"telemetry": {**telemetry_params, "otlp": otlp_params}}
         res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
@@ -715,10 +718,148 @@ class CoreTracingTests(TelemetryTestBase):
         span_received = self._wait_for_span()
         self.assertIsNotNone(span_received)
         span, attrs = self._extract_span(span_received)
-        self.assertEqual(attrs["openinference.user.id"]["stringValue"], "user-abc-123")
-        self.assertEqual(
-            attrs["openinference.session.id"]["stringValue"], "session-xyz-999"
+        self.assertEqual(attrs["user.id"]["stringValue"], "user-abc-123")
+        self.assertEqual(attrs["session.id"]["stringValue"], "session-xyz-999")
+
+    def test_005b_well_known_session_header_injection(self):
+        """Verify that well-known session headers implicitly inject session ID into trace span."""
+        self._enable_telemetry(semantics=["openinference", "otel_genai"])
+
+        # Test x-session-id
+        self._chat_completion(
+            "Hi session header.",
+            request_headers={"x-session-id": "sess-injected-123"},
         )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "sess-injected-123")
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"], "sess-injected-123"
+        )
+
+        # Test mcp-session-id
+        self._chat_completion(
+            "Hi mcp session.",
+            request_headers={"Mcp-Session-Id": "mcp-sess-999"},
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "mcp-sess-999")
+
+    def test_005c_well_known_session_header_namespacing(self):
+        """Verify that client header automatically prefixes session header as <client>/<session>."""
+        self._enable_telemetry(semantics=["openinference", "otel_genai"])
+
+        self._chat_completion(
+            "Hi namespaced session.",
+            request_headers={
+                "x-opencode-session": "sess-456",
+                "x-opencode-client": "vscode-ide",
+            },
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "vscode-ide/sess-456")
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"], "vscode-ide/sess-456"
+        )
+
+    def test_005d_session_resolution_body_wins_over_header(self):
+        """Verify that body session_id takes precedence over implicit headers."""
+        self._enable_telemetry(semantics=["openinference", "otel_genai"])
+
+        self._chat_completion(
+            "Hi body priority.",
+            session_id="body-session-wins",
+            request_headers={
+                "x-session-id": "header-session-loses",
+                "x-client-id": "vscode-ide",
+            },
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "body-session-wins")
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"], "body-session-wins"
+        )
+
+    def test_005e_configured_custom_session_headers(self):
+        """Verify that user-configured custom headers (not in well-known list) inject session ID."""
+        self._enable_telemetry(
+            session={
+                "headers": {
+                    "id": ["x-custom-corp-session", "x-alt-session"],
+                    "client": ["x-custom-corp-client"],
+                }
+            },
+            semantics=["openinference", "otel_genai"],
+        )
+
+        self._chat_completion(
+            "Hi custom configured headers.",
+            request_headers={
+                "x-custom-corp-session": "corp-sess-888",
+                "x-custom-corp-client": "internal-tool",
+            },
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(
+            attrs["session.id"]["stringValue"],
+            "internal-tool/corp-sess-888",
+        )
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"],
+            "internal-tool/corp-sess-888",
+        )
+
+    def test_005f_session_header_edge_cases(self):
+        """Verify edge cases: whitespace trimming, case-insensitivity, empty value."""
+        self._enable_telemetry()
+
+        # 1. Whitespace trimming & case insensitivity
+        self._chat_completion(
+            "Hi whitespace.",
+            request_headers={
+                "X-OpenCode-Session": "  sess-trimmed-789  ",
+                "X-OpenCode-Client": "  cli  ",
+            },
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "cli/sess-trimmed-789")
+
+        # 2. Empty session header value -> no session attribute
+        self._chat_completion(
+            "Hi empty header.",
+            request_headers={
+                "x-session-id": "   ",
+                "x-client-id": "cli",
+            },
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertNotIn("session.id", attrs)
+
+        # 3. Only client header present, no session header -> no session attribute
+        self._chat_completion(
+            "Hi client only.",
+            request_headers={"x-client-id": "cli"},
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertNotIn("session.id", attrs)
 
     def test_006_json_telemetry_span(self):
         """Verify that when protocol is http/json, the payload is transmitted as standard JSON."""

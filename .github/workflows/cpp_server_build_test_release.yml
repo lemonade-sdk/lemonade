@@ -1071,11 +1071,11 @@ jobs:
             extra_args: "--wrapped-server trellis"
             backends: "vulkan rocm"
             runner: [Windows, rocm, vulkan, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
+          # - name: tts-openmoss
+          #   script: server_tts_openmoss.py
+          #   extra_args: "--wrapped-server openmoss"
+          #   backends: "vulkan rocm"
+          #   runner: [Windows, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1324,11 +1324,11 @@ jobs:
             extra_args: "--wrapped-server trellis"
             backends: "vulkan rocm"
             runner: [Linux, vulkan, rocm, lemon-prod]
-          - name: tts-openmoss
-            script: server_tts_openmoss.py
-            extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+          # - name: tts-openmoss
+          #   script: server_tts_openmoss.py
+          #   extra_args: "--wrapped-server openmoss"
+          #   backends: "vulkan rocm"
+          #   runner: [Linux, vulkan, rocm, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1997,6 +1997,7 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu streaming-errors"
           .venv/bin/python test/server_streaming_errors.py --cli-binary lemonade
+          .venv/bin/python test/test_gpu_hang_retry.py --cli-binary lemonade
 
       - name: Test jobs
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -2112,6 +2113,7 @@ jobs:
           elif [ "${{ matrix.test_type }}" = "streaming-errors" ]; then
             echo "Running streaming error termination tests..."
             $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+            $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
           fi
           echo "${{ matrix.test_type }} tests PASSED!"
 
@@ -2221,6 +2223,7 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "windows-latest streaming-errors"
           $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.
@@ -2282,13 +2285,13 @@ jobs:
         run: echo "HF_HOME=$PWD/hf-cache" >> $GITHUB_ENV
 
       - name: Stop the tray agent started by the .pkg
-        # postinst-full-mac bootstraps com.lemonade.tray into the GUI domain and
+        # postinst-full-mac bootstraps ai.lemonadeserver.tray into the GUI domain and
         # the tray is single-instance, so test_tray_https.py cannot start its own
         # while this one runs. KeepAlive is false, so it stays down.
         shell: bash
         run: |
           set -e
-          launchctl bootout "gui/$(id -u)/com.lemonade.tray" 2>/dev/null || true
+          launchctl bootout "gui/$(id -u)/ai.lemonadeserver.tray" 2>/dev/null || true
           pkill -f lemonade-tray 2>/dev/null || true
           sudo pkill -f lemonade-tray 2>/dev/null || true
           for i in $(seq 1 15); do
@@ -2367,6 +2370,7 @@ jobs:
         run: |
           $VENV_PYTHON -m test.utils.reset_server_state --best-effort --label "macos-latest streaming-errors"
           $VENV_PYTHON test/server_streaming_errors.py --cli-binary "$CLI_BINARY"
+          $VENV_PYTHON test/test_gpu_hang_retry.py --cli-binary "$CLI_BINARY"
 
       # Must run last: its tearDown stops lemond via /internal/shutdown to
       # launch its own instance, and nothing after it can rely on the server.

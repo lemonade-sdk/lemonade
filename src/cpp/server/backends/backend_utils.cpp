@@ -27,6 +27,8 @@
 
 #ifdef _WIN32
     #include <windows.h>
+    #include <winver.h>
+    #pragma comment(lib, "version.lib")
 #else
     #include <unistd.h>
     #include <sys/stat.h>
@@ -1918,6 +1920,120 @@ namespace lemon::backends {
             add(utils::path_from_utf8(d));
         }
         return out;
+#endif
+    }
+
+#ifdef _WIN32
+    // GetFileVersionInfoW can return stale cached data for system32 paths (it
+    // reported 6.2 for a file that actually contains 10.0). Callers read
+    // versions from plain paths (TheRock dir, staged copies) where it is
+    // reliable.
+    uint64_t BackendUtils::read_dll_version(const fs::path& dll) {
+        const std::wstring wpath = dll.wstring();
+        DWORD handle = 0;
+        DWORD size = GetFileVersionInfoSizeW(wpath.c_str(), &handle);
+        if (size == 0) {
+            return 0;
+        }
+        std::vector<BYTE> data(size);
+        if (!GetFileVersionInfoW(wpath.c_str(), handle, size, data.data())) {
+            return 0;
+        }
+        VS_FIXEDFILEINFO* ffi = nullptr;
+        UINT len = 0;
+        if (!VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&ffi), &len) || ffi == nullptr) {
+            return 0;
+        }
+        return (static_cast<uint64_t>(ffi->dwFileVersionMS) << 32) | ffi->dwFileVersionLS;
+    }
+#else
+    uint64_t BackendUtils::read_dll_version(const fs::path& dll) {
+        (void)dll;
+        return 0;
+    }
+#endif
+
+    bool BackendUtils::stage_therock_hip_runtime(const std::string& rocm_arch,
+                                                 const fs::path& target_dir) {
+#ifndef _WIN32
+        (void)rocm_arch;
+        (void)target_dir;
+        return false;
+#else
+        if (rocm_arch.empty()) {
+            return false;
+        }
+
+        std::vector<std::string> therock_dirs = get_therock_lib_paths(rocm_arch);
+        if (therock_dirs.empty()) {
+            return false;
+        }
+
+        const fs::path therock_dll = utils::path_from_utf8(therock_dirs.front()) / "amdhip64_7.dll";
+        if (!fs::exists(therock_dll)) {
+            return false;
+        }
+
+        const fs::path target_dll = target_dir / "amdhip64_7.dll";
+
+        wchar_t sysdir[MAX_PATH] = {};
+        if (GetSystemDirectoryW(sysdir, MAX_PATH) == 0) {
+            return false;
+        }
+        const fs::path system_dll = fs::path(sysdir) / "amdhip64_7.dll";
+
+        const uint64_t therock_ver = read_dll_version(therock_dll);
+
+        // A previously staged copy may be locked by a running backend process
+        // (Windows blocks overwriting a loaded DLL), so leave it untouched when
+        // it is already at least as new as TheRock's.
+        const uint64_t staged_ver = read_dll_version(target_dll);
+        if (staged_ver != 0 && staged_ver >= therock_ver) {
+            LOG(INFO, "BackendUtils")
+                << "Existing amdhip64_7.dll at " << utils::path_to_utf8(target_dll)
+                << " is at least as new as TheRock's; leaving it in place" << std::endl;
+            return false;
+        }
+
+        // Windows loads DLLs from the exe dir before System32, so the staged
+        // copy wins over System32. Stage System32's runtime first (a plain
+        // path, where GetFileVersionInfoW is reliable) and only overwrite it
+        // with TheRock's when TheRock is newer.
+        std::error_code ec;
+        if (fs::exists(system_dll)) {
+            fs::copy_file(system_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+            if (!ec) {
+                const uint64_t system_ver = read_dll_version(target_dll);
+                if (system_ver != 0 && system_ver >= therock_ver) {
+                    LOG(INFO, "BackendUtils")
+                        << "System32 amdhip64_7.dll is at least as new as TheRock's; staged it at "
+                        << utils::path_to_utf8(target_dll) << std::endl;
+                    return false;
+                }
+                fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+                if (!ec) {
+                    LOG(INFO, "BackendUtils")
+                        << "TheRock's amdhip64_7.dll is newer than System32's; staged it at "
+                        << utils::path_to_utf8(target_dll) << std::endl;
+                    return true;
+                }
+                LOG(ERROR, "BackendUtils")
+                    << "Failed to copy amdhip64_7.dll from TheRock: " << ec.message() << std::endl;
+                return false;
+            }
+            LOG(WARNING, "BackendUtils")
+                << "Failed to stage System32 amdhip64_7.dll: " << ec.message() << std::endl;
+        }
+
+        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
+        if (!ec) {
+            LOG(INFO, "BackendUtils")
+                << "Copied amdhip64_7.dll from TheRock to " << utils::path_to_utf8(target_dll)
+                << std::endl;
+            return true;
+        }
+        LOG(ERROR, "BackendUtils") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
+        return false;
 #endif
     }
     void BackendUtils::apply_cuda_env_vars(
