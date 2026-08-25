@@ -395,8 +395,7 @@ json TheNoiseServer::image_variations(const json& /* request */) {
 
 std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
-    const std::string& upscale_model_path,
-    double upscale_factor) {
+    const std::string& upscale_model_path) {
 
     std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), "rocm");
 
@@ -462,12 +461,6 @@ std::string TheNoiseServer::upscale_via_cli(
         "--input", input_path.string(),
         "--out", output_path.string()
     };
-
-    // Omit the factor when the client didn't request one, so thenoise applies its default
-    if (upscale_factor > 0.0) {
-        args.push_back("--upscale-factor");
-        args.push_back(std::to_string(upscale_factor));
-    }
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     auto proc = ProcessManager::start_process(

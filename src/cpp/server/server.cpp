@@ -5550,14 +5550,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // Optional client-requested upscale factor. Each backend applies it
-        // only when > 0; otherwise it uses its own default (thenoise omits the
-        // flag entirely).
-        double upscale_factor = 0.0;
-        if (request_json.contains("upscale_factor") && request_json["upscale_factor"].is_number()) {
-            upscale_factor = request_json["upscale_factor"].get<double>();
-        }
-
         std::string b64_image = request_json["image"].get<std::string>();
 
         // Upscaling is model-free: no model is loaded through the router, so we
@@ -5566,11 +5558,9 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         // and runtime environment all live in the backend).
         std::string upscaled;
         if (recipe == "thenoise") {
-            upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(
-                b64_image, upscale_model_path, upscale_factor);
+            upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(b64_image, upscale_model_path);
         } else if (recipe == "sd-cpp") {
-            upscaled = lemon::backends::SDServer::upscale_via_cli(
-                b64_image, upscale_model_path, upscale_factor);
+            upscaled = lemon::backends::SDServer::upscale_via_cli(b64_image, upscale_model_path);
         } else {
             res.status = 400;
             nlohmann::json error = {{"error", {

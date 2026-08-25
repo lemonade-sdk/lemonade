@@ -48,8 +48,7 @@ public:
     // sd-cli binary's -M upscale mode as a subprocess.
     static std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path,
-        double upscale_factor = 0.0);
+        const std::string& upscale_model_path);
 
 private:
     // Precedence and fall-through are documented in build_extra_args().
