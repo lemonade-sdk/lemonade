@@ -1187,7 +1187,7 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_health(req, res);
     });
 
-    // Lemonade-specific API reference, bundled with the running server (#1700)
+    // Lemonade-specific API reference bundled with the server
     register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
         handle_docs(req, res);
     });

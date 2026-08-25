@@ -1,9 +1,3 @@
-// Standalone test for lemon::load_api_docs() (issue #1700).
-// Compile with: cl /std:c++17 /EHsc /I src/cpp/include test/cpp/test_docs_endpoint.cpp
-//              src/cpp/server/api_docs.cpp
-// or:          g++ -std=c++17 -I src/cpp/include test/cpp/test_docs_endpoint.cpp
-//              src/cpp/server/api_docs.cpp -lpthread -o docs_endpoint_test
-
 #include "lemon/api_docs.h"
 
 #include <cstdio>
@@ -33,7 +27,6 @@ void write_file(const fs::path& path, const std::string& content) {
 int main() {
     int failures = 0;
 
-    // Case 1 + 2: all three files present, in order, version header correct.
     {
         fs::path dir = make_scratch_dir("all_present");
         write_file(dir / "lemonade.md", "LEMONADE_CONTENT");
@@ -57,13 +50,10 @@ int main() {
         if (!ok) ++failures;
     }
 
-    // Case 3: one file missing does not throw, and the rest still appear.
     {
         fs::path dir = make_scratch_dir("one_missing");
         write_file(dir / "lemonade.md", "LEMONADE_CONTENT");
         write_file(dir / "mcp.md", "MCP_CONTENT");
-        // llamacpp.md intentionally absent.
-
         std::string result;
         bool threw = false;
         try {
@@ -79,7 +69,6 @@ int main() {
         if (!ok) ++failures;
     }
 
-    // Case 4: directory missing entirely fails cleanly, no throw.
     {
         fs::path dir = fs::temp_directory_path() / "lemon_docs_test_does_not_exist";
         std::error_code ec;
@@ -98,7 +87,6 @@ int main() {
         if (!ok) ++failures;
     }
 
-    // Case 5: an empty file is handled without crashing.
     {
         fs::path dir = make_scratch_dir("empty_file");
         write_file(dir / "lemonade.md", "");

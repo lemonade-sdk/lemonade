@@ -8400,8 +8400,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/markdown", response.headers.get("Content-Type", ""))
         self.assertGreater(len(response.text), 0)
-        # A heading that only exists in docs/api/lemonade.md, so this also
-        # confirms the Lemonade-specific file actually made it into the response.
         self.assertIn("# Lemonade API", response.text)
 
     def test_061_docs_endpoint_quad_prefix(self):

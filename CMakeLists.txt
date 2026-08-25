@@ -1286,7 +1286,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
 #   - bench_scenarios.json (benchmark scenarios)
-#   - api-docs/ (Lemonade-specific API reference, served at GET /docs)
+#   - api-docs/ (bundled API reference)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1300,10 +1300,7 @@ file(GLOB_RECURSE RESOURCE_FILES
 set(TOOL_DEFINITIONS_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
 
-# API docs served by GET /docs (issue #1700). Listed explicitly rather than
-# globbed: docs/ also holds the published website (HTML, assets, CNAME), and
-# the OpenAI/Ollama-compatible pages are intentionally excluded since those
-# surfaces are already documented everywhere else.
+# Listed explicitly, not globbed: docs/ also holds the published website.
 set(API_DOC_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/lemonade.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/llamacpp.md"
@@ -2499,9 +2496,6 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
     add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
 endif()
 
-# GET /docs concatenation and error handling (issue #1700). Compiles
-# api_docs.cpp directly rather than linking lemonade-server-core, since the
-# function under test has no other dependency.
 set(_DOCS_ENDPOINT_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_docs_endpoint.cpp"
 )

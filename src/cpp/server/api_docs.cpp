@@ -12,7 +12,6 @@ namespace lemon {
 
 namespace {
 
-// Order matches CMakeLists.txt's API_DOC_FILES list.
 constexpr const char* kApiDocFiles[] = {"lemonade.md", "llamacpp.md", "mcp.md"};
 
 } // namespace
@@ -34,10 +33,7 @@ std::string load_api_docs(const std::string& docs_dir, const std::string& versio
             LOG(WARNING, "Server") << "API doc file missing: " << file_path.string() << std::endl;
             continue;
         }
-        // Read into a throwaway stream first: operator<<(ostream&, streambuf*)
-        // sets failbit on the destination when it extracts zero bytes, which
-        // would silently poison `out` (and drop every file appended after
-        // it) the first time an empty file is encountered.
+        // Appending an empty streambuf sets failbit on out and drops later files.
         std::ostringstream content;
         content << file.rdbuf();
         out << content.str() << "\n\n";
