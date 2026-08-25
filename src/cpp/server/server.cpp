@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/api_docs.h"
 #include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
@@ -1184,6 +1185,11 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Health check
     register_get("health", [this](const httplib::Request& req, httplib::Response& res) {
         handle_health(req, res);
+    });
+
+    // Lemonade-specific API reference, bundled with the running server (#1700)
+    register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docs(req, res);
     });
 
     // Models endpoints
@@ -2654,6 +2660,13 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
     static const char* kLiveResponse = R"({"status":"ok"})";
 
     res.set_content(kLiveResponse, "application/json");
+    res.status = 200;
+}
+
+void Server::handle_docs(const httplib::Request& req, httplib::Response& res) {
+    (void)req;
+    std::string docs_dir = utils::get_resource_path("resources/api-docs");
+    res.set_content(load_api_docs(docs_dir, LEMON_VERSION_STRING), "text/markdown");
     res.status = 200;
 }
 

@@ -108,6 +108,7 @@ private:
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
+    void handle_docs(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_register(const httplib::Request& req, httplib::Response& res);
     void validate_model_registration_name(const std::string& model_name,
