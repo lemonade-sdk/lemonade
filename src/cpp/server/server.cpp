@@ -18,6 +18,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/conversation_fingerprint.h"
@@ -5498,7 +5499,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::string upscale_model_path;
-        std::string backend;
+        std::string recipe;
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
 
@@ -5510,27 +5511,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             }
 
             upscale_model_path = info.resolved_path("main");
-
-            // Honor explicit config first (e.g. sdcpp.backend = "rocm").
-            // "auto" in config.json is mapped to "" by recipe_options().
-            auto recipe_opts = config_->recipe_options("");
-            if (recipe_opts.contains("sd-cpp_backend") &&
-                recipe_opts["sd-cpp_backend"].is_string()) {
-                backend = recipe_opts["sd-cpp_backend"].get<std::string>();
-            }
-
-            // Auto-detect best backend when not explicitly configured,
-            // matching the same logic SDServer::load() uses via
-            // RecipeOptions::get_option(). Without this, upscaling
-            // silently falls back to CPU even when ROCm/Vulkan is available.
-            if (backend.empty()) {
-                auto supported = SystemInfo::get_supported_backends("sd-cpp");
-                if (!supported.backends.empty()) {
-                    backend = supported.backends[0];
-                } else {
-                    backend = "cpu";
-                }
-            }
+            recipe = info.recipe;
         } catch (const std::exception& e) {
             res.status = 404;
             nlohmann::json error = {{"error", {
@@ -5541,106 +5522,31 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // sd-server's HTTP API does not expose an upscaling endpoint.
-        // Upscaling is only available via the sd-cli binary's -M upscale mode,
-        // so we shell out to sd-cli as a subprocess. This also keeps upscaling
-        // as a separate request from generation, which lets the frontend show
-        // the original and upscaled images side by side with independent timing.
-        std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
-            *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
-        std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
-#ifdef _WIN32
-            "sd-cli.exe";
-#else
-            "sd-cli";
-#endif
+        std::string b64_image = request_json["image"].get<std::string>();
 
-        if (!std::filesystem::exists(cli_exe)) {
-            res.status = 500;
+        // Upscaling is model-free: no model is loaded through the router, so we
+        // dispatch by recipe to each backend's shared upscale API, which shells
+        // out to its own CLI binary directly (backend selection, binary path,
+        // and runtime environment all live in the backend).
+        std::string upscaled;
+        if (recipe == "thenoise") {
+            upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(b64_image, upscale_model_path);
+        } else if (recipe == "sd-cpp") {
+            upscaled = lemon::backends::SDServer::upscale_via_cli(b64_image, upscale_model_path);
+        } else {
+            res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "sd-cpp backend not installed (sd-cli not found at: "
-                            + cli_exe.string() + ")"},
-                {"type", "server_error"}
+                {"message", "Upscale is not supported by recipe: " + recipe},
+                {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
             return;
         }
 
-        std::vector<std::pair<std::string, std::string>> env_vars;
-        std::filesystem::path cli_dir = cli_exe.parent_path();
-
-        std::string resolved_backend = backend;
-        if (backend == "rocm") {
-            std::string channel = "stable";
-            if (config_) {
-                channel = config_->rocm_channel_for_recipe("sd-cpp");
-            }
-            resolved_backend = "rocm-" + channel;
-        }
-#ifndef _WIN32
-        std::string lib_path = cli_dir.string();
-
-        if (resolved_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            if (!rocm_arch.empty()) {
-                std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch));
-                if (!therock_dirs.empty()) {
-                    lib_path = therock_dirs + ":" + lib_path;
-                }
-            }
-        }
-
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
-        if (existing_ld_path && strlen(existing_ld_path) > 0) {
-            lib_path = lib_path + ":" + std::string(existing_ld_path);
-        }
-        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-#else
-        if (resolved_backend == "rocm-stable") {
-            std::string new_path = cli_dir.string();
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            std::vector<std::string> therock_dirs;
-            if (!rocm_arch.empty()) {
-                therock_dirs =
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch);
-                for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                    if (!it->empty()) {
-                        new_path = *it + ";" + new_path;
-                    }
-                }
-            }
-
-            const char* existing_path = std::getenv("PATH");
-            if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
-            env_vars.push_back({"PATH", new_path});
-
-            if (!therock_dirs.empty()) {
-                fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
-                fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
-                if (fs::exists(therock_dll)) {
-                    std::error_code ec;
-                    fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                    if (!ec) {
-                        LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
-                            << lemon::utils::path_to_utf8(target_dll) << std::endl;
-                    } else {
-                        LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
-                            << ec.message() << std::endl;
-                    }
-                }
-            }
-        }
-#endif
-
-        std::string b64_image = request_json["image"].get<std::string>();
-        std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
-            b64_image, upscale_model_path, cli_exe.string(), env_vars);
-
         if (upscaled.empty()) {
             res.status = 500;
             nlohmann::json error = {{"error", {
-                {"message", "ESRGAN upscale failed"},
+                {"message", "Upscale failed"},
                 {"type", "server_error"}
             }}};
             res.set_content(error.dump(), "application/json");

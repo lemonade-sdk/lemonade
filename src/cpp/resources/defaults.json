@@ -111,6 +111,7 @@
   "thenoise": {
     "backend": "auto",
     "lora_dir": "",
+    "rocm_bin": "builtin",
     "upscaler_dir": ""
   },
   "thinksound": {
