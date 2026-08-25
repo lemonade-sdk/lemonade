@@ -8394,6 +8394,38 @@ class EndpointTests(ServerTestBase):
                 "[OK] /internal/set applies download_rate_limit at runtime "
                 "and persists it"
             )
+    def test_060_docs_endpoint(self):
+        """GET /docs returns the bundled Lemonade-specific API reference (#1700)."""
+        response = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/markdown", response.headers.get("Content-Type", ""))
+        self.assertGreater(len(response.text), 0)
+        # A heading that only exists in docs/api/lemonade.md, so this also
+        # confirms the Lemonade-specific file actually made it into the response.
+        self.assertIn("# Lemonade API", response.text)
+
+    def test_061_docs_endpoint_quad_prefix(self):
+        """GET /docs is registered on all four routing prefixes with identical bodies."""
+        prefixes = ["/api/v0", "/api/v1", "/v0", "/v1"]
+        bodies = []
+        for prefix in prefixes:
+            response = requests.get(
+                f"http://localhost:{PORT}{prefix}/docs", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{prefix}/docs did not return 200"
+            )
+            bodies.append(response.text)
+
+        for body in bodies[1:]:
+            self.assertEqual(
+                body, bodies[0], "docs body differs between routing prefixes"
+            )
+
+    def test_062_docs_endpoint_rejects_post(self):
+        """POST /docs is not a defined route, consistent with other GET-only endpoints."""
+        response = requests.post(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

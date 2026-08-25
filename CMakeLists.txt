@@ -2499,6 +2499,28 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
     add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
 endif()
 
+# GET /docs concatenation and error handling (issue #1700). Compiles
+# api_docs.cpp directly rather than linking lemonade-server-core, since the
+# function under test has no other dependency.
+set(_DOCS_ENDPOINT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_docs_endpoint.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_DOCS_ENDPOINT_TEST_SRC}")
+    add_executable(test_docs_endpoint
+        test/cpp/test_docs_endpoint.cpp
+        src/cpp/server/api_docs.cpp
+    )
+    target_include_directories(test_docs_endpoint PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_docs_endpoint PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_cpp_ci_test(DocsEndpointTest CI ON COMMAND test_docs_endpoint)
+endif()
+
 # Descriptor contract: every mode a backend advertises in `supported_modes` is
 # backed by a capability interface its server class implements. Compiles the
 # server class definitions (for the compile-time capability mask) but calls
