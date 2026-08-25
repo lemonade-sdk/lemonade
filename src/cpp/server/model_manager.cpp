@@ -2818,6 +2818,7 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
         if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
@@ -2896,6 +2897,7 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
         if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
@@ -3562,10 +3564,28 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
-        // Filter out models that are too large for system RAM
-        // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
-            if (info.size > max_model_size_gb) {
+        // Filter out models too large to run on this machine.
+        if (!filter_out && !user_controlled_model && info.size > 0.0) {
+            const auto* desc = backends::descriptor_for(recipe);
+            if (desc && desc->streams_model_from_storage) {
+                // A streaming backend reads the model from disk on demand, so the
+                // full model need not fit in memory — only its resident working
+                // set, and only in the device's own pool. ROCm cannot address
+                // system RAM plus the iGPU carveout as one pool; it gets the
+                // larger of the pools (largest_mem_pool_gb), so that is the ceiling.
+                const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
+                if (streaming_model_exceeds_pool(working_set, largest_mem_pool_gb)) {
+                    filter_out = true;
+                    size_filtered_recipes.insert(recipe);
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(1);
+                    oss << "This model streams from disk but needs about " << working_set
+                        << " GB resident in GPU memory, and this device's largest memory "
+                        << "pool is only " << largest_mem_pool_gb << " GB.";
+                    filter_reason = oss.str();
+                }
+            } else if (system_ram_gb > 0.0 && info.size > max_model_size_gb) {
+                // Non-streaming: the whole model must fit (80% of system RAM).
                 filter_out = true;
                 size_filtered_recipes.insert(recipe);
                 std::ostringstream oss;
@@ -3625,6 +3645,15 @@ std::set<std::string> ModelManager::recipes_missing_all_models(
         }
     }
     return hidden;
+}
+
+double ModelManager::streaming_working_set_gb(double min_resident_gb, double size_gb) {
+    return min_resident_gb > 0.0 ? min_resident_gb : size_gb;
+}
+
+bool ModelManager::streaming_model_exceeds_pool(double working_set_gb, double pool_gb) {
+    // pool <= 0 means the device pool is unknown: don't hide on missing data.
+    return pool_gb > 0.0 && working_set_gb > pool_gb;
 }
 
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {

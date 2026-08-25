@@ -204,12 +204,10 @@ private:
     // loops without any keys still work.
     void handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res);
     void handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res);
-    void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
-    void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 

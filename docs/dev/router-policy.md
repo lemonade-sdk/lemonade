@@ -70,8 +70,25 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `keywords_any` / `keywords_all` | Case-insensitive substring match over the input. |
 | `regex` | ECMAScript regex over the input. |
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
-| `has_tools` / `has_images` | Boolean — request carries tools / images. |
+| `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
+| `has_tools` / `has_images` | Boolean - request carries tools / images. |
 | `metadata` | `{ key, equals \| any \| exists }` over the request's OpenAI `metadata`. |
+
+The text conditions above - `keywords_any` / `keywords_all`, `regex`, and the
+`chars` pair - see only the **routing input**: the last user message (or the
+`prompt` / `input` text). `total_chars` instead sums every text part the
+request carries - all roles of a chat `messages` array, all items of a
+Responses `input` array - so a rule can select on conversation size rather
+than the size of the latest turn:
+
+```json
+{ "id": "long-conversation", "match": { "min_total_chars": 60000 }, "route_to": "cloud-model" }
+```
+
+That rule fires on a long history even when the final message is `"go on"`,
+which `min_chars` would see as 5 bytes. Bounds are inclusive and counted in
+bytes; images and audio contribute nothing. Sizing a bound against a context
+window, estimate ~4 bytes per token.
 
 **Model-backed:**
 
@@ -177,6 +194,24 @@ Then call it by name with a normal client:
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="lemonade")
 client.chat.completions.create(model="user.My-Router", messages=[...])
+```
+
+## Testing a policy before registering it
+
+[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) evaluates a
+policy document against a prompt and returns the decision plus its full trace,
+without registering the policy or dispatching the user request to the selected
+candidate. Component names are accepted without resolving against the model
+registry, so a policy can be iterated on before its candidates are downloaded.
+The endpoint performs structural policy validation, but it does not run the
+registry-backed model-capability checks that registration performs. Model-backed
+routing conditions can still invoke classifier, embedding, or LLM helper models
+while the decision is evaluated.
+
+```bash
+curl -X POST http://localhost:13305/api/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{"policy": {...}, "prompt": "please write a def to reverse a list"}'
 ```
 
 ## The decision on the response
