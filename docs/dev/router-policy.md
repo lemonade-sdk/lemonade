@@ -192,6 +192,31 @@ also carries an **`x_lemonade_route`** object:
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
 
+## Context-window fitting
+
+Rules match on the last user message, so they cannot see how large the whole
+conversation has grown. Before dispatching, the router therefore estimates the
+request's token footprint and compares it against the selected candidate's
+context window — its live resolved `ctx_size` when the candidate is loaded, or
+the window a load would produce when it isn't. A candidate that cannot fit the
+request is skipped and resolution re-runs without it, so first-match-wins lands
+on the next matching rule, then the policy default.
+
+A candidate with no known window (a cloud provider that reports none) counts as
+unconstrained and is never skipped. Each skip appears in `trace` when
+`route_trace` is set:
+
+```json
+{ "condition": "capacity:Small-GGUF", "result": false,
+  "rationale": "estimated 5200 tokens (+1024 headroom) > window 4096" }
+```
+
+When no candidate fits, the request fails with **400** and
+`error.code = "context_length_exceeded"`, carrying the same trace. The estimate
+is deliberately conservative, so it can still be wrong in the other direction:
+if a routed candidate rejects the prompt for length at inference, dispatch
+re-routes **once** past that candidate and answers from the replacement.
+
 ## Cloud candidates
 
 A candidate may be a cloud model — the router derives the route category from the

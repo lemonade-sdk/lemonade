@@ -963,6 +963,7 @@ set(SOURCES_CORE
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
+    src/cpp/server/routing_capacity.cpp
     src/cpp/server/routing_classifier_services.cpp
     src/cpp/server/routing_classifier_services_router.cpp
     src/cpp/server/thinking_controls.cpp
@@ -2689,6 +2690,28 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RoutingPolicyEngineTest CI ON COMMAND test_routing_policy_engine)
+endif()
+
+# Routing capacity filtering (issue #2959): prompt-token estimator, generation
+# headroom, effective-context-window resolution (loaded / cloud / unloaded /
+# unknown=unconstrained), and the fit predicate with its safety margin.
+set(_ROUTING_CAPACITY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_capacity.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CAPACITY_TEST_SRC}")
+    add_executable(test_routing_capacity
+        test/cpp/test_routing_capacity.cpp
+        src/cpp/server/routing_capacity.cpp
+    )
+    target_include_directories(test_routing_capacity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_capacity PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingCapacityTest CI ON COMMAND test_routing_capacity)
 endif()
 
 # Routing policy parser (issue #2383): collection.router JSON -> RoutePolicy,

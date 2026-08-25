@@ -153,9 +153,29 @@ private:
     // Run a collection.router model's routing engine and return the selected
     // candidate plus the full Decision. Returns std::nullopt when routing did
     // not engage (no parsed policy), so callers leave the request untouched.
+    // Candidates whose context window cannot fit the estimated request are
+    // skipped (capacity filtering, #2959); `excluded_candidates` seeds that
+    // exclusion set so the inference-time backstop can retry past a candidate
+    // that already failed live. Throws ContextWindowExceededException when no
+    // candidate (nor the default) fits.
     std::optional<RouterDispatchResult> route_collection_request(
         const nlohmann::json& request_json,
-        const ModelInfo& collection_info);
+        const ModelInfo& collection_info,
+        const std::set<std::string>& excluded_candidates = {});
+    // Effective context window (tokens) of one routing candidate: the live
+    // resolved ctx_size when loaded, else the estimate the load path would
+    // produce. 0 = unknown = unconstrained (never skip on missing info).
+    int64_t candidate_context_window(const std::string& model_name) const;
+    // One-shot inference-time backstop (#2959): when a router-dispatched
+    // request still fails with code=context_length_exceeded, re-route once
+    // with the failed candidate excluded and forward to the new selection.
+    // Returns the retried response (and updates request_json/route_dispatch),
+    // or the original response when no retry applies or re-routing fails.
+    nlohmann::json retry_dispatch_on_context_overflow(
+        nlohmann::json response,
+        nlohmann::json& request_json,
+        std::optional<RouterDispatchResult>& route_dispatch,
+        const std::function<nlohmann::json(const nlohmann::json&)>& forward);
     // If request_json addresses a collection.router model, rewrite its "model"
     // field in place to the engine-selected candidate and return the Decision.
     // No-op otherwise.

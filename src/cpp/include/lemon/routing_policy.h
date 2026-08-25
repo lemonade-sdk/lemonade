@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -467,7 +468,14 @@ public:
     // outputs["estimated_cost"] when cost_services.cost_of is set and the
     // matched rule didn't already set that key itself; a throwing cost_of is
     // logged and ignored rather than propagated.
-    Decision route(const RouteContext& ctx, bool want_trace) const;
+    //
+    // `excluded_candidates` (engine API only — not policy schema): rules whose
+    // route_to is in the set are treated as non-matching, so first-match-wins
+    // lands on the next rule (or the default). The engine stays
+    // capacity-agnostic: an excluded default_model is still returned, and the
+    // caller decides what an excluded final selection means (#2959).
+    Decision route(const RouteContext& ctx, bool want_trace,
+                   const std::set<std::string>* excluded_candidates = nullptr) const;
 
     const RoutePolicy& policy() const { return policy_; }
 

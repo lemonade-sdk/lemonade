@@ -7,6 +7,7 @@
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
 #include "lemon/route_decision_response.h"
+#include "lemon/routing_capacity.h"
 #include "lemon/routing_classifier_services.h"
 #include "lemon/routing_policy.h"
 #include "lemon/routing_policy_parser.h"
@@ -172,6 +173,22 @@ void set_router_residency_conflict_response(
             {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
         }},
     };
+    res.set_content(response.dump(), "application/json");
+}
+
+void set_context_window_exceeded_response(
+    const ContextWindowExceededException& error,
+    httplib::Response& res) {
+    res.status = 400;
+    json error_body = {
+        {"message", error.what()},
+        {"type", "invalid_request_error"},
+        {"code", "context_length_exceeded"},
+    };
+    if (!error.trace().empty()) {
+        error_body["trace"] = error.trace();
+    }
+    const json response = {{"error", error_body}};
     res.set_content(response.dump(), "application/json");
 }
 
@@ -3687,7 +3704,8 @@ void Server::handle_collection_chat_completions(const nlohmann::json& request_js
 
 std::optional<RouterDispatchResult> Server::route_collection_request(
     const nlohmann::json& request_json,
-    const ModelInfo& collection_info) {
+    const ModelInfo& collection_info,
+    const std::set<std::string>& excluded_candidates) {
     // The policy is parsed once when the models cache is built (ModelManager),
     // so dispatch just reads it here. A missing policy means the collection
     // failed to parse at cache-build time; return nullopt so the caller leaves
@@ -3713,7 +3731,57 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
 
     RouteContext ctx = build_route_context(request_json, collection_info.model_name);
     const bool want_trace = request_json.value("route_trace", false);
-    Decision decision = engine.route(ctx, want_trace);
+
+    // Capacity filtering (#2959): re-run resolution with any candidate whose
+    // window can't fit the estimate excluded, until a fitting candidate is
+    // selected or the fail-open default itself is excluded (nothing fits).
+    const int64_t prompt_tokens = routing_capacity::estimate_prompt_tokens(request_json);
+    const int64_t headroom = routing_capacity::generation_headroom(request_json);
+
+    std::set<std::string> excluded = excluded_candidates;
+    std::vector<TraceEntry> capacity_trace;
+    Decision decision;
+    while (true) {
+        decision = engine.route(ctx, want_trace,
+                                excluded.empty() ? nullptr : &excluded);
+        if (excluded.count(decision.route_to) > 0) {
+            json trace_json = json::array();
+            if (want_trace) {
+                for (const auto& entry : capacity_trace) {
+                    trace_json.push_back({{"condition", entry.condition},
+                                          {"result", entry.result},
+                                          {"rationale", entry.rationale}});
+                }
+            }
+            throw ContextWindowExceededException(
+                "Request is estimated at " + std::to_string(prompt_tokens) +
+                    " prompt tokens (+" + std::to_string(headroom) +
+                    " generation headroom), which exceeds the context window of "
+                    "every candidate in router collection '" +
+                    collection_info.model_name + "'.",
+                std::move(trace_json));
+        }
+        const int64_t window = candidate_context_window(decision.route_to);
+        if (routing_capacity::fits(prompt_tokens, headroom, window)) {
+            break;
+        }
+        TraceEntry skip;
+        skip.condition = "capacity:" + decision.route_to;
+        skip.result = false;
+        skip.rationale = "estimated " + std::to_string(prompt_tokens) +
+                         " tokens (+" + std::to_string(headroom) +
+                         " headroom) > window " + std::to_string(window);
+        LOG(INFO, "Server") << "Router collection '" << collection_info.model_name
+                            << "': skipping '" << decision.route_to << "' — "
+                            << skip.rationale << std::endl;
+        capacity_trace.push_back(std::move(skip));
+        excluded.insert(decision.route_to);
+    }
+    if (want_trace && !capacity_trace.empty()) {
+        decision.trace.insert(decision.trace.end(), capacity_trace.begin(),
+                              capacity_trace.end());
+    }
+
     RouterDispatchResult result;
     result.requested_model = collection_info.model_name;
     result.selected_model = decision.route_to;
@@ -3721,6 +3789,64 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     router_->note_route_decision(utils::conversation_fingerprint(request_json),
                                  result.selected_model);
     return result;
+}
+
+int64_t Server::candidate_context_window(const std::string& model_name) const {
+    try {
+        const ModelInfo info = model_manager_->get_model_info(model_name);
+        const std::optional<int64_t> loaded_ctx = router_->get_loaded_ctx_size(model_name);
+        std::optional<int64_t> pinned_ctx;
+        const json ctx_option = info.recipe_options.get_option("ctx_size");
+        if (ctx_option.is_number_integer() && ctx_option.get<int64_t>() > 0) {
+            pinned_ctx = ctx_option.get<int64_t>();
+        }
+        double available_gb = 0.0;
+        if (!loaded_ctx.has_value() && !pinned_ctx.has_value() &&
+            info.recipe == "llamacpp") {
+            available_gb = get_available_memory_gb(info.device);
+        }
+        return routing_capacity::effective_context_window(info, loaded_ctx, pinned_ctx,
+                                                          available_gb);
+    } catch (const std::exception&) {
+        // Unknown candidate or lookup failure: unconstrained, never skip.
+        return 0;
+    }
+}
+
+nlohmann::json Server::retry_dispatch_on_context_overflow(
+    nlohmann::json response,
+    nlohmann::json& request_json,
+    std::optional<RouterDispatchResult>& route_dispatch,
+    const std::function<nlohmann::json(const nlohmann::json&)>& forward) {
+    if (!route_dispatch.has_value() ||
+        !routing_capacity::is_context_overflow_error(response)) {
+        return response;
+    }
+
+    const std::string failed_model = route_dispatch->selected_model;
+    const std::string collection_name = route_dispatch->requested_model;
+    std::optional<RouterDispatchResult> retry;
+    try {
+        const ModelInfo collection_info = model_manager_->get_model_info(collection_name);
+        retry = route_collection_request(request_json, collection_info, {failed_model});
+        if (!retry.has_value() || retry->selected_model == failed_model) {
+            return response;
+        }
+        retry->requested_model = collection_name;
+        LOG(INFO, "Server") << "Router collection '" << collection_name
+                            << "': context overflow on '" << failed_model
+                            << "', re-routing once to '" << retry->selected_model
+                            << "'" << std::endl;
+        request_json["model"] = retry->selected_model;
+        auto_load_model_if_needed(retry->selected_model,
+                                  extract_auto_load_options(request_json));
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Context-overflow re-route failed for '"
+                               << collection_name << "': " << e.what() << std::endl;
+        return response;
+    }
+    route_dispatch = std::move(retry);
+    return forward(request_json);
 }
 
 void Server::handle_routing_validate(const httplib::Request& req, httplib::Response& res) {
@@ -3860,6 +3986,11 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
         // Let the endpoint serialize it as HTTP 409 instead of silently falling
         // back to trying to load the collection recipe itself.
         throw;
+    } catch (const ContextWindowExceededException&) {
+        // No candidate can fit the request; the endpoint serializes this as a
+        // 400 with code=context_length_exceeded rather than falling back to
+        // trying to load the collection recipe itself.
+        throw;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Router collection dispatch failed for '"
                                << requested_model << "': " << e.what() << std::endl;
@@ -3953,6 +4084,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 LOG(WARNING, "Server") << "Router residency conflict for '"
                                        << requested_model << "': " << e.what() << std::endl;
                 set_router_residency_conflict_response(e, res);
+                return;
+            } catch (const ContextWindowExceededException& e) {
+                LOG(WARNING, "Server") << "No router candidate fits request for '"
+                                       << requested_model << "': " << e.what() << std::endl;
+                set_context_window_exceeded_response(e, res);
                 return;
             } catch (const std::exception& e) {
                 LOG(DEBUG, "Server") << "Collection check failed for '" << requested_model
@@ -4051,6 +4187,14 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(INFO, "Server") << "POST /api/v1/chat/completions - 200 OK" << std::endl;
 
             auto response = router_->chat_completion(request_json);
+
+            // The preflight estimate can undercount; if the routed candidate
+            // still rejected the prompt for length, re-route once past it.
+            response = retry_dispatch_on_context_overflow(
+                std::move(response), request_json, route_dispatch,
+                [this](const nlohmann::json& body) {
+                    return router_->chat_completion(body);
+                });
 
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Backend returned error response: " << response["error"].dump() << std::endl;
@@ -4215,6 +4359,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         LOG(WARNING, "Server") << "Router residency conflict in completions: "
                                << e.what() << std::endl;
         set_router_residency_conflict_response(e, res);
+    } catch (const ContextWindowExceededException& e) {
+        LOG(WARNING, "Server") << "No router candidate fits request in completions: "
+                               << e.what() << std::endl;
+        set_context_window_exceeded_response(e, res);
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_completions: " << e.what() << std::endl;
         res.status = 500;
@@ -5759,6 +5907,14 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
             auto response = router_->responses(request_json);
 
+            // The preflight estimate can undercount; if the routed candidate
+            // still rejected the prompt for length, re-route once past it.
+            response = retry_dispatch_on_context_overflow(
+                std::move(response), request_json, route_dispatch,
+                [this](const nlohmann::json& body) {
+                    return router_->responses(body);
+                });
+
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Responses backend error: " << response["error"].dump() << std::endl;
                 set_error_response(response, res);
@@ -5776,6 +5932,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         LOG(WARNING, "Server") << "Router residency conflict in responses: "
                                << e.what() << std::endl;
         set_router_residency_conflict_response(e, res);
+    } catch (const ContextWindowExceededException& e) {
+        LOG(WARNING, "Server") << "No router candidate fits request in responses: "
+                               << e.what() << std::endl;
+        set_context_window_exceeded_response(e, res);
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_responses: " << e.what() << std::endl;
         res.status = 500;
