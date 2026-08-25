@@ -74,6 +74,14 @@ struct RouteContext {
         bool has_images = false;     // request carried image content parts
         std::size_t chars = 0;       // UTF-8 byte count of `input`
         std::size_t total_chars = 0; // UTF-8 byte count of all request text
+
+        // The caller's requested output-length ceiling (OpenAI `max_tokens` /
+        // `max_completion_tokens`), when present. This is a ceiling, not an
+        // estimate of actual completion length — nullopt when the caller
+        // didn't send either field. Read-only signal for classifiers/conditions
+        // that want to reason about expected output size (e.g. a future
+        // token-weighted cost ranking); the engine itself never interprets it.
+        std::optional<std::size_t> expected_output_tokens;
     } params;
 
     // Routing inputs carried on the OpenAI `metadata` body field. List values
