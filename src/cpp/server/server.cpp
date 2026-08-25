@@ -1211,7 +1211,8 @@ nlohmann::json Server::handle_mcp_server_tool(
 
     auto call_binary_handler = [this](const nlohmann::json& body,
                                       JsonHandler handler,
-                                      const std::string& label) {
+                                      const std::string& label,
+                                      const std::string& fallback_mime_type) {
         httplib::Request request;
         request.method = "POST";
         request.body = body.dump();
@@ -1221,10 +1222,15 @@ nlohmann::json Server::handle_mcp_server_tool(
         if (response.status >= 400) {
             return mcp_model_http_result(response);
         }
-        const std::string mime_type = response.get_header_value("Content-Type");
+        std::string mime_type = response.get_header_value("Content-Type");
+        if (mime_type.empty()) {
+            mime_type = fallback_mime_type.empty()
+                ? "application/octet-stream"
+                : fallback_mime_type;
+        }
         const std::string encoded = utils::JsonUtils::base64_encode(response.body);
         nlohmann::json payload = {
-            {"mime_type", mime_type.empty() ? "application/octet-stream" : mime_type},
+            {"mime_type", mime_type},
             {"data_base64", encoded},
         };
         nlohmann::json content = nlohmann::json::array();
@@ -1503,7 +1509,7 @@ nlohmann::json Server::handle_mcp_server_tool(
                 if (arguments.contains(key)) body[key] = arguments[key];
             }
             return call_binary_handler(
-                body, &Server::handle_audio_generations, "Generated audio.");
+                body, &Server::handle_audio_generations, "Generated audio.", "audio/wav");
         }
 
         if (tool_name == "lemonade_text_to_speech") {
@@ -1517,8 +1523,23 @@ nlohmann::json Server::handle_mcp_server_tool(
             for (const char* key : {"voice", "speed", "response_format"}) {
                 if (arguments.contains(key)) body[key] = arguments[key];
             }
+            std::string fallback_mime_type = "audio/mpeg";
+            const std::string response_format =
+                body.value("response_format", std::string("mp3"));
+            if (response_format == "wav") {
+                fallback_mime_type = "audio/wav";
+            } else if (response_format == "opus") {
+                fallback_mime_type = "audio/ogg";
+            } else if (response_format == "aac") {
+                fallback_mime_type = "audio/aac";
+            } else if (response_format == "flac") {
+                fallback_mime_type = "audio/flac";
+            } else if (response_format == "pcm") {
+                fallback_mime_type = "audio/l16";
+            }
             return call_binary_handler(
-                body, &Server::handle_audio_speech, "Generated speech audio.");
+                body, &Server::handle_audio_speech, "Generated speech audio.",
+                fallback_mime_type);
         }
 
         if (tool_name == "lemonade_generate_3d") {
@@ -1533,7 +1554,8 @@ nlohmann::json Server::handle_mcp_server_tool(
                 if (arguments.contains(key)) body[key] = arguments[key];
             }
             return call_binary_handler(
-                body, &Server::handle_3d_generations, "Generated GLB model.");
+                body, &Server::handle_3d_generations, "Generated GLB model.",
+                "model/gltf-binary");
         }
 
         return mcp_model_tool_result({{"error", "Unknown Lemonade server tool: " + tool_name}}, true);

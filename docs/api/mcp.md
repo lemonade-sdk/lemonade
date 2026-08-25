@@ -232,7 +232,7 @@ Passing a non-collection model (e.g. a plain LLM) returns `isError: true` with a
 ## Canonical capability hub
 
 `tools/list` is the runtime source of truth for Lemonade tool names, descriptions, and input schemas.
-Lemonade App and other MCP clients are assumend to consume that catalog.
+Lemonade App and other MCP clients are assumed to consume that catalog.
 UI-only metadata such as icons, ordering, grouping, attachment selection, and rendering can remain local to the host.
 
 | Tool | Server capability |

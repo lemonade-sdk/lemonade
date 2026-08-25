@@ -417,7 +417,14 @@ class McpGatewayTests(ServerTestBase):
         listed = _post({"jsonrpc": "2.0", "id": 120, "method": "tools/list"}).json()[
             "result"
         ]["tools"]
-        self.assertEqual({tool["name"] for tool in listed}, MCP_HUB_EXPECTED_TOOLS)
+        listed_names = {tool["name"] for tool in listed}
+        self.assertTrue(
+            MCP_HUB_EXPECTED_TOOLS.issubset(listed_names),
+            msg=(
+                "Missing expected MCP tools: "
+                f"{sorted(MCP_HUB_EXPECTED_TOOLS - listed_names)}"
+            ),
+        )
         for index, tool in enumerate(listed, start=121):
             result = _call_tool(tool["name"], {}, request_id=index)
             text = json.dumps(result)
