@@ -1285,6 +1285,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
 #   - bench_scenarios.json (benchmark scenarios)
+#   - api-docs/ (Lemonade-specific API reference, served at GET /docs)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1298,6 +1299,16 @@ file(GLOB_RECURSE RESOURCE_FILES
 set(TOOL_DEFINITIONS_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
 
+# API docs served by GET /docs (issue #1700). Listed explicitly rather than
+# globbed: docs/ also holds the published website (HTML, assets, CNAME), and
+# the OpenAI/Ollama-compatible pages are intentionally excluded since those
+# surfaces are already documented everywhere else.
+set(API_DOC_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/lemonade.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/llamacpp.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/mcp.md"
+)
+
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
 add_custom_command(
@@ -1308,8 +1319,13 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${TOOL_DEFINITIONS_SRC}
         ${CMAKE_BINARY_DIR}/resources/toolDefinitions.json
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_BINARY_DIR}/resources/api-docs
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${API_DOC_FILES}
+        ${CMAKE_BINARY_DIR}/resources/api-docs/
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
-    DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC}
+    DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC} ${API_DOC_FILES}
     COMMENT "Copying resources to build directory"
 )
 
