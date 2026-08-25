@@ -24,7 +24,13 @@ CostServices make_router_cost_services(Router& router, ModelManager& model_manag
     // Memo keyed by candidate name, valid for one registry-change generation:
     // avoids a registry/build_cache hit on every routed request while still
     // picking up a price the moment it changes (model add/edit/remove, cloud
-    // discovery, on-disk edit) instead of only on restart.
+    // discovery, on-disk edit) instead of only on restart. Bounded: a caller
+    // can name arbitrary candidate strings (e.g. /v1/routing/validate's
+    // identity resolver), so without a cap, requests naming a steady stream
+    // of unique names would grow this process-global map without limit.
+    // Past the cap, a new name just isn't cached — it costs a repeat lookup
+    // on every use rather than evicting an already-cached real model.
+    constexpr std::size_t kMaxCachedCandidates = 4096;
     static std::mutex cache_mu;
     static std::map<std::string, CostInfo> cache;
     static uint64_t cached_generation = 0;
@@ -59,6 +65,9 @@ CostServices make_router_cost_services(Router& router, ModelManager& model_manag
         }
 
         std::lock_guard<std::mutex> lock(cache_mu);
+        if (cache.size() >= kMaxCachedCandidates) {
+            return info;
+        }
         auto [it, inserted] = cache.emplace(candidate, info);
         (void)inserted;
         return it->second;

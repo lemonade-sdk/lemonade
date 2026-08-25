@@ -441,25 +441,35 @@ private:
 };
 
 // Ranking metric for the "cost" classifier: sum of the two per-million
-// prices. Output token count isn't known before generation, so this is a
-// proxy rather than an exact per-request cost — the standard "cheapest
-// model" heuristic. A candidate must resolve BOTH per-million fields to get a
-// score; a model's two prices are set or unset together in practice (cloud
-// auto-discovery sets both, providers that don't publish pricing set
-// neither), so a partial resolution is treated as "no data" rather than
-// scored on one field alone. A negative, NaN, or infinite price (a malformed
-// catalog entry) is likewise treated as "no data" rather than allowed to win
-// as spuriously cheapest.
+// prices, or 0.0 for cost_tier: "free" — checked first, so a free candidate
+// wins regardless of (or absent) per-million fields. A non-free candidate
+// must resolve BOTH per-million fields to score (partial resolution is "no
+// data"); a model's two prices are set or unset together in practice. A
+// negative, NaN, infinite, overflowing (input+output), or implausibly tiny
+// positive price (cloud pricing is caller-reported, so a near-zero value
+// must not always win) is likewise "no data" rather than spuriously
+// cheapest — exact 0.0 is unaffected; use cost_tier: "free" for an
+// explicit free price instead of relying on a bare 0.
 std::optional<double> compute_cost_score(const CostInfo& info) {
+    if (info.cost_tier && *info.cost_tier == "free") {
+        return 0.0;
+    }
     if (!info.cost_input_per_million || !info.cost_output_per_million) {
         return std::nullopt;
     }
+    constexpr double kMinPlausiblePricePerMillion = 1e-6;
     const double input = *info.cost_input_per_million;
     const double output = *info.cost_output_per_million;
-    if (!std::isfinite(input) || input < 0.0 || !std::isfinite(output) || output < 0.0) {
+    const double sum = input + output;
+    if (!std::isfinite(input) || input < 0.0 || !std::isfinite(output) || output < 0.0 ||
+        !std::isfinite(sum)) {
         return std::nullopt;
     }
-    return input + output;
+    if ((input > 0.0 && input < kMinPlausiblePricePerMillion) ||
+        (output > 0.0 && output < kMinPlausiblePricePerMillion)) {
+        return std::nullopt;
+    }
+    return sum;
 }
 
 // Locale-independent, fixed-precision rendering of a per-million cost figure
@@ -506,10 +516,13 @@ public:
         const auto& candidates = labels();
         std::size_t best_index = 0;
         std::optional<double> best_score;
+        bool best_is_free_tier = false;
         for (std::size_t i = 0; i < candidates.size(); ++i) {
+            CostInfo info;
             std::optional<double> score;
             try {
-                score = compute_cost_score(ctx.cost_services.cost_of(candidates[i]));
+                info = ctx.cost_services.cost_of(candidates[i]);
+                score = compute_cost_score(info);
             } catch (const std::exception& e) {
                 log_cost_of_failure_once(candidates[i], e.what());
                 continue;
@@ -523,6 +536,7 @@ public:
             if (!best_score.has_value() || *score < *best_score) {
                 best_score = score;
                 best_index = i;
+                best_is_free_tier = info.cost_tier && *info.cost_tier == "free";
             }
         }
 
@@ -530,9 +544,12 @@ public:
         result.ok = true;
         if (best_score.has_value()) {
             result.labels[candidates[best_index]] = 1.0;
-            result.rationale = "cheapest by input+output per-M sum ($" +
-                                format_cost(*best_score) + ") among " +
-                                std::to_string(candidates.size()) + " candidates";
+            result.rationale = best_is_free_tier
+                ? "cheapest: cost_tier=free among " +
+                  std::to_string(candidates.size()) + " candidates"
+                : "cheapest by input+output per-M sum ($" +
+                  format_cost(*best_score) + ") among " +
+                  std::to_string(candidates.size()) + " candidates";
         } else {
             result.rationale = "no cost data available for any candidate; "
                                 "falling open to default_model";

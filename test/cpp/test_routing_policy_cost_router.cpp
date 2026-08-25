@@ -217,6 +217,100 @@ static void test_negative_or_nonfinite_price_excluded_from_ranking() {
           s.ok && s.score_of("Mid-GGUF") == 1.0);
 }
 
+static void test_free_tier_wins_over_priced_candidates() {
+    auto cost = make_cost({"cloud.cheap", "Local-Free-GGUF"});
+    CostServices services;
+    services.cost_of = [](const std::string& candidate) -> CostInfo {
+        CostInfo info;
+        if (candidate == "cloud.cheap") {
+            info.cost_input_per_million = 0.01;
+            info.cost_output_per_million = 0.01;  // sum 0.02 -- tiny, but still priced
+        } else if (candidate == "Local-Free-GGUF") {
+            info.cost_tier = "free";  // no per-million fields at all
+        }
+        return info;
+    };
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: cost_tier=free beats a priced candidate, even a cheap one",
+          s.ok && s.score_of("Local-Free-GGUF") == 1.0);
+}
+
+static void test_free_tier_short_circuits_contradictory_per_million_fields() {
+    auto cost = make_cost({"Weird-Free-But-Priced"});
+    CostServices services;
+    services.cost_of = [](const std::string&) -> CostInfo {
+        CostInfo info;
+        info.cost_tier = "free";
+        info.cost_input_per_million = 999.0;   // contradictory; must be ignored
+        info.cost_output_per_million = 999.0;
+        return info;
+    };
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: cost_tier=free short-circuits even a contradictory high per-million price",
+          s.ok && s.score_of("Weird-Free-But-Priced") == 1.0);
+}
+
+static void test_free_tier_rationale_says_free_not_per_million_sum() {
+    auto cost = make_cost({"Local-Free-GGUF", "Mid-GGUF"});
+    CostServices services;
+    services.cost_of = [](const std::string& candidate) -> CostInfo {
+        CostInfo info;
+        if (candidate == "Local-Free-GGUF") {
+            info.cost_tier = "free";
+        } else if (candidate == "Mid-GGUF") {
+            info.cost_input_per_million = 1.0;
+            info.cost_output_per_million = 2.0;
+        }
+        return info;
+    };
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: free-tier winner's rationale says cost_tier=free, not a per-M sum",
+          s.ok && s.score_of("Local-Free-GGUF") == 1.0 &&
+          s.rationale.find("cost_tier=free") != std::string::npos &&
+          s.rationale.find("per-M sum") == std::string::npos);
+}
+
+static void test_sum_overflow_excluded_from_ranking() {
+    auto cost = make_cost({"Bad-Overflow", "Mid-GGUF"});
+    CostServices services;
+    services.cost_of = [](const std::string& candidate) -> CostInfo {
+        CostInfo info;
+        if (candidate == "Bad-Overflow") {
+            info.cost_input_per_million = std::numeric_limits<double>::max();
+            info.cost_output_per_million = std::numeric_limits<double>::max();  // sum -> +inf
+        } else if (candidate == "Mid-GGUF") {
+            info.cost_input_per_million = 1.0;
+            info.cost_output_per_million = 2.0;  // sum 3.0, the only valid score
+        }
+        return info;
+    };
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: two finite prices whose sum overflows to inf are excluded from ranking",
+          s.ok && s.score_of("Mid-GGUF") == 1.0);
+}
+
+static void test_price_below_sanity_floor_excluded_but_exact_zero_is_not() {
+    auto cost = make_cost({"Spoofed-Tiny", "Legit-Zero", "Mid-GGUF"});
+    CostServices services;
+    services.cost_of = [](const std::string& candidate) -> CostInfo {
+        CostInfo info;
+        if (candidate == "Spoofed-Tiny") {
+            info.cost_input_per_million = 1e-30;
+            info.cost_output_per_million = 1e-30;  // implausibly tiny (spoofed/underflowed)
+        } else if (candidate == "Legit-Zero") {
+            info.cost_input_per_million = 0.0;
+            info.cost_output_per_million = 0.0;  // an honestly-declared free price via numbers
+        } else if (candidate == "Mid-GGUF") {
+            info.cost_input_per_million = 1.0;
+            info.cost_output_per_million = 2.0;
+        }
+        return info;
+    };
+    Score s = cost->evaluate(ClassifierContext{make_route("hi"), ClassifierServices{}, services});
+    check("cost: an implausibly tiny positive price is excluded, but exact 0.0 still wins as free",
+          s.ok && s.score_of("Legit-Zero") == 1.0);
+}
+
 static void test_ranking_reflects_a_price_change_on_the_next_evaluate_call() {
     // The classifier itself must not cache across evaluate() calls: it is
     // shared (via RoutePolicy::classifiers' shared_ptr) by every request's
@@ -349,6 +443,23 @@ static void test_desugar_rejects_unknown_router_type() {
     check("desugar: an unknown routing.router.type is rejected", threw);
 }
 
+// /v1/routing/validate parses routing.candidates with an identity resolver —
+// no registered-model count bounds it there — so the cap is enforced in the
+// parser itself, not only as documentation in the schema's maxItems.
+static void test_candidates_cap_enforced() {
+    json collection = l0b_collection();
+    std::vector<std::string> many;
+    for (int i = 0; i < 65; ++i) {
+        many.push_back("Candidate-" + std::to_string(i));
+    }
+    collection["components"] = many;
+    collection["routing"]["candidates"] = many;
+    collection["routing"]["default_model"] = many[0];
+    bool threw = false;
+    try { parse_l0b(collection); } catch (const std::invalid_argument&) { threw = true; }
+    check("cost_select: routing.candidates over the cap (65) is rejected", threw);
+}
+
 // ---------------------------------------------------------------------------
 // End-to-end engine routing (the acceptance path)
 // ---------------------------------------------------------------------------
@@ -403,6 +514,11 @@ int main() {
     test_mixed_priced_and_unpriced_candidates();
     test_partial_price_data_treated_as_no_data();
     test_negative_or_nonfinite_price_excluded_from_ranking();
+    test_free_tier_wins_over_priced_candidates();
+    test_free_tier_short_circuits_contradictory_per_million_fields();
+    test_free_tier_rationale_says_free_not_per_million_sum();
+    test_sum_overflow_excluded_from_ranking();
+    test_price_below_sanity_floor_excluded_but_exact_zero_is_not();
     test_ranking_reflects_a_price_change_on_the_next_evaluate_call();
     test_rationale_uses_locale_independent_formatting();
     test_throwing_candidate_excluded_not_a_failure();
@@ -413,6 +529,7 @@ int main() {
     test_desugar_rejects_router_plus_rules();
     test_desugar_rejects_model_or_prompt();
     test_desugar_rejects_unknown_router_type();
+    test_candidates_cap_enforced();
     test_e2e_routes_to_cheapest_and_reports_its_own_cost();
     test_e2e_no_data_falls_open_to_default_model();
 

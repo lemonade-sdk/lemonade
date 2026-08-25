@@ -1050,6 +1050,17 @@ void ModelManager::notify_models_changed() {
     if (in_notify) {
         return;
     }
+
+    // Bump unconditionally, before checking whether a callback is registered:
+    // a generation-based consumer (e.g. the routing-policy price cache) must
+    // see this registry change even on a build with nothing subscribed via
+    // set_models_changed_callback. Two concurrent registry updates may run
+    // their callbacks in parallel and publish out of order; the consumer
+    // keeps only the highest generation instead of us serializing the whole
+    // (potentially blocking) callback here, which would stall a newer update
+    // behind an older one.
+    const uint64_t generation = ++notify_generation_;
+
     std::function<void(uint64_t)> cb;
     {
         std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
@@ -1062,12 +1073,6 @@ void ModelManager::notify_models_changed() {
     struct ResetGuard {
         ~ResetGuard() { in_notify = false; }
     } reset_guard;
-    // Tag this notification with a monotonic generation. Two concurrent registry
-    // updates may run their callbacks in parallel and publish out of order; the
-    // consumer keeps only the highest generation instead of us serializing the
-    // whole (potentially blocking) callback here, which would stall a newer
-    // update behind an older one.
-    const uint64_t generation = ++notify_generation_;
     // Best-effort: a notification must never abort the registry mutation that
     // triggered it. delete_model fires this from a scope-guard destructor, where
     // a propagating exception would call std::terminate.

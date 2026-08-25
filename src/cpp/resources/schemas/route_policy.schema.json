@@ -32,6 +32,7 @@
           "description": "Explicit routing-target set (analog of vLLM SR providers.models). default_model and every rule.route_to must be a member.",
           "type": "array",
           "minItems": 1,
+          "maxItems": 64,
           "items": { "type": "string" }
         },
         "default_model": {

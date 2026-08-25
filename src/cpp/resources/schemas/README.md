@@ -86,7 +86,17 @@ v1** (pinned in the schema field descriptions):
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
 | `routing.router` desugaring | `type: "llm"` expands to one `llm` classifier + identity rules; `type: "cost_select"` expands to one `cost` classifier + identity rules. Both are deterministic and behavior-equivalent across versions |
-| `cost` classifier ranking | sum of `cost_input_per_million + cost_output_per_million`; a candidate resolving only one of the two fields, or a negative/non-finite price, is unranked (treated as no data); ties resolve to the first-listed candidate; if no candidate has any cost data, the classifier fails open (no winning label) and the engine falls through to `default_model` |
+| `cost` classifier tie-break / no-data fallback | ties resolve to the first-listed candidate; if no candidate has usable cost data, the classifier reports no winning label (not the `on_error` path) and the engine falls through to `default_model`. "Tie" is bit-exact IEEE equality on the summed score, not an epsilon compare — `0.1+0.2` and `0.15+0.15` are not a tie, so two prices an author considers equal resolve by their floating-point sum, not necessarily by listing order |
+
+**Exception: the `cost` classifier's ranking *metric* is not frozen.** Unlike
+every semantic above (including its own tie-break and no-data fallback, which
+are), `cost_input_per_million + cost_output_per_million` — with an explicit
+`cost_tier: "free"` short-circuiting to the cheapest score regardless of
+per-million fields — is provisional: the planned token-weighted ranking
+follow-up is expected to change it without a major-version bump. A candidate
+resolving neither `cost_tier: "free"` nor both per-million fields, or a
+negative/NaN/non-finite/overflowing price, is unranked (treated as no data)
+under the current metric.
 
 Anything fancier (token/BM25 keyword matching, a different regex engine,
 token-based length) ships as a new, separately named op — never by changing one
@@ -145,14 +155,16 @@ in `extras`. Authors can add e.g. `"cost_tier": "free"` or
 "cost_select"` (see the levels table above and `l0b_cost_select.json`) picks
 route_to automatically: it desugars into a deterministic `cost` classifier that
 ranks every candidate by the same `cost_input_per_million +
-cost_output_per_million` sum shown above and routes to the cheapest. The
-chosen candidate's own cost is still reported via `outputs.estimated_cost`
-exactly as for any other route_to — Phase A's reporting and Phase B's
-selection compose, they don't replace each other. The ranking metric, the
-tie-break (first-listed candidate wins), and the no-data fallback (fail open
-to `default_model`) are frozen v1 behavior alongside the other semantics in
-the table above; changing any of them later needs a new major, per this
-file's own evolution rule.
+cost_output_per_million` sum shown above — or `cost_tier: "free"` as an
+outright cheapest, so a free local model can actually win the ranking — and
+routes to the cheapest. The chosen candidate's own cost is still reported via
+`outputs.estimated_cost` exactly as for any other route_to — Phase A's
+reporting and Phase B's selection compose, they don't replace each other. The
+tie-break (first-listed candidate wins) and the no-data fallback (falls
+through to `default_model`) are frozen v1 behavior alongside the other
+semantics in the table above; the ranking metric itself is provisional (see
+the exception noted under that table) pending the token-weighted ranking
+follow-up.
 
 Phase C (spend/budget tracking) remains deferred.
 

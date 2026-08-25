@@ -2929,6 +2929,24 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
     add_cpp_ci_test(RoutingClassifierServicesTest CI ON COMMAND test_routing_classifier_services)
 endif()
 
+# make_router_cost_services: the price cache's registry-generation invalidation
+# and entry-count bound (a caller-supplied candidate name, e.g. via
+# /v1/routing/validate, has no registered-model count bounding it otherwise).
+# Needs a real Router/ModelManager, unlike the classifier-services test above.
+set(_ROUTING_CLASSIFIER_SERVICES_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_classifier_services_router.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CLASSIFIER_SERVICES_ROUTER_TEST_SRC}")
+    add_executable(test_routing_classifier_services_router
+        test/cpp/test_routing_classifier_services_router.cpp
+    )
+    target_link_libraries(test_routing_classifier_services_router PRIVATE lemonade-server-core)
+    add_dependencies(test_routing_classifier_services_router copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingClassifierServicesRouterTest CI ON COMMAND test_routing_classifier_services_router)
+endif()
+
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.
 # Covers head_count_kv_per_layer, sliding_window_pattern, SWA precise weighted sum,
 # full_attention_interval exact count, and scalar fallback paths.

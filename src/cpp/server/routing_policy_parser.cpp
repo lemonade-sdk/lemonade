@@ -160,12 +160,24 @@ void require_declared(const std::string& resolved,
     }
 }
 
+// Cap on routing.candidates. Enforced here rather than only in the schema
+// (schema, maxItems) because /v1/routing/validate calls this parser directly
+// with an identity component resolver — no registered-model count bounds it
+// there — and each candidate costs one cost_of()/registry lookup per
+// evaluate() for a cost_select policy, so an unbounded list is a cheap way
+// to drive many registry misses per request. Far above any real policy.
+constexpr std::size_t kMaxCandidates = 64;
+
 std::vector<std::string> parse_candidates(const json& routing,
                                           const std::set<std::string>& declared,
                                           const RoutingPolicyParseOptions& options) {
     const json& value = required_field(routing, "candidates", "routing");
     if (!value.is_array() || value.empty()) {
         throw std::invalid_argument("routing.candidates must be a non-empty array");
+    }
+    if (value.size() > kMaxCandidates) {
+        throw std::invalid_argument("routing.candidates must not exceed " +
+                                    std::to_string(kMaxCandidates) + " entries");
     }
     std::vector<std::string> candidates;
     std::set<std::string> seen;
