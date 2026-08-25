@@ -5235,7 +5235,6 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
                 LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
                 res.status = 500;
             }
-            // Auto-upscale if the loaded model has an upscale_model recipe option
             bool skip_upscale = request_json.value("skip_upscale", false);
             apply_upscale_if_configured(requested_model, response, skip_upscale);
             res.set_content(response.dump(), "application/json");
@@ -5469,7 +5468,6 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
             LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
-        // Auto-upscale if the loaded model has an upscale_model recipe option
         apply_upscale_if_configured(edit_model_name, response, parse_bool_form_field(req.form, "skip_upscale"));
         res.set_content(response.dump(), "application/json");
 
@@ -5524,7 +5522,6 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
             res.status = 500;
         }
-        // Auto-upscale if the loaded model has an upscale_model recipe option
         apply_upscale_if_configured(var_model_name, response, parse_bool_form_field(req.form, "skip_upscale"));
         res.set_content(response.dump(), "application/json");
 
@@ -5551,7 +5548,6 @@ void Server::apply_upscale_if_configured(
     const std::string& model_name,
     nlohmann::json& response,
     bool skip_upscale_request) {
-    // Check if this model has an upscale_model recipe option configured
     std::string upscale_model_name;
     try {
         auto info = model_manager_->get_model_info(model_name);
@@ -5595,13 +5591,12 @@ void Server::apply_upscale_if_configured(
             continue; // Keep the original image
         }
         item["b64_json"] = upscaled.value();
+        item["upscaled"] = true;
 
-        // Response transparency: signal that auto-upscale was applied and provide
-        // the final dimensions so UI sizing isn't surprised. Decode just the PNG
-        // header (24 bytes = 32 base64 chars).
+        // Provide the final dimensions so UI sizing isn't surprised. Decode just
+        // the PNG header (24 bytes = 32 base64 chars).
         std::string raw_header = utils::JsonUtils::base64_decode(upscaled.value().substr(0, 32));
         if (auto dims = lemon::utils::get_png_dimensions(raw_header)) {
-            item["upscaled"] = true;
             item["width"] = std::get<0>(*dims);
             item["height"] = std::get<1>(*dims);
         }
