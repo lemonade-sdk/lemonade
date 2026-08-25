@@ -20,6 +20,7 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
+#include <limits>
 #include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
@@ -2869,49 +2870,120 @@ void Server::handle_models_sync_status(const httplib::Request& req, httplib::Res
 }
 
 void Server::handle_models(const httplib::Request& req, httplib::Response& res) {
-    // For HEAD requests, just return 200 OK without processing
+    // For HEAD requests, just return 200 OK without processing.
     if (req.method == "HEAD") {
         res.status = 200;
         return;
     }
 
-    // Check if we should show all models (for CLI list command) or only downloaded (OpenAI API behavior)
-    bool show_all = req.has_param("show_all") && req.get_param_value("show_all") == "true";
+    auto bad_request = [&res](const std::string& message) {
+        res.status = 400;
+        res.set_content(nlohmann::json{{"error", message}}.dump(), "application/json");
+    };
+    auto parse_bool_param = [&](const char* name, bool& out) -> bool {
+        if (!req.has_param(name)) return true;
+        const std::string value = req.get_param_value(name);
+        if (value == "true") {
+            out = true;
+            return true;
+        }
+        if (value == "false") {
+            out = false;
+            return true;
+        }
+        bad_request(std::string("'") + name + "' must be true or false");
+        return false;
+    };
 
-    // OPTIMIZATION: For OpenAI API mode, use get_downloaded_models() which filters first
-    // Only use get_supported_models() when we need to show ALL models
-    std::map<std::string, ModelInfo> models;
-    if (show_all) {
-        models = model_manager_->get_supported_models();
-    } else {
-        models = model_manager_->get_downloaded_models();
+    // Preserve the historical show_all contract exactly: only the literal
+    // string "true" enables it; every other value behaves as false.
+    const bool show_all =
+        req.has_param("show_all") && req.get_param_value("show_all") == "true";
+
+    ModelQueryOptions options;
+    if (req.has_param("query")) options.query = req.get_param_value("query");
+    if (req.has_param("capability")) options.capability = req.get_param_value("capability");
+    if (req.has_param("cursor")) options.cursor = req.get_param_value("cursor");
+
+    if (req.has_param("downloaded")) {
+        bool downloaded = false;
+        if (!parse_bool_param("downloaded", downloaded)) return;
+        options.downloaded = downloaded;
+    } else if (!show_all) {
+        // Preserve OpenAI-compatible legacy behavior: /v1/models lists only
+        // downloaded models unless show_all=true or downloaded is explicit.
+        options.downloaded = true;
     }
 
-    nlohmann::json response;
-    response["data"] = nlohmann::json::array();
-    response["object"] = "list";
+    if (req.has_param("limit")) {
+        const std::string value = req.get_param_value("limit");
+        if (value.empty() ||
+            !std::all_of(value.begin(), value.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+            bad_request("'limit' must be a positive integer");
+            return;
+        }
+        try {
+            const unsigned long long parsed = std::stoull(value);
+            if (parsed == 0 || parsed > static_cast<unsigned long long>(std::numeric_limits<size_t>::max())) {
+                bad_request("'limit' must be a positive integer");
+                return;
+            }
+            options.limit = static_cast<size_t>(parsed);
+        } catch (const std::exception&) {
+            bad_request("'limit' must be a positive integer");
+            return;
+        }
+    }
 
-    for (const auto& [model_id, model_info] : models) {
+    const bool canonical_discovery =
+        req.has_param("query") || req.has_param("capability") ||
+        req.has_param("downloaded") || req.has_param("limit") || req.has_param("cursor");
+
+    ModelQueryResult page;
+    try {
+        page = model_manager_->query_models(options);
+    } catch (const std::invalid_argument& e) {
+        bad_request(e.what());
+        return;
+    }
+
+    nlohmann::json response = {
+        {"data", nlohmann::json::array()},
+        {"object", "list"},
+    };
+    std::map<std::string, ModelInfo> legacy_models;
+    for (const auto& [model_id, model_info] : page.models) {
         response["data"].push_back(model_info_to_json(model_id, model_info));
+        if (!canonical_discovery) legacy_models.emplace(model_id, model_info);
     }
 
-    if (alias_manager_) {
+    // API aliases are a compatibility projection, not registered model records.
+    // Keep them on the legacy /models and ?show_all=true paths, but exclude them
+    // from canonical discovery so matching_total/cursors describe real records.
+    if (!canonical_discovery && alias_manager_) {
         auto all_aliases = alias_manager_->get_all_aliases();
         for (const auto& [alias_id, target_name] : all_aliases) {
-            if (models.count(alias_id) > 0) {
-                continue;
-            }
+            if (legacy_models.count(alias_id) > 0) continue;
             std::string ultimate_target = target_name;
             if (auto resolved = alias_manager_->resolve_alias(alias_id)) {
                 ultimate_target = *resolved;
             }
             std::string canonical_target = model_manager_->resolve_model_name(ultimate_target);
-            if (models.count(canonical_target) > 0) {
-                response["data"].push_back(model_info_to_json(alias_id, models.at(canonical_target)));
-            } else if (models.count(ultimate_target) > 0) {
-                response["data"].push_back(model_info_to_json(alias_id, models.at(ultimate_target)));
+            if (legacy_models.count(canonical_target) > 0) {
+                response["data"].push_back(
+                    model_info_to_json(alias_id, legacy_models.at(canonical_target)));
+            } else if (legacy_models.count(ultimate_target) > 0) {
+                response["data"].push_back(
+                    model_info_to_json(alias_id, legacy_models.at(ultimate_target)));
             }
         }
+    }
+
+    if (canonical_discovery) {
+        response["matching_total"] = page.matching_total;
+        response["next_cursor"] = page.next_cursor.empty()
+            ? nlohmann::json(nullptr)
+            : nlohmann::json(page.next_cursor);
     }
 
     res.set_content(response.dump(), "application/json");
@@ -3197,6 +3269,8 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"checkpoint", info.checkpoint()},
         {"checkpoints", info.checkpoints},
         {"recipe", info.recipe},
+        {"capability", ModelManager::model_capability(info)},
+        {"capabilities", ModelManager::model_capabilities(info)},
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},

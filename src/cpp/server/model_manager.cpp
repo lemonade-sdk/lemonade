@@ -32,6 +32,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <iomanip>
+#include <iterator>
+#include <limits>
 #include <lemon/utils/aixlog.hpp>
 
 #ifndef _WIN32
@@ -114,7 +116,7 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source", "auto_update"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source", "auto_update", "labels"};
 
 static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
     std::string stem = fs::path(variant.primary_file).stem().string();
@@ -3338,6 +3340,158 @@ std::map<std::string, ModelInfo> ModelManager::get_downloaded_models() {
         }
     }
     return downloaded;
+}
+
+namespace {
+
+std::string lower_ascii(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+std::string normalize_model_capability(std::string value) {
+    value = lower_ascii(std::move(value));
+    std::replace(value.begin(), value.end(), '_', '-');
+    if (value == "llm") return "chat";
+    if (value == "embeddings") return "embedding";
+    if (value == "3d" || value == "mesh" || value == "model-3d") return "model3d";
+
+    static const std::set<std::string> kCanonical = {
+        "chat", "router", "omni", "image", "image-edit", "transcription",
+        "audio-generation", "tts", "model3d", "embedding", "reranking",
+        "classification",
+    };
+    return kCanonical.count(value) ? value : std::string();
+}
+
+size_t decode_model_query_cursor(const std::string& cursor) {
+    if (cursor.empty()) return 0;
+    static const std::string kPrefix = "offset:";
+    if (cursor.rfind(kPrefix, 0) != 0 || cursor.size() == kPrefix.size()) {
+        throw std::invalid_argument("Invalid model query cursor");
+    }
+    const std::string raw = cursor.substr(kPrefix.size());
+    if (!std::all_of(raw.begin(), raw.end(), [](unsigned char ch) { return std::isdigit(ch); })) {
+        throw std::invalid_argument("Invalid model query cursor");
+    }
+    try {
+        const unsigned long long parsed = std::stoull(raw);
+        if (parsed > static_cast<unsigned long long>(std::numeric_limits<size_t>::max())) {
+            throw std::invalid_argument("Invalid model query cursor");
+        }
+        return static_cast<size_t>(parsed);
+    } catch (const std::exception&) {
+        throw std::invalid_argument("Invalid model query cursor");
+    }
+}
+
+} // namespace
+
+std::string ModelManager::model_capability(const ModelInfo& info) {
+    if (is_router_collection_recipe(info.recipe)) return "router";
+    if (is_omni_collection_recipe(info.recipe)) return "omni";
+
+    switch (info.type) {
+        case ModelType::LLM: return "chat";
+        case ModelType::EMBEDDING: return "embedding";
+        case ModelType::RERANKING: return "reranking";
+        case ModelType::TRANSCRIPTION: return "transcription";
+        case ModelType::IMAGE: return "image";
+        case ModelType::TTS: return "tts";
+        case ModelType::AUDIO_GENERATION: return "audio-generation";
+        case ModelType::CLASSIFICATION: return "classification";
+        case ModelType::MESH: return "model3d";
+    }
+    return "";
+}
+
+std::vector<std::string> ModelManager::model_capabilities(const ModelInfo& info) {
+    std::vector<std::string> result;
+    auto add = [&result](const std::string& capability) {
+        if (!capability.empty() &&
+            std::find(result.begin(), result.end(), capability) == result.end()) {
+            result.push_back(capability);
+        }
+    };
+
+    add(model_capability(info));
+    for (const std::string& label : info.labels) {
+        add(normalize_model_capability(label));
+    }
+    return result;
+}
+
+ModelQueryResult ModelManager::query_models(const ModelQueryOptions& options) {
+    if (options.limit && *options.limit == 0) {
+        throw std::invalid_argument("Model query limit must be greater than zero");
+    }
+
+    const std::vector<std::string> wanted_tokens = [&]() {
+        std::vector<std::string> tokens;
+        std::istringstream input(lower_ascii(options.query));
+        for (std::string token; input >> token;) tokens.push_back(std::move(token));
+        return tokens;
+    }();
+    const std::string wanted_capability = normalize_model_capability(options.capability);
+    if (!options.capability.empty() && wanted_capability.empty()) {
+        return {};
+    }
+
+    std::vector<std::pair<std::string, ModelInfo>> matches;
+    auto candidates = options.downloaded && *options.downloaded
+        ? get_downloaded_models()
+        : get_supported_models();
+    for (auto& [model_id, info] : candidates) {
+        if (options.downloaded && info.downloaded != *options.downloaded) continue;
+
+        if (!wanted_capability.empty()) {
+            const auto capabilities = model_capabilities(info);
+            if (std::find(capabilities.begin(), capabilities.end(), wanted_capability) ==
+                capabilities.end()) {
+                continue;
+            }
+        }
+
+        if (!wanted_tokens.empty()) {
+            std::string haystack = model_id + " " + info.recipe;
+            for (const auto& [role, checkpoint] : info.checkpoints) {
+                (void)role;
+                haystack += " " + checkpoint;
+            }
+            for (const std::string& label : info.labels) haystack += " " + label;
+            haystack = lower_ascii(std::move(haystack));
+
+            bool all_tokens_match = true;
+            for (const std::string& token : wanted_tokens) {
+                if (haystack.find(token) == std::string::npos) {
+                    all_tokens_match = false;
+                    break;
+                }
+            }
+            if (!all_tokens_match) continue;
+        }
+
+        matches.emplace_back(model_id, std::move(info));
+    }
+
+    ModelQueryResult result;
+    result.matching_total = matches.size();
+    const size_t offset = decode_model_query_cursor(options.cursor);
+    if (offset >= matches.size()) return result;
+
+    size_t end = matches.size();
+    if (options.limit) {
+        const size_t remaining = matches.size() - offset;
+        end = offset + std::min(*options.limit, remaining);
+    }
+    result.models.insert(
+        result.models.end(),
+        std::make_move_iterator(matches.begin() + static_cast<std::ptrdiff_t>(offset)),
+        std::make_move_iterator(matches.begin() + static_cast<std::ptrdiff_t>(end)));
+    if (end < matches.size()) result.next_cursor = "offset:" + std::to_string(end);
+    return result;
 }
 
 // Helper function to parse physical memory string (e.g., "32.00 GB") to GB as double

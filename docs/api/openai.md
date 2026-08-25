@@ -966,16 +966,30 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
+| `show_all` | No | Backward-compatible switch. `true` returns all registered models when `downloaded` is not explicitly supplied; default behavior remains downloaded-only. |
+| `query` | No | Case-insensitive AND-token search across public model ID, checkpoints, recipe, and labels. |
+| `capability` | No | Server-owned capability predicate such as `chat`, `router`, `omni`, `image`, `image-edit`, `transcription`, `audio-generation`, `tts`, `model3d`, `embedding`, or `reranking`. |
+| `downloaded` | No | Boolean predicate over registered models. `true` selects locally present/usable artifacts; `false` selects registered but not downloaded models. Virtual collections derive this value from their components. |
+| `limit` | No | Positive maximum number of canonical model records to return. Omit it for the legacy unbounded REST behavior. |
+| `cursor` | No | Opaque continuation cursor returned by a previous canonical discovery response. |
 
-### Example request
+### Canonical discovery filters
+
+The default `GET /v1/models` response remains OpenAI-compatible and downloaded-only, and
+`show_all=true` remains supported. Supplying any of `query`, `capability`, `downloaded`,
+`limit`, or `cursor` switches the response into canonical registered-model discovery.
+Those responses additionally contain `matching_total` and `next_cursor`. API aliases are
+not counted as registered model records in this mode.
 
 ```bash
-# Show only downloaded models (OpenAI-compatible)
+# Legacy: downloaded models only
 curl http://localhost:13305/v1/models
 
-# Show all models including not-yet-downloaded (extended usage)
+# Legacy: all registered models
 curl http://localhost:13305/v1/models?show_all=true
+
+# Canonical: registered Qwen chat models that are already downloaded
+curl "http://localhost:13305/v1/models?show_all=true&query=qwen&capability=chat&downloaded=true&limit=30"
 ```
 
 ### Response format
@@ -991,6 +1005,8 @@ curl http://localhost:13305/v1/models?show_all=true
       "owned_by": "lemonade",
       "checkpoint": "unsloth/Qwen3-0.6B-GGUF:Q4_0",
       "recipe": "llamacpp",
+      "capability": "chat",
+      "capabilities": ["chat"],
       "size": 0.38,
       "max_context_window": 40960,
       "context_length": 8192,
@@ -1043,6 +1059,8 @@ curl http://localhost:13305/v1/models?show_all=true
   - `owned_by` - Owner of the model, always `"lemonade"`
   - `checkpoint` - Full checkpoint identifier on Hugging Face
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
+  - `capability` - Canonical primary server capability for this record (for example `chat`, `router`, `image`, or `embedding`)
+  - `capabilities` - Canonical capability set used by the `capability` filter. Includes the primary capability plus recognized orthogonal server-owned capabilities such as `image-edit`.
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
   - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running and the configured `ctx_size` otherwise (omitted when neither is known).
