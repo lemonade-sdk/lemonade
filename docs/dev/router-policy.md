@@ -187,6 +187,24 @@ client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="lemonade")
 client.chat.completions.create(model="user.My-Router", messages=[...])
 ```
 
+## Testing a policy before registering it
+
+[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) evaluates a
+policy document against a prompt and returns the decision plus its full trace,
+without registering the policy or dispatching the user request to the selected
+candidate. Component names are accepted without resolving against the model
+registry, so a policy can be iterated on before its candidates are downloaded.
+The endpoint performs structural policy validation, but it does not run the
+registry-backed model-capability checks that registration performs. Model-backed
+routing conditions can still invoke classifier, embedding, or LLM helper models
+while the decision is evaluated.
+
+```bash
+curl -X POST http://localhost:13305/api/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{"policy": {...}, "prompt": "please write a def to reverse a list"}'
+```
+
 ## The decision on the response
 
 Every routed response carries the header **`x-lemonade-route`** — the matched rule
