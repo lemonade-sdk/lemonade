@@ -397,6 +397,7 @@ std::string TheNoiseServer::upscale_via_cli(
     const std::string& b64_image,
     const std::string& upscale_model_path) {
 
+    //ROCm is currently the only available backend. If other backends are added this needs to be parameterized accordingly.
     std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), "rocm");
 
     if (!fs::exists(exe_path)) {
