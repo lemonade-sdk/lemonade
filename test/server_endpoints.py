@@ -4593,6 +4593,57 @@ class EndpointTests(ServerTestBase):
         self.assertTrue(decision["default_used"])
         print("[OK] /routing/validate fell through to the default model")
 
+    def test_021zta_routing_validate_total_chars_uses_prompt_length(self):
+        """A test prompt is a single turn with no history, so `min_total_chars`
+        measures the prompt itself — the same equality the history-less
+        completions form gives. A context that left the total at 0 would make
+        every whole-conversation rule untestable in the Router Builder."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "long-conversation-to-big",
+                        "match": {"min_total_chars": 100},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        long_prompt = "tell me more about this topic. " * 10  # 310 chars
+        self.assertGreater(len(long_prompt), 100)
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": long_prompt},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "long-conversation-to-big")
+        self.assertFalse(decision["default_used"])
+        self.assertTrue(
+            any(
+                entry.get("condition") == "min_total_chars"
+                and entry.get("result") is True
+                for entry in decision.get("trace", [])
+            ),
+            f"trace must include the matched min_total_chars condition: {decision}",
+        )
+
+        short_response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(short_response.status_code, 200, short_response.text)
+        self.assertTrue(short_response.json()["decision"]["default_used"])
+        print("[OK] /routing/validate measures min_total_chars on the test prompt")
+
     def test_021zu_routing_validate_bad_policy_returns_400(self):
         """A malformed policy (missing the required 'routing' key) is rejected
         with a 400 and a clear error message, not a crash."""
