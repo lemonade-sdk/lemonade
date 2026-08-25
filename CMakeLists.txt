@@ -11,7 +11,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/LemonadeTesting.cmake)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/BuildConfig.cmake)
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Dependencies.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Dependencies.cmake NO_POLICY_SCOPE)
 
 # ============================================================
 # Application: lemond
@@ -654,5 +654,5 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Packaging.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Embeddable.cmake)
 
 if(BUILD_TESTING)
-    add_subdirectory(test)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt)
 endif()

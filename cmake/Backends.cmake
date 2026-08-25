@@ -9,8 +9,7 @@
 #              include/lemon/backends/<stem>/<stem>_server.h  WrappedServer subclass + create() decl
 #              server/backends/<stem>/<stem>_server.cpp       implementation + create() def
 #
-# Adding a backend is one line here plus that folder. The codegen later in this
-# file (see "Self-describing backends registry codegen") compiles the server
+# Adding a backend is one line here plus that folder. cmake/BackendCodegen.cmake compiles the server
 # source and regenerates the registry headers, which bind each descriptor to its
 # create(). Because this list is a tracked input, editing it forces regeneration
 # on the next build (a file(GLOB) would silently miss a newly added backend). The

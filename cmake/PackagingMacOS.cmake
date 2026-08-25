@@ -1,6 +1,7 @@
 # ============================================================
 # macOS Packaging & Notarization
 # ============================================================
+macro(lemonade_prepare_macos_packaging)
 if(APPLE)
     # SETUP IDENTITIES
     set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
@@ -49,50 +50,9 @@ if(APPLE)
             </plist>")
     endif()
 endif()
+endmacro()
 
-# Add CLI application subdirectory
-add_subdirectory(src/cpp/cli)
-
-# Add tray application subdirectory
-add_subdirectory(src/cpp/tray)
-
-# Wire WiX installer targets to the binaries and frontend artifacts they package.
-# Doing this after the subdirectories are added ensures MSBuild gets real project refs.
-if(WIN32 AND WIX_EXECUTABLE)
-    set(WIX_PACKAGED_TARGETS)
-
-    if(TARGET LemonadeServer)
-        list(APPEND WIX_PACKAGED_TARGETS LemonadeServer)
-    endif()
-    if(TARGET lemonade)
-        list(APPEND WIX_PACKAGED_TARGETS lemonade)
-    endif()
-    if(TARGET ${EXECUTABLE_NAME})
-        list(APPEND WIX_PACKAGED_TARGETS ${EXECUTABLE_NAME})
-    endif()
-
-    if(TARGET wix_installer_minimal)
-        if(TARGET web-app)
-            add_dependencies(wix_installer_minimal web-app)
-        endif()
-        if(WIX_PACKAGED_TARGETS)
-            add_dependencies(wix_installer_minimal ${WIX_PACKAGED_TARGETS})
-        endif()
-    endif()
-
-    if(TARGET wix_installer_full)
-        if(TARGET tauri-app)
-            add_dependencies(wix_installer_full tauri-app)
-        endif()
-        if(TARGET web-app)
-            add_dependencies(wix_installer_full web-app)
-        endif()
-        if(WIX_PACKAGED_TARGETS)
-            add_dependencies(wix_installer_full ${WIX_PACKAGED_TARGETS})
-        endif()
-    endif()
-endif()
-
+macro(lemonade_finalize_macos_packaging)
 if(APPLE)
     # SIGNING LOGIC (Release Only)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
@@ -250,3 +210,4 @@ if(APPLE)
         add_dependencies(notarize package-macos)
     endif()
 endif()
+endmacro()

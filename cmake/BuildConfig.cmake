@@ -24,6 +24,7 @@ include(GNUInstallDirs)
           DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
      )
 
+# Preserve the backend-list initialization point from the former root CMakeLists.txt.
 include(${CMAKE_CURRENT_LIST_DIR}/Backends.cmake)
 
 # ============================================================

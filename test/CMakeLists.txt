@@ -1,6 +1,4 @@
 # C++ test targets. Shared registration policy lives in cmake/LemonadeTesting.cmake.
-# Keep executable placement compatible with the former root declarations.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
 
 set(VLLM_ARG_RESOLVER_TEST_SOURCE "${PROJECT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
 if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")

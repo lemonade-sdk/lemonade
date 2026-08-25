@@ -1,7 +1,7 @@
 # ============================================================
 # Self-describing backends registry codegen
 # ============================================================
-# Consumes LEMON_BACKENDS (defined near the top of this file): the foreach below
+# Consumes LEMON_BACKENDS (defined in cmake/Backends.cmake): the foreach below
 # compiles each backend's server source and regenerates the registry headers that
 # bind every descriptor to its create().
 set(LEMON_DESCRIPTOR_INCLUDES "")
