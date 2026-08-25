@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cctype>
+#include <cmath>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -20,6 +22,9 @@
 
 #include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
+#include "lemon/hf_variants.h"
+#include "lemon/models/registry_types.h"
+#include "lemon/runtime_config.h"
 #include "lemon/model_types.h"
 #include "lemon/models/store_snapshot.h"
 #include "lemon/utils/json_utils.h"
@@ -62,6 +67,42 @@ std::string extract_string_arg(const json& args, const char* key) {
         throw std::runtime_error(std::string("Missing or non-string argument: ") + key);
     }
     return args[key].get<std::string>();
+}
+
+std::string mcp_trim_whitespace(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string mcp_registry_source(const json& arguments) {
+    if (!arguments.contains("source")) return "huggingface";
+    if (!arguments["source"].is_string()) {
+        throw std::runtime_error("`source` must be a string");
+    }
+    const std::string source = arguments["source"].get<std::string>();
+    if (source != "huggingface" && source != "modelscope") {
+        throw std::runtime_error("`source` must be either 'huggingface' or 'modelscope'");
+    }
+    return source;
+}
+
+json mcp_discovery_error(const std::string& message,
+                         json structured = json::object()) {
+    json result = {
+        {"content", json::array({json{{"type", "text"}, {"text", message}}})},
+        {"isError", true},
+    };
+    if (!structured.empty()) {
+        result["structuredContent"] = std::move(structured);
+    }
+    return result;
+}
+
+bool mcp_discovery_is_offline() {
+    const RuntimeConfig* config = RuntimeConfig::global();
+    return config != nullptr && config->offline();
 }
 
 // Some MCP clients (notably Claude Desktop) emit chat messages in Anthropic's
@@ -1121,6 +1162,121 @@ json McpServer::tool_list_models(const json& arguments) {
     };
 }
 
+json McpServer::tool_search_models(const json& arguments) {
+    const std::string query = mcp_trim_whitespace(
+        extract_string_arg(arguments, "query"));
+    if (query.size() < 3) {
+        return mcp_discovery_error(
+            "`query` must contain at least 3 non-whitespace characters.");
+    }
+
+    const std::string source_name = mcp_registry_source(arguments);
+    const auto source = parse_remote_registry_source(source_name);
+
+    std::size_t limit = 12;
+    if (arguments.contains("limit")) {
+        const json& value = arguments["limit"];
+        if (!value.is_number()) {
+            return mcp_discovery_error("`limit` must be an integer from 1 to 50.");
+        }
+        const double requested = value.get<double>();
+        if (!std::isfinite(requested) || std::floor(requested) != requested ||
+            requested < 1 || requested > 50) {
+            return mcp_discovery_error("`limit` must be an integer from 1 to 50.");
+        }
+        limit = static_cast<std::size_t>(requested);
+    }
+
+    if (mcp_discovery_is_offline()) {
+        return mcp_discovery_error(
+            "Remote model search is unavailable while Lemond is in offline mode.",
+            {{"code", "lemond_offline"}});
+    }
+
+    RegistrySearchResponse search;
+    try {
+        search = model_manager_->search_registry(source_name, query, limit, false);
+    } catch (const RegistrySearchError& e) {
+        return mcp_discovery_error(
+            std::string("Registry search failed: ") + e.what(),
+            {{"source", source_name}, {"upstream_status_code", e.status_code()}});
+    }
+
+    json candidates = json::array();
+    for (const auto& model : search.results) {
+        candidates.push_back({
+            {"checkpoint", model.repo_id},
+            {"display_name", model.display_name},
+            {"source", remote_registry_source_name(model.source)},
+            {"repository_type", model.repository_type},
+            {"description", model.description},
+            {"tags", model.tags},
+            {"task", model.task},
+            {"downloads", model.downloads},
+            {"likes", model.likes},
+            {"has_gguf", model.has_gguf},
+        });
+    }
+
+    const std::size_t found = candidates.size();
+    json payload = {
+        {"query", query},
+        {"source", remote_registry_source_name(source)},
+        {"total", search.total},
+        {"candidates", std::move(candidates)},
+    };
+    return json{
+        {"content", json::array({text_content_block(
+            "Found " + std::to_string(found) + " remote repositories.")})},
+        {"structuredContent", std::move(payload)},
+        {"isError", false},
+    };
+}
+
+json McpServer::tool_get_pull_variants(const json& arguments) {
+    const std::string checkpoint = mcp_trim_whitespace(
+        extract_string_arg(arguments, "checkpoint"));
+    if (checkpoint.empty()) {
+        return mcp_discovery_error("`checkpoint` must not be empty.");
+    }
+
+    const std::string source_name = mcp_registry_source(arguments);
+    const auto source = parse_remote_registry_source(source_name);
+    if (mcp_discovery_is_offline()) {
+        return mcp_discovery_error(
+            "Pull-variant discovery is unavailable while Lemond is in offline mode.",
+            {{"code", "lemond_offline"}});
+    }
+
+    bool not_found = false;
+    json payload = fetch_pull_variants(
+        model_manager_->resolver(), checkpoint, source_name, not_found);
+    if (not_found) {
+        return mcp_discovery_error(
+            "Checkpoint '" + checkpoint + "' was not found on " +
+                remote_registry_display_name(source) + ".",
+            {{"checkpoint", checkpoint}, {"source", source_name}});
+    }
+    if (!payload.is_object() || !payload.contains("variants") ||
+        !payload["variants"].is_array()) {
+        return mcp_discovery_error(
+            "Pull-variant discovery returned a malformed server response.",
+            {{"checkpoint", checkpoint}, {"source", source_name}});
+    }
+
+    // Current REST route adds the resolved source after the resolver returns.
+    payload["source"] = remote_registry_source_name(source);
+    const std::size_t found = payload["variants"].size();
+    const bool gguf = payload.value("repo_kind", std::string()) == "gguf";
+    return json{
+        {"content", json::array({text_content_block(
+            "Found " + std::to_string(found) +
+            (gguf ? " GGUF variants." : " pull variants."))})},
+        {"structuredContent", std::move(payload)},
+        {"isError", false},
+    };
+}
+
 std::vector<McpTool> McpServer::build_tools() {
     return {
         McpTool(
@@ -1152,6 +1308,87 @@ std::vector<McpTool> McpServer::build_tools() {
             },
             [this](const json& arguments) {
                 return tool_list_models(arguments);
+            }),
+        McpTool(
+            json::parse(R"LMCP(
+            {
+              "_meta": {
+                "lemonade/result": {
+                  "description": "Success returns a short `text` summary and `structuredContent` with `query`, `source`, `total` and `candidates`. Each candidate contains the registry's normalized repository metadata. Errors have `isError: true`; nothing is pulled or registered."
+                }
+              },
+              "description": "Search Hugging Face or ModelScope for remote repository candidates. Use this when a requested model is not already known to Lemonade. Results are repository candidates, not registered models. Inspect the pull variants before installing anything.",
+              "inputSchema": {
+                "properties": {
+                  "limit": {
+                    "default": 12,
+                    "description": "Maximum number of repository candidates, 1 to 50.",
+                    "maximum": 50,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "query": {
+                    "description": "Search text, at least 3 characters after trimming whitespace.",
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  "source": {
+                    "default": "huggingface",
+                    "description": "Remote registry, Hugging Face by default.",
+                    "enum": [
+                      "huggingface",
+                      "modelscope"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "query"
+                ],
+                "type": "object"
+              },
+              "name": "lemonade_search_models"
+            }
+            )LMCP"),
+            [this](const json& arguments) {
+                return tool_search_models(arguments);
+            }),
+        McpTool(
+            json::parse(R"LMCP(
+            {
+              "_meta": {
+                "lemonade/result": {
+                  "description": "Success returns a short `text` summary and the complete server-owned pull-variant response in `structuredContent`, including variant names, files, sizes and repository kind. Errors have `isError: true`; no files are downloaded."
+                }
+              },
+              "description": "Inspect pullable variants of a remote model repository before an explicit installation. Reuses Lemonade's current resolver-aware pull-variant discovery, including GGUF shards and companion files. Never selects a quantization or starts a pull.",
+              "inputSchema": {
+                "properties": {
+                  "checkpoint": {
+                    "description": "Repository id in owner/name format, for example unsloth/Qwen3-8B-GGUF.",
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "source": {
+                    "default": "huggingface",
+                    "description": "Remote registry, Hugging Face by default.",
+                    "enum": [
+                      "huggingface",
+                      "modelscope"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "checkpoint"
+                ],
+                "type": "object"
+              },
+              "name": "lemonade_get_pull_variants"
+            }
+            )LMCP"),
+            [this](const json& arguments) {
+                return tool_get_pull_variants(arguments);
             }),
         McpTool(
             json{

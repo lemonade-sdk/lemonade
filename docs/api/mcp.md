@@ -187,6 +187,33 @@ Success returns two `text` content blocks: a human-readable summary, then a JSON
 | `include_available` | no | `{"type":"boolean"}` | Include downloaded models in the `available` list. |
 | `include_suggested` | no | `{"type":"boolean"}` | Include suggested, not-yet-downloaded models in `suggested_to_pull`. |
 
+### `lemonade_search_models`
+
+Search Hugging Face or ModelScope for remote repository candidates. Use this when a requested model is not already known to Lemonade. Results are repository candidates, not registered models. Inspect the pull variants before installing anything.
+
+**Returns**
+
+Success returns a short `text` summary and `structuredContent` with `query`, `source`, `total` and `candidates`. Each candidate contains the registry's normalized repository metadata. Errors have `isError: true`; nothing is pulled or registered.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `limit` | no | `{"default":12,"maximum":50,"minimum":1,"type":"integer"}` | Maximum number of repository candidates, 1 to 50. |
+| `query` | yes | `{"minLength":3,"type":"string"}` | Search text, at least 3 characters after trimming whitespace. |
+| `source` | no | `{"default":"huggingface","enum":["huggingface","modelscope"],"type":"string"}` | Remote registry, Hugging Face by default. |
+
+### `lemonade_get_pull_variants`
+
+Inspect pullable variants of a remote model repository before an explicit installation. Reuses Lemonade's current resolver-aware pull-variant discovery, including GGUF shards and companion files. Never selects a quantization or starts a pull.
+
+**Returns**
+
+Success returns a short `text` summary and the complete server-owned pull-variant response in `structuredContent`, including variant names, files, sizes and repository kind. Errors have `isError: true`; no files are downloaded.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `checkpoint` | yes | `{"minLength":1,"type":"string"}` | Repository id in owner/name format, for example unsloth/Qwen3-8B-GGUF. |
+| `source` | no | `{"default":"huggingface","enum":["huggingface","modelscope"],"type":"string"}` | Remote registry, Hugging Face by default. |
+
 ### `lemonade_chat`
 
 Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI chat format). `model` is OPTIONAL: when omitted, the server reuses an already-loaded LLM, else an already-downloaded one; if neither exists it asks you to either pass a `model` or `allow_download: true` (which downloads the default, Qwen3.5-4B-MTP-GGUF). Call `lemonade_list_models` first if you want to choose explicitly — a wrong name may trigger a multi-GB download.
