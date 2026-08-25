@@ -309,14 +309,14 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
-    // Auto-upscale response image(s) per the model's "upscale_model" recipe
-    // option, or upscale_model_override. Failed upscales leave the original
+    // Auto-upscale response image(s) per the model's "pixel_upscaler" recipe
+    // option, or pixel_upscaler_override. Failed upscales leave the original
     // image in place; skip_upscale_request forces the pass-through.
     void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
         bool skip_upscale_request = false,
-        const std::string& upscale_model_override = "");
+        const std::string& pixel_upscaler_override = "");
 
     // Returns the upscaled base64 image, or std::nullopt on failure
     // (error written to res if res is not null).

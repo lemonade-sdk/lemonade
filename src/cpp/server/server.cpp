@@ -5587,12 +5587,12 @@ void Server::apply_upscale_if_configured(
     const std::string& model_name,
     nlohmann::json& response,
     bool skip_upscale_request,
-    const std::string& upscale_model_override) {
-    std::string upscale_model_name = upscale_model_override;
+    const std::string& pixel_upscaler_override) {
+    std::string upscale_model_name = pixel_upscaler_override;
     if (upscale_model_name.empty()) {
         try {
             auto info = model_manager_->get_model_info(model_name);
-            auto upscale_opt = info.recipe_options.get_option("upscale_model");
+            auto upscale_opt = info.recipe_options.get_option("pixel_upscaler");
             if (upscale_opt.is_string() && !upscale_opt.get<std::string>().empty()) {
                 upscale_model_name = upscale_opt.get<std::string>();
             }
