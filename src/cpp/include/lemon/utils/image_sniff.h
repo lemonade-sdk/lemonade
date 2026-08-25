@@ -30,15 +30,12 @@ inline SniffedImage sniff_image(const std::string& bytes) {
 // Extract width and height from a PNG image's raw bytes.
 // Returns std::nullopt if the data is not a valid PNG with an IHDR chunk.
 inline std::optional<std::tuple<int, int>> get_png_dimensions(const std::string& bytes) {
-    // PNG signature is 8 bytes, then IHDR chunk: 4 length + 4 type + 13 data (width + height + ...)
-    // Minimum: 8 + 4 + 4 + 8 = 24 bytes
+    // 8-byte signature, then IHDR: 4 length + 4 type + data, with big-endian
+    // width at offset 16 and height at offset 20. Minimum: 24 bytes.
     if (bytes.size() < 24) return std::nullopt;
-    // Check PNG signature
     const char sig[] = "\x89PNG\r\n\x1a\n";
     if (bytes.compare(0, 8, sig, 8) != 0) return std::nullopt;
-    // Check IHDR chunk type at offset 12
     if (bytes.compare(12, 4, "IHDR", 4) != 0) return std::nullopt;
-    // Width at offset 16 (big-endian), height at offset 20 (big-endian)
     int width  = (static_cast<unsigned char>(bytes[16]) << 24) |
                  (static_cast<unsigned char>(bytes[17]) << 16) |
                  (static_cast<unsigned char>(bytes[18]) <<  8) |

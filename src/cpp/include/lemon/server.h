@@ -309,29 +309,24 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
-    // Auto-upscale the response image(s) if the source model has an "upscale_model"
-    // recipe option configured, or if upscale_model_override names one (per-request
-    // selection across either backend). Images that fail to upscale are returned
-    // unchanged (original resolution), so a transient upscale failure never discards
-    // a successful generation. If skip_upscale_request is true, skip auto-upscale even
-    // if configured (per-request override).
+    // Auto-upscale response image(s) per the model's "upscale_model" recipe
+    // option, or upscale_model_override. Failed upscales leave the original
+    // image in place; skip_upscale_request forces the pass-through.
     void apply_upscale_if_configured(
         const std::string& model_name,
         nlohmann::json& response,
         bool skip_upscale_request = false,
         const std::string& upscale_model_override = "");
 
-    // Internal helper: resolve upscale model path, pick backend, run sd-cli.
-    // Returns the upscaled base64 image on success, or std::nullopt on failure
-    // (error already written to res if res is not null).
+    // Returns the upscaled base64 image, or std::nullopt on failure
+    // (error written to res if res is not null).
     std::optional<std::string> do_upscale(
         const std::string& b64_image,
         const std::string& upscale_model_name,
         const std::string& main_model_name,
         httplib::Response* res);
 
-    // Parse a boolean from a multipart form field ("true"/"1"/"yes"/"on",
-    // case-insensitive); anything else is false.
+    // True for "true"/"1"/"yes"/"on" (case-insensitive), false otherwise.
     static bool parse_bool_form_field(const httplib::MultipartFormData& form,
                                       const std::string& name);
 

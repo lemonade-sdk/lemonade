@@ -5197,9 +5197,6 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
 
         bool refine = request_json.value("refine", false);
         std::string pixel_upscaler = request_json.value("pixel_upscaler", "");
-        // Caught server-side: `upscale` no longer reaches backends (it used to be
-        // forwarded to TheNoise), and `pixel_upscaler` names a registry model for
-        // the post-generation upscaling step.
         request_json.erase("upscale");
         request_json.erase("refine");
         request_json.erase("pixel_upscaler");
@@ -5602,10 +5599,9 @@ void Server::apply_upscale_if_configured(
         } catch (const std::exception&) {}
     }
     if (upscale_model_name.empty()) {
-        return; // No upscaler selected
+        return;
     }
 
-    // Per-request override: caller can opt out of model-level auto-upscale
     if (skip_upscale_request) {
         LOG(INFO, "Server") << "Skipping auto-upscale for model '" << model_name
                             << "' (per-request skip_implicit_upscaling=true)" << std::endl;
@@ -5614,7 +5610,7 @@ void Server::apply_upscale_if_configured(
 
     if (!response.contains("data") || !response["data"].is_array()) {
         LOG(WARNING, "Server") << "Response has no image data to upscale" << std::endl;
-        return; // Nothing to upscale — pass through
+        return;
     }
 
     LOG(INFO, "Server") << "Auto-upscaling images for model '" << model_name
@@ -5626,19 +5622,18 @@ void Server::apply_upscale_if_configured(
             continue;
         }
         std::string b64_image = item["b64_json"].get<std::string>();
-        // res == nullptr so do_upscale never writes an error response: a failed
-        // upscale keeps the original image rather than failing the whole request.
+        // res == nullptr: a failed upscale keeps the original image rather than
+        // failing the whole request.
         auto upscaled = do_upscale(b64_image, upscale_model_name, model_name, nullptr);
         if (!upscaled.has_value()) {
             LOG(WARNING, "Server") << "Auto-upscale failed for model '" << model_name
                                    << "', returning the original image" << std::endl;
-            continue; // Keep the original image
+            continue;
         }
         item["b64_json"] = upscaled.value();
         item["upscaled"] = true;
 
-        // Provide the final dimensions so UI sizing isn't surprised. Decode just
-        // the PNG header (24 bytes = 32 base64 chars).
+        // Final dimensions from just the PNG header (24 bytes = 32 base64 chars).
         std::string raw_header = utils::JsonUtils::base64_decode(upscaled.value().substr(0, 32));
         if (auto dims = lemon::utils::get_png_dimensions(raw_header)) {
             item["width"] = std::get<0>(*dims);
@@ -5658,7 +5653,6 @@ std::optional<std::string> Server::do_upscale(
     const std::string& upscale_model_name,
     const std::string& main_model_name,
     httplib::Response* res) {
-    // Resolve upscale model path
     std::string upscale_model_path;
     std::string recipe;
     try {
@@ -5687,10 +5681,8 @@ std::optional<std::string> Server::do_upscale(
         return std::nullopt;
     }
 
-    // Upscaling is model-free: no model is loaded through the router, so we
-    // dispatch by recipe to each backend's shared upscale API, which shells
-    // out to its own CLI binary directly (backend selection, binary path,
-    // and runtime environment all live in the backend).
+    // Upscaling bypasses the router (no model load): dispatch by recipe straight
+    // to each backend's upscale CLI.
     std::string upscaled;
     if (recipe == "thenoise") {
         upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(b64_image, upscale_model_path);
@@ -5706,7 +5698,6 @@ std::optional<std::string> Server::do_upscale(
         return std::nullopt;
     }
     if (upscaled.empty()) {
-        // CLI failed but didn't set a specific error — generic 500.
         if (res) {
             res->status = 500;
             res->set_content(nlohmann::json{{"error", {{
@@ -5748,7 +5739,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // Shared upscaling pipeline: resolve model, dispatch by recipe, run CLI.
         auto upscaled = do_upscale(
             request_json["image"].get<std::string>(), upscale_model_name, "", &res);
         if (!upscaled.has_value()) {
