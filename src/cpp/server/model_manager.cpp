@@ -147,6 +147,23 @@ static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
 
+// Select the deployment mode from the top-level directory within extra_models_dir.
+static std::string extra_model_deployment_label(
+    const fs::path& model_path,
+    const fs::path& search_path) {
+    const fs::path relative_path = model_path.lexically_relative(search_path);
+    if (relative_path.empty()) return {};
+
+    const auto first_component = relative_path.begin();
+    if (first_component == relative_path.end()) return {};
+
+    const std::string category = first_component->string();
+    if (category == "chat") return "chat";
+    if (category == "embeddings") return "embeddings";
+    if (category == "reranking") return "reranking";
+    return {};
+}
+
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
 // cache key, which is the form used by recipe_options.json on disk.
@@ -1154,9 +1171,7 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_->start();
 }
 
-// The deployment label is deliberately not stamped here. Callers still add
-// labels inferred from the filename, and stamping "chat" first would win over
-// them, since find_deployment_mode() checks chat ahead of every other mode.
+// Apply the default only after discovery has checked for an explicit directory mode.
 ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     ModelInfo info;
     info.model_name = name;
@@ -1220,7 +1235,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
-    std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
+    std::vector<std::pair<fs::path, std::string>> standalone_files;  // GGUF files not in subdirectories
 
     // Recursively find all .gguf files
     try {
@@ -1234,13 +1249,14 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf")) continue;
 
             fs::path parent_dir = entry.path().parent_path();
+            const std::string deployment_label =
+                extra_model_deployment_label(entry.path(), search_path);
+            const bool directly_in_category =
+                parent_dir.parent_path() == search_path && !deployment_label.empty();
 
-            // Check if this file is directly in the search directory or in a subdirectory
-            if (parent_dir == search_path) {
-                // Standalone file in the root of search directory
-                standalone_files.push_back(entry.path());
+            if (parent_dir == search_path || directly_in_category) {
+                standalone_files.emplace_back(entry.path(), deployment_label);
             } else {
-                // File in a subdirectory - group by parent directory
                 dirs_with_gguf[parent_dir].push_back(entry.path());
             }
         }
@@ -1250,7 +1266,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     }
 
     // Process standalone files (single-file models)
-    for (const auto& gguf_path : standalone_files) {
+    for (const auto& [gguf_path, deployment_label] : standalone_files) {
         std::string filename = gguf_path.filename().string();
 
         // Skip mmproj files - they're part of multimodal models
@@ -1260,8 +1276,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
-        for (const auto& label : infer_labels_from_name(model_name, filename)) {
-            add_label_once(info.labels, label);
+        if (!deployment_label.empty()) {
+            add_label_once(info.labels, deployment_label);
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
@@ -1294,6 +1310,8 @@ void ModelManager::discover_extra_models_in_directory(
     std::map<std::string, ModelInfo>& discovered) const {
 
     std::string dir_name = dir_path.filename().string();
+    const std::string deployment_label = extra_model_deployment_label(
+        dir_path, path_from_utf8(extra_models_dir_));
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
     double total_size = 0.0;
@@ -1367,8 +1385,8 @@ void ModelManager::discover_extra_models_in_directory(
             info.resolved_paths["main"] = path.string();
             info.size = static_cast<double>(v.size_bytes) / (1024.0 * 1024.0 * 1024.0);
 
-            for (const auto& label : infer_labels_from_name(variant_id, path.filename().string())) {
-                add_label_once(info.labels, label);
+            if (!deployment_label.empty()) {
+                add_label_once(info.labels, deployment_label);
             }
 
             if (!mmproj_file.empty()) {
@@ -1395,8 +1413,8 @@ void ModelManager::discover_extra_models_in_directory(
         info.resolved_paths["main"] = main_model_path.string();
         info.size = total_size;
 
-        for (const auto& label : infer_labels_from_name(model_id, main_model_path.filename().string())) {
-            add_label_once(info.labels, label);
+        if (!deployment_label.empty()) {
+            add_label_once(info.labels, deployment_label);
         }
 
         if (!mmproj_file.empty()) {

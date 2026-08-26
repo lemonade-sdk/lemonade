@@ -85,10 +85,10 @@ static void test_root_files() {
     ModelManager manager(dir.string());
     auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
-    check_type(models, "root embedding file -> EMBEDDING", "extra.nomic-embed-text-v2",
-               ModelType::EMBEDDING, "embeddings");
-    check_type(models, "root reranker file -> RERANKING", "extra.bge-reranker-v2",
-               ModelType::RERANKING, "reranking");
+    check_type(models, "root embedding filename defaults to LLM", "extra.nomic-embed-text-v2",
+               ModelType::LLM, "chat");
+    check_type(models, "root reranker filename defaults to LLM", "extra.bge-reranker-v2",
+               ModelType::LLM, "chat");
     check_type(models, "root ordinary chat file stays LLM", "extra.Qwen3-8B-Instruct",
                ModelType::LLM, "chat");
 
@@ -97,46 +97,44 @@ static void test_root_files() {
 
 static void test_split_variant_folder() {
     fs::path dir = make_temp_dir();
-    touch(dir / "MyEmbedModel" / "MyEmbedModel-Q4_K_M.gguf");
-    touch(dir / "MyEmbedModel" / "MyEmbedModel-Q8_0.gguf");
+    touch(dir / "reranking" / "MyModel" / "MyModel-Q4_K_M.gguf");
+    touch(dir / "reranking" / "MyModel" / "MyModel-Q8_0.gguf");
 
     ModelManager manager(dir.string());
     auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
-    check_type(models, "split variant (Q4_K_M) -> EMBEDDING", "extra.MyEmbedModel-Q4_K_M",
-               ModelType::EMBEDDING, "embeddings");
-    check_type(models, "split variant (Q8_0) -> EMBEDDING", "extra.MyEmbedModel-Q8_0",
-               ModelType::EMBEDDING, "embeddings");
+    check_type(models, "split variant (Q4_K_M) inherits reranking", "extra.MyModel-Q4_K_M",
+               ModelType::RERANKING, "reranking");
+    check_type(models, "split variant (Q8_0) inherits reranking", "extra.MyModel-Q8_0",
+               ModelType::RERANKING, "reranking");
 
     fs::remove_all(dir);
 }
 
 static void test_folder_model() {
     fs::path dir = make_temp_dir();
-    touch(dir / "my-reranker-model" / "model.gguf");
+    touch(dir / "embeddings" / "my-model" / "model.gguf");
 
     ModelManager manager(dir.string());
     auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
-    check_type(models, "folder model -> RERANKING", "extra.my-reranker-model",
-               ModelType::RERANKING, "reranking");
+    check_type(models, "folder model inherits embeddings", "extra.my-model",
+               ModelType::EMBEDDING, "embeddings");
 
     fs::remove_all(dir);
 }
 
-// Carrying both labels is the set illegal_deployment_labels() rejects.
-static void test_folder_and_file_disagree() {
+static void test_filename_does_not_override_category() {
     fs::path dir = make_temp_dir();
-    touch(dir / "embed-models" / "bge-reranker-v2.gguf");
+    touch(dir / "embeddings" / "bge-reranker-v2.gguf");
 
     ModelManager manager(dir.string());
     auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
-    if (check_type(models, "reranker in an embed-named folder -> RERANKING",
-                   "extra.embed-models", ModelType::RERANKING, "reranking")) {
-        const ModelInfo* info = find_model(models, "extra.embed-models");
-        check("reranker in an embed-named folder is not also labeled embeddings",
-              !has_label(*info, "embeddings"));
+    if (check_type(models, "reranker filename in embeddings stays EMBEDDING",
+                   "extra.bge-reranker-v2", ModelType::EMBEDDING, "embeddings")) {
+        const ModelInfo* info = find_model(models, "extra.bge-reranker-v2");
+        check("filename does not add reranking", !has_label(*info, "reranking"));
     }
 
     fs::remove_all(dir);
@@ -144,14 +142,14 @@ static void test_folder_and_file_disagree() {
 
 static void test_mixed_folder_is_one_model() {
     fs::path dir = make_temp_dir();
-    touch(dir / "mixed" / "a-chat-model.gguf");
-    touch(dir / "mixed" / "z-embed-model.gguf");
+    touch(dir / "mixed" / "a-embed-model.gguf");
+    touch(dir / "mixed" / "z-rerank-model.gguf");
 
     ModelManager manager(dir.string());
     auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
     check("mixed folder discovers one model", models.size() == 1);
-    check_type(models, "mixed folder takes the primary file's mode", "extra.mixed",
+    check_type(models, "ordinary folder defaults to chat", "extra.mixed",
                ModelType::LLM, "chat");
 
     fs::remove_all(dir);
@@ -160,8 +158,8 @@ static void test_mixed_folder_is_one_model() {
 // vision is a capability, not a mode, so the model still deploys as chat.
 static void test_multimodal_folder() {
     fs::path dir = make_temp_dir();
-    touch(dir / "gemma-vision" / "gemma-vision-Q4_K_M.gguf");
-    touch(dir / "gemma-vision" / "mmproj-gemma-vision-f16.gguf");
+    touch(dir / "chat" / "gemma-vision" / "gemma-vision-Q4_K_M.gguf");
+    touch(dir / "chat" / "gemma-vision" / "mmproj-gemma-vision-f16.gguf");
 
     ModelManager manager(dir.string());
     auto models = ExtraModelDiscoveryTestHook::discover(manager);
@@ -177,6 +175,63 @@ static void test_multimodal_folder() {
     fs::remove_all(dir);
 }
 
+static void test_category_files_are_separate_models() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "embeddings" / "model-a.gguf");
+    touch(dir / "embeddings" / "model-b.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+
+    check("category files discover two models", models.size() == 2);
+    check_type(models, "first category file is embedding", "extra.model-a",
+               ModelType::EMBEDDING, "embeddings");
+    check_type(models, "second category file is embedding", "extra.model-b",
+               ModelType::EMBEDDING, "embeddings");
+
+    fs::remove_all(dir);
+}
+
+static void test_category_names_are_case_sensitive() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "Embeddings" / "model.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+
+    check_type(models, "unreserved mixed-case directory defaults to chat", "extra.Embeddings",
+               ModelType::LLM, "chat");
+
+    fs::remove_all(dir);
+}
+
+static void test_same_name_across_categories() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "embeddings" / "model.gguf");
+    touch(dir / "reranking" / "model.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+
+    int embedding_models = 0;
+    int reranking_models = 0;
+    for (const auto& [id, info] : models) {
+        (void)id;
+        if (info.type == ModelType::EMBEDDING && has_label(info, "embeddings")) {
+            ++embedding_models;
+        }
+        if (info.type == ModelType::RERANKING && has_label(info, "reranking")) {
+            ++reranking_models;
+        }
+    }
+
+    check("same-named category files are both discovered", models.size() == 2);
+    check("same-named category files keep one embedding", embedding_models == 1);
+    check("same-named category files keep one reranker", reranking_models == 1);
+
+    fs::remove_all(dir);
+}
+
 int main() {
     // The constructor loads the registry JSON files unconditionally, so point it
     // at a scratch dir to keep the test off the real user cache.
@@ -186,9 +241,12 @@ int main() {
     test_root_files();
     test_split_variant_folder();
     test_folder_model();
-    test_folder_and_file_disagree();
+    test_filename_does_not_override_category();
     test_mixed_folder_is_one_model();
     test_multimodal_folder();
+    test_category_files_are_separate_models();
+    test_category_names_are_case_sensitive();
+    test_same_name_across_categories();
 
     fs::remove_all(cache_dir);
 

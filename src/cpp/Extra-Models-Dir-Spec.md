@@ -67,21 +67,18 @@ If a directory contains a file with `mmproj` anywhere in the filename, it is aut
 
 ### Embedding and Reranking Detection
 
-The name decides the mode. A name containing `rerank` gets the `reranking` label. A name containing `embed`, or naming the `bge-` embedding family, gets `embeddings`. Everything else is a chat model. Matching ignores case.
+The top-level directory selects the deployment mode. The reserved directories are `chat`, `embeddings`, and `reranking`:
 
-Only one of these labels is ever applied, because a model runs in exactly one mode. `rerank` is checked first, so `bge-reranker-v2` is a reranker rather than an embedding model.
+```text
+extra_models_dir/
+├── chat/
+├── embeddings/
+└── reranking/
+```
 
-Which name is read depends on the layout:
+Files directly inside a reserved directory are listed as separate models. Nested folder models and split variants inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat.
 
-| Layout | Name read |
-|--------|-----------|
-| A `.gguf` in the top level of the directory | its own filename |
-| A folder split into variants | each variant's own filename |
-| A folder kept as one model | its primary file's filename, then the folder name |
-
-A folder kept as one model gets one mode for the whole folder, and the other `.gguf` files in it do not affect the result. The filename is read before the folder name, so a reranker stored in a folder named `embed-models` is still a reranker.
-
-Detection is only as good as the name. An embedding model whose name says neither, such as `all-MiniLM-L6-v2`, `gte-base`, or `e5-large-v2`, is listed as chat, and a chat model whose name happens to contain `embed` is listed as an embedding model. Renaming the file is the direct fix, since discovery reads nothing but the name. Registering the file in `user_models.json` with an explicit `labels` array, for example `["embeddings"]`, adds a correctly labeled `user.*` model, but the `extra.*` entry stays as it was discovered.
+Directory matching is exact and case-sensitive. Filenames do not affect the mode, so `embeddings/bge-reranker-v2.gguf` is still an embedding model.
 
 ## Model Properties
 
@@ -92,7 +89,7 @@ Discovered models receive the following default properties:
 | `recipe` | `llamacpp` |
 | `suggested` | `true` |
 | `downloaded` | `true` |
-| `labels` | `["custom"]` (plus `"vision"` if multimodal, plus the mode label from the filename) |
+| `labels` | `["custom"]`, the directory-selected mode (or `"chat"` by default), and `"vision"` if multimodal |
 | `type` | Derived from `labels` |
 | `size` | Sum of all `.gguf` file sizes in GB |
 | `source` | `extra_models_dir` |

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -200,29 +199,6 @@ inline bool add_label_once(std::vector<std::string>& labels, const std::string& 
     if (has_label(labels, label)) return false;
     labels.push_back(label);
     return true;
-}
-
-// For sources carrying no metadata: a bare .gguf in extra_models_dir, a /pull
-// preview. At most one label is returned, since illegal_deployment_labels()
-// rejects a set naming two modes. `checkpoint` is the more specific name and
-// takes precedence, so a reranker stored in an "embeddings" folder stays one.
-inline std::vector<std::string> infer_labels_from_name(
-    const std::string& model_name,
-    const std::string& checkpoint = "") {
-    auto mode_of = [](const std::string& text) -> const char* {
-        std::string lowered = text;
-        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (lowered.find("rerank") != std::string::npos) return "reranking";
-        for (const char* family : {"embed", "bge-"}) {
-            if (lowered.find(family) != std::string::npos) return "embeddings";
-        }
-        return nullptr;
-    };
-
-    if (const char* from_checkpoint = mode_of(checkpoint)) return {from_checkpoint};
-    if (const char* from_name = mode_of(model_name)) return {from_name};
-    return {};
 }
 
 // Fallback device type for recipes with no registered backend descriptor
