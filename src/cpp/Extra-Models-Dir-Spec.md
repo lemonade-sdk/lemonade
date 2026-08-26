@@ -67,15 +67,9 @@ If a directory contains a file with `mmproj` anywhere in the filename, it is aut
 
 ### Embedding and Reranking Detection
 
-The model's filename (and, for folder models, the containing directory name) is matched case-insensitively against `embed` and `rerank`. A match against `embed` applies the `embeddings` label; a match against `rerank` applies the `reranking` label. A name matching neither is treated as an ordinary chat model. This applies per-file, so a split-variant folder can produce a mix of embedding, reranking, and chat models from the same directory.
+The model's filename, or the containing directory name for folder models, is matched case-insensitively against the substrings `embed` and `rerank` to apply the `embeddings` or `reranking` label. A name matching neither is an ordinary chat model. Matching is per-file, so one directory can produce a mix of all three.
 
-A model deploys in exactly one mode, so at most one of these labels is applied. When the filename and the directory name disagree, the filename takes precedence: a reranker stored in a folder named `embed-models` is still listed as a reranking model. When a single name carries both words, `reranking` wins.
-
-Detection reads the name only, so it is only as good as the name. Embedding models whose names do not contain `embed`, such as `bge-*` and `all-MiniLM-*`, are listed as chat models. Matching is on substrings rather than whole words, so a chat model whose name happens to contain `embed` is listed as an embedding model. Either case can be corrected by registering the file as a user model with an explicit label:
-
-```
-lemonade pull user.NAME --checkpoint main /path/to/model.gguf --recipe llamacpp --label embeddings
-```
+At most one of these labels is applied, since a model deploys in exactly one mode. The filename takes precedence over the directory name, and `reranking` wins when a single name carries both words. Detection is only as good as the name: an embedding model that does not say `embed`, such as `bge-*` or `all-MiniLM-*`, is listed as chat, and a chat model that happens to contain `embed` is listed as an embedding model. Either case is corrected by registering the file in `user_models.json` with an explicit `labels` array, for example `["embeddings"]`.
 
 ## Model Properties
 
@@ -86,8 +80,8 @@ Discovered models receive the following default properties:
 | `recipe` | `llamacpp` |
 | `suggested` | `true` |
 | `downloaded` | `true` |
-| `labels` | `["custom"]`, plus `"vision"` if multimodal, plus one mode label inferred from the filename: `"embeddings"` or `"reranking"` (see above), or `"chat"` if neither is matched |
-| `type` | Derived from `labels`: `embedding`, `reranking`, or `llm` |
+| `labels` | `["custom"]` (plus `"vision"` if multimodal, plus the mode label from the filename) |
+| `type` | Derived from `labels` |
 | `size` | Sum of all `.gguf` file sizes in GB |
 | `source` | `extra_models_dir` |
 
