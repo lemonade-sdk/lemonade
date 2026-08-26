@@ -71,7 +71,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `regex` | ECMAScript regex over the input. |
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
 | `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
-| `has_tools` / `has_images` | Boolean - request carries tools / images. |
+| `has_tools` / `has_images` | Boolean - request carries a non-empty `tools` array / image content parts. |
 | `metadata` | `{ key, equals \| any \| exists }` over the request's OpenAI `metadata`. |
 
 The text conditions above - `keywords_any` / `keywords_all`, `regex`, and the
@@ -163,14 +163,19 @@ and every entry's `model` must be one of `components`:
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to `default_model`.
 
-  The context includes `has_tools`/`has_images`, disclaimed to the judge as
-  request-format flags, not content signals — but a small judge (under ~2B) can
-  still read their mere presence as a cue and mislabel unrelated text. Write
-  `prompt` with an explicit criterion (as `risk` does above: "risk for tool
-  execution", not just "risk") and, where a request feature should genuinely
-  affect routing, prefer composing the deterministic `has_tools`/`has_images`
-  leaf alongside the classifier — as `risky-tool-calls-stay-local` does — rather
-  than trusting the judge to weigh it correctly on its own.
+  `has_tools`/`has_images` reach the judge's context only when this same
+  policy already composes the deterministic `has_tools`/`has_images` leaf
+  somewhere (as `risky-tool-calls-stay-local` does above) — a policy that
+  never references either field never exposes them, which removes the risk of
+  an unrelated request being mislabeled from their mere presence, rather than
+  relying on a disclaimer alone. When they are exposed, the judge is told
+  they describe the request's format, not its content, and to treat either as
+  risk/intent evidence only when `prompt` itself asks it to condition on tool
+  or image presence. Write `prompt` with an explicit criterion regardless (as
+  `risk` does above: "risk for tool execution", not just "risk"), and where a
+  request feature should deterministically affect routing rather than being
+  left to the judge's discretion, compose the `has_tools`/`has_images` leaf
+  alongside the classifier as shown above.
 
 > A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
 > block are the two LLM forms. `routing.router` picks the final candidate itself
@@ -266,3 +271,8 @@ The router `model` must be one of `components`. At request time the engine asks 
 to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
+
+Unlike a `type: "llm"` classifier (whose exposure of `has_tools`/`has_images` to
+the judge depends on the rest of the policy, see above), the router always
+receives them: it's the sole decision mechanism here, so `prompt` can rely on
+them directly — e.g. "use Vision-GGUF when the request includes images."
