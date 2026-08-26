@@ -1,8 +1,3 @@
-// Filesystem-level tests for ModelManager::discover_extra_models() (#1667).
-// test_model_type_classifier.cpp covers the naming helpers in isolation; these
-// run real discovery against a temp directory, which is what catches wiring
-// bugs such as a default label being stamped before the filename is read.
-
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
 
@@ -18,6 +13,16 @@ using lemon::ModelInfo;
 using lemon::ModelManager;
 using lemon::ModelType;
 using lemon::model_type_to_string;
+
+namespace lemon {
+struct ExtraModelDiscoveryTestHook {
+    static std::map<std::string, ModelInfo> discover(const ModelManager& m) {
+        return m.discover_extra_models();
+    }
+};
+}  // namespace lemon
+
+using lemon::ExtraModelDiscoveryTestHook;
 
 static int g_failures = 0;
 
@@ -78,7 +83,7 @@ static void test_root_files() {
     touch(dir / "Qwen3-8B-Instruct.gguf");
 
     ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models();
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
     check_type(models, "root embedding file -> EMBEDDING", "extra.nomic-embed-text-v2",
                ModelType::EMBEDDING, "embeddings");
@@ -96,7 +101,7 @@ static void test_split_variant_folder() {
     touch(dir / "MyEmbedModel" / "MyEmbedModel-Q8_0.gguf");
 
     ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models();
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
     check_type(models, "split variant (Q4_K_M) -> EMBEDDING", "extra.MyEmbedModel-Q4_K_M",
                ModelType::EMBEDDING, "embeddings");
@@ -111,7 +116,7 @@ static void test_folder_model() {
     touch(dir / "my-reranker-model" / "model.gguf");
 
     ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models();
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
     check_type(models, "folder model -> RERANKING", "extra.my-reranker-model",
                ModelType::RERANKING, "reranking");
@@ -125,7 +130,7 @@ static void test_folder_and_file_disagree() {
     touch(dir / "embed-models" / "bge-reranker-v2.gguf");
 
     ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models();
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
     if (check_type(models, "reranker in an embed-named folder -> RERANKING",
                    "extra.embed-models", ModelType::RERANKING, "reranking")) {
@@ -137,6 +142,21 @@ static void test_folder_and_file_disagree() {
     fs::remove_all(dir);
 }
 
+static void test_mixed_folder_is_one_model() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "mixed" / "a-chat-model.gguf");
+    touch(dir / "mixed" / "z-embed-model.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+
+    check("mixed folder discovers one model", models.size() == 1);
+    check_type(models, "mixed folder takes the primary file's mode", "extra.mixed",
+               ModelType::LLM, "chat");
+
+    fs::remove_all(dir);
+}
+
 // vision is a capability, not a mode, so the model still deploys as chat.
 static void test_multimodal_folder() {
     fs::path dir = make_temp_dir();
@@ -144,7 +164,7 @@ static void test_multimodal_folder() {
     touch(dir / "gemma-vision" / "mmproj-gemma-vision-f16.gguf");
 
     ModelManager manager(dir.string());
-    auto models = manager.discover_extra_models();
+    auto models = ExtraModelDiscoveryTestHook::discover(manager);
 
     if (check_type(models, "multimodal folder stays LLM", "extra.gemma-vision",
                    ModelType::LLM, "chat")) {
@@ -167,6 +187,7 @@ int main() {
     test_split_variant_folder();
     test_folder_model();
     test_folder_and_file_disagree();
+    test_mixed_folder_is_one_model();
     test_multimodal_folder();
 
     fs::remove_all(cache_dir);

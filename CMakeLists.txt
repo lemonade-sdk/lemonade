@@ -2840,10 +2840,6 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
-# Extra-models-dir discovery (#1667): filesystem-level coverage for
-# ModelManager::discover_extra_models() itself - root files, split variants,
-# and folder models all classify by filename (embed/rerank/plain) rather than
-# defaulting to ModelType::LLM.
 set(_EXTRA_MODEL_DISCOVERY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extra_model_discovery.cpp"
 )

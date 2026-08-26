@@ -174,6 +174,7 @@ class CloudProviderRegistry;
 
 class ModelManager {
 public:
+    friend struct ExtraModelDiscoveryTestHook;
     explicit ModelManager(const std::string& extra_models_dir = "");
 
     // Wires the cloud provider registry. ModelManager uses it to look up
@@ -446,10 +447,6 @@ struct UpdateCheckResult {
 
     void start_directory_watcher();
 
-    // Scan extra_models_dir and classify what it finds. Public because it is
-    // pure filesystem work, testable without build_cache()'s hardware filtering.
-    std::map<std::string, ModelInfo> discover_extra_models() const;
-
 private:
     // Cycle-detecting overload used by the collection fan-out in download_model.
     // `visited` accumulates collection names already entered on the current
@@ -532,6 +529,9 @@ private:
     // Download from the model's configured remote registry
     void download_from_registry(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
+
+    // Discover GGUF models from extra_models_dir
+    std::map<std::string, ModelInfo> discover_extra_models() const;
 
     ModelInfo init_extra_model_info(const std::string& name) const;
 
