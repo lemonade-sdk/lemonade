@@ -6132,6 +6132,19 @@ optgroup {
   z-index: 3;
 }
 
+.composer__toolbar {
+  flex-wrap: nowrap;
+}
+
+.composer__model-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.composer__model-button {
+  min-width: 0;
+}
+
 @media (max-width: 768px) {
   .chat.chat--with-logs.rail-expanded,
   .chat.chat--with-logs:not(.rail-expanded) {

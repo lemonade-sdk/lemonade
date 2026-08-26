@@ -3046,6 +3046,28 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });
 
+  test('A186b — Logs remains beside Effective Settings at narrow widths', async ({ page }) => {
+    await page.setViewportSize({ width: 851, height: 800 });
+    await goToChatWithLoadedModel(page);
+
+    const settings = page.getByRole('button', { name: 'Effective settings' });
+    const logs = page.getByRole('button', { name: /Logs/i });
+
+    for (const width of [851, 480]) {
+      await page.setViewportSize({ width, height: 800 });
+      const [settingsBox, logsBox] = await Promise.all([
+        settings.boundingBox(),
+        logs.boundingBox(),
+      ]);
+
+      expect(settingsBox).not.toBeNull();
+      expect(logsBox).not.toBeNull();
+      expect(Math.abs(logsBox!.y - settingsBox!.y)).toBeLessThan(2);
+      expect(logsBox!.x).toBeGreaterThan(settingsBox!.x + settingsBox!.width);
+      expect(logsBox!.x + logsBox!.width).toBeLessThanOrEqual(width);
+    }
+  });
+
   test('A187 — add menu exposes one unified tools entry and is keyboard-operable', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     const addBtn = page.getByRole('button', { name: /Add files, photos, or tools/i });

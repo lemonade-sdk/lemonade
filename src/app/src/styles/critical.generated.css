@@ -2654,7 +2654,14 @@ option:checked {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}@media (max-width: 980px) {.chat--with-logs,
+}.composer__toolbar {
+    flex-wrap: nowrap;
+  }.composer__model-picker {
+    flex: 1 1 auto;
+    min-width: 0;
+  }.composer__model-button {
+    min-width: 0;
+  }@media (max-width: 980px) {.chat--with-logs,
   .chat--with-logs.rail-expanded {
     grid-template-columns: var(--rail-collapsed) 1fr;
     grid-template-areas:
