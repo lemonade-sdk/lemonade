@@ -22,6 +22,16 @@ curl -s http://localhost:13305/mcp \
     -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
 ```
 
+### Lifecycle tool safety
+
+Model and backend lifecycle tools are intentionally part of the default `tools/list`
+catalog so MCP remains the complete server capability contract. They use the same
+API authentication boundary as the corresponding REST endpoints. Their MCP
+`annotations` describe read-only, destructive, and open-world behavior so hosts can
+apply their own approval UX or policy. These annotations, and `confirm: true` on
+`lemonade_delete_model`, are safety metadata and accident guards, not authorization
+boundaries.
+
 ## Supported methods
 
 | Method | Purpose |

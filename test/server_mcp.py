@@ -425,6 +425,73 @@ class McpGatewayTests(ServerTestBase):
                 f"{sorted(MCP_HUB_EXPECTED_TOOLS - listed_names)}"
             ),
         )
+        by_name = {tool["name"]: tool for tool in listed}
+        expected_annotations = {
+            "lemonade_list_models": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_get_model_info": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_load_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+            "lemonade_unload_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_get_loaded_models": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_get_server_health": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_pull_model": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "openWorldHint": True,
+            },
+            "lemonade_delete_model": {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "openWorldHint": False,
+            },
+            "lemonade_get_system_info": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_list_backends": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "openWorldHint": False,
+            },
+            "lemonade_install_backend": {
+                "readOnlyHint": False,
+                "destructiveHint": True,
+                "openWorldHint": True,
+            },
+        }
+        for name, expected in expected_annotations.items():
+            annotations = by_name[name].get("annotations", {})
+            for key, value in expected.items():
+                self.assertEqual(
+                    annotations.get(key),
+                    value,
+                    msg=f"{name} annotation {key}: {annotations}",
+                )
+
         for index, tool in enumerate(listed, start=121):
             result = _call_tool(tool["name"], {}, request_id=index)
             text = json.dumps(result)

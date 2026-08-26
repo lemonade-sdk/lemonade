@@ -1168,6 +1168,11 @@ json McpServer::tools_descriptor() {
     return json::array({
         {
             {"name", "lemonade_list_models"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "List models known to the Lemonade server. ALWAYS call this "
              "first if you don't already know the exact model name to use "
@@ -1185,6 +1190,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_get_model_info"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "Get the server's detailed record for one exact model ID returned "
              "by lemonade_list_models. Returns the same model metadata used by "
@@ -1202,6 +1212,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_load_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", false},
+                {"openWorldHint", true},
+            }},
             {"description",
              "Explicitly load a Lemonade model using the same implementation as "
              "POST /v1/load. The model_name must be exact. A known registry model "
@@ -1229,6 +1244,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_unload_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "Unload exactly one named model using the same implementation as "
              "POST /v1/unload. model_name is mandatory: this MCP tool never "
@@ -1245,6 +1265,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_pull_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", false},
+                {"openWorldHint", true},
+            }},
             {"description",
              "Download or register a model using the same implementation as "
              "POST /v1/pull. For a built-in/registered model, pass its exact "
@@ -1271,6 +1296,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_delete_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", true},
+                {"openWorldHint", false},
+            }},
             {"description",
              "Delete exactly one model using the same implementation as POST "
              "/v1/delete. This is destructive. The model_name must identify an "
@@ -1291,6 +1321,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_get_loaded_models"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "List the models currently loaded in Lemonade, including runtime "
              "recipe/type/device information reported by the server. Use this "
@@ -1304,6 +1339,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_get_server_health"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "Return Lemonade server health and runtime limits using the same "
              "implementation as GET /api/v1/health."},
@@ -1315,6 +1355,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_get_system_info"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "Return Lemonade hardware and recipe/backend capability information "
              "using the same implementation as GET /api/v1/system-info."},
@@ -1326,6 +1371,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_list_backends"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "List Lemonade recipes/backends and their installation/support "
              "state. This is the backend-focused view of the canonical "
@@ -1338,6 +1388,11 @@ json McpServer::tools_descriptor() {
         },
         {
             {"name", "lemonade_install_backend"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", true},
+                {"openWorldHint", true},
+            }},
             {"description",
              "Install or update one Lemonade recipe/backend through the same "
              "implementation as POST /api/v1/install. The MCP call is "
