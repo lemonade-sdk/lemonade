@@ -13,6 +13,7 @@
 using lemon::ModelType;
 using lemon::find_deployment_mode;
 using lemon::get_model_type_from_labels;
+using lemon::infer_labels_from_name;
 using lemon::model_type_to_string;
 
 struct Case {
@@ -123,7 +124,39 @@ int main() {
         if (!ok) ++failures;
     }
 
-    const size_t total = cases.size() + declared_cases.size();
+    struct NameCase {
+        const char* name;
+        std::string model_name;
+        std::string checkpoint;
+        std::vector<std::string> expected;
+    };
+    const std::vector<NameCase> name_cases = {
+        {"Qwen embedding filename", "Qwen3-Embedding-0.6B-Q8_0", "", {"embeddings"}},
+        {"Nomic embedding checkpoint", "custom-model", "nomic-ai/nomic-embed-text-v2-GGUF", {"embeddings"}},
+        {"zembed model", "zembed-1-Q4_K_M-GGUF", "", {"embeddings"}},
+        {"uppercase embedding", "MY-EMBED-MODEL", "", {"embeddings"}},
+        {"reranker model", "Qwen3-Reranker-0.6B", "", {"reranking"}},
+        {"reranker checkpoint", "custom-model", "org/bge-reranker-v2-GGUF", {"reranking"}},
+        // A model deploys in exactly one mode, so only one mode label is ever
+        // returned; illegal_deployment_labels() rejects a set naming two.
+        {"both signals in one name", "embed-rerank-model", "", {"reranking"}},
+        // The checkpoint (filename / repo id) outranks the folder or suggested
+        // name it sits under, in both directions.
+        {"reranker filed under an embeddings name", "embed-models",
+         "bge-reranker-v2.gguf", {"reranking"}},
+        {"embedding filed under a reranker name", "reranker-models",
+         "nomic-embed-text-v2.gguf", {"embeddings"}},
+        {"ordinary chat model", "Qwen3-8B-Instruct", "", {}},
+        {"empty inputs", "", "", {}},
+    };
+    for (const auto& c : name_cases) {
+        const auto actual = infer_labels_from_name(c.model_name, c.checkpoint);
+        const bool ok = actual == c.expected;
+        std::printf("[%s] inferred labels: %s\n", ok ? "PASS" : "FAIL", c.name);
+        if (!ok) ++failures;
+    }
+
+    const size_t total = cases.size() + declared_cases.size() + name_cases.size();
     std::printf("\n%d/%zu cases passed\n", static_cast<int>(total - failures), total);
     return failures == 0 ? 0 : 1;
 }
