@@ -86,15 +86,29 @@ jobs:
 
       - name: Install ccache
         run: |
-          if command -v pacman >/dev/null 2>&1; then
-            pacman -Syu --needed --noconfirm ccache
-          elif command -v zypper >/dev/null 2>&1; then
-            zypper install -y ccache
-          elif command -v apt-get >/dev/null 2>&1; then
-            apt-get update && apt-get install -y ccache
-          elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y ccache
-          fi
+          # Distro mirrors intermittently serve an index that is out of sync
+          # with their pool, 404ing individual packages. Retry a few times.
+          install_ccache() {
+            if command -v pacman >/dev/null 2>&1; then
+              pacman -Syu --needed --noconfirm ccache
+            elif command -v zypper >/dev/null 2>&1; then
+              zypper install -y ccache
+            elif command -v apt-get >/dev/null 2>&1; then
+              apt-get update && apt-get install -y ccache
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y ccache
+            fi
+          }
+          success=false
+          for i in 1 2 3; do
+            if install_ccache; then
+              success=true
+              break
+            fi
+            echo "ccache install failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
           ccache -z
 
       - name: Run setup.sh to configure environment
