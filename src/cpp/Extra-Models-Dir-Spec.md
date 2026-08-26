@@ -67,7 +67,7 @@ If a directory contains a file with `mmproj` anywhere in the filename, it is aut
 
 ### Embedding and Reranking Detection
 
-The name decides the mode. A name containing `rerank` gets the `reranking` label, and a name containing `embed` gets `embeddings`. Everything else is a chat model. Matching ignores case.
+The name decides the mode. A name containing `rerank` gets the `reranking` label. A name containing `embed`, or naming the `bge-` embedding family, gets `embeddings`. Everything else is a chat model. Matching ignores case.
 
 Only one of these labels is ever applied, because a model runs in exactly one mode. `rerank` is checked first, so `bge-reranker-v2` is a reranker rather than an embedding model.
 
@@ -81,7 +81,7 @@ Which name is read depends on the layout:
 
 A folder kept as one model gets one mode for the whole folder, and the other `.gguf` files in it do not affect the result. The filename is read before the folder name, so a reranker stored in a folder named `embed-models` is still a reranker.
 
-Detection is only as good as the name. An embedding model whose name says neither, such as `bge-small-en-v1.5`, `all-MiniLM-L6-v2`, or `gte-base`, is listed as chat, and a chat model whose name happens to contain `embed` is listed as an embedding model. Renaming the file is the direct fix, since discovery reads nothing but the name. Registering the file in `user_models.json` with an explicit `labels` array, for example `["embeddings"]`, adds a correctly labeled `user.*` model, but the `extra.*` entry stays as it was discovered.
+Detection is only as good as the name. An embedding model whose name says neither, such as `all-MiniLM-L6-v2`, `gte-base`, or `e5-large-v2`, is listed as chat, and a chat model whose name happens to contain `embed` is listed as an embedding model. Renaming the file is the direct fix, since discovery reads nothing but the name. Registering the file in `user_models.json` with an explicit `labels` array, for example `["embeddings"]`, adds a correctly labeled `user.*` model, but the `extra.*` entry stays as it was discovered.
 
 ## Model Properties
 

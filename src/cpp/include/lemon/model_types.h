@@ -214,7 +214,9 @@ inline std::vector<std::string> infer_labels_from_name(
         std::transform(lowered.begin(), lowered.end(), lowered.begin(),
                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         if (lowered.find("rerank") != std::string::npos) return "reranking";
-        if (lowered.find("embed") != std::string::npos) return "embeddings";
+        for (const char* family : {"embed", "bge-"}) {
+            if (lowered.find(family) != std::string::npos) return "embeddings";
+        }
         return nullptr;
     };
 

@@ -142,6 +142,9 @@ int main() {
          "bge-reranker-v2.gguf", {"reranking"}},
         {"embedding filed under a reranker name", "reranker-models",
          "nomic-embed-text-v2.gguf", {"embeddings"}},
+        {"bge embedding family", "bge-small-en-v1.5", "", {"embeddings"}},
+        {"bge reranker beats the family prefix", "bge-reranker-v2-m3", "", {"reranking"}},
+        {"embedding family the name does not declare", "gte-base", "", {}},
         {"ordinary chat model", "Qwen3-8B-Instruct", "", {}},
         {"empty inputs", "", "", {}},
     };
