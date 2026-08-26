@@ -1154,11 +1154,9 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_->start();
 }
 
-// The deployment label is deliberately NOT stamped here. Callers still have to
-// add the labels inferred from the filename, and ensure_deployment_label() would
-// otherwise add "chat" first - which find_deployment_mode() checks before every
-// other mode, so the model would deploy as an LLM no matter what its name said.
-// Each caller calls ensure_deployment_label() once its labels are assembled.
+// The deployment label is deliberately not stamped here. Callers still add
+// labels inferred from the filename, and stamping "chat" first would win over
+// them, since find_deployment_mode() checks chat ahead of every other mode.
 ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     ModelInfo info;
     info.model_name = name;

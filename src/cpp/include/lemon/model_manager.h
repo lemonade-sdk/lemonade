@@ -446,10 +446,8 @@ struct UpdateCheckResult {
 
     void start_directory_watcher();
 
-    // Scan extra_models_dir and classify what it finds. Pure filesystem +
-    // filename inference, no hardware queries or cache locking, so it can be
-    // unit-tested directly without going through build_cache()'s
-    // system-info-dependent filtering.
+    // Scan extra_models_dir and classify what it finds. Public because it is
+    // pure filesystem work, testable without build_cache()'s hardware filtering.
     std::map<std::string, ModelInfo> discover_extra_models() const;
 
 private:

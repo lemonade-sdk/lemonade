@@ -137,11 +137,7 @@ int main() {
         {"uppercase embedding", "MY-EMBED-MODEL", "", {"embeddings"}},
         {"reranker model", "Qwen3-Reranker-0.6B", "", {"reranking"}},
         {"reranker checkpoint", "custom-model", "org/bge-reranker-v2-GGUF", {"reranking"}},
-        // A model deploys in exactly one mode, so only one mode label is ever
-        // returned; illegal_deployment_labels() rejects a set naming two.
         {"both signals in one name", "embed-rerank-model", "", {"reranking"}},
-        // The checkpoint (filename / repo id) outranks the folder or suggested
-        // name it sits under, in both directions.
         {"reranker filed under an embeddings name", "embed-models",
          "bge-reranker-v2.gguf", {"reranking"}},
         {"embedding filed under a reranker name", "reranker-models",

@@ -1,12 +1,7 @@
 // Filesystem-level tests for ModelManager::discover_extra_models() (#1667).
-// The classifier-only tests in test_model_type_classifier.cpp cover
-// infer_labels_from_name() and get_model_type_from_labels() in isolation;
-// these tests exercise the real discovery pipeline (root files, split
-// variants, and folder models) against a temp directory, so they also catch
-// wiring bugs the isolated helper tests cannot see - such as a default
-// deployment label ("chat") getting stamped before the filename is inspected,
-// which used to make every discovered model resolve to ModelType::LLM
-// regardless of what infer_labels_from_name() found.
+// test_model_type_classifier.cpp covers the naming helpers in isolation; these
+// run real discovery against a temp directory, which is what catches wiring
+// bugs such as a default label being stamped before the filename is read.
 
 #include "lemon/model_manager.h"
 #include "lemon/utils/path_utils.h"
@@ -39,8 +34,7 @@ static fs::path make_temp_dir() {
     return dir;
 }
 
-// Discovery only reads filenames and file sizes, never GGUF content, so an
-// empty placeholder file is a faithful fixture.
+// Discovery never reads GGUF content, so an empty file is a valid fixture.
 static void touch(const fs::path& path) {
     fs::create_directories(path.parent_path());
     std::ofstream(path).close();
@@ -77,7 +71,6 @@ static bool check_type(const std::map<std::string, ModelInfo>& models,
     return ok;
 }
 
-// Root-level standalone files: covers model_manager.cpp's standalone_files loop.
 static void test_root_files() {
     fs::path dir = make_temp_dir();
     touch(dir / "nomic-embed-text-v2.gguf");
@@ -97,8 +90,6 @@ static void test_root_files() {
     fs::remove_all(dir);
 }
 
-// Split-variant folder: multiple named quantizations of the same model,
-// covers discover_extra_models_in_directory()'s split path.
 static void test_split_variant_folder() {
     fs::path dir = make_temp_dir();
     touch(dir / "MyEmbedModel" / "MyEmbedModel-Q4_K_M.gguf");
@@ -115,9 +106,6 @@ static void test_split_variant_folder() {
     fs::remove_all(dir);
 }
 
-// Single-file folder model: covers discover_extra_models_in_directory()'s
-// non-split (folder-as-one-model) path, where the folder name carries the
-// signal and the file name does not.
 static void test_folder_model() {
     fs::path dir = make_temp_dir();
     touch(dir / "my-reranker-model" / "model.gguf");
@@ -131,9 +119,7 @@ static void test_folder_model() {
     fs::remove_all(dir);
 }
 
-// A model deploys in exactly one mode. When the folder name and the file name
-// disagree, the file wins and only its label is applied - carrying both would
-// be the label set illegal_deployment_labels() rejects.
+// Carrying both labels is the set illegal_deployment_labels() rejects.
 static void test_folder_and_file_disagree() {
     fs::path dir = make_temp_dir();
     touch(dir / "embed-models" / "bge-reranker-v2.gguf");
@@ -151,8 +137,7 @@ static void test_folder_and_file_disagree() {
     fs::remove_all(dir);
 }
 
-// An mmproj companion adds "vision" alongside the deployment label. vision is a
-// capability, not a mode, so the model still deploys as an ordinary chat LLM.
+// vision is a capability, not a mode, so the model still deploys as chat.
 static void test_multimodal_folder() {
     fs::path dir = make_temp_dir();
     touch(dir / "gemma-vision" / "gemma-vision-Q4_K_M.gguf");
@@ -173,10 +158,8 @@ static void test_multimodal_folder() {
 }
 
 int main() {
-    // Redirect ModelManager's cache dir (server_models.json / user_models.json /
-    // recipe_options.json) to a scratch location so construction never touches
-    // the real user cache - the discovery logic under test doesn't use these
-    // files, but the constructor loads them unconditionally.
+    // The constructor loads the registry JSON files unconditionally, so point it
+    // at a scratch dir to keep the test off the real user cache.
     fs::path cache_dir = make_temp_dir();
     lemon::utils::set_cache_dir(cache_dir.string());
 

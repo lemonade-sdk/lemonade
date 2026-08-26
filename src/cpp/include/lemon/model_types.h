@@ -202,16 +202,10 @@ inline bool add_label_once(std::vector<std::string>& labels, const std::string& 
     return true;
 }
 
-// Guess a model's deployment mode from its name, for sources that carry no
-// metadata (a bare .gguf in extra_models_dir, a /pull preview).
-//
-// Returns at most ONE mode label: a model deploys in exactly one mode, and
-// illegal_deployment_labels() rejects a label set naming two. `checkpoint` is
-// the more specific name (the .gguf filename, or the full repo id) and wins
-// when it disagrees with `model_name` (the folder or suggested name it sits
-// under), so a reranker filed in an "embeddings" folder is still a reranker.
-// Within one name "rerank" wins, since reranker names are the ones that also
-// tend to carry embedding-flavored wording.
+// For sources carrying no metadata: a bare .gguf in extra_models_dir, a /pull
+// preview. At most one label is returned, since illegal_deployment_labels()
+// rejects a set naming two modes. `checkpoint` is the more specific name and
+// takes precedence, so a reranker stored in an "embeddings" folder stays one.
 inline std::vector<std::string> infer_labels_from_name(
     const std::string& model_name,
     const std::string& checkpoint = "") {
