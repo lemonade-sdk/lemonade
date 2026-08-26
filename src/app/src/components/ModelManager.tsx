@@ -1877,12 +1877,18 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
     const labels = new Set(vdata?.suggested_labels || []);
     if (vdata?.mmproj_files?.length) labels.add('vision');
+
+    const draftFile = vdata?.variants.find(v => v.name === variantName)?.draft_file;
+    const checkpoints = draftFile
+      ? { main: checkpoint, draft: `${modelId}:${draftFile}` }
+      : undefined;
     try {
       await api.pullModel(targetModelName, callbacks, {
         checkpoint,
         recipe,
         source: provider,
         mmproj: vdata?.mmproj_files?.[0],
+        checkpoints,
         labels: [...labels],
         vision: labels.has('vision'),
         embedding: labels.has('embeddings'),
