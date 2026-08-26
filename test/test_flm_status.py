@@ -36,7 +36,12 @@ try:
 except ImportError as e:
     raise ImportError("You must `pip install requests` to run this test", e)
 
-from utils.test_models import PORT, TIMEOUT_DEFAULT, get_default_cli_binary
+from utils.test_models import (
+    PORT,
+    TIMEOUT_DEFAULT,
+    get_default_cli_binary,
+    get_default_lemond_binary,
+)
 from utils.server_base import _auth_headers, wait_for_server
 
 
@@ -259,14 +264,16 @@ class FlmStatusTests(unittest.TestCase):
         cls.server_version = get_server_version(cls.cli_binary)
         print(f"[SETUP] Using server version: {cls.server_version}")
 
-        # Derive lemond path from the CLI binary (they live in the same build dir)
+        # Derive lemond path from the CLI binary / build dir
         build_dir = os.path.dirname(cls.cli_binary)
-        if IS_WINDOWS:
-            cls.router_binary = os.path.join(build_dir, "lemond.exe")
-        else:
-            cls.router_binary = os.path.join(build_dir, "lemond")
-        if not os.path.exists(cls.router_binary):
-            cls.router_binary = shutil.which("lemond") or cls.router_binary
+        cls.router_binary = get_default_lemond_binary()
+        if not cls.router_binary or not os.path.exists(cls.router_binary):
+            candidates = ["LemonadeServer", "lemond"] if IS_WINDOWS else ["lemond"]
+            for c in candidates:
+                which_path = shutil.which(c)
+                if which_path:
+                    cls.router_binary = which_path
+                    break
         print(f"[SETUP] Using router binary: {cls.router_binary}")
 
         # Read required FLM version from backend_versions.json

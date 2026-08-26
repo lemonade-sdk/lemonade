@@ -6,6 +6,7 @@ WebSocket Origin Verification, Ephemeral Session Tokens, and Admin Fallback.
 """
 
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -21,14 +22,14 @@ import websockets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils.test_models import get_default_lemond_binary
+from utils.server_fixture import (
+    allocate_free_port,
+    lemond_server,
+    make_clean_env,
+    wait_for_http_health,
+)
 
-
-def find_free_port():
-    s = socket.socket()
-    s.bind(("", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+find_free_port = allocate_free_port
 
 
 def get_span_attributes(span_data):
@@ -75,32 +76,19 @@ class TelemetrySecurityTestBase(unittest.TestCase):
             raise RuntimeError(
                 f"lemond binary not found at {cls.lemond_bin}. Build it first."
             )
-        cls.procs = []
+        cls._exit_stack = contextlib.ExitStack()
         cls.temp_dirs = []
+        cls.procs = []
 
     @classmethod
     def tearDownClass(cls):
-        for proc, log_file, log_file_path in cls.procs:
-            if proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=3)
-                except Exception:
-                    try:
-                        proc.kill()
-                        proc.wait()
-                    except Exception:
-                        pass
-            try:
-                log_file.close()
-            except Exception:
-                pass
-            pass
-        for temp_dir in cls.temp_dirs:
+        if hasattr(cls, "_exit_stack"):
+            cls._exit_stack.close()
+        for temp_dir in getattr(cls, "temp_dirs", []):
             try:
                 import shutil
 
-                shutil.rmtree(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception:
                 pass
 
@@ -109,16 +97,8 @@ class TelemetrySecurityTestBase(unittest.TestCase):
         temp_dir = tempfile.mkdtemp(prefix="lemond_ws_sec_")
         cls.temp_dirs.append(temp_dir)
 
-        port = find_free_port()
-        env = os.environ.copy()
-
-        # Clean all relevant env vars by default so tests are isolated
-        for k in [
-            "LEMONADE_API_KEY",
-            "LEMONADE_ADMIN_API_KEY",
-            "LEMONADE_ALLOWED_ORIGINS",
-        ]:
-            env.pop(k, None)
+        port = allocate_free_port()
+        env = make_clean_env(temp_dir)
 
         if env_overrides:
             for k, v in env_overrides.items():
@@ -127,49 +107,47 @@ class TelemetrySecurityTestBase(unittest.TestCase):
                 else:
                     env[k] = v
 
-        log_file_path = os.path.join(temp_dir, "lemond.log")
-        log_file = open(log_file_path, "w")
-        proc = subprocess.Popen(
-            [cls.lemond_bin, temp_dir, "--port", str(port)],
-            stdout=log_file,
-            stderr=log_file,
-            env=env,
-        )
-        cls.procs.append((proc, log_file, log_file_path))
+        headers = {}
+        api_key = env_overrides.get("LEMONADE_API_KEY") if env_overrides else None
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
-        # Wait for server to start
-        for _ in range(60):
-            try:
-                res = requests.get(f"http://localhost:{port}/live", timeout=0.2)
-                if res.status_code == 200:
-                    # Get ws port from /health
-                    headers = {}
-                    api_key = (
-                        env_overrides.get("LEMONADE_API_KEY") if env_overrides else None
-                    )
-                    if api_key:
-                        headers["Authorization"] = f"Bearer {api_key}"
-
-                    health_res = requests.get(
-                        f"http://localhost:{port}/api/v1/health",
-                        headers=headers,
-                        timeout=0.5,
-                    )
-                    ws_port = health_res.json().get("websocket_port")
-                    return port, ws_port
-            except Exception:
-                pass
-            time.sleep(0.05)
-
-        proc.terminate()
+        call_stack = contextlib.ExitStack()
         try:
-            with open(log_file_path, "r") as f:
-                log_content = f.read()
+            log_file_path = os.path.join(temp_dir, "lemond.log")
+            log_file = call_stack.enter_context(
+                open(log_file_path, "w", encoding="utf-8")
+            )
+            proc = call_stack.enter_context(
+                lemond_server(
+                    port=port,
+                    cache_dir=temp_dir,
+                    binary_path=cls.lemond_bin,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+            )
+
+            health_res = requests.get(
+                f"http://localhost:{port}/api/v1/health",
+                headers=headers,
+                timeout=2.0,
+            )
+            ws_port = health_res.json().get("websocket_port")
+            if ws_port is None:
+                raise RuntimeError("Failed to get websocket_port from health response")
+            cls._exit_stack.enter_context(call_stack.pop_all())
+            cls.procs.append((proc, log_file, log_file_path))
+            return port, ws_port
         except Exception:
-            log_content = "Could not read log file"
-        raise RuntimeError(
-            f"Failed to start temporary lemond server on port {port}. Log:\n{log_content}"
-        )
+            call_stack.close()
+            import shutil
+
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
 
 
 class TelemetryAuthSecurityTests(TelemetrySecurityTestBase):

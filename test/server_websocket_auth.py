@@ -12,6 +12,7 @@ and the main HTTP port, plus the backward-compatible api_key query parameter.
 
 import asyncio
 import base64
+import contextlib
 import json
 import os
 import sys
@@ -27,18 +28,15 @@ import websockets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils.test_models import get_default_lemond_binary
+from utils.server_fixture import (
+    allocate_free_port,
+    lemond_server,
+    make_clean_env,
+    wait_for_http_health,
+)
 
 API_KEY = "secret_key"
 APP_PROTOCOL = "lemonade-realtime"
-
-
-def find_free_port():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-    finally:
-        s.close()
 
 
 def credential_protocol(api_key):
@@ -60,54 +58,49 @@ class WebSocketAuthTests(unittest.TestCase):
                 "skipping (source-build only)"
             )
         cls.temp_dir = tempfile.mkdtemp(prefix="lemond_ws_auth_")
-        cls.port = find_free_port()
+        cls.port = allocate_free_port()
 
-        env = os.environ.copy()
-        env.pop("LEMONADE_ADMIN_API_KEY", None)
+        env = make_clean_env(cls.temp_dir)
         env["LEMONADE_API_KEY"] = API_KEY
 
-        cls.log_path = os.path.join(cls.temp_dir, "lemond.log")
-        cls.log_file = open(cls.log_path, "w")
-        cls.proc = subprocess.Popen(
-            [cls.lemond_bin, cls.temp_dir, "--port", str(cls.port)],
-            stdout=cls.log_file,
-            stderr=cls.log_file,
-            env=env,
-        )
+        cls._exit_stack = contextlib.ExitStack()
+        try:
+            cls.log_path = os.path.join(cls.temp_dir, "lemond.log")
+            cls.log_file = cls._exit_stack.enter_context(
+                open(cls.log_path, "w", encoding="utf-8")
+            )
+            cls.proc = cls._exit_stack.enter_context(
+                lemond_server(
+                    port=cls.port,
+                    cache_dir=cls.temp_dir,
+                    binary_path=cls.lemond_bin,
+                    env=env,
+                    wait_health=True,
+                    health_headers={"Authorization": f"Bearer {API_KEY}"},
+                    stdout=cls.log_file,
+                    stderr=subprocess.STDOUT,
+                )
+            )
 
-        cls.ws_port = None
-        for _ in range(60):
-            try:
-                res = requests.get(f"http://localhost:{cls.port}/live", timeout=0.2)
-                if res.status_code == 200:
-                    health = requests.get(
-                        f"http://localhost:{cls.port}/api/v1/health",
-                        headers={"Authorization": f"Bearer {API_KEY}"},
-                        timeout=0.5,
-                    )
-                    cls.ws_port = health.json().get("websocket_port")
-                    break
-            except Exception:
-                pass
-            time.sleep(0.05)
+            health = requests.get(
+                f"http://localhost:{cls.port}/api/v1/health",
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                timeout=2,
+            )
+            cls.ws_port = health.json().get("websocket_port")
+            if cls.ws_port is None:
+                raise RuntimeError("Failed to get websocket_port from health response")
+        except Exception:
+            cls._exit_stack.close()
+            import shutil
 
-        if cls.ws_port is None:
-            cls.tearDownClass()
-            raise RuntimeError("Failed to start lemond server for WebSocket auth tests")
+            shutil.rmtree(cls.temp_dir, ignore_errors=True)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        proc = getattr(cls, "proc", None)
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except Exception:
-                proc.kill()
-                proc.wait()
-        log_file = getattr(cls, "log_file", None)
-        if log_file:
-            log_file.close()
+        if hasattr(cls, "_exit_stack"):
+            cls._exit_stack.close()
         temp_dir = getattr(cls, "temp_dir", None)
         if temp_dir:
             import shutil
@@ -340,72 +333,59 @@ class WebSocketAuthTests(unittest.TestCase):
         """Under admin-only auth configuration (LEMONADE_API_KEY empty, LEMONADE_ADMIN_API_KEY set),
         verify that WebSocket connection retains admin token and can authenticate."""
         temp_dir = tempfile.mkdtemp(prefix="lemond_admin_only_")
-        port = find_free_port()
-        env = os.environ.copy()
-        env.pop("LEMONADE_API_KEY", None)
+        port = allocate_free_port()
+        env = make_clean_env(temp_dir)
         env["LEMONADE_ADMIN_API_KEY"] = "admin_secret"
 
-        proc = subprocess.Popen(
-            [self.lemond_bin, temp_dir, "--port", str(port)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-        )
-
         try:
-            # Wait for startup
-            ws_port = None
-            for _ in range(60):
-                try:
-                    res = requests.get(f"http://localhost:{port}/live", timeout=0.2)
-                    if res.status_code == 200:
-                        # Since api_key is empty, health is public
-                        health = requests.get(
-                            f"http://localhost:{port}/api/v1/health", timeout=0.5
-                        )
-                        ws_port = health.json().get("websocket_port")
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.05)
+            with lemond_server(
+                port=port,
+                cache_dir=temp_dir,
+                env=env,
+                wait_health=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ):
+                health = requests.get(
+                    f"http://localhost:{port}/api/v1/health", timeout=0.5
+                )
+                ws_port = health.json().get("websocket_port")
+                self.assertIsNotNone(
+                    ws_port, "Failed to get websocket_port for admin-only test"
+                )
 
-            self.assertIsNotNone(ws_port, "Failed to start server for admin-only test")
+                # Now let's connect to /spans/stream with the admin subprotocol
+                async def run():
+                    uri = f"ws://localhost:{port}/v1/spans/stream"
+                    async with websockets.connect(
+                        uri,
+                        subprotocols=auth_subprotocols("admin_secret"),
+                    ) as ws:
+                        # Connection should upgrade successfully
+                        self.assertEqual(ws.subprotocol, APP_PROTOCOL)
 
-            # Now let's connect to /spans/stream with the admin subprotocol
-            async def run():
-                uri = f"ws://localhost:{port}/v1/spans/stream"
-                async with websockets.connect(
-                    uri,
-                    subprotocols=auth_subprotocols("admin_secret"),
-                ) as ws:
-                    # Connection should upgrade successfully
-                    self.assertEqual(ws.subprotocol, APP_PROTOCOL)
+                        # Now trigger a span from a public request without an Authorization token
+                        def trigger():
+                            payload = {
+                                "model": "nonexistent-model",
+                                "messages": [{"role": "user", "content": "hello"}],
+                            }
+                            requests.post(
+                                f"http://localhost:{port}/api/v1/chat/completions",
+                                json=payload,
+                                timeout=5,
+                            )
 
-                    # Now trigger a span from a public request without an Authorization token
-                    def trigger():
-                        payload = {
-                            "model": "nonexistent-model",
-                            "messages": [{"role": "user", "content": "hello"}],
-                        }
-                        requests.post(
-                            f"http://localhost:{port}/api/v1/chat/completions",
-                            json=payload,
-                            timeout=5,
-                        )
+                        loop = asyncio.get_running_loop()
+                        await loop.run_in_executor(None, trigger)
 
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, trigger)
+                        # Assert that the admin WebSocket receives the span
+                        msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                        self.assertIn("name", msg)
+                        self.assertEqual(msg.get("name"), "chat.completions")
 
-                    # Assert that the admin WebSocket receives the span
-                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
-                    self.assertIn("name", msg)
-                    self.assertEqual(msg.get("name"), "chat.completions")
-
-            asyncio.run(run())
-
+                asyncio.run(run())
         finally:
-            proc.terminate()
-            proc.wait()
             import shutil
 
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -413,56 +393,45 @@ class WebSocketAuthTests(unittest.TestCase):
     def test_014_null_origin_explicit_allowlist(self):
         """Verify that Origin: null is accepted when allowed origins config contains 'null'."""
         temp_dir = tempfile.mkdtemp(prefix="lemond_null_origin_")
-        port = find_free_port()
-        env = os.environ.copy()
-        env.pop("LEMONADE_ADMIN_API_KEY", None)
+        port = allocate_free_port()
+        env = make_clean_env(temp_dir)
         env["LEMONADE_API_KEY"] = API_KEY
         env["LEMONADE_ALLOWED_ORIGINS"] = "null"
 
-        proc = subprocess.Popen(
-            [self.lemond_bin, temp_dir, "--port", str(port)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-        )
-
         try:
-            # Wait for startup
-            ws_port = None
-            for _ in range(60):
-                try:
-                    res = requests.get(f"http://localhost:{port}/live", timeout=0.2)
-                    if res.status_code == 200:
-                        health = requests.get(
-                            f"http://localhost:{port}/api/v1/health",
-                            headers={"Authorization": f"Bearer {API_KEY}"},
-                            timeout=0.5,
-                        )
-                        ws_port = health.json().get("websocket_port")
-                        break
-                except Exception:
-                    pass
-                time.sleep(0.05)
+            with lemond_server(
+                port=port,
+                cache_dir=temp_dir,
+                env=env,
+                wait_health=True,
+                health_headers={"Authorization": f"Bearer {API_KEY}"},
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ):
+                health = requests.get(
+                    f"http://localhost:{port}/api/v1/health",
+                    headers={"Authorization": f"Bearer {API_KEY}"},
+                    timeout=0.5,
+                )
+                ws_port = health.json().get("websocket_port")
+                self.assertIsNotNone(
+                    ws_port, "Failed to get websocket_port for null origin test"
+                )
 
-            self.assertIsNotNone(ws_port, "Failed to start server for null origin test")
+                # Connect with Origin: null
+                async def run():
+                    uri = f"ws://localhost:{ws_port}/logs/stream"
+                    async with websockets.connect(
+                        uri,
+                        subprotocols=auth_subprotocols(API_KEY),
+                        origin="null",
+                    ) as ws:
+                        await ws.send(json.dumps({"type": "logs.subscribe"}))
+                        msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
+                        self.assertEqual(msg.get("type"), "logs.snapshot")
 
-            # Connect with Origin: null
-            async def run():
-                uri = f"ws://localhost:{ws_port}/logs/stream"
-                async with websockets.connect(
-                    uri,
-                    subprotocols=auth_subprotocols(API_KEY),
-                    origin="null",
-                ) as ws:
-                    await ws.send(json.dumps({"type": "logs.subscribe"}))
-                    msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=3.0))
-                    self.assertEqual(msg.get("type"), "logs.snapshot")
-
-            asyncio.run(run())
-
+                asyncio.run(run())
         finally:
-            proc.terminate()
-            proc.wait()
             import shutil
 
             shutil.rmtree(temp_dir, ignore_errors=True)
