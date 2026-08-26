@@ -1168,12 +1168,24 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 // so the model keeps a readable name instead of the snapshot hash that would
 // otherwise be read as the containing folder's name. Stops at `stop_at` (the
 // configured extra_models_dir root) so an unrelated ancestor name can't match.
+//
+// A cache directory can hold more than one "snapshots/<hash>" revision (a
+// stale re-download, an older pinned revision, etc). Recovering "org/repo"
+// for all of them would make every snapshot race for the same model id, with
+// whichever one the directory scan happens to visit last silently winning it
+// and the "active" snapshot getting collision-qualified with its hash
+// instead. So when a snapshots/ layout is present, only the snapshot that
+// "refs/main" actually points at is trusted with the recovered name; any
+// other snapshot falls back to the pre-existing hash-named behavior, same as
+// before this recovery existed.
 static std::string hf_cache_repo_name_for_path(const fs::path& path, const fs::path& stop_at) {
     static constexpr const char kHfPrefix[] = "models--";
     static constexpr const char kMsPrefix[] = "modelscope--models--";
+
+    fs::path cache_root;
+    std::string encoded;
     for (fs::path cur = path; cur.has_filename() && cur != stop_at; cur = cur.parent_path()) {
         std::string dirname = cur.filename().string();
-        std::string encoded;
         if (dirname.rfind(kMsPrefix, 0) == 0) {
             encoded = dirname.substr(sizeof(kMsPrefix) - 1);
         } else if (dirname.rfind(kHfPrefix, 0) == 0) {
@@ -1181,16 +1193,33 @@ static std::string hf_cache_repo_name_for_path(const fs::path& path, const fs::p
         } else {
             continue;
         }
-        // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo";
-        // repo names don't contain "--", so the first occurrence is the
-        // namespace boundary.
-        size_t sep = encoded.find("--");
-        if (sep == std::string::npos || sep == 0 || sep + 2 >= encoded.size()) {
-            return encoded;
-        }
-        return encoded.substr(0, sep) + "/" + encoded.substr(sep + 2);
+        cache_root = cur;
+        break;
     }
-    return "";
+    if (cache_root.empty()) {
+        return "";
+    }
+
+    // If `path` sits under cache_root/snapshots/<hash>, that hash must match
+    // refs/main before the recovered name can be trusted.
+    const fs::path snapshots_dir = cache_root / "snapshots";
+    for (fs::path cur = path; cur.has_filename() && cur != cache_root; cur = cur.parent_path()) {
+        if (cur.parent_path() != snapshots_dir) continue;
+        const std::string active_hash = read_hf_ref_main(cache_root);
+        if (active_hash.empty() || active_hash != cur.filename().string()) {
+            return "";
+        }
+        break;
+    }
+
+    // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo";
+    // repo names don't contain "--", so the first occurrence is the
+    // namespace boundary.
+    size_t sep = encoded.find("--");
+    if (sep == std::string::npos || sep == 0 || sep + 2 >= encoded.size()) {
+        return encoded;
+    }
+    return encoded.substr(0, sep) + "/" + encoded.substr(sep + 2);
 }
 
 // Record a discovered model without ever overwriting one already found. Two
