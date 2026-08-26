@@ -155,6 +155,7 @@ The endpoint is available at:
 | `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. |
 | `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
 | `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
+| `turns` | integer | no | Simulate conversation depth for `min_turns`/`max_turns` conditions. Default `1`; a value below `1` (including `0`) floors to `1`, matching every real request. |
 | `metadata` | object | no | String-valued metadata pairs matched by `metadata` conditions. |
 
 ### Example request
@@ -277,7 +278,7 @@ its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
 
 | Status | Condition |
 |--------|-----------|
-| `400` | Body is not valid JSON, `policy` is missing or not an object, `prompt` is not a string, `has_images`/`has_tools` are not booleans, or `metadata` is not an object of string values. |
+| `400` | Body is not valid JSON, `policy` is missing or not an object, `prompt` is not a string, `has_images`/`has_tools` are not booleans, `turns` is not a non-negative integer, or `metadata` is not an object of string values. |
 | `400` | The policy document is invalid or internally inconsistent; the `error` field is prefixed with `Invalid routing policy:`. |
 
 ## `POST /v1/models/check-updates`

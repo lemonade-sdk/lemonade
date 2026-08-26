@@ -71,7 +71,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `regex` | ECMAScript regex over the input. |
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
 | `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
-| `min_turns` / `max_turns` | Conversation depth — count of `role:"user"` turns in `messages`/`input`. |
+| `min_turns` / `max_turns` | Conversation depth (**whole-conversation scope**, like `total_chars` — not just the latest turn like `chars`) — count of `role:"user"` turns in `messages`/`input`. |
 | `has_tools` / `has_images` | Boolean — request carries tools / images. |
 | `metadata` | `{ key, equals \| any \| exists \| gte \| lte }` over the request's OpenAI `metadata`. `gte`/`lte` parse the value as a number — useful for a harness-precomputed signal like a tool-error streak (see [trajectory-signal routing](#trajectory-signal-routing) below). |
 
@@ -215,6 +215,16 @@ it as a plain number in `metadata`:
 
 A missing or non-numeric `metadata` value never satisfies `gte`/`lte` (same
 "absent counts as no match" posture as `equals`/`any`).
+
+A single `metadata` leaf allows exactly one comparator, so a numeric range
+needs **two** leaves under `all` rather than `{"gte": 1, "lte": 5}` on one:
+
+```json
+{ "all": [
+  { "metadata": { "key": "tool_error_streak", "gte": 1 } },
+  { "metadata": { "key": "tool_error_streak", "lte": 5 } }
+] }
+```
 
 ## Registering and invoking
 

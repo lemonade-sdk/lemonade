@@ -283,6 +283,28 @@ void test_metadata_gte_lte() {
     RouteContext absent = make_request("x");
     check("metadata gte missing key never matches",
           !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, absent));
+
+    // Deliberately narrower than strtod: no hex float, no comma-decoding
+    // (unlike equals/any's token-set split), no "inf"/"nan" text forms.
+    RouteContext hex = make_request("x");
+    hex.metadata["n"] = "0x10";
+    check("metadata gte hex-float text never matches (not silently 16)",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, hex));
+
+    RouteContext comma_list = make_request("x");
+    comma_list.metadata["n"] = "3,5";
+    check("metadata gte comma-list value never matches (no comma-decoding)",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, comma_list));
+
+    RouteContext inf_text = make_request("x");
+    inf_text.metadata["n"] = "inf";
+    check("metadata gte 'inf' text form never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, inf_text));
+
+    RouteContext scientific = make_request("x");
+    scientific.metadata["n"] = "3e1";  // 30 -- exponent form is still a real number
+    check("metadata gte accepts scientific notation",
+          eval_leaf("metadata", json{{"key", "n"}, {"gte", 30}}, scientific));
 }
 
 void test_rejections() {

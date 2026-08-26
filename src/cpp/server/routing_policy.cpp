@@ -711,27 +711,56 @@ std::set<std::string> decode_metadata_tokens(const std::string& value) {
     return tokens;
 }
 
-// Parse a metadata value as a number for the gte/lte comparators. Metadata
-// values are always strings (the caller pre-computes and stringifies its own
-// signal, e.g. a tool_error_streak count); a blank value or one that isn't
-// ENTIRELY numeric (trailing ASCII whitespace aside — "3 " parses, "3abc"
-// doesn't) is treated as "no number here" rather than a parse error, so a
-// malformed metadata value fails the comparator (no match) instead of
-// throwing out of Condition::evaluate().
+// Parse a metadata value as a number for the gte/lte comparators. Grammar is
+// checked by hand rather than delegated to strtod/stod — optional sign,
+// digits, an optional '.' with more digits, an optional exponent, nothing
+// else — deliberately rejecting what strtod would otherwise silently accept
+// (a hex float like "0x10", or "inf"/"nan" text). Since only ASCII digits,
+// whitespace, and '.' pass the grammar, stod (called last, on the
+// now-validated substring) never sees anything a comma-decimal LC_NUMERIC
+// could misread — locale-independent by construction rather than by
+// imbue/setlocale. Leading/trailing whitespace both use is_ascii_ws, so the
+// two ends are symmetric. A blank or non-conforming value is "no number
+// here", not a parse error — a malformed value fails the comparator instead
+// of throwing out of Condition::evaluate().
 std::optional<double> parse_metadata_number(const std::string& s) {
-    if (is_blank(s)) {
+    std::size_t a = 0;
+    std::size_t b = s.size();
+    while (a < b && is_ascii_ws(s[a])) ++a;
+    while (b > a && is_ascii_ws(s[b - 1])) --b;
+    if (a == b) {
         return std::nullopt;
     }
-    std::size_t consumed = 0;
+
+    std::size_t i = a;
+    if (s[i] == '+' || s[i] == '-') ++i;
+    std::size_t digits_before = 0;
+    while (i < b && s[i] >= '0' && s[i] <= '9') { ++i; ++digits_before; }
+    std::size_t digits_after = 0;
+    if (i < b && s[i] == '.') {
+        ++i;
+        while (i < b && s[i] >= '0' && s[i] <= '9') { ++i; ++digits_after; }
+    }
+    if (digits_before == 0 && digits_after == 0) {
+        return std::nullopt;  // just a sign and/or a dot, no actual digits
+    }
+    if (i < b && (s[i] == 'e' || s[i] == 'E')) {
+        ++i;
+        if (i < b && (s[i] == '+' || s[i] == '-')) ++i;
+        std::size_t exponent_digits = 0;
+        while (i < b && s[i] >= '0' && s[i] <= '9') { ++i; ++exponent_digits; }
+        if (exponent_digits == 0) {
+            return std::nullopt;  // "e" with no exponent digits
+        }
+    }
+    if (i != b) {
+        return std::nullopt;  // trailing junk, e.g. hex's "x" or stray letters
+    }
+
     double value = 0.0;
     try {
-        value = std::stod(s, &consumed);
+        value = std::stod(s.substr(a, b - a));
     } catch (...) {
-        return std::nullopt;
-    }
-    std::size_t end = s.size();
-    while (end > consumed && is_ascii_ws(s[end - 1])) --end;
-    if (consumed != end) {
         return std::nullopt;
     }
     if (!std::isfinite(value)) {

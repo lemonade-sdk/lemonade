@@ -324,6 +324,14 @@ void validate_leaf(const json& leaf,
             }
         }
     }
+    // A new pair gets the min_score/max_score cross-check from day one, unlike
+    // the pre-existing min_chars/max_chars and min_total_chars/max_total_chars,
+    // which parse min > max without complaint and just never match — changing
+    // that now would reject an already-shipped (if pathological) policy.
+    if (leaf.contains("min_turns") && leaf.contains("max_turns") &&
+        leaf.at("min_turns").get<long long>() > leaf.at("max_turns").get<long long>()) {
+        throw std::invalid_argument(path + " has min_turns greater than max_turns");
+    }
     for (const char* op : {"has_tools", "has_images"}) {
         if (leaf.contains(op)) {
             ++condition_count;

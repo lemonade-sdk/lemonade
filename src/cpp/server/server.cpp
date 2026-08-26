@@ -3737,6 +3737,21 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
     const bool has_tools = request_json.value("has_tools", false);
 
+    if (request_json.contains("turns") &&
+        (!request_json["turns"].is_number_integer() || request_json["turns"].get<long long>() < 0)) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'turns' must be a non-negative integer"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+    // Defaults to 1, not 0: a request that reaches the engine is always at
+    // least one turn (see build_route_context's unconditional floor), and
+    // this endpoint simulates that same request. An explicit 0 floors the
+    // same way rather than being rejected, so a caller who didn't think
+    // about it gets the real invariant instead of a surprising 0-turn result.
+    const long long requested_turns = request_json.value("turns", 1LL);
+    const std::size_t turns = static_cast<std::size_t>(std::max<long long>(1, requested_turns));
+
     std::map<std::string, std::string> metadata;
     if (request_json.contains("metadata")) {
         const nlohmann::json& metadata_json = request_json["metadata"];
@@ -3792,6 +3807,7 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         ctx.params.total_chars = prompt.size();
         ctx.params.has_images = has_images;
         ctx.params.has_tools = has_tools;
+        ctx.params.turn_count = turns;
         ctx.metadata = std::move(metadata);
 
         Decision decision = engine.route(ctx, /*want_trace=*/true);

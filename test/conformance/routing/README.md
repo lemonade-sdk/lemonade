@@ -29,6 +29,7 @@ corpus reads as a checklist against the v1 semantics table in
 1/
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
   l1_conditions_total_char_bounds/  # min_total_chars / max_total_chars over the whole request
+  l1_conditions_turn_bounds/  # min_turns / max_turns over role:"user" turn count
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
@@ -108,6 +109,12 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | `total_chars` sums every role, not just user turns | `l1_conditions_total_char_bounds/total_chars-counts-every-role` |
 | `total_chars` on the history-less `prompt` form equals `chars` | `l1_conditions_total_char_bounds/prompt-form-total-equals-chars` |
 | `total_chars` sums all items of a Responses `input` array, not just the routing item | `l1_conditions_total_char_bounds/responses-input-array-sums-all-items` |
+| `min_turns` — inclusive (`>=`), counts `role:"user"` turns only, not total message count | `l1_conditions_turn_bounds/min_turns-inclusive-boundary` |
+| `max_turns` — inclusive (`<=`) | `l1_conditions_turn_bounds/max_turns-inclusive-boundary` |
+| turn count between the bounds satisfies neither rule ⇒ fall through to default | `l1_conditions_turn_bounds/between-bounds-default` |
+| `turn_count` floors to 1 unconditionally for an empty `messages` array | `l1_conditions_turn_bounds/floor-at-least-one-turn-empty-messages` |
+| `turn_count` floors to 1 for a non-empty conversation with no `role:"user"` entry | `l1_conditions_turn_bounds/floor-at-least-one-turn-no-user-role` |
+| `turn_count` counts `role:"user"` items in a Responses `input` array the same way | `l1_conditions_turn_bounds/responses-input-array-counts-user-role-items` |
 | `metadata` `any` — value equals one of the listed | `l1_conditions_metadata/metadata-any` |
 | `metadata` `equals` — value matches exactly | `l1_conditions_metadata/metadata-equals` |
 | `metadata` `equals` — near-miss value fails (exact, not substring) | `l1_conditions_metadata/metadata-equals-no-match` |
@@ -117,6 +124,13 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | `metadata` `exists: true` — key present ⇒ match | `l1_conditions_metadata/metadata-exists-true` |
 | `metadata` — whitespace-only value counts as absent | `l1_conditions_metadata/metadata-whitespace-counts-absent` |
 | `metadata` `any` — comma-separated value, one token listed | `l1_conditions_metadata/metadata-any-comma-separated` |
+| `metadata` `gte` — inclusive (`>=`), value parsed as a number | `l1_conditions_metadata/metadata-gte-inclusive-boundary` |
+| `metadata` `gte` — below threshold ⇒ no match | `l1_conditions_metadata/metadata-gte-below-threshold-no-match` |
+| `metadata` `gte`/`lte` — missing key never satisfies, same as `equals`/`any` | `l1_conditions_metadata/metadata-gte-absent-key-no-match` |
+| `metadata` `gte`/`lte` — non-numeric value never satisfies | `l1_conditions_metadata/metadata-gte-non-numeric-value-no-match` |
+| `metadata` `gte`/`lte` — a comma-list value is not comma-decoded like `equals`/`any`; it is non-numeric and never satisfies | `l1_conditions_metadata/metadata-gte-comma-list-value-no-match` |
+| `metadata` `lte` — inclusive (`<=`), value parsed as a number | `l1_conditions_metadata/metadata-lte-inclusive-boundary` |
+| `metadata` `lte` — above threshold ⇒ no match | `l1_conditions_metadata/metadata-lte-above-threshold-no-match` |
 | matched rule's non-empty nested `outputs` copied verbatim into `Decision` | `l1_outputs/nested-outputs-verbatim` |
 | first-match-wins (earlier rule beats a later match) | `l1_resolution/first-match-wins` |
 | later rule fires when earlier misses | `l1_resolution/later-rule-when-earlier-misses` |
@@ -139,9 +153,12 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | trace emits condition `max_chars` | `l1_conditions_char_bounds/max_chars-trace` |
 | trace emits condition `min_total_chars` | `l1_conditions_total_char_bounds/min_total_chars-trace` |
 | trace emits condition `max_total_chars` | `l1_conditions_total_char_bounds/max_total_chars-trace` |
+| trace emits condition `min_turns` | `l1_conditions_turn_bounds/min_turns-trace` |
+| trace emits condition `max_turns` | `l1_conditions_turn_bounds/max_turns-trace` |
 | trace emits condition `has_tools` | `l1_conditions_features/has_tools-trace` |
 | trace emits condition `has_images` | `l1_conditions_features/has_images-trace` |
 | trace emits condition `metadata` | `l1_conditions_metadata/metadata-trace` |
+| trace emits condition `metadata` for a `gte`/`lte` leaf too — same condition name, not a new one | `l1_conditions_metadata/metadata-gte-lte-trace` |
 
 The one trace-emitting family not locked above is the classifier band (`classifier:<id>`),
 which is model-backed and non-deterministic — it arrives with the stubbed `l2`/`l3`/`l0a`

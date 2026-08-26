@@ -20,6 +20,12 @@
         "route_to": "local" },
       { "id": "blank-equals-never-matches",
         "match": { "metadata": { "key": "note", "equals": "" } },
+        "route_to": "local" },
+      { "id": "high-error-streak-escalates",
+        "match": { "metadata": { "key": "tool_error_streak", "gte": 2 } },
+        "route_to": "local" },
+      { "id": "low-budget-stays-local",
+        "match": { "metadata": { "key": "budget_remaining", "lte": 5 } },
         "route_to": "local" }
     ]
   }

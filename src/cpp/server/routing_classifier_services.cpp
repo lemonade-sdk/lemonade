@@ -390,22 +390,17 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
 
     if (request_json.contains("messages") && request_json["messages"].is_array()) {
         const auto& messages = request_json["messages"];
-        // Totalling every role's text is what makes `total_chars` a proxy for
-        // prefill size: the whole array is what the backend prefills, not just
-        // the routing turn. It cannot ride along with an image scan that stops
-        // at the first hit, so the flag is latched instead of breaking out.
+        // One forward pass counts user turns, detects images, and totals every
+        // role's text (the `total_chars` proxy for prefill size) together,
+        // rather than three separate walks that could drift apart. Totalling
+        // cannot ride along with an image scan that stops at the first hit, so
+        // has_images is latched instead of breaking out.
         for (const auto& msg : messages) {
-            if (msg.is_object() && msg.value("role", std::string()) == "user") {
+            if (!msg.is_object()) continue;
+            if (msg.value("role", std::string()) == "user") {
                 ++ctx.params.turn_count;
             }
-        }
-        // A non-empty conversation with no role:"user" entry at all (unusual,
-        // but not impossible) still reached the router as one turn.
-        if (ctx.params.turn_count == 0 && !messages.empty()) {
-            ctx.params.turn_count = 1;
-        }
-        for (const auto& msg : messages) {
-            if (!msg.is_object() || !msg.contains("content")) continue;
+            if (!msg.contains("content")) continue;
             const auto& content = msg["content"];
             if (!ctx.params.has_images && content_has_image(content)) {
                 ctx.params.has_images = true;
@@ -443,20 +438,14 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
             ctx.params.turn_count = 1;
             ctx.params.total_chars = ctx.input.size();
         } else if (input.is_array()) {
+            // One forward pass counts user turns, detects images anywhere in the
+            // input (mirroring how the chat path scans every message), and
+            // totals every item's text — role-tagged or bare, which is more
+            // than the routing input takes — rather than separate walks.
             for (const auto& item : input) {
                 if (item.is_object() && item.value("role", std::string()) == "user") {
                     ++ctx.params.turn_count;
                 }
-            }
-            // Role-less bare-parts input (see the fallback below) still
-            // reached the router as one turn.
-            if (ctx.params.turn_count == 0 && !input.empty()) {
-                ctx.params.turn_count = 1;
-            }
-            // Detect images anywhere in the input, mirroring how the chat path
-            // scans every message, and total every item's text in the same pass
-            // — role-tagged or bare, which is more than the routing input takes.
-            for (const auto& item : input) {
                 if (item.is_string()) {
                     ctx.params.total_chars += item.get<std::string>().size();
                     continue;
@@ -500,6 +489,15 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
                 }
             }
         }
+    }
+
+    // Any request that reaches the engine is at least one turn — including
+    // one with no messages/prompt/input field at all, or an empty
+    // messages/input array — so min_turns/max_turns' "at least 1" invariant
+    // holds unconditionally rather than only on the branches that happened
+    // to set turn_count already.
+    if (ctx.params.turn_count == 0) {
+        ctx.params.turn_count = 1;
     }
 
     ctx.params.chars = ctx.input.size();
