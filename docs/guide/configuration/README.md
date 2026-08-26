@@ -53,6 +53,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
   "download_rate_limit": "",
+  "ds4": {
+    "args": ""
+  },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
