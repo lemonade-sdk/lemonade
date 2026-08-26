@@ -439,6 +439,7 @@ function downloadPayloadCompleted(data: unknown): boolean {
 export interface PullVariant {
   name: string;
   primary_file: string;
+  draft_file?: string;
   files: string[];
   sharded: boolean;
   size_bytes: number;
