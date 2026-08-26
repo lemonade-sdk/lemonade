@@ -54,25 +54,47 @@ bool throws_for_arch(const std::string& arch) {
 }  // namespace
 
 int main() {
-    SystemInfo::set_rocm_arch_override("gfx1151");
-    const auto params = Ds4Server::get_install_params("rocm", "b0001");
-    SystemInfo::set_rocm_arch_override("");
+    // get_install_params() rejects the host OS before it looks at the
+    // architecture, so asset resolution can only be asserted where ds4 actually
+    // publishes. Everywhere else the only correct outcome is a refusal.
+    const bool host_publishes =
+        lemon::backends::ds4::publishes_for_os(lemon::get_current_os());
 
-    expect(params.repo == "lemonade-sdk/ds4-rocm", "rocm resolves to the ds4-rocm release repo");
+    if (host_publishes) {
+        SystemInfo::set_rocm_arch_override("gfx1151");
+        const auto params = Ds4Server::get_install_params("rocm", "b0001");
+        SystemInfo::set_rocm_arch_override("");
 
-    // The asset name has to be derivable from the release tag alone: ds4-rocm
-    // deliberately does not put the upstream ds4 commit in the filename, because
-    // lemonade only knows the tag it is pinned to.
-    expect(params.filename == "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz",
-           "asset filename is built from tag + detected arch");
+        expect(params.repo == "lemonade-sdk/ds4-rocm",
+               "rocm resolves to the ds4-rocm release repo");
 
-    expect(install_filename("gfx1151", "b0002") == "ds4-b0002-linux-rocm-gfx1151-x64.tar.gz",
-           "filename tracks the pinned version");
+        // The asset name has to be derivable from the release tag alone: ds4-rocm
+        // deliberately does not put the upstream ds4 commit in the filename, because
+        // lemonade only knows the tag it is pinned to.
+        expect(params.filename == "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz",
+               "asset filename is built from tag + detected arch");
 
-    // ds4-rocm publishes raw ISA names, not family names, so the arch must be
-    // passed through verbatim rather than collapsed to a family.
-    expect(install_filename("gfx1151", "b0001").find("gfx1151") != std::string::npos,
-           "arch is used verbatim, not collapsed to a family target");
+        expect(install_filename("gfx1151", "b0002") == "ds4-b0002-linux-rocm-gfx1151-x64.tar.gz",
+               "filename tracks the pinned version");
+
+        // ds4-rocm publishes raw ISA names, not family names, so the arch must be
+        // passed through verbatim rather than collapsed to a family.
+        expect(install_filename("gfx1151", "b0001").find("gfx1151") != std::string::npos,
+               "arch is used verbatim, not collapsed to a family target");
+
+        // Install must refuse an architecture we publish nothing for, rather than
+        // composing a plausible-looking asset name that 404s. Model filtering
+        // normally keeps such hosts away, but the install path cannot assume it ran.
+        expect(throws_for_arch("gfx1150"),
+               "install refuses an unsupported architecture");
+        expect(throws_for_arch("gfx942"),
+               "install refuses a CDNA architecture");
+        expect(!throws_for_arch("gfx1151"),
+               "install still resolves for the supported architecture");
+    } else {
+        expect(throws_for_arch("gfx1151"),
+               "install refuses a host OS ds4 publishes no build for");
+    }
 
     expect(throws_for_backend("system"),
            "the removed system variant is rejected");
@@ -87,15 +109,6 @@ int main() {
     expect(!SystemInfo::backend_supports_arch("ds4", "rocm", "gfx1150"),
            "rocm is not advertised for unvalidated architectures");
 
-    // Install must refuse an architecture we publish nothing for, rather than
-    // composing a plausible-looking asset name that 404s. Model filtering
-    // normally keeps such hosts away, but the install path cannot assume it ran.
-    expect(throws_for_arch("gfx1150"),
-           "install refuses an unsupported architecture");
-    expect(throws_for_arch("gfx942"),
-           "install refuses a CDNA architecture");
-    expect(!throws_for_arch("gfx1151"),
-           "install still resolves for the supported architecture");
     // The support row is Linux-only, and the direct backend-install endpoint
     // does not go through model filtering, so a Windows gfx1151 host would
     // otherwise pass the arch check and resolve the Linux asset.
