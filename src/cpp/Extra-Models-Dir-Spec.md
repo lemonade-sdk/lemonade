@@ -65,6 +65,18 @@ When a folder is split into variants, its folder name is still accepted in reque
 
 If a directory contains a file with `mmproj` anywhere in the filename, it is automatically set as the model's `mmproj` field and the `vision` label is applied. When several `mmproj` files are present, the first by filename is chosen, so the selection is stable across restarts.
 
+### Embedding and Reranking Detection
+
+The model's filename (and, for folder models, the containing directory name) is matched case-insensitively against `embed` and `rerank`. A match against `embed` applies the `embeddings` label; a match against `rerank` applies the `reranking` label. A name matching neither is treated as an ordinary chat model. This applies per-file, so a split-variant folder can produce a mix of embedding, reranking, and chat models from the same directory.
+
+A model deploys in exactly one mode, so at most one of these labels is applied. When the filename and the directory name disagree, the filename takes precedence: a reranker stored in a folder named `embed-models` is still listed as a reranking model. When a single name carries both words, `reranking` wins.
+
+Detection reads the name only, so it is only as good as the name. Embedding models whose names do not contain `embed`, such as `bge-*` and `all-MiniLM-*`, are listed as chat models. Matching is on substrings rather than whole words, so a chat model whose name happens to contain `embed` is listed as an embedding model. Either case can be corrected by registering the file as a user model with an explicit label:
+
+```
+lemonade pull user.NAME --checkpoint main /path/to/model.gguf --recipe llamacpp --label embeddings
+```
+
 ## Model Properties
 
 Discovered models receive the following default properties:
@@ -74,7 +86,8 @@ Discovered models receive the following default properties:
 | `recipe` | `llamacpp` |
 | `suggested` | `true` |
 | `downloaded` | `true` |
-| `labels` | `["custom"]` (plus `"vision"` if multimodal) |
+| `labels` | `["custom"]`, plus `"vision"` if multimodal, plus one mode label inferred from the filename: `"embeddings"` or `"reranking"` (see above), or `"chat"` if neither is matched |
+| `type` | Derived from `labels`: `embedding`, `reranking`, or `llm` |
 | `size` | Sum of all `.gguf` file sizes in GB |
 | `source` | `extra_models_dir` |
 

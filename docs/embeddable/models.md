@@ -18,7 +18,7 @@ Contents:
 `lemond`'s configuration has two properties, `models_dir` and `extra_models_dir`, that determine where `lemond` will look when listing, pulling, and loading models.
 
 - `models_dir` is the primary model store, where `lemond` will `pull` models to.
-- `extra_models_dir` is a search path for GGUF LLMs that can be imported into `lemond`.
+- `extra_models_dir` is a search path for GGUF models (chat, embedding, or reranking) that can be imported into `lemond`.
 
 ### Sharing Models With Other Apps
 
