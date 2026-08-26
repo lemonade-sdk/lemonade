@@ -446,6 +446,12 @@ struct UpdateCheckResult {
 
     void start_directory_watcher();
 
+    // Scan extra_models_dir and classify what it finds. Pure filesystem +
+    // filename inference, no hardware queries or cache locking, so it can be
+    // unit-tested directly without going through build_cache()'s
+    // system-info-dependent filtering.
+    std::map<std::string, ModelInfo> discover_extra_models() const;
+
 private:
     // Cycle-detecting overload used by the collection fan-out in download_model.
     // `visited` accumulates collection names already entered on the current
@@ -528,9 +534,6 @@ private:
     // Download from the model's configured remote registry
     void download_from_registry(const ModelInfo& info,
                                    DownloadProgressCallback progress_callback = nullptr);
-
-    // Discover GGUF models from extra_models_dir
-    std::map<std::string, ModelInfo> discover_extra_models() const;
 
     ModelInfo init_extra_model_info(const std::string& name) const;
 

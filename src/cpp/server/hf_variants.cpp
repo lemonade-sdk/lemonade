@@ -391,10 +391,8 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     // registration; otherwise the preview and the registered model disagree.
     std::vector<std::string> labels;
     if (!vset.mmproj_files.empty()) add_label_once(labels, "vision");
-    {
-        std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
-        if (id_lower.find("rerank") != std::string::npos) add_label_once(labels, "reranking");
+    for (const auto& label : infer_labels_from_name(suggested_name, checkpoint)) {
+        add_label_once(labels, label);
     }
     backends::ensure_deployment_label(labels, "llamacpp");
 

@@ -1154,6 +1154,11 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_->start();
 }
 
+// The deployment label is deliberately NOT stamped here. Callers still have to
+// add the labels inferred from the filename, and ensure_deployment_label() would
+// otherwise add "chat" first - which find_deployment_mode() checks before every
+// other mode, so the model would deploy as an LLM no matter what its name said.
+// Each caller calls ensure_deployment_label() once its labels are assembled.
 ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     ModelInfo info;
     info.model_name = name;
@@ -1162,7 +1167,6 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     info.downloaded = true;
     info.source = EXTRA_MODEL_SOURCE;
     info.labels = {"custom"};
-    lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
     info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
     return info;
 }
@@ -1258,7 +1262,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
-        info.type = ModelType::LLM;
+        for (const auto& label : infer_labels_from_name(model_name, filename)) {
+            add_label_once(info.labels, label);
+        }
+        lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
+        info.type = get_model_type_from_labels(info.labels);
 
         // Calculate size in GB
         try {
@@ -1361,11 +1369,16 @@ void ModelManager::discover_extra_models_in_directory(
             info.resolved_paths["main"] = path.string();
             info.size = static_cast<double>(v.size_bytes) / (1024.0 * 1024.0 * 1024.0);
 
+            for (const auto& label : infer_labels_from_name(variant_id, path.filename().string())) {
+                add_label_once(info.labels, label);
+            }
+
             if (!mmproj_file.empty()) {
                 info.checkpoints["mmproj"] = mmproj_file.filename().string();
                 info.resolved_paths["mmproj"] = mmproj_file.string();
                 info.labels.push_back("vision");
             }
+            lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
@@ -1384,11 +1397,16 @@ void ModelManager::discover_extra_models_in_directory(
         info.resolved_paths["main"] = main_model_path.string();
         info.size = total_size;
 
+        for (const auto& label : infer_labels_from_name(model_id, main_model_path.filename().string())) {
+            add_label_once(info.labels, label);
+        }
+
         if (!mmproj_file.empty()) {
             info.checkpoints["mmproj"] = mmproj_file.filename().string();
             info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
+        lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
         add_extra_model(discovered, dir_name, dir_path, std::move(info));
     }
