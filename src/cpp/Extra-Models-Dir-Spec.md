@@ -67,9 +67,21 @@ If a directory contains a file with `mmproj` anywhere in the filename, it is aut
 
 ### Embedding and Reranking Detection
 
-The model's filename, or the containing directory name for folder models, is matched case-insensitively against the substrings `embed` and `rerank` to apply the `embeddings` or `reranking` label. A name matching neither is an ordinary chat model. Matching is per-file, so one directory can produce a mix of all three.
+The name decides the mode. A name containing `rerank` gets the `reranking` label, and a name containing `embed` gets `embeddings`. Everything else is a chat model. Matching ignores case.
 
-At most one of these labels is applied, since a model deploys in exactly one mode. The filename takes precedence over the directory name, and `reranking` wins when a single name carries both words. Detection is only as good as the name: an embedding model that does not say `embed`, such as `bge-*` or `all-MiniLM-*`, is listed as chat, and a chat model that happens to contain `embed` is listed as an embedding model. Either case is corrected by registering the file in `user_models.json` with an explicit `labels` array, for example `["embeddings"]`.
+Only one of these labels is ever applied, because a model runs in exactly one mode. `rerank` is checked first, so `bge-reranker-v2` is a reranker rather than an embedding model.
+
+Which name is read depends on the layout:
+
+| Layout | Name read |
+|--------|-----------|
+| A `.gguf` in the top level of the directory | its own filename |
+| A folder split into variants | each variant's own filename |
+| A folder kept as one model | its primary file's filename, then the folder name |
+
+A folder kept as one model gets one mode for the whole folder, and the other `.gguf` files in it do not affect the result. The filename is read before the folder name, so a reranker stored in a folder named `embed-models` is still a reranker.
+
+Detection is only as good as the name. An embedding model whose name says neither, such as `bge-small-en-v1.5`, `all-MiniLM-L6-v2`, or `gte-base`, is listed as chat, and a chat model whose name happens to contain `embed` is listed as an embedding model. Renaming the file is the direct fix, since discovery reads nothing but the name. Registering the file in `user_models.json` with an explicit `labels` array, for example `["embeddings"]`, adds a correctly labeled `user.*` model, but the `extra.*` entry stays as it was discovered.
 
 ## Model Properties
 
