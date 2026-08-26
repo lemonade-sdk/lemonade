@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -200,21 +199,6 @@ inline bool add_label_once(std::vector<std::string>& labels, const std::string& 
     if (has_label(labels, label)) return false;
     labels.push_back(label);
     return true;
-}
-
-// Normalize capability-label spelling without deriving capabilities from model names.
-// Deployment labels remain separate from orthogonal capabilities (e.g. image editing).
-inline std::string normalize_capability_label(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    std::replace(value.begin(), value.end(), '_', '-');
-
-    if (value == "edit" || value == "image-editing" ||
-        value == "image-to-image" || value == "img2img") {
-        return "image-edit";
-    }
-    return value;
 }
 
 // Fallback device type for recipes with no registered backend descriptor

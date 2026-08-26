@@ -29,9 +29,14 @@ MediaModelCandidate candidate(const std::string& name,
 int main() {
     const auto normal_image = candidate("normal-image", ModelType::IMAGE, {"image"});
     const auto edit_image = candidate(
-        "edit-image", ModelType::IMAGE, {"image", "image-edit"});
+        "edit-image", ModelType::IMAGE, {"image", "edit"});
     const auto downloaded_edit = candidate(
-        "downloaded-edit", ModelType::IMAGE, {"image", "image-edit"});
+        "downloaded-edit", ModelType::IMAGE, {"image", "edit"});
+
+    // #3346 owns the metadata -> capability mapping: edit becomes image-edit.
+    const auto capabilities = lemon::ModelManager::model_capabilities(edit_image.info);
+    assert(std::find(capabilities.begin(), capabilities.end(), "image") != capabilities.end());
+    assert(std::find(capabilities.begin(), capabilities.end(), "image-edit") != capabilities.end());
 
     // loaded normal image + downloaded edit => downloaded edit
     {
@@ -62,19 +67,9 @@ int main() {
 
     // An edit label cannot turn a non-image deployment into an image model.
     const auto mislabeled_llm = candidate(
-        "mislabeled-llm", ModelType::LLM, {"chat", "image-edit"});
+        "mislabeled-llm", ModelType::LLM, {"chat", "edit"});
     assert(!lemon::mcp::media_model_eligible(
         mislabeled_llm.info, ModelType::IMAGE, "image-edit"));
-
-    // Legacy spelling is accepted only through canonical normalization.
-    for (const char* legacy : {
-             "edit", "image-edit", "image-editing", "image-to-image", "img2img",
-             "IMAGE_EDITING"}) {
-        const auto legacy_model = candidate(
-            "legacy", ModelType::IMAGE, {"image", legacy});
-        assert(lemon::mcp::media_model_eligible(
-            legacy_model.info, ModelType::IMAGE, "image-edit"));
-    }
 
     std::cout << "MCP media model selection tests passed\n";
     return 0;

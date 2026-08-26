@@ -451,8 +451,6 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
         bool allow_download,
         std::string required_capability) {
     if (!required_capability.empty()) {
-        required_capability = normalize_capability_label(std::move(required_capability));
-
         auto selection_error = [](const std::string& message) -> json {
             return json{
                 {"content", json::array({json{{"type", "text"}, {"text", message}}})},
@@ -873,12 +871,18 @@ json McpServer::tool_edit_image(const json& arguments) {
     if (std::holds_alternative<json>(resolved)) return std::get<json>(resolved);
     const std::string model = std::get<std::string>(resolved);
 
-    // Attachment choice belongs to the MCP host. The public server receives the
-    // concrete image bytes selected by the caller, not a conversational lookup
-    // instruction such as "edit the most recent image".
-    const std::string image_base64 = extract_string_arg(arguments, "image_base64");
-    if (utils::JsonUtils::base64_decode(image_base64).empty()) {
-        throw std::runtime_error("image_base64 decoded to zero bytes.");
+    // Attachment choice belongs to the MCP host. Keep the public MCP argument
+    // aligned with the canonical edit-image contract: raw base64 or a data URL.
+    std::string image = extract_string_arg(arguments, "image");
+    if (image.rfind("data:", 0) == 0) {
+        const auto comma = image.find(',');
+        if (comma == std::string::npos) {
+            throw std::runtime_error("image data URL is missing its base64 payload");
+        }
+        image = image.substr(comma + 1);
+    }
+    if (utils::JsonUtils::base64_decode(image).empty()) {
+        throw std::runtime_error("image decoded to zero bytes.");
     }
 
     ensure_loaded_(model);
@@ -886,10 +890,10 @@ json McpServer::tool_edit_image(const json& arguments) {
     json router_request = {
         {"model", model},
         {"prompt", prompt},
-        {"image_data", image_base64},
+        {"image_data", image},
         {"response_format", "b64_json"},
     };
-    for (const char* key : {"size", "n", "negative_prompt", "seed", "steps", "cfg_scale"}) {
+    for (const char* key : {"size", "n", "seed", "steps", "cfg_scale"}) {
         if (arguments.contains(key)) {
             router_request[key] = arguments[key];
         }
@@ -1397,27 +1401,28 @@ json McpServer::tools_descriptor() {
             {"name", "lemonade_edit_image"},
             {"description",
              "Edit a concrete image with an image-edit capable model. The MCP "
-             "host chooses which attachment/image is meant and passes its bytes "
-             "as `image_base64`; the server does not inspect chat history to pick "
-             "an image. `model` is OPTIONAL: when omitted, Lemonade selects an "
-             "already-loaded IMAGE model advertising `image-edit`, otherwise an "
-             "already-downloaded eligible model. Ordinary text-to-image models "
-             "are skipped. This tool never downloads a default model implicitly."},
+             "host chooses which attachment/image is meant and passes `image` as "
+             "raw base64 or a data:image URL; the server does not inspect chat "
+             "history to pick an image. `model` is OPTIONAL: when omitted, "
+             "Lemonade selects an already-loaded IMAGE model advertising "
+             "`image-edit`, otherwise an already-downloaded eligible model. "
+             "Ordinary text-to-image models are skipped. This tool never "
+             "downloads a default model implicitly."},
             {"inputSchema", {
                 {"type", "object"},
-                {"required", json::array({"prompt", "image_base64"})},
+                {"required", json::array({"prompt", "image"})},
+                {"additionalProperties", false},
                 {"properties", {
+                    {"prompt", {{"type", "string"}}},
+                    {"image", {{"type", "string"},
+                               {"description", "Base64 image bytes or a data:image/...;base64 URL."}}},
                     {"model", {{"type", "string"},
                                {"description", "Optional. Must be an IMAGE model that advertises image-edit; omit to auto-select a loaded/downloaded eligible model."}}},
-                    {"prompt", {{"type", "string"}}},
-                    {"image_base64", {{"type", "string"},
-                                      {"description", "Base64-encoded bytes of the concrete source image selected by the MCP host."}}},
                     {"size", {{"type", "string"}}},
-                    {"n", {{"type", "integer"}, {"minimum", 1}}},
-                    {"negative_prompt", {{"type", "string"}}},
-                    {"seed", {{"type", "integer"}}},
-                    {"steps", {{"type", "integer"}}},
+                    {"steps", {{"type", "integer"}, {"minimum", 1}}},
                     {"cfg_scale", {{"type", "number"}}},
+                    {"seed", {{"type", "integer"}}},
+                    {"n", {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}},
                 }},
             }},
         },

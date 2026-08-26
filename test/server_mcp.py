@@ -251,9 +251,11 @@ class McpGatewayTests(ServerTestBase):
 
         edit = next(t for t in tools if t["name"] == "lemonade_edit_image")
         edit_required = set(edit["inputSchema"].get("required", []))
-        self.assertEqual(edit_required, {"prompt", "image_base64"})
+        self.assertEqual(edit_required, {"prompt", "image"})
         edit_properties = edit["inputSchema"]["properties"]
         self.assertIn("model", edit_properties)
+        self.assertIn("image", edit_properties)
+        self.assertNotIn("image_base64", edit_properties)
         self.assertNotIn("allow_download", edit_properties)
 
     # ---------------------------------------------------------------------
@@ -412,7 +414,7 @@ class McpGatewayTests(ServerTestBase):
                         "prompt": "make it blue",
                         # Empty on purpose: capability validation must happen
                         # before image decoding or any model load/download.
-                        "image_base64": "",
+                        "image": "",
                     },
                 },
             }

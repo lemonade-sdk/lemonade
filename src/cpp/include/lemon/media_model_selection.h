@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "model_manager.h"
-#include "model_types.h"
 
 namespace lemon {
 namespace mcp {
@@ -21,11 +20,9 @@ struct MediaModelCandidate {
 inline bool model_advertises_capability(const ModelInfo& info,
                                         const std::string& required_capability) {
     if (required_capability.empty()) return true;
-    const std::string wanted = normalize_capability_label(required_capability);
-    for (const std::string& label : info.labels) {
-        if (normalize_capability_label(label) == wanted) return true;
-    }
-    return false;
+    const auto capabilities = ModelManager::model_capabilities(info);
+    return std::find(capabilities.begin(), capabilities.end(), required_capability) !=
+           capabilities.end();
 }
 
 inline bool media_model_eligible(const ModelInfo& info,
