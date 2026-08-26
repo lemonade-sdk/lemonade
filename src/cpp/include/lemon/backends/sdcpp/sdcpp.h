@@ -46,10 +46,7 @@ inline const BackendDescriptor descriptor = {
     },
     /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()
-    // Every sd-cpp image model is also served by /v1/images/edits. Keep that
-    // server-owned capability on the backend descriptor instead of deriving it
-    // from model names in clients/MCP.
-    /*default_capabilities*/ {"image-edit"},
+    /*default_capabilities*/ {},
     /*experimental*/    false,
     /*web_display_name*/ "stable-diffusion.cpp",
     /*rocm_channels*/   {"stable"},

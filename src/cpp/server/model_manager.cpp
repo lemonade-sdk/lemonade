@@ -3356,6 +3356,7 @@ std::string normalize_model_capability(std::string value) {
     std::replace(value.begin(), value.end(), '_', '-');
     if (value == "llm") return "chat";
     if (value == "embeddings") return "embedding";
+    if (value == "edit") return "image-edit";
     if (value == "3d" || value == "mesh" || value == "model-3d") return "model3d";
 
     static const std::set<std::string> kCanonical = {
@@ -3436,7 +3437,8 @@ ModelQueryResult ModelManager::query_models(const ModelQueryOptions& options) {
     }();
     const std::string wanted_capability = normalize_model_capability(options.capability);
     if (!options.capability.empty() && wanted_capability.empty()) {
-        return {};
+        throw std::invalid_argument(
+            "Unknown model capability: " + options.capability);
     }
 
     std::vector<std::pair<std::string, ModelInfo>> matches;

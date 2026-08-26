@@ -170,7 +170,7 @@ struct ModelFileInfo {
     bool exists = false;
 };
 
-// Canonical query contract for models known to the running Lemonade server.
+// Canonical query contract for models registered by this server.
 // `downloaded` is an independent predicate, not a lifecycle enum. `limit` being
 // unset means unbounded (used by backward-compatible REST paths); MCP and other
 // bounded clients can choose their own page default without duplicating query

@@ -325,8 +325,7 @@ class EndpointTests(ServerTestBase):
         model_a = f"user.DiscoveryCase-{suffix}-Alpha"
         model_b = f"user.DiscoveryCase-{suffix}-Beta"
         router_name = f"user.DiscoveryRouter-{suffix}"
-        image_name = f"user.DiscoveryImage-{suffix}"
-        registered = [model_a, model_b, router_name, image_name]
+        registered = [model_a, model_b, router_name]
 
         def register(payload):
             response = requests.post(
@@ -459,33 +458,6 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(router_body["data"][0]["id"], public_router)
             self.assertEqual(router_body["data"][0]["capability"], "router")
 
-            # image-edit comes from server-owned backend metadata, not a model-name
-            # heuristic. A user sd-cpp registration inherits the descriptor's
-            # image + image-edit capability labels without naming a stock model.
-            public_image = register(
-                {
-                    "model_name": image_name,
-                    "recipe": "sd-cpp",
-                    "checkpoint": f"example/discovery-image-{suffix}:model.safetensors",
-                }
-            )
-            response = requests.get(
-                f"{self.base_url}/models",
-                params={
-                    "show_all": "true",
-                    "query": f"DiscoveryImage-{suffix}",
-                    "capability": "image-edit",
-                    "downloaded": "false",
-                },
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(response.status_code, 200, response.text)
-            image_edit = response.json()
-            self.assertEqual(image_edit["matching_total"], 1)
-            self.assertEqual(image_edit["data"][0]["id"], public_image)
-            self.assertEqual(image_edit["data"][0]["capability"], "image")
-            self.assertIn("image-edit", image_edit["data"][0]["capabilities"])
-
             # Invalid cursors fail explicitly rather than silently restarting a page.
             response = requests.get(
                 f"{self.base_url}/models",
@@ -493,6 +465,18 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(response.status_code, 400, response.text)
+
+            # Unknown canonical predicates are client errors, not empty success.
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={"show_all": "true", "capability": "imgae"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertEqual(
+                response.json().get("error"),
+                "Unknown model capability: imgae",
+            )
         finally:
             for model_name in reversed(registered):
                 try:

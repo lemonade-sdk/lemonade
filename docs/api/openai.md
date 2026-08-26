@@ -968,7 +968,7 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 |-----------|----------|-------------|
 | `show_all` | No | Backward-compatible switch. `true` returns all registered models when `downloaded` is not explicitly supplied; default behavior remains downloaded-only. |
 | `query` | No | Case-insensitive AND-token search across public model ID, checkpoints, recipe, and labels. |
-| `capability` | No | Server-owned capability predicate such as `chat`, `router`, `omni`, `image`, `image-edit`, `transcription`, `audio-generation`, `tts`, `model3d`, `embedding`, or `reranking`. |
+| `capability` | No | Server-owned capability predicate such as `chat`, `router`, `omni`, `image`, `image-edit`, `transcription`, `audio-generation`, `tts`, `model3d`, `embedding`, or `reranking`. Unknown values return `400 Bad Request`. |
 | `downloaded` | No | Boolean predicate over registered models. `true` selects locally present/usable artifacts; `false` selects registered but not downloaded models. Virtual collections derive this value from their components. |
 | `limit` | No | Positive maximum number of canonical model records to return. Omit it for the legacy unbounded REST behavior. |
 | `cursor` | No | Opaque continuation cursor returned by a previous canonical discovery response. |
@@ -977,18 +977,19 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 
 The default `GET /v1/models` response remains OpenAI-compatible and downloaded-only, and
 `show_all=true` remains supported. Supplying any of `query`, `capability`, `downloaded`,
-`limit`, or `cursor` switches the response into canonical registered-model discovery.
-Those responses additionally contain `matching_total` and `next_cursor`. API aliases are
-not counted as registered model records in this mode.
+`limit`, or `cursor` switches the response into canonical discovery over models registered
+and supported by this running server. This is intentionally not the raw unfiltered registry.
+Canonical responses additionally contain `matching_total` and `next_cursor`; API aliases are
+not counted as separate model records.
 
 ```bash
 # Legacy: downloaded models only
 curl http://localhost:13305/v1/models
 
-# Legacy: all registered models
+# Legacy: all registered models supported by this server
 curl http://localhost:13305/v1/models?show_all=true
 
-# Canonical: registered Qwen chat models that are already downloaded
+# Canonical: supported registered Qwen chat models that are already downloaded
 curl "http://localhost:13305/v1/models?show_all=true&query=qwen&capability=chat&downloaded=true&limit=30"
 ```
 
