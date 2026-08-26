@@ -17,6 +17,7 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/collection_orchestrator.h"
+#include "lemon/media_model_selection.h"
 #include "lemon/model_types.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
@@ -386,6 +387,8 @@ json McpServer::handle_tools_call(const json& params, const json& id) {
             result = tool_transcribe_audio(arguments);
         } else if (tool_name == "lemonade_generate_image") {
             result = tool_generate_image(arguments);
+        } else if (tool_name == "lemonade_edit_image") {
+            result = tool_edit_image(arguments);
         } else if (tool_name == "lemonade_omni") {
             result = tool_omni(arguments);
         } else if (tool_name == "lemonade_list_models") {
@@ -445,7 +448,69 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
         ModelType want_type,
         const char* type_str,
         const char* default_model,
-        bool allow_download) {
+        bool allow_download,
+        std::string required_capability) {
+    if (!required_capability.empty()) {
+        required_capability = normalize_capability_label(std::move(required_capability));
+
+        auto selection_error = [](const std::string& message) -> json {
+            return json{
+                {"content", json::array({json{{"type", "text"}, {"text", message}}})},
+                {"isError", true},
+            };
+        };
+
+        if (arguments.contains("model") && arguments["model"].is_string() &&
+            !arguments["model"].get<std::string>().empty()) {
+            const std::string model = arguments["model"].get<std::string>();
+            if (!model_manager_->model_exists(model)) {
+                if (model_manager_->model_exists_unfiltered(model)) {
+                    std::string reason = model_manager_->get_model_filter_reason(model);
+                    if (reason.empty()) {
+                        reason = "This model is not available on the running lemonade server.";
+                    }
+                    return selection_error(
+                        "Model '" + model + "' is not available on this lemonade server. " + reason);
+                }
+                return selection_error("Unknown model '" + model + "'.");
+            }
+
+            ModelInfo info = model_manager_->get_model_info(model);
+            if (info.type != want_type) {
+                return selection_error(
+                    "Model '" + model + "' is not a " + type_str + " model.");
+            }
+            if (!mcp::model_advertises_capability(info, required_capability)) {
+                return selection_error(
+                    "Model '" + model + "' does not advertise " +
+                    required_capability + " support.");
+            }
+            return model;
+        }
+
+        std::vector<mcp::MediaModelCandidate> loaded_candidates;
+        for (const auto& loaded : router_->get_all_loaded_models()) {
+            const std::string name = loaded.value("model_name", std::string());
+            if (name.empty() || !model_manager_->model_exists(name)) continue;
+            loaded_candidates.push_back({name, model_manager_->get_model_info(name)});
+        }
+
+        std::vector<mcp::MediaModelCandidate> downloaded_candidates;
+        for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
+            downloaded_candidates.push_back({name, info});
+        }
+
+        if (auto selected = mcp::select_media_model(
+                loaded_candidates, downloaded_candidates, want_type,
+                required_capability)) {
+            return *selected;
+        }
+
+        return selection_error(
+            "No loaded or downloaded " + required_capability +
+            " capable model is available.");
+    }
+
     // 1. Explicit model argument always wins.
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
@@ -791,6 +856,64 @@ json McpServer::tool_generate_image(const json& arguments) {
     json paths = json::array();
     for (const auto& p : written) paths.push_back(p.string());
     content.push_back(text_content_block(json{{"paths", std::move(paths)}}.dump()));
+
+    return json{
+        {"content", std::move(content)},
+        {"isError", false},
+    };
+}
+
+json McpServer::tool_edit_image(const json& arguments) {
+    const std::string prompt = extract_string_arg(arguments, "prompt");
+
+    // No implicit download for edit-image. There is no generic image model
+    // default that can safely stand in for the image-edit capability.
+    auto resolved = resolve_model_for_tool(
+        arguments, ModelType::IMAGE, "image", "", false, "image-edit");
+    if (std::holds_alternative<json>(resolved)) return std::get<json>(resolved);
+    const std::string model = std::get<std::string>(resolved);
+
+    // Attachment choice belongs to the MCP host. The public server receives the
+    // concrete image bytes selected by the caller, not a conversational lookup
+    // instruction such as "edit the most recent image".
+    const std::string image_base64 = extract_string_arg(arguments, "image_base64");
+    if (utils::JsonUtils::base64_decode(image_base64).empty()) {
+        throw std::runtime_error("image_base64 decoded to zero bytes.");
+    }
+
+    ensure_loaded_(model);
+
+    json router_request = {
+        {"model", model},
+        {"prompt", prompt},
+        {"image_data", image_base64},
+        {"response_format", "b64_json"},
+    };
+    for (const char* key : {"size", "n", "negative_prompt", "seed", "steps", "cfg_scale"}) {
+        if (arguments.contains(key)) {
+            router_request[key] = arguments[key];
+        }
+    }
+
+    json response = router_->image_edits(router_request);
+    if (response.contains("error")) {
+        throw std::runtime_error(response["error"].value("message", "image editing failed"));
+    }
+
+    json content = json::array();
+    if (response.contains("data") && response["data"].is_array()) {
+        for (const auto& entry : response["data"]) {
+            if (!entry.contains("b64_json") || !entry["b64_json"].is_string()) continue;
+            content.push_back({
+                {"type", "image"},
+                {"data", entry["b64_json"].get<std::string>()},
+                {"mimeType", "image/png"},
+            });
+        }
+    }
+    if (content.empty()) {
+        throw std::runtime_error("Image editing returned no images");
+    }
 
     return json{
         {"content", std::move(content)},
@@ -1266,6 +1389,34 @@ json McpServer::tools_descriptor() {
                     {"negative_prompt", {{"type", "string"}}},
                     {"seed",   {{"type", "integer"}}},
                     {"steps",  {{"type", "integer"}}},
+                    {"cfg_scale", {{"type", "number"}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_edit_image"},
+            {"description",
+             "Edit a concrete image with an image-edit capable model. The MCP "
+             "host chooses which attachment/image is meant and passes its bytes "
+             "as `image_base64`; the server does not inspect chat history to pick "
+             "an image. `model` is OPTIONAL: when omitted, Lemonade selects an "
+             "already-loaded IMAGE model advertising `image-edit`, otherwise an "
+             "already-downloaded eligible model. Ordinary text-to-image models "
+             "are skipped. This tool never downloads a default model implicitly."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"prompt", "image_base64"})},
+                {"properties", {
+                    {"model", {{"type", "string"},
+                               {"description", "Optional. Must be an IMAGE model that advertises image-edit; omit to auto-select a loaded/downloaded eligible model."}}},
+                    {"prompt", {{"type", "string"}}},
+                    {"image_base64", {{"type", "string"},
+                                      {"description", "Base64-encoded bytes of the concrete source image selected by the MCP host."}}},
+                    {"size", {{"type", "string"}}},
+                    {"n", {{"type", "integer"}, {"minimum", 1}}},
+                    {"negative_prompt", {{"type", "string"}}},
+                    {"seed", {{"type", "integer"}}},
+                    {"steps", {{"type", "integer"}}},
                     {"cfg_scale", {{"type", "number"}}},
                 }},
             }},

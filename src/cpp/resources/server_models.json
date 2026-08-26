@@ -1939,7 +1939,8 @@
         "suggested": true,
         "labels": [
             "image",
-            "edit"
+            "edit",
+            "image-edit"
         ],
         "size": 16.1,
         "image_defaults": {
@@ -1959,7 +1960,8 @@
         "suggested": true,
         "labels": [
             "image",
-            "edit"
+            "edit",
+            "image-edit"
         ],
         "size": 19.0,
         "image_defaults": {
