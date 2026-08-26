@@ -27,7 +27,7 @@ import tempfile
 
 import requests
 
-from utils.server_base import unload_all_models, wait_for_server
+from utils.server_base import _auth_headers, unload_all_models, wait_for_server
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_HEALTH = 60
@@ -61,6 +61,11 @@ def collect_server_logs(output_dir):
 
 def request_json(method, url, timeout, **kwargs):
     """Perform an HTTP request and parse the JSON response when present."""
+    api_key = _auth_headers()
+    if api_key: 
+        headers = kwargs.get("headers", {})
+        headers.update(api_key)
+        kwargs["headers"] = headers
     response = requests.request(method, url, timeout=timeout, **kwargs)
     body = {}
     if response.content:
