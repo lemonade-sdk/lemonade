@@ -25,6 +25,27 @@
 
 #ifndef _WIN32
 #include <unistd.h>
+void start_parent_watchdog(int fd = -1) {
+    if (fd < 0) {
+        const char* fd_str = std::getenv("LEMONADE_WATCHDOG_FD");
+        if (fd_str && fd_str[0] != '\0') {
+            try {
+                fd = std::stoi(fd_str);
+            } catch (...) {}
+        }
+    }
+    if (fd >= 0) {
+        // Blocks until the parent dies and the OS closes the pipe write end.
+        std::thread([fd]() {
+            char buf;
+            ssize_t res = read(fd, &buf, 1);
+            if (res <= 0) {
+                std::cerr << "[Watchdog] Parent process died or closed pipe. Shutting down." << std::endl;
+                std::raise(SIGTERM);
+            }
+        }).detach();
+    }
+}
 #endif
 
 using namespace lemon;
@@ -140,6 +161,10 @@ int main(int argc, char** argv) {
         }
 
         auto cli_config = parser.get_config();
+
+#ifndef _WIN32
+        start_parent_watchdog(cli_config.watchdog_fd);
+#endif
 
         // Initialize logging early with INFO so config loading messages are captured
         {

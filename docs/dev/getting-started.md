@@ -586,6 +586,12 @@ A GUI application for desktop users that exposes the server via a system tray ic
 - Used by application launchers, desktop shortcuts, and autostart entries
 - Provides seamless GUI experience for non-technical users
 
+**`lemonade-tray` options (Linux/macOS):**
+- `--port, -p <port>` / `--host <host>` - server to connect to (defaults read from the server's `config.json`).
+- `--spawn-server` - if no server is reachable, spawn a local `lemond` and supervise it. The tray opens a watchdog pipe and passes `--watchdog-fd <FD>` to the child; when the tray exits for any reason (including SIGKILL), the OS closes the pipe and `lemond` shuts itself down, so no orphaned server is left behind. This flag is intended for standalone environments where `lemond` is not already managed by a service manager (`systemd` on Linux or `LaunchDaemon` on macOS); when running alongside a managed daemon, the existing server is detected and no child is spawned.
+- `--launch-app, --open` - open the desktop app once the server is ready.
+- `--silent` - suppress the startup notification.
+
 ### Client-Server Communication
 
 The `lemonade` client communicates with `lemond` server via HTTP:
