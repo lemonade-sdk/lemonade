@@ -112,11 +112,11 @@ def get_hot_llamacpp_models(base_url):
 
 
 def set_rocm_channel(base_url, channel):
-    """Configure the ROCm channel in lemond via the params API."""
-    print(f"Setting rocm_channel={channel} via /params", flush=True)
+    """Configure the ROCm channel in lemond via the internal config API."""
+    print(f"Setting rocm_channel={channel} via /internal/set", flush=True)
     response, body = request_json(
         "POST",
-        f"{base_url}/params",
+        f"{base_url.rsplit('/api/v1', 1)[0]}/internal/set",
         timeout=TIMEOUT_DEFAULT,
         json={"rocm_channel": channel},
     )

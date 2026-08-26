@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.7.0)
+project(lemon_cpp VERSION 11.8.0)
 
 include(CTest)
 
@@ -980,6 +980,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
@@ -1167,7 +1168,7 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
         src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
-    add_cpp_ci_test(vllm_arg_resolver CI OFF COMMAND test_vllm_arg_resolver)
+    add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
 endif()
 
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
@@ -2370,6 +2371,24 @@ if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
     add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
 endif()
 
+set(_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_whispercpp_multipart_fields.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC}")
+    add_executable(test_whispercpp_multipart_fields
+        test/cpp/test_whispercpp_multipart_fields.cpp
+    )
+    target_include_directories(test_whispercpp_multipart_fields PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/whispercpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_whispercpp_multipart_fields PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(WhisperCppMultipartFieldsTest CI ON COMMAND test_whispercpp_multipart_fields)
+endif()
+
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
@@ -2975,6 +2994,19 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
+endif()
+
+set(_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_download_rate_limit.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC}")
+    add_executable(test_config_download_rate_limit
+        test/cpp/test_config_download_rate_limit.cpp
+    )
+    target_link_libraries(test_config_download_rate_limit PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDownloadRateLimitTest CI ON
+        COMMAND test_config_download_rate_limit
+    )
 endif()
 
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC

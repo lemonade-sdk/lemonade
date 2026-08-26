@@ -29,6 +29,7 @@ const std::vector<std::string> kKnownKeys = {
     "model_name",
     "models",
     "image_defaults",
+    "audio_defaults",
     "labels",
     "recipe",
     "recipe_options",
