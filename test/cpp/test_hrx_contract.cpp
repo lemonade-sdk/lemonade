@@ -51,11 +51,38 @@ void check_launch_contract() {
         "--metrics",
         "--threads", "7",
         "--no-mmap",
+        "--parallel", "1",
     };
     const auto argv = hrx::build_server_argv(
         "/models/qualified.gguf", 32768, 14123, "--threads 7 --no-mmap");
     check("HRX builds the complete managed argv with a benign custom tail",
           argv == expected_argv);
+
+    const std::vector<std::string> expected_default_argv = {
+        "-m", "/models/qualified.gguf",
+        "--ctx-size", "32768",
+        "--device", "HRX0",
+        "--port", "14123",
+        "--jinja",
+        "--metrics",
+        "--parallel", "1",
+    };
+    check("HRX pins --parallel 1 when no custom args are given",
+          hrx::build_server_argv("/models/qualified.gguf", 32768, 14123, "") ==
+              expected_default_argv);
+
+    const std::vector<std::string> expected_override_argv = {
+        "-m", "/models/qualified.gguf",
+        "--ctx-size", "32768",
+        "--device", "HRX0",
+        "--port", "14123",
+        "--jinja",
+        "--metrics",
+        "-np", "2",
+    };
+    check("HRX lets a custom -np override the --parallel default",
+          hrx::build_server_argv("/models/qualified.gguf", 32768, 14123,
+                                 "-np 2") == expected_override_argv);
 
     const std::vector<std::pair<std::string, std::string>> expected_environment = {
         {"GGML_DISABLE_VULKAN", "1"},

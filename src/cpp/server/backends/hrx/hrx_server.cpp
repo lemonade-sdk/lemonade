@@ -16,6 +16,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/process_manager.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 
 #include <lemon/utils/aixlog.hpp>
 
@@ -51,19 +52,25 @@ std::vector<std::string> build_server_argv(const std::string& gguf_path,
         "--metrics",
     };
 
-    if (hrx_args.empty()) {
-        return argv;
+    if (!hrx_args.empty()) {
+        const std::string validation_error =
+            utils::validate_custom_args(hrx_args, reserved_custom_arg_flags());
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom HRX llama-server arguments:\n" +
+                validation_error);
+        }
     }
 
-    const std::string validation_error =
-        utils::validate_custom_args(hrx_args, reserved_custom_arg_flags());
-    if (!validation_error.empty()) {
-        throw std::invalid_argument(
-            "Invalid custom HRX llama-server arguments:\n" + validation_error);
-    }
+    // An auto slot count enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count
+    // keeps ctx_size the context a request actually gets (llamacpp pins the
+    // same default in resolve_llamacpp_runtime_args).
+    const std::string resolved_args = utils::append_runtime_arg_defaults(
+        hrx_args, {{"--parallel 1", "--parallel", {"-np"}}});
 
     const std::vector<std::string> custom_args =
-        utils::parse_custom_args(hrx_args);
+        utils::parse_custom_args(resolved_args);
     argv.insert(argv.end(), custom_args.begin(), custom_args.end());
     return argv;
 }
