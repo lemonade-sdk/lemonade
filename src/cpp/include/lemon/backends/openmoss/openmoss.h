@@ -25,7 +25,7 @@ inline const BackendDescriptor descriptor = {
         {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
         {"rocm", {"linux", "windows"}, {{"amd_gpu", {}}}, "AMD GPUs (ROCm via TheRock)"},
     },
-    /*supported_modes*/ {"tts"},
+    /*supported_modes*/ {"tts", "audio-generation"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*experimental*/    true,

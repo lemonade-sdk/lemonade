@@ -397,6 +397,37 @@ sys.exit(0)
         output = result.stdout + result.stderr
         print(f"Status output: {output}")
 
+    def test_010a_status_json(self):
+        """Test status --json emits parseable per-model detail."""
+        result = self.assertCommandSucceeds(["status", "--json"])
+        data = json.loads(result.stdout)
+
+        self.assertIn("port", data)
+        self.assertIsInstance(data["port"], int)
+        self.assertIn("version", data)
+        self.assertIn("models", data)
+        self.assertIsInstance(data["models"], list)
+
+        # Per-model detail only exists when something is loaded; the CLI suite
+        # does not guarantee that, so the contract is checked opportunistically.
+        for model in data["models"]:
+            for key in (
+                "model_name",
+                "checkpoint",
+                "type",
+                "device",
+                "recipe",
+                "recipe_options",
+                "status",
+                "pinned",
+                "pid",
+                "backend_url",
+            ):
+                self.assertIn(key, model)
+            self.assertIsInstance(model["recipe_options"], dict)
+            self.assertIsInstance(model["pinned"], bool)
+            self.assertIsInstance(model["pid"], int)
+
     def test_011_status_with_global_options(self):
         """Test status command with global options."""
         result = run_cli_command(

@@ -18,6 +18,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include <limits>
@@ -374,6 +375,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
+
+    // Global download rate limit
+    utils::HttpClient::set_download_rate_limit(config->download_rate_limit_bytes_per_second());
 
     cloud_registry_ = std::make_unique<CloudProviderRegistry>();
     // Seed installed providers from config.json. Runtime keys stay empty
@@ -3320,6 +3324,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["system_prompt"] = info.system_prompt;
     }
 
+    auto audio_defaults = info.extras.find("audio_defaults");
+    if (audio_defaults != info.extras.end() &&
+        audio_defaults->second.is_object()) {
+        model_json["audio_defaults"] = audio_defaults->second;
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {
@@ -4827,6 +4837,17 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Handle model loading
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            if (auto info = router_->try_get_model_info(requested_model);
+                info && info->type != ModelType::TTS) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", {
+                    {"message", "Model '" + requested_model +
+                        "' is not a text-to-speech model"},
+                    {"type", "invalid_request_error"},
+                    {"code", "model_not_applicable"}}}}.dump(),
+                    "application/json");
+                return;
+            }
             try {
                 auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
@@ -4851,6 +4872,15 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (!request_json["input"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "'input' must be a string"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
@@ -4926,7 +4956,14 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.set_content(error.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES[response_format];
+        const auto format_metadata =
+            router_->audio_speech_format_metadata(speech_model, response_format);
+        std::string mime_type = format_metadata.content_type.empty()
+            ? MIME_TYPES[response_format].get<std::string>()
+            : format_metadata.content_type;
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
         // The backend has to encode what the Content-Type above promises. Without
         // this it would receive whatever the client sent -- nothing, when the
         // format came from a default -- and fall back to its own choice.
@@ -5041,7 +5078,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        for (const auto* field : {"lyrics", "vocal_language"}) {
+        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
             if (request_json.contains(field) && !request_json[field].is_string()) {
                 res.status = 400;
                 res.set_content(nlohmann::json{{"error", {
@@ -5052,6 +5089,17 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         }
 
         std::string requested_model = request_json["model"];
+        if (auto info = router_->try_get_model_info(requested_model);
+            info && info->type != ModelType::AUDIO_GENERATION) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Model '" + requested_model +
+                    "' is not an audio-generation model"},
+                {"type", "invalid_request_error"},
+                {"code", "model_not_applicable"}}}}.dump(),
+                "application/json");
+            return;
+        }
         try {
             auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
@@ -5082,8 +5130,16 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES.contains(response_format)
-            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
+        const auto format_metadata =
+            router_->audio_generation_format_metadata(requested_model, response_format);
+        std::string mime_type = !format_metadata.content_type.empty()
+            ? format_metadata.content_type
+            : (MIME_TYPES.contains(response_format)
+                ? MIME_TYPES[response_format].get<std::string>()
+                : MIME_TYPES["wav"].get<std::string>());
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
 
@@ -5572,7 +5628,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::string upscale_model_path;
-        std::string backend;
+        std::string recipe;
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
 
@@ -5584,27 +5640,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             }
 
             upscale_model_path = info.resolved_path("main");
-
-            // Honor explicit config first (e.g. sdcpp.backend = "rocm").
-            // "auto" in config.json is mapped to "" by recipe_options().
-            auto recipe_opts = config_->recipe_options("");
-            if (recipe_opts.contains("sd-cpp_backend") &&
-                recipe_opts["sd-cpp_backend"].is_string()) {
-                backend = recipe_opts["sd-cpp_backend"].get<std::string>();
-            }
-
-            // Auto-detect best backend when not explicitly configured,
-            // matching the same logic SDServer::load() uses via
-            // RecipeOptions::get_option(). Without this, upscaling
-            // silently falls back to CPU even when ROCm/Vulkan is available.
-            if (backend.empty()) {
-                auto supported = SystemInfo::get_supported_backends("sd-cpp");
-                if (!supported.backends.empty()) {
-                    backend = supported.backends[0];
-                } else {
-                    backend = "cpu";
-                }
-            }
+            recipe = info.recipe;
         } catch (const std::exception& e) {
             res.status = 404;
             nlohmann::json error = {{"error", {
@@ -5615,106 +5651,31 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // sd-server's HTTP API does not expose an upscaling endpoint.
-        // Upscaling is only available via the sd-cli binary's -M upscale mode,
-        // so we shell out to sd-cli as a subprocess. This also keeps upscaling
-        // as a separate request from generation, which lets the frontend show
-        // the original and upscaled images side by side with independent timing.
-        std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
-            *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
-        std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
-#ifdef _WIN32
-            "sd-cli.exe";
-#else
-            "sd-cli";
-#endif
+        std::string b64_image = request_json["image"].get<std::string>();
 
-        if (!std::filesystem::exists(cli_exe)) {
-            res.status = 500;
+        // Upscaling is model-free: no model is loaded through the router, so we
+        // dispatch by recipe to each backend's shared upscale API, which shells
+        // out to its own CLI binary directly (backend selection, binary path,
+        // and runtime environment all live in the backend).
+        std::string upscaled;
+        if (recipe == "thenoise") {
+            upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(b64_image, upscale_model_path);
+        } else if (recipe == "sd-cpp") {
+            upscaled = lemon::backends::SDServer::upscale_via_cli(b64_image, upscale_model_path);
+        } else {
+            res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "sd-cpp backend not installed (sd-cli not found at: "
-                            + cli_exe.string() + ")"},
-                {"type", "server_error"}
+                {"message", "Upscale is not supported by recipe: " + recipe},
+                {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
             return;
         }
 
-        std::vector<std::pair<std::string, std::string>> env_vars;
-        std::filesystem::path cli_dir = cli_exe.parent_path();
-
-        std::string resolved_backend = backend;
-        if (backend == "rocm") {
-            std::string channel = "stable";
-            if (config_) {
-                channel = config_->rocm_channel_for_recipe("sd-cpp");
-            }
-            resolved_backend = "rocm-" + channel;
-        }
-#ifndef _WIN32
-        std::string lib_path = cli_dir.string();
-
-        if (resolved_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            if (!rocm_arch.empty()) {
-                std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch));
-                if (!therock_dirs.empty()) {
-                    lib_path = therock_dirs + ":" + lib_path;
-                }
-            }
-        }
-
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
-        if (existing_ld_path && strlen(existing_ld_path) > 0) {
-            lib_path = lib_path + ":" + std::string(existing_ld_path);
-        }
-        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-#else
-        if (resolved_backend == "rocm-stable") {
-            std::string new_path = cli_dir.string();
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            std::vector<std::string> therock_dirs;
-            if (!rocm_arch.empty()) {
-                therock_dirs =
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch);
-                for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                    if (!it->empty()) {
-                        new_path = *it + ";" + new_path;
-                    }
-                }
-            }
-
-            const char* existing_path = std::getenv("PATH");
-            if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
-            env_vars.push_back({"PATH", new_path});
-
-            if (!therock_dirs.empty()) {
-                fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
-                fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
-                if (fs::exists(therock_dll)) {
-                    std::error_code ec;
-                    fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                    if (!ec) {
-                        LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
-                            << lemon::utils::path_to_utf8(target_dll) << std::endl;
-                    } else {
-                        LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
-                            << ec.message() << std::endl;
-                    }
-                }
-            }
-        }
-#endif
-
-        std::string b64_image = request_json["image"].get<std::string>();
-        std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
-            b64_image, upscale_model_path, cli_exe.string(), env_vars);
-
         if (upscaled.empty()) {
             res.status = 500;
             nlohmann::json error = {{"error", {
-                {"message", "ESRGAN upscale failed"},
+                {"message", "Upscale failed"},
                 {"type", "server_error"}
             }}};
             res.set_content(error.dump(), "application/json");
@@ -7025,6 +6986,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"allow_insecure_http", rec.allow_insecure_http},
                 {"auth_header_name", rec.auth_header_name},
                 {"auth_header_prefix", rec.auth_header_prefix},
+                {"wire_format", rec.wire_format},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -7427,6 +7389,14 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
+        } else if (key == "download_rate_limit") {
+            const int64_t bps = config_->download_rate_limit_bytes_per_second();
+            if (bps > 0) {
+                LOG(INFO, "Server") << "Download rate limit enabled at " << bps << " B/s" << std::endl;
+            } else {
+                LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
+            }
+            utils::HttpClient::set_download_rate_limit(bps);
         } else if (key == "broadcast" || key == "no_broadcast") {
             bool bcast = config_->broadcast();
             LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
@@ -7946,7 +7916,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    auth_header_name / auth_header_prefix: see
+        //    auth_header_name / auth_header_prefix / wire_format: see
         //      CloudProviderRegistry::Record,
         //    api_key: "..."}
         //
@@ -7980,9 +7950,9 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
 
             CloudProviderRegistry::InstallOptions install_options;
-            auto read_header_field = [&](const char* field,
-                                         std::string (*validate)(const std::string&),
-                                         std::optional<std::string>& out) {
+            auto read_validated_field = [&](const char* field,
+                                            std::string (*validate)(const std::string&),
+                                            std::optional<std::string>& out) {
                 if (!request_json.contains(field)) return true;
                 if (!request_json[field].is_string()) {
                     reject(std::string(field) + " must be a string when provided");
@@ -7996,12 +7966,15 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 out = std::move(value);
                 return true;
             };
-            if (!read_header_field("auth_header_name",
-                                   CloudProviderRegistry::validate_auth_header_name,
-                                   install_options.auth_header_name) ||
-                !read_header_field("auth_header_prefix",
-                                   CloudProviderRegistry::validate_auth_header_prefix,
-                                   install_options.auth_header_prefix)) {
+            if (!read_validated_field("auth_header_name",
+                                      CloudProviderRegistry::validate_auth_header_name,
+                                      install_options.auth_header_name) ||
+                !read_validated_field("auth_header_prefix",
+                                      CloudProviderRegistry::validate_auth_header_prefix,
+                                      install_options.auth_header_prefix) ||
+                !read_validated_field("wire_format",
+                                      CloudProviderRegistry::validate_wire_format,
+                                      install_options.wire_format)) {
                 return;
             }
             if (request_json.contains("allow_insecure_http")) {
@@ -8061,6 +8034,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
                 {"auth_header_name", auth_header.name},
                 {"auth_header_prefix", auth_header.prefix},
+                {"wire_format", cloud_registry_->wire_format_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},
