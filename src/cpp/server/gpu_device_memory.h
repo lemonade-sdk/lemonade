@@ -2,14 +2,25 @@
 
 #include <algorithm>
 #include <cctype>
-#include <lemon/system_info.h>
 #include <string>
 #include <vector>
 
 namespace lemon {
 
-// A GPU memory pool a model can be placed into, flattened from GPUInfo so the
-// selection logic below stays independent of how each vendor reports memory
+// The subset of GPUInfo (lemon/system_info.h) that memory-pool selection needs.
+// Kept as a local, minimal struct rather than including system_info.h so this
+// header stays cheap for consumers that only want device-string parsing.
+struct GpuDeviceReading {
+    bool available = false;
+    int index = -1;          // Runtime ordinal, matching the N in "ROCm<N>"/"CUDA<N>".
+    double vram_gb = 0.0;
+    double virtual_gb = 0.0;
+    double vram_used_gb = -1.0;
+    double virtual_used_gb = -1.0;
+};
+
+// A GPU memory pool a model can be placed into, flattened from GpuDeviceReading so
+// the selection logic below stays independent of how each vendor reports memory
 // (an APU's pool spans VRAM + GTT, a dGPU's does not).
 struct GpuMemoryCandidate {
     int index = -1;          // Runtime ordinal, matching the N in "ROCm<N>"/"CUDA<N>".
@@ -135,7 +146,7 @@ inline GpuDeviceSelection parse_gpu_device_selection(const std::string& device_s
 }
 
 inline std::vector<GpuMemoryCandidate> amd_memory_candidates(
-        const GPUInfo& igpu, const std::vector<GPUInfo>& dgpus) {
+        const GpuDeviceReading& igpu, const std::vector<GpuDeviceReading>& dgpus) {
     std::vector<GpuMemoryCandidate> candidates;
     // An APU's usable pool is dedicated VRAM plus the GTT it can borrow from
     // system RAM; a dGPU is limited to its own VRAM.
@@ -161,7 +172,7 @@ inline std::vector<GpuMemoryCandidate> amd_memory_candidates(
     return candidates;
 }
 
-inline std::vector<GpuMemoryCandidate> nvidia_memory_candidates(const std::vector<GPUInfo>& gpus) {
+inline std::vector<GpuMemoryCandidate> nvidia_memory_candidates(const std::vector<GpuDeviceReading>& gpus) {
     std::vector<GpuMemoryCandidate> candidates;
     for (const auto& gpu : gpus) {
         if (!gpu.available || gpu.vram_gb <= 0) continue;
@@ -250,6 +261,25 @@ inline GpuMemoryPool select_gpu_memory_pool(const std::vector<GpuMemoryCandidate
     return detail::most_constrained(reachable, /*ambiguous=*/true);
 }
 
+// How many GPUs the given backend/device selection could ever draw from on this host,
+// independent of whether any of them resolved to a usable memory reading. Used to tell
+// "we couldn't scope this platform's reading" (expected, silent) apart from "we couldn't
+// scope it and there was something to scope to" (worth a warning).
+inline int count_reachable_gpus(const std::vector<GpuMemoryCandidate>& amd,
+                                const std::vector<GpuMemoryCandidate>& nvidia,
+                                const std::string& backend,
+                                const std::string& device_string) {
+    const GpuDeviceSelection selection = parse_gpu_device_selection(device_string);
+    GpuVendor vendor = selection.vendor;
+    if (vendor == GpuVendor::Unknown) vendor = gpu_vendor_from_backend(backend);
+
+    size_t count = 0;
+    if (vendor == GpuVendor::AMD || vendor == GpuVendor::Unknown) count += amd.size();
+    if (vendor == GpuVendor::NVIDIA || vendor == GpuVendor::Unknown) count += nvidia.size();
+    if (vendor == GpuVendor::Vulkan) count = amd.size() + nvidia.size();
+    return static_cast<int>(count);
+}
+
 /// How trustworthy the headroom figure behind an auto-tuned ctx_size is.
 enum class CtxScopeWarning {
     None,
@@ -265,10 +295,15 @@ struct CtxMemoryScope {
     bool per_device = false;
     bool ambiguous = false;
     bool device_named = false;
+    // Number of GPUs reachable on this host for the resolved vendor. On a single-GPU
+    // host the aggregate reading and the per-device reading describe the same card, so
+    // failing to scope it isn't actionable and shouldn't be reported as a warning.
+    int reachable_gpu_count = 0;
 };
 
 inline CtxScopeWarning classify_ctx_scope(const CtxMemoryScope& scope) {
-    if (scope.is_gpu && !scope.per_device && scope.device_named) return CtxScopeWarning::Unscoped;
+    if (scope.is_gpu && !scope.per_device && scope.device_named && scope.reachable_gpu_count > 1)
+        return CtxScopeWarning::Unscoped;
     if (scope.ambiguous) return CtxScopeWarning::Ambiguous;
     return CtxScopeWarning::None;
 }

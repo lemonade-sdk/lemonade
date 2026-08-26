@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
-#include <lemon/gpu_device_memory.h>
+#include <gpu_device_memory.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
@@ -198,6 +198,24 @@ inline double get_available_memory_gb(DeviceType device_type) {
     return 0.0;  // Could not determine
 }
 
+inline GpuDeviceReading to_gpu_device_reading(const GPUInfo& gpu) {
+    GpuDeviceReading reading;
+    reading.available = gpu.available;
+    reading.index = gpu.index;
+    reading.vram_gb = gpu.vram_gb;
+    reading.virtual_gb = gpu.virtual_gb;
+    reading.vram_used_gb = gpu.vram_used_gb;
+    reading.virtual_used_gb = gpu.virtual_used_gb;
+    return reading;
+}
+
+inline std::vector<GpuDeviceReading> to_gpu_device_readings(const std::vector<GPUInfo>& gpus) {
+    std::vector<GpuDeviceReading> readings;
+    readings.reserve(gpus.size());
+    for (const auto& gpu : gpus) readings.push_back(to_gpu_device_reading(gpu));
+    return readings;
+}
+
 /// Outcome of scoping the memory query to the GPU a model is being placed on.
 struct DeviceMemoryResult {
     double available_gb = 0.0;
@@ -207,6 +225,9 @@ struct DeviceMemoryResult {
     // Set when a pool was picked without the caller naming a device.
     bool ambiguous = false;
     std::string device_label;
+    // How many GPUs were reachable for the resolved vendor, regardless of whether any
+    // of them yielded a usable per-device reading.
+    int reachable_gpu_count = 0;
 };
 
 /// Available memory for a model placement, scoped to the specific GPU when possible.
@@ -222,9 +243,10 @@ inline DeviceMemoryResult get_available_memory_detail(DeviceType device_type,
 
     if (device_type & DEVICE_GPU) {
         auto si = create_system_info();
-        const auto amd = amd_memory_candidates(si->get_amd_igpu_device(),
-                                               si->get_amd_dgpu_devices());
-        const auto nvidia = nvidia_memory_candidates(si->get_nvidia_gpu_devices());
+        const auto amd = amd_memory_candidates(to_gpu_device_reading(si->get_amd_igpu_device()),
+                                               to_gpu_device_readings(si->get_amd_dgpu_devices()));
+        const auto nvidia = nvidia_memory_candidates(to_gpu_device_readings(si->get_nvidia_gpu_devices()));
+        result.reachable_gpu_count = count_reachable_gpus(amd, nvidia, backend, device_string);
         const GpuMemoryPool pool = select_gpu_memory_pool(amd, nvidia, backend, device_string);
         if (pool.resolved) {
             result.available_gb = pool.free_gb();
@@ -243,12 +265,25 @@ inline DeviceMemoryResult get_available_memory_detail(DeviceType device_type,
     return result;
 }
 
+/// Resolve ctx_size from available memory and model metadata.
+///
+/// `out_is_memory_fallback`, if non-null, is set to true only when the returned value
+/// is AUTO_CTX_FALLBACK *because there wasn't enough memory to do better* — as opposed
+/// to 4096 being the model's own max_context_window, the computed value legitimately
+/// landing on 4096, or kv_bytes_per_token being unavailable for non-memory reasons.
+/// Callers that warn about "fell back due to low memory" must check this flag rather
+/// than comparing the result to AUTO_CTX_FALLBACK, since 4096 is also a valid non-
+/// fallback value.
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
-                                          bool is_embedding = false) {
+                                          bool is_embedding = false,
+                                          bool* out_is_memory_fallback = nullptr) {
+    if (out_is_memory_fallback) *out_is_memory_fallback = false;
+
     if (available_memory_gb <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
+        if (out_is_memory_fallback) *out_is_memory_fallback = true;
         return AUTO_CTX_FALLBACK;
     }
 
@@ -295,6 +330,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     }
 
     if (kv_bytes_per_token <= 0) {
+        // Not a memory shortage — the model's metadata just didn't yield a usable
+        // per-token KV size.
         return AUTO_CTX_FALLBACK;
     }
 
@@ -308,6 +345,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                << " — no memory for KV after weights (" << std::fixed
                                << std::setprecision(2) << model_weight_gb
                                << " GB), returning " << AUTO_CTX_FALLBACK  << " ";
+        if (out_is_memory_fallback) *out_is_memory_fallback = true;
         return AUTO_CTX_FALLBACK;
     }
 
@@ -315,6 +353,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     int64_t max_ctx_from_memory = static_cast<int64_t>(std::floor(available_bytes / kv_bytes_per_token));
 
     if (max_ctx_from_memory <= 0) {
+        if (out_is_memory_fallback) *out_is_memory_fallback = true;
         return AUTO_CTX_FALLBACK;
     }
 
@@ -366,26 +405,31 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
 
-    // Only llama.cpp exposes a device selection today; other recipes fall through with
-    // an empty target, which still narrows the search to the reachable GPUs.
+    // Scoping the headroom figure to one GPU needs a device selection to scope to.
+    // Only llama.cpp exposes one today, so the new per-device path is limited to that
+    // recipe for now; other recipes keep the pre-existing aggregate estimate rather
+    // than silently changing what "available memory" means for them.
     const bool is_llamacpp = effective_options.get_recipe() == "llamacpp";
     json device_json = is_llamacpp ? effective_options.get_option("llamacpp_device") : json();
     json backend_json = is_llamacpp ? effective_options.get_option("llamacpp_backend") : json();
     const std::string device_string = device_json.is_string() ? device_json.get<std::string>() : "";
     const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
 
-    const DeviceMemoryResult memory =
-        get_available_memory_detail(model_info.device, backend, device_string);
+    const DeviceMemoryResult memory = is_llamacpp
+        ? get_available_memory_detail(model_info.device, backend, device_string)
+        : DeviceMemoryResult{get_available_memory_gb(model_info.device), false, false, "", 0};
     const double available_gb = memory.available_gb;
 
     // Without a per-device reading the headroom figure mixes one card's capacity with
     // the machine's busiest-card usage, which understates free VRAM once a second
-    // model is resident on another GPU.
+    // model is resident on another GPU. On a single-GPU host there is nothing else to
+    // scope to, so this isn't actionable and shouldn't be reported.
     CtxMemoryScope scope;
     scope.is_gpu = (model_info.device & DEVICE_GPU) != 0;
     scope.per_device = memory.per_device;
     scope.ambiguous = memory.ambiguous;
     scope.device_named = !device_string.empty();
+    scope.reachable_gpu_count = memory.reachable_gpu_count;
     const CtxScopeWarning warning = classify_ctx_scope(scope);
 
     if (warning == CtxScopeWarning::Unscoped) {
@@ -393,14 +437,14 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
                                  << device_string
                                  << "'; auto-tuned ctx_size is based on a machine-wide estimate "
                                     "and may be far smaller than this GPU can hold. "
-                                    "Pass --ctx-size to set it explicitly." << std::endl;
+                                    "Pass --ctx-size to set it explicitly."  << " ";
     } else if (warning == CtxScopeWarning::Ambiguous) {
         LOG(WARNING, "AutoTune") << model_info.model_name
                                  << ": no target GPU specified; auto-tuning ctx_size against the "
                                     "most constrained GPU (" << memory.device_label << "). "
                                  << (is_llamacpp ? "Pass --llamacpp-device or --ctx-size"
                                                  : "Pass --ctx-size")
-                                 << " to override." << std::endl;
+                                 << " to override."  << " ";
     }
 
     if (available_gb <= 0) {
@@ -408,22 +452,24 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
         LOG(WARNING, "AutoTune") << model_info.model_name
                                  << ": available memory could not be determined; falling back to "
                                     "ctx_size=" << fallback
-                                 << ". Pass --ctx-size to set it explicitly." << std::endl;
+                                 << ". Pass --ctx-size to set it explicitly."  << " ";
         return fallback;
     }
 
-    int64_t result = compute_auto_context_size(model_info, available_gb, is_embedding);
+    bool is_memory_fallback = false;
+    int64_t result = compute_auto_context_size(model_info, available_gb, is_embedding,
+                                               &is_memory_fallback);
     LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
                            << " → ctx_size=" << result;
 
-    if (!is_embedding && result == AUTO_CTX_FALLBACK) {
+    if (!is_embedding && is_memory_fallback) {
         LOG(WARNING, "AutoTune") << model_info.model_name << ": only " << std::fixed
                                  << std::setprecision(2) << available_gb << " GB free on "
                                  << (memory.device_label.empty() ? "the target device"
                                                                  : memory.device_label)
                                  << " — not enough for the model weights plus a larger KV cache, "
                                     "so ctx_size fell back to " << AUTO_CTX_FALLBACK
-                                 << ". Free VRAM or pass --ctx-size to override." << std::endl;
+                                 << ". Free VRAM or pass --ctx-size to override."  << " ";
     }
     return result;
 }

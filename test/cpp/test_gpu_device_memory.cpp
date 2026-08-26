@@ -1,9 +1,9 @@
 // Standalone test for GPU device-string parsing and memory-pool selection.
 //
-// Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_gpu_device_memory.cpp -o test_gpu_device_memory
+// Compile: g++ -std=c++17 -I src/cpp/server test/cpp/test_gpu_device_memory.cpp -o test_gpu_device_memory
 
-#include "lemon/gpu_device_memory.h"
-#include "lemon/nvidia_smi_parse.h"
+#include "gpu_device_memory.h"
+#include "nvidia_smi_parse.h"
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -228,8 +228,19 @@ static void test_ctx_scope_warnings() {
     unscoped.is_gpu = true;
     unscoped.per_device = false;
     unscoped.device_named = true;
-    check("a named device that could not be scoped warns",
+    unscoped.reachable_gpu_count = 2;
+    check("a named device that could not be scoped warns when other GPUs exist",
           classify_ctx_scope(unscoped) == CtxScopeWarning::Unscoped);
+
+    // Windows AMD/Metal/CPU-labeled devices never populate per-device counters, so a
+    // single-GPU host would otherwise warn on every load with no actionable fix.
+    CtxMemoryScope unscoped_single_gpu;
+    unscoped_single_gpu.is_gpu = true;
+    unscoped_single_gpu.per_device = false;
+    unscoped_single_gpu.device_named = true;
+    unscoped_single_gpu.reachable_gpu_count = 1;
+    check("a named device that could not be scoped stays silent on a single-GPU host",
+          classify_ctx_scope(unscoped_single_gpu) == CtxScopeWarning::None);
 
     CtxMemoryScope ambiguous;
     ambiguous.is_gpu = true;
@@ -282,6 +293,23 @@ static void test_nvidia_smi_row_parsing() {
           no_index.valid && no_index.index == 7);
 }
 
+static void test_count_reachable_gpus() {
+    const auto amd = two_amd_dgpus();
+    const std::vector<GpuMemoryCandidate> nvidia = {make_candidate(0, 24.0, 2.0, "NVIDIA")};
+    const std::vector<GpuMemoryCandidate> none;
+
+    check("rocm backend counts only AMD cards",
+          lemon::count_reachable_gpus(amd, nvidia, "rocm-stable", "") == 2);
+    check("cuda backend counts only NVIDIA cards",
+          lemon::count_reachable_gpus(amd, nvidia, "cuda", "") == 1);
+    check("unknown backend with no device string counts every card",
+          lemon::count_reachable_gpus(amd, nvidia, "", "") == 3);
+    check("a named device still counts the whole reachable set for its vendor",
+          lemon::count_reachable_gpus(amd, none, "rocm-stable", "ROCm0") == 2);
+    check("a single AMD card counts as one",
+          lemon::count_reachable_gpus({make_candidate(0, 31.9, 11.2)}, none, "rocm-stable", "") == 1);
+}
+
 static void test_no_gpus_is_unresolved() {
     const std::vector<GpuMemoryCandidate> none;
     check("a host with no GPUs is unresolved",
@@ -302,6 +330,7 @@ int main() {
     test_backend_implies_vendor();
     test_unnamed_multi_gpu_is_ambiguous();
     test_missing_usage_is_unresolved();
+    test_count_reachable_gpus();
     test_no_gpus_is_unresolved();
     test_parse_hostile_inputs();
     test_ctx_scope_warnings();

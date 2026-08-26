@@ -18,7 +18,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <regex>
-#include <lemon/nvidia_smi_parse.h>
+#include "nvidia_smi_parse.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <cctype>

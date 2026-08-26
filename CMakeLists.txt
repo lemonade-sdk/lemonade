@@ -1086,6 +1086,9 @@ list(APPEND SOURCES_CORE ${LEMON_BACKEND_DESCRIPTOR_SOURCES} ${LEMON_BACKEND_FAC
 # Server core OBJECT library (shared by lemond and Lemonade.exe)
 # ============================================================
 add_library(lemonade-server-core OBJECT ${SOURCES_CORE})
+# Internal-only headers (not part of the public src/cpp/include/lemon API surface),
+# e.g. gpu_device_memory.h / nvidia_smi_parse.h.
+target_include_directories(lemonade-server-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server)
 
 # ============================================================
 # lemond executable
@@ -2937,10 +2940,8 @@ if(BUILD_TESTING AND EXISTS "${_GPU_DEVICE_MEMORY_TEST_SRC}")
         test/cpp/test_gpu_device_memory.cpp
     )
     target_include_directories(test_gpu_device_memory PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-        ${CMAKE_CURRENT_BINARY_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
     )
-    target_link_libraries(test_gpu_device_memory PRIVATE nlohmann_json::nlohmann_json)
 
     include(CTest)
     add_cpp_ci_test(GpuDeviceMemoryTest CI ON COMMAND test_gpu_device_memory)
