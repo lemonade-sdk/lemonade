@@ -182,6 +182,9 @@ public:
     // Must be called before the first build_cache() / get_supported_models().
     void set_cloud_registry(CloudProviderRegistry* registry);
 
+    // The wired registry, or nullptr if set_cloud_registry was never called.
+    CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
+
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
     // provider's entries (drop-then-add semantics). No-op + warning if the

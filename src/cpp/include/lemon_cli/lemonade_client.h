@@ -128,7 +128,8 @@ public:
                                 const std::string& api_key = "",
                                 bool allow_insecure_http = false,
                                 const std::optional<std::string>& auth_header_name = std::nullopt,
-                                const std::optional<std::string>& auth_header_prefix = std::nullopt);
+                                const std::optional<std::string>& auth_header_prefix = std::nullopt,
+                                const std::optional<std::string>& wire_format = std::nullopt);
     int uninstall_cloud_provider(const std::string& provider);
     int cloud_auth(const std::string& provider,
                    const std::string& api_key,

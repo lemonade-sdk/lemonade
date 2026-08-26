@@ -3698,7 +3698,8 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         models = backends::CloudServer::discover_models(
             provider, api_key, base_url,
             cloud_registry_->allow_insecure_http_for(provider),
-            cloud_registry_->auth_header_for(provider));
+            cloud_registry_->auth_header_for(provider),
+            cloud_registry_->wire_format_for(provider));
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;
