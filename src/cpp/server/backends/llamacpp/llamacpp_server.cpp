@@ -134,6 +134,11 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
 
+    // An auto slot count also enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
+    // ctx_size the context a request actually gets.
+    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
     return append_runtime_arg_defaults(custom_args, defaults);
 }
 
