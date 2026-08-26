@@ -28,9 +28,7 @@ namespace fs = std::filesystem;
 
 namespace lemon_tray {
 
-#ifndef _WIN32
-int TrayUI::signal_pipe_[2] = {-1, -1};
-#endif
+volatile std::sig_atomic_t TrayUI::g_quit_requested = 0;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,6 +56,8 @@ TrayUI::TrayUI(const TrayUIOptions& options)
     , host_(options.host)
     , is_ssl_(options.is_ssl)
     , silent_(options.silent)
+    , launch_app_(options.launch_app)
+    , server_initially_connected_(options.server_initially_connected)
     , recipe_options_(nlohmann::json::object())
 {
     std::string clean_host;
@@ -68,32 +68,10 @@ TrayUI::TrayUI(const TrayUIOptions& options)
     port_ = clean_port;
     is_ssl_ = clean_is_ssl;
 
-#ifndef _WIN32
-    if (pipe(signal_pipe_) == -1) {
-        std::cerr << "Failed to create signal pipe" << std::endl;
-    } else {
-        // Set write end to non-blocking
-        int flags = fcntl(signal_pipe_[1], F_GETFL);
-        if (flags != -1) {
-            fcntl(signal_pipe_[1], F_SETFL, flags | O_NONBLOCK);
-        }
-    }
-#endif
+
 }
 
 TrayUI::~TrayUI() {
-#ifndef _WIN32
-    if (signal_monitor_thread_.joinable()) {
-        stop_signal_monitor_ = true;
-        signal_monitor_thread_.join();
-    }
-    if (signal_pipe_[0] != -1) {
-        close(signal_pipe_[0]);
-        close(signal_pipe_[1]);
-        signal_pipe_[0] = signal_pipe_[1] = -1;
-    }
-#endif
-
 }
 
 // ---------------------------------------------------------------------------
@@ -108,8 +86,15 @@ bool TrayUI::initialize() {
     }
 
     tray_->set_ready_callback([this]() {
-        if (!silent_) {
-            show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+        // Only announce the server if it was reachable at startup; when the tray
+        // starts in disconnected mode the periodic refresher notifies on reconnect.
+        if (server_initially_connected_) {
+            if (!silent_) {
+                show_notification("Woohoo!", "Lemonade Server is running! Right-click the tray icon to access options.");
+            }
+            if (launch_app_) {
+                open_desktop_app();
+            }
         }
     });
 
@@ -133,37 +118,52 @@ bool TrayUI::initialize() {
 }
 
 void TrayUI::run() {
+    if (!tray_) return;
+
+    // On POSIX, a background thread refreshes the menu so the tray reflects
+    // server state and recovers if it goes offline and later comes back
+    // (disconnected mode), and polls g_quit_requested to quit cleanly on
+    // SIGINT/SIGTERM. This thread is non-Windows only: Windows already refreshes
+    // on its UI thread via set_menu_update_callback, and WindowsTray::set_menu
+    // mutates Win32 menu handles without synchronization, so it must only be
+    // called from the UI thread. On Linux/macOS set_menu marshals to the UI
+    // thread (g_idle_add / dispatch_async), so cross-thread calls are safe.
 #ifndef _WIN32
-    // Background thread to monitor signals and periodically refresh the menu
-    signal_monitor_thread_ = std::thread([this]() {
+    std::thread refresher([this]() {
         auto last_tick = std::chrono::steady_clock::now();
-        while (!stop_signal_monitor_) {
-            fd_set readfds;
-            FD_ZERO(&readfds);
-            FD_SET(signal_pipe_[0], &readfds);
-
-            struct timeval tv = {0, 100000};  // 100ms
-            int result = select(signal_pipe_[0] + 1, &readfds, nullptr, nullptr, &tv);
-
+        bool notified_reconnect = server_initially_connected_;
+        while (!stop_refresh_) {
+            if (g_quit_requested) {
+                stop();
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::seconds>(now - last_tick).count() >= 5) {
                 refresh_menu();
+                if (!notified_reconnect) {
+                    if (fetch_server_state().has_value()) {
+                        notified_reconnect = true;
+                        if (!silent_) {
+                            show_notification("Lemonade Server", "Lemonade Server is now available.");
+                        }
+                        if (launch_app_) {
+                            open_desktop_app();
+                        }
+                    }
+                }
                 last_tick = now;
-            }
-
-            if (result > 0 && FD_ISSET(signal_pipe_[0], &readfds)) {
-                char sig;
-                ssize_t bytes_read = read(signal_pipe_[0], &sig, 1);
-                (void)bytes_read;
-                std::cout << "\nReceived interrupt signal, shutting down..." << std::endl;
-                stop();
-                break;
             }
         }
     });
 #endif
 
     tray_->run();  // Blocks in platform event loop
+
+#ifndef _WIN32
+    stop_refresh_ = true;
+    if (refresher.joinable()) refresher.join();
+#endif
 }
 
 void TrayUI::stop() {

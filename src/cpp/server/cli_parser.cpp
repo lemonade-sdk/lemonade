@@ -42,6 +42,10 @@ CLIParser::CLIParser()
     app_.add_option("--log-max-files", config_.log_max_files, "Max number of rotated log backup files to retain (0..100, overrides config.json)")
         ->type_name("N")
         ->check(CLI::Range(0, 100));
+
+    app_.add_option("--watchdog-fd", config_.watchdog_fd, "Internal supervisor watchdog pipe descriptor")
+        ->type_name("FD")
+        ->group("");
 }
 
 int CLIParser::parse(int argc, char** argv) {
