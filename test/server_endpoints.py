@@ -6621,6 +6621,98 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021yb_extra_hf_cache_layout_recovers_repo_name(self):
+        """A model moved into extra_models_dir with its HF hub layout intact
+        keeps its 'org/repo' name instead of showing the snapshot hash."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_hfcache_")
+        repo_dir = os.path.join(
+            extra_dir, "models--unsloth--Llama-3.2-3B-Instruct-GGUF"
+        )
+        snapshot_hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        gguf_path = os.path.join(
+            repo_dir, "snapshots", snapshot_hash, "Llama-3.2-3B-Instruct-Q4_K_M.gguf"
+        )
+        self._write_stub_gguf_file(gguf_path)
+        os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+        with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
+            f.write(snapshot_hash)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
+
+            self.assertIn(
+                "extra.unsloth/Llama-3.2-3B-Instruct-GGUF",
+                ids,
+                f"expected recovered repo name in {ids}",
+            )
+            self.assertNotIn(
+                f"extra.{snapshot_hash}",
+                ids,
+                "should not fall back to the raw snapshot hash",
+            )
+
+            print("[OK] HF-cache-layout extra model recovers org/repo name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021yc_extra_hf_cache_multiple_snapshots_prefers_active_ref(self):
+        """Only the snapshot refs/main points at claims the recovered repo
+        name; a stale snapshot falls back so the two don't collide (#3297)."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_hfcache_multi_")
+        repo_dir = os.path.join(extra_dir, "models--unsloth--Qwen3-4B-GGUF")
+        old_hash = "1111111111111111111111111111111111111a"
+        active_hash = "2222222222222222222222222222222222222b"
+
+        old_gguf = os.path.join(
+            repo_dir, "snapshots", old_hash, "Qwen3-4B-Q4_K_M.gguf"
+        )
+        active_gguf = os.path.join(
+            repo_dir, "snapshots", active_hash, "Qwen3-4B-Q4_K_M.gguf"
+        )
+        self._write_stub_gguf_file(old_gguf)
+        self._write_stub_gguf_file(active_gguf)
+        os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+        with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
+            f.write(active_hash)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            by_checkpoint = {
+                m["checkpoint"]: m["id"] for m in models_response.json()["data"]
+            }
+
+            self.assertEqual(
+                by_checkpoint.get(active_gguf),
+                "extra.unsloth/Qwen3-4B-GGUF",
+                f"active snapshot should claim the clean repo name: {by_checkpoint}",
+            )
+            self.assertIsNotNone(
+                by_checkpoint.get(old_gguf),
+                "old snapshot's model should still be discovered",
+            )
+            self.assertNotEqual(
+                by_checkpoint.get(old_gguf),
+                "extra.unsloth/Qwen3-4B-GGUF",
+                "a non-active snapshot must not also claim the active name",
+            )
+
+            print(
+                "[OK] multi-snapshot HF cache: only refs/main snapshot recovers repo name"
+            )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously
