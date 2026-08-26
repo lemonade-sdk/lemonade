@@ -3,6 +3,10 @@
 #include "lemon/mcp_server.h"
 #include "lemon/server/api_route.h"
 #include "lemon/server/model_loader.h"
+#include "lemon/server/route_registry.h"
+
+#include <stdexcept>
+#include <utility>
 
 namespace lemon {
 namespace {
@@ -26,6 +30,26 @@ const RouteArg kMethod{"method", ArgIn::JsonBody, {{"type", "string"}}, true, Su
 const RouteArg kParams{"params", ArgIn::JsonBody, {{"type", "object"}}, false, Support::Available,
                        "Method parameters; `tools/call` takes `name` and `arguments`."};
 
+// Reuse the HTTP generation routes in-process. Their model loading, input
+// validation and error handling remain authoritative for MCP calls as well.
+mcp_3d::GenerationResponse run_internal_generation(
+    RouteRegistry* registry, const char* path, const json& body) {
+    httplib::Request request;
+    request.method = "POST";
+    request.path = path;
+    request.body = body.dump();
+    request.headers.emplace("Content-Type", "application/json");
+    httplib::Response response;
+    if (!registry->dispatch(request, response)) {
+        throw std::runtime_error(std::string("Missing internal generation route: ") + path);
+    }
+    return {
+        response.status > 0 ? response.status : 200,
+        response.get_header_value("Content-Type"),
+        std::move(response.body),
+    };
+}
+
 class McpRpcRoute : public ApiRoute {
 public:
     explicit McpRpcRoute(ServerContext& ctx)
@@ -33,6 +57,14 @@ public:
           mcp_(ctx.router, ctx.model_manager,
                [loader = ctx.model_loader](const std::string& model) {
                    loader->ensure_loaded(model);
+               },
+               [registry = ctx.registry](const json& body) {
+                   return run_internal_generation(
+                       registry, "/api/v1/images/generations", body);
+               },
+               [registry = ctx.registry](const json& body) {
+                   return run_internal_generation(
+                       registry, "/api/v1/3d/generations", body);
                }) {}
 
     RouteSpec spec() const override {

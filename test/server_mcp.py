@@ -243,6 +243,7 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
+            "lemonade_generate_3d",
             "lemonade_omni",
             "lemonade_docs",
         }
@@ -286,6 +287,19 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(required, {"messages"})
         self.assertIn("model", omni["inputSchema"]["properties"])
         self.assertIn("output_dir", omni["inputSchema"]["properties"])
+
+        model3d = next(t for t in tools if t["name"] == "lemonade_generate_3d")
+        schema3d = model3d["inputSchema"]
+        self.assertEqual(len(schema3d.get("oneOf", [])), 2)
+        for key in ("image", "prompt", "image_model", "model"):
+            self.assertIn(key, schema3d["properties"])
+        self.assertEqual(
+            schema3d["properties"]["resolution"]["enum"], [512, 1024, 1536]
+        )
+        self.assertEqual(
+            schema3d["properties"]["bg_removal"]["enum"], ["threshold", "birefnet"]
+        )
+        self.assertEqual(schema3d["properties"]["uv"]["enum"], ["box", "xatlas"])
 
     # ---------------------------------------------------------------------
     # tools/call error paths
