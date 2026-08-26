@@ -309,6 +309,15 @@ void validate_leaf(const json& leaf,
             }
         }
     }
+    for (const auto& band : {std::pair<const char*, const char*>{"min_chars", "max_chars"},
+                             std::pair<const char*, const char*>{"min_total_chars",
+                                                                 "max_total_chars"}}) {
+        if (leaf.contains(band.first) && leaf.contains(band.second) &&
+            leaf.at(band.first).get<long long>() > leaf.at(band.second).get<long long>()) {
+            throw std::invalid_argument(std::string(path) + " has " + band.first +
+                                        " greater than " + band.second);
+        }
+    }
     for (const char* op : {"has_tools", "has_images"}) {
         if (leaf.contains(op)) {
             ++condition_count;
