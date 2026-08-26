@@ -1566,18 +1566,7 @@ int main(int argc, char* argv[]) {
     // Execute command
     if (status_cmd->count() > 0) {
         if (config.json_output) {
-            // Verify the server is actually reachable before reporting its port.
-            // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers to target the wrong process.
-            bool reachable = try_live_check(config.host, config.port, config.api_key, config.is_ssl, 500);
-            if (!reachable) {
-                std::cerr << "Server is not running" << std::endl;
-                return 1;
-            }
-            nlohmann::json out;
-            out["port"] = config.port;
-            std::cout << out.dump() << std::endl;
-            return 0;
+            return client.status_json(config.port);
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
