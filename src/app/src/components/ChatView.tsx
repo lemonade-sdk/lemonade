@@ -3634,7 +3634,10 @@ ${finalText}`
       <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
-            <div className="composer__model-picker" ref={modelPickerRef}>
+            <div
+              className={`composer__model-picker${currentLoadedModel ? ' composer__model-picker--loaded' : ''}`}
+              ref={modelPickerRef}
+            >
               <span className="composer__model-label">Model</span>
               <button
                 type="button"
@@ -3642,6 +3645,7 @@ ${finalText}`
                 onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
+                aria-label={currentModel ? `Select model, current ${currentModel}` : 'Select model'}
               >
                 {currentLoadedModel ? (
                   <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
@@ -3663,7 +3667,9 @@ ${finalText}`
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
                 )}
-                <span className="composer__model-button-caret">▾</span>
+                <span className="composer__model-button-caret" aria-hidden="true">
+                  <span className="composer__model-button-caret-glyph">▾</span>
+                </span>
               </button>
               {modelPickerOpen && (
                 <div className="composer__model-menu" role="dialog" aria-label="Search models">

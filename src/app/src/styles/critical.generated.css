@@ -2661,7 +2661,73 @@ option:checked {
     min-width: 0;
   }.composer__model-button {
     min-width: 0;
-  }@media (max-width: 980px) {.chat--with-logs,
+  }@media (max-width: 480px) {.composer__model-picker {
+    flex: 1 1 auto;
+    min-width: 30px;
+    order: 0;
+  }.composer__effective-settings {
+    order: 1;
+    margin-left: auto;
+  }.composer__tools-toggle:not(.composer__effective-settings) { order: 2;
+  }.composer__model-label,
+  .composer__model-picker:not(.composer__model-picker--loaded) .composer__model-button > :not(.composer__model-button-caret) {
+    display: none;
+  }.composer__model-button {
+    width: max-content;
+    height: 30px;
+    min-width: 30px;
+    max-width: 30px;
+    flex: 0 0 30px;
+    padding: 0;
+    justify-content: center;
+    overflow: hidden;
+    white-space: nowrap;
+    transition:
+      max-width var(--duration-base) var(--ease-out),
+      padding var(--duration-base) var(--ease-out),
+      gap var(--duration-base) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }.composer__model-picker--loaded .composer__model-button {
+    max-width: min(260px, 100%);
+    flex: 0 0 auto;
+    padding: 5px var(--space-2);
+    justify-content: flex-start;
+  }.composer__model-picker--loaded .composer__model-button-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }.composer__model-button-caret {
+    width: 100%;
+    height: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0;
+    font-size: 0;
+  }.composer__model-button-caret-glyph {
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 16px;
+    font-size: 16px;
+    line-height: 1;
+    transform: rotate(0deg);
+    transform-origin: 50% 50%;
+    transition: transform var(--duration-base) var(--ease-out);
+    will-change: transform;
+  }.composer__model-picker--loaded .composer__model-button-caret {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    margin-left: auto;
+  }.composer__model-button[aria-expanded="true"] .composer__model-button-caret-glyph {
+    transform: rotate(180deg);
+  }.composer__model-menu {
+    right: auto;
+    left: 0;
+  }}@media (max-width: 980px) {.chat--with-logs,
   .chat--with-logs.rail-expanded {
     grid-template-columns: var(--rail-collapsed) 1fr;
     grid-template-areas:
