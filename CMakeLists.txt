@@ -992,6 +992,7 @@ set(SOURCES_CORE
     src/cpp/server/anthropic_api.cpp
     src/cpp/server/mcp_client.cpp
     src/cpp/server/mcp_server.cpp
+    src/cpp/server/mcp_3d_orchestrator.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
     src/cpp/server/realtime_session.cpp
@@ -2508,6 +2509,25 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
+endif()
+
+# Prompt-to-3D orchestration is transport/model independent and uses injected
+# callbacks, so this regression suite needs no server process, GPU, or model.
+set(_MCP_3D_ORCHESTRATOR_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_3d_orchestrator.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MCP_3D_ORCHESTRATOR_TEST_SRC}")
+    add_executable(test_mcp_3d_orchestrator
+        test/cpp/test_mcp_3d_orchestrator.cpp
+        src/cpp/server/mcp_3d_orchestrator.cpp
+    )
+    target_include_directories(test_mcp_3d_orchestrator PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    target_link_libraries(test_mcp_3d_orchestrator PRIVATE
+        nlohmann_json::nlohmann_json
+    )
+    add_cpp_ci_test(Mcp3dOrchestratorTest CI ON COMMAND test_mcp_3d_orchestrator)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference

@@ -3,11 +3,13 @@ Integration tests for the MCP gateway endpoint (POST /mcp).
 
 Requires a Lemonade server to already be running on port 13305.
 
-Covers the JSON-RPC 2.0 envelope plus the four tools exposed by the gateway:
+Covers the JSON-RPC 2.0 envelope plus the six tools exposed by the gateway:
 - lemonade_list_models
 - lemonade_chat
 - lemonade_transcribe_audio   (smoke-tested via schema only; needs Whisper)
 - lemonade_generate_image     (smoke-tested via schema only; needs SD)
+- lemonade_generate_3d        (schema/validation only; no GPU model required)
+- lemonade_omni
 
 The "live" chat tool uses a small model so the suite stays fast.
 
@@ -220,7 +222,7 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(body["result"], {})
 
     def test_012_tools_list(self):
-        """tools/list must include the five gateway tools, each with a schema."""
+        """tools/list must include the six gateway tools, each with a schema."""
         response = _post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         body = response.json()
         tools = body["result"]["tools"]
@@ -230,6 +232,7 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
+            "lemonade_generate_3d",
             "lemonade_omni",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
@@ -245,6 +248,21 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(required, {"messages"})
         self.assertIn("model", omni["inputSchema"]["properties"])
         self.assertIn("output_dir", omni["inputSchema"]["properties"])
+
+        model3d = next(t for t in tools if t["name"] == "lemonade_generate_3d")
+        schema3d = model3d["inputSchema"]
+        self.assertEqual(len(schema3d.get("oneOf", [])), 2)
+        self.assertIn("image", schema3d["properties"])
+        self.assertIn("prompt", schema3d["properties"])
+        self.assertIn("image_model", schema3d["properties"])
+        self.assertEqual(
+            schema3d["properties"]["resolution"].get("enum"), [512, 1024, 1536]
+        )
+        self.assertEqual(
+            schema3d["properties"]["bg_removal"].get("enum"),
+            ["threshold", "birefnet"],
+        )
+        self.assertEqual(schema3d["properties"]["uv"].get("enum"), ["box", "xatlas"])
 
     # ---------------------------------------------------------------------
     # tools/call error paths

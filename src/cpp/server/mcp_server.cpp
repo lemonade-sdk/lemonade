@@ -215,10 +215,16 @@ std::string unique_token() {
 
 }  // namespace
 
-McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded)
+McpServer::McpServer(Router* router,
+                     ModelManager* model_manager,
+                     EnsureLoadedFn ensure_loaded,
+                     mcp_3d::GenerationFn image_generation,
+                     mcp_3d::GenerationFn generation_3d)
     : router_(router),
       model_manager_(model_manager),
-      ensure_loaded_(std::move(ensure_loaded)) {}
+      ensure_loaded_(std::move(ensure_loaded)),
+      image_generation_(std::move(image_generation)),
+      generation_3d_(std::move(generation_3d)) {}
 
 McpServer::~McpServer() = default;
 
@@ -386,6 +392,8 @@ json McpServer::handle_tools_call(const json& params, const json& id) {
             result = tool_transcribe_audio(arguments);
         } else if (tool_name == "lemonade_generate_image") {
             result = tool_generate_image(arguments);
+        } else if (tool_name == "lemonade_generate_3d") {
+            result = tool_generate_3d(arguments);
         } else if (tool_name == "lemonade_omni") {
             result = tool_omni(arguments);
         } else if (tool_name == "lemonade_list_models") {
@@ -683,8 +691,9 @@ json McpServer::tool_generate_image(const json& arguments) {
     if (auto err = unsupported_model_error(model_manager_, model, "image generation", {"sd-cpp"})) {
         return *err;
     }
-
-    ensure_loaded_(model);
+    if (!image_generation_) {
+        throw std::runtime_error("Image generation server callback is not configured");
+    }
 
     json router_request = {
         {"model", model},
@@ -698,9 +707,27 @@ json McpServer::tool_generate_image(const json& arguments) {
     }
     router_request["response_format"] = "b64_json";
 
-    json response = router_->image_generations(router_request);
+    mcp_3d::GenerationResponse generated;
+    try {
+        generated = image_generation_(router_request);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(std::string("Image generation failed: ") + e.what());
+    }
+    if (generated.status >= 400) {
+        throw std::runtime_error(
+            "Image generation failed: " + mcp_3d::response_error_message(generated));
+    }
+
+    json response;
+    try {
+        response = json::parse(generated.body);
+    } catch (const std::exception& e) {
+        throw std::runtime_error(
+            std::string("Image generation failed: invalid JSON response: ") + e.what());
+    }
     if (response.contains("error")) {
-        throw std::runtime_error(response["error"].value("message", "image generation failed"));
+        throw std::runtime_error(
+            "Image generation failed: " + mcp_3d::response_error_message(generated));
     }
 
     std::vector<std::string> b64_images;
@@ -794,6 +821,122 @@ json McpServer::tool_generate_image(const json& arguments) {
 
     return json{
         {"content", std::move(content)},
+        {"isError", false},
+    };
+}
+
+json McpServer::tool_generate_3d(const json& arguments) {
+    if (!arguments.is_object()) {
+        throw std::runtime_error("3D tool arguments must be an object");
+    }
+
+    const bool has_image = arguments.contains("image");
+    const bool has_prompt = arguments.contains("prompt");
+    if (has_image == has_prompt) {
+        throw std::runtime_error("Provide exactly one of 'image' or 'prompt'");
+    }
+    if (has_image && arguments.contains("image_model")) {
+        throw std::runtime_error("'image_model' is only valid when 'prompt' is used");
+    }
+    if (auto validation_error = mcp_3d::validate_3d_options(arguments)) {
+        throw std::runtime_error(*validation_error);
+    }
+
+    auto resolve_local_model = [this](ModelType type, const char* label) -> std::string {
+        const std::string wanted_type = model_type_to_string(type);
+        for (const auto& loaded : router_->get_all_loaded_models()) {
+            if (loaded.value("type", std::string()) != wanted_type) continue;
+            const std::string name = loaded.value("model_name", std::string());
+            if (!name.empty()) return name;
+        }
+        for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
+            if (info.type == type) return name;
+        }
+        throw std::runtime_error(
+            std::string("No ") + label +
+            " model is loaded or downloaded; pull one first or pass an explicit model");
+    };
+
+    std::string model_3d;
+    if (arguments.contains("model")) {
+        if (!arguments["model"].is_string() || arguments["model"].get<std::string>().empty()) {
+            throw std::runtime_error("'model' must be a non-empty string");
+        }
+        model_3d = arguments["model"].get<std::string>();
+        if (auto err = unsupported_model_error(model_manager_, model_3d, "3D generation", {"trellis"})) {
+            return *err;
+        }
+        if (!model_manager_->model_exists(model_3d)) {
+            throw std::runtime_error("Unknown 3D model: " + model_3d);
+        }
+        if (model_manager_->get_model_info(model_3d).type != ModelType::MESH) {
+            throw std::runtime_error("Model '" + model_3d + "' is not a 3D-generation model");
+        }
+    } else {
+        model_3d = resolve_local_model(ModelType::MESH, "3D-generation");
+    }
+
+    std::string image_model;
+    if (has_prompt) {
+        if (!arguments["prompt"].is_string() || arguments["prompt"].get<std::string>().empty()) {
+            throw std::runtime_error("'prompt' must be a non-empty string");
+        }
+        if (arguments.contains("image_model")) {
+            if (!arguments["image_model"].is_string() ||
+                arguments["image_model"].get<std::string>().empty()) {
+                throw std::runtime_error("'image_model' must be a non-empty string");
+            }
+            image_model = arguments["image_model"].get<std::string>();
+            if (auto err = unsupported_model_error(
+                    model_manager_, image_model, "image generation", {"sd-cpp"})) {
+                return *err;
+            }
+            if (!model_manager_->model_exists(image_model)) {
+                throw std::runtime_error("Unknown image_model: " + image_model);
+            }
+            if (model_manager_->get_model_info(image_model).type != ModelType::IMAGE) {
+                throw std::runtime_error(
+                    "Model '" + image_model + "' is not an image-generation model");
+            }
+            if (!router_->is_model_loaded(image_model) &&
+                !model_manager_->is_model_downloaded(image_model)) {
+                throw std::runtime_error(
+                    "image_model '" + image_model +
+                    "' is neither loaded nor downloaded; prompt-to-3D never auto-downloads "
+                    "image models, pull it first");
+            }
+        } else {
+            image_model = resolve_local_model(ModelType::IMAGE, "image-generation");
+        }
+    } else if (!arguments["image"].is_string() ||
+               arguments["image"].get<std::string>().empty()) {
+        throw std::runtime_error("'image' must be a non-empty string");
+    }
+
+    const mcp_3d::PipelineResult pipeline = mcp_3d::run_pipeline(
+        arguments, model_3d, image_model, image_generation_, generation_3d_);
+
+    const std::string encoded_glb = utils::JsonUtils::base64_encode(pipeline.glb_bytes);
+    json structured = {
+        {"mime_type", pipeline.glb_mime_type},
+        {"data_base64", encoded_glb},
+    };
+    json content = json::array({text_content_block("Generated GLB model.")});
+
+    if (pipeline.reference_generated) {
+        structured["reference_generated"] = true;
+        structured["image_model"] = image_model;
+        structured["model"] = model_3d;
+        content.push_back({
+            {"type", "image"},
+            {"data", pipeline.reference_image_base64},
+            {"mimeType", "image/png"},
+        });
+    }
+
+    return json{
+        {"content", std::move(content)},
+        {"structuredContent", std::move(structured)},
         {"isError", false},
     };
 }
@@ -1267,6 +1410,53 @@ json McpServer::tools_descriptor() {
                     {"seed",   {{"type", "integer"}}},
                     {"steps",  {{"type", "integer"}}},
                     {"cfg_scale", {{"type", "number"}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_generate_3d"},
+            {"description",
+             "Create a GLB from exactly one of `image` or `prompt`. With `image`, "
+             "the existing image-to-3D server path is used directly. With `prompt`, "
+             "the server first creates one reconstruction-oriented 1024x1024 "
+             "reference image, then feeds it directly into the same 3D path. "
+             "`image_model` is optional but never auto-downloaded: when omitted, "
+             "a loaded image model is preferred, then a downloaded one."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"additionalProperties", false},
+                {"oneOf", json::array({
+                    json{
+                        {"required", json::array({"image"})},
+                        {"not", json{{"required", json::array({"prompt"})}}},
+                    },
+                    json{
+                        {"required", json::array({"prompt"})},
+                        {"not", json{{"required", json::array({"image"})}}},
+                    },
+                })},
+                {"properties", {
+                    {"image", {{"type", "string"},
+                               {"description", "Base64 image bytes or a data:image/...;base64 URL."}}},
+                    {"prompt", {{"type", "string"}}},
+                    {"model", {{"type", "string"},
+                               {"description",
+                                "Optional 3D reconstruction model. Omit to reuse a "
+                                "loaded/downloaded mesh model."}}},
+                    {"image_model", {{"type", "string"},
+                                     {"description",
+                                      "Prompt path only. Exact local image-generation "
+                                      "model; never auto-downloaded."}}},
+                    {"resolution", {{"type", "integer"},
+                                    {"enum", json::array({512, 1024, 1536})},
+                                    {"description",
+                                     "3D reconstruction resolution; independent of "
+                                     "the fixed 1024x1024 reference image."}}},
+                    {"bg_removal", {{"type", "string"},
+                                    {"enum", json::array({"threshold", "birefnet"})}}},
+                    {"seed", {{"type", "integer"}}},
+                    {"uv", {{"type", "string"},
+                            {"enum", json::array({"box", "xatlas"})}}},
                 }},
             }},
         },

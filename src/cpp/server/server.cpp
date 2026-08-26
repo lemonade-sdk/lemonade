@@ -1515,10 +1515,33 @@ void Server::setup_routes(httplib::Server &web_server) {
     // Register MCP gateway (POST /mcp). NOTE: /mcp is an INTENTIONAL EXCEPTION
     // to the quad-prefix invariant (AGENTS.md #1) — the MCP spec mandates a
     // single endpoint URL.
+    auto call_mcp_generation_handler =
+        [this](const json& body,
+               void (Server::*handler)(const httplib::Request&, httplib::Response&)) {
+            httplib::Request request;
+            request.method = "POST";
+            request.body = body.dump();
+            request.headers.emplace("Content-Type", "application/json");
+            httplib::Response response;
+            (this->*handler)(request, response);
+            const int status = response.status > 0 ? response.status : 200;
+            return mcp_3d::GenerationResponse{
+                status,
+                response.get_header_value("Content-Type"),
+                std::move(response.body),
+            };
+        };
+
     auto mcp_server = std::make_shared<McpServer>(
         router_.get(),
         model_manager_.get(),
-        [this](const std::string& m) { auto_load_model_if_needed(m); });
+        [this](const std::string& m) { auto_load_model_if_needed(m); },
+        [call_mcp_generation_handler](const json& body) {
+            return call_mcp_generation_handler(body, &Server::handle_image_generations);
+        },
+        [call_mcp_generation_handler](const json& body) {
+            return call_mcp_generation_handler(body, &Server::handle_3d_generations);
+        });
     mcp_server->register_routes(web_server);
 
     // Setup static file serving for web UI

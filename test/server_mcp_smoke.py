@@ -1,11 +1,12 @@
 """
-MCP gateway smoke tests — exercises each of the 5 MCP tools end-to-end.
+MCP gateway smoke tests — exercises each of the 6 MCP tools end-to-end.
 
 Two modes:
 
 * **Fast mode (default, used in CI)** — exercises each tool's dispatcher and
   validation path. Only downloads a ~180 MB GGUF for the chat tool. Whisper,
-  Stable Diffusion, and Omni are checked via their structured-error paths so
+  Stable Diffusion, prompt-to-3D, and Omni are checked via their structured-error
+  paths so
   the workflow stays runnable on a vanilla ubuntu-latest runner.
 
 * **Live mode (local opt-in)** — per-tool flags trigger real inference using
@@ -231,6 +232,15 @@ def smoke_generate_image_dispatch(mcp_url, _cfg):
     detail(f"structured error: {truncate(text, 120)}")
 
 
+def smoke_generate_3d_dispatch(mcp_url, _cfg):
+    """XOR validation must fail before model resolution or any GPU backend."""
+    result = tools_call(mcp_url, "lemonade_generate_3d", {})
+    assert result.get("isError") is True, f"expected isError: {result}"
+    text = assert_text_content(result)
+    assert "exactly one" in text.lower(), f"unexpected text: {text}"
+    detail(f"structured error: {truncate(text, 120)}")
+
+
 def smoke_omni_dispatch(mcp_url, _cfg):
     """A non-collection model must short-circuit with a structured isError."""
     result = tools_call(
@@ -395,6 +405,7 @@ def build_plan(args):
             smoke_generate_image_live if live_image else smoke_generate_image_dispatch,
         )
     )
+    smokes.append(("lemonade_generate_3d", smoke_generate_3d_dispatch))
     smokes.append(
         (
             "lemonade_omni (live)" if live_omni else "lemonade_omni",
