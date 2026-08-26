@@ -1,5 +1,6 @@
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp.h"
+#include "lemon/backends/sdcpp/sdcpp_asset.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -53,6 +54,20 @@ std::string resolve_sdcpp_backend(const std::string& backend) {
     return backend;
 }
 
+std::string get_therock_version() {
+    auto config = JsonUtils::load_from_file(utils::get_resource_path("resources/backend_versions.json"));
+    if (!config.contains("therock") || !config["therock"].is_object() ||
+        !config["therock"].contains("version") || !config["therock"]["version"].is_string()) {
+        throw std::runtime_error("backend_versions.json is missing 'therock.version'");
+    }
+    // sd.cpp assets embed the full ROCm runtime version (e.g. rocm-7.13.0).
+    std::string version = config["therock"]["version"].get<std::string>();
+    if (!version.empty() && version[0] == 'v') {
+        return version.substr(1);
+    }
+    return version;
+}
+
 int generate_random_seed() {
     return static_cast<int>(std::random_device{}() & 0x7fffffffU);
 }
@@ -99,17 +114,14 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
                 SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
-        // sd.cpp embeds the ROCm runtime it was built with (e.g. rocm-7.14.0),
-        // which drifts independently of backend_versions.json's therock.version.
-        // Wildcard the runtime so install resolves the actual published asset.
-#ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-rocm-*-x64.zip";
-#elif defined(__linux__)
-        params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-*.zip";
-#else
-        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
-#endif
-        } else if (resolved_backend == "vulkan") {
+        // Only "latest" bin pins wildcard the ROCm runtime; pinned installs
+        // match the TheRock runtime exactly (see sdcpp_asset.h).
+        const bool wildcard_runtime =
+            BackendUtils::get_bin_config_value("sd-cpp", resolved_backend) == "latest";
+        params.filename = sdcpp::sdcpp_rocm_asset_pattern(
+            short_version, wildcard_runtime,
+            wildcard_runtime ? std::string() : get_therock_version());
+    } else if (resolved_backend == "vulkan") {
     #ifdef _WIN32
         params.filename = "sd-" + short_version + "-bin-win-vulkan-x64.zip";
     #elif defined(__linux__)
