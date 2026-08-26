@@ -118,6 +118,14 @@ assert.match(sources.modelManager, /EXTRA_MODELS_DIR_SOURCE = 'extra_models_dir'
 assert.match(sources.modelManager, /isExtraModelsDirModel\(model\)[\s\S]*?showExternalModelDeleteNotice\(model\)[\s\S]*?return;/);
 assert.match(sources.modelManager, /managed in your external models folder\. Delete it directly from that folder\./);
 assert.doesNotMatch(sources.modelManager, /openExternalModelsFolder|manager__toast-folder-action/);
+assert.match(sources.api, /draft_file\?: string;/);
+assert.match(sources.api, /draft_files\?: string\[\];/);
+assert.match(sources.modelManager, /const variantDraftFile = vdata\?\.variants\.find\(v => v\.name === variantName\)\?\.draft_file;/);
+assert.match(sources.modelManager, /const legacyDraftFile = vdata\?\.draft_files\?\.length === 1/);
+assert.match(sources.modelManager, /labels\.add\('mtp'\)/);
+assert.match(sources.modelManager, /labels\.add\('dflash'\)/);
+assert.match(sources.modelManager, /draft: `\$\{modelId\}:\$\{selectedDraftFile\}`/);
+assert.match(sources.modelManager, /mmproj: vdata\?\.mmproj_files\?\.\[0\],[\s\S]*?checkpoints,[\s\S]*?labels:/);
 
 assert.match(sources.mcpPanel, /transport: 'streamable-http'/);
 assert.match(sources.mcpPanel, />HTTP endpoint</);

@@ -1876,12 +1876,27 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
 
     const labels = new Set(vdata?.suggested_labels || []);
     if (vdata?.mmproj_files?.length) labels.add('vision');
+
+    // New servers resolve a draft per selected main variant. Older servers only
+    // expose the legacy list, which is safe to auto-use when it has one entry.
+    const variantDraftFile = vdata?.variants.find(v => v.name === variantName)?.draft_file;
+    const legacyDraftFile = vdata?.draft_files?.length === 1 ? vdata.draft_files[0] : undefined;
+    const selectedDraftFile = variantDraftFile || legacyDraftFile;
+    if (selectedDraftFile) {
+      const draftName = selectedDraftFile.split(/[\\/]/).pop()?.toLowerCase() || '';
+      if (draftName.startsWith('mtp-')) labels.add('mtp');
+      if (draftName === 'dflash.gguf' || draftName.startsWith('dflash-')) labels.add('dflash');
+    }
+    const checkpoints = selectedDraftFile
+      ? { main: checkpoint, draft: `${modelId}:${selectedDraftFile}` }
+      : undefined;
     try {
       await api.pullModel(targetModelName, callbacks, {
         checkpoint,
         recipe,
         source: provider,
         mmproj: vdata?.mmproj_files?.[0],
+        checkpoints,
         labels: [...labels],
         vision: labels.has('vision'),
         embedding: labels.has('embeddings'),

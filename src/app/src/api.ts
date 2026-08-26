@@ -443,6 +443,7 @@ function downloadPayloadCompleted(data: unknown): boolean {
 export interface PullVariant {
   name: string;
   primary_file: string;
+  draft_file?: string;
   files: string[];
   sharded: boolean;
   size_bytes: number;
@@ -458,6 +459,7 @@ export interface PullVariantsResult {
   suggested_name: string;
   suggested_labels: string[];
   mmproj_files: string[];
+  draft_files?: string[];
   variants: PullVariant[];
   capabilities?: string[];
   input_modalities?: string[];
