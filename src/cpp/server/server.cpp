@@ -3250,6 +3250,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["system_prompt"] = info.system_prompt;
     }
 
+    auto audio_defaults = info.extras.find("audio_defaults");
+    if (audio_defaults != info.extras.end() &&
+        audio_defaults->second.is_object()) {
+        model_json["audio_defaults"] = audio_defaults->second;
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {
@@ -4757,6 +4763,17 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Handle model loading
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            if (auto info = router_->try_get_model_info(requested_model);
+                info && info->type != ModelType::TTS) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", {
+                    {"message", "Model '" + requested_model +
+                        "' is not a text-to-speech model"},
+                    {"type", "invalid_request_error"},
+                    {"code", "model_not_applicable"}}}}.dump(),
+                    "application/json");
+                return;
+            }
             try {
                 auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
@@ -4781,6 +4798,15 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (!request_json["input"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "'input' must be a string"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
@@ -4856,7 +4882,14 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.set_content(error.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES[response_format];
+        const auto format_metadata =
+            router_->audio_speech_format_metadata(speech_model, response_format);
+        std::string mime_type = format_metadata.content_type.empty()
+            ? MIME_TYPES[response_format].get<std::string>()
+            : format_metadata.content_type;
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
         // The backend has to encode what the Content-Type above promises. Without
         // this it would receive whatever the client sent -- nothing, when the
         // format came from a default -- and fall back to its own choice.
@@ -4971,7 +5004,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        for (const auto* field : {"lyrics", "vocal_language"}) {
+        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
             if (request_json.contains(field) && !request_json[field].is_string()) {
                 res.status = 400;
                 res.set_content(nlohmann::json{{"error", {
@@ -4982,6 +5015,17 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         }
 
         std::string requested_model = request_json["model"];
+        if (auto info = router_->try_get_model_info(requested_model);
+            info && info->type != ModelType::AUDIO_GENERATION) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Model '" + requested_model +
+                    "' is not an audio-generation model"},
+                {"type", "invalid_request_error"},
+                {"code", "model_not_applicable"}}}}.dump(),
+                "application/json");
+            return;
+        }
         try {
             auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
@@ -5012,8 +5056,16 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES.contains(response_format)
-            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
+        const auto format_metadata =
+            router_->audio_generation_format_metadata(requested_model, response_format);
+        std::string mime_type = !format_metadata.content_type.empty()
+            ? format_metadata.content_type
+            : (MIME_TYPES.contains(response_format)
+                ? MIME_TYPES[response_format].get<std::string>()
+                : MIME_TYPES["wav"].get<std::string>());
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
 
