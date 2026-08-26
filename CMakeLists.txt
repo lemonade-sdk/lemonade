@@ -154,6 +154,7 @@ include(GNUInstallDirs)
 set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
+    "hrx|hrx"
     "whispercpp|whispercpp"
     "moonshine|moonshine"
     "kokoro|kokoro"
@@ -2508,6 +2509,12 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
+    add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
+    target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference

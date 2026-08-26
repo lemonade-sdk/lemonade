@@ -382,6 +382,13 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
+#### HRX GPU (experimental) (`hrx` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--hrx-args ARGS` | Custom arguments to pass to the HRX llama-server | `""` |
+
 #### Whisper.cpp (`whispercpp` recipe)
 
 | Option | Description | Default |

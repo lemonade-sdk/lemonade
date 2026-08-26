@@ -179,6 +179,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
+      <td rowspan="1"><code>hrx</code> (experimental)</td>
+      <td><code>hrx</code></td>
+      <td>AMD GPUs (gfx1100, gfx1151)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
       <td rowspan="1"><code>flm</code></td>
       <td><code>npu</code></td>
       <td>XDNA2 NPU</td>
