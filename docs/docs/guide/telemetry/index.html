@@ -1231,6 +1231,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#session-tracking-client-identification" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session Tracking &amp; Client Identification
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Session Tracking &amp; Client Identification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resolution-precedence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resolution Precedence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-namespacing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Client Namespacing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuring-custom-headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuring Custom Headers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#privacy-redaction" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2315,6 +2365,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2879,6 +2957,56 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#session-tracking-client-identification" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session Tracking &amp; Client Identification
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Session Tracking &amp; Client Identification">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#resolution-precedence" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Resolution Precedence
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#client-namespacing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Client Namespacing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuring-custom-headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuring Custom Headers
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#privacy-redaction" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2975,7 +3103,7 @@
 <span class="w">                    </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">'{"x-project-name":"lemonade"}'</span>
 </code></pre></div></p>
 <h5 id="option-b-configuration-via-configjson">Option B: Configuration via <code>config.json</code></h5>
-<p>Alternatively, edit the <code>telemetry</code> block in your <code>config.json</code> file inside the Lemonade cache directory.</p>
+<p>Alternatively, edit the <code>telemetry</code> block in your <code>config.json</code> file inside the Lemonade config directory.</p>
 <blockquote>
 <p>[!IMPORTANT]
 Manually modifying <code>config.json</code> requires a restart of the Lemonade server to apply the changes. See the <a href=".././configuration/#configjson">Configuration Guide</a> to find the location of the <code>config.json</code> file on your operating system.</p>
@@ -3129,6 +3257,18 @@ Manually modifying <code>config.json</code> requires a restart of the Lemonade s
 <td><code>1.0</code></td>
 <td>Maximum buffer timeout in seconds before exporting a partial batch.</td>
 </tr>
+<tr>
+<td><code>telemetry.session.headers.id</code></td>
+<td>array / string</td>
+<td><code>[]</code></td>
+<td>Optional list of custom HTTP request headers to extract session IDs from (e.g. <code>["x-corp-session"]</code>).</td>
+</tr>
+<tr>
+<td><code>telemetry.session.headers.client</code></td>
+<td>array / string</td>
+<td><code>[]</code></td>
+<td>Optional list of custom HTTP request headers to identify the client (e.g. <code>["x-corp-client"]</code>).</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -3197,6 +3337,33 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 <p>[!WARNING]
 Only enable <code>telemetry.trust_incoming_trace_context</code> if you trust the callers on your network. Enabling this setting allows client-supplied headers to modify the structure of your trace parentage.</p>
 </blockquote>
+<hr />
+<h2 id="session-tracking-client-identification">Session Tracking &amp; Client Identification</h2>
+<p>Lemonade automatically captures session identifiers to group multi-turn conversations in telemetry traces (<code>session.id</code> and <code>gen_ai.conversation.id</code>).</p>
+<h3 id="resolution-precedence">Resolution Precedence</h3>
+<ol>
+<li><strong>Request Body</strong>: An explicit <code>"session_id"</code> in the JSON request payload always takes highest precedence.</li>
+<li><strong>Configured Custom Headers</strong>: If no body <code>session_id</code> is supplied, Lemonade checks custom headers configured in <code>telemetry.session.headers.id</code> (e.g. <code>["x-custom-session"]</code>).</li>
+<li><strong>Well-Known HTTP Headers</strong>: If neither is present, Lemonade automatically checks built-in well-known session headers in priority order:</li>
+<li><code>x-opencode-session</code> (OpenCode)</li>
+<li><code>x-session-id</code> (Claude Code / general agents)</li>
+<li><code>x-client-session-id</code> (OpenAI / Lemonade clients)</li>
+<li><code>mcp-session-id</code> (Model Context Protocol gateway)</li>
+<li><code>x-conversation-id</code></li>
+<li><code>session-id</code></li>
+<li><strong>No Session</strong>: If no session identifier is found, the span is recorded without a session attribute.</li>
+</ol>
+<h3 id="client-namespacing">Client Namespacing</h3>
+<p>If an incoming request includes a configured custom client header (<code>telemetry.session.headers.client</code>) or a well-known client header (such as <code>x-opencode-client</code>, <code>x-client-id</code>, or <code>x-client-name</code>), Lemonade automatically prefixes the session ID as <code>&lt;client&gt;/&lt;session&gt;</code> (for example, <code>vscode/sess-abc123</code>). This avoids session collisions when multiple IDE extensions or agent tools share a single Lemonade server.</p>
+<h3 id="configuring-custom-headers">Configuring Custom Headers</h3>
+<p>If your client or proxy uses proprietary headers not included in the built-in list:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Configure custom session ID header(s)</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.session.headers.id<span class="o">=</span><span class="s1">'["x-corp-session", "x-team-session"]'</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.session.headers.id<span class="o">=</span><span class="s2">"x-corp-session"</span>
+
+<span class="c1"># Configure custom client identification header(s)</span>
+lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.session.headers.client<span class="o">=</span><span class="s2">"x-corp-client"</span>
+</code></pre></div>
 <hr />
 <h2 id="privacy-redaction">Privacy &amp; Redaction</h2>
 <p>By default, Lemonade captures prompts, completions, and internal reasoning/thinking steps in trace span attributes to allow full evaluation and debugging.</p>

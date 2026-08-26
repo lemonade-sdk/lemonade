@@ -1977,6 +1977,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2592,7 +2620,7 @@ own ops pass through while every other request waits. A job with only
 read-only ops (e.g. <code>system_info</code>, <code>sleep</code>) never takes the gate. Read-only
 status queries (model list, health, telemetry) are not gated.</p>
 <h2 id="persistence">Persistence</h2>
-<p>Jobs persist to <code>&lt;cache_dir&gt;/jobs.json</code> (atomic write, cap 50, oldest terminal
+<p>Jobs persist to <code>&lt;config_dir&gt;/jobs.json</code> (atomic write, cap 50, oldest terminal
 evicted first). The cap is enforced at creation: when all 50 retained jobs are
 still active or resumable (nothing <code>completed</code>/<code>failed</code> to evict), <code>POST jobs</code>
 is rejected with <code>429</code> until a job is deleted or finishes. On startup a job left

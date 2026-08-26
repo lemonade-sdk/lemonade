@@ -957,6 +957,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#gateways-with-a-non-standard-auth-header" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Gateways with a non-standard auth header
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#providers-that-speak-the-anthropic-messages-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Providers that speak the Anthropic Messages format
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2127,6 +2149,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2451,6 +2501,28 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#gateways-with-a-non-standard-auth-header" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Gateways with a non-standard auth header
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#providers-that-speak-the-anthropic-messages-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Providers that speak the Anthropic Messages format
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2558,6 +2630,30 @@ lemonade<span class="w"> </span>cloud<span class="w"> </span>auth<span class="w"
 <span class="w">  </span>--api-key<span class="w"> </span>fw-XXXXX
 </code></pre></div>
 <p>Runtime keys live in <code>lemond</code>'s process memory only — they're never written to disk and they vanish on restart. To make them survive a restart, switch to Option A.</p>
+<h3 id="gateways-with-a-non-standard-auth-header">Gateways with a non-standard auth header</h3>
+<p>By default the key is sent as <code>Authorization: Bearer &lt;key&gt;</code>. Some gateways front an OpenAI-shaped API but expect a differently-named header, often with no prefix:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>acme<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--base-url<span class="w"> </span>https://gateway.example.com/v1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--auth-header-name<span class="w"> </span>X-Api-Key<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--auth-header-prefix<span class="w"> </span><span class="s2">""</span>
+</code></pre></div>
+<p>Both settings persist per provider in <code>config.json</code> and apply to discovery and every forwarded request. <code>lemonade cloud list</code> prints the header when either value isn't the default. They are sticky: a later <code>cloud install</code> for the same provider that omits these flags keeps the configured header rather than reverting to <code>Authorization: Bearer</code>.</p>
+<h3 id="providers-that-speak-the-anthropic-messages-format">Providers that speak the Anthropic Messages format</h3>
+<p>Some providers serve their models over the Anthropic Messages wire format rather than OpenAI chat completions. Register those with <code>--wire-format anthropic</code>:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>acme<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--base-url<span class="w"> </span>https://gateway.example.com/v1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--wire-format<span class="w"> </span>anthropic<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--auth-header-name<span class="w"> </span>x-api-key<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--auth-header-prefix<span class="w"> </span><span class="s2">""</span>
+</code></pre></div>
+<p>The wire format and the auth header are independent settings, but usually go together: the Anthropic API authenticates with <code>x-api-key</code>, so leaving the header at its default returns <code>401</code>. Omit the auth flags only for a gateway that fronts the Anthropic format behind bearer auth.</p>
+<p>Every request to an <code>anthropic</code> provider, discovery included, carries <code>anthropic-version: 2023-06-01</code> unless the client sends its own. <code>anthropic-beta</code> is forwarded from the client, so SDK feature opt-ins reach the provider.</p>
+<p>Discovery is unchanged — <code>GET &lt;base_url&gt;/models</code>, which these providers serve in the OpenAI envelope. Inference differs:</p>
+<ul>
+<li><strong><code>POST /v1/messages</code></strong> relays to <code>&lt;base_url&gt;/messages</code> byte-for-byte, rewriting only the <code>model</code> field. Nothing is converted, so thinking blocks, tool use, cache control, and future Anthropic fields pass through intact. Streaming relays the upstream SSE unmodified. <code>retry-after</code>, <code>request-id</code>, and <code>anthropic-ratelimit-*</code> response headers are relayed back. A non-streaming request reports the upstream status code directly; with <code>stream: true</code> the response has already begun by the time upstream's status is known, so an upstream error arrives as an SSE <code>error</code> event on a <code>200</code> and the status code carries no signal.</li>
+<li><strong><code>POST /v1/chat/completions</code> and <code>POST /v1/completions</code></strong> are refused, since the provider does not serve the OpenAI shape. A non-streaming request gets <code>400</code> pointing at <code>/v1/messages</code>; a <code>stream: true</code> request gets the same message as an SSE error frame on a <code>200</code>, because the response has already begun by the time the body is written.</li>
+</ul>
+<p>Relayed requests take no router slot — there is no local model to load — so they do not appear in <code>/v1/stats</code>.</p>
 <h2 id="using-cloud-models">Using cloud models</h2>
 <p>Cloud-discovered models use a dot-namespaced name: <code>&lt;provider&gt;.&lt;upstream-id&gt;</code>. For example, after installing Fireworks you'll see entries like:</p>
 <div class="highlight"><pre><span></span><code>fireworks.accounts/fireworks/models/kimi-k2p5
@@ -2624,6 +2720,14 @@ lemonade<span class="w"> </span>run<span class="w"> </span>fireworks.kimi-k2p5
 <tr>
 <td>Cloud model missing from <code>/v1/models</code></td>
 <td>Provider doesn't expose it as chat-capable, or discovery failed. Check <code>lemond</code> logs for warnings from the <code>Cloud</code> component.</td>
+</tr>
+<tr>
+<td>Chat completions returns "speaks the 'anthropic' wire format"</td>
+<td>The provider was installed with <code>--wire-format anthropic</code>; send the request to <code>POST /v1/messages</code> instead. With <code>stream: true</code> this arrives as an SSE error frame on a <code>200</code>, not a <code>400</code>.</td>
+</tr>
+<tr>
+<td>An <code>anthropic</code> provider 401s with a valid key</td>
+<td>It likely expects <code>x-api-key</code> rather than the default <code>Authorization: Bearer</code>. Re-install with <code>--auth-header-name x-api-key --auth-header-prefix ""</code>. With <code>stream: true</code> on <code>/v1/messages</code> the <code>401</code> appears as an SSE <code>error</code> event on a <code>200</code>, so check the event body rather than the status code.</td>
 </tr>
 </tbody>
 </table>

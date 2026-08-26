@@ -16,7 +16,7 @@
         <link rel="prev" href="../ollama/">
       
       
-        <link rel="next" href="../llamacpp/">
+        <link rel="next" href="../mcp/">
       
       
         
@@ -1993,6 +1993,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../llamacpp/" class="md-nav__link">
         
   
@@ -2307,6 +2335,7 @@
 </tbody>
 </table>
 <p>Current scope focuses on message generation parity for common fields (<code>model</code>, <code>messages</code>, <code>system</code>, <code>max_tokens</code>, <code>temperature</code>, <code>stream</code>, and basic <code>tools</code>). Unsupported or unimplemented Anthropic-specific fields are ignored and surfaced via warning logs/headers.</p>
+<p>Those limits apply only where Lemonade converts to and from the OpenAI shape. A cloud provider registered with <code>--wire-format anthropic</code> is relayed unconverted, so no field is dropped — see <a href="../../guide/configuration/cloud/#providers-that-speak-the-anthropic-messages-format">Cloud Offload</a>.</p>
 
 
 
@@ -2361,13 +2390,13 @@
         
         
           
-          <a href="../llamacpp/" class="md-footer__link md-footer__link--next" aria-label="Next: llama.cpp Specific">
+          <a href="../mcp/" class="md-footer__link md-footer__link--next" aria-label="Next: MCP Gateway">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                llama.cpp Specific
+                MCP Gateway
               </div>
             </div>
             <div class="md-footer__button md-icon">

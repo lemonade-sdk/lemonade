@@ -2471,6 +2471,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../api/llamacpp/" class="md-nav__link">
         
   
@@ -3289,7 +3317,7 @@ lemonade<span class="w"> </span>pull<span class="w"> </span>user.MyCodingModel<s
 </tr>
 <tr>
 <td><code>--recipe RECIPE</code></td>
-<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>thenoise</code>, <code>thinksound</code>, <code>acestep</code>, <code>onnxruntime</code>, <code>trellis</code>, <code>openmoss</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
+<td>Recipe to associate with the new <code>user.*</code> model. Common values: <!-- BEGIN GENERATED: recipe-values --><code>llamacpp</code>, <code>whispercpp</code>, <code>moonshine</code>, <code>kokoro</code>, <code>sd-cpp</code>, <code>flm</code>, <code>ryzenai-llm</code>, <code>vllm</code>, <code>thenoise</code>, <code>ds4</code>, <code>thinksound</code>, <code>acestep</code>, <code>onnxruntime</code>, <code>trellis</code>, <code>openmoss</code>, <code>collection.omni</code><!-- END GENERATED: recipe-values -->.</td>
 </tr>
 <tr>
 <td><code>--label LABEL</code></td>
@@ -3454,7 +3482,7 @@ from the embedded definitions.</p>
 <h3 id="edit-json-files-directly">Edit JSON files directly</h3>
 <p>Advanced users can edit <code>user_models.json</code> and <code>recipe_options.json</code> directly. The rest of this guide documents those files and gives complete examples.</p>
 <h2 id="overview">Overview</h2>
-<p>Custom model configuration involves two files, both located in the Lemonade cache directory:</p>
+<p>Custom model configuration involves two files, both located in the Lemonade config directory:</p>
 <table>
 <thead>
 <tr>
@@ -3473,30 +3501,30 @@ from the embedded definitions.</p>
 </tr>
 </tbody>
 </table>
-<p>If you used an installer from a Lemonade release, the cache directory is typically:</p>
+<p>If you used an installer from a Lemonade release, the config directory is typically:</p>
 <table>
 <thead>
 <tr>
 <th>OS</th>
-<th>Cache directory</th>
+<th>Config directory</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>Linux systemd install</td>
-<td><code>/var/lib/lemonade/.cache/lemonade</code></td>
+<td><code>/var/lib/lemonade</code></td>
 </tr>
 <tr>
 <td>Windows</td>
-<td><code>%USERPROFILE%\.cache\lemonade</code></td>
+<td><code>%USERPROFILE%\.config\lemonade</code></td>
 </tr>
 <tr>
 <td>macOS system install</td>
-<td><code>/Library/Application Support/lemonade/.cache</code></td>
+<td><code>/Library/Application Support/lemonade/.config</code></td>
 </tr>
 </tbody>
 </table>
-<p>For a standalone <code>lemond</code> executable, the default is <code>~/.cache/lemonade</code> unless you pass an explicit <code>cache_dir</code> argument or set <code>LEMONADE_CACHE_DIR</code>.</p>
+<p>For a standalone <code>lemond</code> executable, the default config directory is <code>~/.config/lemonade</code>. Pass an explicit <code>config_dir</code> positional argument if you want persistent JSON files somewhere else; <code>cache_dir</code> only controls downloaded/runtime data.</p>
 <h2 id="model-naming-spec">Model naming spec</h2>
 <p>Lemonade tracks three sources of models. Every model has a <strong>canonical ID</strong> of the form <code>&lt;source&gt;.&lt;bare-name&gt;</code>:</p>
 <table>

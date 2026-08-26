@@ -779,10 +779,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#seeding-defaults-for-packaged-installs" class="md-nav__link">
+  <a href="#defaults-precedence-layering" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Seeding defaults for packaged installs
+        Defaults Precedence &amp; Layering
       </span>
     </span>
   </a>
@@ -929,10 +929,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#lemond-cli-arguments-fallback" class="md-nav__link">
+  <a href="#lemond-cli-arguments-runtime-overrides" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        lemond CLI arguments (fallback)
+        lemond CLI arguments (runtime overrides)
       </span>
     </span>
   </a>
@@ -1005,6 +1005,45 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Allowed Origins
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-synchronization-auto-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model Synchronization &amp; Auto-Updates
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model Synchronization &amp; Auto-Updates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#risks-of-automatic-model-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Risks of Automatic Model Updates
       </span>
     </span>
   </a>
@@ -2316,6 +2355,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2630,10 +2697,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#seeding-defaults-for-packaged-installs" class="md-nav__link">
+  <a href="#defaults-precedence-layering" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Seeding defaults for packaged installs
+        Defaults Precedence &amp; Layering
       </span>
     </span>
   </a>
@@ -2780,10 +2847,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#lemond-cli-arguments-fallback" class="md-nav__link">
+  <a href="#lemond-cli-arguments-runtime-overrides" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        lemond CLI arguments (fallback)
+        lemond CLI arguments (runtime overrides)
       </span>
     </span>
   </a>
@@ -2868,6 +2935,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#model-synchronization-auto-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model Synchronization &amp; Auto-Updates
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model Synchronization &amp; Auto-Updates">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Configuration
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#risks-of-automatic-model-updates" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Risks of Automatic Model Updates
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#remote-server-connection" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2909,31 +3015,34 @@
 
 <h1 id="lemonade-server-configuration">Lemonade Server Configuration</h1>
 <h2 id="overview">Overview</h2>
-<p>Lemonade Server starts automatically with the OS after installation. Configuration is managed through a single <code>config.json</code> file stored in the lemonade cache directory.</p>
+<p>Lemonade Server starts automatically with the OS after installation. Persistent JSON configuration is stored in Lemonade's config directory; caches and downloaded artifacts stay in the cache directory.</p>
 <h2 id="configjson">config.json</h2>
 <p>If you used an installer from the Lemonade release your <code>config.json</code> will be at these locations depending on your OS:</p>
 <ul>
-<li><strong>Linux — <code>apt</code>/<code>.deb</code> (Debian/Ubuntu):</strong> <code>/var/lib/lemonade/.cache/lemonade/config.json</code></li>
-<li><strong>Linux — <code>dnf</code>/<code>.rpm</code> (Fedora/Red Hat):</strong> <code>/opt/var/lib/lemonade/.cache/lemonade/config.json</code></li>
+<li><strong>Linux — <code>apt</code>/<code>.deb</code> (Debian/Ubuntu):</strong> <code>/var/lib/lemonade/config.json</code></li>
+<li><strong>Linux — <code>dnf</code>/<code>.rpm</code> (Fedora/Red Hat):</strong> <code>/var/lib/lemonade/config.json</code></li>
 </ul>
 <blockquote>
-<p>Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old <code>/opt/var/lib/lemonade</code> path to <code>/var/lib/lemonade</code>.</p>
+<p>Note: The systemd service runs as the <code>lemonade</code> user. Persistent config lives in <code>/var/lib/lemonade</code> (systemd StateDirectory), while cached models go to <code>/var/cache/huggingface</code> (CacheDirectory). For Debian/Ubuntu, upgrading the package automatically migrates data from the old <code>/opt/var/lib/lemonade</code> path to <code>/var/lib/lemonade</code>.</p>
 </blockquote>
 <ul>
-<li><strong>Windows:</strong> <code>%USERPROFILE%\.cache\lemonade\config.json</code></li>
-<li><strong>macOS:</strong> <code>/Library/Application Support/lemonade/.cache/config.json</code></li>
+<li><strong>Windows:</strong> <code>%USERPROFILE%\.config\lemonade\config.json</code></li>
+<li><strong>macOS:</strong> <code>/Library/Application Support/lemonade/.config/config.json</code></li>
 </ul>
-<p>If you are using a standalone <code>lemond</code> exectable, the default location is <code>~/.cache/lemonade/config.json</code>.</p>
+<p>If you are using a standalone <code>lemond</code> executable, the default location is <code>~/.config/lemonade/config.json</code>.</p>
+<p>On startup, Lemonade automatically migrates persistent JSON files from the legacy <code>.cache</code> location into the new <code>.config</code> location.</p>
 <blockquote>
-<p>Note: If <code>config.json</code> doesn't exist, it's created automatically with default values on first run.</p>
+<p>Note: <code>config.json</code> is a sparse override file. It only contains settings you explicitly customize; all unspecified settings automatically inherit default values and receive upstream improvements across updates.</p>
 </blockquote>
-<h3 id="seeding-defaults-for-packaged-installs">Seeding defaults for packaged installs</h3>
-<p>On first run, <code>config.json</code> is initialized from the defaults baked into the release (<code>resources/defaults.json</code>). Packagers can override those defaults without editing the release, in increasing precedence:</p>
+<h3 id="defaults-precedence-layering">Defaults Precedence &amp; Layering</h3>
+<p>When <code>lemond</code> starts, effective configuration is resolved by deep-merging settings in increasing precedence:</p>
 <ol>
-<li>On Linux, <code>lemond</code> also merges <code>/usr/share/lemonade/defaults.json</code> if it exists, so distro packages can ship their own defaults (e.g. backend <code>*_bin</code> paths pointing at system-installed binaries).</li>
-<li>Set the <code>LEMONADE_DEFAULTS_PATH</code> environment variable to a <code>defaults.json</code> at any location to merge it on top. This is the seam for non-FHS distros (Nix, Guix) that cannot write under <code>/usr/share</code>.</li>
+<li><strong>Built-in Defaults</strong>: Factory defaults baked into the release (<code>resources/defaults.json</code> and backend descriptors).</li>
+<li><strong>Distro / System Defaults</strong>: On Linux, <code>lemond</code> merges <code>/usr/share/lemonade/defaults.json</code> if it exists, so distro packages can ship system-level defaults (e.g. backend <code>*_bin</code> paths pointing at system-installed binaries).</li>
+<li><strong>Environment Defaults</strong>: Set the <code>LEMONADE_DEFAULTS_PATH</code> environment variable to a <code>defaults.json</code> at any location to merge on top (for non-FHS distros like Nix/Guix that cannot write under <code>/usr/share</code>).</li>
+<li><strong>User Overrides (<code>config.json</code>)</strong>: Values explicitly set in your <code>config.json</code> override defaults.</li>
+<li><strong>CLI Flags</strong>: Arguments passed to <code>lemond</code> (e.g. <code>--port</code>, <code>--host</code>).</li>
 </ol>
-<p>Values set in the user's <code>config.json</code> always take precedence over these seeded defaults.</p>
 <h3 id="example-configjson">Example config.json</h3>
 <!-- BEGIN GENERATED: config-example -->
 <div class="highlight"><pre><span></span><code><span class="p">{</span>
@@ -2945,12 +3054,17 @@
 <span class="w">    </span><span class="nt">"vulkan_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"auto_check_model_updates"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"auto_update_models"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"broadcast"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"cloud_providers"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
 <span class="w">  </span><span class="nt">"config_version"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"default_model_source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"huggingface"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"disable_model_filtering"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"download_rate_limit"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"ds4"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span>
+<span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"enable_dgpu_gtt"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"extra_models_dir"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"flm"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -3037,11 +3151,18 @@
 <span class="w">      </span><span class="p">],</span>
 <span class="w">      </span><span class="nt">"send_batch_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span>
 <span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">"session"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"headers"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">"client"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">        </span><span class="nt">"id"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">},</span>
 <span class="w">    </span><span class="nt">"trust_incoming_trace_context"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"thenoise"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">"backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"auto"</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"lora_dir"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"rocm_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"upscaler_dir"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span>
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"thinksound"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -3146,6 +3267,12 @@
 <td>Remote registry used to pull checkpoints when a request does not name one (<code>huggingface</code> or <code>modelscope</code>). Explicit <code>--source</code>, a <code>source</code>/<code>registry_source</code> field, or a provider URL always overrides it.</td>
 </tr>
 <tr>
+<td><code>download_rate_limit</code></td>
+<td>string</td>
+<td>""</td>
+<td>Caps model/backend download speed. Byte rate with curl-style suffixes: <code>512</code>, <code>100K</code>, <code>10M</code>, etc. Use <code>""</code> for unlimited download speed. A non-empty value also serializes concurrent transfers.</td>
+</tr>
+<tr>
 <td><code>offline</code></td>
 <td>bool</td>
 <td>false</td>
@@ -3156,6 +3283,12 @@
 <td>bool</td>
 <td>true</td>
 <td>Check downloaded Hugging Face-backed models for updates during server startup. Set to <code>false</code> to check only with <code>lemonade check-updates</code> or <code>POST /v1/models/check-updates</code>. Manual downloads and updates remain enabled.</td>
+</tr>
+<tr>
+<td><code>auto_update_models</code></td>
+<td>bool</td>
+<td>false</td>
+<td>Automatically download model updates when available. Can be overridden per model via <code>auto_update</code> in model options.</td>
 </tr>
 <tr>
 <td><code>no_fetch_executables</code></td>
@@ -3254,6 +3387,22 @@
 <tr>
 <td><code>base_url</code></td>
 <td>OpenAI-compatible base URL ending in <code>/v1</code> (or equivalent).</td>
+</tr>
+<tr>
+<td><code>allow_insecure_http</code></td>
+<td>Whether this provider may receive its API key over <code>http://</code>.</td>
+</tr>
+<tr>
+<td><code>auth_header_name</code></td>
+<td>Header the API key is sent in. Omitted when it is the default <code>Authorization</code>.</td>
+</tr>
+<tr>
+<td><code>auth_header_prefix</code></td>
+<td>Value prefix before the key. Omitted when it is the default <code>"Bearer "</code>.</td>
+</tr>
+<tr>
+<td><code>wire_format</code></td>
+<td><code>openai</code> or <code>anthropic</code>. Omitted when it is the default <code>openai</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -3484,31 +3633,33 @@ lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">s
 lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.semantics<span class="o">=</span><span class="s1">'["openinference"]'</span>
 lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span>telemetry.otlp.headers<span class="o">=</span><span class="s1">'{"Authorization":"Bearer key"}'</span>
 </code></pre></div>
-<h3 id="lemond-cli-arguments-fallback">lemond CLI arguments (fallback)</h3>
-<p>If the server cannot start (e.g., invalid port in config.json), <code>lemond</code> accepts <code>--port</code> and <code>--host</code> as CLI arguments to override config.json. These overrides are persisted so the server can start normally next time:</p>
+<h3 id="lemond-cli-arguments-runtime-overrides">lemond CLI arguments (runtime overrides)</h3>
+<p><code>lemond</code> accepts <code>--port</code> and <code>--host</code> as CLI arguments to provide ephemeral runtime overrides for that specific server process without modifying <code>config.json</code>:</p>
 <div class="highlight"><pre><span></span><code>lemond<span class="w"> </span>--port<span class="w"> </span><span class="m">9000</span><span class="w"> </span>--host<span class="w"> </span><span class="m">0</span>.0.0.0
 </code></pre></div>
+<p>Because CLI overrides are ephemeral and do not mutate <code>config.json</code> on disk, if the server cannot start due to an invalid port or host setting in <code>config.json</code>:
+1. Start <code>lemond</code> using the CLI override: <code>lemond --port 9000</code>
+2. Run <code>lemonade config set port=9000</code> against the running server to persist the fix for subsequent restarts.
+3. Alternatively, edit <code>config.json</code> directly as shown below.</p>
 <h3 id="edit-configjson-manually-last-resort">Edit config.json manually (last resort)</h3>
-<p>If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:</p>
-<div class="highlight"><pre><span></span><code><span class="c1"># Linux (Debian/Ubuntu)</span>
-sudo<span class="w"> </span>nano<span class="w"> </span>/var/lib/lemonade/.cache/lemonade/config.json
-
-<span class="c1"># Linux (Fedora/Red Hat)</span>
-sudo<span class="w"> </span>nano<span class="w"> </span>/opt/var/lib/lemonade/.cache/lemonade/config.json
+<p>If the server won't start and CLI tools aren't sufficient, you can edit config.json directly. Restart the server after making changes:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Linux (Debian/Ubuntu and Fedora/Red Hat)</span>
+sudo<span class="w"> </span>nano<span class="w"> </span>/var/lib/lemonade/config.json
 
 sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class="w"> </span>lemond
 
 <span class="c1"># Windows — edit with your preferred text editor:</span>
-<span class="c1"># %USERPROFILE%\.cache\lemonade\config.json</span>
+<span class="c1"># %USERPROFILE%\.config\lemonade\config.json</span>
 <span class="c1"># Then quit and relaunch from the Start Menu</span>
 </code></pre></div>
 <h2 id="lemond-cli">lemond CLI</h2>
-<div class="highlight"><pre><span></span><code>lemond [cache_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
+<div class="highlight"><pre><span></span><code>lemond [cache_dir] [config_dir] [--port PORT] [--host HOST] [--broadcast] [--no-broadcast]
 </code></pre></div>
 <ul>
-<li><strong>cache_dir</strong> — Path to the lemonade cache directory containing config.json and model data. Optional; defaults to platform-specific location.</li>
-<li><strong>--port</strong> — Port to serve on (overrides config.json, persisted). Use as a fallback if the server cannot start.</li>
-<li><strong>--host</strong> — Address to bind (overrides config.json, persisted). Use as a fallback if the server cannot start.</li>
+<li><strong>cache_dir</strong> — Path to the lemonade cache/data directory. Optional; defaults to the platform-specific cache location.</li>
+<li><strong>config_dir</strong> — Path to the lemonade config directory for persistent JSON state. Optional; defaults to the platform-specific config location.</li>
+<li><strong>--port</strong> — Port to serve on (runtime override, does not mutate config.json).</li>
+<li><strong>--host</strong> — Address to bind (runtime override, does not mutate config.json).</li>
 <li><strong>--broadcast</strong> / <strong>--no-broadcast</strong> — Enable or disable UDP broadcasting for server discovery (non-persistent override).</li>
 </ul>
 <h2 id="api-key-and-security">API Key and Security</h2>
@@ -3581,6 +3732,26 @@ Using <code>LEMONADE_ALLOWED_ORIGINS=*</code> permits any website running in a u
 </li>
 <li><strong>Local/Loopback &amp; Desktop Access</strong>: Loopback addresses (<code>localhost</code>, <code>127.0.0.1</code>, <code>[::1]</code>, <code>*.localhost</code>) and custom desktop application schemes (<code>file://</code>, <code>app://.</code>, <code>vscode-webview://</code>, <code>jan://</code>, etc.) are permitted for local client connections. Opaque <code>null</code> origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in <code>LEMONADE_ALLOWED_ORIGINS</code> to prevent CSWSH attacks.</li>
 </ul>
+<h2 id="model-synchronization-auto-updates">Model Synchronization &amp; Auto-Updates</h2>
+<p>Lemonade supports manual model synchronization via <code>lemonade update-models</code> as well as automatic background updates.</p>
+<h3 id="configuration">Configuration</h3>
+<ul>
+<li><strong>Global Config</strong>: Set <code>auto_update_models: true</code> in server configuration or via <code>lemonade config set auto_update_models=true</code>.</li>
+<li><strong>Per-Model Override</strong>: Include <code>"auto_update": true</code> or <code>"auto_update": false</code> in custom model recipes (<code>user.*</code>) to override the global default on a per-model basis.</li>
+<li><strong>Administrative Authorization</strong>: Because model synchronization endpoints are administrative (<code>/internal/*</code>), manual synchronization via the CLI or direct API requests requires the appropriate admin credentials (<code>LEMONADE_ADMIN_API_KEY</code>, falling back to <code>LEMONADE_API_KEY</code> if the admin key is not explicitly configured) when server-side authentication is enabled.</li>
+</ul>
+<h3 id="risks-of-automatic-model-updates">Risks of Automatic Model Updates</h3>
+<blockquote>
+<p>[!WARNING]
+Enabling automatic updates (<code>auto_update_models: true</code> or per-model <code>"auto_update": true</code>) introduces operational risks that should be carefully considered:</p>
+<ol>
+<li><strong>Output &amp; Behavioral Drift</strong>: Upstream Hugging Face or ModelScope repositories can release updated weights, revised tokenizers, or altered chat templates. These changes can alter model responses, reasoning characteristics, and prompt compatibility.</li>
+<li><strong>High Bandwidth &amp; Disk Consumption</strong>: Model updates involve downloading multi-gigabyte file revisions (e.g. GGUF quantizations). Unattended updates can unexpectedly consume substantial network bandwidth and disk space.</li>
+<li><strong>Startup &amp; Inference Delays</strong>: Automatic update downloads trigger on server startup when upstream revisions are detected, delaying server readiness and inference availability.</li>
+<li><strong>Quantization &amp; Recipe Shifts</strong>: Remote repository changes may alter file naming or tensor layouts, requiring updated recipe configurations.</li>
+</ol>
+<p><strong>Recommendation</strong>: Leave <code>auto_update_models</code> set to <code>false</code> (default) in production environments. Use manual sync (<code>lemonade update-models --check</code> followed by <code>lemonade update-models</code>) to inspect and control model updates.</p>
+</blockquote>
 <h2 id="remote-server-connection">Remote Server Connection</h2>
 <p>To make Lemonade Server accessible from other machines on your network, set the host to <code>0.0.0.0</code>:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>config<span class="w"> </span><span class="nb">set</span><span class="w"> </span><span class="nv">host</span><span class="o">=</span><span class="m">0</span>.0.0.0

@@ -1636,6 +1636,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#post-internalsimulate-vram-pressure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>POST /internal/simulate-vram-pressure</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2603,6 +2614,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -3294,6 +3333,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#post-internalsimulate-vram-pressure" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>POST /internal/simulate-vram-pressure</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3974,7 +4024,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <p>The <code>lemonade</code> client communicates with <code>lemond</code> server via HTTP:
 - <strong>Model operations:</strong> <code>/api/v1/models</code>, <code>/api/v1/pull</code>, <code>/api/v1/delete</code>
 - <strong>Model control:</strong> <code>/api/v1/load</code>, <code>/api/v1/unload</code>
-- <strong>Server management:</strong> <code>/api/v1/health</code>, <code>/internal/shutdown</code>, <code>/internal/set</code>, <code>/internal/config</code>, <code>/internal/cleanup-cache</code>, <code>/internal/pin</code>
+- <strong>Server management:</strong> <code>/api/v1/health</code>, <code>/internal/shutdown</code>, <code>/internal/set</code>, <code>/internal/config</code>, <code>/internal/cleanup-cache</code>, <code>/internal/pin</code>, <code>/internal/models/sync</code>, <code>/internal/models/sync/status</code>
 - <strong>Inference:</strong> <code>/api/v1/chat/completions</code>, <code>/api/v1/completions</code>, <code>/api/v1/audio/transcriptions</code></p>
 <p>The client automatically:
 - Discovers the running server's port
@@ -4037,6 +4087,21 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <td><code>/internal/pin</code></td>
 <td>Pin or unpin a loaded model</td>
 </tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/internal/models/sync</code></td>
+<td>Sync/update downloaded models to the latest version (async or dry-run)</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/internal/models/sync/status</code></td>
+<td>Retrieve status/progress of background model synchronization</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/internal/simulate-vram-pressure</code></td>
+<td>Test/admin hook: synchronously simulate a VRAM-pressure callback</td>
+</tr>
 </tbody>
 </table>
 <h4 id="post-internalset"><code>POST /internal/set</code></h4>
@@ -4070,6 +4135,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <td><code>global_timeout</code></td>
 <td>int (positive)</td>
 <td>Updates default HTTP client timeout</td>
+</tr>
+<tr>
+<td><code>download_rate_limit</code></td>
+<td>string (<code>0</code>/<code>""</code> = unlimited)</td>
+<td>Sets the active download-rate cap (curl-style byte rate)</td>
 </tr>
 <tr>
 <td><code>broadcast</code></td>
@@ -4157,6 +4227,42 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 <p><strong>Example:</strong>
 <div class="highlight"><pre><span></span><code>curl<span class="w"> </span>http://localhost:13305/internal/config/defaults
 </code></pre></div></p>
+<h4 id="post-internalsimulate-vram-pressure"><code>POST /internal/simulate-vram-pressure</code></h4>
+<p>Test/admin hook for the <a href="../../guide/configuration/multi-model/">dynamic VRAM management</a> path. Fires the VRAM pressure callback the eviction engine registers, synchronously and on the calling thread, without waiting for — or depending on — a real VRAM reading. The response returns only after the callback and any resulting eviction-engine evaluation have finished. When <code>pct</code> triggers an evaluation, a test can therefore assert on the outcome immediately instead of polling.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pct</code></td>
+<td>number</td>
+<td>No</td>
+<td>Simulated VRAM utilization. Pressure simulations normally use a fraction in <code>[0, 1]</code>; numeric values are not range-validated. Defaults to <code>0.0</code>. Exactly <code>-1</code> requests an idle-only evaluation instead.</td>
+</tr>
+</tbody>
+</table>
+<p>Behavior by <code>pct</code>:</p>
+<ul>
+<li><strong><code>pct &gt;= auto_evict_threshold_pct</code></strong> — runs one evaluation with pressure eviction enabled. The first eligible model encountered in loaded-model order that is already past its <code>evict_idle_timeout</code> is selected immediately; if none has reached that timeout, the highest-scoring eligible pressure candidate is selected.</li>
+<li><strong><code>0 &lt;= pct &lt; auto_evict_threshold_pct</code></strong> — the callback returns without running an eviction-engine evaluation, so this does not force an idle-timeout sweep.</li>
+<li><strong><code>pct == -1</code></strong> — runs one idle-only evaluation, the same sweep used by the engine's background timer. Models past <code>evict_idle_timeout</code> can be evicted, while ready models past <code>downsize_idle_timeout</code> can be downsized.</li>
+<li><strong>Other negative numeric values</strong> — are accepted by the HTTP handler but do not trigger an evaluation.</li>
+</ul>
+<p>Eligibility starts with the global <code>auto_evict</code> setting and is overridden by a model's boolean <code>auto_evict</code> option when present. A per-model <code>false</code> therefore excludes that model even when the global setting is on; a per-model <code>true</code> can opt that model in even when the global setting is off.</p>
+<p>For pressure selection, the eviction score is <code>idle_time_ms / (load_duration_ms * evict_weight_factor)</code>. Higher scores are more disposable: longer-idle and faster-loading models rank higher, while a larger <code>evict_weight_factor</code> protects a model. If the recorded load duration is not positive, the engine uses <code>1000 ms</code>; a non-positive weight factor is treated as <code>1.0</code>.</p>
+<p>Pinned models are never auto-evicted or downsized, and models currently in use are not selected for eviction. If an exclusive job session is active when an evaluation begins, the evaluation is skipped and the hook does not reschedule it. The endpoint still returns <code>200</code>, so a successful response means the callback completed, not necessarily that an evaluation ran.</p>
+<p><strong>Example:</strong>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-X<span class="w"> </span>POST<span class="w"> </span>http://localhost:13305/internal/simulate-vram-pressure<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-H<span class="w"> </span><span class="s2">"Content-Type: application/json"</span><span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-d<span class="w"> </span><span class="s1">'{"pct": 0.95}'</span>
+</code></pre></div></p>
+<p>Returns <code>{"status": "ok"}</code> after the callback completes for a valid JSON object when <code>pct</code> is absent or numeric, including when no evaluation ran or nothing was evicted. Returns <code>400</code> with an <code>error</code> field if the body is invalid JSON, is not a JSON object, or contains a non-numeric <code>pct</code>.</p>
 <h3 id="dependencies">Dependencies</h3>
 <p>All dependencies are automatically fetched by CMake via FetchContent:</p>
 <ul>
@@ -4177,7 +4283,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 ./lemond<span class="w"> </span>--port<span class="w"> </span><span class="m">8080</span>
 
 <span class="c1"># Available options:</span>
-<span class="c1">#   [cache_dir]              Path to lemonade cache directory (optional)</span>
+<span class="c1">#   [cache_dir]              Path to lemonade cache/data directory (optional)</span>
+<span class="c1">#   [config_dir]             Path to lemonade config directory (optional)</span>
 <span class="c1">#   --port PORT              Port number (default: 13305)</span>
 <span class="c1">#   --host HOST              Bind address (default: localhost)</span>
 <span class="c1">#   --version, -v            Show version</span>

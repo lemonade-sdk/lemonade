@@ -1337,6 +1337,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ds4-dwarfstar4-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>ds4</code> — DwarfStar4 (experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#flm-fastflowlm-npu" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1403,10 +1414,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-thenoise-rocm-experimental" class="md-nav__link">
+  <a href="#thenoise-thenoise-rocm" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>thenoise</code> — TheNoise ROCm (experimental)
+        <code>thenoise</code> — TheNoise ROCm
       </span>
     </span>
   </a>
@@ -1479,6 +1490,28 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         ACE-Step (<code>acestep</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#openmoss-openmoss" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        OpenMOSS (<code>openmoss</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-downloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model downloads
       </span>
     </span>
   </a>
@@ -2241,6 +2274,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2577,6 +2638,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#ds4-dwarfstar4-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>ds4</code> — DwarfStar4 (experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#flm-fastflowlm-npu" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2643,10 +2715,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-thenoise-rocm-experimental" class="md-nav__link">
+  <a href="#thenoise-thenoise-rocm" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code>thenoise</code> — TheNoise ROCm (experimental)
+        <code>thenoise</code> — TheNoise ROCm
       </span>
     </span>
   </a>
@@ -2726,6 +2798,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#openmoss-openmoss" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        OpenMOSS (<code>openmoss</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-downloads" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Model downloads
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#backend-auto-selection" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2785,6 +2879,13 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>cuda, rocm, vulkan</td>
 </tr>
 <tr>
+<td><code>ds4</code></td>
+<td>DwarfStar4 (experimental)</td>
+<td>no</td>
+<td>yes</td>
+<td>rocm</td>
+</tr>
+<tr>
 <td><code>flm</code></td>
 <td>FastFlowLM NPU</td>
 <td>no</td>
@@ -2842,7 +2943,7 @@ the generator instead. Prose outside the markers is preserved. -->
 </tr>
 <tr>
 <td><code>thenoise</code></td>
-<td>TheNoise ROCm (experimental)</td>
+<td>TheNoise ROCm</td>
 <td>yes</td>
 <td>no</td>
 <td>rocm</td>
@@ -2908,6 +3009,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>rocm</td>
 <td>linux, windows</td>
 <td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
+</tr>
+<tr>
+<td><code>ds4</code></td>
+<td>rocm</td>
+<td>linux</td>
+<td>amd_gpu (gfx1151)</td>
 </tr>
 <tr>
 <td><code>flm</code></td>
@@ -3166,6 +3273,34 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
+<h4 id="ds4-dwarfstar4-experimental"><code>ds4</code> — DwarfStar4 (experimental)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>CLI flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ctx_size</code></td>
+<td><code>--ctx-size</code></td>
+<td>SIZE</td>
+<td>-1</td>
+<td>Context size for the model</td>
+</tr>
+<tr>
+<td><code>ds4_args</code></td>
+<td><code>--ds4-args</code></td>
+<td>ARGS</td>
+<td>""</td>
+<td>Custom arguments to pass to ds4-server</td>
+</tr>
+</tbody>
+</table>
 <h4 id="flm-fastflowlm-npu"><code>flm</code> — FastFlowLM NPU</h4>
 <table>
 <thead>
@@ -3369,7 +3504,7 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 </tr>
 </tbody>
 </table>
-<h4 id="thenoise-thenoise-rocm-experimental"><code>thenoise</code> — TheNoise ROCm (experimental)</h4>
+<h4 id="thenoise-thenoise-rocm"><code>thenoise</code> — TheNoise ROCm</h4>
 <table>
 <thead>
 <tr>
@@ -3581,6 +3716,17 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <p><code>[Instrumental]</code> — any case, surrounding whitespace ignored — is ACE-Step's sentinel for the no-vocals path, matching the Python reference implementation. Instrumental requests send the sentinel explicitly rather than an empty string because the synth stage also feeds the lyrics text into its conditioning.</p>
 <p>Errors from <code>audio_generations</code> are written into the response sink as a JSON error payload; the endpoint handler turns that into an HTTP error instead of shipping it as audio.</p>
 <p>The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (<code>acestep-5Hz-lm-4B-Q8_0.gguf</code>, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to <code>--models</code> is the directory of GGUFs; <code>ace-server</code> scans it by architecture, and <code>--keep-loaded</code> keeps models resident across requests.</p>
+<h3 id="openmoss-openmoss">OpenMOSS (<code>openmoss</code>)</h3>
+<p><code>moss-tts-server</code> hosts exactly one <code>--model</code> per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. <code>OpenMossServer</code> runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, <code>server_models.json</code> keeps <code>size</code> as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.</p>
+<p>The legacy <code>MOSS-VoiceGen</code> registry entry remains as a compatibility model for existing clients; integrated voice design on <code>OpenMOSS-TTS</code> and <code>MOSS-TTS-Local</code> does not depend on that standalone entry.</p>
+<p><code>request_mutex_</code> serialises a process-changing voice-design request against normal OpenMOSS inference, <code>load()</code>, and <code>unload()</code>. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -&gt; VoiceGenerator -&gt; speech swap, <code>process_swap_in_progress_</code> keeps <code>is_backend_alive()</code> true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on <code>request_mutex_</code> until speech is restored. <code>start_speech_process()</code> therefore calls <code>stop_speech_process()</code> rather than <code>unload()</code> on a failed readiness wait, because <code>unload()</code> takes the same exclusive lock.</p>
+<p>The transient design process is polled for readiness through its own <code>/health</code> rather than the shared <code>wait_for_ready()</code>, since it does not own <code>port_</code>; the poll also checks <code>ProcessManager::is_running()</code> each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. <code>spawn()</code> uses <code>find_free_port()</code> instead of <code>choose_port()</code> for the same reason — <code>choose_port()</code> assigns <code>port_</code>, and the caller decides which process <code>port_</code> addresses.</p>
+<p>Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit <code>n_ctx</code>; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.</p>
+<p>Lemonade does not inject <code>max_audio_frames</code> into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.</p>
+<p>Voice design is opt-in through the <code>voice_design_description</code> extension and is never inferred from <code>voice</code>, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending <code>"voice": "default"</code> gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries <code>reference_wav_b64</code>. Request fields are read with a type-checking accessor rather than <code>json::value()</code>, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.</p>
+<p><code>MOSS-SoundEffect</code> uses the same recipe but is an audio-generation model: <code>audio_generations()</code> forwards to the backend's <code>/sfx</code> endpoint, accepting <code>duration</code>/<code>cfg</code> as aliases for <code>seconds</code>/<code>cfg_scale</code>.</p>
+<h3 id="model-downloads">Model downloads</h3>
+<p>A checkpoint file can be reached twice during a registry download: once because the backend's <code>select_checkpoint_files</code> claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS <code>.extras.gguf</code> sidecars are both). The same bytes either way, so <code>download_from_registry</code> collapses duplicates before counting, or the progress total overshoots.</p>
 <h3 id="backend-auto-selection">Backend auto-selection</h3>
 <p>When a recipe's backend is not pinned in <code>config.json</code> (the <code>backend</code> key is absent or <code>"auto"</code>), the default backend reported in <code>system-info</code> — and used by <code>RecipeOptions</code> when resolving <code>*_backend</code> options — is chosen as follows: the first supported backend in <code>RECIPE_DEFS</code> preference order wins, unless a later supported backend is already locally installed (state <code>installed</code>, <code>update_available</code>, or <code>update_required</code>) while the earlier candidates are merely installable. In that case the first installed one wins. This makes explicitly installing a variant (e.g. the Vulkan build of a GPU backend) an effective override: auto-selection uses what is on disk instead of downloading the preference-order winner. An explicit <code>backend</code> value in <code>config.json</code> always takes precedence over both rules. The llamacpp <code>system</code> variant is never auto-selected unless <code>prefer_system</code> is set.</p>
 

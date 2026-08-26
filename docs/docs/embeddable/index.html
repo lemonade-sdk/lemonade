@@ -1981,6 +1981,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../api/llamacpp/" class="md-nav__link">
         
   
@@ -2527,8 +2555,8 @@
 <h2 id="customization-overview">Customization Overview</h2>
 <p>While you can ship Embeddable Lemonade as-is, there many opportunities to customize it before packaging it into your app.</p>
 <h3 id="how-it-works">How it Works</h3>
-<p>Many of the customization options rely of <code>lemond</code>'s <code>config.json</code> file, a persistent store of settings. Learn more about the individual settings in the <a href="../guide/configuration/">configuration guide</a>.</p>
-<p><code>config.json</code> is automatically generated based on the values in <code>resources/defaults.json</code> the first time <code>lemond</code> starts. The positional arg <code>lemond DIR</code> determines where <code>config.json</code> and other runtime files (e.g., backend binaries) will be located.</p>
+<p>Many of the customization options rely on <code>lemond</code>'s <code>config.json</code> file, a persistent store of custom settings and overrides. Learn more about the individual settings in the <a href="../guide/configuration/">configuration guide</a>.</p>
+<p><code>config.json</code> stores your explicit overrides on top of <code>resources/defaults.json</code>. The positional arg <code>lemond DIR</code> determines where <code>config.json</code> and other runtime files (e.g., backend binaries) will be located.</p>
 <p>In the examples in this guide, we start <code>lemond ./</code> to place these files in the same directory as <code>lemond</code> itself. Then:</p>
 <ol>
 <li>We use the <code>lemonade</code> CLI's <code>config set</code> command to programmatically customize the contents of <code>config.json</code> (you can also manually edit <code>config.json</code> if you prefer).</li>

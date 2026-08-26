@@ -1981,6 +1981,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2701,7 +2729,7 @@
 </div>
 </div>
 <h4 id="get-internalconfigdefaults"><code>GET /internal/config/defaults</code></h4>
-<p>Returns the canonical default configuration — the values a brand-new <code>config.json</code> is seeded with, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what <code>docs/tools/gen_backend_boilerplate.py</code> reads to regenerate <code>src/cpp/resources/defaults.json</code>.</p>
+<p>Returns the canonical default configuration baked into the release, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what <code>docs/tools/gen_backend_boilerplate.py</code> reads to regenerate <code>src/cpp/resources/defaults.json</code>.</p>
 <p><strong>Example:</strong></p>
 <div class="tabbed-set tabbed-alternate" data-tabs="5:2"><input checked="checked" id="__tabbed_5_1" name="__tabbed_5" type="radio" /><input id="__tabbed_5_2" name="__tabbed_5" type="radio" /><div class="tabbed-labels"><label for="__tabbed_5_1">Windows (cmd.exe)</label><label for="__tabbed_5_2">Linux (bash)</label></div>
 <div class="tabbed-content">
@@ -2746,6 +2774,11 @@
 <td><code>global_timeout</code></td>
 <td>int (positive)</td>
 <td>Updates default HTTP client timeout</td>
+</tr>
+<tr>
+<td><code>download_rate_limit</code></td>
+<td>string (<code>0</code>/<code>""</code> = unlimited)</td>
+<td>Sets the active download-rate cap (curl-style byte rate)</td>
 </tr>
 <tr>
 <td><code>broadcast</code></td>

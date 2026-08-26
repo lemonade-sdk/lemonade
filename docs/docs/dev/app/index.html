@@ -2158,6 +2158,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -2610,7 +2638,7 @@
 <p>The Tauri desktop app is a <strong>thin client</strong> for a separately-running <code>lemond</code> server. A single <code>lemond</code> can be driven by multiple clients at once, including clients running on other machines.</p>
 <p>Consequences that callers of this code need to know about:</p>
 <ul>
-<li><strong>Per-client local state.</strong> All user-tunable state (inference params, layout sizes, zoom, base URL, API key) lives in <code>~/.cache/lemonade/app_settings.json</code> on the client, owned by the Rust host (<code>src-tauri/src/settings.rs</code>). It is <strong>never</strong> stored or proxied through <code>lemond</code>, because two clients against the same server must be able to hold different preferences.</li>
+<li><strong>Per-client local state.</strong> All user-tunable state (inference params, layout sizes, zoom, base URL, API key) lives in <code>~/.config/lemonade/app_settings.json</code> on the client, owned by the Rust host (<code>src-tauri/src/settings.rs</code>). It is <strong>never</strong> stored or proxied through <code>lemond</code>, because two clients against the same server must be able to hold different preferences.</li>
 <li><strong>The desktop app does not manage <code>lemond</code>'s lifecycle.</strong> The server is started independently — on Windows by <code>LemonadeServer.exe</code> (auto-started via the startup folder, tray icon always visible), on Linux/macOS by the user or a service. The Tauri app is opened on demand and must not add itself to autostart, spawn <code>lemond</code> as a subprocess, or assume <code>lemond</code> is on the same machine.</li>
 <li><strong>Discovery is best-effort local + explicit remote.</strong> <code>beacon.rs</code> listens for a UDP broadcast emitted by a local <code>lemond</code> to auto-populate the base URL. For remote-server use, the user sets <code>baseURL</code> + <code>apiKey</code> in settings and the client talks to that endpoint directly.</li>
 </ul>

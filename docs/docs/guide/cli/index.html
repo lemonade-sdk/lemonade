@@ -907,10 +907,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-rocm-experimental-thenoise-recipe" class="md-nav__link">
+  <a href="#thenoise-rocm-thenoise-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        TheNoise ROCm (experimental) (<code>thenoise</code> recipe)
+        TheNoise ROCm (<code>thenoise</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dwarfstar4-experimental-ds4-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DwarfStar4 (experimental) (<code>ds4</code> recipe)
       </span>
     </span>
   </a>
@@ -1016,6 +1027,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#options-for-update-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Options for update-models
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#options-for-backends" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1031,6 +1053,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Options for launch
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Options for status
       </span>
     </span>
   </a>
@@ -2684,6 +2717,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../api/mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../api/llamacpp/" class="md-nav__link">
         
   
@@ -3231,10 +3292,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#thenoise-rocm-experimental-thenoise-recipe" class="md-nav__link">
+  <a href="#thenoise-rocm-thenoise-recipe" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        TheNoise ROCm (experimental) (<code>thenoise</code> recipe)
+        TheNoise ROCm (<code>thenoise</code> recipe)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dwarfstar4-experimental-ds4-recipe" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        DwarfStar4 (experimental) (<code>ds4</code> recipe)
       </span>
     </span>
   </a>
@@ -3340,6 +3412,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#options-for-update-models" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Options for update-models
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#options-for-backends" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3355,6 +3438,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Options for launch
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#options-for-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Options for status
       </span>
     </span>
   </a>
@@ -3776,6 +3870,10 @@
 <tr>
 <td><code>unpin MODEL_NAME</code></td>
 <td>Unpin a loaded model to allow auto-eviction. See options <a href="#options-for-pin-and-unpin">below</a>.</td>
+</tr>
+<tr>
+<td><code>update-models [MODEL_NAME ...]</code></td>
+<td>Sync/update downloaded models to the latest version. Use <code>--check</code> to preview updates without downloading.</td>
 </tr>
 <tr>
 <td><code>export MODEL_NAME</code></td>
@@ -4393,7 +4491,7 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 </tr>
 </tbody>
 </table>
-<h4 id="thenoise-rocm-experimental-thenoise-recipe">TheNoise ROCm (experimental) (<code>thenoise</code> recipe)</h4>
+<h4 id="thenoise-rocm-thenoise-recipe">TheNoise ROCm (<code>thenoise</code> recipe)</h4>
 <table>
 <thead>
 <tr>
@@ -4407,6 +4505,28 @@ lemonade<span class="w"> </span>import<span class="w"> </span>model-with-id-alia
 <td><code>--thenoise BACKEND</code></td>
 <td>TheNoise backend to use</td>
 <td>Auto-detected</td>
+</tr>
+</tbody>
+</table>
+<h4 id="dwarfstar4-experimental-ds4-recipe">DwarfStar4 (experimental) (<code>ds4</code> recipe)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--ctx-size SIZE</code></td>
+<td>Context size for the model</td>
+<td>auto</td>
+</tr>
+<tr>
+<td><code>--ds4-args ARGS</code></td>
+<td>Custom arguments to pass to ds4-server</td>
+<td><code>""</code></td>
 </tr>
 </tbody>
 </table>
@@ -4584,6 +4704,58 @@ lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> <
 <span class="c1"># Export and view the JSON output</span>
 lemonade<span class="w"> </span><span class="nb">export</span><span class="w"> </span>Qwen3-0.6B-GGUF<span class="w"> </span>--output<span class="w"> </span>model.json<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cat<span class="w"> </span>model.json
 </code></pre></div>
+<h2 id="options-for-update-models">Options for update-models</h2>
+<p>The <code>update-models</code> command checks and updates downloaded models against upstream repositories. By default, model synchronization runs in the background.</p>
+<blockquote>
+<p>[!NOTE]
+Because model synchronization operates as an administrative control routing, executing <code>lemonade update-models</code> requires appropriate credentials when server-side API authentication is enabled. The client will automatically propagate the <code>LEMONADE_ADMIN_API_KEY</code> (or the standard <code>LEMONADE_API_KEY</code> if no distinct administrative key is configured) as a bearer token.</p>
+</blockquote>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>update-models<span class="w"> </span><span class="o">[</span>MODEL_NAME<span class="w"> </span>...<span class="o">]</span><span class="w"> </span><span class="o">[</span>-w<span class="p">|</span>--wait<span class="o">]</span><span class="w"> </span><span class="o">[</span>--check<span class="o">]</span><span class="w"> </span><span class="o">[</span>--json<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MODEL_NAME ...</code></td>
+<td>Optional model name(s), recipe names (<code>user.*</code>), or HF checkpoints to update</td>
+<td>Update all downloaded models</td>
+</tr>
+<tr>
+<td><code>-w, --wait</code></td>
+<td>Wait for server model synchronization task to complete</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>--check</code></td>
+<td>Dry-run mode: check for available updates without downloading</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>--json</code></td>
+<td>Output update results in JSON format</td>
+<td><code>false</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Examples:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Dispatch model update in the background (default)</span>
+lemonade<span class="w"> </span>update-models
+
+<span class="c1"># Check for available model updates without downloading (dry run)</span>
+lemonade<span class="w"> </span>update-models<span class="w"> </span>--check
+
+<span class="c1"># Update models and wait for completion</span>
+lemonade<span class="w"> </span>update-models<span class="w"> </span>--wait
+
+<span class="c1"># Wait for a specific model update to complete</span>
+lemonade<span class="w"> </span>update-models<span class="w"> </span>Gemma-4-E4B-it<span class="w"> </span>-w
+</code></pre></div>
 <h2 id="options-for-backends">Options for backends</h2>
 <p>The <code>backends</code> command lists supported recipes and their backends. Use <code>--all</code> to list all available backends or use the <code>install</code> and <code>uninstall</code> subcommands to manage them:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>backends
@@ -4735,6 +4907,43 @@ lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class=
 <span class="c1"># Launch and allow optional prompt-driven recipe import using prefilled remote recipe flags</span>
 lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class="w"> </span>--directory<span class="w"> </span>coding-agents<span class="w"> </span>--recipe-file<span class="w"> </span>Qwen3.5-35B-A3B-NoThinking.json
 </code></pre></div>
+<h2 id="options-for-status">Options for status</h2>
+<p>The <code>status</code> command reports whether the server can be reached and, if it can, what it currently has loaded:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>status<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--json</code></td>
+<td>Emit machine-readable JSON instead of a table</td>
+<td>off</td>
+</tr>
+</tbody>
+</table>
+<p>With <code>--json</code>, a single JSON object is written to stdout and nothing else. It carries <code>port</code>, <code>version</code>, <code>websocket_port</code>, and a <code>models</code> array that is present even when no model is loaded. Each entry reports <code>model_name</code>, <code>checkpoint</code>, <code>type</code>, <code>device</code>, <code>recipe</code>, <code>status</code>, <code>pinned</code>, <code>pid</code>, <code>backend_url</code>, and a <code>recipe_options</code> object holding the values the model was actually loaded with, so a <code>ctx_size</code> of <code>auto</code> appears here as a number. These field names do not change, but the keys inside <code>recipe_options</code> differ from one recipe to the next, so check that a key is present before reading it. If the server cannot be reached, stdout stays empty, the error goes to stderr, and the command exits with <code>1</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"port"</span><span class="p">:</span><span class="w"> </span><span class="mi">13306</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11.7.0"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"websocket_port"</span><span class="p">:</span><span class="w"> </span><span class="mi">9000</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"models"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"model_name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Qwen3.5-0.8B-GGUF"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"checkpoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M.gguf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llm"</span><span class="p">,</span><span class="w"> </span><span class="nt">"device"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gpu"</span><span class="p">,</span><span class="w"> </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"recipe_options"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">"ctx_size"</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span><span class="w"> </span><span class="nt">"llamacpp_backend"</span><span class="p">:</span><span class="w"> </span><span class="s2">"vulkan"</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ready"</span><span class="p">,</span><span class="w"> </span><span class="nt">"pinned"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="nt">"pid"</span><span class="p">:</span><span class="w"> </span><span class="mi">30932</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"backend_url"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://127.0.0.1:8001/v1"</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
 <h2 id="options-for-cloud">Options for cloud</h2>
 <p>The <code>cloud</code> command manages OpenAI-compatible cloud providers (Fireworks, OpenAI, OpenRouter, Together, etc.). Provider URLs persist in <code>lemond</code>'s <code>config.json</code>; API keys live in env vars (preferred) or <code>lemond</code>'s process memory and are never written to disk. See the <a href=".././configuration/cloud/">Cloud Offload guide</a> for the full workflow.</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span><span class="o">[</span>install<span class="p">|</span>uninstall<span class="p">|</span>auth<span class="p">|</span>clear<span class="p">|</span>list<span class="o">]</span>
@@ -4767,10 +4976,35 @@ lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class=
 <td>No</td>
 <td>Optional. Stored in <code>lemond</code> process memory only.</td>
 </tr>
+<tr>
+<td><code>--allow-insecure-http</code></td>
+<td>No</td>
+<td>Explicitly permit sending this provider's API key over <code>http://</code>.</td>
+</tr>
+<tr>
+<td><code>--auth-header-name HEADER</code></td>
+<td>No</td>
+<td>Header carrying the API key. Default <code>Authorization</code>.</td>
+</tr>
+<tr>
+<td><code>--auth-header-prefix PREFIX</code></td>
+<td>No</td>
+<td>Value prefix before the key. Default <code>Bearer</code>; pass <code>""</code> for none.</td>
+</tr>
+<tr>
+<td><code>--wire-format FORMAT</code></td>
+<td>No</td>
+<td><code>openai</code> (default) or <code>anthropic</code>. <code>anthropic</code> providers are reachable via <code>POST /v1/messages</code> only.</td>
+</tr>
 </tbody>
 </table>
+<p>Omitted options keep the provider's current setting, so re-running <code>cloud install</code> to change only the base URL won't reset a custom auth header.</p>
 <p>Example:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>fireworks<span class="w"> </span>--base-url<span class="w"> </span>https://api.fireworks.ai/inference/v1
+</code></pre></div>
+<p>Some gateways front an OpenAI-shaped API but expect the key in a differently-named header with no prefix:</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>install<span class="w"> </span>acme<span class="w"> </span>--base-url<span class="w"> </span>https://gateway.example.com/v1<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--auth-header-name<span class="w"> </span>X-Api-Key<span class="w"> </span>--auth-header-prefix<span class="w"> </span><span class="s2">""</span>
 </code></pre></div>
 <h3 id="cloud-uninstall"><code>cloud uninstall</code></h3>
 <p>Remove a provider record and drop its discovered models from the catalog. The provider's env-var-based key (if any) is unaffected — only the persisted URL and any in-memory runtime key are cleared.</p>
@@ -4807,9 +5041,26 @@ lemonade<span class="w"> </span>launch<span class="w"> </span>claude<span class=
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>clear<span class="w"> </span>PROVIDER
 </code></pre></div>
 <h3 id="cloud-list"><code>cloud list</code></h3>
-<p>Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (<code>env_var_set</code>, <code>runtime_key_set</code>), and the number of models discovered.</p>
-<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>list
+<p>Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (<code>env_var_set</code>, <code>runtime_key_set</code>), and the number of models discovered. A non-default auth header or wire format is printed on its own line.</p>
+<div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>cloud<span class="w"> </span>list<span class="w"> </span><span class="o">[</span>--json<span class="o">]</span>
 </code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Description</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--json</code></td>
+<td>Emit the provider list as a JSON array instead of human-readable text</td>
+<td>Human-readable text</td>
+</tr>
+</tbody>
+</table>
+<p>With <code>--json</code>, stdout is a JSON array of provider objects (the same <code>cloud.providers</code> payload from <code>/v1/system-info</code>). An empty installation emits <code>[]</code>. Fields include <code>name</code>, <code>base_url</code>, <code>allow_insecure_http</code>, <code>env_var</code>, <code>env_var_set</code>, <code>runtime_key_set</code>, and <code>models_discovered</code>. API keys are never included.</p>
 <h2 id="options-for-scan">Options for scan</h2>
 <p>The <code>scan</code> command scans for network beacons on the local network. Beacons are UDP broadcasts sent by Lemonade Server instances to announce their presence. This command listens for these beacons and displays any discovered servers:</p>
 <div class="highlight"><pre><span></span><code>lemonade<span class="w"> </span>scan<span class="w"> </span><span class="o">[</span>options<span class="o">]</span>

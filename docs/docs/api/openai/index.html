@@ -2836,6 +2836,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../mcp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Gateway
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../llamacpp/" class="md-nav__link">
         
   
@@ -4649,7 +4677,7 @@
 <tr>
 <td><code>language</code></td>
 <td>No</td>
-<td>The language of the audio (ISO 639-1 code, e.g., <code>en</code>, <code>es</code>, <code>fr</code>). If not specified, Whisper will auto-detect the language.</td>
+<td>The language of the audio (ISO 639-1 code, e.g., <code>en</code>, <code>es</code>, <code>fr</code>). Defaults to <code>auto</code>, which tells whisper.cpp to detect the source language instead of using whisper-server's English default.</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -5348,8 +5376,8 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
 <p>Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.</p>
 <blockquote>
-<p><strong>Note:</strong> Supported models are <code>kokoro-v1</code> (fixed voices, <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> backend) and the OpenMOSS family — <code>OpenMOSS-TTS</code> (voice cloning from a reference WAV) and <code>MOSS-VoiceGen</code> (voice design from a text description).</p>
-<p><strong>Limitations:</strong> Which <code>response_format</code> values are accepted depends on the model's backend: <code>kokoro-v1</code> encodes <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code>, while OpenMOSS models natively produce <code>wav</code> only. A format the backend cannot encode is rejected with <code>400 Bad Request</code> listing the ones it does support. Streaming works for any TTS backend, but a backend's streamable set can be narrower than its buffered set — <code>kokoro-v1</code> streams <code>pcm</code> only, so an explicit <code>response_format</code> of <code>mp3</code> alongside <code>stream_format</code> is rejected rather than silently answered with PCM.</p>
+<p><strong>Note:</strong> Supported models are <code>kokoro-v1</code> (fixed voices, <a href="https://github.com/lucasjinreal/Kokoros">Kokoros</a> backend) and the OpenMOSS family — <code>OpenMOSS-TTS</code> and <code>MOSS-TTS-Local</code> support cloning and integrated voice design. <code>MOSS-VoiceGen</code> remains available as a legacy compatibility model while existing GUI/settings paths migrate to the integrated design flow.</p>
+<p><strong>Limitations:</strong> Which <code>response_format</code> values are accepted depends on the model's backend: <code>kokoro-v1</code> encodes <code>mp3</code>, <code>wav</code>, <code>opus</code>, and <code>pcm</code>; OpenMOSS v0.3 encodes buffered <code>wav</code> or <code>pcm</code>. Native streaming is narrower for both backends and uses <code>pcm</code> only, so an explicit non-PCM <code>response_format</code> on a streaming request is rejected rather than mislabeled or silently transcoded. OpenMOSS raw PCM is returned as <code>audio/pcm</code> with <code>X-MOSS-Sample-Rate</code> and <code>X-MOSS-Channels</code>, because its native format is model-dependent (24 kHz mono for OpenMOSS-TTS and 48 kHz stereo for MOSS-TTS-Local).</p>
 </blockquote>
 <h3 id="parameters_9">Parameters</h3>
 <table>
@@ -5399,6 +5427,12 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
+<td><code>voice_design_description</code></td>
+<td>No</td>
+<td>Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. <code>a warm low female voice with a British accent</code>. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying <code>reference_wav_b64</code> yourself. Ignored when <code>reference_wav_b64</code> is also present. Design is opt-in through this field only — <code>voice</code> never triggers it.</td>
+<td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
+</tr>
+<tr>
 <td><code>response_format</code></td>
 <td>No</td>
 <td>Container for the returned audio. Which values are accepted depends on the model's backend (see Limitations above). Default: <code>mp3</code> when buffered and <code>pcm</code> when streaming, falling back to the backend's first supported format when it cannot encode that default.</td>
@@ -5433,7 +5467,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <p>The generated audio file is returned as-is.</p>
 <h2 id="get-v1models"><code>GET /v1/models</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like <code>checkpoint</code>, <code>recipe</code>, <code>size</code>, <code>downloaded</code>, <code>labels</code>, and, when known, <code>max_context_window</code>.</p>
+<p>Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like <code>checkpoint</code>, <code>recipe</code>, <code>size</code>, <code>downloaded</code>, <code>labels</code>, <code>context_length</code>, and, when known, <code>max_context_window</code>.</p>
 <p>By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.</p>
 <p>When <code>lemond</code> is configured with cloud providers, cloud-routed models appear here alongside local ones with <code>recipe: "cloud"</code> and a <code>cloud_provider</code> field. They are dot-namespaced by provider (e.g. <code>fireworks.kimi-k2p5</code>) and accept the standard chat-completions / completions requests below — see <a href="../../guide/configuration/cloud/">Cloud Offload</a>.</p>
 <h3 id="parameters_10">Parameters</h3>
@@ -5473,6 +5507,7 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 <span class="w">      </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"max_context_window"</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"context_length"</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"downloaded"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">      </span><span class="nt">"update_available"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
@@ -5523,6 +5558,7 @@ curl<span class="w"> </span>http://localhost:13305/v1/models?show_all<span class
 <li><code>recipe</code> - Backend/device recipe used to load the model (e.g., <code>"ryzenai-llm"</code>, <code>"llamacpp"</code>, <code>"flm"</code>)</li>
 <li><code>size</code> - Model size in GB (omitted for models without size information)</li>
 <li><code>max_context_window</code> - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.</li>
+<li><code>context_length</code> - Number of tokens the model can handle in one request. Uses the loaded value when the model is running and the configured <code>ctx_size</code> otherwise (omitted when neither is known).</li>
 <li><code>downloaded</code> - Boolean indicating if the model is downloaded and available locally</li>
 <li><code>update_available</code> - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. <code>false</code> otherwise.</li>
 <li><code>suggested</code> - Boolean indicating if the model is recommended for general use</li>
@@ -5751,6 +5787,7 @@ can be corrected by hand.</p>
 <span class="w">  </span><span class="nt">"recipe"</span><span class="p">:</span><span class="w"> </span><span class="s2">"llamacpp"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"size"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.38</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"max_context_window"</span><span class="p">:</span><span class="w"> </span><span class="mi">40960</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"context_length"</span><span class="p">:</span><span class="w"> </span><span class="mi">8192</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"downloaded"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"suggested"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"labels"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">"reasoning"</span><span class="p">],</span>
