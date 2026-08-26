@@ -69,6 +69,7 @@ class WhisperTests(ServerTestBase):
 
     # Class-level cache for the test audio file
     _test_audio_path = None
+    _german_audio_path = os.path.join(os.path.dirname(__file__), "test_speech_de.wav")
 
     @classmethod
     def setUpClass(cls):
@@ -205,6 +206,58 @@ class WhisperTests(ServerTestBase):
         self.assertGreater(len(result["text"]), 0, "Transcription should not be empty")
 
         print(f"[OK] Transcription with language=en: {result['text']}")
+
+    def test_002a_omitted_language_auto_detects(self):
+        """Test omitted language preserves a non-English transcription."""
+        wrapped_server = get_config().get("wrapped_server")
+        if wrapped_server not in (None, "whispercpp"):
+            self.skipTest("Language forwarding is specific to whispercpp")
+
+        self.assertTrue(
+            os.path.exists(self._german_audio_path),
+            f"German test audio not found at {self._german_audio_path}",
+        )
+        model = self._load_whisper_model_or_fail()
+
+        def transcribe(language=None):
+            data = {"model": model, "response_format": "verbose_json"}
+            if language is not None:
+                data["language"] = language
+
+            with open(self._german_audio_path, "rb") as audio_file:
+                response = requests.post(
+                    f"{self.base_url}/audio/transcriptions",
+                    files={"file": ("test_speech_de.wav", audio_file, "audio/wav")},
+                    data=data,
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                f"German transcription failed: {response.text}",
+            )
+            result = response.json()
+            self.assertIn("text", result)
+            return result["text"].strip().casefold()
+
+        omitted_text = transcribe()
+        auto_text = transcribe("auto")
+        english_text = transcribe("en")
+
+        for language, text in (
+            ("omitted", omitted_text),
+            ("auto", auto_text),
+        ):
+            with self.subTest(language=language):
+                self.assertIn("guten morgen", text)
+                self.assertIn("sonne", text)
+                self.assertIn("deutsch", text)
+
+        self.assertEqual(omitted_text, auto_text)
+        self.assertIn("good morning", english_text)
+        self.assertNotEqual(english_text, omitted_text)
+        print(f"[OK] Omitted language auto-detected German: {omitted_text}")
 
     def test_002b_transcription_response_formats(self):
         """Test audio transcription response_format handling."""

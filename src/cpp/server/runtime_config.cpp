@@ -3,6 +3,7 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/rate_limit_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -353,6 +354,19 @@ long RuntimeConfig::global_timeout() const {
 int RuntimeConfig::max_loaded_models() const {
     std::shared_lock lock(mutex_);
     return config_["max_loaded_models"].get<int>();
+}
+
+int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
+    std::shared_lock lock(mutex_);
+    if (!config_.contains("download_rate_limit") || !config_["download_rate_limit"].is_string()) {
+        return 0;
+    }
+    const int64_t parsed = utils::parse_rate_limit_to_bytes(config_["download_rate_limit"].get<std::string>());
+    if (parsed < 0) {
+        LOG(WARNING, "RuntimeConfig") << "Invalid download_rate_limit value in config, treating as unlimited" << std::endl;
+        return 0;
+    }
+    return parsed;
 }
 
 std::string RuntimeConfig::models_dir() const {
@@ -732,6 +746,15 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (source != "huggingface" && source != "modelscope") {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
+        }
+    } else if (key == "download_rate_limit") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'download_rate_limit' must be a byte rate string");
+        }
+        if (utils::parse_rate_limit_to_bytes(value.get<std::string>()) < 0) {
+            throw std::invalid_argument(
+                "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"10M\", etc. "
+                "Use \"\" for unlimited download speed");
         }
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||

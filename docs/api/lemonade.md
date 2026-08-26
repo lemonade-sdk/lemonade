@@ -11,6 +11,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 |--------|----------|-------------|
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `POST` | [`/v1/models/register`](#post-v1modelsregister) | Register or update a user model definition without downloading it |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Evaluate an ad-hoc routing policy against a prompt without registering it |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
 | `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
@@ -112,6 +113,172 @@ The decision is reported on the response:
   attached to the first SSE event.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
+## `POST /v1/routing/validate`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Evaluate a routing policy document against a prompt and return the decision the
+engine would make, without registering the policy or dispatching the user
+request to the selected candidate. This is the endpoint behind the Router
+Builder's **Test Prompt** tab: it lets a policy be iterated on before it is
+attached to a `collection.router` model.
+
+The endpoint performs parser-level structural policy validation: every
+`candidates` entry, `default_model`, rule `route_to`, and classifier model must
+be listed in `components`. It does not consult the live model registry:
+component names are accepted as-is, so a policy can be tested before its
+candidates are downloaded. Because names and component model types are not
+resolved through the registry, registration-time registry checks (for example,
+whether a `semantic_similarity` model can embed or a `classifier` model can
+classify/chat) are not performed by this endpoint.
+
+Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)
+are evaluated locally. Model-backed conditions (`semantic_similarity`,
+`classifier`, and `llm`, including `routing.router`) may load and run their
+referenced models. A model-evaluation failure is handled by the classifier's
+`on_error` policy (`match_false` by default), so routing normally continues to a
+later rule or falls through to `default_model` rather than treating the policy
+as invalid.
+
+The endpoint is available at:
+
+- `/v1/routing/validate`
+- `/api/v1/routing/validate`
+- `/v0/routing/validate`
+- `/api/v0/routing/validate`
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `policy` | object | yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). |
+| `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. |
+| `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
+| `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
+| `metadata` | object | no | String-valued metadata pairs matched by `metadata` conditions. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/api/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{
+           "policy": {
+             "version": "1",
+             "recipe": "collection.router",
+             "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+             "routing": {
+               "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+               "default_model": "Qwen3-8B-GGUF",
+               "rules": [
+                 {
+                   "id": "code-to-big",
+                   "match": {"keywords_any": ["def ", "function", "compile"]},
+                   "route_to": "vllm.qwen3-32b"
+                 }
+               ]
+             }
+           },
+           "prompt": "please write a def to reverse a list"
+         }'
+```
+
+### Response format
+
+```json
+{
+  "decision": {
+    "version": "1",
+    "route_to": "vllm.qwen3-32b",
+    "matched_rule": "code-to-big",
+    "default_used": false,
+    "outputs": {},
+    "trace": [
+      { "condition": "keywords_any", "result": true }
+    ]
+  },
+  "normalized_policy": {
+    "version": "1",
+    "recipe": "collection.router",
+    "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "routing": {
+      "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+      "default_model": "Qwen3-8B-GGUF",
+      "rules": [
+        {
+          "id": "code-to-big",
+          "match": {"keywords_any": ["def ", "function", "compile"]},
+          "route_to": "vllm.qwen3-32b"
+        }
+      ]
+    }
+  }
+}
+```
+
+`decision` has the same shape as the `x_lemonade_route` object a routed
+completion returns with `route_trace: true`, and the trace is always included
+here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
+and `route_to` is the policy's `default_model`.
+
+`normalized_policy` echoes the policy as it was actually evaluated. The policy
+above uses explicit `routing.rules`, so it comes back unchanged. The field earns
+its place when a policy uses the `routing.router` shorthand: that sugar is
+desugared into an explicit `llm` classifier plus one identity rule per
+candidate, so a `routing` block authored as:
+
+```json
+{
+  "router": {
+    "type": "llm",
+    "model": "Qwen3-8B-GGUF",
+    "prompt": "Pick the best model for this request."
+  },
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF"
+}
+```
+
+is echoed back with `router` removed and synthesized `classifiers`/`rules`:
+
+```json
+{
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF",
+  "classifiers": [
+    {
+      "id": "__router",
+      "type": "llm",
+      "model": "Qwen3-8B-GGUF",
+      "prompt": "Pick the best model for this request.",
+      "labels": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "__route_0",
+      "match": {"classifier": "__router", "label": "Qwen3-8B-GGUF", "min_score": 1.0},
+      "route_to": "Qwen3-8B-GGUF"
+    },
+    {
+      "id": "__route_1",
+      "match": {"classifier": "__router", "label": "vllm.qwen3-32b", "min_score": 1.0},
+      "route_to": "vllm.qwen3-32b"
+    }
+  ]
+}
+```
+
+Match `decision.matched_rule` against this document rather than the one you
+sent — a policy authored with only `routing.router` has no `routing.rules` of
+its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400` | Body is not valid JSON, `policy` is missing or not an object, `prompt` is not a string, `has_images`/`has_tools` are not booleans, or `metadata` is not an object of string values. |
+| `400` | The policy document is invalid or internally inconsistent; the `error` field is prefixed with `Invalid routing policy:`. |
 
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -1690,6 +1857,7 @@ curl "http://localhost:13305/v1/system-info"
     - `base_url` - Persisted base URL from `config.json`.
     - `auth_header_name` - Header this provider's API key is sent in (default `Authorization`).
     - `auth_header_prefix` - Value prefix placed before the key (default `Bearer `).
+    - `wire_format` - Request/response shape this provider speaks: `openai` (default) or `anthropic`.
     - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
@@ -1749,6 +1917,7 @@ Registers an OpenAI-compatible chat provider. The base URL is persisted to `conf
 | `allow_insecure_http` | No | Default `false`. Must be `true` to send an API key to an `http://` base URL. |
 | `auth_header_name` | No | Header carrying the API key. Must be a valid HTTP header name. Default `"Authorization"`. |
 | `auth_header_prefix` | No | Value prefix before the key. Default `"Bearer "`; pass `""` for gateways that expect the bare key. |
+| `wire_format` | No | `"openai"` (default) or `"anthropic"`. An `"anthropic"` provider is served from `POST /v1/messages` only; any other value returns 400. |
 
 Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
@@ -1774,6 +1943,7 @@ Response format:
   "base_url": "https://api.fireworks.ai/inference/v1",
   "auth_header_name": "Authorization",
   "auth_header_prefix": "Bearer ",
+  "wire_format": "openai",
   "models_discovered": 12,
   "auth_state": {
     "env_var_set": true,
