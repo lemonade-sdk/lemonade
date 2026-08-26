@@ -648,11 +648,17 @@
   border-radius: var(--radius-pill);
   background: var(--surface-1);
   color: var(--text-secondary);
+}.titlebar--desktop .titlebar__utilities-toggle {
+  background: transparent;
 }.titlebar__utilities-toggle:hover,
 .titlebar__utilities-toggle[aria-expanded="true"] {
   border-color: var(--border-strong);
   background: var(--surface-2);
   color: var(--text-primary);
+}.titlebar--desktop .titlebar__utilities-toggle,
+.titlebar--desktop .titlebar__utilities-toggle:hover,
+.titlebar--desktop .titlebar__utilities-toggle[aria-expanded="true"] {
+  border-color: transparent;
 }.titlebar__utility-label { display: none; }.titlebar__utility-status,
 .titlebar__utility-value { display: none; }.titlebar__theme-toggle {
   display: flex;
