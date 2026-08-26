@@ -15,9 +15,11 @@
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <random>
 #include <regex>
 #include <sstream>
@@ -420,8 +422,9 @@ void VLLMServer::load(const std::string& model_name,
     args.push_back(model_name);
     // Keep eager execution for consumer GPU inference; leave dtype selection to vLLM.
     // Discrete-HBM parts skip it: eager costs decode throughput for no stability gain.
+    const std::string rocm_arch = SystemInfo::get_rocm_arch();
     const DeviceClassLaunchPolicy launch_policy = device_class_launch_policy(
-        SystemInfo::get_rocm_arch(), resolved_vllm_args.has_memory_budget_arg,
+        rocm_arch, resolved_vllm_args.has_memory_budget_arg,
         resolved_vllm_args.has_enforce_eager);
     if (launch_policy.enforce_eager) {
         args.push_back("--enforce-eager");
@@ -472,7 +475,27 @@ void VLLMServer::load(const std::string& model_name,
     // Discrete-HBM GPUs get vLLM's native budgeting instead of a fixed cap.
     if (launch_policy.cap_kv_cache) {
         args.push_back("--kv-cache-memory-bytes");
-        args.push_back("4G");
+        args.push_back(kKvCacheCapArg);
+
+        // The cap above bounds what vLLM uses, but not what it demands be free before it
+        // will start, so a co-tenant process can still reject a model that fits.
+        uint64_t free_bytes = 0;
+        uint64_t total_bytes = 0;
+        if (SystemInfo::get_rocm_device_memory(rocm_arch, free_bytes, total_bytes)) {
+            const double utilization =
+                shared_memory_gpu_utilization(free_bytes, total_bytes);
+            if (utilization > 0.0) {
+                constexpr uint64_t mib = 1024 * 1024;
+                std::ostringstream formatted;
+                formatted << std::fixed << std::setprecision(2) << utilization;
+                LOG(DEBUG, "vLLM") << "Scaling --gpu-memory-utilization to "
+                                   << formatted.str() << "; " << rocm_arch << " has "
+                                   << (free_bytes / mib) << " MiB of "
+                                   << (total_bytes / mib) << " MiB free" << std::endl;
+                args.push_back("--gpu-memory-utilization");
+                args.push_back(formatted.str());
+            }
+        }
     }
 
     // Emitted as its own argv element, never through vllm_args: that tokenizer strips quotes
@@ -501,7 +524,8 @@ void VLLMServer::load(const std::string& model_name,
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars));
+    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
+                       executable, args);
 
     // vLLM can take longer to start (loading model, compiling kernels)
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {

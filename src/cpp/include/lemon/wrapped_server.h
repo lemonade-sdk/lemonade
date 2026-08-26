@@ -91,7 +91,10 @@ public:
           active_request_count_(0),
           maintenance_in_progress_(false),
           load_duration_ms_(0),
-          last_backend_activity_(std::chrono::steady_clock::now()) {}
+          last_backend_activity_(std::chrono::steady_clock::now()),
+          instance_id_(next_instance_id()) {}
+
+    uint64_t get_instance_id() const { return instance_id_; }
 
     virtual ~WrappedServer();
 
@@ -406,7 +409,14 @@ public:
         return ctx_size_auto_;
     }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
+    std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
+
+    struct ProcessInfo {
+        int pid = 0;
+        std::vector<std::string> launch_command;
+    };
+    ProcessInfo get_process_info() const;
 
     // Cheap liveness gate used by the router. On POSIX this relies on
     // ProcessManager::is_running(), which intentionally checks without reaping.
@@ -414,6 +424,9 @@ public:
 
     // True once the backend watchdog force-reset the child process.
     bool was_watchdog_triggered() const { return watchdog_triggered_.load(std::memory_order_acquire); }
+
+    // Request backend reset from watchdog (stops process immediately).
+    void request_backend_reset_from_watchdog(const std::string& reason);
 
     // Human-readable state for /health and debugging endpoints.
     virtual std::string get_backend_health_state() const;
@@ -570,7 +583,15 @@ protected:
 
     static bool has_process_handle(const ProcessHandle& handle);
     ProcessHandle get_process_handle_snapshot() const;
-    void set_process_handle(ProcessHandle handle);
+    void set_process_handle(ProcessHandle handle,
+                            const std::string& executable,
+                            const std::vector<std::string>& args);
+    // Publish the complete externally-observable child-process identity under
+    // one process_mutex_ critical section. Used by backends that choose a
+    // transient port before adopting the child (OpenMOSS process swaps).
+    void set_process_state(ProcessHandle handle, int port,
+                           const std::string& executable,
+                           const std::vector<std::string>& args);
     ProcessHandle consume_process_handle_for_cleanup();
 
     // Choose an available port
@@ -610,6 +631,7 @@ protected:
     std::string server_name_;
     int port_;
     ProcessHandle process_handle_;
+    std::vector<std::string> launch_command_;
     mutable std::mutex process_mutex_;
     Telemetry telemetry_;
     std::string log_level_;
@@ -649,11 +671,16 @@ protected:
     std::atomic<bool>* load_cancel_ = nullptr;
 
 private:
+    static uint64_t next_instance_id() {
+        static std::atomic<uint64_t> counter{0};
+        return ++counter;
+    }
+    uint64_t instance_id_;
+
     void begin_backend_request(BackendRequestKind kind);
     void end_backend_request(BackendRequestKind kind);
     void backend_watchdog_loop();
     bool has_backend_process_exited() const;
-    void request_backend_reset_from_watchdog(const std::string& reason);
 
     mutable std::mutex watchdog_mutex_;
     std::condition_variable watchdog_cv_;

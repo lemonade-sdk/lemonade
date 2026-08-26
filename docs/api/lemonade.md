@@ -11,6 +11,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 |--------|----------|-------------|
 | `POST` | [`/v1/pull`](#post-v1pull) | Install a model |
 | `POST` | [`/v1/models/register`](#post-v1modelsregister) | Register or update a user model definition without downloading it |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Evaluate an ad-hoc routing policy against a prompt without registering it |
 | `GET` | [`/v1/downloads`](#get-v1downloads) | List server-owned model download jobs |
 | `POST` | [`/v1/downloads/control`](#post-v1downloadscontrol) | Pause, cancel, or remove server-owned model download jobs |
 | `GET` | [`/v1/registry/search`](#get-v1registrysearch) | Search Hugging Face or ModelScope for model repositories |
@@ -31,6 +32,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
 | `GET` | [`/v1/system-info`](#get-v1system-info) | System information and device enumeration |
 | `POST` | [`/v1/install`](#post-v1install) | Install or update a backend, or register a cloud provider |
+| `POST` | [`/v1/install/dry-run`](#post-v1installdry-run) | Resolve backend install metadata without downloading the backend asset |
 | `POST` | [`/v1/uninstall`](#post-v1uninstall) | Remove a backend or cloud provider |
 | `POST` | [`/v1/cloud/auth`](#post-v1cloudauth) | Set an in-memory API key for a cloud provider |
 | `DELETE` | [`/v1/cloud/auth/{provider}`](#delete-v1cloudauthprovider) | Clear the in-memory API key for a cloud provider |
@@ -111,6 +113,172 @@ The decision is reported on the response:
   attached to the first SSE event.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
+## `POST /v1/routing/validate`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Evaluate a routing policy document against a prompt and return the decision the
+engine would make, without registering the policy or dispatching the user
+request to the selected candidate. This is the endpoint behind the Router
+Builder's **Test Prompt** tab: it lets a policy be iterated on before it is
+attached to a `collection.router` model.
+
+The endpoint performs parser-level structural policy validation: every
+`candidates` entry, `default_model`, rule `route_to`, and classifier model must
+be listed in `components`. It does not consult the live model registry:
+component names are accepted as-is, so a policy can be tested before its
+candidates are downloaded. Because names and component model types are not
+resolved through the registry, registration-time registry checks (for example,
+whether a `semantic_similarity` model can embed or a `classifier` model can
+classify/chat) are not performed by this endpoint.
+
+Deterministic conditions (`keywords_any`, `regex`, `min_chars`, `metadata`, …)
+are evaluated locally. Model-backed conditions (`semantic_similarity`,
+`classifier`, and `llm`, including `routing.router`) may load and run their
+referenced models. A model-evaluation failure is handled by the classifier's
+`on_error` policy (`match_false` by default), so routing normally continues to a
+later rule or falls through to `default_model` rather than treating the policy
+as invalid.
+
+The endpoint is available at:
+
+- `/v1/routing/validate`
+- `/api/v1/routing/validate`
+- `/v0/routing/validate`
+- `/api/v0/routing/validate`
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `policy` | object | yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). |
+| `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. |
+| `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
+| `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
+| `metadata` | object | no | String-valued metadata pairs matched by `metadata` conditions. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/api/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{
+           "policy": {
+             "version": "1",
+             "recipe": "collection.router",
+             "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+             "routing": {
+               "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+               "default_model": "Qwen3-8B-GGUF",
+               "rules": [
+                 {
+                   "id": "code-to-big",
+                   "match": {"keywords_any": ["def ", "function", "compile"]},
+                   "route_to": "vllm.qwen3-32b"
+                 }
+               ]
+             }
+           },
+           "prompt": "please write a def to reverse a list"
+         }'
+```
+
+### Response format
+
+```json
+{
+  "decision": {
+    "version": "1",
+    "route_to": "vllm.qwen3-32b",
+    "matched_rule": "code-to-big",
+    "default_used": false,
+    "outputs": {},
+    "trace": [
+      { "condition": "keywords_any", "result": true }
+    ]
+  },
+  "normalized_policy": {
+    "version": "1",
+    "recipe": "collection.router",
+    "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+    "routing": {
+      "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+      "default_model": "Qwen3-8B-GGUF",
+      "rules": [
+        {
+          "id": "code-to-big",
+          "match": {"keywords_any": ["def ", "function", "compile"]},
+          "route_to": "vllm.qwen3-32b"
+        }
+      ]
+    }
+  }
+}
+```
+
+`decision` has the same shape as the `x_lemonade_route` object a routed
+completion returns with `route_trace: true`, and the trace is always included
+here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
+and `route_to` is the policy's `default_model`.
+
+`normalized_policy` echoes the policy as it was actually evaluated. The policy
+above uses explicit `routing.rules`, so it comes back unchanged. The field earns
+its place when a policy uses the `routing.router` shorthand: that sugar is
+desugared into an explicit `llm` classifier plus one identity rule per
+candidate, so a `routing` block authored as:
+
+```json
+{
+  "router": {
+    "type": "llm",
+    "model": "Qwen3-8B-GGUF",
+    "prompt": "Pick the best model for this request."
+  },
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF"
+}
+```
+
+is echoed back with `router` removed and synthesized `classifiers`/`rules`:
+
+```json
+{
+  "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+  "default_model": "Qwen3-8B-GGUF",
+  "classifiers": [
+    {
+      "id": "__router",
+      "type": "llm",
+      "model": "Qwen3-8B-GGUF",
+      "prompt": "Pick the best model for this request.",
+      "labels": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"]
+    }
+  ],
+  "rules": [
+    {
+      "id": "__route_0",
+      "match": {"classifier": "__router", "label": "Qwen3-8B-GGUF", "min_score": 1.0},
+      "route_to": "Qwen3-8B-GGUF"
+    },
+    {
+      "id": "__route_1",
+      "match": {"classifier": "__router", "label": "vllm.qwen3-32b", "min_score": 1.0},
+      "route_to": "vllm.qwen3-32b"
+    }
+  ]
+}
+```
+
+Match `decision.matched_rule` against this document rather than the one you
+sent — a policy authored with only `routing.router` has no `routing.rules` of
+its own, only the synthesized `__route_0`, `__route_1`, … rules shown here.
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400` | Body is not valid JSON, `policy` is missing or not an object, `prompt` is not a string, `has_images`/`has_tools` are not booleans, or `metadata` is not an object of string values. |
+| `400` | The policy document is invalid or internally inconsistent; the `error` field is prefixed with `Invalid routing policy:`. |
 
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -452,7 +620,7 @@ In case of an error, the status will be `error` and the message will contain the
 
 **Register and Install a Model**
 
-Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade cache (default: `~/.cache/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
+Registration will place an entry for that model in the `user_models.json` file, which is located in the user's Lemonade config directory (default: `~/.config/lemonade`). Then, the model will be installed. Once the model is registered and installed, it will show up in the `models` endpoint alongside the built-in models and can be loaded.
 
 The `recipe` field defines which software framework and device will be used to load and run the model.
 
@@ -953,7 +1121,7 @@ Explicitly load a registered model into memory. This is useful to ensure that th
 
 > Note: loading a collection (`recipe: "collection.omni"`) loads each of its components in turn. Per-model options like `ctx_size` or `llamacpp_backend` are not forwarded to components — set them on each component's own `recipe_options.json` entry instead.
 
-Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
+Recipe option fields on `/v1/load` have three-state semantics. Omitting a field keeps using its saved per-model value. Passing explicit `null` ignores only that saved key for this load and falls through to the lower default layers without changing `recipe_options.json`. Passing a concrete value overrides the saved value. For `*_args`, a concrete value replaces the model/architecture args scope for that load; backend/machine args remain only when `merge_args` is true. `ctx_size: -1` is a concrete value meaning automatic context sizing, not a tombstone. With `save_options: true`, concrete values are persisted as usual while a `null` tombstone preserves the existing saved value for that key.
 
 ### Parameters
 
@@ -971,7 +1139,7 @@ Recipe option fields on `/v1/load` have three-state semantics. Omitting a field 
 | `cfg_scale` | No | sd-cpp | Classifier-free guidance scale for image generation. Default: 7.0. |
 | `width` | No | sd-cpp | Image width in pixels. Default: 512. |
 | `height` | No | sd-cpp | Image height in pixels. Default: 512. |
-| `merge_args` | No | All | Boolean. If true (default), `*_args` values from global config and per-model config are merged (per-model takes priority). If false, per-model `*_args` replace global `*_args` entirely. |
+| `merge_args` | No | All | Boolean. If true (default), backend/machine `*_args` are inherited; concrete request `*_args` replace model/architecture args while keeping backend args. If false, no inherited custom args or overridable runtime defaults are applied. |
 
 **Setting Priority:**
 
@@ -984,7 +1152,7 @@ When loading a model, settings are applied in this priority order:
 
 ### Per-model options
 
-You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade cache (default: `~/.cache/lemonade`). The available options depend on the model's recipe:
+You can configure recipe-specific options on a per-model basis. Lemonade manages a file called `recipe_options.json` in the user's Lemonade config directory (default: `~/.config/lemonade`). The available options depend on the model's recipe:
 
 ```json
 {
@@ -1270,6 +1438,12 @@ curl http://localhost:13305/v1/health
       "pinned": true,
       "recipe": "ryzenai-llm",
       "pid": 12345,
+      "launch_command": [
+        "~/.cache/lemonade/bin/ryzenai/npu/ryzenai-server.exe",
+        "-m", "~/.cache/lemonade/models/Llama-3.2-1B-Instruct-Hybrid",
+        "--port", "8001",
+        "--ctx-size", "4096"
+      ],
       "recipe_options": {
         "ctx_size": 4096
       },
@@ -1284,6 +1458,13 @@ curl http://localhost:13305/v1/health
       "pinned": false,
       "recipe": "llamacpp",
       "pid": 12346,
+      "launch_command": [
+        "~/.cache/lemonade/bin/llamacpp/rocm-stable/llama-server.exe",
+        "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
+        "--ctx-size", "8192",
+        "--port", "8002",
+        "--no-mmap"
+      ],
       "recipe_options": {
         "ctx_size": 8192,
         "llamacpp_args": "--no-mmap",
@@ -1332,6 +1513,7 @@ curl http://localhost:13305/v1/health
   - `is_streaming` - Boolean indicating if the model is actively generating output tokens (true after first chunk arrives, false when all streaming requests complete)
   - `backend_url` - URL of the backend server process handling this model (useful for debugging)
   - `pid` - The Process ID (PID) of the backend engine handling this model
+  - `launch_command` - *(optional)* The command used to start the backend engine, as an array with the program first and its arguments after it. Every local backend has one. Cloud models don't, because they don't start a program. The values shown are the ones actually used, so a `ctx_size` of `auto` appears here as a real number, and any flags Lemonade added on its own are included.
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
@@ -1673,6 +1855,9 @@ curl "http://localhost:13305/v1/system-info"
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).
     - `base_url` - Persisted base URL from `config.json`.
+    - `auth_header_name` - Header this provider's API key is sent in (default `Authorization`).
+    - `auth_header_prefix` - Value prefix placed before the key (default `Bearer `).
+    - `wire_format` - Request/response shape this provider speaks: `openai` (default) or `anthropic`.
     - `env_var` - Canonical environment variable name for this provider's API key (e.g. `LEMONADE_FIREWORKS_API_KEY`). The variable's *name* is reported, never its value.
     - `env_var_set` - `true` if the env var is set in `lemond`'s environment.
     - `runtime_key_set` - `true` if an in-memory key has been supplied via `POST /v1/cloud/auth` this session.
@@ -1729,6 +1914,12 @@ Registers an OpenAI-compatible chat provider. The base URL is persisted to `conf
 | `provider` | Yes | Short identifier (e.g. `fireworks`). Used as the model-name prefix. |
 | `base_url` | Yes | OpenAI-compatible base URL ending in `/v1` (or equivalent). |
 | `api_key` | No | Optional. If set, stored in process memory; honors env-wins precedence (see `/v1/cloud/auth`). |
+| `allow_insecure_http` | No | Default `false`. Must be `true` to send an API key to an `http://` base URL. |
+| `auth_header_name` | No | Header carrying the API key. Must be a valid HTTP header name. Default `"Authorization"`. |
+| `auth_header_prefix` | No | Value prefix before the key. Default `"Bearer "`; pass `""` for gateways that expect the bare key. |
+| `wire_format` | No | `"openai"` (default) or `"anthropic"`. An `"anthropic"` provider is served from `POST /v1/messages` only; any other value returns 400. |
+
+Optional fields are applied only when present in the request body. Re-installing a provider without them keeps its stored values, so updating just the `base_url` never resets a custom auth header or the `allow_insecure_http` opt-in.
 
 Example request:
 
@@ -1750,6 +1941,9 @@ Response format:
   "backend": "cloud",
   "provider": "fireworks",
   "base_url": "https://api.fireworks.ai/inference/v1",
+  "auth_header_name": "Authorization",
+  "auth_header_prefix": "Bearer ",
+  "wire_format": "openai",
   "models_discovered": 12,
   "auth_state": {
     "env_var_set": true,
@@ -1759,6 +1953,96 @@ Response format:
 ```
 
 `models_discovered` is `0` when no API key is resolvable. If `api_key` is supplied but the provider's env var is also set, the response includes a `warning` string explaining the env var took precedence.
+
+## `POST /v1/install/dry-run`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Resolve the backend install metadata that [`POST /v1/install`](#post-v1install)
+would use for a recipe/backend pair, without downloading or installing the
+backend asset. Nothing is installed and no existing installation is modified.
+
+Resolution uses the normal backend install-parameter machinery. It may consult
+local configuration and, if a backend version is configured as `latest`, query
+GitHub release metadata. The endpoint does not download the backend asset and
+does not check whether the returned asset URL exists.
+
+The `arch` parameter mocks ROCm GPU architecture detection while the install
+parameters are resolved. This makes the endpoint useful in CI for checking
+architecture-to-asset resolution on hardware that is not present on the runner.
+The repository's `test/server_gfx_topology.py` uses the endpoint for this
+resolution step and separately checks the resulting release URLs or
+split-archive manifests.
+
+The endpoint is available at:
+
+- `/v1/install/dry-run`
+- `/api/v1/install/dry-run`
+- `/v0/install/dry-run`
+- `/api/v0/install/dry-run`
+
+### Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `recipe` | Yes | Recipe name, for example `llamacpp`, `whispercpp`, or `vllm`. |
+| `backend` | Yes | Backend name within the recipe, for example `vulkan`, `rocm`, or `rocm-nightly`. |
+| `arch` | No | ROCm GPU architecture to use for this call, for example `gfx1201`. When provided, it overrides ROCm architecture detection while install parameters are resolved. When omitted, normal host detection is used; if resolution succeeds, `arch` is returned as `""` and `supported` is `true`. |
+
+### Example request
+
+```bash
+curl -X POST http://localhost:13305/v1/install/dry-run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "recipe": "whispercpp",
+    "backend": "rocm",
+    "arch": "gfx1201"
+  }'
+```
+
+### Response format
+
+```json
+{
+  "recipe": "whispercpp",
+  "backend": "rocm",
+  "arch": "gfx1201",
+  "repo": "lemonade-sdk/whisper.cpp-rocm",
+  "version": "v1.8.4",
+  "filename": "whisper-v1.8.4-linux-rocm-gfx120X.tar.gz",
+  "url": "https://github.com/lemonade-sdk/whisper.cpp-rocm/releases/download/v1.8.4/whisper-v1.8.4-linux-rocm-gfx120X.tar.gz",
+  "supports_split_archive": false,
+  "supported": true
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `recipe`, `backend`, `arch` | Echo the requested values. If `arch` was omitted, it is returned as an empty string. |
+| `repo`, `version`, `filename` | Install parameters produced by the backend-specific resolver. The default version pin comes from `backend_versions.json`; runtime version policy can override it. |
+| `url` | GitHub release-download URL constructed from `repo`, `version`, and `filename`. The endpoint does not check this URL. |
+| `supported` | Whether Lemonade's local recipe/backend support matrix accepts the requested `arch`. This is not a release-asset existence check. When `arch` is omitted, it is `true` on a successful response. |
+| `supports_split_archive` | Whether the recipe supports assets published as multiple archive parts. When `true`, the real download path can consult a `.partcount` manifest. |
+
+A device ISA may resolve to a family target name used by the release repository.
+For example, `gfx1201` resolves to the `gfx120X` family used in the Whisper
+filename above. That mapping is defined by `rocm_asset_families` in
+`backend_versions.json`.
+
+An explicit architecture outside Lemonade's support matrix can still produce
+install metadata; in that case `supported` is `false`. Callers that need to
+verify the release asset itself must check the returned URL, or the corresponding
+split-archive manifest, separately.
+
+### Error responses
+
+| Status | Condition |
+|--------|-----------|
+| `400` | `recipe` or `backend` is missing or empty. |
+| `500` | The body is invalid JSON or install-parameter resolution fails, for example because the recipe/backend pair is unknown, the platform is unsupported, required architecture detection is unavailable, or version resolution fails. |
+
+Error responses contain an `error` string. If `arch` was parsed before the
+failure, the response may also include that `arch` value.
 
 ## `POST /v1/uninstall`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

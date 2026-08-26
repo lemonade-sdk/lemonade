@@ -48,7 +48,9 @@ struct RouterDispatchResult {
 
 class Server {
 public:
-    Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir);
+    Server(std::shared_ptr<RuntimeConfig> config,
+           const std::string& cache_dir,
+           const std::string& config_dir);
 
     ~Server();
 
@@ -71,6 +73,11 @@ public:
     // main() can report failure and exit non-zero.
     bool startup_failed() const;
 
+    // Unified config endpoints (callable directly in unit tests)
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -85,11 +92,6 @@ private:
 
     // Stop the main-port listeners (fronts) and detach the routed servers
     void stop_http_listeners();
-
-    // Unified config endpoints
-    void handle_config_set(const httplib::Request& req, httplib::Response& res);
-    void handle_config_get(const httplib::Request& req, httplib::Response& res);
-    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.
@@ -124,6 +126,8 @@ private:
         bool local_import);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync_status(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
     void handle_model_options_get(const httplib::Request& req, httplib::Response& res);
     void handle_model_options_post(const httplib::Request& req, httplib::Response& res);
@@ -200,12 +204,10 @@ private:
     // loops without any keys still work.
     void handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res);
     void handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res);
-    void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
-    void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 
@@ -338,6 +340,12 @@ private:
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info,
                                       int depth = 0);
 
+    // Effective context window, or 0 when nothing knows it: a loaded backend's
+    // own ctx_size, else the resolved options, else max_context_window.
+    // Deliberately skips the VRAM auto-tuner, which probes the system on every
+    // call and would do so once per model across a full listing.
+    int64_t resolve_context_length(const std::string& model_id, const ModelInfo& info) const;
+
     // Warm model list cache in the background after startup dependencies are initialized
     void start_model_cache_warmup();
 
@@ -350,12 +358,19 @@ private:
     double get_npu_utilization();
 
     std::shared_ptr<RuntimeConfig> config_;
-    std::string cache_dir_;  // Lemonade cache dir for config.json persistence
+    std::string cache_dir_;  // Lemonade cache dir; persistent JSON may live in sibling .config dir
+    std::string config_dir_;
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
     std::thread model_cache_warmup_thread_;
+    struct SyncTaskThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::vector<SyncTaskThread> background_sync_threads_;
+    std::mutex background_sync_mutex_;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port

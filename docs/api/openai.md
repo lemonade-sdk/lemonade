@@ -448,7 +448,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 |-----------|----------|-------------|--------|
 | `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, which tells whisper.cpp to detect the source language instead of using whisper-server's English default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | The response format. Supported values: `json`, `verbose_json`, `text`, `srt`, `vtt`. `srt` and `vtt` require a backend that reports segment timestamps (whisper.cpp). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
@@ -915,9 +915,9 @@ A typical workflow is to generate an image first, then upscale it:
 
 Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.
 
-> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description).
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local` support cloning and integrated voice design. `MOSS-VoiceGen` remains available as a legacy compatibility model while existing GUI/settings paths migrate to the integrated design flow.
 >
-> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`, while OpenMOSS models natively produce `wav` only. A format the backend cannot encode is rejected with `400 Bad Request` listing the ones it does support. Streaming works for any TTS backend, but a backend's streamable set can be narrower than its buffered set — `kokoro-v1` streams `pcm` only, so an explicit `response_format` of `mp3` alongside `stream_format` is rejected rather than silently answered with PCM.
+> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS v0.3 encodes buffered `wav` or `pcm`. Native streaming is narrower for both backends and uses `pcm` only, so an explicit non-PCM `response_format` on a streaming request is rejected rather than mislabeled or silently transcoded. OpenMOSS raw PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels`, because its native format is model-dependent (24 kHz mono for OpenMOSS-TTS and 48 kHz stereo for MOSS-TTS-Local).
 
 ### Parameters
 
@@ -929,6 +929,7 @@ Speech Generation API. You provide a text input and receive an audio file. Which
 | `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `voice` (OpenMOSS) | No | For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. `a calm, deep male narrator voice`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Design is opt-in through this field only — `voice` never triggers it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `response_format` | No | Container for the returned audio. Which values are accepted depends on the model's backend (see Limitations above). Default: `mp3` when buffered and `pcm` when streaming, falling back to the backend's first supported format when it cannot encode that default. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `stream_format` | No | If set, the response is streamed. Only `audio` is supported. This selects the transport only — the container still comes from `response_format`, and an explicit one is honored on both transports. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 
@@ -956,7 +957,7 @@ The generated audio file is returned as-is.
 ## `GET /v1/models`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, and, when known, `max_context_window`.
+Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, `context_length`, and, when known, `max_context_window`.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
@@ -993,6 +994,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "recipe": "llamacpp",
       "size": 0.38,
       "max_context_window": 40960,
+      "context_length": 8192,
       "downloaded": true,
       "suggested": true,
       "update_available": false,
@@ -1044,6 +1046,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
+  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running and the configured `ctx_size` otherwise (omitted when neither is known).
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
   - `suggested` - Boolean indicating if the model is recommended for general use
@@ -1167,6 +1170,7 @@ Returns a single model object with the same fields as described in the [models l
   "recipe": "llamacpp",
   "size": 0.38,
   "max_context_window": 40960,
+  "context_length": 8192,
   "downloaded": true,
   "suggested": true,
   "labels": ["reasoning"],

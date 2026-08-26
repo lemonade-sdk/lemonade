@@ -7,12 +7,17 @@
     "vulkan_bin": "builtin"
   },
   "auto_check_model_updates": true,
+  "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
   "config_version": 2,
   "ctx_size": -1,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
+  "download_rate_limit": "",
+  "ds4": {
+    "args": ""
+  },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
@@ -99,11 +104,18 @@
       ],
       "send_batch_size": 100
     },
+    "session": {
+      "headers": {
+        "client": [],
+        "id": []
+      }
+    },
     "trust_incoming_trace_context": false
   },
   "thenoise": {
     "backend": "auto",
     "lora_dir": "",
+    "rocm_bin": "builtin",
     "upscaler_dir": ""
   },
   "thinksound": {

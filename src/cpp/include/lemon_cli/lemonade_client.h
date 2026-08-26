@@ -82,6 +82,12 @@ public:
     // Model management commands
     int list_models(bool show_all, const std::string& name_filter = "") const;
     int check_model_updates() const;
+    int update_models(const std::vector<std::string>& models = {}, bool check_only = false, bool json_output = false, bool wait_for_completion = false) const;
+    int sync_models(const std::vector<std::string>& models = {}, bool check_only = false, bool json_output = false, bool wait_for_completion = false) const {
+        return update_models(models, check_only, json_output, wait_for_completion);
+    }
+
+
     // Pulls/registers a model. By default the pull is cache-first
     // (do_not_upgrade=true): an already-downloaded model is reused without
     // contacting Hugging Face. Only the explicit `lemonade pull` update flow
@@ -101,6 +107,8 @@ public:
 
     // Status commands
     int status(int display_port = 0) const;
+    int status_json(int display_port = 0) const;
+    nlohmann::json fetch_health() const;
     std::vector<ModelInfo> get_models(bool show_all) const;
 
     // Recipe/backend commands
@@ -111,16 +119,23 @@ public:
     // Cloud provider commands. Each maps to one /v1/cloud/* or /v1/{install,
     // uninstall} request. api_key is optional on install — when omitted the
     // server relies on env var or a later /v1/cloud/auth POST.
+    // Unset auth header fields are omitted from the request so the server
+    // keeps whatever the provider already had. An empty prefix is a real
+    // value (gateways that expect the bare key), hence std::optional rather
+    // than an empty-means-absent string.
     int install_cloud_provider(const std::string& provider,
                                 const std::string& base_url,
                                 const std::string& api_key = "",
-                                bool allow_insecure_http = false);
+                                bool allow_insecure_http = false,
+                                const std::optional<std::string>& auth_header_name = std::nullopt,
+                                const std::optional<std::string>& auth_header_prefix = std::nullopt,
+                                const std::optional<std::string>& wire_format = std::nullopt);
     int uninstall_cloud_provider(const std::string& provider);
     int cloud_auth(const std::string& provider,
                    const std::string& api_key,
                    bool allow_insecure_http = false);
     int cloud_auth_clear(const std::string& provider);
-    int cloud_list() const;
+    int cloud_list(bool json_output = false) const;
 
     // Cache management
     int cleanup_cache(bool dry_run) const;

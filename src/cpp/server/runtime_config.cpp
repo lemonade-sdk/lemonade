@@ -3,6 +3,7 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/rate_limit_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -283,12 +284,28 @@ RuntimeConfig::RuntimeConfig(const json& config)
 
 int RuntimeConfig::port() const {
     std::shared_lock lock(mutex_);
+    if (port_override_.has_value()) {
+        return *port_override_;
+    }
     return config_["port"].get<int>();
+}
+
+void RuntimeConfig::set_port_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    port_override_ = override_val;
 }
 
 std::string RuntimeConfig::host() const {
     std::shared_lock lock(mutex_);
+    if (host_override_.has_value()) {
+        return *host_override_;
+    }
     return config_["host"].get<std::string>();
+}
+
+void RuntimeConfig::set_host_override(std::optional<std::string> override_val) {
+    std::unique_lock lock(mutex_);
+    host_override_ = override_val;
 }
 
 int RuntimeConfig::websocket_port() const {
@@ -339,6 +356,19 @@ int RuntimeConfig::max_loaded_models() const {
     return config_["max_loaded_models"].get<int>();
 }
 
+int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
+    std::shared_lock lock(mutex_);
+    if (!config_.contains("download_rate_limit") || !config_["download_rate_limit"].is_string()) {
+        return 0;
+    }
+    const int64_t parsed = utils::parse_rate_limit_to_bytes(config_["download_rate_limit"].get<std::string>());
+    if (parsed < 0) {
+        LOG(WARNING, "RuntimeConfig") << "Invalid download_rate_limit value in config, treating as unlimited" << std::endl;
+        return 0;
+    }
+    return parsed;
+}
+
 std::string RuntimeConfig::models_dir() const {
     std::shared_lock lock(mutex_);
     return config_["models_dir"].get<std::string>();
@@ -376,14 +406,24 @@ double RuntimeConfig::auto_evict_threshold_pct() const {
 }
 
 bool RuntimeConfig::offline() const {
-
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
 }
 
 bool RuntimeConfig::auto_check_model_updates() const {
     std::shared_lock lock(mutex_);
-    return config_.value("auto_check_model_updates", true);
+    if (config_.contains("auto_check_model_updates")) {
+        return config_["auto_check_model_updates"].get<bool>();
+    }
+    return true;
+}
+
+bool RuntimeConfig::auto_update_models() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_update_models")) {
+        return config_["auto_update_models"].get<bool>();
+    }
+    return false;
 }
 
 bool RuntimeConfig::no_fetch_executables() const {
@@ -511,6 +551,46 @@ int RuntimeConfig::telemetry_otlp_send_batch_size() const {
 
 double RuntimeConfig::telemetry_otlp_batch_timeout_s() const {
     return get_double_opt(nullptr, {"telemetry", "otlp", "batch_timeout_s"}, 1.0);
+}
+
+static void extract_header_strings(const json& val, std::vector<std::string>& headers) {
+    if (val.is_array()) {
+        for (const auto& item : val) {
+            if (item.is_string()) {
+                std::string s = item.get<std::string>();
+                if (!s.empty()) headers.push_back(s);
+            }
+        }
+    } else if (val.is_string()) {
+        std::string s = val.get<std::string>();
+        if (!s.empty()) headers.push_back(s);
+    }
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_session_headers_id() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> headers;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("session") && config_["telemetry"]["session"].is_object()) {
+        const auto& sess = config_["telemetry"]["session"];
+        if (sess.contains("headers") && sess["headers"].is_object() && sess["headers"].contains("id")) {
+            extract_header_strings(sess["headers"]["id"], headers);
+        }
+    }
+    return headers;
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_session_headers_client() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> headers;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("session") && config_["telemetry"]["session"].is_object()) {
+        const auto& sess = config_["telemetry"]["session"];
+        if (sess.contains("headers") && sess["headers"].is_object() && sess["headers"].contains("client")) {
+            extract_header_strings(sess["headers"]["client"], headers);
+        }
+    }
+    return headers;
 }
 
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
@@ -667,8 +747,18 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
         }
+    } else if (key == "download_rate_limit") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'download_rate_limit' must be a byte rate string");
+        }
+        if (utils::parse_rate_limit_to_bytes(value.get<std::string>()) < 0) {
+            throw std::invalid_argument(
+                "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"10M\", etc. "
+                "Use \"\" for unlimited download speed");
+        }
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
+               key == "auto_update_models" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
@@ -742,7 +832,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
             "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
-            "max_queue_capacity", "max_attribute_length", "otlp"
+            "max_queue_capacity", "max_attribute_length", "otlp", "session"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
@@ -858,6 +948,43 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                 }
             }
         }
+        if (value.contains("session")) {
+            const auto& sess = value["session"];
+            if (!sess.is_object()) {
+                throw std::invalid_argument("'telemetry.session' must be an object");
+            }
+            static const std::unordered_set<std::string> valid_session_keys = {
+                "headers"
+            };
+            for (auto& [s_key, s_val] : sess.items()) {
+                if (valid_session_keys.find(s_key) == valid_session_keys.end()) {
+                    throw std::invalid_argument("Unknown config key: 'telemetry.session." + s_key + "'");
+                }
+            }
+            if (sess.contains("headers")) {
+                const auto& hdrs = sess["headers"];
+                if (!hdrs.is_object()) {
+                    throw std::invalid_argument("'telemetry.session.headers' must be an object");
+                }
+                static const std::unordered_set<std::string> valid_headers_keys = {
+                    "id", "client"
+                };
+                for (auto& [h_key, h_val] : hdrs.items()) {
+                    if (valid_headers_keys.find(h_key) == valid_headers_keys.end()) {
+                        throw std::invalid_argument("Unknown config key: 'telemetry.session.headers." + h_key + "'");
+                    }
+                    if (h_val.is_array()) {
+                        for (const auto& item : h_val) {
+                            if (!item.is_string()) {
+                                throw std::invalid_argument("'telemetry.session.headers." + h_key + "' elements must be strings");
+                            }
+                        }
+                    } else if (!h_val.is_string()) {
+                        throw std::invalid_argument("'telemetry.session.headers." + h_key + "' must be a string or array of strings");
+                    }
+                }
+            }
+        }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");
@@ -962,6 +1089,30 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                                 applied_diff["telemetry"]["otlp"] = json::object();
                             }
                             applied_diff["telemetry"]["otlp"][otlp_key] = otlp_val;
+                        }
+                    }
+                } else if (t_key == "session" && t_val.is_object()) {
+                    if (!config_["telemetry"].contains("session") || !config_["telemetry"]["session"].is_object()) {
+                        config_["telemetry"]["session"] = json::object();
+                    }
+                    if (t_val.contains("headers") && t_val["headers"].is_object()) {
+                        if (!config_["telemetry"]["session"].contains("headers") || !config_["telemetry"]["session"]["headers"].is_object()) {
+                            config_["telemetry"]["session"]["headers"] = json::object();
+                        }
+                        for (auto& [h_key, h_val] : t_val["headers"].items()) {
+                            if (!config_["telemetry"]["session"]["headers"].contains(h_key) || config_["telemetry"]["session"]["headers"][h_key] != h_val) {
+                                config_["telemetry"]["session"]["headers"][h_key] = h_val;
+                                if (!applied_diff.contains("telemetry")) {
+                                    applied_diff["telemetry"] = json::object();
+                                }
+                                if (!applied_diff["telemetry"].contains("session")) {
+                                    applied_diff["telemetry"]["session"] = json::object();
+                                }
+                                if (!applied_diff["telemetry"]["session"].contains("headers")) {
+                                    applied_diff["telemetry"]["session"]["headers"] = json::object();
+                                }
+                                applied_diff["telemetry"]["session"]["headers"][h_key] = h_val;
+                            }
                         }
                     }
                 } else {
