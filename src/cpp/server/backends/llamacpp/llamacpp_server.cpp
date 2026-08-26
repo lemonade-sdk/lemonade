@@ -134,6 +134,11 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
 
+    // An auto slot count also enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
+    // ctx_size the context a request actually gets.
+    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
     return append_runtime_arg_defaults(custom_args, defaults);
 }
 
@@ -337,11 +342,6 @@ void LlamaCppServer::load(const std::string& model_name,
         push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
-
-    // An auto slot count also enables the unified KV buffer, which advertises the
-    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
-    // ctx_size the context a request actually gets.
-    push_overridable_arg(args, llamacpp_args, "--parallel", "1", {"-np"});
 
     if (!llamacpp_device.empty()) {
         BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);
