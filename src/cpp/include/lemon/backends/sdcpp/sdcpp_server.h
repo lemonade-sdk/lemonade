@@ -48,21 +48,12 @@ public:
     // sd-cli binary's -M upscale mode as a subprocess.
     static std::string upscale_via_cli(
         const std::string& b64_image,
-        const std::string& upscale_model_path,
-        const std::string& cli_exe_path,
-        const std::vector<std::pair<std::string, std::string>>& env_vars,
-        bool debug = false);
+        const std::string& upscale_model_path);
 
 private:
-    // image_defaults from the currently loaded model's server_models.json entry.
-    // Applied when a request doesn't specify size / steps / cfg_scale / etc.
-    // Needed because sd-server's own defaults are fixed at process startup and
-    // OmniRouter tool calls arrive without these fields.
-    ImageDefaults image_defaults_;
-
-    // Build the <sd_cpp_extra_args> JSON. Precedence: request -> image_defaults_
-    // -> recipe_options_. `include_flow_shift` is true for /v1/images/generations
-    // and /v1/images/edits; false for /v1/images/variations (which strips prompt).
+    // Precedence and fall-through are documented in build_extra_args().
+    // `include_flow_shift` is true for /v1/images/generations and
+    // /v1/images/edits; false for /v1/images/variations.
     nlohmann::json build_extra_args(const nlohmann::json& request,
                                     bool include_flow_shift = true) const;
 

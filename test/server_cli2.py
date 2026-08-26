@@ -734,9 +734,9 @@ sys.exit(0)
         )
         print(f"Config set output: {result.stdout}")
 
-        # 2. Query the params to verify it parsed correctly and merged
+        # 2. Read the config back to verify it parsed correctly and merged
         response = requests.get(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/config",
             headers=_auth_headers(),
             timeout=10,
         )
@@ -765,7 +765,7 @@ sys.exit(0)
 
             # Verify it is set to false on the server
             response = requests.get(
-                f"http://localhost:{PORT}/api/v1/params",
+                f"http://localhost:{PORT}/internal/config",
                 headers=_auth_headers(),
                 timeout=10,
             )
@@ -783,7 +783,7 @@ sys.exit(0)
                 ]
             )
             response = requests.get(
-                f"http://localhost:{PORT}/api/v1/params",
+                f"http://localhost:{PORT}/internal/config",
                 headers=_auth_headers(),
                 timeout=10,
             )

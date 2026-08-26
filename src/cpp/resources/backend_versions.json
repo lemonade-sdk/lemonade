@@ -4,13 +4,13 @@
     "comment": "Expected SHA-256 of downloaded GitHub release assets, verified after download (see BackendUtils::lookup_expected_asset_hash). Keyed by checksums.github.<owner/repo>.<tag>.<asset>. Values are the sha256:<hex> digests GitHub publishes for each asset. Update alongside the matching version pin below.",
     "github": {
       "pwilkin/openmoss": {
-        "v0.1.3": {
-          "moss-tts-vulkan-linux-x64.tar.gz": "sha256:15e64803ed7f93e0459f4e3132346a83123e1de0b973702c2c0631ae32f55feb",
-          "moss-tts-vulkan-windows-x64.zip": "sha256:6cafdc45c53cc614427696bd369f44602e7881d3879f5acb48b5f92b339149b6",
-          "moss-tts-rocm-linux-x64.tar.gz": "sha256:6bf1dac5fc8511e6bc6d11ec55623e1d364db814242a5af7346f5b6feb6b0dad",
-          "moss-tts-rocm-windows-x64.zip": "sha256:c9178dfad4ddf51fc8d8df8d1412e65237ff364ca9ca8fc997c9c71f55d60827",
-          "moss-tts-cuda-linux-x64.tar.gz": "sha256:8662251a854bda4993a5f99e90ba02c176797bf22b1c5b3e89a0061b0a4b102a",
-          "moss-tts-cuda-windows-x64.zip": "sha256:2b2f5f4b6757d99acf621b43426483ab0bc4a70f1f13904c17deed09cac70969"
+        "v0.3.0": {
+          "moss-tts-vulkan-linux-x64.tar.gz": "sha256:1288a22295451d0e5d8bd707ef79ea324e1c7b5f1cd9bfbdab2167a388fe3af7",
+          "moss-tts-vulkan-windows-x64.zip": "sha256:709c5c67e76c4180a38c6516cf908665fa2df6613900298a7d2c58eba5914733",
+          "moss-tts-rocm-linux-x64.tar.gz": "sha256:0126df034ea8d18cb895ef39e639bf36a29c7a024a87ab9eaeadf1126ccfe80d",
+          "moss-tts-rocm-windows-x64.zip": "sha256:5b4f32862b6c52a52b01e937af11cf9f60f887da079bb0354cbb6ecc46e7fe72",
+          "moss-tts-cuda-linux-x64.tar.gz": "sha256:3a7a61852bd9fe16a14f262ff99e055739e7bc52c2727749d05f0b4664facb37",
+          "moss-tts-cuda-windows-x64.zip": "sha256:def68a7f35e6bd111ec4118f4e88835547f3af87efd5f3812ab1e505d1f38229"
         }
       },
       "pwilkin/acestep.cpp": {
@@ -61,11 +61,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-820-de298c2",
-    "rocm-stable": "master-820-de298c2",
-    "vulkan": "master-820-de298c2",
-    "cuda": "master-789-65745b4",
-    "metal": "master-820-de298c2"
+    "cpu": "master-827-97d2990",
+    "rocm-stable": "master-827-97d2990",
+    "vulkan": "master-827-97d2990",
+    "cuda": "master-827-e2329c3",
+    "metal": "master-827-97d2990"
   },
   "therock": {
     "version": "7.14.0",
@@ -146,7 +146,7 @@
   },
   "thenoise": {
     "comment": "TheNoise release tag. The portable bundle publishes per-GPU-target archives (<tag>-gfxNNNN-x64.tar.gz) under this tag; the host arch picks the matching archive.",
-    "rocm": "thenoise-0.3.0-rocm7.14.0"
+    "rocm": "thenoise-0.4.1-rocm7.14.0"
   },
   "rocm_asset_families": {
     "comment": "Maps a concrete ROCm ISA (as detected on the device) to the family target name the GitHub release repos publish assets under. ISAs not listed here (e.g. gfx908, gfx90a, which ship as individual assets) are used verbatim. Add a new GPU's ISA here when its release asset is published under a family name.",
@@ -186,9 +186,9 @@
     "cuda": "v0.4.3"
   },
   "openmoss": {
-    "vulkan": "v0.1.3",
-    "rocm-stable": "v0.1.3",
-    "cuda": "v0.1.3"
+    "vulkan": "v0.3.0",
+    "rocm-stable": "v0.3.0",
+    "cuda": "v0.3.0"
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

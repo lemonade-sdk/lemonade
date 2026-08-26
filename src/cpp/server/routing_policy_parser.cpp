@@ -314,7 +314,8 @@ void validate_leaf(const json& leaf,
             throw std::invalid_argument(path + ".regex must be a non-empty string");
         }
     }
-    for (const char* op : {"min_chars", "max_chars", "min_turns", "max_turns"}) {
+    for (const char* op : {"min_chars", "max_chars", "min_total_chars", "max_total_chars",
+                           "min_turns", "max_turns"}) {
         if (leaf.contains(op)) {
             ++condition_count;
             if (!leaf.at(op).is_number_integer() || leaf.at(op).get<long long>() < 0) {
@@ -565,7 +566,8 @@ const std::set<std::string>& routing_match_expr_keys() {
     static const std::set<std::string> keys = {
         "any", "all", "not", "classifier", "label", "min_score", "max_score",
         "keywords_any", "keywords_all", "regex", "min_chars", "max_chars",
-        "min_turns", "max_turns", "has_tools", "has_images", "metadata"};
+        "min_total_chars", "max_total_chars", "min_turns", "max_turns",
+        "has_tools", "has_images", "metadata"};
     return keys;
 }
 

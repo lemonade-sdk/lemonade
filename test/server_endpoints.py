@@ -239,6 +239,39 @@ class EndpointTests(ServerTestBase):
 
         session.close()
 
+    def test_000b_retired_endpoints_removed(self):
+        """Verify the retired routes stay gone on every prefix."""
+        session = requests.Session()
+        headers = _auth_headers()
+
+        for endpoint in ["params", "log-level", "test"]:
+            for prefix in ["/api/v0", "/api/v1", "/v0", "/v1"]:
+                url = f"http://localhost:{PORT}{prefix}/{endpoint}"
+                for response in (
+                    session.get(url, headers=headers, timeout=TIMEOUT_DEFAULT),
+                    session.post(
+                        url, json={}, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ),
+                ):
+                    self.assertEqual(
+                        response.status_code,
+                        404,
+                        f"Retired endpoint {prefix}/{endpoint} still responds",
+                    )
+
+        response = session.get(
+            f"http://localhost:{PORT}/status", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 404, "Retired /status still responds")
+
+        # The legacy status page is still served at its documented location.
+        response = session.get(
+            f"http://localhost:{PORT}/api/v1", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        session.close()
+
     def test_000a_register_model_definition_without_pull(self):
         """Register a user model definition without downloading its checkpoint."""
         canonical_name = f"user.RegisterEndpoint-{uuid.uuid4().hex[:8]}"
@@ -4592,6 +4625,57 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
         self.assertTrue(decision["default_used"])
         print("[OK] /routing/validate fell through to the default model")
+
+    def test_021zta_routing_validate_total_chars_uses_prompt_length(self):
+        """A test prompt is a single turn with no history, so `min_total_chars`
+        measures the prompt itself — the same equality the history-less
+        completions form gives. A context that left the total at 0 would make
+        every whole-conversation rule untestable in the Router Builder."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "long-conversation-to-big",
+                        "match": {"min_total_chars": 100},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        long_prompt = "tell me more about this topic. " * 10  # 310 chars
+        self.assertGreater(len(long_prompt), 100)
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": long_prompt},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "long-conversation-to-big")
+        self.assertFalse(decision["default_used"])
+        self.assertTrue(
+            any(
+                entry.get("condition") == "min_total_chars"
+                and entry.get("result") is True
+                for entry in decision.get("trace", [])
+            ),
+            f"trace must include the matched min_total_chars condition: {decision}",
+        )
+
+        short_response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(short_response.status_code, 200, short_response.text)
+        self.assertTrue(short_response.json()["decision"]["default_used"])
+        print("[OK] /routing/validate measures min_total_chars on the test prompt")
 
     def test_021zu_routing_validate_bad_policy_returns_400(self):
         """A malformed policy (missing the required 'routing' key) is rejected

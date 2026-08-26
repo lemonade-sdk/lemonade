@@ -423,7 +423,7 @@ The following options are available depending on the recipe being used:
 | `--vllm BACKEND` | vLLM backend to use | Auto-detected |
 | `--vllm-args ARGS` | Custom arguments to pass to vllm-server | `""` |
 
-#### TheNoise ROCm (experimental) (`thenoise` recipe)
+#### TheNoise ROCm (`thenoise` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
