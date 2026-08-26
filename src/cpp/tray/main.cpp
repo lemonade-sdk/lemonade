@@ -68,7 +68,12 @@ static void create_child_process_job() {
 // Helpers
 // ---------------------------------------------------------------------------
 
-static bool wait_for_server(const std::string& clean_host, int clean_port, bool is_ssl, int timeout_seconds) {
+enum class ServerProbeMode {
+    ready_only,     // 200, 401, 403 (503 retries until ready or timeout)
+    allow_starting  // 200, 401, 403, 503 (returns true immediately if starting or ready)
+};
+
+static bool wait_for_server(const std::string& clean_host, int clean_port, bool is_ssl, int timeout_seconds, ServerProbeMode mode = ServerProbeMode::ready_only) {
     std::string connect_host;
     if (is_ssl) {
         connect_host = (clean_host.empty() || clean_host == "0.0.0.0")
@@ -86,7 +91,8 @@ static bool wait_for_server(const std::string& clean_host, int clean_port, bool 
         headers.emplace("Authorization", std::string("Bearer ") + api_key);
     }
 
-    for (int i = 0; i < timeout_seconds * 2; ++i) {
+    int max_attempts = std::max(1, timeout_seconds * 2);
+    for (int i = 0; i < max_attempts; ++i) {
         try {
 #ifndef LEMONADE_HTTPLIB_HAS_TLS
             if (is_ssl) {
@@ -109,11 +115,18 @@ static bool wait_for_server(const std::string& clean_host, int clean_port, bool 
             // Use /api/v1/health instead of /live — /live responds before the model
             // cache is built, which causes 500s on /models if clients connect too early.
             auto res = cli.Get("/api/v1/health", headers);
-            if (res && res->status == 200) {
-                return true;
+            if (res) {
+                if (res->status == 200 || res->status == 401 || res->status == 403) {
+                    return true;
+                }
+                if (res->status == 503 && mode == ServerProbeMode::allow_starting) {
+                    return true;
+                }
             }
         } catch (...) {}
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (i + 1 < max_attempts) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        }
     }
     return false;
 }
@@ -244,6 +257,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         options.host = runtime_config->host();
         options.is_ssl = false;
         options.silent = silent;
+        options.server_initially_connected = true;  // Embedded server is always up
         lemon_tray::TrayUI tray(options);
         if (tray.initialize()) {
             tray.run();  // Blocks until quit
@@ -293,29 +307,116 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
 #else
 
-// Signal handler writes to self-pipe for clean shutdown
+#include <CLI/CLI.hpp>
+#include <lemon/utils/url_utils.h>
+#include <lemon/utils/path_utils.h>
+#include <lemon/single_instance.h>
+#include <filesystem>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <vector>
+#include <fstream>
+#include <nlohmann/json.hpp>
+
+// std::exit() is not async-signal-safe; set a flag the refresh thread polls.
 static void tray_signal_handler(int sig) {
     if (sig == SIGINT || sig == SIGTERM) {
-        char c = (char)sig;
-        ssize_t written = write(lemon_tray::TrayUI::signal_pipe_[1], &c, 1);
-        (void)written;
+        lemon_tray::TrayUI::g_quit_requested = 1;
     }
 }
 
+static std::string find_lemond_binary(const char* argv0 = nullptr) {
+    std::string bin_name = "lemond";
+    if (argv0 && argv0[0]) {
+        try {
+            std::filesystem::path p(argv0);
+            if (p.has_parent_path()) {
+                std::filesystem::path candidate = p.parent_path() / bin_name;
+                if (std::filesystem::exists(candidate) && std::filesystem::is_regular_file(candidate)) {
+                    return candidate.string();
+                }
+            }
+        } catch (...) {}
+    }
+
+    try {
+        std::string exe_dir = lemon::utils::get_executable_dir();
+        if (!exe_dir.empty()) {
+            std::filesystem::path candidate = std::filesystem::path(exe_dir) / bin_name;
+            if (std::filesystem::exists(candidate) && std::filesystem::is_regular_file(candidate)) {
+                return candidate.string();
+            }
+        }
+    } catch (...) {}
+
+    std::string in_path = lemon::utils::find_executable_in_path(bin_name);
+    if (!in_path.empty()) {
+        return in_path;
+    }
+
+    std::vector<std::string> standard_paths = {
+        "/usr/local/bin/lemond",
+        "/usr/bin/lemond",
+        "/opt/lemonade/bin/lemond"
+    };
+    const char* home = std::getenv("HOME");
+    if (home && home[0]) {
+        standard_paths.push_back(std::string(home) + "/.local/bin/lemond");
+    }
+    for (const auto& p : standard_paths) {
+        if (std::filesystem::exists(p) && std::filesystem::is_regular_file(p)) {
+            return p;
+        }
+    }
+    return "";
+}
+
+static void read_fallback_config(int& port, std::string& host) {
+    try {
+        std::filesystem::path config_dir = lemon::utils::get_config_dir();
+        if (!config_dir.empty()) {
+            auto config_path = config_dir / "config.json";
+            if (std::filesystem::exists(config_path)) {
+                std::ifstream f(config_path);
+                nlohmann::json j;
+                f >> j;
+                if (j.contains("port") && j["port"].is_number()) {
+                    port = j["port"];
+                }
+                if (j.contains("host") && j["host"].is_string()) {
+                    host = j["host"];
+                }
+            }
+        }
+    } catch (...) {}
+}
+
+extern char **environ;
+
 int main(int argc, char* argv[]) {
-    // Single instance check
     if (lemon::SingleInstance::IsAnotherInstanceRunning("Tray")) {
         std::cerr << "lemonade-tray is already running." << std::endl;
         return 0;
     }
 
-    // Parse args
     CLI::App app{"Lemonade Tray - system tray interface for Lemonade Server"};
+
+    // config.json supplies the defaults that --port/--host override
     int port = 13305;
     std::string host = "localhost";
+    read_fallback_config(port, host);
 
     app.add_option("--port,-p", port, "Server port to connect to");
     app.add_option("--host", host, "Server host to connect to");
+
+    bool silent = false;
+    bool spawn_server = false;
+    bool launch_app = false;
+    app.add_flag("--silent", silent, "Suppress startup notification");
+    app.add_flag("--spawn-server", spawn_server, "Spawn a local lemond instance if none is running");
+    app.add_flag("--launch-app,--open", launch_app, "Launch desktop app once server is ready");
 
     try {
         app.parse(argc, argv);
@@ -332,23 +433,103 @@ int main(int argc, char* argv[]) {
     // Install signal handlers
     signal(SIGINT, tray_signal_handler);
     signal(SIGTERM, tray_signal_handler);
+    signal(SIGPIPE, SIG_IGN);
 
-    // Wait for router to be reachable (retry with backoff up to 30s)
-    std::cout << "Connecting to lemond at " << clean_host << ":" << clean_port << (is_ssl ? " (SSL)" : "") << "..." << std::endl;
-    if (!wait_for_server(clean_host, clean_port, is_ssl, 30)) {
-        std::cerr << "Error: Could not connect to lemond at " << clean_host << ":" << clean_port << std::endl;
-        std::cerr << "Make sure lemond is running." << std::endl;
-        return 1;
+    bool server_present = wait_for_server(clean_host, clean_port, is_ssl, 1, ServerProbeMode::allow_starting);
+    bool server_initially_connected = false;
+
+    if (!server_present && spawn_server) {
+        std::string lemond_bin = find_lemond_binary(argv[0]);
+        if (lemond_bin.empty()) {
+            std::cerr << "Error: Could not find lemond binary." << std::endl;
+            return 1;
+        }
+
+        int watchdog_pipe[2];
+        if (pipe(watchdog_pipe) == -1) {
+            std::cerr << "Error: Could not create watchdog pipe." << std::endl;
+            return 1;
+        }
+
+        // On POSIX: pipes do not have FD_CLOEXEC set by default. Explicitly set
+        // FD_CLOEXEC on the parent's write end so child processes launched by
+        // the tray (e.g. desktop app or browser via xdg-open) do not inherit it
+        // and keep the pipe open if the tray dies. Clear FD_CLOEXEC on the read
+        // end so it survives posix_spawn in the child.
+        fcntl(watchdog_pipe[1], F_SETFD, FD_CLOEXEC);
+        fcntl(watchdog_pipe[0], F_SETFD, 0);
+
+        std::string watchdog_fd_arg = "--watchdog-fd=" + std::to_string(watchdog_pipe[0]);
+
+        std::vector<const char*> c_args;
+        c_args.push_back(lemond_bin.c_str());
+        c_args.push_back(watchdog_fd_arg.c_str());
+        // Forward the tray's args to lemond, dropping the tray-only flags (also
+        // in --flag=value form, which CLI11 accepts for booleans).
+        auto is_tray_only_arg = [](const std::string& arg) {
+            static const char* tray_flags[] = {"--spawn-server", "--silent", "--launch-app", "--open"};
+            for (const char* flag : tray_flags) {
+                std::string flag_s = flag;
+                if (arg == flag_s || (arg.rfind(flag_s, 0) == 0 && arg[flag_s.size()] == '=')) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        for (int i = 1; i < argc; ++i) {
+            if (is_tray_only_arg(argv[i])) {
+                continue;
+            }
+            c_args.push_back(argv[i]);
+        }
+        c_args.push_back(nullptr);
+
+        pid_t pid;
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+
+        // The child must not inherit the write end of the watchdog pipe. If it
+        // does, the child's blocking read() in start_parent_watchdog() never sees
+        // EOF (a live writer always exists) and an orphaned server survives the
+        // tray exiting, even via SIGKILL. Closing it in the child also prevents
+        // lemond from passing it down to its backend subprocesses.
+        if (posix_spawn_file_actions_addclose(&actions, watchdog_pipe[1]) != 0) {
+            std::cerr << "Error: Could not configure watchdog pipe." << std::endl;
+            return 1;
+        }
+
+        if (posix_spawnp(&pid, lemond_bin.c_str(), &actions, nullptr, const_cast<char* const*>(c_args.data()), environ) != 0) {
+            std::cerr << "Error: Could not spawn lemond." << std::endl;
+            return 1;
+        }
+        posix_spawn_file_actions_destroy(&actions);
+
+        close(watchdog_pipe[0]);
+
+        std::cout << "Starting local lemond instance..." << std::endl;
+        if (!wait_for_server(clean_host, clean_port, is_ssl, 15, ServerProbeMode::ready_only)) {
+            std::cerr << "Error: Spawned lemond failed to start within 15 seconds." << std::endl;
+            return 1;
+        }
+        server_initially_connected = true;
+    } else if (server_present) {
+        server_initially_connected = wait_for_server(clean_host, clean_port, is_ssl, 0, ServerProbeMode::ready_only);
     }
 
-    std::cout << "Connected to lemond v" << LEMON_VERSION_STRING << std::endl;
+    if (!server_present && !spawn_server) {
+        std::cout << "Lemonade Server is offline. Starting tray in disconnected mode..." << std::endl;
+    } else if (server_present && !server_initially_connected) {
+        std::cout << "Lemonade Server is starting. Starting tray in waiting mode..." << std::endl;
+    }
 
-    // Create and run tray UI
     lemon_tray::TrayUIOptions options;
     options.port = clean_port;
     options.host = clean_host;
     options.is_ssl = is_ssl;
-    options.silent = false;
+    options.silent = silent;
+    options.launch_app = launch_app;
+    options.server_initially_connected = server_initially_connected;
+
     lemon_tray::TrayUI tray(options);
     if (!tray.initialize()) {
         return 1;
@@ -356,7 +537,6 @@ int main(int argc, char* argv[]) {
 
     tray.run();  // Blocks until quit
 
-    // On macOS/Linux, just exit — the router keeps running
     return 0;
 }
 
