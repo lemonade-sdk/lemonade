@@ -429,6 +429,13 @@ The following options are available depending on the recipe being used:
 |--------|-------------|---------|
 | `--thenoise BACKEND` | TheNoise backend to use | Auto-detected |
 
+#### DwarfStar4 (experimental) (`ds4` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |
@@ -753,6 +760,7 @@ lemonade cloud install PROVIDER --base-url URL [--api-key KEY]
 | `--allow-insecure-http` | No | Explicitly permit sending this provider's API key over `http://`. |
 | `--auth-header-name HEADER` | No | Header carrying the API key. Default `Authorization`. |
 | `--auth-header-prefix PREFIX` | No | Value prefix before the key. Default `Bearer `; pass `""` for none. |
+| `--wire-format FORMAT` | No | `openai` (default) or `anthropic`. `anthropic` providers are reachable via `POST /v1/messages` only. |
 
 Omitted options keep the provider's current setting, so re-running `cloud install` to change only the base URL won't reset a custom auth header.
 
@@ -802,7 +810,7 @@ lemonade cloud clear PROVIDER
 
 ### `cloud list`
 
-Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered. A non-default auth header is printed on its own line.
+Print every installed cloud provider with its base URL, the canonical env-var name, current auth status (`env_var_set`, `runtime_key_set`), and the number of models discovered. A non-default auth header or wire format is printed on its own line.
 
 ```bash
 lemonade cloud list [--json]

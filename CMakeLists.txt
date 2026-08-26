@@ -162,6 +162,7 @@ set(LEMON_BACKENDS
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
+    "ds4|ds4"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -979,6 +980,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
@@ -2369,6 +2371,24 @@ if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
     add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
 endif()
 
+set(_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_whispercpp_multipart_fields.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC}")
+    add_executable(test_whispercpp_multipart_fields
+        test/cpp/test_whispercpp_multipart_fields.cpp
+    )
+    target_include_directories(test_whispercpp_multipart_fields PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/whispercpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_whispercpp_multipart_fields PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(WhisperCppMultipartFieldsTest CI ON COMMAND test_whispercpp_multipart_fields)
+endif()
+
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
@@ -2976,6 +2996,19 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
 endif()
 
+set(_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_download_rate_limit.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC}")
+    add_executable(test_config_download_rate_limit
+        test/cpp/test_config_download_rate_limit.cpp
+    )
+    target_link_libraries(test_config_download_rate_limit PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDownloadRateLimitTest CI ON
+        COMMAND test_config_download_rate_limit
+    )
+endif()
+
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_backend_validation.cpp"
 )
@@ -3106,6 +3139,16 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
 endif()
 
+# ds4 install params: upstream ds4 ships no binaries, so assets come from
+# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
+# plus the detected ISA. Only gfx1151 is validated upstream.
+set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
+    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
+    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
+    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
+endif()
+
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
 # published, so the shared Windows/Linux support row must not advertise Windows
 # or nightly installs for gfx950.
@@ -3121,6 +3164,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
     target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
+endif()
+
+set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_timeout.cpp")
+if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
+    add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
+    target_link_libraries(test_http_client_timeout PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
 endif()
 
 set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
@@ -3156,6 +3206,13 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)
     target_link_libraries(test_anthropic_error PRIVATE lemonade-server-core)
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
+endif()
+
+set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")
+if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_RELAY_HEADERS_TEST_SRC}")
+    add_executable(test_anthropic_relay_headers test/cpp/test_anthropic_relay_headers.cpp)
+    target_link_libraries(test_anthropic_relay_headers PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AnthropicRelayHeadersTest CI ON COMMAND test_anthropic_relay_headers)
 endif()
 
 set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
