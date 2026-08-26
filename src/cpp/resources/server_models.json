@@ -968,7 +968,7 @@
     },
     "Qwen3-30B-A3B-Instruct-2507-HRX": {
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
-        "recipe": "hrx",
+        "recipe": "llamacpp-hrx",
         "suggested": true,
         "labels": [
             "chat",

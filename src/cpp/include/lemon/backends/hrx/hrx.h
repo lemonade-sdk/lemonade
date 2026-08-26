@@ -43,10 +43,10 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 }
 
 inline const BackendDescriptor descriptor = {
-    /*recipe*/          "hrx",
+    /*recipe*/          "llamacpp-hrx",
     /*display_name*/    "HRX GPU (experimental)",
     /*binary*/          "llama-server",
-    /*config_section*/  "",  // defaults to recipe
+    /*config_section*/  "hrx",
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ false,

@@ -12,9 +12,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
-| `hrx` | HRX GPU (experimental) | no | yes | hrx |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
@@ -37,7 +37,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `ds4` | rocm | linux | amd_gpu (gfx1151) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
-| `hrx` | hrx | linux | amd_gpu (gfx1100, gfx1151) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |
@@ -46,6 +45,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp-hrx` | hrx | linux | amd_gpu (gfx1100, gfx1151) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
@@ -106,13 +106,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `flm_args` | `--flm-args` | ARGS | "" | Safe flm serve tuning args: --pmode, --prefill-chunk-len, --img-pre-resize, --socket, --q-len, --preemption |
 
-#### `hrx` — HRX GPU (experimental)
-
-| Option | CLI flag | Type | Default | Description |
-|--------|----------|------|---------|-------------|
-| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
-| `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
-
 #### `llamacpp` — Llama.cpp GPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -121,6 +114,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+
+#### `llamacpp-hrx` — HRX GPU (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
 
 #### `moonshine` — Moonshine
 

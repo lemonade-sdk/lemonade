@@ -63,7 +63,7 @@
     "metal": "b10375",
     "cpu": "b10375"
   },
-  "hrx": {
+  "llamacpp-hrx": {
     "hrx": "hrx-b59"
   },
   "whispercpp": {

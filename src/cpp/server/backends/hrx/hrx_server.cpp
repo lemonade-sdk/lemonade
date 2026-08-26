@@ -116,7 +116,7 @@ void HrxServer::load(const std::string& model_name,
             hrx::kQualifiedCheckpoint);
     }
 
-    backend_manager_->install_backend("hrx", "hrx");
+    backend_manager_->install_backend(hrx::spec()->recipe, "hrx");
 
     const std::string gguf_path = model_info.resolved_path();
     if (gguf_path.empty()) {

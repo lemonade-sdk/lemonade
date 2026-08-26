@@ -382,7 +382,7 @@ The following options are available depending on the recipe being used:
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
 
-#### HRX GPU (experimental) (`hrx` recipe)
+#### HRX GPU (experimental) (`llamacpp-hrx` recipe)
 
 | Option | Description | Default |
 |--------|-------------|---------|
