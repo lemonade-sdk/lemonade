@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -36,6 +37,8 @@ public:
     void set_broadcast_override(std::optional<bool> override_val);
     long global_timeout() const;
     int max_loaded_models() const;
+    int64_t download_rate_limit_bytes_per_second() const;
+
     std::string models_dir() const;
     int ctx_size() const;
     bool auto_evict() const;

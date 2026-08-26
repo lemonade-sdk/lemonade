@@ -375,6 +375,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
+    // Global download rate limit
+    utils::HttpClient::set_download_rate_limit(config->download_rate_limit_bytes_per_second());
+
     cloud_registry_ = std::make_unique<CloudProviderRegistry>();
     // Seed installed providers from config.json. Runtime keys stay empty
     // until either an env var resolves them per-request or a client POSTs
@@ -3247,6 +3250,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["system_prompt"] = info.system_prompt;
     }
 
+    auto audio_defaults = info.extras.find("audio_defaults");
+    if (audio_defaults != info.extras.end() &&
+        audio_defaults->second.is_object()) {
+        model_json["audio_defaults"] = audio_defaults->second;
+    }
+
     // Add image_defaults if present (for sd-cpp models)
     if (info.image_defaults.has_defaults) {
         json img_def = {
@@ -4756,6 +4765,17 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Handle model loading
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            if (auto info = router_->try_get_model_info(requested_model);
+                info && info->type != ModelType::TTS) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", {
+                    {"message", "Model '" + requested_model +
+                        "' is not a text-to-speech model"},
+                    {"type", "invalid_request_error"},
+                    {"code", "model_not_applicable"}}}}.dump(),
+                    "application/json");
+                return;
+            }
             try {
                 auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
@@ -4780,6 +4800,15 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (!request_json["input"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "'input' must be a string"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
@@ -4855,7 +4884,14 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.set_content(error.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES[response_format];
+        const auto format_metadata =
+            router_->audio_speech_format_metadata(speech_model, response_format);
+        std::string mime_type = format_metadata.content_type.empty()
+            ? MIME_TYPES[response_format].get<std::string>()
+            : format_metadata.content_type;
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
         // The backend has to encode what the Content-Type above promises. Without
         // this it would receive whatever the client sent -- nothing, when the
         // format came from a default -- and fall back to its own choice.
@@ -4970,7 +5006,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        for (const auto* field : {"lyrics", "vocal_language"}) {
+        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
             if (request_json.contains(field) && !request_json[field].is_string()) {
                 res.status = 400;
                 res.set_content(nlohmann::json{{"error", {
@@ -4981,6 +5017,17 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         }
 
         std::string requested_model = request_json["model"];
+        if (auto info = router_->try_get_model_info(requested_model);
+            info && info->type != ModelType::AUDIO_GENERATION) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Model '" + requested_model +
+                    "' is not an audio-generation model"},
+                {"type", "invalid_request_error"},
+                {"code", "model_not_applicable"}}}}.dump(),
+                "application/json");
+            return;
+        }
         try {
             auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
@@ -5011,8 +5058,16 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES.contains(response_format)
-            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
+        const auto format_metadata =
+            router_->audio_generation_format_metadata(requested_model, response_format);
+        std::string mime_type = !format_metadata.content_type.empty()
+            ? format_metadata.content_type
+            : (MIME_TYPES.contains(response_format)
+                ? MIME_TYPES[response_format].get<std::string>()
+                : MIME_TYPES["wav"].get<std::string>());
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
 
@@ -6859,6 +6914,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"allow_insecure_http", rec.allow_insecure_http},
                 {"auth_header_name", rec.auth_header_name},
                 {"auth_header_prefix", rec.auth_header_prefix},
+                {"wire_format", rec.wire_format},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -7261,6 +7317,14 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
+        } else if (key == "download_rate_limit") {
+            const int64_t bps = config_->download_rate_limit_bytes_per_second();
+            if (bps > 0) {
+                LOG(INFO, "Server") << "Download rate limit enabled at " << bps << " B/s" << std::endl;
+            } else {
+                LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
+            }
+            utils::HttpClient::set_download_rate_limit(bps);
         } else if (key == "broadcast" || key == "no_broadcast") {
             bool bcast = config_->broadcast();
             LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
@@ -7780,7 +7844,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    auth_header_name / auth_header_prefix: see
+        //    auth_header_name / auth_header_prefix / wire_format: see
         //      CloudProviderRegistry::Record,
         //    api_key: "..."}
         //
@@ -7814,9 +7878,9 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
 
             CloudProviderRegistry::InstallOptions install_options;
-            auto read_header_field = [&](const char* field,
-                                         std::string (*validate)(const std::string&),
-                                         std::optional<std::string>& out) {
+            auto read_validated_field = [&](const char* field,
+                                            std::string (*validate)(const std::string&),
+                                            std::optional<std::string>& out) {
                 if (!request_json.contains(field)) return true;
                 if (!request_json[field].is_string()) {
                     reject(std::string(field) + " must be a string when provided");
@@ -7830,12 +7894,15 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 out = std::move(value);
                 return true;
             };
-            if (!read_header_field("auth_header_name",
-                                   CloudProviderRegistry::validate_auth_header_name,
-                                   install_options.auth_header_name) ||
-                !read_header_field("auth_header_prefix",
-                                   CloudProviderRegistry::validate_auth_header_prefix,
-                                   install_options.auth_header_prefix)) {
+            if (!read_validated_field("auth_header_name",
+                                      CloudProviderRegistry::validate_auth_header_name,
+                                      install_options.auth_header_name) ||
+                !read_validated_field("auth_header_prefix",
+                                      CloudProviderRegistry::validate_auth_header_prefix,
+                                      install_options.auth_header_prefix) ||
+                !read_validated_field("wire_format",
+                                      CloudProviderRegistry::validate_wire_format,
+                                      install_options.wire_format)) {
                 return;
             }
             if (request_json.contains("allow_insecure_http")) {
@@ -7895,6 +7962,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
                 {"auth_header_name", auth_header.name},
                 {"auth_header_prefix", auth_header.prefix},
+                {"wire_format", cloud_registry_->wire_format_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},
