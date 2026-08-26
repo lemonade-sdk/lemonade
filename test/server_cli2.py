@@ -36,6 +36,7 @@ import unittest
 import uuid
 
 from utils.server_base import _auth_headers, set_server_config, wait_for_server
+from utils.server_fixture import allocate_free_port
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     ENDPOINT_TEST_MODEL_CTX_SIZE,
@@ -2445,11 +2446,7 @@ class CLIUrlSchemeTests(unittest.TestCase):
                     self.send_response(404)
                     self.end_headers()
 
-        # Find a free port
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind(("127.0.0.1", 0))
-        cls.mock_port = s.getsockname()[1]
-        s.close()
+        cls.mock_port = allocate_free_port()
 
         cls.server = http.server.HTTPServer(
             ("127.0.0.1", cls.mock_port), MockHTTPHandler

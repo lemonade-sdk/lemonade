@@ -131,6 +131,7 @@ python test/test_schema_lock.py
 - Gate tests on declared server capabilities with `@skip_if_unsupported` from `test/utils/capabilities.py`; it skips based on what the configured `--wrapped-server` / `--backend` reports supporting, not on detected hardware. Use `@requires_backend(...)` to gate on a specific backend. In practice, capability- and backend-gated tests execute on the self-hosted hardware runners and skip elsewhere.
 - Mock external services in-process (for example, the mock cloud provider) so tests run in CI without secrets or network dependencies.
 - Clean up after yourself: restore environment variables with `self.addCleanup(...)`, terminate any subprocess the test starts, and never leave a server running on a hardcoded port.
+- For tests that launch a dedicated `lemond` process or need an ephemeral port, import the shared fixture utilities from `test/utils/server_fixture.py` (`lemond_server`, `allocate_free_port`, `wait_for_http_health`) rather than writing manual socket binds, subprocess loops, or sleep-polling routines.
 
 ---
 

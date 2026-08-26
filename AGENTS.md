@@ -137,7 +137,7 @@ python test/server_whisper.py
 python test/server_sd.py
 ```
 
-Test utilities in `test/utils/` with `server_base.py` as the base class. Test dependencies include `requests`, `httpx`, `openai`, `huggingface_hub`, `psutil`, `numpy`, `websockets`, and `ollama`.
+Test utilities in `test/utils/` with `server_base.py` as the base class and `server_fixture.py` for hermetic server lifecycle management (`lemond_server`, `allocate_free_port`, `wait_for_http_health`). Test dependencies include `requests`, `httpx`, `openai`, `huggingface_hub`, `psutil`, `numpy`, `websockets`, and `ollama`.
 
 ### C++ unit tests
 

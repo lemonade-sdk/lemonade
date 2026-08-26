@@ -12,6 +12,9 @@ import unittest
 
 import requests
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils.server_fixture import wait_for_http_health
+
 PORT = 13401
 HOST = "127.0.0.1"
 BASE = f"http://{HOST}:{PORT}/api/v1"
@@ -47,6 +50,14 @@ def find_lemond_binary():
     env = os.environ.get("LEMOND_BINARY")
     if env:
         return env
+    try:
+        from utils.test_models import get_default_lemond_binary
+
+        candidate = get_default_lemond_binary()
+        if candidate and os.path.isfile(candidate):
+            return candidate
+    except ImportError:
+        pass
     for candidate in ("build/lemond", "build-debug/lemond", "build-release/lemond"):
         path = os.path.join(REPO_ROOT, candidate)
         if os.path.isfile(path):
@@ -159,18 +170,10 @@ class JobEngineTests(unittest.TestCase):
             stderr=subprocess.DEVNULL,
         )
         type(self)._shared_proc = self.proc
-        deadline = time.time() + 40
-        while time.time() < deadline:
+        if not wait_for_http_health(PORT, host=HOST, timeout=40.0):
             if self.proc.poll() is not None:
                 raise RuntimeError("lemond exited during startup")
-            try:
-                r = requests.get(f"{BASE}/health", timeout=2)
-                if r.status_code == 200:
-                    return
-            except requests.RequestException:
-                pass
-            time.sleep(POLL_INTERVAL)
-        raise RuntimeError("lemond did not become healthy in time")
+            raise RuntimeError("lemond did not become healthy in time")
 
     def stop_server(self, hard=False):
         if not self.proc:

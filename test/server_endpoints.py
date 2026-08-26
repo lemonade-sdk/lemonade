@@ -26,6 +26,7 @@ import os
 import platform
 import socket
 import subprocess
+import sys
 import time
 import unittest
 import shutil
@@ -34,6 +35,9 @@ import uuid
 import requests
 from openai import NotFoundError
 from prometheus_client.parser import text_string_to_metric_families
+
+# Make test utilities importable regardless of test runner invocation mode
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils.server_base import (
     ServerTestBase,
@@ -63,101 +67,12 @@ from utils.test_models import (
 )
 
 
-def _resolve_lemond_binary():
-    """Locate the lemond daemon binary for the duplicate-port test.
-
-    Prefers the binary built alongside this checkout; falls back to whatever is
-    on PATH. Returns None if neither exists so the test can skip cleanly rather
-    than fail on a machine without a built daemon.
-    """
-    candidate = get_default_lemond_binary()
-    if candidate and os.path.exists(candidate):
-        return candidate
-    return shutil.which("lemond")
-
-
-def _pick_free_port():
-    """Return an unused TCP port assigned by the OS on the IPv4 loopback.
-
-    Binding to port 0 lets the kernel pick a free port; we read it back and
-    close the socket immediately. Both lemond instances in the duplicate-port
-    test target this port, which is independent of the suite's server on PORT.
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-    finally:
-        s.close()
-
-
-def _lemond_health_ok(port, headers):
-    """True if lemond answers a 200 on /api/v1/health at the given port."""
-    try:
-        response = requests.get(
-            f"http://localhost:{port}/api/v1/health",
-            headers=headers,
-            timeout=2,
-        )
-        return response.status_code == 200
-    except requests.RequestException:
-        return False
-
-
-@contextlib.contextmanager
-def _running_lemond(config=None, cache_prefix="lemond_test_"):
-    """Spawn lemond on a free port with the given config.json body.
-
-    Skips the calling test when no daemon binary is available. Yields
-    (proc, port, headers, log_path) and terminates the daemon plus removes
-    its cache directory on exit.
-    """
-    lemond_binary = _resolve_lemond_binary()
-    if not lemond_binary:
-        raise unittest.SkipTest("lemond binary not found (build it or add it to PATH)")
-
-    headers = {}
-    api_key = os.environ.get("LEMONADE_API_KEY")
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    port = _pick_free_port()
-    cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
-    log_path = os.path.join(cache_dir, "lemond.log")
-    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
-        json.dump({"config_version": 2, **(config or {})}, f)
-
-    proc = None
-    try:
-        with open(log_path, "w", encoding="utf-8") as log:
-            proc = subprocess.Popen(
-                [lemond_binary, cache_dir, "--port", str(port)],
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                env=os.environ.copy(),
-            )
-        yield proc, port, headers, log_path
-    finally:
-        if proc is not None and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=10)
-        shutil.rmtree(cache_dir, ignore_errors=True)
-
-
-def _wait_until_healthy(proc, port, headers, timeout_s=60):
-    """Poll /api/v1/health until lemond answers or the deadline expires."""
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            return False
-        if _lemond_health_ok(port, headers):
-            return True
-        time.sleep(1)
-    return False
+from utils.server_fixture import (
+    allocate_free_port,
+    lemond_server,
+    make_clean_env,
+    wait_for_http_health,
+)
 
 
 class EndpointTests(ServerTestBase):
@@ -7316,103 +7231,71 @@ class EndpointTests(ServerTestBase):
         same port, and asserts the second one (a) exits non-zero, (b) reports the
         port is already in use, and (c) leaves the first server healthy.
         """
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        port = _pick_free_port()
+        headers = _auth_headers()
+        port = allocate_free_port()
         cache_dir = tempfile.mkdtemp(prefix="lemond_dupport_")
+        env = make_clean_env(cache_dir)
         first_log_path = os.path.join(cache_dir, "first_lemond.log")
-        cmd = [lemond_binary, cache_dir, "--port", str(port)]
 
-        first = None
-        second = None
         try:
             # --- Start the first lemond and wait until it is healthy ---
             with open(first_log_path, "w", encoding="utf-8") as first_log:
-                first = subprocess.Popen(
-                    cmd,
+                with lemond_server(
+                    port=port,
+                    cache_dir=cache_dir,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
                     stdout=first_log,
                     stderr=subprocess.STDOUT,
-                    env=os.environ.copy(),
-                )
+                    skip_if_unavailable=True,
+                ):
+                    # --- Start the second lemond on the SAME port; it must refuse ---
+                    with lemond_server(
+                        port=port,
+                        cache_dir=cache_dir,
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        skip_if_unavailable=True,
+                    ) as second:
+                        try:
+                            out, err = second.communicate(timeout=30)
+                        except subprocess.TimeoutExpired:
+                            second.kill()
+                            out, err = second.communicate()
+                            self.fail(
+                                "Second lemond did not exit; it should fail fast on the "
+                                f"in-use port {port}."
+                            )
 
-            deadline = time.time() + 60
-            first_healthy = False
-            while time.time() < deadline:
-                if first.poll() is not None:
-                    break  # exited early; surface the log below
-                if _lemond_health_ok(port, headers):
-                    first_healthy = True
-                    break
-                time.sleep(1)
+                        combined = f"{out or ''}\n{err or ''}"
 
-            if not first_healthy:
-                with open(first_log_path, "r", encoding="utf-8", errors="replace") as f:
-                    log = f.read()
-                self.fail(
-                    f"First lemond never became healthy on port {port}.\n"
-                    f"=== lemond log ===\n{log}"
-                )
+                        self.assertNotEqual(
+                            second.returncode,
+                            0,
+                            "Second lemond on an in-use port must exit non-zero, "
+                            f"got exit code 0.\n=== output ===\n{combined}",
+                        )
+                        self.assertIn(
+                            "already in use",
+                            combined.lower(),
+                            "Second lemond should report the port is already in use.\n"
+                            f"=== output ===\n{combined}",
+                        )
 
-            # --- Start the second lemond on the SAME port; it must refuse ---
-            second = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=os.environ.copy(),
-            )
-            try:
-                out, err = second.communicate(timeout=30)
-            except subprocess.TimeoutExpired:
-                second.kill()
-                out, err = second.communicate()
-                self.fail(
-                    "Second lemond did not exit; it should fail fast on the "
-                    f"in-use port {port}."
-                )
+                        # --- The original server must still be healthy ---
+                        self.assertTrue(
+                            wait_for_http_health(port, headers=headers),
+                            "First lemond should remain healthy after the duplicate was "
+                            "rejected.",
+                        )
 
-            combined = f"{out or ''}\n{err or ''}"
-
-            self.assertNotEqual(
-                second.returncode,
-                0,
-                "Second lemond on an in-use port must exit non-zero, "
-                f"got exit code 0.\n=== output ===\n{combined}",
-            )
-            self.assertIn(
-                "already in use",
-                combined.lower(),
-                "Second lemond should report the port is already in use.\n"
-                f"=== output ===\n{combined}",
-            )
-
-            # --- The original server must still be healthy ---
-            self.assertTrue(
-                _lemond_health_ok(port, headers),
-                "First lemond should remain healthy after the duplicate was "
-                "rejected.",
-            )
-
-            print(
-                f"[OK] Second lemond on in-use port {port} exited "
-                f"{second.returncode} and first server stayed healthy"
-            )
+                        print(
+                            f"[OK] Second lemond on in-use port {port} exited "
+                            f"{second.returncode} and first server stayed healthy"
+                        )
         finally:
-            for proc in (second, first):
-                if proc is not None and proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait(timeout=10)
             shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_034_shared_repo_variant_resolves_after_refs_main_advances(self):
@@ -7573,94 +7456,51 @@ class EndpointTests(ServerTestBase):
         client socket is kept open (which creates a lingering server-side connection
         in the TCP stack). The second lemond should start successfully.
         """
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found")
-
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-
-        port = _pick_free_port()
+        headers = _auth_headers()
+        port = allocate_free_port()
         cache_dir = tempfile.mkdtemp(prefix="lemond_lingering_")
+        env = make_clean_env(cache_dir)
         first_log_path = os.path.join(cache_dir, "first_lemond.log")
         second_log_path = os.path.join(cache_dir, "second_lemond.log")
-        cmd = [lemond_binary, cache_dir, "--port", str(port)]
 
-        first = None
-        second = None
         client_sock = None
         try:
             # 1. Start the first lemond
             with open(first_log_path, "w", encoding="utf-8") as first_log:
-                first = subprocess.Popen(
-                    cmd,
+                with lemond_server(
+                    port=port,
+                    cache_dir=cache_dir,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
                     stdout=first_log,
                     stderr=subprocess.STDOUT,
-                    env=os.environ.copy(),
-                )
+                    skip_if_unavailable=True,
+                ):
+                    # 2. Establish a TCP connection from a client socket and keep it open
+                    client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    client_sock.connect(("127.0.0.1", port))
+                    client_sock.sendall(
+                        b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                    )
 
-            # Wait for it to be healthy
-            deadline = time.time() + 30
-            first_healthy = False
-            while time.time() < deadline:
-                if first.poll() is not None:
-                    break
-                if _lemond_health_ok(port, headers):
-                    first_healthy = True
-                    break
-                time.sleep(1)
-
-            self.assertTrue(first_healthy, "First lemond failed to start")
-
-            # 2. Establish a TCP connection from a client socket and keep it open
-            client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_sock.connect(("127.0.0.1", port))
-            client_sock.sendall(b"GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n")
-
-            # 3. Shutdown the first lemond
-            first.terminate()
-            try:
-                first.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                first.kill()
-                first.wait(timeout=10)
-
-            # 4. Attempt to start a second lemond on the SAME port while client_sock is still active.
+            # First lemond is terminated on context exit.
+            # 3. Attempt to start a second lemond on the SAME port while client_sock is still active.
             # Without the fix, the second lemond would fail to start with EADDRINUSE (port already in use).
             with open(second_log_path, "w", encoding="utf-8") as second_log:
-                second = subprocess.Popen(
-                    cmd,
+                with lemond_server(
+                    port=port,
+                    cache_dir=cache_dir,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
                     stdout=second_log,
                     stderr=subprocess.STDOUT,
-                    env=os.environ.copy(),
-                )
-
-            # Assert that the second lemond starts and becomes healthy
-            deadline = time.time() + 30
-            second_healthy = False
-            while time.time() < deadline:
-                if second.poll() is not None:
-                    break
-                if _lemond_health_ok(port, headers):
-                    second_healthy = True
-                    break
-                time.sleep(1)
-
-            if not second_healthy:
-                with open(
-                    second_log_path, "r", encoding="utf-8", errors="replace"
-                ) as f:
-                    log = f.read()
-                self.fail(
-                    f"Second lemond failed to start on port {port} with lingering connection.\n"
-                    f"=== second lemond log ===\n{log}"
-                )
-
-            print(
-                f"[OK] Second lemond started successfully on port {port} with lingering connections"
-            )
+                    skip_if_unavailable=True,
+                ):
+                    print(
+                        f"[OK] Second lemond started successfully on port {port} with lingering connections"
+                    )
 
         finally:
             if client_sock:
@@ -7668,14 +7508,6 @@ class EndpointTests(ServerTestBase):
                     client_sock.close()
                 except Exception:
                     pass
-            for proc in (second, first):
-                if proc is not None and proc.poll() is None:
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                        proc.wait(timeout=10)
             shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_050_telemetry_trust_incoming_trace_context_config(self):
@@ -8211,189 +8043,228 @@ class EndpointTests(ServerTestBase):
         via /internal/set. Spawns its own lemond so it does not depend on an
         externally-managed server (unlike the shared-server assumption of
         ServerTestBase)."""
-        with _running_lemond(cache_prefix="lemond_ratecfg_") as (
-            proc,
-            port,
-            headers,
-            log_path,
-        ):
-            self.assertTrue(
-                _wait_until_healthy(proc, port, headers),
-                f"lemond never became healthy on port {port} (see {log_path})",
-            )
+        temp_cache = tempfile.mkdtemp(prefix="lemond_ratecfg_")
+        env = make_clean_env(temp_cache)
+        port = allocate_free_port()
+        log_path = os.path.join(temp_cache, "lemond.log")
+        headers = _auth_headers()
+        try:
+            with open(log_path, "w", encoding="utf-8") as log:
+                with lemond_server(
+                    port=port,
+                    cache_dir=temp_cache,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    skip_if_unavailable=True,
+                ):
+                    config_url = f"http://localhost:{port}/internal/config"
+                    set_url = f"http://localhost:{port}/internal/set"
 
-            config_url = f"http://localhost:{port}/internal/config"
-            set_url = f"http://localhost:{port}/internal/set"
+                    # Invalid values are rejected by config validation.
+                    bad_changes = [
+                        {"download_rate_limit": "10M5"},  # malformed rate string
+                        {"download_rate_limit": -5},  # non-string / negative
+                        {"download_rate_limit": "abc"},  # invalid rate string
+                    ]
+                    for body in bad_changes:
+                        resp = requests.post(
+                            set_url,
+                            headers=headers,
+                            json=body,
+                            timeout=TIMEOUT_DEFAULT,
+                        )
+                        self.assertEqual(
+                            resp.status_code,
+                            400,
+                            f"expected 400 for {body!r}, got {resp.status_code}: {resp.text}",
+                        )
 
-            # Invalid values are rejected by config validation.
-            bad_changes = [
-                {"download_rate_limit": "10M5"},  # malformed rate string
-                {"download_rate_limit": -5},  # non-string / negative
-                {"download_rate_limit": "abc"},  # invalid rate string
-            ]
-            for body in bad_changes:
-                resp = requests.post(
-                    set_url,
-                    headers=headers,
-                    json=body,
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(
-                    resp.status_code,
-                    400,
-                    f"expected 400 for {body!r}, got {resp.status_code}: {resp.text}",
-                )
+                    # A full round-trip persists in the config snapshot.
+                    resp = requests.post(
+                        set_url,
+                        headers=headers,
+                        json={"download_rate_limit": "10M"},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(
+                        resp.status_code, 200, f"/internal/set failed: {resp.text}"
+                    )
+                    cfg = requests.get(
+                        config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ).json()
+                    self.assertEqual(cfg["download_rate_limit"], "10M")
 
-            # A full round-trip persists in the config snapshot.
-            resp = requests.post(
-                set_url,
-                headers=headers,
-                json={"download_rate_limit": "10M"},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(
-                resp.status_code, 200, f"/internal/set failed: {resp.text}"
-            )
-            cfg = requests.get(
-                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
-            ).json()
-            self.assertEqual(cfg["download_rate_limit"], "10M")
+                    # A partial update preserves unrelated keys.
+                    resp = requests.post(
+                        set_url,
+                        headers=headers,
+                        json={"download_rate_limit": "20M"},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(
+                        resp.status_code, 200, f"/internal/set failed: {resp.text}"
+                    )
+                    cfg = requests.get(
+                        config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ).json()
+                    self.assertEqual(cfg["download_rate_limit"], "20M")
 
-            # A partial update preserves unrelated keys.
-            resp = requests.post(
-                set_url,
-                headers=headers,
-                json={"download_rate_limit": "20M"},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(
-                resp.status_code, 200, f"/internal/set failed: {resp.text}"
-            )
-            cfg = requests.get(
-                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
-            ).json()
-            self.assertEqual(cfg["download_rate_limit"], "20M")
+                    # Clearing the cap means runtime unlimited.
+                    resp = requests.post(
+                        set_url,
+                        headers=headers,
+                        json={"download_rate_limit": ""},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(
+                        resp.status_code, 200, f"/internal/set failed: {resp.text}"
+                    )
+                    cfg = requests.get(
+                        config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ).json()
+                    self.assertEqual(cfg["download_rate_limit"], "")
 
-            # Clearing the cap means runtime unlimited.
-            resp = requests.post(
-                set_url,
-                headers=headers,
-                json={"download_rate_limit": ""},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(
-                resp.status_code, 200, f"/internal/set failed: {resp.text}"
-            )
-            cfg = requests.get(
-                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
-            ).json()
-            self.assertEqual(cfg["download_rate_limit"], "")
-
-            print(
-                "[OK] download_rate_limit validates and round-trips via /internal/set"
-            )
+                    print(
+                        "[OK] download_rate_limit validates and round-trips via /internal/set"
+                    )
+        finally:
+            shutil.rmtree(temp_cache, ignore_errors=True)
 
     def test_058_download_rate_limit_invalid_config_startup(self):
         """An invalid download_rate_limit in config.json must not crash
         lemond: the raw value is preserved in the snapshot and the server stays
         healthy (invalid caps are treated as unlimited)."""
-        with _running_lemond(
-            config={"download_rate_limit": "-1"},
-            cache_prefix="lemond_badcfg_",
-        ) as (proc, port, headers, log_path):
-            if not _wait_until_healthy(proc, port, headers):
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    log = f.read()
-                self.fail(
-                    f"lemond with invalid download_rate_limit crashed or never "
-                    f"became healthy on port {port}.\n=== lemond log ===\n{log}"
-                )
+        temp_cache = tempfile.mkdtemp(prefix="lemond_badcfg_")
+        env = make_clean_env(temp_cache)
+        config_dir = env["LEMONADE_CONFIG_DIR"]
+        os.makedirs(config_dir, exist_ok=True)
+        config_path = os.path.join(config_dir, "config.json")
+        port = allocate_free_port()
+        log_path = os.path.join(temp_cache, "lemond.log")
+        headers = _auth_headers()
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump({"config_version": 2, "download_rate_limit": "-1"}, f)
+        try:
+            with open(log_path, "w", encoding="utf-8") as log:
+                with lemond_server(
+                    port=port,
+                    cache_dir=temp_cache,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    skip_if_unavailable=True,
+                ):
+                    cfg = requests.get(
+                        f"http://localhost:{port}/internal/config",
+                        headers=headers,
+                        timeout=TIMEOUT_DEFAULT,
+                    ).json()
+                    # The raw value is preserved verbatim in the config snapshot.
+                    self.assertEqual(cfg.get("download_rate_limit"), "-1")
 
-            cfg = requests.get(
-                f"http://localhost:{port}/internal/config",
-                headers=headers,
-                timeout=TIMEOUT_DEFAULT,
-            ).json()
-            # The raw value is preserved verbatim in the config snapshot.
-            self.assertEqual(cfg.get("download_rate_limit"), "-1")
-
-            print(
-                "[OK] lemond stays healthy with an invalid download_rate_limit "
-                "in config.json"
-            )
+                    print(
+                        "[OK] lemond stays healthy with an invalid download_rate_limit "
+                        "in config.json"
+                    )
+        finally:
+            shutil.rmtree(temp_cache, ignore_errors=True)
 
     def test_059_download_rate_limit_runtime_effect(self):
         """Changing download_rate_limit via /internal/set must actually apply
         the cap to HttpClient at runtime: the side-effect log line records the
         newly active byte rate, clearing it disables capping, and the last
         value is persisted to config.json."""
-        with _running_lemond(
-            config={"download_rate_limit": "10M"},
-            cache_prefix="lemond_ratecfg_",
-        ) as (proc, port, headers, log_path):
-            config_path = os.path.join(os.path.dirname(log_path), "config.json")
-            self.assertTrue(
-                _wait_until_healthy(proc, port, headers),
-                f"lemond never became healthy on port {port} (see {log_path})",
-            )
+        temp_cache = tempfile.mkdtemp(prefix="lemond_ratecfg_")
+        env = make_clean_env(temp_cache)
+        config_dir = env["LEMONADE_CONFIG_DIR"]
+        os.makedirs(config_dir, exist_ok=True)
+        config_path = os.path.join(config_dir, "config.json")
+        port = allocate_free_port()
+        log_path = os.path.join(temp_cache, "lemond.log")
+        headers = _auth_headers()
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump({"config_version": 2, "download_rate_limit": "10M"}, f)
+        try:
+            with open(log_path, "w", encoding="utf-8") as log:
+                with lemond_server(
+                    port=port,
+                    cache_dir=temp_cache,
+                    env=env,
+                    wait_health=True,
+                    health_headers=headers,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    skip_if_unavailable=True,
+                ):
+                    config_url = f"http://localhost:{port}/internal/config"
+                    set_url = f"http://localhost:{port}/internal/set"
 
-            config_url = f"http://localhost:{port}/internal/config"
-            set_url = f"http://localhost:{port}/internal/set"
+                    def _wait_for_log(needle, timeout_s=10.0):
+                        deadline = time.time() + timeout_s
+                        while time.time() < deadline:
+                            with open(
+                                log_path, "r", encoding="utf-8", errors="replace"
+                            ) as f:
+                                if needle in f.read():
+                                    return True
+                            time.sleep(0.2)
+                        return False
 
-            def _wait_for_log(needle, timeout_s=10.0):
-                deadline = time.time() + timeout_s
-                while time.time() < deadline:
-                    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                        if needle in f.read():
-                            return True
-                    time.sleep(0.2)
-                return False
+                    cfg = requests.get(
+                        config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ).json()
+                    self.assertEqual(cfg.get("download_rate_limit"), "10M")
 
-            cfg = requests.get(
-                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
-            ).json()
-            self.assertEqual(cfg.get("download_rate_limit"), "10M")
+                    # Raising the cap takes effect immediately and is logged.
+                    resp = requests.post(
+                        set_url,
+                        headers=headers,
+                        json={"download_rate_limit": "50M"},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(resp.status_code, 200, resp.text)
+                    self.assertTrue(
+                        _wait_for_log("Download rate limit enabled at 52428800 B/s"),
+                        "runtime cap change was not applied to HttpClient",
+                    )
 
-            # Raising the cap takes effect immediately and is logged.
-            resp = requests.post(
-                set_url,
-                headers=headers,
-                json={"download_rate_limit": "50M"},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(resp.status_code, 200, resp.text)
-            self.assertTrue(
-                _wait_for_log("Download rate limit enabled at 52428800 B/s"),
-                "runtime cap change was not applied to HttpClient",
-            )
+                    # Clearing the cap disables limiting at runtime too.
+                    resp = requests.post(
+                        set_url,
+                        headers=headers,
+                        json={"download_rate_limit": ""},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                    self.assertEqual(resp.status_code, 200, resp.text)
+                    self.assertTrue(
+                        _wait_for_log("Download rate limit disabled"),
+                        "clearing the cap did not disable runtime limiting",
+                    )
 
-            # Clearing the cap disables limiting at runtime too.
-            resp = requests.post(
-                set_url,
-                headers=headers,
-                json={"download_rate_limit": ""},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(resp.status_code, 200, resp.text)
-            self.assertTrue(
-                _wait_for_log("Download rate limit disabled"),
-                "clearing the cap did not disable runtime limiting",
-            )
+                    # The persistent channel wrote the final value; "" equals the
+                    # default, so the key may be pruned from disk.
+                    if os.path.exists(config_path):
+                        with open(config_path, "r", encoding="utf-8") as f:
+                            self.assertEqual(
+                                json.load(f).get("download_rate_limit", ""), ""
+                            )
 
-            # The persistent channel wrote the final value; "" equals the
-            # default, so the key may be pruned from disk.
-            with open(config_path, "r", encoding="utf-8") as f:
-                self.assertEqual(json.load(f).get("download_rate_limit", ""), "")
+                    cfg = requests.get(
+                        config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ).json()
+                    self.assertEqual(cfg.get("download_rate_limit"), "")
 
-            cfg = requests.get(
-                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
-            ).json()
-            self.assertEqual(cfg.get("download_rate_limit"), "")
-
-            print(
-                "[OK] /internal/set applies download_rate_limit at runtime "
-                "and persists it"
-            )
+                    print(
+                        "[OK] /internal/set applies download_rate_limit at runtime "
+                        "and persists it"
+                    )
+        finally:
+            shutil.rmtree(temp_cache, ignore_errors=True)
 
 
 if __name__ == "__main__":
