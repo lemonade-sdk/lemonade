@@ -161,13 +161,53 @@ int main() {
 
     {
         auto set = lemon::enumerate_gguf_variants({
-            "Gemma-Q4_K_M.gguf",
-            "mtp-Gemma.gguf",
+            "Model-Q4_K_M.gguf",
+            "mtp-Model.gguf",
         });
         result.expect("MTP companion is reported as a draft",
                       set.variants.size() == 1 && set.variants[0].name == "Q4_K_M" &&
-                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Gemma.gguf",
+                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Model.gguf",
                       "got " + join_names(set));
+        result.expect("single draft is associated with the main variant",
+                      set.variants.size() == 1 && set.variants[0].draft_file == "mtp-Model.gguf",
+                      set.variants.empty() ? "no main variant" :
+                          "draft=" + set.variants[0].draft_file);
+    }
+
+    // Multiple MTP precisions are resolved generically. The main Q4_K_M has no
+    // exact sidecar tag, so nearest bit width selects Q4_0; Q8_0 matches exactly.
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Model-Q4_K_M.gguf",
+            "Model-Q8_0.gguf",
+            "mtp-Model-Q4_0.gguf",
+            "mtp-Model-Q8_0.gguf",
+        });
+        result.expect("Q4 target selects nearest-bit MTP companion",
+                      set.variants.size() == 2 && set.variants[0].quant == "Q4_K_M" &&
+                          set.variants[0].draft_file == "mtp-Model-Q4_0.gguf",
+                      set.variants.empty() ? "no variants" :
+                          "draft=" + set.variants[0].draft_file);
+        result.expect("Q8 target selects exact MTP companion",
+                      set.variants.size() == 2 && set.variants[1].quant == "Q8_0" &&
+                          set.variants[1].draft_file == "mtp-Model-Q8_0.gguf",
+                      set.variants.size() < 2 ? "missing Q8 variant" :
+                          "draft=" + set.variants[1].draft_file);
+    }
+
+    // Repository-relative paths matter for auxiliary checkpoint downloads.
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Q4_K_M/Model-Q4_K_M-00001-of-00002.gguf",
+            "Q4_K_M/Model-Q4_K_M-00002-of-00002.gguf",
+            "Q4_K_M/mtp-Model-Q4_0.gguf",
+            "mtp-Model-Q8_0.gguf",
+        });
+        result.expect("draft association preserves repository-relative path",
+                      set.variants.size() == 1 &&
+                          set.variants[0].draft_file == "Q4_K_M/mtp-Model-Q4_0.gguf",
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
     }
 
     {
@@ -179,6 +219,10 @@ int main() {
         result.expect("Multiple draft companions are all reported",
                       set.draft_files.size() == 2,
                       "draft count = " + std::to_string(set.draft_files.size()));
+        result.expect("different speculative mechanisms stay ambiguous",
+                      set.variants.size() == 1 && set.variants[0].draft_file.empty(),
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
     }
 
     {
