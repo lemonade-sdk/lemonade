@@ -4,6 +4,8 @@
 
 #include "lemon/backends/vllm/vllm_arg_resolver.h"
 
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <string>
@@ -11,6 +13,7 @@
 
 using lemon::backends::VLLMArgResolution;
 using lemon::backends::resolve_vllm_args;
+using lemon::backends::shared_memory_gpu_utilization;
 using nlohmann::json;
 
 static json test_config() {
@@ -111,6 +114,24 @@ static bool expect_error(const char* name,
 
     std::printf("[FAIL] %s\n  expected error containing: %s\n", name, expected_substring.c_str());
     return false;
+}
+
+static constexpr uint64_t gib = 1024ULL * 1024ULL * 1024ULL;
+
+static uint64_t gib_of(double count) {
+    return static_cast<uint64_t>(count * static_cast<double>(gib));
+}
+
+static bool expect_utilization(const char* name,
+                               uint64_t free_bytes,
+                               uint64_t total_bytes,
+                               double expected) {
+    double actual = shared_memory_gpu_utilization(free_bytes, total_bytes);
+    // A negative expectation only asserts "omit the flag", not an exact value.
+    bool ok = expected < 0.0 ? actual < 0.0 : std::fabs(actual - expected) < 1e-9;
+    std::printf("[%s] %s\n  got:  %.4f\n  want: %.4f\n",
+                ok ? "PASS" : "FAIL", name, actual, expected);
+    return ok;
 }
 
 int main() {
@@ -316,6 +337,56 @@ int main() {
         resolve_vllm_args("Qwen3.5-4B-vLLM", "Qwen/Qwen3.5-4B", test_config(), "--quantization gptq"),
         true,
         "gptq");
+
+    // shared_memory_gpu_utilization scales vLLM's startup free-memory demand to what the
+    // device itself has free, so a co-tenant process cannot reject a model that fits.
+
+    // The gfx1151 CI case, verbatim from the failing run: 27.07 of 32.0 GiB free, which
+    // vLLM's 0.92 default (29.44 GiB) rejects. 0.79 asks for 25.28 GiB, which fits.
+    failures += !expect_utilization(
+        "the observed CI reading yields a request that fits",
+        gib_of(27.07), gib_of(32.0), 0.79);
+
+    // Same reading: 0.7959 truncates to 0.79 rather than rounding to 0.80, because the
+    // flag is emitted at two decimals and rounding up would spend the headroom.
+    failures += !expect_utilization(
+        "the emitted value truncates rather than rounding past what is free",
+        gib_of(27.07), gib_of(32.0), 0.79);
+
+    failures += !expect_utilization(
+        "an idle device leaves vLLM's own default in place",
+        gib_of(31.5), gib_of(32.0), -1.0);
+
+    // vLLM's pre-flight passes at exactly 0.92 free, so there is nothing to correct.
+    failures += !expect_utilization(
+        "a device vLLM's default exactly fits keeps that default",
+        gib_of(92.0), gib_of(100.0), -1.0);
+
+    failures += !expect_utilization(
+        "a device just below the default is scaled down",
+        gib_of(58.0), gib_of(64.0), 0.85);
+
+    failures += !expect_utilization(
+        "no usable reading leaves vLLM's own default in place", 0, 0, -1.0);
+
+    failures += !expect_utilization(
+        "a nonsensical reading leaves vLLM's own default in place",
+        gib_of(48.0), gib_of(32.0), -1.0);
+
+    failures += !expect_utilization(
+        "an exhausted device leaves vLLM's own default in place",
+        0, gib_of(32.0), -1.0);
+
+    // 4 GiB free of 32 GiB scales to 0.07, a 2.24 GiB budget that cannot hold the 4 GiB
+    // kv-cache cap emitted beside it. vLLM's own error names the byte counts instead.
+    failures += !expect_utilization(
+        "a budget too small for the kv-cache cap leaves vLLM's own default in place",
+        gib_of(4.0), gib_of(32.0), -1.0);
+
+    // The same 12.5% free share of a large pool is 17.92 GiB, which clears the cap.
+    failures += !expect_utilization(
+        "the same free share on a large pool is still worth requesting",
+        gib_of(32.0), gib_of(256.0), 0.07);
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

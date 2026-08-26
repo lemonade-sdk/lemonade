@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.7.0)
+project(lemon_cpp VERSION 11.8.0)
 
 include(CTest)
 
@@ -1166,7 +1166,7 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
         src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
-    add_cpp_ci_test(vllm_arg_resolver CI OFF COMMAND test_vllm_arg_resolver)
+    add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
 endif()
 
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")

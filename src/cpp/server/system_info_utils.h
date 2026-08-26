@@ -2,7 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstdio>
+#include <exception>
+#include <filesystem>
+#include <fstream>
 #include <set>
+#include <system_error>
 #include <string>
 #include <utility>
 #include <vector>
@@ -118,6 +124,121 @@ inline std::string identify_cuda_arch_from_name(const std::string& device_name) 
         }
     }
     return "";
+}
+
+// KFD publishes a GPU's ISA as packed decimal (110501 -> gfx1151), where the minor and
+// step fields are hex nibbles. Empty when the value is not a decimal integer; the CPU
+// node's 0 yields the unmatchable "gfx000" rather than an error.
+inline std::string gfx_target_version_to_arch(const std::string& gfx_target_version) {
+    if (gfx_target_version.empty() ||
+        !std::all_of(gfx_target_version.begin(), gfx_target_version.end(),
+                     [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return "";
+    }
+
+    int packed = 0;
+    try {
+        packed = std::stoi(gfx_target_version);
+    } catch (const std::exception&) {
+        return "";
+    }
+
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "gfx%d%x%x",
+                  packed / 10000, (packed / 100) % 100, packed % 100);
+    return std::string(buf);
+}
+
+// Reads the amdgpu driver's own per-device accounting under `kfd_nodes_dir` (KFD
+// topology) and `drm_dir` (/sys/class/drm). Both are world-readable, unlike the libdrm
+// probe elsewhere in this file's callers, which needs O_RDWR on a render node and so
+// answers wrongly for a service account outside the `render` group.
+//
+// Reports nothing unless exactly one GPU matches: two of the same ISA leave no way to say
+// which one a launch lands on, and guessing would size against the wrong device.
+inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes_dir,
+                                          const std::filesystem::path& drm_dir,
+                                          const std::string& arch,
+                                          uint64_t& free_bytes,
+                                          uint64_t& total_bytes) {
+    namespace fs = std::filesystem;
+
+    if (arch.empty()) {
+        return false;
+    }
+
+    std::error_code ec;
+    if (!fs::is_directory(kfd_nodes_dir, ec)) {
+        return false;
+    }
+
+    std::string wanted = arch;
+    std::transform(wanted.begin(), wanted.end(), wanted.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    std::vector<std::string> matching_render_minors;
+    for (fs::directory_iterator it(kfd_nodes_dir, ec), end; it != end && !ec;
+         it.increment(ec)) {
+        std::ifstream props(it->path() / "properties");
+        if (!props.is_open()) {
+            continue;
+        }
+
+        std::string line;
+        std::string gfx_target_version;
+        std::string drm_render_minor;
+        while (std::getline(props, line)) {
+            const size_t space = line.find(' ');
+            if (space == std::string::npos) {
+                continue;
+            }
+            const std::string key = line.substr(0, space);
+            std::string value = line.substr(space + 1);
+            const size_t end_of_value = value.find_last_not_of(" \t\n\r");
+            value = end_of_value == std::string::npos
+                ? ""
+                : value.substr(0, end_of_value + 1);
+
+            if (key == "gfx_target_version") {
+                gfx_target_version = value;
+            } else if (key == "drm_render_minor") {
+                drm_render_minor = value;
+            }
+        }
+
+        // drm_render_minor -1 marks a GPU with no render node, which no userspace
+        // runtime can open. The CPU node needs no special case: its packed version of 0
+        // cannot match a real ISA.
+        if (drm_render_minor.empty() || drm_render_minor == "-1") {
+            continue;
+        }
+        if (gfx_target_version_to_arch(gfx_target_version) == wanted) {
+            matching_render_minors.push_back(drm_render_minor);
+        }
+    }
+
+    if (matching_render_minors.size() != 1) {
+        return false;
+    }
+
+    auto read_u64 = [](const fs::path& path, uint64_t& value) {
+        std::ifstream file(path);
+        return file.is_open() && static_cast<bool>(file >> value);
+    };
+
+    const fs::path device_dir =
+        drm_dir / ("renderD" + matching_render_minors.front()) / "device";
+    uint64_t used = 0;
+    uint64_t total = 0;
+    if (!read_u64(device_dir / "mem_info_vram_used", used) ||
+        !read_u64(device_dir / "mem_info_vram_total", total) ||
+        total == 0 || used > total) {
+        return false;
+    }
+
+    free_bytes = total - used;
+    total_bytes = total;
+    return true;
 }
 
 }  // namespace lemon::system_info_detail
