@@ -120,7 +120,7 @@ struct BackendDescriptor {
     // for llamacpp/sd-cpp. Trailing field so existing positional initializers keep
     // their default (false) without edits.
     bool rocm_bundles_runtime = false;
-  
+
     // True if the backend streams the model from storage rather than loading it
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_models_by_backend in model_manager.cpp).

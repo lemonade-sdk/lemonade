@@ -35,7 +35,7 @@ The install fetches a per-GPU-target release (e.g. `…-gfx1151`, `…-gfx1150`)
 
 ### ROCm Channels (stable / nightly)
 
-The `vllm:rocm` backend publishes two channels, selected by the same global [`rocm_channel`](#) toggle used by `llamacpp:rocm` and `sd-cpp:rocm`:
+The `vllm:rocm` backend publishes two channels, selected by the same global `rocm_channel` toggle used by `llamacpp:rocm` and `sd-cpp:rocm`:
 
 | Channel | What it is | Pin key |
 |---|---|---|
@@ -154,7 +154,7 @@ Lemonade-managed process arguments cannot be set in this file or in `vllm_args`:
 
 Some FP8 Qwen3.6 recipes enable **Multi-Token Prediction (MTP)** speculative decoding through a structured `speculative_config` object in [`vllm_model_config.json`](https://github.com/lemonade-sdk/lemonade/blob/main/src/cpp/resources/vllm_model_config.json) (`{"method": "mtp", "num_speculative_tokens": 1}`). It is configured as an object rather than a `vllm_args` string because the space-delimited `vllm_args` tokenizer would corrupt inline JSON; Lemonade serializes it to a single `--speculative-config` argument.
 
-**Validation scope.** MTP was verified on gfx942 / MI300X (`vllm0.19.1-rocm7.13.0`): vLLM detects the model's MTP head, and the dense `Qwen3.6-27B-FP8` recipe reached ~80% draft-token acceptance. The `Qwen3.6-35B-A3B-FP8` MoE recipes were throughput-benched on the same GPU with the MTP head active. The recipes are **not** arch-restricted, so an RDNA host with enough VRAM can load them against the default RDNA stable pin (`vllm.rocm-stable`, currently `vllm0.22.1-rocm7.13.0`); that pin is newer than the gfx942 line and exposes the same method, but MTP on RDNA has not been independently serve-validated.
+**Validation scope.** MTP was verified on gfx942 / MI300X (`vllm0.19.1-rocm7.13.0`): vLLM detects the model's MTP head, and the dense `Qwen3.6-27B-FP8` recipe reached ~80% draft-token acceptance. The `Qwen3.6-35B-A3B-FP8` MoE recipes were throughput-benched on the same GPU with the MTP head active. The recipes are **not** arch-restricted, so an RDNA host with enough VRAM can load them against the default RDNA stable pin (`vllm.rocm-stable`, currently `vllm0.20.1-rocm7.12.0`); that pin exposes the same method, but MTP on RDNA has not been independently serve-validated.
 
 ## Tuning
 
