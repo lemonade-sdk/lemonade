@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "mcp_tool.h"
+#include "lemon/mcp_3d_orchestrator.h"
 #include "lemon/model_manager_types.h"
 #include "router.h"
 
@@ -23,7 +24,10 @@ public:
     using ServerToolFn = std::function<json(const std::string&, const json&)>;
 
     McpServer(Router* router, ModelManager* model_manager,
-              EnsureLoadedFn ensure_loaded, ServerToolFn server_tool);
+              EnsureLoadedFn ensure_loaded,
+              ServerToolFn server_tool,
+              mcp_3d::GenerationFn image_generation,
+              mcp_3d::GenerationFn generation_3d);
     ~McpServer();
 
     // Returns the JSON-RPC reply, or an empty string when every message was a
@@ -43,6 +47,7 @@ private:
     json tool_chat(const json& arguments);
     json tool_transcribe_audio(const json& arguments);
     json tool_generate_image(const json& arguments);
+    json tool_generate_3d(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
     json tool_docs(const json& arguments);
@@ -79,6 +84,8 @@ private:
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
     ServerToolFn server_tool_;
+    mcp_3d::GenerationFn image_generation_;
+    mcp_3d::GenerationFn generation_3d_;
     std::vector<McpTool> tools_;
 };
 

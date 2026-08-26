@@ -484,6 +484,25 @@ Without `output_path` or `output_dir`, success returns one native MCP `image` co
 | `size` | no | `{"type":"string"}` | Requested image size as WIDTHxHEIGHT, for example 512x512. |
 | `steps` | no | `{"type":"integer"}` | Number of diffusion sampling steps. |
 
+### `lemonade_generate_3d`
+
+Create a GLB from exactly one of `image` or `prompt`. With `image`, reconstruction uses the existing 3D server path directly. With `prompt`, Lemonade first generates one reconstruction-oriented 1024x1024 image, then passes it into the same 3D path. An optional `image_model` must already be loaded or downloaded; otherwise a loaded image model, then a downloaded one, is selected. No image model is downloaded automatically.
+
+**Returns**
+
+Returns a short text block and the GLB in `structuredContent.data_base64` (`mime_type`: model/gltf-binary). Prompt calls also include a native MCP reference-image block and `reference_generated`, `image_model`, and `model` metadata. Failures distinguish reference-image generation from 3D reconstruction.
+
+| Argument | Required | Schema | Description |
+|---|:---:|---|---|
+| `bg_removal` | no | `{"enum":["threshold","birefnet"],"type":"string"}` | Background removal mode for 3D reconstruction. |
+| `image` | no | `{"type":"string"}` | Base64 PNG/JPEG/BMP/GIF image or base64 data: URL. Use exactly one of image/prompt. |
+| `image_model` | no | `{"type":"string"}` | Prompt path only. Optional local image-generation model; never auto-downloaded. |
+| `model` | no | `{"type":"string"}` | Optional 3D reconstruction model; omit to reuse a loaded or downloaded mesh model. |
+| `prompt` | no | `{"type":"string"}` | Text prompt used to generate one 1024x1024 reference image. Use exactly one of image/prompt. |
+| `resolution` | no | `{"enum":[512,1024,1536],"type":"integer"}` | 3D reconstruction resolution; independent of the reference-image size. |
+| `seed` | no | `{"type":"integer"}` | Optional reconstruction seed. |
+| `uv` | no | `{"enum":["box","xatlas"],"type":"string"}` | 3D UV atlas method. |
+
 ### `lemonade_omni`
 
 Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + images + speech in the same response). The server runs an internal tool-calling loop against the collection's planner LLM and executes its image / image-edit / TTS tools by routing to the bundled component models; the result comes back as a text block plus native MCP `image` / `audio` content blocks (one per artifact). `model` is OPTIONAL: when omitted, the server reuses an already-downloaded Omni collection; if none is downloaded it asks you to pass a `model` or `allow_download: true` (which downloads the default, `LMX-Omni-5.5B-Lite`). Pass `model='LMX-Omni-52B-Halo'` (or any other recipe='collection.omni' model from `lemonade_list_models`) to opt into a larger collection; that model may be multi-GB. Same-machine deployment: PREFER `output_dir` to write artifacts to disk and avoid expensive inline base64 blobs. For plain text chat against a regular LLM, use `lemonade_chat` instead.
