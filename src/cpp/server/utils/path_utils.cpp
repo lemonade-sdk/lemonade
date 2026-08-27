@@ -274,9 +274,15 @@ static bool move_tree_into(const fs::path& src, const fs::path& dst,
         return false;
     }
 
+    std::error_code iter_ec;
     std::vector<fs::path> entries;
-    for (const auto& entry : fs::directory_iterator(src, ec)) {
+    for (const auto& entry : fs::directory_iterator(src, iter_ec)) {
         entries.push_back(entry.path());
+    }
+    if (iter_ec) {
+        LOG(WARNING) << "Migration: cannot read " << path_to_utf8(src)
+                     << ": " << iter_ec.message();
+        return false;
     }
 
     bool drained = true;
@@ -329,7 +335,17 @@ void migrate_legacy_paths(const std::string& cache_dir,
     // Pre-3028 systemd installs kept everything under $HOME/.cache. Recover the
     // cache payload (downloaded backends, registry blobs) into the relocated
     // cache dir and the JSON into the config dir.
-    const std::string legacy_cache = platform()->get_legacy_cache_dir();
+    //
+    // Gate this on the service actually relocating our directories — systemd
+    // exports CACHE_DIRECTORY / STATE_DIRECTORY when it does. Otherwise the
+    // legacy dir differs from the active one for a second, innocent reason: the
+    // user pointed lemond at a different cache dir (e.g. `lemond /tmp/scratch`),
+    // and we must not drain their real ~/.cache/lemonade into it.
+    const bool relocated_by_service =
+        !get_environment_variable_utf8("CACHE_DIRECTORY").empty() ||
+        !get_environment_variable_utf8("STATE_DIRECTORY").empty();
+    const std::string legacy_cache =
+        relocated_by_service ? platform()->get_legacy_cache_dir() : std::string();
     if (!legacy_cache.empty()) {
         const fs::path legacy_cache_path = path_from_utf8(legacy_cache);
         const fs::path new_cache_path = path_from_utf8(cache_dir);
