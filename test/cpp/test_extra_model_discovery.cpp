@@ -14,16 +14,6 @@ using lemon::ModelManager;
 using lemon::ModelType;
 using lemon::model_type_to_string;
 
-namespace lemon {
-struct ExtraModelDiscoveryTestHook {
-    static std::map<std::string, ModelInfo> discover(const ModelManager& m) {
-        return m.discover_extra_models();
-    }
-};
-}  // namespace lemon
-
-using lemon::ExtraModelDiscoveryTestHook;
-
 static int g_failures = 0;
 
 static void check(const char* name, bool ok) {
@@ -83,7 +73,7 @@ static void test_root_files() {
     touch(dir / "Qwen3-8B-Instruct.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     check_type(models, "root embedding filename defaults to LLM", "extra.nomic-embed-text-v2",
                ModelType::LLM, "chat");
@@ -101,7 +91,7 @@ static void test_split_variant_folder() {
     touch(dir / "reranking" / "MyModel" / "MyModel-Q8_0.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     check_type(models, "split variant (Q4_K_M) inherits reranking", "extra.MyModel-Q4_K_M",
                ModelType::RERANKING, "reranking");
@@ -116,7 +106,7 @@ static void test_folder_model() {
     touch(dir / "embeddings" / "my-model" / "model.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     check_type(models, "folder model inherits embeddings", "extra.my-model",
                ModelType::EMBEDDING, "embeddings");
@@ -129,7 +119,7 @@ static void test_filename_does_not_override_category() {
     touch(dir / "embeddings" / "bge-reranker-v2.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     if (check_type(models, "reranker filename in embeddings stays EMBEDDING",
                    "extra.bge-reranker-v2", ModelType::EMBEDDING, "embeddings")) {
@@ -146,7 +136,7 @@ static void test_mixed_folder_is_one_model() {
     touch(dir / "mixed" / "z-rerank-model.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     check("mixed folder discovers one model", models.size() == 1);
     check_type(models, "ordinary folder defaults to chat", "extra.mixed",
@@ -162,7 +152,7 @@ static void test_multimodal_folder() {
     touch(dir / "chat" / "gemma-vision" / "mmproj-gemma-vision-f16.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     if (check_type(models, "multimodal folder stays LLM", "extra.gemma-vision",
                    ModelType::LLM, "chat")) {
@@ -181,7 +171,7 @@ static void test_category_files_are_separate_models() {
     touch(dir / "embeddings" / "model-b.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     check("category files discover two models", models.size() == 2);
     check_type(models, "first category file is embedding", "extra.model-a",
@@ -197,7 +187,7 @@ static void test_category_names_are_case_sensitive() {
     touch(dir / "Embeddings" / "model.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     check_type(models, "unreserved mixed-case directory defaults to chat", "extra.Embeddings",
                ModelType::LLM, "chat");
@@ -211,7 +201,7 @@ static void test_same_name_across_categories() {
     touch(dir / "reranking" / "model.gguf");
 
     ModelManager manager(dir.string());
-    auto models = ExtraModelDiscoveryTestHook::discover(manager);
+    auto models = manager.discover_extra_models_for_test();
 
     int embedding_models = 0;
     int reranking_models = 0;
@@ -232,6 +222,23 @@ static void test_same_name_across_categories() {
     fs::remove_all(dir);
 }
 
+static void test_non_normalized_search_path() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "embeddings" / "model-a.gguf");
+    touch(dir / "embeddings" / "model-b.gguf");
+
+    ModelManager manager((dir / ".").string());
+    auto models = manager.discover_extra_models_for_test();
+
+    check("non-normalized category path discovers two models", models.size() == 2);
+    check_type(models, "first non-normalized path model is embedding", "extra.model-a",
+               ModelType::EMBEDDING, "embeddings");
+    check_type(models, "second non-normalized path model is embedding", "extra.model-b",
+               ModelType::EMBEDDING, "embeddings");
+
+    fs::remove_all(dir);
+}
+
 int main() {
     // The constructor loads the registry JSON files unconditionally, so point it
     // at a scratch dir to keep the test off the real user cache.
@@ -247,6 +254,7 @@ int main() {
     test_category_files_are_separate_models();
     test_category_names_are_case_sensitive();
     test_same_name_across_categories();
+    test_non_normalized_search_path();
 
     fs::remove_all(cache_dir);
 

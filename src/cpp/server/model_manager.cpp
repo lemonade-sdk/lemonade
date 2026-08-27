@@ -1212,7 +1212,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    const fs::path search_path = path_from_utf8(extra_models_dir_);
+    fs::path search_path = path_from_utf8(extra_models_dir_).lexically_normal();
+    if (!search_path.has_filename()) {
+        search_path = search_path.parent_path();
+    }
     std::error_code status_ec;
     const fs::file_status status = fs::status(search_path, status_ec);
     if (status_ec) {
@@ -1251,8 +1254,9 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             fs::path parent_dir = entry.path().parent_path();
             const std::string deployment_label =
                 extra_model_deployment_label(entry.path(), search_path);
+            const fs::path relative_parent = parent_dir.lexically_relative(search_path);
             const bool directly_in_category =
-                parent_dir.parent_path() == search_path && !deployment_label.empty();
+                !deployment_label.empty() && relative_parent == fs::path(deployment_label);
 
             if (parent_dir == search_path || directly_in_category) {
                 standalone_files.emplace_back(entry.path(), deployment_label);
@@ -1296,7 +1300,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     // Process directories (multimodal and multi-shard models)
     for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
-        discover_extra_models_in_directory(dir_path, gguf_files, discovered);
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -1307,11 +1311,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 void ModelManager::discover_extra_models_in_directory(
     const fs::path& dir_path,
     const std::vector<fs::path>& gguf_files,
-    std::map<std::string, ModelInfo>& discovered) const {
+    std::map<std::string, ModelInfo>& discovered,
+    const fs::path& search_path) const {
 
     std::string dir_name = dir_path.filename().string();
-    const std::string deployment_label = extra_model_deployment_label(
-        dir_path, path_from_utf8(extra_models_dir_));
+    const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
     double total_size = 0.0;
