@@ -6,6 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "lemon/backends/backend_descriptor.h"
+
 namespace lemon {
 
 // Single GGUF variant detected in a remote model registry repository.
@@ -30,6 +32,15 @@ struct GgufVariantSet {
     std::vector<std::string> draft_files;   // Bare filenames of recognized draft GGUF companions.
 };
 
+std::vector<GgufVariant> filter_variants(
+    const std::vector<GgufVariant>& variants,
+    const std::vector<ModelConstraint>& constraints,
+    const std::string& architecture);
+
+// The tokenizer enumerate_gguf_variants() groups by, exported so compatibility
+// checks and the variant list cannot disagree about what a quant is.
+std::string extract_gguf_quant(const std::string& text);
+
 // Enumerate GGUF variants from a normalized repository file list.
 //
 // `repo_files` is the normalized path list returned by the selected registry. `file_sizes` is an optional map (rfilename -> size in bytes) used to
@@ -47,9 +58,12 @@ GgufVariantSet enumerate_gguf_variants(
 // derives suggested labels from the repo id, and returns the response JSON.
 // Throws std::runtime_error on transport failure; sets `not_found` true if
 // the registry reports a missing/inaccessible repo so the caller can return HTTP 404.
+// A non-empty `recipe` drops variants that backend cannot serve and adds
+// `constraint` and `filtered_out` to the response.
 nlohmann::json fetch_pull_variants(const std::string& checkpoint,
                                    const std::string& registry_source,
-                                   bool& not_found);
+                                   bool& not_found,
+                                   const std::string& recipe = "");
 
 inline nlohmann::json fetch_pull_variants(const std::string& checkpoint, bool& not_found) {
     return fetch_pull_variants(checkpoint, "huggingface", not_found);

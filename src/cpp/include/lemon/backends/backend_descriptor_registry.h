@@ -40,6 +40,20 @@ const std::string& default_mode_for(const std::string& recipe);
 // by a backend that could reject the request.
 bool backend_serves_mode(const std::string& recipe, ModelType mode);
 
+// Empty constraints, architecture, or quant all return true: absent metadata is
+// "unknown", not "mismatch". Architecture folds out `_`/`-`/space, since
+// llama.cpp spells it "qwen3moe" where Transformers says "qwen3_moe".
+bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
+                             const std::string& architecture,
+                             const std::string& quant);
+
+bool backend_supports_model(const std::string& recipe,
+                            const std::string& architecture,
+                            const std::string& quant);
+
+// Renders as `qwen3_moe (Q4_K_M)`; empty when the recipe gates nothing.
+std::string model_constraint_summary(const std::string& recipe);
+
 // The display string the generated docs and /system-info render for a backend
 // (e.g. chat -> "Text generation"), derived from its default mode.
 std::string modality_display_for(const BackendDescriptor& descriptor);

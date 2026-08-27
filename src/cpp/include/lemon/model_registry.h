@@ -9,6 +9,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "lemon/backends/backend_descriptor.h"
+
 namespace lemon {
 
 enum class RemoteRegistrySource {
@@ -43,6 +45,7 @@ struct RegistrySearchResult {
     std::uint64_t downloads = 0;
     std::uint64_t likes = 0;
     bool has_gguf = false;
+    std::string architecture;  // advisory; empty when the provider reports none
 };
 
 struct RegistrySearchResponse {
@@ -103,6 +106,10 @@ bool checkpoint_looks_like_repo_id(const std::string& checkpoint);
 void apply_default_pull_source(nlohmann::json& request_json,
                                const std::string& default_source);
 
+// `gguf.architecture`, else `config.model_type`. Advisory: HF GGUF repos often
+// publish neither, so empty means "unknown" and must not be read as a mismatch.
+std::string registry_architecture_hint(const nlohmann::json& metadata);
+
 // Normalize one provider-specific model-list entry into Lemonade's registry contract.
 // Exposed so fixture tests and future clients share the same field mapping.
 RegistrySearchResult normalize_registry_search_result(
@@ -111,10 +118,21 @@ RegistrySearchResult normalize_registry_search_result(
 
 // Normalize and filter a provider response without performing network I/O.
 // This keeps provider field mapping and filtering deterministic and unit-testable.
+// A non-empty `recipe` drops results whose reported architecture that backend
+// cannot serve. Results reporting no architecture are kept.
 RegistrySearchResponse normalize_registry_search_response(
     RemoteRegistrySource source,
     const nlohmann::json& body,
-    std::size_t limit = 12);
+    std::size_t limit = 12,
+    const std::string& recipe = "");
+
+// Constraints supplied directly; the recipe overload delegates here. Testable
+// against constraints no shipping backend declares yet.
+RegistrySearchResponse normalize_registry_search_response(
+    RemoteRegistrySource source,
+    const nlohmann::json& body,
+    std::size_t limit,
+    const std::vector<ModelConstraint>& constraints);
 
 // Search a remote model registry. Provider-side GGUF filters are candidate
 // hints only; callers must use /pull/variants as the authoritative file-level
@@ -123,7 +141,8 @@ RegistrySearchResponse search_registry_models(
     RemoteRegistrySource source,
     const std::string& query,
     std::size_t limit = 12,
-    bool gguf_only = false);
+    bool gguf_only = false,
+    const std::string& recipe = "");
 
 // Deterministic snapshot id for providers whose download revision may remain
 // mutable. Ordering of files does not affect the result.

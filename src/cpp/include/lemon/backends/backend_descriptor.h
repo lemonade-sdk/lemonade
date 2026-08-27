@@ -1,5 +1,6 @@
 #pragma once
 
+#include <set>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -43,6 +44,12 @@ inline const char* slot_policy_to_string(SlotPolicy p) {
     }
     return "standard";
 }
+
+// Matching rules: see model_constraints_allow() in backend_descriptor_registry.h.
+struct ModelConstraint {
+    std::string architecture;       // GGUF general.architecture, e.g. "qwen3moe"
+    std::set<std::string> quants;   // normalized quant tokens; empty = any quant
+};
 
 // Plain data declaring *what a backend is*. This is the single object the
 // registry, the CLI, /system-info, and the docs all read. Behavior lives in the
@@ -118,6 +125,9 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
+
+    // Empty = no gating. See model_constraints_allow().
+    std::vector<ModelConstraint> supported_models;
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

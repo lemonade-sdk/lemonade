@@ -971,6 +971,7 @@ Requires network access: returns 400 with code `lemond_offline` when the server 
 | `source` | No | Registry to search: `huggingface` (default) or `modelscope`. Aliases `hf` and `ms` are accepted; the canonical name is echoed in the response. |
 | `limit` | No | Maximum number of results, an integer from 1 to 50. Default 12. |
 | `format` | No | The only accepted value is `gguf`. Biases search and ranking toward GGUF repositories and echoes `"format": "gguf"` in the response. |
+| `recipe` | No | Scope results to what one backend can serve, e.g. `llamacpp`. Only results whose architecture the registry reports **and** which the backend cannot serve are dropped; a result whose architecture the registry does not report is kept, because absent metadata is not a mismatch. Note that Hugging Face's search endpoint reports no architecture for GGUF repositories, so this filter is inert there — [`/v1/pull/variants`](#get-v1pullvariants) is the tier that actually narrows the list. A recipe that declares no model constraints, or one with no registered backend, filters nothing. |
 
 Example request:
 
@@ -997,7 +998,8 @@ curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&for
       "task": "text-generation",
       "downloads": 222500,
       "likes": 12,
-      "has_gguf": true
+      "has_gguf": true,
+      "architecture": ""
     }
   ]
 }
@@ -1007,8 +1009,9 @@ curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&for
 |-------|-------------|
 | `source`, `query` | Echoed input (`source` canonicalized to `huggingface` or `modelscope`). |
 | `format` | Present only when `format=gguf` was requested. |
+| `recipe`, `constraint` | Present only when `recipe=` was requested and that backend declares model constraints. `constraint` summarizes what it serves, e.g. `qwen3_moe (Q4_K_M)`. |
 | `total` | Total match count reported by the upstream registry; may exceed the number of returned results. |
-| `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, and `has_gguf`. `has_gguf` is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
+| `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, `has_gguf`, and `architecture`. `architecture` is the model architecture the registry reports and is empty whenever it reports none — which, for Hugging Face GGUF repositories, is always. Like `has_gguf` it is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
 
 ### Error responses
 
@@ -1028,6 +1031,7 @@ Inspect a Hugging Face GGUF repository and enumerate the variants (quantizations
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `checkpoint` | Yes | Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. |
+| `recipe` | No | Drop variants the named backend cannot serve, e.g. `llamacpp`. When the backend declares model constraints the response also carries `constraint` (what it serves) and `filtered_out` (how many variants were removed), so a caller never has to guess why a variant is missing. Omitted, or a recipe declaring no constraints, returns every variant. |
 
 Example request:
 

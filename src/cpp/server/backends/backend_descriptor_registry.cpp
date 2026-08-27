@@ -1,6 +1,9 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 
+#include <cctype>
+#include <string>
 #include <utility>
+#include "lemon/utils/origin_utils.h"
 
 // Generated from LEMON_BACKENDS at configure time. Defines
 // lemon::backends::all_generated_descriptors() (descriptor data only).
@@ -30,6 +33,71 @@ bool has_backend(const std::string& recipe) {
 bool recipe_has_rocm_channels(const std::string& recipe) {
     const BackendDescriptor* d = descriptor_for(recipe);
     return d != nullptr && !d->rocm_channels.empty();
+}
+
+bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
+                             const std::string& architecture,
+                             const std::string& quant) {
+    if (constraints.empty()) {
+        return true;
+    }
+    if (architecture.empty()) {
+        return true;
+    }
+
+    const auto fold = [](const std::string& value) {
+        std::string out;
+        out.reserve(value.size());
+        for (unsigned char ch : value) {
+            if (ch == '_' || ch == '-' || ch == ' ') continue;
+            out.push_back(static_cast<char>(std::tolower(ch)));
+        }
+        return out;
+    };
+
+    const std::string arch = fold(architecture);
+    const std::string token = utils::to_lower(quant);
+    for (const ModelConstraint& c : constraints) {
+        if (fold(c.architecture) != arch) continue;
+        if (c.quants.empty() || token.empty()) return true;
+        for (const std::string& allowed : c.quants) {
+            if (utils::to_lower(allowed) == token) return true;
+        }
+    }
+    return false;
+}
+
+bool backend_supports_model(const std::string& recipe,
+                            const std::string& architecture,
+                            const std::string& quant) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr) {
+        return true;
+    }
+    return model_constraints_allow(d->supported_models, architecture, quant);
+}
+
+std::string model_constraint_summary(const std::string& recipe) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr || d->supported_models.empty()) {
+        return "";
+    }
+    std::string out;
+    for (const ModelConstraint& c : d->supported_models) {
+        if (!out.empty()) out += ", ";
+        out += c.architecture;
+        if (!c.quants.empty()) {
+            out += " (";
+            bool first = true;
+            for (const std::string& q : c.quants) {
+                if (!first) out += "/";
+                out += q;
+                first = false;
+            }
+            out += ")";
+        }
+    }
+    return out;
 }
 
 const std::vector<std::string>& supported_modes_for(const std::string& recipe) {
