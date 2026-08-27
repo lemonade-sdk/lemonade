@@ -5234,6 +5234,25 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             return;
         }
 
+        // Fall back to recipe options when the request doesn't set them.
+        if (!refine || pixel_upscaler.empty()) {
+            try {
+                auto info = model_manager_->get_model_info(requested_model);
+                if (!refine) {
+                    auto opt = info.recipe_options.get_option("refine");
+                    if (opt.is_boolean() && opt.get<bool>()) {
+                        refine = true;
+                    }
+                }
+                if (pixel_upscaler.empty()) {
+                    auto opt = info.recipe_options.get_option("pixel_upscaler");
+                    if (opt.is_string() && !opt.get<std::string>().empty()) {
+                        pixel_upscaler = opt.get<std::string>();
+                    }
+                }
+            } catch (const std::exception&) {}
+        }
+
         if (refine) {
             try {
                 if (model_manager_->get_model_info(requested_model).recipe == "thenoise") {
