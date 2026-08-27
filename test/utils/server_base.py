@@ -155,8 +155,15 @@ def wait_for_server(port=PORT, timeout=60):
 
 
 def _auth_headers():
-    """Return Authorization header if LEMONADE_API_KEY is set."""
-    api_key = os.environ.get("LEMONADE_API_KEY")
+    """Return Authorization header for the highest-privilege key that is set.
+
+    The admin key comes first because it authenticates against both the regular
+    API routes and /internal/*, while LEMONADE_API_KEY cannot reach /internal/*
+    when a distinct admin key is configured.
+    """
+    api_key = os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
+        "LEMONADE_API_KEY"
+    )
     if api_key:
         return {"Authorization": f"Bearer {api_key}"}
     return {}
@@ -174,15 +181,24 @@ def set_server_config(config: dict, port=PORT):
     return response.json()
 
 
-def unload_all_models(port=PORT):
+def unload_all_models(port=PORT, attempts=3):
     """POST /api/v1/unload to unload all models for clean state."""
-    response = requests.post(
-        f"http://localhost:{port}/api/v1/unload",
-        json={},
-        headers=_auth_headers(),
-        timeout=30,
-    )
-    # 200 = unloaded, 404 = nothing loaded — both OK
+    response = None
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                f"http://localhost:{port}/api/v1/unload",
+                json={},
+                headers=_auth_headers(),
+                timeout=30,
+            )
+            # 200 = unloaded, 404 = nothing loaded — both OK
+            if response.status_code in [200, 404]:
+                return response
+        except requests.RequestException as exc:
+            if attempt == attempts:
+                raise exc
+            time.sleep(1)
     return response
 
 

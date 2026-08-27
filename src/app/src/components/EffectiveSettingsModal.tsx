@@ -85,15 +85,8 @@ function isAutoContextSize(value: unknown): boolean {
   return value === 'auto' || Number(value) === -1;
 }
 
-function shellQuote(token: string): string {
-  if (token === '') return "''";
-  if (/^[A-Za-z0-9_\-./:=@]+$/.test(token)) return token;
-  return `'${token.replace(/'/g, `'\\''`)}'`;
-}
-
-function formatCommand(modelName: string, args: string[]): string {
-  const parts = ['lemonade', 'load', shellQuote(modelName), ...args.map(shellQuote)];
-  return parts.join(' ');
+function formatCommand(options: Record<string, unknown>): string {
+  return `POST /api/v1/load\n${JSON.stringify(options, null, 2)}`;
 }
 
 interface SourceRow {
@@ -168,7 +161,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       try {
         setServerModelOptions(await api.getModelOptions(modelName));
       } catch {
-        // The effective load command remains useful even if the auxiliary
+        // The effective load request remains useful even if the auxiliary
         // saved/default source breakdown cannot be fetched.
         setServerModelOptions(null);
       }
@@ -394,7 +387,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
 
   if (!open) return null;
 
-  const previewArgs = preview?.args ?? effective?.args ?? [];
+  const previewOptions = preview?.options ?? effective?.options ?? {};
   const backendLabel = effective?.backend || '—';
 
   const body = (
@@ -431,7 +424,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title">Settings by source</h5>
             <p className="effective-settings__note">
               <Icon name="info" size={12} />
-              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative. It includes architecture and global defaults applied by the server that may not appear here.</span>
+              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load request</strong> below is authoritative. It includes architecture and global defaults applied by the server that may not appear here.</span>
             </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
@@ -517,12 +510,12 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
           </section>
 
           <section className="effective-settings__section">
-            <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Effective load command</h5>
+            <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Effective load request</h5>
             {loading && <p className="effective-settings__empty">Resolving…</p>}
             {error && <p className="effective-settings__error">{error}</p>}
             {!loading && !error && (
               <>
-                <pre className="effective-settings__command"><code>{formatCommand(modelName, previewArgs)}</code></pre>
+                <pre className="effective-settings__command"><code>{formatCommand(previewOptions)}</code></pre>
                 <p className="effective-settings__note">
                   <Icon name="info" size={12} /> Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.
                 </p>

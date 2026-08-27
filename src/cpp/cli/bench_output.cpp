@@ -167,10 +167,15 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
 json to_json(const std::vector<BenchBackendResult>& results,
              const std::string& model,
              const std::string& timestamp,
-             const BenchConfig& config) {
+             const BenchConfig& config,
+             const json& model_info) {
     json output;
     output["model"] = model;
     output["timestamp"] = timestamp;
+
+    if (model_info.contains("checkpoints") && model_info["checkpoints"].is_object() &&
+        !model_info["checkpoints"].empty())
+        output["checkpoints"] = model_info["checkpoints"];
 
     json config_json;
     config_json["warmup_runs"] = config.warmup_runs;

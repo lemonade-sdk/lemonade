@@ -140,7 +140,7 @@ Returns the full runtime configuration as a flat JSON object containing all serv
 
 #### `GET /internal/config/defaults`
 
-Returns the canonical default configuration — the values a brand-new `config.json` is seeded with, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
+Returns the canonical default configuration baked into the release, independent of this instance's current config or any deployment override. The per-recipe sections are derived from the backend descriptors, so this is the authoritative source for "what are the factory defaults." It is what `docs/tools/gen_backend_boilerplate.py` reads to regenerate `src/cpp/resources/defaults.json`.
 
 **Example:**
 === "Windows (cmd.exe)"
@@ -167,6 +167,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `host` | string | HTTP rebind |
 | `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
+| `download_rate_limit` | string (`0`/`""` = unlimited) | Sets the active download-rate cap (curl-style byte rate) |
 | `broadcast` | bool | Starts or stops UDP beacon |
 | `models_dir` | string (`"auto"` or path) | Updates the primary model cache location |
 | `extra_models_dir` | string | Validates access and updates the external GGUF search path |

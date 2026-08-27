@@ -1,6 +1,42 @@
 // News content data - easy to add new entries
 const newsData = [
     {
+        title: "The easiest free local coding setup with Pi and Qwen3.8 27B!",
+        url: "https://www.youtube.com/watch?v=AT10gUUgTrE",
+        date: "August 19, 2026",
+        description: "Install the Pi coding agent, connect it to Lemonade, and let Qwen3.8 27B build this video's title card in HTML and CSS, all running locally for free.",
+        image: "https://img.youtube.com/vi/AT10gUUgTrE/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
+        title: "Make images and audio in Claude Code with the local AI skill!",
+        url: "https://www.youtube.com/watch?v=OmteZN1Wtes",
+        date: "August 17, 2026",
+        description: "See how AMD's local-ai-use skill lets Claude Code, Codex, or Cursor generate images and audio with local AI through Lemonade.",
+        image: "https://img.youtube.com/vi/OmteZN1Wtes/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
+        title: "Lemonade 11.6 Integrates Muse-Glimmer 30B, Experimental TheNoise ROCm Image Generation",
+        url: "https://www.phoronix.com/news/Lemonade-SDK-11.6",
+        date: "August 14, 2026",
+        description: "Phoronix covers the Lemonade 11.6 release: Muse Glimmer 30B in the llama.cpp catalog, an experimental TheNoise ROCm image-generation backend for Strix Halo and Strix Point, and out-of-the-box support for older AMD Instinct GPUs.",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "blog"
+        },
+    {
+        title: "Run day0 LLMs locally with Lemonade, feat. Muse Glimmer 30B",
+        url: "https://www.youtube.com/watch?v=0RVUGOHtp6k",
+        date: "August 10, 2026",
+        description: "A walkthrough of running day-0 open-weights models locally with Lemonade, using Meta's Muse Glimmer 30B as the example.",
+        image: "https://img.youtube.com/vi/0RVUGOHtp6k/maxresdefault.jpg",
+        imageStyle: "width: 100%; height: 100%; object-position: center top; ",
+        type: "video"
+        },
+    {
         title: "Run Meta's Muse Glimmer 30B locally with Lemonade",
         url: "https://lemonade-server.ai/news/muse-glimmer.html",
         date: "August 10, 2026",
@@ -59,7 +95,7 @@ const newsData = [
         url: "https://www.phoronix.com/news/Lemonade-SDK-10.2-Released",
         date: "April 9, 2026",
         description: "Phoronix covers the Lemonade SDK 10.2 release, which publishes embeddable artifacts so developers can bundle Lemonade's local AI stack into their own apps.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },
@@ -68,7 +104,7 @@ const newsData = [
         url: "https://www.phoronix.com/news/Lemonade-10.1-Released",
         date: "April 7, 2026",
         description: "Phoronix highlights Lemonade 10.1, featuring a revamped CLI, async model loading, super resolution upscaling, and Gemma 4 GPU support.",
-        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/docs/banner.png",
+        image: "https://raw.githubusercontent.com/lemonade-sdk/assets/refs/heads/main/partner_logos/phoronix.svg",
         imageStyle: "width: 100%; height: 100%; object-position: center top; ",
         type: "blog"
         },

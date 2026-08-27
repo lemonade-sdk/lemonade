@@ -30,6 +30,7 @@
 #include <lemon/logging_config.h>
 #include <lemon/runtime_config.h>
 #include <lemon/server.h>
+#include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <winsock2.h>
 #include <windows.h>
@@ -170,31 +171,41 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     auto cli_config = parser.get_config();
 
     lemon::utils::set_cache_dir(cli_config.cache_dir);
+    lemon::utils::set_config_dir(cli_config.config_dir);
+    lemon::utils::migrate_legacy_json_files_to_config_dir(cli_config.cache_dir,
+                                                          cli_config.config_dir);
 
-    auto config_json = lemon::ConfigFile::load(cli_config.cache_dir);
-
-    // CLI overrides (persist to config.json)
-    bool cli_overrides = false;
-    if (cli_config.port != -1) {
-        config_json["port"] = cli_config.port;
-        cli_overrides = true;
-    }
-    if (!cli_config.host.empty()) {
-        config_json["host"] = cli_config.host;
-        cli_overrides = true;
-    }
-    if (cli_overrides) {
-        lemon::ConfigFile::save(cli_config.cache_dir, config_json);
-    }
+    auto config_json = lemon::ConfigFile::load(cli_config.cache_dir,
+                                               cli_config.config_dir);
 
     auto runtime_config = std::make_shared<lemon::RuntimeConfig>(config_json);
     lemon::RuntimeConfig::set_global(runtime_config.get());
 
+    if (cli_config.port != -1) {
+        runtime_config->set_port_override(cli_config.port);
+    }
+    if (!cli_config.host.empty()) {
+        runtime_config->set_host_override(cli_config.host);
+    }
+    if (!cli_config.log_file.empty()) {
+        runtime_config->set_log_file_override(cli_config.log_file);
+    }
+    if (cli_config.log_max_file_size_mb != -1) {
+        runtime_config->set_log_max_file_size_mb_override(cli_config.log_max_file_size_mb);
+    }
+    if (cli_config.log_max_files != -1) {
+        runtime_config->set_log_max_files_override(cli_config.log_max_files);
+    }
+
     lemon::utils::set_models_dir(runtime_config->models_dir());
 
     // Initialize logging (file + log hub; SUBSYSTEM:WINDOWS has no console)
+    lemon::LogRotationConfig rot_cfg;
+    rot_cfg.file_mode = runtime_config->log_file();
+    rot_cfg.max_file_size_mb = runtime_config->log_max_file_size_mb();
+    rot_cfg.max_files = runtime_config->log_max_files();
     lemon::configure_application_logging(
-        runtime_config->log_level(), lemon::LoggingMode::embedded_tray_server);
+        runtime_config->log_level(), lemon::LoggingMode::embedded_tray_server, rot_cfg);
 
     // Initialize Winsock (required by httplib)
     WSADATA wsa;
@@ -202,9 +213,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     // Start server on background thread
     std::string cache_dir = cli_config.cache_dir;
-    std::thread server_thread([runtime_config, cache_dir]() {
+    std::string config_dir = cli_config.config_dir;
+    std::thread server_thread([runtime_config, cache_dir, config_dir]() {
         try {
-            lemon::Server server(runtime_config, cache_dir);
+            lemon::Server server(runtime_config, cache_dir, config_dir);
             server.run();
         } catch (const std::exception& e) {
             MessageBoxA(NULL, e.what(), "Lemonade Server Error", MB_OK | MB_ICONERROR);

@@ -147,7 +147,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="10"><strong>Text generation</strong></td>
       <td rowspan="6"><code>llamacpp</code></td>
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
@@ -194,6 +194,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td rowspan="1"><code>vllm</code> (experimental)</td>
       <td><code>rocm</code></td>
       <td>Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>ds4</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Prebuilt ds4 for AMD Strix Halo</td>
       <td>Linux</td>
     </tr>
     <tr>
@@ -500,7 +506,7 @@ Lemonade is built by the local AI community! If you would like to contribute to 
 
 ## Maintainers
 
-This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @kenvandine @Geramy @ramkrishna2910 @sawansri @siavashhub @sofiageo @superm1 @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+This is a community project with many maintainers, please see the [maintainers list here](./docs/dev/contribute.md#maintainers) to see their subject areas. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues) or joining our [Discord](https://discord.gg/5xXzkMu8Zk). This project is sponsored by [AMD](mailto:lemonade@amd.com).
 
 ## Code Signing Policy
 

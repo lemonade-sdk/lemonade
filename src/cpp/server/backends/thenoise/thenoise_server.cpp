@@ -7,9 +7,12 @@
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
 #include "lemon/system_info.h"
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/utils/aixlog.hpp"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <random>
 #include <set>
 #include <sstream>
@@ -153,7 +156,7 @@ void TheNoiseServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start thenoise process");
@@ -388,6 +391,100 @@ json TheNoiseServer::image_variations(const json& /* request */) {
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Image variations", "thenoise (text-to-image only)")
     );
+}
+
+std::string TheNoiseServer::upscale_via_cli(
+    const std::string& b64_image,
+    const std::string& upscale_model_path) {
+
+    //ROCm is currently the only available backend. If other backends are added this needs to be parameterized accordingly.
+    std::string exe_path = BackendUtils::get_backend_binary_path(*thenoise::spec(), "rocm");
+
+    if (!fs::exists(exe_path)) {
+        LOG(ERROR, "TheNoise") << "thenoise binary not found at: " << exe_path << std::endl;
+        return "";
+    }
+
+    std::string raw = JsonUtils::base64_decode(b64_image);
+
+    fs::path runtime_base = path_from_utf8(get_runtime_dir());
+    std::random_device rd;
+    std::uniform_int_distribution<unsigned int> dis(0, 0xFFFFFF);
+
+    fs::path temp_dir;
+    std::error_code ec;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        auto nonce = static_cast<unsigned long long>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        std::ostringstream suffix;
+        suffix << "thenoise-upscale-" << nonce << "-" << std::hex << dis(rd);
+        fs::path candidate = runtime_base / suffix.str();
+
+        ec.clear();
+        if (fs::create_directory(candidate, ec)) {
+            temp_dir = candidate;
+            break;
+        }
+    }
+
+    if (temp_dir.empty()) {
+        LOG(ERROR, "TheNoise") << "Failed to create temporary directory for upscale" << std::endl;
+        return "";
+    }
+
+    fs::path input_path = temp_dir / "input.png";
+    fs::path output_path = temp_dir / "output.png";
+
+    struct TempFileGuard {
+        fs::path path;
+        bool recursive = false;
+        ~TempFileGuard() {
+            std::error_code ec;
+            if (recursive) {
+                fs::remove_all(path, ec);
+            } else {
+                fs::remove(path, ec);
+            }
+        }
+    };
+    TempFileGuard dir_guard{temp_dir, true};
+    TempFileGuard input_guard{input_path};
+    TempFileGuard output_guard{output_path};
+
+    {
+        std::ofstream out(input_path, std::ios::binary);
+        out.write(raw.data(), raw.size());
+    }
+
+    std::vector<std::string> args = {
+        "upscale",
+        "--pixel-upscaler", upscale_model_path,
+        "--input", input_path.string(),
+        "--out", output_path.string()
+    };
+
+    std::vector<std::pair<std::string, std::string>> env_vars;
+    auto proc = ProcessManager::start_process(
+        exe_path, args, "", true, false, env_vars);
+
+    int exit_code = ProcessManager::wait_for_exit(proc, 300);
+
+    std::string result;
+    if (exit_code == 0 && fs::exists(output_path)) {
+        std::ifstream in(output_path, std::ios::binary);
+        std::string upscaled_data(
+            (std::istreambuf_iterator<char>(in)),
+            std::istreambuf_iterator<char>());
+        result = JsonUtils::base64_encode(upscaled_data);
+        LOG(INFO, "TheNoise") << "Upscale complete ("
+            << raw.size() << " -> " << upscaled_data.size() << " bytes)" << std::endl;
+    } else {
+        LOG(WARNING, "TheNoise") << "Upscale failed (exit code: "
+            << exit_code << ", model: " << upscale_model_path
+            << ", cli: " << exe_path << ")" << std::endl;
+    }
+
+    return result;
 }
 
 } // namespace backends

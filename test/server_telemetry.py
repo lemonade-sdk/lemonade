@@ -2,7 +2,7 @@
 Integration tests for the OpenInference telemetry feature (Option B).
 
 Covers:
-- Configuration validation (POST /v1/params).
+- Configuration validation (POST /internal/set).
 - Out-of-band tracing for chat completions (non-streaming).
 - Out-of-band tracing for chat completions (streaming).
 - Trace context validation (span name, kind, attributes, traceId, spanId).
@@ -27,7 +27,11 @@ from queue import Queue
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests  # noqa: E402
-from utils.server_base import ServerTestBase, run_server_tests  # noqa: E402
+from utils.server_base import (  # noqa: E402
+    ServerTestBase,
+    _auth_headers,
+    run_server_tests,
+)
 from utils.test_models import (  # noqa: E402
     ENDPOINT_TEST_MODEL,
     PORT,
@@ -274,9 +278,23 @@ class TelemetryTestBase(ServerTestBase):
 
     _pull_base_model = False
 
+    _telemetry_snapshot = None
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
+
+        # /internal/set persists to config.json, so the pre-test telemetry
+        # settings have to be captured and restored rather than just disabled.
+        # /internal/config reports the defaults-merged config, so the snapshot
+        # covers every key these tests write.
+        try:
+            res = cls._auth_get(f"http://localhost:{PORT}/internal/config")
+            if res.status_code == 200:
+                cls._telemetry_snapshot = res.json().get("telemetry")
+        except Exception:
+            pass
+
         cls.mock_port = find_free_port()
         cls.mock_server = MockOTLPServer(("127.0.0.1", cls.mock_port), MockOTLPHandler)
         cls.mock_thread = threading.Thread(target=cls.mock_server.serve_forever)
@@ -296,10 +314,18 @@ class TelemetryTestBase(ServerTestBase):
     @classmethod
     def tearDownClass(cls):
         try:
-            cls._auth_post(
-                f"http://localhost:{PORT}/api/v1/params",
-                {"telemetry": {"enabled": False}},
-            )
+            restored = False
+            if cls._telemetry_snapshot:
+                res = cls._auth_post(
+                    f"http://localhost:{PORT}/internal/set",
+                    {"telemetry": cls._telemetry_snapshot},
+                )
+                restored = res.status_code == 200
+            if not restored:
+                cls._auth_post(
+                    f"http://localhost:{PORT}/internal/set",
+                    {"telemetry": {"enabled": False}},
+                )
         except Exception:
             pass
         cls.mock_server.shutdown()
@@ -310,18 +336,12 @@ class TelemetryTestBase(ServerTestBase):
     @classmethod
     def _auth_post(cls, url, json_body, timeout=TIMEOUT_DEFAULT, headers=None):
         req_headers = dict(headers or {})
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            req_headers["Authorization"] = f"Bearer {api_key}"
+        req_headers.update(_auth_headers())
         return requests.post(url, json=json_body, headers=req_headers, timeout=timeout)
 
     @classmethod
     def _auth_get(cls, url, timeout=TIMEOUT_DEFAULT):
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        return requests.get(url, headers=headers, timeout=timeout)
+        return requests.get(url, headers=_auth_headers(), timeout=timeout)
 
     def setUp(self):
         super().setUp()
@@ -351,10 +371,13 @@ class TelemetryTestBase(ServerTestBase):
         }
 
         for k, v in kwargs.items():
-            otlp_params[k] = v
+            if k == "session":
+                telemetry_params["session"] = v
+            else:
+                otlp_params[k] = v
 
         payload = {"telemetry": {**telemetry_params, "otlp": otlp_params}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 200, res.text)
 
     def _wait_for_span(self, span_name=None, timeout=5.0, queue=None):
@@ -453,54 +476,54 @@ class ConfigTests(TelemetryTestBase):
                 },
             }
         }
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 200, res.text)
 
         # Invalid: enabled is not a boolean
         payload = {"telemetry": {"enabled": "yes"}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("enabled", res.json()["error"])
 
         # Invalid: endpoint is not a string
         payload = {"telemetry": {"otlp": {"endpoint": 123}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("endpoint", res.json()["error"])
 
         # Invalid: headers is not an object
         payload = {"telemetry": {"otlp": {"headers": "Bearer token"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("headers", res.json()["error"])
 
         # Invalid: protocol is not a string
         payload = {"telemetry": {"otlp": {"protocol": 123}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("protocol", res.json()["error"])
 
         # Invalid: protocol value is not supported
         payload = {"telemetry": {"otlp": {"protocol": "http/xml"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("protocol", res.json()["error"])
 
         # Invalid: max_retries is not an integer
         payload = {"telemetry": {"otlp": {"max_retries": "3"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("max_retries", res.json()["error"])
 
         # Invalid: max_retries is negative
         payload = {"telemetry": {"otlp": {"max_retries": -1}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("max_retries", res.json()["error"])
 
         # Invalid: semantics is not an array
         payload = {"telemetry": {"otlp": {"semantics": "openinference"}}}
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("semantics", res.json()["error"])
 
@@ -508,7 +531,7 @@ class ConfigTests(TelemetryTestBase):
         payload = {
             "telemetry": {"otlp": {"semantics": ["openinference", "custom_fmt"]}}
         }
-        res = self._auth_post(f"http://localhost:{PORT}/api/v1/params", payload)
+        res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
         self.assertEqual(res.status_code, 400)
         self.assertIn("semantics", res.json()["error"])
 
@@ -524,8 +547,8 @@ class ConfigTests(TelemetryTestBase):
             res.json().get("updated", {}).get("telemetry", {}).get("enabled")
         )
 
-        # 2. Get params to verify it is disabled
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        # 2. Read the config back to verify it is disabled
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertFalse(res.json().get("telemetry", {}).get("enabled"))
 
@@ -539,8 +562,8 @@ class ConfigTests(TelemetryTestBase):
             res.json().get("updated", {}).get("telemetry", {}).get("enabled")
         )
 
-        # 4. Get params to verify it is enabled again
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        # 4. Read the config back to verify it is enabled again
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200, res.text)
         self.assertTrue(res.json().get("telemetry", {}).get("enabled"))
 
@@ -581,7 +604,7 @@ class ConfigTests(TelemetryTestBase):
         self.assertEqual(res.status_code, 200, res.text)
 
         # 3. Verify settings are preserved
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200)
         telemetry = res.json().get("telemetry", {})
         self.assertFalse(telemetry.get("enabled"))
@@ -597,7 +620,7 @@ class ConfigTests(TelemetryTestBase):
         self.assertEqual(res.status_code, 200)
 
         # 5. Verify settings are still preserved and semantics is still otel_genai
-        res = self._auth_get(f"http://localhost:{PORT}/api/v1/params")
+        res = self._auth_get(f"http://localhost:{PORT}/internal/config")
         self.assertEqual(res.status_code, 200)
         telemetry = res.json().get("telemetry", {})
         self.assertTrue(telemetry.get("enabled"))
@@ -606,7 +629,7 @@ class ConfigTests(TelemetryTestBase):
 
         # 6. Verify unknown telemetry keys are rejected
         res = self._auth_post(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/set",
             {"telemetry": {"unknown_field": True}},
         )
         self.assertEqual(res.status_code, 400)
@@ -614,7 +637,7 @@ class ConfigTests(TelemetryTestBase):
 
         # 7. Verify unknown OTLP keys are rejected
         res = self._auth_post(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/set",
             {"telemetry": {"otlp": {"unknown_otlp_field": "val"}}},
         )
         self.assertEqual(res.status_code, 400)
@@ -715,10 +738,148 @@ class CoreTracingTests(TelemetryTestBase):
         span_received = self._wait_for_span()
         self.assertIsNotNone(span_received)
         span, attrs = self._extract_span(span_received)
-        self.assertEqual(attrs["openinference.user.id"]["stringValue"], "user-abc-123")
-        self.assertEqual(
-            attrs["openinference.session.id"]["stringValue"], "session-xyz-999"
+        self.assertEqual(attrs["user.id"]["stringValue"], "user-abc-123")
+        self.assertEqual(attrs["session.id"]["stringValue"], "session-xyz-999")
+
+    def test_005b_well_known_session_header_injection(self):
+        """Verify that well-known session headers implicitly inject session ID into trace span."""
+        self._enable_telemetry(semantics=["openinference", "otel_genai"])
+
+        # Test x-session-id
+        self._chat_completion(
+            "Hi session header.",
+            request_headers={"x-session-id": "sess-injected-123"},
         )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "sess-injected-123")
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"], "sess-injected-123"
+        )
+
+        # Test mcp-session-id
+        self._chat_completion(
+            "Hi mcp session.",
+            request_headers={"Mcp-Session-Id": "mcp-sess-999"},
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "mcp-sess-999")
+
+    def test_005c_well_known_session_header_namespacing(self):
+        """Verify that client header automatically prefixes session header as <client>/<session>."""
+        self._enable_telemetry(semantics=["openinference", "otel_genai"])
+
+        self._chat_completion(
+            "Hi namespaced session.",
+            request_headers={
+                "x-opencode-session": "sess-456",
+                "x-opencode-client": "vscode-ide",
+            },
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "vscode-ide/sess-456")
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"], "vscode-ide/sess-456"
+        )
+
+    def test_005d_session_resolution_body_wins_over_header(self):
+        """Verify that body session_id takes precedence over implicit headers."""
+        self._enable_telemetry(semantics=["openinference", "otel_genai"])
+
+        self._chat_completion(
+            "Hi body priority.",
+            session_id="body-session-wins",
+            request_headers={
+                "x-session-id": "header-session-loses",
+                "x-client-id": "vscode-ide",
+            },
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "body-session-wins")
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"], "body-session-wins"
+        )
+
+    def test_005e_configured_custom_session_headers(self):
+        """Verify that user-configured custom headers (not in well-known list) inject session ID."""
+        self._enable_telemetry(
+            session={
+                "headers": {
+                    "id": ["x-custom-corp-session", "x-alt-session"],
+                    "client": ["x-custom-corp-client"],
+                }
+            },
+            semantics=["openinference", "otel_genai"],
+        )
+
+        self._chat_completion(
+            "Hi custom configured headers.",
+            request_headers={
+                "x-custom-corp-session": "corp-sess-888",
+                "x-custom-corp-client": "internal-tool",
+            },
+        )
+
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(
+            attrs["session.id"]["stringValue"],
+            "internal-tool/corp-sess-888",
+        )
+        self.assertEqual(
+            attrs["gen_ai.conversation.id"]["stringValue"],
+            "internal-tool/corp-sess-888",
+        )
+
+    def test_005f_session_header_edge_cases(self):
+        """Verify edge cases: whitespace trimming, case-insensitivity, empty value."""
+        self._enable_telemetry()
+
+        # 1. Whitespace trimming & case insensitivity
+        self._chat_completion(
+            "Hi whitespace.",
+            request_headers={
+                "X-OpenCode-Session": "  sess-trimmed-789  ",
+                "X-OpenCode-Client": "  cli  ",
+            },
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertEqual(attrs["session.id"]["stringValue"], "cli/sess-trimmed-789")
+
+        # 2. Empty session header value -> no session attribute
+        self._chat_completion(
+            "Hi empty header.",
+            request_headers={
+                "x-session-id": "   ",
+                "x-client-id": "cli",
+            },
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertNotIn("session.id", attrs)
+
+        # 3. Only client header present, no session header -> no session attribute
+        self._chat_completion(
+            "Hi client only.",
+            request_headers={"x-client-id": "cli"},
+        )
+        span_received = self._wait_for_span()
+        self.assertIsNotNone(span_received)
+        span, attrs = self._extract_span(span_received)
+        self.assertNotIn("session.id", attrs)
 
     def test_006_json_telemetry_span(self):
         """Verify that when protocol is http/json, the payload is transmitted as standard JSON."""
@@ -1154,7 +1315,7 @@ class ReliabilityTests(TelemetryTestBase):
                 }
             }
             res = self._auth_post(
-                f"http://localhost:{temp_port}/api/v1/params", config_payload
+                f"http://localhost:{temp_port}/internal/set", config_payload
             )
             self.assertEqual(res.status_code, 200, res.text)
 
@@ -1427,13 +1588,9 @@ class ReliabilityTests(TelemetryTestBase):
         )
 
         # Send a POST request to /internal/telemetry/flush and verify it returns 200 OK
-        headers = {}
-        api_key = os.environ.get("LEMONADE_API_KEY")
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
-        res = requests.post(
+        res = self._auth_post(
             f"http://localhost:{PORT}/internal/telemetry/flush",
-            headers=headers,
+            None,
             timeout=5.0,
         )
         self.assertEqual(res.status_code, 200, res.text)

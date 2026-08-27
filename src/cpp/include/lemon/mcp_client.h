@@ -44,7 +44,7 @@ struct McpServerConfig {
 
 class McpClientManager : public std::enable_shared_from_this<McpClientManager> {
 public:
-    explicit McpClientManager(std::string cache_dir);
+    McpClientManager(std::string cache_dir, std::string config_dir);
     ~McpClientManager();
 
     McpClientManager(const McpClientManager&) = delete;
@@ -82,6 +82,7 @@ private:
     std::string next_id_locked(const std::string& seed) const;
 
     std::string cache_dir_;
+    std::string config_dir_;
     std::string config_path_;
 
     mutable std::mutex mutex_;
@@ -90,6 +91,7 @@ private:
 };
 
 void register_mcp_client_routes(httplib::Server& server,
-                                const std::string& cache_dir);
+                                const std::string& cache_dir,
+                                const std::string& config_dir);
 
 }  // namespace lemon
