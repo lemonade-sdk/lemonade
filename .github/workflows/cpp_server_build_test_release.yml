@@ -2326,7 +2326,16 @@ jobs:
         run: |
           set -e
           sudo mkdir -p /Users/Shared/hf-cache
+          # The daemon writes as root and the suites' own servers as the runner
+          # user, so a mode on the root alone would not reach the model
+          # directories the daemon creates later. An inherited ACL does.
           sudo chmod 0777 /Users/Shared/hf-cache
+          ACE="list,search,add_file,add_subdirectory,delete,delete_child"
+          ACE="$ACE,read,write,execute,append,readattr,writeattr"
+          ACE="$ACE,readextattr,writeextattr,readsecurity"
+          ACE="$ACE,file_inherit,directory_inherit"
+          sudo chmod +a "everyone allow $ACE" /Users/Shared/hf-cache
+          ls -lde /Users/Shared/hf-cache
           sudo launchctl setenv HF_HUB_CACHE /Users/Shared/hf-cache
           echo "HF_HUB_CACHE=/Users/Shared/hf-cache" >> $GITHUB_ENV
 
