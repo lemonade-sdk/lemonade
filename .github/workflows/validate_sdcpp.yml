@@ -372,6 +372,10 @@ jobs:
           New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
           New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
+          # A 1024x1024 CPU generation runs 419-520s against lemond's 600s default.
+          Set-Content -Path (Join-Path $cacheDir "config.json") `
+            -Value '{"global_timeout": 3600}' -Encoding utf8
+
           $stdoutLog = Join-Path $PWD "$logsDir\lemond.stdout.log"
           $stderrLog = Join-Path $PWD "$logsDir\lemond.stderr.log"
 
