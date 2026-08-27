@@ -422,14 +422,11 @@ ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_f
 // behavior-free contract objects from policy JSON while keeping live backend
 // access behind ClassifierServices.
 //
-// expose_request_features gates whether an `llm` classifier serializes
-// has_tools/has_images into its judge payload/prompt at all (#2789): the
-// parser passes true only for the routing.router sugar's synthesized
-// classifier (the sole decision mechanism, with no sibling rule to compose
-// against) or when some rule in the same policy already composes the
-// deterministic has_tools/has_images leaf. Callers that construct a
-// classifier directly (tests, standalone tooling) get the pre-existing
-// always-expose behavior via the default.
+// expose_request_features gates an `llm` classifier's has_tools/has_images
+// visibility (#2789) — see LlmClassifier::effective_prompt in
+// routing_policy.cpp for which classifiers the parser passes true for. The
+// default preserves prior always-expose behavior for direct callers (tests,
+// standalone tooling).
 ClassifierPtr make_classifier(const json& config, bool expose_request_features = true);
 std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json,
                                                        bool expose_request_features = true);

@@ -516,50 +516,6 @@ std::vector<Rule> parse_rules(const json& routing,
     return rules;
 }
 
-// Raw-JSON scan for whether a match expression composes the deterministic
-// has_tools/has_images leaf anywhere in its tree, run on the pre-parse JSON
-// (before parse_rules/validate_leaf) so it can gate `llm` classifier
-// construction, which happens before rules are parsed. Deliberately
-// permissive about shape (a stray non-object/non-array where one is expected
-// just yields `false` here) — validate_leaf still runs afterward and is the
-// source of truth for rejecting malformed policies.
-bool match_expr_json_uses_request_feature(const json& expr) {
-    if (!expr.is_object()) {
-        return false;
-    }
-    if (expr.contains("any") && expr.at("any").is_array()) {
-        for (const auto& child : expr.at("any")) {
-            if (match_expr_json_uses_request_feature(child)) {
-                return true;
-            }
-        }
-    }
-    if (expr.contains("all") && expr.at("all").is_array()) {
-        for (const auto& child : expr.at("all")) {
-            if (match_expr_json_uses_request_feature(child)) {
-                return true;
-            }
-        }
-    }
-    if (expr.contains("not") && match_expr_json_uses_request_feature(expr.at("not"))) {
-        return true;
-    }
-    return expr.contains("has_tools") || expr.contains("has_images");
-}
-
-bool rules_json_use_request_feature(const json& rules_json) {
-    if (!rules_json.is_array()) {
-        return false;
-    }
-    for (const auto& rule : rules_json) {
-        if (rule.is_object() && rule.contains("match") &&
-            match_expr_json_uses_request_feature(rule.at("match"))) {
-            return true;
-        }
-    }
-    return false;
-}
-
 } // namespace
 
 const std::set<std::string>& routing_policy_root_keys() {
@@ -703,17 +659,10 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
         routing_eff = &desugared;
     }
 
-    // Gate whether an `llm` classifier's judge payload/prompt carries
-    // has_tools/has_images (#2789): the router.sugar's synthesized classifier
-    // is the sole decision mechanism and always gets them (it has no sibling
-    // rule to compose the deterministic leaf against); an author-declared
-    // classifier only gets them when some rule in this same policy already
-    // composes has_tools/has_images deterministically, evidencing they
-    // actually matter to this policy's routing.
-    const bool expose_request_features =
-        is_router_sugar ||
-        (routing_eff->contains("rules") &&
-         rules_json_use_request_feature(routing_eff->at("rules")));
+    // Only the routing.router sugar's synthesized classifier gets
+    // has_tools/has_images (#2789) — see LlmClassifier::effective_prompt in
+    // routing_policy.cpp for why an author-declared classifier never does.
+    const bool expose_request_features = is_router_sugar;
 
     const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
     policy.classifiers = make_classifiers(classifier_configs, expose_request_features);

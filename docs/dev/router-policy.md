@@ -163,19 +163,15 @@ and every entry's `model` must be one of `components`:
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to `default_model`.
 
-  `has_tools`/`has_images` reach the judge's context only when this same
-  policy already composes the deterministic `has_tools`/`has_images` leaf
-  somewhere (as `risky-tool-calls-stay-local` does above) — a policy that
-  never references either field never exposes them, which removes the risk of
-  an unrelated request being mislabeled from their mere presence, rather than
-  relying on a disclaimer alone. When they are exposed, the judge is told
-  they describe the request's format, not its content, and to treat either as
-  risk/intent evidence only when `prompt` itself asks it to condition on tool
-  or image presence. Write `prompt` with an explicit criterion regardless (as
-  `risk` does above: "risk for tool execution", not just "risk"), and where a
-  request feature should deterministically affect routing rather than being
-  left to the judge's discretion, compose the `has_tools`/`has_images` leaf
-  alongside the classifier as shown above.
+  A `type: "llm"` classifier's judge never sees `has_tools`/`has_images`
+  (#2789) — not even when a sibling condition composes the deterministic leaf
+  in the *same* rule, as `risky-tool-calls-stay-local` does above; exposing
+  them there would feed the judge the very signal the rule already checks
+  deterministically, biasing the label from their mere presence. Write
+  `prompt` with an explicit criterion instead (as `risk` does above: "risk
+  for tool execution", not just "risk"), and compose the `has_tools`/
+  `has_images` leaf alongside the classifier when a request feature should
+  affect routing, exactly as shown above.
 
 > A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
 > block are the two LLM forms. `routing.router` picks the final candidate itself
@@ -290,7 +286,7 @@ to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
 
-Unlike a `type: "llm"` classifier (whose exposure of `has_tools`/`has_images` to
-the judge depends on the rest of the policy, see above), the router always
-receives them: it's the sole decision mechanism here, so `prompt` can rely on
-them directly — e.g. "use Vision-GGUF when the request includes images."
+Unlike a `type: "llm"` classifier (which never receives `has_tools`/
+`has_images`, see above), the router always does: it's the sole decision
+mechanism here, so `prompt` can rely on them directly — e.g. "use Vision-GGUF
+when the request includes images."

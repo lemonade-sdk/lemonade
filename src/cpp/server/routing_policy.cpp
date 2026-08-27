@@ -366,18 +366,15 @@ private:
     // appended here so every llm router speaks the same protocol regardless
     // of authoring.
     //
-    // has_tools/has_images are only ever shown to the judge when
-    // expose_request_features_ is set (#2789): either this classifier is the
-    // routing.router sugar's sole decision mechanism (no sibling rule exists
-    // to compose the deterministic leaf against, so the fields have nowhere
-    // else to be used), or some rule in the same policy already composes the
-    // deterministic has_tools/has_images leaf, evidencing the author actually
-    // wants these fields to matter to routing. A policy that never references
-    // either field withholds them from the judge outright, which removes the
-    // bias risk structurally rather than relying on the judge to obey a
-    // disclaimer. When they are shown, the disclaimer below still applies:
-    // it tells the judge to only treat them as content/risk evidence when the
-    // author's own prompt (the routing criteria above) asks it to.
+    // has_tools/has_images reach the judge only when expose_request_features_
+    // is set, which the parser sets true solely for the routing.router
+    // sugar's synthesized classifier (#2789): it's the sole decision
+    // mechanism, so it needs them directly (e.g. "use the vision model when
+    // has_images"). An author-declared classifier always gets false — even
+    // one composed alongside a deterministic has_tools/has_images rule
+    // (risky-tool-calls-stay-local) would otherwise leak the same field into
+    // its own judgment, recreating #2789. Compose the leaf in a rule instead
+    // of trusting the judge to weigh it.
     std::string effective_prompt() const {
         std::string suffix;
         if (expose_request_features_) {
