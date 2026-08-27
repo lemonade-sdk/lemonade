@@ -1,4 +1,4 @@
-// Proves HRX keeps its narrow install, model-admission, and process-launch
+// Proves HRX keeps its narrow install, custom-argument, and process-launch
 // contract. These checks call the same helpers as HrxServer::load(), without
 // starting the backend or duplicating descriptor-derived data tables.
 
@@ -18,9 +18,6 @@ namespace {
 namespace hrx = lemon::backends::hrx;
 using lemon::backends::HrxServer;
 
-constexpr const char* kQualifiedCheckpoint =
-    "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:"
-    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf";
 constexpr const char* kReleaseVersion = "hrx-b59";
 
 int failures = 0;
@@ -112,13 +109,6 @@ void check_admission_contract() {
             "/models/qualified.gguf", 4096, 14123, "--port=1");
     });
     check("HRX rejects an equals-form managed argument", equals_flag_rejected);
-
-    check("HRX accepts the exact qualified checkpoint",
-          hrx::is_qualified_checkpoint(kQualifiedCheckpoint));
-    check("HRX rejects a checkpoint artifact mismatch",
-          !hrx::is_qualified_checkpoint(
-              "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:"
-              "Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf"));
 }
 
 void check_installer_contract() {

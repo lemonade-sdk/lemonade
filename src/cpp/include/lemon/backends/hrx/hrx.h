@@ -9,14 +9,6 @@ namespace lemon {
 namespace backends {
 namespace hrx {
 
-inline constexpr char kQualifiedCheckpoint[] =
-    "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:"
-    "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf";
-
-inline bool is_qualified_checkpoint(const std::string& checkpoint) {
-    return checkpoint == kQualifiedCheckpoint;
-}
-
 inline const std::set<std::string>& reserved_custom_arg_flags() {
     static const std::set<std::string> kReservedCustomArgFlags = {
         "-c",

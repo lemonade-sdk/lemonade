@@ -108,14 +108,6 @@ void HrxServer::load(const std::string& model_name,
     LOG(DEBUG, "HRX") << "Per-model settings: "
                        << options.to_log_string() << std::endl;
 
-    const std::string checkpoint = model_info.checkpoint();
-    if (!hrx::is_qualified_checkpoint(checkpoint)) {
-        throw std::invalid_argument(
-            "Checkpoint '" + checkpoint +
-            "' is not qualified for HRX. Qualified checkpoint: " +
-            hrx::kQualifiedCheckpoint);
-    }
-
     backend_manager_->install_backend(hrx::spec()->recipe, "hrx");
 
     const std::string gguf_path = model_info.resolved_path();
