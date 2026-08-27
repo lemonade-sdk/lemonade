@@ -1631,6 +1631,20 @@ void Server::setup_static_files(httplib::Server &web_server) {
     // Serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
 
+    // Rendered documentation site, when one was bundled at build time
+    // (-DBUILD_DOCS_SITE=ON). Unversioned so it mirrors the paths used on
+    // lemonade-server.ai; the machine-readable reference stays on /v1/docs.
+    // Mounted with the trailing slash so a bare /docs reaches the redirect:
+    // httplib matches mounts ahead of routes, and serving index.html at /docs
+    // would resolve the page's relative links one level too high.
+    std::string docs_site_dir = utils::get_resource_path("resources/docs-site");
+    if (web_server.set_mount_point("/docs/", docs_site_dir)) {
+        web_server.Get("/docs", [](const httplib::Request&, httplib::Response& res) {
+            res.set_redirect("/docs/", 301);
+        });
+        LOG(INFO, "Server") << "Serving bundled documentation site at /docs/" << std::endl;
+    }
+
     // Mount static files directory for status page assets (CSS, JS, images)
     if (!web_server.set_mount_point("/static", static_dir)) {
         LOG(WARNING, "Server") << "Could not mount static files from: " << static_dir << std::endl;
