@@ -49,6 +49,11 @@ def read_records(labels: list[str]) -> list[dict[str, Any]]:
         for item in data:
             if not isinstance(item, dict):
                 raise SystemExit(f"{path} contains a non-object record")
+            # Non-image diagnostics (e.g. the active-backend assertion) share the
+            # array but are not per-model/size results, so they must not count
+            # toward the pass tallies or the expected-image assertion.
+            if item.get("check"):
+                continue
             item.setdefault("label", label)
             item["artifact"] = f"sdcpp-validation-{label}"
             records.append(item)

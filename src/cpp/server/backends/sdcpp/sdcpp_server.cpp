@@ -327,26 +327,16 @@ void SDServer::load(const std::string& model_name,
             std::string rocm_arch = SystemInfo::get_rocm_arch();
             if (!rocm_arch.empty()) {
                 std::vector<std::string> therock_dirs = BackendUtils::get_therock_lib_paths(rocm_arch);
-                std::string therock_bin = therock_dirs.empty() ? std::string() : therock_dirs.front();
-                if (!therock_bin.empty()) {
-                    for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                        new_path = *it + ";" + new_path;
-                    }
-
-                    fs::path therock_dll = fs::path(therock_bin) / "amdhip64_7.dll";
-                    fs::path target_dll = exe_dir / "amdhip64_7.dll";
-                    if (fs::exists(therock_dll)) {
-                        std::error_code ec;
-                        fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                        if (!ec) {
-                            LOG(INFO, "SDServer") << "Copied amdhip64_7.dll from TheRock to " << path_to_utf8(target_dll) << std::endl;
-                        } else {
-                            LOG(ERROR, "SDServer") << "Failed to copy amdhip64_7.dll: " << ec.message() << std::endl;
-                        }
-                    } else {
-                        LOG(DEBUG, "SDServer") << "amdhip64_7.dll not found in TheRock at " << path_to_utf8(therock_dll) << std::endl;
-                    }
+                for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
+                    new_path = *it + ";" + new_path;
                 }
+
+                // Version-aware staging: force-copying TheRock's amdhip64_7.dll
+                // shadows a newer System32 runtime (the exe dir precedes System32
+                // in the loader search order), which makes hipGetDeviceCount()
+                // return 0 and sd-server silently fall back to the CPU backend.
+                // See #3213 for the equivalent llama.cpp failure.
+                BackendUtils::stage_therock_hip_runtime(rocm_arch, exe_dir);
             }
         }
 

@@ -33,7 +33,11 @@ env:
   # lemonade-sdk fork and may intentionally be on a different release tag.
   SDCPP_BASE_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal
   SDCPP_CUDA_UPDATE_BACKENDS: cuda
-  SDCPP_VALIDATED_LABELS: cpu,vulkan,rocm-stable
+  # rocm-stable is omitted while its leg is non-blocking (see #3409): the update
+  # PR body asserts image evidence for every label listed here, and the leg
+  # cannot produce any. It stays in SDCPP_BASE_UPDATE_BACKENDS, so the pin is
+  # still updated and the body reports it as updated-but-not-validated.
+  SDCPP_VALIDATED_LABELS: cpu,vulkan
   SDCPP_TEST_PROMPT: "A small glass of lemonade on a clean table, product photo, high detail"
   SDCPP_TEST_MODELS: "SD-Turbo-GGUF,Flux-2-Klein-4B"
   SDCPP_TEST_SIZES: "512x256,1024x1024"
@@ -282,14 +286,22 @@ jobs:
           - label: cpu
             backend: cpu
             channel: ""
+            blocking: true
             runner: [self-hosted, Windows, stx-halo, vulkan, lemon-prod]
           - label: vulkan
             backend: vulkan
             channel: ""
+            blocking: true
             runner: [self-hosted, Windows, stx-halo, vulkan, lemon-prod]
+          # Non-blocking until #3409 is resolved: ROCm 7.14.0's rocBLAS aborts
+          # sd-server on gfx1151 (hipErrorInvalidDeviceFunction from
+          # hipblasGemmStridedBatchedEx), which is a ROCm regression this repo
+          # cannot fix. The leg still runs and reports, so the day ROCm ships a
+          # fix we see it go green and flip this back to blocking: true.
           - label: rocm-stable
             backend: rocm
             channel: stable
+            blocking: false
             runner: [self-hosted, Windows, stx-halo, rocm, lemon-prod]
           # CUDA is pinned by the updater and its assets are required by the
           # verify-cuda-assets job after this validation matrix completes.
@@ -391,7 +403,9 @@ jobs:
               "--seed", "${{ env.SDCPP_TEST_SEED }}",
               "--warmup",
               "--output", "sdcpp_validation_$label.json",
-              "--images-dir", "sdcpp-images-$label"
+              "--images-dir", "sdcpp-images-$label",
+              "--server-log", $stdoutLog,
+              "--server-log", $stderrLog
             )
             foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
               $model = $model.Trim()
@@ -412,7 +426,15 @@ jobs:
               $validationArgs += $channel
             }
             & $venvPython @validationArgs
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $validationExit = $LASTEXITCODE
+            if ($validationExit -ne 0) {
+              if ("${{ matrix.blocking }}" -eq "false") {
+                Write-Host "::warning title=$label validation failed (non-blocking)::Exit $validationExit. This leg does not gate merges; see issue #3409."
+                Write-Host "$label failed with exit $validationExit; not gating." -ForegroundColor Yellow
+              } else {
+                exit $validationExit
+              }
+            }
           } finally {
             try {
               Invoke-WebRequest -Uri "http://127.0.0.1:13305/internal/shutdown" `

@@ -79,6 +79,9 @@ jobs:
       - name: Run the comment-slop unit tests
         run: python -m unittest test.test_comment_slop -v
 
+      - name: Run the sd-cpp active-backend assertion unit tests
+        run: python -m unittest test.test_sdcpp_backend_log -v
+
       - name: Run pre-commit on the changed files
         # Scoped to what the change touches; running repo-wide would fail on drift that
         # predates it and is not the contributor's to fix.
