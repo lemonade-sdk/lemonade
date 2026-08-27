@@ -334,7 +334,9 @@ def run_bench(
     env = os.environ.copy()
 
     print(f"    cmd: {' '.join(cmd)}")
-    print(f"    backend key: {bench_as}  (binary routed via llamacpp.{bench_as}_bin)")
+    recipe = fork.get("recipe", "llamacpp")
+    cfg_section = fork.get("config_section", recipe)
+    print(f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)")
 
     if dry_run:
         print("    [dry-run] skipping execution")
@@ -620,7 +622,8 @@ def main() -> int:
 
         try:
             tag_prefix = fork.get("version_tag_prefix", "")
-            version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+            pinned = fork.get("version", "") if fork.get("version_source") == "pinned" else ""
+            version = resolve_latest_version(fork["repo"], args.token, tag_prefix, pinned)
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve version: {e}")
