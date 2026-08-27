@@ -33,7 +33,10 @@ std::vector<std::pair<std::string, std::string>> build_server_environment();
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
-constexpr uint32_t capabilities() { return capability_mask_of<HrxServer>(); }
+constexpr uint32_t capabilities() {
+    return capability_mask_of<HrxServer>() &
+           ~(CAP_EMBEDDINGS | CAP_RERANKING);
+}
 }  // namespace hrx
 
 }  // namespace backends

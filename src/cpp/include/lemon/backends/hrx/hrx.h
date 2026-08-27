@@ -55,7 +55,7 @@ inline const BackendDescriptor descriptor = {
          {{"gfx1100", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx1151", {/*os*/ {"linux"}, /*channels*/ {}}}}},
     },
-    /*supported_modes*/ {"chat", "embeddings", "reranking"},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*experimental*/    true,
