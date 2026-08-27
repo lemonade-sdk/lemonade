@@ -2,10 +2,12 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
 #include "lemon/model_manager.h"
+#include "lemon/routing_policy.h"
 
 // Capacity-aware candidate filtering for router-collection dispatch (#2959).
 // Pure helpers: the dispatch loop in server.cpp estimates the request's token
@@ -17,21 +19,20 @@ namespace routing_capacity {
 
 using json = nlohmann::json;
 
-// chars/4 undercounts for code, non-Latin scripts, and chat-template overhead;
-// the margin must err toward skipping a too-small candidate.
-constexpr double SAFETY_MARGIN = 1.25;
+// Per-message cost of the chat template's role markers and separators
+// (e.g. `<|im_start|>user\n` ... `<|im_end|>\n`), which the content text
+// itself does not account for.
+constexpr int64_t TOKENS_PER_MESSAGE_OVERHEAD = 4;
 
-// Generation headroom assumed when the request doesn't set max_tokens.
-constexpr int64_t DEFAULT_GENERATION_HEADROOM = 1024;
-
-// Rough prompt footprint in tokens: UTF-8 bytes of the serialized messages,
-// system, tools, prompt, and input fields divided by 4 (rounded up). The JSON
-// serialization overhead (keys, quotes) stands in for chat-template overhead.
+// Rough prompt footprint in tokens. Message *content* text is counted (not the
+// serialized JSON envelope, whose keys and quotes are not sent to the model),
+// plus a per-message template overhead. `tools` is counted from its serialized
+// form because tool schemas really are injected into the prompt as JSON.
 int64_t estimate_prompt_tokens(const json& request);
 
-// Requested max_tokens / max_completion_tokens when present and positive,
-// else DEFAULT_GENERATION_HEADROOM.
-int64_t generation_headroom(const json& request);
+// Requested max_tokens / max_completion_tokens when present and positive, else
+// `fallback` (the policy's generation_headroom).
+int64_t generation_headroom(const json& request, int64_t fallback);
 
 // Effective context window for a candidate, in tokens. 0 means unknown —
 // callers must treat unknown as unconstrained and never skip on it.
@@ -47,16 +48,22 @@ int64_t effective_context_window(const ModelInfo& info,
                                  std::optional<int64_t> pinned_ctx_size,
                                  double available_memory_gb);
 
-// SAFETY_MARGIN * prompt_tokens + headroom <= window. window <= 0 (unknown)
+// safety_margin * prompt_tokens + headroom <= window. window <= 0 (unknown)
 // always fits.
-bool fits(int64_t prompt_tokens, int64_t headroom, int64_t window);
+bool fits(int64_t prompt_tokens, int64_t headroom, int64_t window,
+          double safety_margin);
 
-// True when a backend error response is a context-window rejection. Matches
-// both the normalized code the llama.cpp path sets
-// (create_backend_error_response in wrapped_server.cpp) and the raw provider
-// rejection text, which cloud errors keep nested under error.details.response
-// with a generic backend_error code.
+// True when a backend error response is a context-window rejection. The
+// normalized code set by create_backend_error_response (wrapped_server.cpp) is
+// matched exactly; the raw-text fallback is scoped to the message/code fields
+// that actually carry backend rejections — including the provider body cloud
+// errors nest under error.details.response — so an error that merely echoes
+// user input cannot trigger a re-route.
 bool is_context_overflow_error(const json& response);
+
+// True when one SSE event body ("data: {...}") is such a rejection. Used to
+// intercept a streaming overflow before any bytes reach the client.
+bool sse_event_is_context_overflow(const std::string& event);
 
 } // namespace routing_capacity
 } // namespace lemon

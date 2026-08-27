@@ -33,24 +33,60 @@ static void test_estimate_prompt_tokens() {
     check("non-object request estimates zero",
           cap::estimate_prompt_tokens(json("hi")) == 0);
 
+    // Content text drives the estimate; the JSON envelope's keys and quotes are
+    // never sent to the model and must not be counted.
+    const std::string content(400, 'a');
     json chat = {{"messages", json::array({
-                     json{{"role", "user"}, {"content", "hello"}}})}};
-    const int64_t bytes = static_cast<int64_t>(chat["messages"].dump().size());
-    check("chat estimate is ceil(bytes/4)",
-          cap::estimate_prompt_tokens(chat) == (bytes + 3) / 4);
+                     json{{"role", "user"}, {"content", content}}})}};
+    const int64_t expected = static_cast<int64_t>(content.size()) / 4 +
+                             cap::TOKENS_PER_MESSAGE_OVERHEAD;
+    check("chat estimate is content bytes/4 plus per-message overhead",
+          cap::estimate_prompt_tokens(chat) == expected);
+    check("chat estimate excludes the JSON envelope",
+          cap::estimate_prompt_tokens(chat) <
+              static_cast<int64_t>(chat["messages"].dump().size()) / 4);
+
+    // A long role name or extra keys must not inflate the estimate.
+    json verbose = {{"messages", json::array({
+                        json{{"role", "user"},
+                             {"content", content},
+                             {"some_client_annotation", std::string(500, 'z')}}})}};
+    check("unknown message keys are not counted",
+          cap::estimate_prompt_tokens(verbose) == expected);
+
+    // Content parts: text counts, an image blob does not (it never enters the
+    // prompt as text, and counting its base64 would wildly over-skip).
+    json parts = {{"messages", json::array({
+                      json{{"role", "user"},
+                           {"content", json::array({
+                               json{{"type", "text"}, {"text", content}},
+                               json{{"type", "image_url"},
+                                    {"image_url", {{"url", std::string(5000, 'Z')}}}}})}}})}};
+    check("content parts count text and skip image blobs",
+          cap::estimate_prompt_tokens(parts) == expected);
 
     json with_tools = chat;
     with_tools["tools"] = json::array({json{{"type", "function"}}});
-    check("tools grow the estimate",
+    check("tool schemas grow the estimate (they are injected as JSON)",
           cap::estimate_prompt_tokens(with_tools) > cap::estimate_prompt_tokens(chat));
 
+    json with_tool_calls = {{"messages", json::array({
+                                json{{"role", "assistant"},
+                                     {"tool_calls", json::array({
+                                         json{{"id", "call_1"}}})}}})}};
+    check("assistant tool_calls are counted",
+          cap::estimate_prompt_tokens(with_tool_calls) >
+              cap::TOKENS_PER_MESSAGE_OVERHEAD);
+
     json completion = {{"prompt", std::string(4000, 'x')}};
-    check("prompt field is counted",
-          cap::estimate_prompt_tokens(completion) > 1000);
+    check("prompt field is counted", cap::estimate_prompt_tokens(completion) == 1000);
 
     json responses_api = {{"input", std::string(4000, 'x')}};
     check("responses input field is counted",
-          cap::estimate_prompt_tokens(responses_api) > 1000);
+          cap::estimate_prompt_tokens(responses_api) == 1000);
+
+    json system_only = {{"system", std::string(400, 's')}};
+    check("system field is counted", cap::estimate_prompt_tokens(system_only) == 100);
 
     // Multi-byte UTF-8 counts bytes, not characters: each 'é' is 2 bytes.
     json ascii = {{"prompt", std::string(100, 'a')}};
@@ -61,27 +97,46 @@ static void test_estimate_prompt_tokens() {
     }()}};
     check("estimate counts UTF-8 bytes",
           cap::estimate_prompt_tokens(accented) > cap::estimate_prompt_tokens(ascii));
+
+    // Each message pays the template overhead, so many short turns cost more
+    // than one long turn of the same total text.
+    json many = {{"messages", json::array()}};
+    for (int i = 0; i < 10; ++i) {
+        many["messages"].push_back(json{{"role", "user"}, {"content", std::string(40, 'a')}});
+    }
+    check("per-message overhead accumulates",
+          cap::estimate_prompt_tokens(many) == 400 / 4 + 10 * cap::TOKENS_PER_MESSAGE_OVERHEAD);
 }
 
 static void test_generation_headroom() {
-    check("default headroom when unset",
-          cap::generation_headroom(json::object()) == cap::DEFAULT_GENERATION_HEADROOM);
+    const int64_t policy_default = lemon::CapacitySettings{}.generation_headroom;
+    check("policy fallback used when request sets none",
+          cap::generation_headroom(json::object(), policy_default) == policy_default);
     check("max_tokens wins when set",
-          cap::generation_headroom(json{{"max_tokens", 256}}) == 256);
+          cap::generation_headroom(json{{"max_tokens", 256}}, policy_default) == 256);
     check("max_completion_tokens honored",
-          cap::generation_headroom(json{{"max_completion_tokens", 512}}) == 512);
-    check("non-positive max_tokens falls back to default",
-          cap::generation_headroom(json{{"max_tokens", 0}}) ==
-              cap::DEFAULT_GENERATION_HEADROOM);
+          cap::generation_headroom(json{{"max_completion_tokens", 512}}, policy_default) == 512);
+    check("non-positive max_tokens falls back to the policy value",
+          cap::generation_headroom(json{{"max_tokens", 0}}, policy_default) == policy_default);
+    check("a policy may raise the fallback",
+          cap::generation_headroom(json::object(), 4096) == 4096);
 }
 
 static void test_fits() {
-    check("unknown window (0) always fits", cap::fits(1000000, 1024, 0));
-    check("negative window treated as unknown", cap::fits(1000000, 1024, -1));
+    const double margin = lemon::CapacitySettings{}.safety_margin;
+    check("unknown window (0) always fits", cap::fits(1000000, 1024, 0, margin));
+    check("negative window treated as unknown", cap::fits(1000000, 1024, -1, margin));
     // 1.25 * 1000 + 1024 = 2274
-    check("exact boundary fits", cap::fits(1000, 1024, 2274));
-    check("one below boundary does not fit", !cap::fits(1000, 1024, 2273));
-    check("small request fits small window", cap::fits(100, 100, 4096));
+    check("exact boundary fits", cap::fits(1000, 1024, 2274, margin));
+    check("one below boundary does not fit", !cap::fits(1000, 1024, 2273, margin));
+    check("small request fits small window", cap::fits(100, 100, 4096, margin));
+
+    // A policy-tuned margin moves the boundary: at 1.0 the same request fits a
+    // window the default margin would have skipped.
+    check("margin 1.0 admits what 1.25 rejects",
+          cap::fits(1000, 1024, 2100, 1.0) && !cap::fits(1000, 1024, 2100, margin));
+    check("a larger margin skips more aggressively",
+          !cap::fits(1000, 1024, 2274, 2.0));
 }
 
 static void test_effective_context_window() {
@@ -154,6 +209,53 @@ static void test_is_context_overflow_error() {
     check("llama.cpp rejection text is detected regardless of case",
           cap::is_context_overflow_error(
               json{{"error", {{"message", "Context Length Exceeded"}}}}));
+
+    // The text fallback must only read the fields that carry backend
+    // rejections. An error that echoes user input — a prompt asking about the
+    // error code, a model id, an unrelated details payload — must not evict a
+    // working candidate.
+    check("user input echoed in a non-message field does not match",
+          !cap::is_context_overflow_error(json{
+              {"error",
+               {{"message", "invalid request"},
+                {"type", "invalid_request_error"},
+                {"param", "why did I get context_length_exceeded?"}}}}));
+    check("the bare code word in free text does not match",
+          !cap::is_context_overflow_error(json{
+              {"error", {{"message", "unknown field context_length_exceeded"}}}}));
+    check("a request echo under details does not match",
+          !cap::is_context_overflow_error(json{
+              {"error",
+               {{"message", "validation failed"},
+                {"details",
+                 {{"request",
+                   {{"messages",
+                     "explain the error exceeds the available context size"}}}}}}}}));
+    check("a nested provider code is detected",
+          cap::is_context_overflow_error(json{
+              {"error",
+               {{"message", "cloud (x) request failed"},
+                {"details",
+                 {{"response",
+                   {{"error", {{"code", "context_length_exceeded"}}}}}}}}}}));
+}
+
+static void test_sse_event_is_context_overflow() {
+    check("an SSE error event is detected",
+          cap::sse_event_is_context_overflow(
+              "data: {\"error\":{\"message\":\"request (9000 tokens) exceeds the "
+              "available context size (512 tokens), try increasing it\","
+              "\"status_code\":400}}\n\n"));
+    check("a normal content chunk is not an overflow",
+          !cap::sse_event_is_context_overflow(
+              "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n"));
+    check("the DONE sentinel is not an overflow",
+          !cap::sse_event_is_context_overflow("data: [DONE]\n\n"));
+    check("a non-SSE line is not an overflow",
+          !cap::sse_event_is_context_overflow("garbage\n\n"));
+    check("an unrelated SSE error is not an overflow",
+          !cap::sse_event_is_context_overflow(
+              "data: {\"error\":{\"message\":\"connection reset\"}}\n\n"));
 }
 
 int main() {
@@ -162,6 +264,7 @@ int main() {
     test_fits();
     test_effective_context_window();
     test_is_context_overflow_error();
+    test_sse_event_is_context_overflow();
 
     if (g_failures > 0) {
         std::printf("%d check(s) FAILED\n", g_failures);

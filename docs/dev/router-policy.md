@@ -53,6 +53,7 @@ on top via each rule's `outputs` pass-through bag and the request `metadata`.
 | `routing.default_model` | yes | Fallback when no rule matches. Must be one of `candidates`. |
 | `routing.rules` | yes* | Ordered; first match wins. (*a policy provides **either** `routing.rules` **or** a `routing.router` block — see [LLM-as-router](#llm-as-router-routingrouter).) |
 | `routing.classifiers` | no | Model-backed classifier definitions referenced by `classifier` / `semantic_similarity` conditions. |
+| `routing.capacity` | no | Tunes context-window fitting — see [Context-window fitting](#context-window-fitting). |
 
 A **rule** is `{ id, match, route_to, outputs? }`. `route_to` must be one of
 `candidates`. `outputs` is an arbitrary object copied verbatim into the decision
@@ -202,6 +203,11 @@ the window a load would produce when it isn't. A candidate that cannot fit the
 request is skipped and resolution re-runs without it, so first-match-wins lands
 on the next matching rule, then the policy default.
 
+The estimate counts message **content** (roughly four bytes per token) plus a
+small per-message allowance for the chat template's role markers; tool schemas
+are counted from their serialized JSON, because that is how they reach the
+model. Image parts are not counted as prompt text.
+
 A candidate with no known window (a cloud provider that reports none) counts as
 unconstrained and is never skipped. Each skip appears in `trace` when
 `route_trace` is set:
@@ -212,10 +218,55 @@ unconstrained and is never skipped. Each skip appears in `trace` when
 ```
 
 When no candidate fits, the request fails with **400** and
-`error.code = "context_length_exceeded"`, carrying the same trace. The estimate
-is deliberately conservative, so it can still be wrong in the other direction:
-if a routed candidate rejects the prompt for length at inference, dispatch
-re-routes **once** past that candidate and answers from the replacement.
+`error.code = "context_length_exceeded"`, carrying the same trace.
+
+### Tuning the boundary
+
+Both fudge factors are policy-level knobs under `routing.capacity`. They matter
+when a collection mixes a small local candidate with an expensive cloud
+default: skipping too eagerly silently shifts traffic — and cost — to the
+larger candidate.
+
+```json
+"routing": {
+  "candidates": ["Small-GGUF", "openrouter.big-model"],
+  "default_model": "openrouter.big-model",
+  "capacity": {
+    "safety_margin": 1.25,
+    "generation_headroom": 1024
+  },
+  "rules": [ ... ]
+}
+```
+
+- **`safety_margin`** (default `1.25`, minimum `1.0`) multiplies the estimate
+  before it is compared against a window. The four-bytes-per-token
+  approximation undercounts code and non-Latin scripts, so >1 errs toward
+  skipping a candidate that would have rejected the request anyway. Lower it to
+  keep more traffic on a local candidate; raise it to avoid backend rejections.
+- **`generation_headroom`** (default `1024`) reserves room for the completion.
+  It is only a fallback: a request that sets `max_tokens` or
+  `max_completion_tokens` uses its own value instead.
+
+### When the estimate is wrong
+
+The estimate can undercount, and a candidate that reports no window is never
+skipped — so a routed candidate may still reject the prompt for length at
+inference. The router then re-routes past it and retries, repeating up to the
+number of candidates in the policy, so a replacement that is also too small
+does not end the attempt.
+
+This applies to streaming too. A backend length rejection arrives as the first
+SSE event with nothing written before it, so it is withheld from the client
+while the re-route runs; only the surviving attempt's events are released, and
+the client never sees the intermediate failure. One caveat: the
+`x-lemonade-route` **header** is committed with the response, so on a re-routed
+stream it still names the initially matched rule — the first SSE event's
+`x_lemonade_route` object is authoritative for which candidate answered.
+
+If every candidate rejects the request for length, the last rejection is
+surfaced to the client unchanged (a 400 for a normal request, an in-stream
+error event for a streaming one).
 
 ## Cloud candidates
 

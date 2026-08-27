@@ -425,6 +425,24 @@ NamedLeafFactories make_deterministic_leaf_factories();
 // Policy + engine (constructor signature only here)
 // ---------------------------------------------------------------------------
 
+// Capacity-filtering knobs (`routing.capacity`, #2959). Dispatch estimates a
+// request's token footprint and skips candidates whose context window cannot
+// fit it; these control how conservative that estimate is. Operators mixing a
+// small local candidate with an expensive cloud default need to control that
+// boundary, because over-skipping silently shifts traffic (and cost) to the
+// larger candidate.
+struct CapacitySettings {
+    // Multiplier applied to the estimated prompt size before comparing against
+    // a window. The estimate is a chars/4 approximation, so it undercounts for
+    // code and non-Latin scripts; >1 errs toward skipping a candidate that
+    // would have rejected the request anyway.
+    double safety_margin = 1.25;
+
+    // Tokens reserved for the completion when the request names no
+    // max_tokens / max_completion_tokens of its own.
+    int64_t generation_headroom = 1024;
+};
+
 // The parsed, resolved routing policy (produced by the parser). Classifier
 // condition refs in the rules resolve against `classifiers` by id.
 struct RoutePolicy {
@@ -439,6 +457,9 @@ struct RoutePolicy {
     // without re-walking classifiers. Candidates are excluded — they load as
     // Standard residency when selected, not as helpers.
     std::vector<std::string> helper_models;
+
+    // Capacity-filtering knobs; defaults apply when `routing.capacity` is absent.
+    CapacitySettings capacity;
 };
 
 // Sorted, de-duplicated union of every classifier's referenced_models() — the

@@ -737,7 +737,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             if (result.status_code != 200) {
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code
                                     << ", body: " << body_buffer.substr(0, 200) << std::endl;
-                json extra = {{"status_code", result.status_code}};
+                // Carry the provider's own error body the way the non-streaming
+                // path does (see post_with_auth): without it a client — and the
+                // router's context-overflow backstop — cannot tell a length
+                // rejection from any other 4xx.
+                json provider_body;
+                try {
+                    provider_body = json::parse(body_buffer);
+                } catch (...) {
+                    provider_body = body_buffer;
+                }
+                json extra = {
+                    {"status_code", result.status_code},
+                    {"details", {{"status_code", result.status_code},
+                                 {"response", provider_body}}},
+                };
                 std::string error_msg = sse_error(
                     "cloud (" + provider_ + ") request failed", "backend_error", extra);
                 sink.write(error_msg.c_str(), error_msg.size());

@@ -155,27 +155,79 @@ private:
     // not engage (no parsed policy), so callers leave the request untouched.
     // Candidates whose context window cannot fit the estimated request are
     // skipped (capacity filtering, #2959); `excluded_candidates` seeds that
-    // exclusion set so the inference-time backstop can retry past a candidate
+    // exclusion set so the inference-time backstop can retry past candidates
     // that already failed live. Throws ContextWindowExceededException when no
     // candidate (nor the default) fits.
     std::optional<RouterDispatchResult> route_collection_request(
         const nlohmann::json& request_json,
         const ModelInfo& collection_info,
         const std::set<std::string>& excluded_candidates = {});
+
+    // Per-dispatch memoization for capacity filtering. Resolving an unloaded
+    // candidate's window probes system memory and runs the auto-tune
+    // computation, so a collection with several unloaded local candidates
+    // would otherwise repeat both once per candidate, per request.
+    struct CandidateWindowCache {
+        std::map<std::string, int64_t> windows;
+        std::map<DeviceType, double> available_memory_gb;
+    };
     // Effective context window (tokens) of one routing candidate: the live
     // resolved ctx_size when loaded, else the estimate the load path would
     // produce. 0 = unknown = unconstrained (never skip on missing info).
-    int64_t candidate_context_window(const std::string& model_name) const;
-    // One-shot inference-time backstop (#2959): when a router-dispatched
-    // request still fails with code=context_length_exceeded, re-route once
-    // with the failed candidate excluded and forward to the new selection.
-    // Returns the retried response (and updates request_json/route_dispatch),
-    // or the original response when no retry applies or re-routing fails.
+    int64_t candidate_context_window(const std::string& model_name,
+                                     CandidateWindowCache& cache) const;
+
+    // Re-resolve `current`'s collection with `failed_models` excluded, rewrite
+    // request_json's model to the replacement and load it. Returns nullopt when
+    // no different candidate is available (or re-resolution failed), leaving
+    // request_json untouched.
+    std::optional<RouterDispatchResult> reroute_excluding(
+        nlohmann::json& request_json,
+        const RouterDispatchResult& current,
+        const std::set<std::string>& failed_models);
+
+    // Number of candidates in a router collection's policy — the bound on how
+    // many times the inference-time backstop may re-route.
+    std::size_t collection_candidate_count(const std::string& collection_name) const;
+
+    // Inference-time backstop (#2959): the preflight estimate can undercount,
+    // and a candidate reporting no window is never skipped, so a routed
+    // candidate may still reject the prompt for length. Re-route past each
+    // rejecting candidate, bounded by the collection's candidate count, and
+    // return the first response that is not an overflow rejection (updating
+    // request_json/route_dispatch to the candidate that produced it).
     nlohmann::json retry_dispatch_on_context_overflow(
         nlohmann::json response,
         nlohmann::json& request_json,
         std::optional<RouterDispatchResult>& route_dispatch,
         const std::function<nlohmann::json(const nlohmann::json&)>& forward);
+
+    // The streaming counterpart. A backend length rejection arrives as the
+    // first SSE event with nothing written before it, so it is withheld from
+    // the client while the same bounded re-route runs; only the surviving
+    // attempt's bytes are released. The response is already committed as
+    // 200/text/event-stream, which every outcome here also produces, so no
+    // status or header ever needs revising — except `x-lemonade-route`, which
+    // was set from the initial decision; the first SSE event's
+    // `x_lemonade_route` carries the candidate that actually answered.
+    void stream_with_context_overflow_backstop(
+        httplib::DataSink& sink,
+        nlohmann::json& request_json,
+        const std::string& initial_body,
+        std::optional<RouterDispatchResult>& route_dispatch,
+        const std::function<void(const std::string&, httplib::DataSink&)>& stream_fn);
+
+    // Install the SSE content provider for a (possibly router-dispatched)
+    // streaming response: sets the streaming headers, attaches the initial
+    // route header, and runs the request through
+    // stream_with_context_overflow_backstop. Takes its state by value because
+    // the provider runs after the handler has returned.
+    void set_router_backstop_sse_content_provider(
+        httplib::Response& res,
+        std::optional<RouterDispatchResult> route_dispatch,
+        nlohmann::json request_json,
+        std::string request_body,
+        std::function<void(const std::string&, httplib::DataSink&)> stream_fn);
     // If request_json addresses a collection.router model, rewrite its "model"
     // field in place to the engine-selected candidate and return the Decision.
     // No-op otherwise.

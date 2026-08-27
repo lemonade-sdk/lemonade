@@ -176,6 +176,114 @@ void set_router_residency_conflict_response(
     res.set_content(response.dump(), "application/json");
 }
 
+// Offset just past the first complete SSE event in `buffer`, or npos. Events
+// are terminated by a blank line; both LF and CRLF framings are accepted.
+std::size_t sse_event_end(const std::string& buffer) {
+    const std::size_t lf = buffer.find("\n\n");
+    const std::size_t crlf = buffer.find("\r\n\r\n");
+    if (crlf != std::string::npos && (lf == std::string::npos || crlf < lf)) {
+        return crlf + 4;
+    }
+    return lf == std::string::npos ? std::string::npos : lf + 2;
+}
+
+// Withholds a streaming attempt's bytes until the first complete SSE event is
+// known. A backend length rejection is delivered as that first event with
+// nothing before it (see StreamingProxy), so it can be swallowed and the
+// request re-routed while the client has still seen nothing. Once the first
+// event proves to be real content, the buffer is released and later writes
+// pass straight through.
+class ContextOverflowProbeSink {
+public:
+    explicit ContextOverflowProbeSink(httplib::DataSink& inner) : inner_(inner) {}
+
+    bool overflow_detected() const { return overflow_; }
+    const std::string& withheld_event() const { return buffer_; }
+
+    bool write(const char* data, std::size_t length) {
+        if (decided_) {
+            return inner_.write(data, length);
+        }
+        buffer_.append(data, length);
+        const std::size_t end = sse_event_end(buffer_);
+        if (end == std::string::npos) {
+            return true;
+        }
+        if (routing_capacity::sse_event_is_context_overflow(buffer_.substr(0, end))) {
+            overflow_ = true;
+            decided_ = true;
+            // Stop the relay: nothing has reached the client, so the caller is
+            // free to re-route and stream a different candidate instead.
+            return false;
+        }
+        decided_ = true;
+        return release();
+    }
+
+    // A withheld attempt must not close the client's response: the caller is
+    // about to stream a different candidate into the very same sink.
+    void done() {
+        if (overflow_) {
+            return;
+        }
+        if (!decided_) {
+            decided_ = true;
+            release();
+        }
+        if (inner_.done) {
+            inner_.done();
+        }
+    }
+
+    void done_with_trailer(const httplib::Headers& trailer) {
+        if (overflow_) {
+            return;
+        }
+        if (!decided_) {
+            decided_ = true;
+            release();
+        }
+        if (inner_.done_with_trailer) {
+            inner_.done_with_trailer(trailer);
+        } else if (inner_.done) {
+            inner_.done();
+        }
+    }
+
+    bool is_writable() const {
+        return !inner_.is_writable || inner_.is_writable();
+    }
+
+private:
+    bool release() {
+        if (buffer_.empty()) {
+            return true;
+        }
+        const bool ok = inner_.write(buffer_.c_str(), buffer_.size());
+        buffer_.clear();
+        return ok;
+    }
+
+    httplib::DataSink& inner_;
+    std::string buffer_;
+    bool decided_ = false;
+    bool overflow_ = false;
+};
+
+// Point a DataSink's std::function members at `wrapper`. DataSink is neither
+// copyable nor movable, so it is filled in place rather than returned.
+template <typename Wrapper>
+void bind_sink(httplib::DataSink& sink, Wrapper& wrapper) {
+    sink.write = [&wrapper](const char* data, std::size_t len) {
+        return wrapper.write(data, len);
+    };
+    sink.done = [&wrapper]() { wrapper.done(); };
+    sink.done_with_trailer = [&wrapper](const httplib::Headers& trailer) {
+        wrapper.done_with_trailer(trailer);
+    };
+    sink.is_writable = [&wrapper]() { return wrapper.is_writable(); };
+}
+
 void set_context_window_exceeded_response(
     const ContextWindowExceededException& error,
     httplib::Response& res) {
@@ -199,41 +307,6 @@ void attach_route_decision(json& response, httplib::Response& res,
     }
     response["x_lemonade_route"] = route_decision_to_json(dispatch->decision);
     attach_route_header(res, dispatch->decision);
-}
-
-template <typename StreamFn>
-void set_route_decision_sse_content_provider(
-    httplib::Response& res,
-    const std::optional<RouterDispatchResult>& dispatch,
-    std::string request_body,
-    StreamFn stream_fn) {
-    res.set_header("Cache-Control", "no-cache");
-    res.set_header("Connection", "keep-alive");
-    res.set_header("X-Accel-Buffering", "no");
-    if (dispatch) {
-        attach_route_header(res, dispatch->decision);
-    }
-
-    json route_decision_json = dispatch
-        ? route_decision_to_json(dispatch->decision)
-        : json(nullptr);
-    res.set_chunked_content_provider(
-        "text/event-stream",
-        [request_body = std::move(request_body),
-         route_decision_json = std::move(route_decision_json),
-         stream_fn = std::move(stream_fn)](size_t offset, httplib::DataSink& sink) {
-            if (offset > 0) {
-                return false;
-            }
-
-            stream_with_route_decision(
-                sink,
-                route_decision_json,
-                [&request_body, &stream_fn](httplib::DataSink& route_sink) {
-                    stream_fn(request_body, route_sink);
-                });
-            return false;
-        });
 }
 
 int get_http_status_from_error(const std::string& error_code) {
@@ -3735,9 +3808,12 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     // Capacity filtering (#2959): re-run resolution with any candidate whose
     // window can't fit the estimate excluded, until a fitting candidate is
     // selected or the fail-open default itself is excluded (nothing fits).
+    const CapacitySettings limits = collection_info.route_policy->capacity;
     const int64_t prompt_tokens = routing_capacity::estimate_prompt_tokens(request_json);
-    const int64_t headroom = routing_capacity::generation_headroom(request_json);
+    const int64_t headroom = routing_capacity::generation_headroom(
+        request_json, limits.generation_headroom);
 
+    CandidateWindowCache window_cache;
     std::set<std::string> excluded = excluded_candidates;
     std::vector<TraceEntry> capacity_trace;
     Decision decision;
@@ -3761,8 +3837,9 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
                     collection_info.model_name + "'.",
                 std::move(trace_json));
         }
-        const int64_t window = candidate_context_window(decision.route_to);
-        if (routing_capacity::fits(prompt_tokens, headroom, window)) {
+        const int64_t window = candidate_context_window(decision.route_to, window_cache);
+        if (routing_capacity::fits(prompt_tokens, headroom, window,
+                                   limits.safety_margin)) {
             break;
         }
         TraceEntry skip;
@@ -3791,7 +3868,14 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
     return result;
 }
 
-int64_t Server::candidate_context_window(const std::string& model_name) const {
+int64_t Server::candidate_context_window(const std::string& model_name,
+                                         CandidateWindowCache& cache) const {
+    auto cached = cache.windows.find(model_name);
+    if (cached != cache.windows.end()) {
+        return cached->second;
+    }
+
+    int64_t window = 0;
     try {
         const ModelInfo info = model_manager_->get_model_info(model_name);
         const std::optional<int64_t> loaded_ctx = router_->get_loaded_ctx_size(model_name);
@@ -3800,16 +3884,65 @@ int64_t Server::candidate_context_window(const std::string& model_name) const {
         if (ctx_option.is_number_integer() && ctx_option.get<int64_t>() > 0) {
             pinned_ctx = ctx_option.get<int64_t>();
         }
+
+        // Only an unloaded, unpinned llama.cpp candidate needs the auto-tune
+        // estimate, and only that path needs a memory probe. The probe is
+        // memoized per device so several such candidates cost one probe.
         double available_gb = 0.0;
         if (!loaded_ctx.has_value() && !pinned_ctx.has_value() &&
             info.recipe == "llamacpp") {
-            available_gb = get_available_memory_gb(info.device);
+            auto memory = cache.available_memory_gb.find(info.device);
+            if (memory == cache.available_memory_gb.end()) {
+                memory = cache.available_memory_gb
+                             .emplace(info.device, get_available_memory_gb(info.device))
+                             .first;
+            }
+            available_gb = memory->second;
         }
-        return routing_capacity::effective_context_window(info, loaded_ctx, pinned_ctx,
-                                                          available_gb);
+        window = routing_capacity::effective_context_window(info, loaded_ctx, pinned_ctx,
+                                                            available_gb);
     } catch (const std::exception&) {
         // Unknown candidate or lookup failure: unconstrained, never skip.
-        return 0;
+        window = 0;
+    }
+
+    cache.windows.emplace(model_name, window);
+    return window;
+}
+
+std::size_t Server::collection_candidate_count(const std::string& collection_name) const {
+    try {
+        const ModelInfo info = model_manager_->get_model_info(collection_name);
+        if (info.route_policy) {
+            return info.route_policy->candidates.size();
+        }
+    } catch (const std::exception&) {
+        // Fall through to the conservative bound below.
+    }
+    return 1;
+}
+
+std::optional<RouterDispatchResult> Server::reroute_excluding(
+    nlohmann::json& request_json,
+    const RouterDispatchResult& current,
+    const std::set<std::string>& failed_models) {
+    const std::string collection_name = current.requested_model;
+    try {
+        const ModelInfo collection_info = model_manager_->get_model_info(collection_name);
+        std::optional<RouterDispatchResult> retry =
+            route_collection_request(request_json, collection_info, failed_models);
+        if (!retry.has_value() || failed_models.count(retry->selected_model) > 0) {
+            return std::nullopt;
+        }
+        retry->requested_model = collection_name;
+        request_json["model"] = retry->selected_model;
+        auto_load_model_if_needed(retry->selected_model,
+                                  extract_auto_load_options(request_json));
+        return retry;
+    } catch (const std::exception& e) {
+        LOG(WARNING, "Server") << "Context-overflow re-route failed for '"
+                               << collection_name << "': " << e.what() << std::endl;
+        return std::nullopt;
     }
 }
 
@@ -3823,30 +3956,124 @@ nlohmann::json Server::retry_dispatch_on_context_overflow(
         return response;
     }
 
-    const std::string failed_model = route_dispatch->selected_model;
-    const std::string collection_name = route_dispatch->requested_model;
-    std::optional<RouterDispatchResult> retry;
-    try {
-        const ModelInfo collection_info = model_manager_->get_model_info(collection_name);
-        retry = route_collection_request(request_json, collection_info, {failed_model});
-        if (!retry.has_value() || retry->selected_model == failed_model) {
+    // A candidate can reach inference despite being too small because it
+    // reported no window at all, and its replacement may be another such
+    // candidate — so keep re-routing past each rejection rather than stopping
+    // after one. The candidate count bounds the walk.
+    const std::size_t max_attempts =
+        collection_candidate_count(route_dispatch->requested_model);
+    std::set<std::string> failed;
+
+    for (std::size_t attempt = 0; attempt < max_attempts; ++attempt) {
+        failed.insert(route_dispatch->selected_model);
+        std::optional<RouterDispatchResult> retry =
+            reroute_excluding(request_json, *route_dispatch, failed);
+        if (!retry.has_value()) {
             return response;
         }
-        retry->requested_model = collection_name;
-        LOG(INFO, "Server") << "Router collection '" << collection_name
-                            << "': context overflow on '" << failed_model
-                            << "', re-routing once to '" << retry->selected_model
+        LOG(INFO, "Server") << "Router collection '" << retry->requested_model
+                            << "': context overflow on '"
+                            << route_dispatch->selected_model
+                            << "', re-routing to '" << retry->selected_model
                             << "'" << std::endl;
-        request_json["model"] = retry->selected_model;
-        auto_load_model_if_needed(retry->selected_model,
-                                  extract_auto_load_options(request_json));
-    } catch (const std::exception& e) {
-        LOG(WARNING, "Server") << "Context-overflow re-route failed for '"
-                               << collection_name << "': " << e.what() << std::endl;
-        return response;
+        route_dispatch = std::move(retry);
+        response = forward(request_json);
+        if (!routing_capacity::is_context_overflow_error(response)) {
+            return response;
+        }
     }
-    route_dispatch = std::move(retry);
-    return forward(request_json);
+    return response;
+}
+
+void Server::stream_with_context_overflow_backstop(
+    httplib::DataSink& sink,
+    nlohmann::json& request_json,
+    const std::string& initial_body,
+    std::optional<RouterDispatchResult>& route_dispatch,
+    const std::function<void(const std::string&, httplib::DataSink&)>& stream_fn) {
+    if (!route_dispatch.has_value()) {
+        stream_fn(initial_body, sink);
+        return;
+    }
+
+    // One attempt per candidate — attempt 0 is the route already resolved, the
+    // rest are re-routes. A replacement may itself be a no-window candidate
+    // that is also too small, so stopping after the first re-route would hand
+    // the client exactly the hard failure this is here to avoid.
+    const std::size_t max_attempts =
+        collection_candidate_count(route_dispatch->requested_model);
+    std::set<std::string> failed;
+    std::string withheld;
+
+    for (std::size_t attempt = 0; attempt < max_attempts; ++attempt) {
+        json decision_json = route_decision_to_json(route_dispatch->decision);
+        RouteDecisionSseSink decision_wrapper(sink, decision_json);
+        httplib::DataSink decision_sink;
+        bind_sink(decision_sink, decision_wrapper);
+        ContextOverflowProbeSink probe(decision_sink);
+        httplib::DataSink probe_sink;
+        bind_sink(probe_sink, probe);
+
+        // The first attempt forwards the body the handler already serialized;
+        // a re-route has to re-serialize to carry the new model.
+        stream_fn(attempt == 0 ? initial_body : request_json.dump(), probe_sink);
+
+        if (!probe.overflow_detected()) {
+            return;
+        }
+        withheld = probe.withheld_event();
+
+        failed.insert(route_dispatch->selected_model);
+        std::optional<RouterDispatchResult> retry =
+            reroute_excluding(request_json, *route_dispatch, failed);
+        if (!retry.has_value()) {
+            break;
+        }
+        LOG(INFO, "Server") << "Router collection '" << retry->requested_model
+                            << "': context overflow on '"
+                            << route_dispatch->selected_model
+                            << "', re-routing stream to '" << retry->selected_model
+                            << "'" << std::endl;
+        route_dispatch = std::move(retry);
+    }
+
+    // Out of candidates: surface the rejection that was withheld, framed the
+    // way an in-stream backend error normally is.
+    if (!withheld.empty()) {
+        json decision_json = route_decision_to_json(route_dispatch->decision);
+        RouteDecisionSseSink decision_wrapper(sink, decision_json);
+        decision_wrapper.write(withheld.c_str(), withheld.size());
+        decision_wrapper.done();
+    }
+}
+
+void Server::set_router_backstop_sse_content_provider(
+    httplib::Response& res,
+    std::optional<RouterDispatchResult> route_dispatch,
+    nlohmann::json request_json,
+    std::string request_body,
+    std::function<void(const std::string&, httplib::DataSink&)> stream_fn) {
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_header("X-Accel-Buffering", "no");
+    if (route_dispatch) {
+        attach_route_header(res, route_dispatch->decision);
+    }
+
+    res.set_chunked_content_provider(
+        "text/event-stream",
+        [this, route_dispatch = std::move(route_dispatch),
+         request_json = std::move(request_json),
+         request_body = std::move(request_body),
+         stream_fn = std::move(stream_fn)](size_t offset,
+                                          httplib::DataSink& sink) mutable {
+            if (offset > 0) {
+                return false;
+            }
+            stream_with_context_overflow_backstop(sink, request_json, request_body,
+                                                  route_dispatch, stream_fn);
+            return false;
+        });
 }
 
 void Server::handle_routing_validate(const httplib::Request& req, httplib::Response& res) {
@@ -4170,9 +4397,10 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
-                set_route_decision_sse_content_provider(
+                set_router_backstop_sse_content_provider(
                     res,
                     route_dispatch,
+                    request_json,
                     request_body,
                     [this](const std::string& body, httplib::DataSink& sink) {
                         router_->chat_completion_stream(body, sink);
@@ -4312,9 +4540,10 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
-                set_route_decision_sse_content_provider(
+                set_router_backstop_sse_content_provider(
                     res,
                     route_dispatch,
+                    request_json,
                     request_body,
                     [this](const std::string& body, httplib::DataSink& sink) {
                         router_->completion_stream(body, sink);
@@ -5890,9 +6119,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
             try {
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
-                set_route_decision_sse_content_provider(
+                set_router_backstop_sse_content_provider(
                     res,
                     route_dispatch,
+                    request_json,
                     request_body,
                     [this](const std::string& body, httplib::DataSink& sink) {
                         router_->responses_stream(body, sink);

@@ -1216,25 +1216,30 @@ class RouterTests(ServerTestBase):
 
     # --- Capacity-aware filtering and context-overflow fallback (issue #2959) --
 
-    def _register_capacity_collection(self, collection, keyword, small_candidate):
+    def _register_capacity_collection(
+        self, collection, keyword, small_candidate, capacity=None
+    ):
         """Register a collection whose only rule sends `keyword` prompts to
         `small_candidate`, with DEFAULT_MODEL as the fail-open default."""
+        routing = {
+            "candidates": [DEFAULT_MODEL, small_candidate],
+            "default_model": DEFAULT_MODEL,
+            "rules": [
+                {
+                    "id": "probe-to-small",
+                    "match": {"keywords_any": [keyword]},
+                    "route_to": small_candidate,
+                }
+            ],
+        }
+        if capacity is not None:
+            routing["capacity"] = capacity
         policy = {
             "version": "1",
             "model_name": collection,
             "recipe": "collection.router",
             "components": [DEFAULT_MODEL, small_candidate],
-            "routing": {
-                "candidates": [DEFAULT_MODEL, small_candidate],
-                "default_model": DEFAULT_MODEL,
-                "rules": [
-                    {
-                        "id": "probe-to-small",
-                        "match": {"keywords_any": [keyword]},
-                        "route_to": small_candidate,
-                    }
-                ],
-            },
+            "routing": routing,
         }
         resp = requests.post(
             f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
@@ -1416,6 +1421,189 @@ class RouterTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
             stop_provider()
+
+    def test_653_streaming_backstop_withholds_rejection(self):
+        """A streaming request must get the same backstop as a non-streaming one.
+
+        The rejection arrives as the first SSE event with nothing written before
+        it, so it is withheld, the request is re-routed, and the client sees only
+        the replacement's stream — never the error.
+        """
+        provider = "testrouterstream"
+        upstream_id = "vendor/tiny-window-stream"
+        marker = "answered-by-cloud-provider"
+        collection = "user.Test-Router-StreamBackstop"
+        keyword = "stream-backstop-probe"
+
+        base_url, stop_provider = start_mock_cloud_provider(
+            [upstream_id], marker, context_limit=64
+        )
+        try:
+            resp = requests.post(
+                f"{self.base_url}/install",
+                json={
+                    "backend": "cloud",
+                    "provider": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"install failed: {resp.text}")
+            resp = requests.post(
+                f"{self.base_url}/cloud/auth",
+                json={
+                    "provider": provider,
+                    "api_key": "dummy-key",
+                    "allow_insecure_http": True,
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, f"auth failed: {resp.text}")
+
+            models = requests.get(
+                f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+            ).json()
+            cloud_ids = [
+                m["id"]
+                for m in models.get("data", [])
+                if m["id"].startswith(f"{provider}.")
+            ]
+            self.assertEqual(
+                len(cloud_ids), 1, f"expected one cloud model, got {cloud_ids}"
+            )
+            cloud_model = cloud_ids[0]
+
+            self._register_capacity_collection(collection, keyword, cloud_model)
+
+            prompt = f"{keyword} " + ("filler " * 100)
+            resp = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": collection,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 8,
+                    "stream": True,
+                    "route_trace": True,
+                },
+                stream=True,
+                timeout=600,
+            )
+            self.assertEqual(resp.status_code, 200, f"expected a stream: {resp.text}")
+            body = resp.text
+
+            self.assertNotIn(
+                "exceeds the available context size",
+                body,
+                "the withheld rejection must never reach the client",
+            )
+            self.assertNotIn(
+                marker,
+                body,
+                "the cloud provider must not have answered after rejecting",
+            )
+            # The first SSE event carries the decision for the candidate that
+            # actually answered.
+            decision = None
+            for line in body.splitlines():
+                if line.startswith("data: ") and "x_lemonade_route" in line:
+                    decision = _json.loads(line[6:])["x_lemonade_route"]
+                    break
+            self.assertIsNotNone(decision, f"no route decision in stream: {body[:400]}")
+            self.assertEqual(
+                decision.get("route_to"),
+                DEFAULT_MODEL,
+                "the stream should have been re-routed to the default candidate",
+            )
+            self.assertIn("data: [DONE]", body, "the re-routed stream must complete")
+            print(
+                f"[OK] streaming overflow on {cloud_model} -> re-routed to "
+                f"{DEFAULT_MODEL}, rejection withheld"
+            )
+        finally:
+            self._delete_collection(collection)
+            requests.delete(
+                f"{self.base_url}/cloud/auth/{provider}", timeout=TIMEOUT_DEFAULT
+            )
+            requests.post(
+                f"{self.base_url}/uninstall",
+                json={"backend": "cloud", "provider": provider},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            stop_provider()
+
+    def test_654_capacity_knobs_move_the_skip_boundary(self):
+        """routing.capacity lets an operator control the fit boundary.
+
+        Same request, same candidate window: the policy's safety_margin and
+        generation_headroom decide whether the candidate is considered too
+        small. A request that names its own max_tokens still wins over the
+        policy's headroom, which is only a fallback.
+        """
+        keyword = "capacity-knob-probe"
+        ctx_size = 2048
+        prompt = f"{keyword} hello"
+
+        def load_small_candidate(self):
+            resp = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": CAPABLE_MODEL,
+                    "ctx_size": ctx_size,
+                    "save_options": False,
+                },
+                timeout=600,
+            )
+            self.assertEqual(resp.status_code, 200, f"load failed: {resp.text}")
+
+        def route(collection, capacity, max_tokens):
+            """Register a collection with `capacity`, then route one request.
+            `max_tokens=None` omits the field so the policy headroom applies."""
+            self._register_capacity_collection(
+                collection, keyword, CAPABLE_MODEL, capacity=capacity
+            )
+            try:
+                load_small_candidate(self)
+                body = {
+                    "model": collection,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.0,
+                    "route_trace": True,
+                }
+                if max_tokens is not None:
+                    body["max_tokens"] = max_tokens
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions", json=body, timeout=600
+                )
+                self.assertEqual(resp.status_code, 200, resp.text)
+                return resp.json().get("x_lemonade_route", {})
+            finally:
+                self._delete_collection(collection)
+
+        # Baseline: the default knobs leave a short request comfortably fitting.
+        decision = route("user.Test-Router-KnobDefault", None, 8)
+        self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+        print(f"[OK] default knobs -> {CAPABLE_MODEL} (fits {ctx_size})")
+
+        # A large safety_margin inflates the same estimate past the window.
+        decision = route("user.Test-Router-KnobMargin", {"safety_margin": 500.0}, 8)
+        self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+        self.assertIn(f"capacity:{CAPABLE_MODEL}", self._trace_map(decision))
+        print(f"[OK] safety_margin=500 skips {CAPABLE_MODEL}")
+
+        # generation_headroom is the fallback for a request that names no
+        # max_tokens: reserving more than the whole window makes it unfit.
+        headroom = {"generation_headroom": ctx_size + 1}
+        decision = route("user.Test-Router-KnobHeadroom", headroom, None)
+        self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+        self.assertIn(f"capacity:{CAPABLE_MODEL}", self._trace_map(decision))
+        print(f"[OK] generation_headroom={ctx_size + 1} skips {CAPABLE_MODEL}")
+
+        # ...but only as a fallback: an explicit max_tokens still wins, so the
+        # same policy routes a request that asks for 8 tokens to the candidate.
+        decision = route("user.Test-Router-KnobOverride", headroom, 8)
+        self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+        print(f"[OK] request max_tokens overrides the policy headroom")
 
 
 if __name__ == "__main__":
