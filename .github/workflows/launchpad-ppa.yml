@@ -42,12 +42,6 @@ jobs:
                 "ppa": "ppa:lemonade-team/bleeding-edge"
               },
               {
-                "release": "25.10",
-                "distro": "ubuntu",
-                "codename": "questing",
-                "ppa": "ppa:lemonade-team/bleeding-edge"
-              },
-              {
                 "release": "26.04",
                 "distro": "ubuntu",
                 "codename": "resolute",
