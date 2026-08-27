@@ -415,6 +415,14 @@ int RuntimeConfig::max_loaded_models() const {
     return config_["max_loaded_models"].get<int>();
 }
 
+bool RuntimeConfig::llm_pool_autosize() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("llm_pool_autosize")) {
+        return config_["llm_pool_autosize"].get<bool>();
+    }
+    return true;
+}
+
 int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
     std::shared_lock lock(mutex_);
     if (!config_.contains("download_rate_limit") || !config_["download_rate_limit"].is_string()) {
@@ -874,9 +882,9 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (value.get<int>() < -1) {
             throw std::invalid_argument("'ctx_size' must be >= -1");
         }
-    } else if (key == "auto_evict") {
+    } else if (key == "auto_evict" || key == "llm_pool_autosize") {
         if (!value.is_boolean()) {
-            throw std::invalid_argument("'auto_evict' must be a boolean");
+            throw std::invalid_argument("'" + key + "' must be a boolean");
         }
     } else if (key == "inhibit_suspend") {
         if (!value.is_boolean()) {

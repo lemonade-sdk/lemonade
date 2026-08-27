@@ -3303,6 +3303,16 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
 endif()
 
+# LLM candidate pool floor: config default/override, the ModelType-aware
+# residency_limit gate, and generation-guarded reconcile applying (or, with
+# autosize off, not applying) the floor at admission time.
+set(_LLM_CANDIDATE_FLOOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llm_candidate_floor.cpp")
+if(BUILD_TESTING AND EXISTS "${_LLM_CANDIDATE_FLOOR_TEST_SRC}")
+    add_executable(test_llm_candidate_floor test/cpp/test_llm_candidate_floor.cpp)
+    target_link_libraries(test_llm_candidate_floor PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LlmCandidateFloorTest CI ON COMMAND test_llm_candidate_floor)
+endif()
+
 # Launch command bookkeeping: the command recorded at spawn must keep describing
 # the process currently held, so a restart replaces it and cleanup erases it.
 set(_LAUNCH_COMMAND_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_launch_command.cpp")

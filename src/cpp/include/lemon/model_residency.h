@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <string>
 
 #include "model_types.h"
@@ -43,11 +44,21 @@ inline std::string residency_class_to_string(ResidencyClass residency_class) {
     return "standard";
 }
 
-// Standard pools honor max_loaded_models. A RoutingHelper pool is scoped to
-// one distinct helper model, so the per-pool limit stays one while multiple
-// helper models required by a policy can remain resident together.
-inline int residency_limit(ResidencyClass residency_class, int standard_limit) {
-    return residency_class == ResidencyClass::RoutingHelper ? 1 : standard_limit;
+// Standard pools honor max_loaded_models, except the LLM pool, which also
+// gets floored at llm_candidate_floor so a policy alternating between several
+// local candidates doesn't reload one on every switch. -1 (unlimited) is left
+// alone — nothing to floor. A RoutingHelper pool is scoped to one distinct
+// helper model, so the per-pool limit stays one while multiple helper models
+// required by a policy can remain resident together.
+inline int residency_limit(ResidencyClass residency_class, ModelType type,
+                           int standard_limit, int llm_candidate_floor) {
+    if (residency_class == ResidencyClass::RoutingHelper) {
+        return 1;
+    }
+    if (type == ModelType::LLM && standard_limit != -1) {
+        return std::max(standard_limit, llm_candidate_floor);
+    }
+    return standard_limit;
 }
 
 // Standard capacity remains shared by ModelType. Routing-helper capacity is

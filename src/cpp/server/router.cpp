@@ -309,7 +309,9 @@ void Router::ensure_residency_capacity(
     ModelType type,
     ResidencyClass residency_class,
     const std::string& model_name) {
-    const int limit = residency_limit(residency_class, config_->max_loaded_models());
+    const int applied_floor = config_->llm_pool_autosize() ? llm_candidate_floor_ : 0;
+    const int limit = residency_limit(residency_class, type, config_->max_loaded_models(),
+                                      applied_floor);
     if (limit == -1 || count_servers_in_pool(type, residency_class, model_name) < limit) {
         return;
     }
@@ -442,6 +444,15 @@ void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64
                 exclusive_owner_ == std::this_thread::get_id());
     });
     prune_stale_routing_helpers_locked();
+}
+
+void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    if (generation <= last_llm_floor_generation_) {
+        return;
+    }
+    last_llm_floor_generation_ = generation;
+    llm_candidate_floor_ = floor;
 }
 
 void Router::prune_stale_routing_helpers_locked() {
@@ -1380,8 +1391,14 @@ json Router::get_all_loaded_models() const {
 
 json Router::get_max_model_limits() const {
     int max = config_->max_loaded_models();
+    int llm_limit = max;
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        const int applied_floor = config_->llm_pool_autosize() ? llm_candidate_floor_ : 0;
+        llm_limit = residency_limit(ResidencyClass::Standard, ModelType::LLM, max, applied_floor);
+    }
     return {
-        {"llm", max},
+        {"llm", llm_limit},
         {"embedding", max},
         {"reranking", max},
         {"transcription", max},
