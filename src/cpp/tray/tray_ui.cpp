@@ -247,13 +247,13 @@ std::string TrayUI::http_post(const std::string& endpoint, const std::string& bo
 // Data fetchers
 // ---------------------------------------------------------------------------
 
-std::pair<bool, std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
-    std::vector<LoadedModelInfo> loaded_models;
+std::optional<std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
     try {
         std::string body = http_get("/api/v1/health");
-        if (body.empty()) return {false, loaded_models};
+        if (body.empty()) return std::nullopt;
 
         auto health = nlohmann::json::parse(body);
+        std::vector<LoadedModelInfo> loaded_models;
         if (health.contains("all_models_loaded") && health["all_models_loaded"].is_array()) {
             for (const auto& model : health["all_models_loaded"]) {
                 LoadedModelInfo info;
@@ -268,14 +268,14 @@ std::pair<bool, std::vector<LoadedModelInfo>> TrayUI::fetch_server_state() {
                 }
             }
         }
-        return {true, loaded_models};
+        return loaded_models;
     } catch (...) {
-        return {false, loaded_models};
+        return std::nullopt;
     }
 }
 
 std::vector<LoadedModelInfo> TrayUI::get_all_loaded_models() {
-    return fetch_server_state().second;
+    return fetch_server_state().value_or(std::vector<LoadedModelInfo>{});
 }
 
 void TrayUI::fetch_runtime_config() {
@@ -327,7 +327,9 @@ void TrayUI::build_menu() {
     if (!tray_) return;
 
     // Fetch once, use for both the menu and the cache
-    auto [reachable, loaded_models] = fetch_server_state();
+    auto server_state = fetch_server_state();
+    bool reachable = server_state.has_value();
+    auto loaded_models = server_state.value_or(std::vector<LoadedModelInfo>{});
     auto available_models = get_downloaded_models();
     if (reachable) fetch_runtime_config();
 
@@ -349,7 +351,9 @@ void TrayUI::refresh_menu() {
 
 bool TrayUI::menu_needs_refresh() {
     // Fetch outside the lock to avoid blocking other threads during HTTP calls
-    auto [reachable, loaded] = fetch_server_state();
+    auto server_state = fetch_server_state();
+    bool reachable = server_state.has_value();
+    auto loaded = server_state.value_or(std::vector<LoadedModelInfo>{});
     auto current_available = get_downloaded_models();
 
     std::lock_guard<std::mutex> lock(state_mutex_);

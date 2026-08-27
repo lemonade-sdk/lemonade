@@ -5,6 +5,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include <set>
@@ -65,7 +66,7 @@ private:
     httplib::Client make_client() const;
 
     // Data fetchers
-    std::pair<bool, std::vector<LoadedModelInfo>> fetch_server_state();
+    std::optional<std::vector<LoadedModelInfo>> fetch_server_state();
     std::vector<LoadedModelInfo> get_all_loaded_models();
     std::vector<ModelInfo> get_downloaded_models();
     void fetch_runtime_config();
