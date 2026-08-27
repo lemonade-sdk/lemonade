@@ -602,6 +602,11 @@ class RouterTests(ServerTestBase):
             self.assertEqual(resp.status_code, 200, resp.text[:1000])
             self.assertFalse(resp.json().get("llm_pool_autosize", {}).get("enabled"))
             self.assertEqual(resp.json().get("max_models", {}).get("llm"), 1)
+            # The diagnostic value must keep reflecting the true count even
+            # while the floor isn't being applied (spec #4: "would apply").
+            self.assertGreaterEqual(
+                resp.json().get("llm_pool_autosize", {}).get("candidate_floor", 0), 2
+            )
 
             # Earlier tests ran with autosize on (floor >= 2), so both local
             # candidates may already be resident from before this toggle.
@@ -702,6 +707,20 @@ class RouterTests(ServerTestBase):
                 f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
             )
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+            # The cloud candidate is unmetered (no local process, no residency
+            # slot) so it must not inflate the LLM pool floor: only DEFAULT_MODEL
+            # counts toward this policy's contribution.
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            policies = resp.json().get("llm_pool_autosize", {}).get("policies", {})
+            self.assertEqual(
+                policies.get(collection),
+                1,
+                f"cloud candidate {cloud_model} should not count toward "
+                f"{collection}'s local candidate floor",
+            )
+            print(f"[OK] cloud candidate {cloud_model} excluded from candidate_floor")
 
             # Coding prompt -> cloud candidate, answered by the mock provider.
             body = {
@@ -1328,6 +1347,57 @@ class RouterTests(ServerTestBase):
             self.assertIsNotNone(lo)
             self.assertLess(lo, 0.5)
             print(f"[OK] classifier benign ({lo:.3f}) -> {DEFAULT_MODEL}")
+        finally:
+            self._delete_collection(collection)
+
+    def test_631_candidate_floor_unions_across_policies(self):
+        """The LLM pool floor is the union of distinct local candidates across
+        all active policies, not the sum of each policy's candidate count.
+
+        Registers a second policy referencing the same two local candidates as
+        `POLICY` (`COLLECTION_NAME`). If the floor summed per-policy counts
+        instead of unioning, this would report 4 (2 + 2); the correct union is
+        still 2, since both policies share the same two candidates.
+        """
+        collection = "user.Test-Router-Local-Union"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [DEFAULT_MODEL, CAPABLE_MODEL],
+            "routing": {
+                "candidates": [DEFAULT_MODEL, CAPABLE_MODEL],
+                "default_model": DEFAULT_MODEL,
+                "rules": [
+                    {
+                        "id": "coding-to-capable",
+                        "match": {"keywords_any": ["def ", "function"]},
+                        "route_to": CAPABLE_MODEL,
+                    }
+                ],
+            },
+        }
+        resp = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+        )
+        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+        try:
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            body = resp.json()
+            autosize = body.get("llm_pool_autosize", {})
+            self.assertEqual(
+                autosize.get("candidate_floor"),
+                2,
+                "candidate_floor should union distinct local candidates across "
+                "policies, not sum each policy's count (would be 4 if summed)",
+            )
+            self.assertGreaterEqual(
+                autosize.get("policies", {}).get(COLLECTION_NAME, 0), 2
+            )
+            self.assertGreaterEqual(autosize.get("policies", {}).get(collection, 0), 2)
+            self.assertEqual(body.get("max_models", {}).get("llm"), 2)
+            print("[OK] candidate_floor unions overlapping policies instead of summing")
         finally:
             self._delete_collection(collection)
 
