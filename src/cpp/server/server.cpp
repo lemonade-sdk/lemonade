@@ -405,6 +405,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // on-disk edit), reclaim any routing helper no remaining policy references.
     model_manager_->set_models_changed_callback([this](uint64_t generation) {
         router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+        router_->reconcile_llm_candidate_floor(
+            static_cast<int>(active_policy_llm_candidate_floor().models.size()), generation);
     });
 
     // Seed the router's needed-helper set from policies already present at
@@ -418,6 +420,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     const uint64_t seed_generation = model_manager_->next_notify_generation();
     const std::set<std::string> seed_needed = active_policy_helper_models();
     router_->reconcile_routing_helpers(seed_needed, seed_generation);
+    router_->reconcile_llm_candidate_floor(
+        static_cast<int>(active_policy_llm_candidate_floor().models.size()), seed_generation);
 
     model_manager_->set_model_updated_callback([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
@@ -2628,6 +2632,17 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
+    // Candidate-floor diagnostics: what raised (or would raise) the LLM limit
+    // above, and whether autosize is actually applying it right now.
+    {
+        auto floor_info = active_policy_llm_candidate_floor();
+        response["llm_pool_autosize"] = {
+            {"enabled", config_->llm_pool_autosize()},
+            {"candidate_floor", static_cast<int>(floor_info.models.size())},
+            {"policies", floor_info.per_policy_counts}
+        };
+    }
+
     // Add pinned model counts
     response["pinned_models"] = router_->get_pinned_model_counts();
     response["pinned_helper_models"] = router_->get_pinned_helper_counts();
@@ -3873,6 +3888,37 @@ std::set<std::string> Server::active_policy_helper_models() {
         }
     }
     return needed;
+}
+
+Server::LlmCandidateFloorInfo Server::active_policy_llm_candidate_floor() {
+    LlmCandidateFloorInfo result;
+    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+        if (!info.route_policy) {
+            continue;
+        }
+        int local_llm_count = 0;
+        for (const auto& candidate : info.route_policy->candidates) {
+            ModelInfo candidate_info;
+            try {
+                candidate_info = model_manager_->get_model_info(candidate);
+            } catch (const std::exception&) {
+                continue;  // candidate no longer resolvable; not this floor's problem
+            }
+            if (candidate_info.type != ModelType::LLM) {
+                continue;
+            }
+            const auto* desc = backends::descriptor_for(candidate_info.recipe);
+            if (desc && desc->slot_policy == SlotPolicy::Unmetered) {
+                continue;  // cloud candidate — no local process, no slot to floor
+            }
+            result.models.insert(model_manager_->resolve_model_name(candidate));
+            ++local_llm_count;
+        }
+        if (local_llm_count > 0) {
+            result.per_policy_counts[name] = local_llm_count;
+        }
+    }
+    return result;
 }
 
 void Server::record_response_telemetry(const nlohmann::json& response,
