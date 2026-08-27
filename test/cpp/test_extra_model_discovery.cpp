@@ -203,21 +203,11 @@ static void test_same_name_across_categories() {
     ModelManager manager(dir.string());
     auto models = manager.discover_extra_models_for_test();
 
-    int embedding_models = 0;
-    int reranking_models = 0;
-    for (const auto& [id, info] : models) {
-        (void)id;
-        if (info.type == ModelType::EMBEDDING && has_label(info, "embeddings")) {
-            ++embedding_models;
-        }
-        if (info.type == ModelType::RERANKING && has_label(info, "reranking")) {
-            ++reranking_models;
-        }
-    }
-
     check("same-named category files are both discovered", models.size() == 2);
-    check("same-named category files keep one embedding", embedding_models == 1);
-    check("same-named category files keep one reranker", reranking_models == 1);
+    check_type(models, "embedding duplicate gets deterministic short id", "extra.model",
+               ModelType::EMBEDDING, "embeddings");
+    check_type(models, "reranking duplicate gets deterministic qualified id",
+               "extra.reranking-model", ModelType::RERANKING, "reranking");
 
     fs::remove_all(dir);
 }

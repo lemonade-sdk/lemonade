@@ -1269,6 +1269,12 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
+    std::sort(standalone_files.begin(), standalone_files.end(),
+              [&search_path](const auto& lhs, const auto& rhs) {
+                  return lhs.first.lexically_relative(search_path).generic_string() <
+                         rhs.first.lexically_relative(search_path).generic_string();
+              });
+
     // Process standalone files (single-file models)
     for (const auto& [gguf_path, deployment_label] : standalone_files) {
         std::string filename = gguf_path.filename().string();
