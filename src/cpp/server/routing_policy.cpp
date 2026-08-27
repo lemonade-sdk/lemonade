@@ -331,11 +331,13 @@ public:
     }
 
 private:
-    // The user message handed to the router LLM: a structured JSON view of the
-    // routing context, so the router can see everything a deterministic rule
-    // could — not just the latest text. An image-only request is visible as
-    // has_images=true with empty text; a tool-bearing request as
-    // has_tools=true; length via chars; caller routing hints via metadata.
+    // The user message handed to the judge: a structured JSON view of the
+    // routing context — not just the latest text. has_tools/has_images are
+    // only present when expose_request_features_ is set (see
+    // effective_prompt below for which classifiers that is); when present, an
+    // image-only request is visible as has_images=true with empty text and a
+    // tool-bearing request as has_tools=true. chars and metadata are always
+    // present regardless.
     //
     // History policy (explicit, per the frozen v1 RouteContext contract):
     // `text` is the LATEST USER TURN ONLY. RouteContext deliberately carries a

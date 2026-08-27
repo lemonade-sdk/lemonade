@@ -188,9 +188,9 @@ static void test_classifier_prompt_carries_contract() {
           seen_prompt.find("\"rationale\"") != std::string::npos);
     check("llm: composed prompt describes the structured input and history policy",
           seen_prompt.find("latest user turn only") != std::string::npos);
-    check("llm: composed prompt disclaims has_tools/has_images as format, not content",
-          seen_prompt.find("FORMAT, not its content") != std::string::npos &&
-          seen_prompt.find("only when the routing criteria above") != std::string::npos);
+    // Not pinned to the disclaimer's exact prose: that it exists and holds up
+    // is proven behaviorally by test_2789_regression_judge_never_sees_leaked_tool_signal
+    // and test_router_sugar_always_exposes_request_features instead.
 }
 
 // #2789 follow-up: an author-declared `llm` classifier never receives
