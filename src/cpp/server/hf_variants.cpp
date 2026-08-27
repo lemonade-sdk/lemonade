@@ -36,12 +36,15 @@ bool contains_ci(const std::string& s, const std::string& needle) {
     return to_lower(s).find(to_lower(needle)) != std::string::npos;
 }
 
+std::string filename_only(const std::string& path) {
+    size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
 enum class DraftKind { None, Mtp, Dflash };
 
 DraftKind draft_kind(const std::string& path) {
-    std::string filename = to_lower(path);
-    size_t slash = filename.find_last_of('/');
-    if (slash != std::string::npos) filename = filename.substr(slash + 1);
+    const std::string filename = to_lower(filename_only(path));
     if (filename.rfind("mtp-", 0) == 0) return DraftKind::Mtp;
     if (filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf") {
         return DraftKind::Dflash;
@@ -99,7 +102,7 @@ int quant_priority(const std::string& q) {
 
 int quant_bits(const std::string& value) {
     std::string quant;
-    if (!extract_quant(value, quant)) return 0;
+    if (!extract_quant(filename_only(value), quant)) return 0;
     size_t pos = quant.find_first_of("0123456789");
     return pos == std::string::npos ? 0 : std::stoi(quant.substr(pos));
 }
@@ -148,7 +151,9 @@ std::string preferred_draft_companion(
     if (kind == DraftKind::None) return {};
 
     std::string target_quant = variant.quant;
-    if (target_quant.empty()) extract_quant(variant.primary_file, target_quant);
+    if (target_quant.empty()) {
+        extract_quant(filename_only(variant.primary_file), target_quant);
+    }
     const int target_bits = quant_bits(target_quant);
 
     std::string best;
@@ -158,11 +163,14 @@ std::string preferred_draft_companion(
     for (const auto& path : draft_paths) {
         if (draft_kind(path) != kind) continue;
 
+        const std::string draft_filename = filename_only(path);
         std::string draft_quant;
-        const bool has_quant = extract_quant(path, draft_quant);
+        const bool has_quant = extract_quant(draft_filename, draft_quant);
         const bool exact = !target_quant.empty() && has_quant && draft_quant == target_quant;
-        const int draft_bits = has_quant ? quant_bits(draft_quant) : 0;
-        const int diff = std::abs(draft_bits - target_bits);
+        const int draft_bits = has_quant ? quant_bits(draft_filename) : 0;
+        // With an unquantized main there is no meaningful bit-distance target.
+        // Keep selection deterministic through the existing depth/path ordering
+        const int diff = target_bits > 0 ? std::abs(draft_bits - target_bits) : 0;
         const size_t depth = shared_directory_depth(variant.primary_file, path);
 
         if (best.empty() || depth > best_depth ||
@@ -490,8 +498,11 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     // registration; otherwise the preview and the registered model disagree.
     std::vector<std::string> labels;
     if (!vset.mmproj_files.empty()) add_label_once(labels, "vision");
-    if (!vset.variants.empty() && !vset.variants.front().draft_file.empty()) {
-        switch (draft_kind(vset.variants.front().draft_file)) {
+    const auto draft_variant = std::find_if(
+        vset.variants.begin(), vset.variants.end(),
+        [](const GgufVariant& variant) { return !variant.draft_file.empty(); });
+    if (draft_variant != vset.variants.end()) {
+        switch (draft_kind(draft_variant->draft_file)) {
             case DraftKind::Mtp: add_label_once(labels, "mtp"); break;
             case DraftKind::Dflash: add_label_once(labels, "dflash"); break;
             case DraftKind::None: break;

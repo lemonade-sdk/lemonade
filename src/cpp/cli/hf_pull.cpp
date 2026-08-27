@@ -428,8 +428,22 @@ int registry_pull_flow(lemonade::LemonadeClient& client,
     }
 
     std::string draft_file;
+    const std::string selected_variant = to_lower(variant_name);
     for (const auto& candidate : variants) {
-        if (to_lower(candidate.value("name", "")) == to_lower(variant_name)) {
+        bool matches = to_lower(candidate.value("name", "")) == selected_variant;
+        if (!matches) {
+            matches = to_lower(candidate.value("primary_file", "")) == selected_variant;
+        }
+        if (!matches && candidate.contains("files") && candidate["files"].is_array()) {
+            for (const auto& file : candidate["files"]) {
+                if (file.is_string() &&
+                    to_lower(file.get<std::string>()) == selected_variant) {
+                    matches = true;
+                    break;
+                }
+            }
+        }
+        if (matches) {
             draft_file = candidate.value("draft_file", std::string());
             break;
         }

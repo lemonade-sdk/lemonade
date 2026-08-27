@@ -195,17 +195,41 @@ int main() {
                           "draft=" + set.variants[1].draft_file);
     }
 
-    // Repository-relative paths matter for auxiliary checkpoint downloads.
+    // A quant-named directory must not mask the draft file's own quant tag.
+    // Both drafts have the same directory depth; the deliberately earlier
+    // Q8 filename would win lexicographically if extraction read Q4_K_M from
+    // the parent directory instead of Q8_0 from the filename.
     {
         auto set = lemon::enumerate_gguf_variants({
             "Q4_K_M/Model-Q4_K_M-00001-of-00002.gguf",
             "Q4_K_M/Model-Q4_K_M-00002-of-00002.gguf",
-            "Q4_K_M/mtp-Model-Q4_0.gguf",
-            "mtp-Model-Q8_0.gguf",
+            "Q4_K_M/mtp-A-Model-Q8_0.gguf",
+            "Q4_K_M/mtp-Z-Model-Q4_0.gguf",
         });
+        result.expect("draft quant comes from filename, not parent directory",
+                      set.variants.size() == 1 &&
+                          set.variants[0].draft_file == "Q4_K_M/mtp-Z-Model-Q4_0.gguf",
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
         result.expect("draft association preserves repository-relative path",
                       set.variants.size() == 1 &&
-                          set.variants[0].draft_file == "Q4_K_M/mtp-Model-Q4_0.gguf",
+                          set.variants[0].draft_file.find("Q4_K_M/") == 0,
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
+    }
+
+    // Without a quantized main there is no meaningful bit-distance comparison.
+    // Stable path ordering wins instead of silently choosing the smallest-bit
+    // draft (the old target_bits == 0 behavior).
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "model.gguf",
+            "mtp-A-Model-Q8_0.gguf",
+            "mtp-Z-Model-Q2_0.gguf",
+        });
+        result.expect("unquantized main does not prefer smallest-bit draft",
+                      set.variants.size() == 1 &&
+                          set.variants[0].draft_file == "mtp-A-Model-Q8_0.gguf",
                       set.variants.empty() ? "no variant" :
                           "draft=" + set.variants[0].draft_file);
     }
