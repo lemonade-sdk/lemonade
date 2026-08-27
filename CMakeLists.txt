@@ -3049,6 +3049,13 @@ if(BUILD_TESTING AND EXISTS "${_CLI_RUNTIME_OVERRIDE_TEST_SRC}")
     add_cpp_ci_test(CliRuntimeOverrideTest CI ON COMMAND test_cli_runtime_override)
 endif()
 
+set(_LOG_ROTATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_log_rotation.cpp")
+if(BUILD_TESTING AND EXISTS "${_LOG_ROTATION_TEST_SRC}")
+    add_executable(test_log_rotation test/cpp/test_log_rotation.cpp)
+    target_link_libraries(test_log_rotation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LogRotationTest CI ON COMMAND test_log_rotation)
+endif()
+
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
 # external-ROCm detection that lets Lemonade skip the bundled TheRock download.
 set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
