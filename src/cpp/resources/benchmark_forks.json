@@ -75,6 +75,7 @@
       "fork_id": "llamacpp-hrx",
       "label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
       "recipe": "llamacpp-hrx",
+      "config_section": "hrx",
       "backend": "hrx",
       "install_as": "hrx",
       "repo": "ROCm/ggml-staging-automation",

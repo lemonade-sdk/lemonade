@@ -206,17 +206,19 @@ jobs:
           fork = next((f for f in forks if f["fork_id"] == fork_id), None)
           if not fork:
             print(f"ERROR: fork {fork_id} not found"); sys.exit(1)
-          cfg_backend  = fork.get("install_as", fork["backend"]).lower()
-          rocm_channel = fork.get("rocm_channel", "")
-          exe          = fork.get("binary_exe_linux", "llama-server")
-          bindir       = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork_id
-          binary       = next(bindir.rglob(exe), None)
+          cfg_backend    = fork.get("install_as", fork["backend"]).lower()
+          cfg_section    = fork.get("config_section", "llamacpp")
+          rocm_channel   = fork.get("rocm_channel", "")
+          exe            = fork.get("binary_exe_linux", "llama-server")
+          bindir         = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork_id
+          binary         = next(bindir.rglob(exe), None)
           if not binary:
             print(f"ERROR: {exe} not found under {bindir}"); sys.exit(1)
           binary = binary.resolve()
-          print(f"Config target: llamacpp.{cfg_backend}_bin = {binary}")
+          print(f"Config target: {cfg_section}.{cfg_backend}_bin = {binary}")
           with open(os.environ["GITHUB_ENV"], "a") as f:
             f.write(f"BENCH_BACKEND_KEY={cfg_backend}\n")
+            f.write(f"BENCH_CONFIG_SECTION={cfg_section}\n")
             f.write(f"BENCH_BIN_FILE={binary}\n")
             f.write(f"BENCH_BIN_DIR={binary.parent}\n")
             f.write(f"BENCH_ROCM_CHANNEL={rocm_channel}\n")
@@ -321,7 +323,7 @@ jobs:
           # One atomic call = one reload; then wait for health + retry once.
           # `config set` takes multiple key=value pairs.
           # ---------------------------------------------------------------
-          KEY="llamacpp.${BENCH_BACKEND_KEY}_bin"
+          KEY="${BENCH_CONFIG_SECTION}.${BENCH_BACKEND_KEY}_bin"
           SET_ARGS=("$KEY=$BENCH_BIN_FILE")
           if [ -n "$BENCH_ROCM_CHANNEL" ]; then
             # rocm_channel is a TOP-LEVEL config key (not nested under llamacpp)
@@ -340,22 +342,23 @@ jobs:
           # `lemonade bench` reads (discover_backends filters on state=
           # installed/update_*). Catches "No suitable backends found" up front.
           if curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
-              | BACKEND="$BENCH_BACKEND_KEY" python3 -c '
+              | BACKEND="$BENCH_BACKEND_KEY" CONFIG_SECTION="$BENCH_CONFIG_SECTION" python3 -c '
           import json, os, sys
           key = os.environ["BACKEND"]
+          section = os.environ["CONFIG_SECTION"]
           info = json.load(sys.stdin)
-          b = info.get("recipes", {}).get("llamacpp", {}).get("backends", {}).get(key, {})
+          b = info.get("recipes", {}).get(section, {}).get("backends", {}).get(key, {})
           state = b.get("state", "missing")
-          print(f"  llamacpp.{key} state = {state}")
+          print(f"  {section}.{key} state = {state}")
           sys.exit(0 if state in ("installed", "update_required", "update_available") else 1)
           '; then
             echo "Detection confirmed: bench will see --backend $BENCH_BACKEND_KEY (routed to $BENCH_BIN_FILE)"
           else
             echo "ERROR: after setting $KEY, system-info never reported '$BENCH_BACKEND_KEY' installed."
             echo "lemonade bench would fail with 'No suitable backends found'. Aborting before wasting a bench run."
-            echo "--- system-info llamacpp backends ---"
+            echo "--- system-info $BENCH_CONFIG_SECTION backends ---"
             curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
-              | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin).get("recipes",{}).get("llamacpp",{}).get("backends",{}), indent=2))' || true
+              | CONFIG_SECTION="$BENCH_CONFIG_SECTION" python3 -c 'import json,sys,os; print(json.dumps(json.load(sys.stdin).get("recipes",{}).get(os.environ["CONFIG_SECTION"],{}).get("backends",{}), indent=2))' || true
             exit 1
           fi
 
