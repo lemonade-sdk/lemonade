@@ -10,6 +10,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
+| `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
@@ -33,6 +34,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | cuda | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `ds4` | rocm | linux | amd_gpu (gfx1151) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
@@ -87,6 +89,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
+
+#### `ds4` — DwarfStar4 (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `ds4_args` | `--ds4-args` | ARGS | "" | Custom arguments to pass to ds4-server |
 
 #### `flm` — FastFlowLM NPU
 
