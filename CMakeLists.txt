@@ -162,6 +162,7 @@ set(LEMON_BACKENDS
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
+    "ds4|ds4"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -3048,6 +3049,13 @@ if(BUILD_TESTING AND EXISTS "${_CLI_RUNTIME_OVERRIDE_TEST_SRC}")
     add_cpp_ci_test(CliRuntimeOverrideTest CI ON COMMAND test_cli_runtime_override)
 endif()
 
+set(_LOG_ROTATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_log_rotation.cpp")
+if(BUILD_TESTING AND EXISTS "${_LOG_ROTATION_TEST_SRC}")
+    add_executable(test_log_rotation test/cpp/test_log_rotation.cpp)
+    target_link_libraries(test_log_rotation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LogRotationTest CI ON COMMAND test_log_rotation)
+endif()
+
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
 # external-ROCm detection that lets Lemonade skip the bundled TheRock download.
 set(_ROCM_ROOT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_rocm_root_resolution.cpp")
@@ -3136,6 +3144,16 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_executable(test_vllm_cdna_gating test/cpp/test_vllm_cdna_gating.cpp)
     target_link_libraries(test_vllm_cdna_gating PRIVATE lemonade-server-core)
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
+endif()
+
+# ds4 install params: upstream ds4 ships no binaries, so assets come from
+# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
+# plus the detected ISA. Only gfx1151 is validated upstream.
+set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
+    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
+    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
+    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

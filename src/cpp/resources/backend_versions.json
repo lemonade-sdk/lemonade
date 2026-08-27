@@ -42,6 +42,11 @@
           "trellis-cuda-linux-x64.tar.gz": "sha256:454c161b2179551db5e80786bba16ae81eaf28ab8fdb685d371b30d58769fbaa",
           "trellis-cuda-windows-x64.zip": "sha256:47b87271f8b644a8e50767f6d58d5baf597e1aa6bb46b809a5e5d5b0ac741b29"
         }
+      },
+      "lemonade-sdk/ds4-rocm": {
+        "b0001": {
+          "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz": "sha256:e63b7c9428fd10de75b3f69164eccd564a8e7261c2f9087cd8bec2b4b19a8ad1"
+        }
       }
     }
   },
@@ -66,6 +71,9 @@
     "vulkan": "master-827-97d2990",
     "cuda": "master-827-e2329c3",
     "metal": "master-827-97d2990"
+  },
+  "ds4": {
+    "rocm": "b0001"
   },
   "therock": {
     "version": "7.14.0",
@@ -130,7 +138,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.2"
+    "npu": "v1.0.3"
   },
   "kokoro": {
     "cpu": "b17",
