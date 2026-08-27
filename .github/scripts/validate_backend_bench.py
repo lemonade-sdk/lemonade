@@ -78,7 +78,27 @@ def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "") -
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
+    try:
+        return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
+    except Exception:
+        # Some orgs (e.g. ROCm) block API access via classic PATs and GITHUB_TOKEN.
+        # Fall back to the unauthenticated redirect: GET /releases/latest returns a
+        # 302 whose Location header contains the tag name — no auth needed.
+        url = f"https://github.com/{repo}/releases/latest"
+        req = urllib.request.Request(url, headers={"User-Agent": "lemonade-bench"})
+        opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
+        # Don't follow redirects — we want the Location header.
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **kw):
+                return None
+        opener = urllib.request.build_opener(_NoRedirect())
+        try:
+            opener.open(req, timeout=15)
+        except urllib.error.HTTPError as e:
+            location = e.headers.get("Location", "")
+            if location:
+                return location.rstrip("/").split("/")[-1]
+            raise RuntimeError(f"Could not resolve latest release for {repo}") from e
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
