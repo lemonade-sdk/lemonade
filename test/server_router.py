@@ -30,6 +30,8 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
     get_config,
+    set_server_config,
+    unload_all_models,
 )
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
@@ -308,6 +310,14 @@ class RouterTests(ServerTestBase):
     def _trace_map(self, decision):
         return {t["condition"]: t["result"] for t in decision.get("trace", [])}
 
+    def _model_pid(self, model):
+        resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200, resp.text[:1000])
+        for loaded in resp.json().get("all_models_loaded", []):
+            if loaded.get("model_name") == model:
+                return loaded.get("pid")
+        return None
+
     @staticmethod
     def _classifier_score(decision, classifier_id):
         condition = f"classifier:{classifier_id}"
@@ -536,6 +546,85 @@ class RouterTests(ServerTestBase):
         self.assertEqual(decision.get("matched_rule"), "")
         self.assertFalse(self._trace_map(decision).get("min_total_chars"))
         print(f"[OK] short conversation -> {DEFAULT_MODEL} (default)")
+
+    def test_607_alternating_local_candidates_keep_stable_pids(self):
+        """Routing back and forth between the two local candidates must not
+        reload either one — the reload-thrash issue #2960 fixes."""
+        self._route("Give me a fun fact about otters.")  # -> DEFAULT_MODEL
+        default_pid = self._model_pid(DEFAULT_MODEL)
+        self.assertTrue(default_pid, f"{DEFAULT_MODEL} did not report a pid")
+
+        self._route(
+            "Write a Python function to reverse a linked list."
+        )  # -> CAPABLE_MODEL
+        capable_pid = self._model_pid(CAPABLE_MODEL)
+        self.assertTrue(capable_pid, f"{CAPABLE_MODEL} did not report a pid")
+
+        for _ in range(3):
+            self._route("Give me a fun fact about otters.")
+            self.assertEqual(
+                self._model_pid(DEFAULT_MODEL),
+                default_pid,
+                f"{DEFAULT_MODEL} was reloaded while alternating candidates",
+            )
+            self._route("Write a Python function to reverse a linked list.")
+            self.assertEqual(
+                self._model_pid(CAPABLE_MODEL),
+                capable_pid,
+                f"{CAPABLE_MODEL} was reloaded while alternating candidates",
+            )
+        print("[OK] alternating local candidates kept both subprocesses stable")
+
+    def test_608_health_reports_raised_llm_limit(self):
+        """/health surfaces the raised limit and why it was raised."""
+        resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200, resp.text[:1000])
+        body = resp.json()
+
+        self.assertGreaterEqual(
+            body.get("max_models", {}).get("llm", 0),
+            2,
+            "max_models.llm should be floored to at least the two local candidates",
+        )
+
+        autosize = body.get("llm_pool_autosize", {})
+        self.assertTrue(autosize.get("enabled"))
+        self.assertGreaterEqual(autosize.get("candidate_floor", 0), 2)
+        self.assertGreaterEqual(autosize.get("policies", {}).get(COLLECTION_NAME, 0), 2)
+        print("[OK] /health reflects the raised llm limit and its cause")
+
+    def test_609_autosize_off_restores_thrash(self):
+        """Disabling llm_pool_autosize reverts to today's reload-per-switch
+        behavior, proving the off-switch actually gates the new capacity."""
+        set_server_config({"llm_pool_autosize": False})
+        try:
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            self.assertFalse(resp.json().get("llm_pool_autosize", {}).get("enabled"))
+            self.assertEqual(resp.json().get("max_models", {}).get("llm"), 1)
+
+            # Earlier tests ran with autosize on (floor >= 2), so both local
+            # candidates may already be resident from before this toggle.
+            # Eviction is enforced lazily (on the next load), not retroactively
+            # when the limit shrinks, so start from a clean slate: otherwise
+            # the assertions below would observe leftover capacity instead of
+            # the reduced limit's real eviction behavior.
+            unload_all_models()
+
+            self._route("Give me a fun fact about otters.")  # -> DEFAULT_MODEL
+            default_pid = self._model_pid(DEFAULT_MODEL)
+            self._route(
+                "Write a Python function to reverse a linked list."
+            )  # -> CAPABLE_MODEL loads, evicts DEFAULT_MODEL
+            self._route("Give me a fun fact about otters.")  # -> DEFAULT_MODEL reloads
+            self.assertNotEqual(
+                self._model_pid(DEFAULT_MODEL),
+                default_pid,
+                "with autosize off, max_loaded_models=1 should still thrash",
+            )
+        finally:
+            set_server_config({"llm_pool_autosize": True})
+        print("[OK] disabling llm_pool_autosize restores max_loaded_models=1 thrash")
 
     def test_610_cloud_candidate_routing(self):
         """A candidate whose recipe is `cloud` routes to a cloud provider.
