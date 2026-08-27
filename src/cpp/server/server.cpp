@@ -5199,7 +5199,6 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         std::string pixel_upscaler = request_json.value("pixel_upscaler", "");
         request_json.erase("upscale");
         request_json.erase("refine");
-        request_json.erase("pixel_upscaler");
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -5243,15 +5242,35 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             } catch (const std::exception&) {}
         }
 
+        // Check the pixel_upscaler model's recipe to decide the upscale path.
+        // sd-cpp upscalers: lemonade handles post-generation upscale separately.
+        // thenoise or unknown: pass pixel_upscaler through to the backend.
+        bool passthrough_upscale = !pixel_upscaler.empty();
+        if (passthrough_upscale) {
+            try {
+                auto upscaler_info = model_manager_->get_model_info(pixel_upscaler);
+                if (upscaler_info.recipe == "sd-cpp") {
+                    passthrough_upscale = false;
+                }
+            } catch (const std::exception&) {
+                // Upscaler model not found — The backend can decide.
+            }
+        }
+        if (!passthrough_upscale) {
+            request_json.erase("pixel_upscaler");
+        }
+
         {
             auto response = router_->image_generations(request_json);
             if (response.contains("error")) {
                 LOG(ERROR, "Server") << "Image generation backend error: " << response.dump() << std::endl;
                 res.status = 500;
             }
-            bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
-            apply_upscale_if_configured(requested_model, response, skip_upscale,
-                                        pixel_upscaler);
+            if (!passthrough_upscale) {
+                bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
+                apply_upscale_if_configured(requested_model, response, skip_upscale,
+                                            pixel_upscaler);
+            }
             res.set_content(response.dump(), "application/json");
         }
 
