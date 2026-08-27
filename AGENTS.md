@@ -56,7 +56,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Single JSON-RPC 2.0 endpoint exposing 5 tools (`lemonade_list_models`, `lemonade_chat`, `lemonade_transcribe_audio`, `lemonade_generate_image`, `lemonade_omni`). GET returns 405.
+**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Single JSON-RPC 2.0 endpoint exposing 6 tools (`lemonade_list_models`, `lemonade_chat`, `lemonade_transcribe_audio`, `lemonade_generate_image`, `lemonade_omni`, `lemonade_docs`). GET returns 405.
 
 **WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. `/realtime` and `/logs/stream` accept WebSocket upgrades directly on the main HTTP port; a dedicated listener on an OS-assigned port (9000+, exposed via the `websocket_port` field in the `/health` response) also remains for backward compatibility.
 

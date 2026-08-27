@@ -147,6 +147,21 @@ If the planner emits app-defined tool calls (those you passed in via `tools`/`to
 
 Passing a non-collection model (e.g. a plain LLM) returns `isError: true` with a hint to use `lemonade_chat`.
 
+### `lemonade_docs`
+
+Read the server's own API reference. Call with no arguments to list the pages this server ships, then pass `page` to read one as markdown. The pages are bundled with the server, so they match the running version and work offline.
+
+```json
+{
+  "name": "lemonade_docs",
+  "arguments": {
+    "page": "api/lemonade"
+  }
+}
+```
+
+The listing returns a summary text block plus a JSON-stringified block with `{pages: [{id, title, bytes}]}`. `page` takes an `id` from that listing; unknown pages return `"isError": true`. The same content is available over HTTP at [`GET /v1/docs`](./lemonade.md#get-v1docs).
+
 ## Error model
 
 | Code | Meaning |

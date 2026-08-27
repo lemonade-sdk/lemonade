@@ -44,6 +44,7 @@ private:
     json tool_generate_image(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
+    json tool_docs(const json& arguments);
 
     // Resolve which model a tool should use when `model` is omitted. Precedence:
     //   1. an explicit `model` argument always wins;
