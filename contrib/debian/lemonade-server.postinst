@@ -34,7 +34,11 @@ if [ "$1" = "configure" ]; then
 	if [ ! -d /var/lib/lemonade ]; then
 		mkdir -p /var/lib/lemonade
 	fi
-	chown -R lemonade:lemonade /var/lib/lemonade 2>/dev/null || true
+	# Own the state + config tree, but skip the HuggingFace model cache: it can
+	# be tens of GB and is already owned by the service that downloaded it, so
+	# recursing into it would make every upgrade's chown walk the whole cache.
+	find /var/lib/lemonade -path /var/lib/lemonade/.cache/huggingface -prune -o \
+		-exec chown lemonade:lemonade {} + 2>/dev/null || true
 	chmod 0750 /var/lib/lemonade
 
 	# Create the FHS cache directory for the service (owned by the service user).
