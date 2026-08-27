@@ -347,23 +347,9 @@ void migrate_legacy_paths(const std::string& cache_dir,
             }
         }
     }
-
-    // HuggingFace model blobs from the pre-3028 home-based hub.
-    try {
-        const fs::path legacy_hub = path_from_utf8(default_hf_cache_dir());
-        const fs::path new_hub = path_from_utf8(resolve_hf_cache_dir());
-        std::error_code exists_ec;
-        if (legacy_hub != new_hub && fs::exists(legacy_hub, exists_ec)) {
-            LOG(INFO) << "Migrating legacy models " << path_to_utf8(legacy_hub)
-                      << " -> " << path_to_utf8(new_hub);
-            if (move_tree_into(legacy_hub, new_hub)) {
-                std::error_code rm_ec;
-                fs::remove(legacy_hub, rm_ec);
-            }
-        }
-    } catch (const std::exception& e) {
-        LOG(WARNING) << "Migration: skipped HuggingFace models: " << e.what();
-    }
+    // HuggingFace models are intentionally not relocated: the service resolves
+    // them via HOME (~/.cache/huggingface), so they stay put across the upgrade
+    // and never need a cross-filesystem copy.
 }
 
 std::string get_hf_cache_dir() {

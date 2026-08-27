@@ -219,17 +219,15 @@ void test_systemd_relocation_recovers_cache_and_models() {
     const fs::path legacy_hub = home / ".cache" / "huggingface" / "hub";
     const fs::path cache_dir = root / "var" / "cache" / "lemonade";
     const fs::path config_dir = root / "var" / "lib" / "lemonade";
-    const fs::path hf_home = root / "var" / "cache" / "huggingface";
 
     ScopedEnvVar home_var("HOME", home.string());
-    ScopedEnvVar hf_home_var("HF_HOME", hf_home.string());
-    ScopedEnvVar hub_cache_var("HF_HUB_CACHE", "");
 
     try {
         write_text(legacy_cache / "config.json", "{\"port\":9000}\n");
         write_text(legacy_cache / "bin" / "llama-server", "ELF\n");
-        write_text(legacy_hub / "models--demo--foo" / "snapshots" / "abc" / "model.gguf",
-                   "GGUF\n");
+        const fs::path legacy_model =
+            legacy_hub / "models--demo--foo" / "snapshots" / "abc" / "model.gguf";
+        write_text(legacy_model, "GGUF\n");
 
         lemon::utils::migrate_legacy_paths(cache_dir.string(), config_dir.string());
 
@@ -239,14 +237,11 @@ void test_systemd_relocation_recovers_cache_and_models() {
 
         assert(fs::exists(cache_dir / "bin" / "llama-server"));
         assert(read_text(cache_dir / "bin" / "llama-server") == "ELF\n");
-
-        const fs::path moved_model = hf_home / "hub" / "models--demo--foo" /
-                                     "snapshots" / "abc" / "model.gguf";
-        assert(fs::exists(moved_model));
-        assert(read_text(moved_model) == "GGUF\n");
-
         assert(!fs::exists(legacy_cache));
-        assert(!fs::exists(legacy_hub));
+
+        // Models are deliberately left in place — no cross-filesystem copy.
+        assert(fs::exists(legacy_model));
+        assert(read_text(legacy_model) == "GGUF\n");
     } catch (...) {
         fs::remove_all(root);
         throw;
@@ -265,11 +260,8 @@ void test_relocation_preserves_existing_target_files() {
     const fs::path legacy_cache = home / ".cache" / "lemonade";
     const fs::path cache_dir = root / "var" / "cache" / "lemonade";
     const fs::path config_dir = root / "var" / "lib" / "lemonade";
-    const fs::path hf_home = root / "var" / "cache" / "huggingface";
 
     ScopedEnvVar home_var("HOME", home.string());
-    ScopedEnvVar hf_home_var("HF_HOME", hf_home.string());
-    ScopedEnvVar hub_cache_var("HF_HUB_CACHE", "");
 
     try {
         write_text(legacy_cache / "config.json", "{\"stale\":true}\n");
