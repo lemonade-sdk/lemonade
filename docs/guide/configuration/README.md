@@ -202,6 +202,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
+| `llm_pool_autosize` | bool | true | Auto-raise the Standard LLM pool above `max_loaded_models` to fit the distinct local LLM candidates referenced by active router policies, so alternating between them doesn't reload on every switch. Other model types are unaffected. Set to `false` to restore a strict `max_loaded_models` limit for LLMs too. |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond` |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |

@@ -179,6 +179,7 @@ When `extra_models_dir` points to an existing path, `lemond` validates that it i
 | Key | Type |
 |-----|------|
 | `max_loaded_models` | int (-1 or positive) |
+| `llm_pool_autosize` | bool |
 | `ctx_size` | int (positive) |
 | `llamacpp_backend` | string |
 | `llamacpp_args` | string |
