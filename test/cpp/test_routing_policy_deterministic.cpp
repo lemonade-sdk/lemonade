@@ -19,6 +19,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <locale>
 #include <map>
 #include <memory>
 #include <string>
@@ -307,6 +308,34 @@ void test_metadata_gte_lte() {
           eval_leaf("metadata", json{{"key", "n"}, {"gte", 30}}, scientific));
 }
 
+// A synthetic comma-decimal facet, built in-process rather than relying on an
+// OS locale package (availability varies by CI image) — sufficient to prove
+// the parser doesn't consult the ambient locale for its decimal point.
+struct CommaDecimalPunct : std::numpunct<char> {
+protected:
+    char do_decimal_point() const override { return ','; }
+};
+
+// Regression: parse_metadata_number must parse "3.5" as 3.5 regardless of the
+// process's global C++ locale. Under a comma-decimal locale, "." is a stray
+// character rather than a separator to any locale-aware parser (istringstream
+// extraction included, unless explicitly imbued with the classic locale) — a
+// naive parse would silently truncate "3.5" to 3.0 instead of parsing the
+// full value or rejecting it outright.
+void test_metadata_gte_lte_locale_independence() {
+    const std::locale previous = std::locale::global(
+        std::locale(std::locale::classic(), new CommaDecimalPunct));
+    RouteContext req = make_request("x");
+    req.metadata["n"] = "3.5";
+    check("metadata gte parses the full value under a comma-decimal global "
+          "locale (not truncated to 3)",
+          eval_leaf("metadata", json{{"key", "n"}, {"gte", 3.5}}, req));
+    check("metadata lte parses the full value under a comma-decimal global "
+          "locale (not truncated to 3, which would wrongly satisfy lte:3)",
+          !eval_leaf("metadata", json{{"key", "n"}, {"lte", 3}}, req));
+    std::locale::global(previous);
+}
+
 void test_rejections() {
     check("empty keywords_any rejected", throws_invalid("keywords_any", json::array()));
     check("empty keywords_all rejected", throws_invalid("keywords_all", json::array()));
@@ -446,6 +475,7 @@ int main() {
     test_metadata_any();
     test_metadata_exists();
     test_metadata_gte_lte();
+    test_metadata_gte_lte_locale_independence();
     test_rejections();
     test_regex_redos_rejected();
     test_trace_emitted();

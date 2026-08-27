@@ -4,9 +4,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <locale>
 #include <mutex>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -715,14 +717,14 @@ std::set<std::string> decode_metadata_tokens(const std::string& value) {
 // checked by hand rather than delegated to strtod/stod — optional sign,
 // digits, an optional '.' with more digits, an optional exponent, nothing
 // else — deliberately rejecting what strtod would otherwise silently accept
-// (a hex float like "0x10", or "inf"/"nan" text). Since only ASCII digits,
-// whitespace, and '.' pass the grammar, stod (called last, on the
-// now-validated substring) never sees anything a comma-decimal LC_NUMERIC
-// could misread — locale-independent by construction rather than by
-// imbue/setlocale. Leading/trailing whitespace both use is_ascii_ws, so the
-// two ends are symmetric. A blank or non-conforming value is "no number
-// here", not a parse error — a malformed value fails the comparator instead
-// of throwing out of Condition::evaluate().
+// (a hex float like "0x10", or "inf"/"nan" text). The conversion itself goes
+// through an istringstream imbued with the classic (C) locale rather than
+// stod, which is LC_NUMERIC-sensitive: under a comma-decimal locale, stod
+// reads "." as a stray character and would silently truncate "3.5" to 3.0
+// instead of parsing the full value. Leading/trailing whitespace both use
+// is_ascii_ws, so the two ends are symmetric. A blank or non-conforming
+// value is "no number here", not a parse error — a malformed value fails
+// the comparator instead of throwing out of Condition::evaluate().
 std::optional<double> parse_metadata_number(const std::string& s) {
     std::size_t a = 0;
     std::size_t b = s.size();
@@ -757,13 +759,11 @@ std::optional<double> parse_metadata_number(const std::string& s) {
         return std::nullopt;  // trailing junk, e.g. hex's "x" or stray letters
     }
 
+    std::istringstream iss(s.substr(a, b - a));
+    iss.imbue(std::locale::classic());
     double value = 0.0;
-    try {
-        value = std::stod(s.substr(a, b - a));
-    } catch (...) {
-        return std::nullopt;
-    }
-    if (!std::isfinite(value)) {
+    iss >> value;
+    if (iss.fail() || !iss.eof() || !std::isfinite(value)) {
         return std::nullopt;
     }
     return value;
