@@ -1916,10 +1916,12 @@ class LemonadeAPI {
   }
 
   async setLogLevel(level: string): Promise<{ status: string; level: string }> {
-    return this._json<{ status: string; level: string }>('/api/v1/log-level', {
-      method: 'POST',
-      body: { level },
-    });
+    const data = await this.setRuntimeConfig({ log_level: level });
+    const updated = (data.updated as Record<string, unknown> | undefined) ?? {};
+    return {
+      status: String(data.status ?? 'success'),
+      level: typeof updated.log_level === 'string' ? updated.log_level : level,
+    };
   }
 
   // ── Log stream (WebSocket) ──────────────────────────────────────
