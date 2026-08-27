@@ -6,6 +6,10 @@ Lemonade to the requested sd-cpp backend, then generates deterministic PNGs for
 all requested model/size combinations. It records review evidence: model,
 backend, prompt, seed, size, generated PNG path, byte size, request wall time,
 and whether an untimed warm-up was used before collecting timings.
+
+When ``--server-log`` is given, the run also asserts that sd-server actually
+initialized the requested ggml backend, so a silent fallback to CPU fails the
+job instead of passing with the wrong backend validated.
 """
 
 from __future__ import annotations
@@ -21,6 +25,8 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+from utils.sdcpp_backend_log import assert_active_backend, read_server_logs
 
 DEFAULT_PORT = int(os.environ.get("LEMONADE_PORT", "13305"))
 DEFAULT_TIMEOUT = int(os.environ.get("LEMONADE_VALIDATE_SD_TIMEOUT", "3600"))
@@ -93,6 +99,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output", default="sdcpp_validation.json")
     parser.add_argument("--images-dir", default="sdcpp-validation-images")
+    parser.add_argument(
+        "--server-log",
+        action="append",
+        type=Path,
+        default=None,
+        dest="server_logs",
+        help=(
+            "Captured lemond stdout/stderr file. May be repeated. When given, "
+            "the run fails unless sd-server initialized the requested backend, "
+            "instead of passing on a silent fallback to CPU."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -362,6 +380,34 @@ def main() -> int:
                 )
                 print(f"[FAIL] {model} {width}x{height}: {exc}", file=sys.stderr)
             results.append(record)
+
+    # Checked once at the end: sd-server's stdout is fully buffered when
+    # redirected to a file, so the early device line is only guaranteed to have
+    # reached the log after a run's worth of output has been written.
+    backend_check: dict[str, Any] = {
+        "check": "active_backend",
+        "backend": args.backend,
+        "channel": args.channel,
+        "label": label,
+        "pass": True,
+    }
+    if args.server_logs:
+        try:
+            devices = assert_active_backend(
+                args.backend, read_server_logs(args.server_logs)
+            )
+            backend_check["ggml_devices"] = devices
+            print(f"[OK] sd-server initialized {sorted(set(devices))} on {label}")
+        except Exception as exc:  # noqa: BLE001 - keep JSON on all failures
+            overall_pass = False
+            backend_check.update({"pass": False, "error": str(exc)})
+            print(f"[FAIL] active backend check on {label}: {exc}", file=sys.stderr)
+        results.append(backend_check)
+    else:
+        print(
+            "[WARN] no --server-log given; skipping the active backend check",
+            file=sys.stderr,
+        )
 
     output_path = Path(args.output)
     output_path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")

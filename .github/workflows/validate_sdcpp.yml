@@ -391,7 +391,9 @@ jobs:
               "--seed", "${{ env.SDCPP_TEST_SEED }}",
               "--warmup",
               "--output", "sdcpp_validation_$label.json",
-              "--images-dir", "sdcpp-images-$label"
+              "--images-dir", "sdcpp-images-$label",
+              "--server-log", $stdoutLog,
+              "--server-log", $stderrLog
             )
             foreach ($model in "${{ env.SDCPP_TEST_MODELS }}".Split(',')) {
               $model = $model.Trim()
