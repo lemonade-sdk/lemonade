@@ -1187,10 +1187,17 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_health(req, res);
     });
 
-    // Lemonade-specific API reference bundled with the server
+    // API reference bundled with the server. The index is fetched first; each entry
+    // carries the URL of the document, so clients never build doc paths themselves.
     register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
         handle_docs(req, res);
     });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Get(std::string(prefix) + R"(/docs/(.+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+            handle_doc_page(req, res);
+        });
+    }
 
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
@@ -2664,9 +2671,41 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
 }
 
 void Server::handle_docs(const httplib::Request& req, httplib::Response& res) {
-    (void)req;
-    std::string docs_dir = utils::get_resource_path("resources/api-docs");
-    res.set_content(load_api_docs(docs_dir, LEMON_VERSION_STRING), "text/markdown");
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    // Echo back the prefix the client used so the URLs stay valid on all four.
+    std::string prefix = req.path.substr(0, req.path.size() - std::string("/docs").size());
+
+    nlohmann::json docs = nlohmann::json::array();
+    for (const ApiDoc& doc : list_api_docs(docs_dir)) {
+        docs.push_back({
+            {"id", doc.id},
+            {"title", doc.title},
+            {"url", prefix + "/docs/" + doc.id},
+            {"bytes", doc.bytes}
+        });
+    }
+
+    nlohmann::json body = {
+        {"version", LEMON_VERSION_STRING},
+        {"format", "text/markdown"},
+        {"docs", docs}
+    };
+    res.set_content(body.dump(2), "application/json");
+    res.status = 200;
+}
+
+void Server::handle_doc_page(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    std::string content;
+    if (!read_api_doc(docs_dir, req.matches[1].str(), content)) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Documentation page not found\"}", "application/json");
+        return;
+    }
+
+    res.set_content(content, "text/markdown");
     res.status = 200;
 }
 

@@ -4,16 +4,26 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
 namespace {
 
+int failures = 0;
+
+void check(bool ok, const char* what) {
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", what);
+    if (!ok) {
+        ++failures;
+    }
+}
+
 fs::path make_scratch_dir(const std::string& name) {
     fs::path dir = fs::temp_directory_path() / ("lemon_docs_test_" + name);
     std::error_code ec;
     fs::remove_all(dir, ec);
-    fs::create_directories(dir);
+    fs::create_directories(dir / "api");
     return dir;
 }
 
@@ -22,90 +32,79 @@ void write_file(const fs::path& path, const std::string& content) {
     f << content;
 }
 
+const lemon::ApiDoc* find_doc(const std::vector<lemon::ApiDoc>& docs, const std::string& id) {
+    for (const auto& doc : docs) {
+        if (doc.id == id) {
+            return &doc;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace
 
 int main() {
-    int failures = 0;
-
     {
-        fs::path dir = make_scratch_dir("all_present");
-        write_file(dir / "lemonade.md", "LEMONADE_CONTENT");
-        write_file(dir / "llamacpp.md", "LLAMACPP_CONTENT");
-        write_file(dir / "mcp.md", "MCP_CONTENT");
+        fs::path dir = make_scratch_dir("index");
+        write_file(dir / "api" / "lemonade.md", "# Lemonade API\n\nbody\n");
+        write_file(dir / "api" / "openai.md", "# OpenAI Compatible\n");
+        write_file(dir / "api" / "untitled.md", "no heading here\n");
+        write_file(dir / "api" / "notes.txt", "ignored");
 
-        std::string result = lemon::load_api_docs(dir.string(), "9.9.9");
+        auto docs = lemon::list_api_docs(dir.string());
 
-        auto lemonade_pos = result.find("LEMONADE_CONTENT");
-        auto llamacpp_pos = result.find("LLAMACPP_CONTENT");
-        auto mcp_pos = result.find("MCP_CONTENT");
+        check(docs.size() == 3, "only .md files are indexed");
 
-        bool header_ok = result.find("# Lemonade Server API Reference (9.9.9)") == 0;
-        bool all_present = lemonade_pos != std::string::npos &&
-                            llamacpp_pos != std::string::npos &&
-                            mcp_pos != std::string::npos;
-        bool order_ok = all_present && lemonade_pos < llamacpp_pos && llamacpp_pos < mcp_pos;
+        const auto* lemonade = find_doc(docs, "api/lemonade");
+        check(lemonade != nullptr, "ids are website-relative paths without the extension");
+        check(lemonade != nullptr && lemonade->title == "Lemonade API", "title comes from the leading H1");
+        check(lemonade != nullptr && lemonade->bytes == fs::file_size(dir / "api" / "lemonade.md"),
+              "bytes reports the file size");
 
-        bool ok = header_ok && all_present && order_ok;
-        std::printf("[%s] all files present, version header, correct order\n", ok ? "PASS" : "FAIL");
-        if (!ok) ++failures;
-    }
+        const auto* untitled = find_doc(docs, "api/untitled");
+        check(untitled != nullptr && untitled->title == "api/untitled",
+              "title falls back to the id when there is no H1");
 
-    {
-        fs::path dir = make_scratch_dir("one_missing");
-        write_file(dir / "lemonade.md", "LEMONADE_CONTENT");
-        write_file(dir / "mcp.md", "MCP_CONTENT");
-        std::string result;
-        bool threw = false;
-        try {
-            result = lemon::load_api_docs(dir.string(), "1.0.0");
-        } catch (...) {
-            threw = true;
+        bool sorted = true;
+        for (std::size_t i = 1; i < docs.size(); ++i) {
+            if (!(docs[i - 1].id < docs[i].id)) {
+                sorted = false;
+            }
         }
-
-        bool ok = !threw &&
-                  result.find("LEMONADE_CONTENT") != std::string::npos &&
-                  result.find("MCP_CONTENT") != std::string::npos;
-        std::printf("[%s] one file missing: no throw, remaining files present\n", ok ? "PASS" : "FAIL");
-        if (!ok) ++failures;
+        check(sorted, "index is sorted by id");
     }
 
     {
-        fs::path dir = fs::temp_directory_path() / "lemon_docs_test_does_not_exist";
+        fs::path dir = fs::temp_directory_path() / "lemon_docs_test_absent";
         std::error_code ec;
         fs::remove_all(dir, ec);
-
-        std::string result;
-        bool threw = false;
-        try {
-            result = lemon::load_api_docs(dir.string(), "1.0.0");
-        } catch (...) {
-            threw = true;
-        }
-
-        bool ok = !threw && result.find("# Lemonade Server API Reference (1.0.0)") == 0;
-        std::printf("[%s] missing directory: no throw, header still returned\n", ok ? "PASS" : "FAIL");
-        if (!ok) ++failures;
+        check(lemon::list_api_docs(dir.string()).empty(), "missing docs directory yields an empty index");
     }
 
     {
-        fs::path dir = make_scratch_dir("empty_file");
-        write_file(dir / "lemonade.md", "");
-        write_file(dir / "llamacpp.md", "LLAMACPP_CONTENT");
-        write_file(dir / "mcp.md", "MCP_CONTENT");
+        fs::path dir = make_scratch_dir("read");
+        write_file(dir / "api" / "lemonade.md", "# Lemonade API\ncontent\n");
+        write_file(dir.parent_path() / "lemon_docs_test_read_outside.md", "SECRET");
 
-        std::string result;
-        bool threw = false;
-        try {
-            result = lemon::load_api_docs(dir.string(), "1.0.0");
-        } catch (...) {
-            threw = true;
-        }
+        std::string content;
+        check(lemon::read_api_doc(dir.string(), "api/lemonade", content) &&
+                  content.find("content") != std::string::npos,
+              "document is readable by id");
 
-        bool ok = !threw && result.find("LLAMACPP_CONTENT") != std::string::npos;
-        std::printf("[%s] empty file: no crash, other files still present\n", ok ? "PASS" : "FAIL");
-        if (!ok) ++failures;
+        content.clear();
+        check(lemon::read_api_doc(dir.string(), "api/lemonade.md", content) &&
+                  content.find("content") != std::string::npos,
+              "the .md suffix is accepted too");
+
+        check(!lemon::read_api_doc(dir.string(), "api/missing", content),
+              "unknown id is rejected");
+        check(!lemon::read_api_doc(dir.string(), "../lemon_docs_test_read_outside", content),
+              "traversal outside the docs directory is rejected");
+        check(!lemon::read_api_doc(dir.string(), "api/../../lemon_docs_test_read_outside", content),
+              "embedded traversal is rejected");
+        check(!lemon::read_api_doc(dir.string(), "", content), "empty id is rejected");
     }
 
-    std::printf("\n%d failure(s)\n", failures);
+    std::printf("%s\n", failures == 0 ? "All docs endpoint tests passed" : "Docs endpoint tests FAILED");
     return failures == 0 ? 0 : 1;
 }

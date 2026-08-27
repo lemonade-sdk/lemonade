@@ -130,7 +130,7 @@
       <Directory Id="INSTALLDIR" Name="lemonade_server">
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
-            <Directory Id="ApiDocsDir" Name="api-docs" />
+            <Directory Id="DocsDir" Name="docs" />
             <Directory Id="StaticDir" Name="static" />
             <Directory Id="WebAppDir" Name="web-app" />
           </Directory>
@@ -218,18 +218,6 @@
         <File Id="architecture_defaults.json" Source="$(var.BuildDir)\Release\resources\architecture_defaults.json" KeyPath="yes" />
       </Component>
 
-      <Component Id="ApiDocsLemonade" Directory="ApiDocsDir" Guid="3fa7f91a-98c4-4c55-a934-103216a8e67b">
-        <File Id="api_docs_lemonade.md" Source="$(var.BuildDir)\Release\resources\api-docs\lemonade.md" KeyPath="yes" />
-      </Component>
-
-      <Component Id="ApiDocsLlamaCpp" Directory="ApiDocsDir" Guid="74d30da7-9b2b-45b4-83dd-8f1946b5e42f">
-        <File Id="api_docs_llamacpp.md" Source="$(var.BuildDir)\Release\resources\api-docs\llamacpp.md" KeyPath="yes" />
-      </Component>
-
-      <Component Id="ApiDocsMcp" Directory="ApiDocsDir" Guid="a62bf31e-137e-49eb-b7ee-07e95b3fe5cb">
-        <File Id="api_docs_mcp.md" Source="$(var.BuildDir)\Release\resources\api-docs\mcp.md" KeyPath="yes" />
-      </Component>
-
       <Component Id="FaviconIco" Directory="StaticDir" Guid="c0d1e2f3-a4b5-4c6d-7e8f-9a0b1c2d3e4f">
         <File Id="favicon.ico" Source="$(var.BuildDir)\Release\resources\static\favicon.ico" KeyPath="yes" />
       </Component>
@@ -312,6 +300,7 @@
     <Feature Id="Complete" Level="1">
       <ComponentGroupRef Id="ExecutableComponents" />
       <ComponentGroupRef Id="ResourceComponents" />
+      <ComponentGroupRef Id="DocsComponents" />
 <?if $(var.IncludeWebApp) = 1 ?>
       <ComponentGroupRef Id="WebAppComponents" />
 <?endif?>

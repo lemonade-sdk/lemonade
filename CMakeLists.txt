@@ -204,6 +204,7 @@ set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 # instead of installing project-local dependencies with npm for web-app builds.
 option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
 
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -844,6 +845,12 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_MINIMAL}" WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE)
         set(WIX_WEBAPP_FRAGMENT_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.full.wxs")
         file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_FULL}" WIX_WEBAPP_FRAGMENT_FULL_NATIVE)
+        set(DOCS_STAGE_DIR "${CMAKE_BINARY_DIR}/resources/docs")
+        file(TO_NATIVE_PATH "${DOCS_STAGE_DIR}" WIX_DOCS_SOURCE_NATIVE)
+        set(WIX_DOCS_FRAGMENT_MINIMAL "${CMAKE_CURRENT_BINARY_DIR}/installer/DocsFragment.minimal.wxs")
+        file(TO_NATIVE_PATH "${WIX_DOCS_FRAGMENT_MINIMAL}" WIX_DOCS_FRAGMENT_MINIMAL_NATIVE)
+        set(WIX_DOCS_FRAGMENT_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/DocsFragment.full.wxs")
+        file(TO_NATIVE_PATH "${WIX_DOCS_FRAGMENT_FULL}" WIX_DOCS_FRAGMENT_FULL_NATIVE)
 
         # Both installers require Python3 for fragment generation and always include the web app
         if(NOT Python3_FOUND)
@@ -860,6 +867,12 @@ if(WIN32)
                 --component-group "WebAppComponents"
                 --root-id "WebAppDir"
                 --path-variable "WebAppSourceDir"
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${DOCS_STAGE_DIR}"
+                --output "${WIX_DOCS_FRAGMENT_MINIMAL}"
+                --component-group "DocsComponents"
+                --root-id "DocsDir"
+                --path-variable "DocsSourceDir"
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
                 -intermediateFolder "${WIX_INTERMEDIATE_MINIMAL_NATIVE}"
@@ -870,9 +883,11 @@ if(WIN32)
                 -d IncludeTauriApp=0
                 -d IncludeWebApp=1
                 -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                -d DocsSourceDir="${WIX_DOCS_SOURCE_NATIVE}"
                 -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
                 "${WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE}"
+                "${WIX_DOCS_FRAGMENT_MINIMAL_NATIVE}"
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -898,6 +913,12 @@ if(WIN32)
                 --component-group "TauriAppComponents"
                 --root-id "TauriAppDir"
                 --path-variable "TauriSourceDir"
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${DOCS_STAGE_DIR}"
+                --output "${WIX_DOCS_FRAGMENT_FULL}"
+                --component-group "DocsComponents"
+                --root-id "DocsDir"
+                --path-variable "DocsSourceDir"
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
                 -intermediateFolder "${WIX_INTERMEDIATE_FULL_NATIVE}"
@@ -909,10 +930,12 @@ if(WIN32)
                 -d IncludeWebApp=1
                 -d TauriSourceDir="${WIX_TAURI_SOURCE_NATIVE}"
                 -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                -d DocsSourceDir="${WIX_DOCS_SOURCE_NATIVE}"
                 -out "${WIX_FULL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
                 "${WIX_TAURI_FRAGMENT_NATIVE}"
                 "${WIX_WEBAPP_FRAGMENT_FULL_NATIVE}"
+                "${WIX_DOCS_FRAGMENT_FULL_NATIVE}"
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -1286,7 +1309,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
 #   - bench_scenarios.json (benchmark scenarios)
-#   - api-docs/ (bundled API reference)
+#   - docs/api/ (bundled API reference, served at <prefix>/docs)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1300,12 +1323,9 @@ file(GLOB_RECURSE RESOURCE_FILES
 set(TOOL_DEFINITIONS_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
 
-# Listed explicitly, not globbed: docs/ also holds the published website.
-set(API_DOC_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/lemonade.md"
-    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/llamacpp.md"
-    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/mcp.md"
-)
+# Scoped to docs/api: the rest of docs/ is the published website, not API reference.
+file(GLOB API_DOC_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/*.md")
 
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
@@ -1318,10 +1338,10 @@ add_custom_command(
         ${TOOL_DEFINITIONS_SRC}
         ${CMAKE_BINARY_DIR}/resources/toolDefinitions.json
     COMMAND ${CMAKE_COMMAND} -E make_directory
-        ${CMAKE_BINARY_DIR}/resources/api-docs
+        ${CMAKE_BINARY_DIR}/resources/docs/api
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${API_DOC_FILES}
-        ${CMAKE_BINARY_DIR}/resources/api-docs/
+        ${CMAKE_BINARY_DIR}/resources/docs/api/
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
     DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC} ${API_DOC_FILES}
     COMMENT "Copying resources to build directory"
