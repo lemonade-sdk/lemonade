@@ -89,6 +89,10 @@ public:
         throw std::runtime_error("USERPROFILE is not set; cannot resolve Lemonade config directory");
     }
 
+    std::string get_legacy_cache_dir() override {
+        return "";
+    }
+
     std::string get_runtime_dir() override {
         char temp_path[MAX_PATH];
         GetTempPathA(MAX_PATH, temp_path);

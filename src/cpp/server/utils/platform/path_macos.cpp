@@ -101,6 +101,10 @@ public:
         return "/Library/Application Support/lemonade/.config";
     }
 
+    std::string get_legacy_cache_dir() override {
+        return "";
+    }
+
     std::string get_runtime_dir() override {
         std::error_code ec;
         fs::path base = fs::temp_directory_path(ec);
