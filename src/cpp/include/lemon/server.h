@@ -390,6 +390,12 @@ private:
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
+    // Per-policy candidate-floor breakdown, cached at each reconcile call site
+    // (not recomputed on the /health request path — that used to mean a full
+    // registry walk on every poll). Guarded by its own mutex since /health
+    // reads it from a different thread than the reconcile callers write it.
+    std::mutex llm_candidate_floor_info_mutex_;
+    LlmCandidateFloorInfo llm_candidate_floor_info_;
     std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;

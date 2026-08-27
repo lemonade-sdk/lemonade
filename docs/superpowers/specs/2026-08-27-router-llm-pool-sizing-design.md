@@ -177,9 +177,19 @@ see both "the limit that's actually in effect" and "why."
 - **VRAM-pressure eviction precedence** — `EvictionEngine::evaluate_servers()`
   (`eviction_engine.cpp`) is a fully separate code path (idle timeout +
   VRAM-pressure scoring) that evicts independently of
-  `ensure_residency_capacity()`'s count-based LRU eviction. A raised floor
-  cannot bypass it — VRAM pressure still evicts even a floor-protected LLM
-  the moment the threshold is crossed.
+  `ensure_residency_capacity()`'s count-based LRU eviction, and a raised floor
+  cannot bypass it when it runs. **However, this backstop is off by default:**
+  `RuntimeConfig::auto_evict()` returns `false` when the `auto_evict` key is
+  absent, `auto_evict` is not set in `defaults.json`, and
+  `EvictionEngine::evaluate_servers()` skips every server when it's false. So
+  on a stock install, the count-based floor this feature adds is the *only*
+  residency governor for LLM candidates, and it's unbounded — a policy with N
+  local candidates permits N concurrent subprocesses with no VRAM safety net.
+  `Router::reconcile_llm_candidate_floor()` logs a one-line warning when a
+  raised floor exceeds `max_loaded_models()` with `auto_evict` disabled, but
+  does not clamp the floor or change `auto_evict`'s default — enabling
+  `auto_evict` (or bounding `max_loaded_models`) is how an operator gets an
+  actual backstop.
 - **Cloud candidates excluded** — via `is_unmetered_recipe()`, reused as-is.
 - **Residency transitions unaffected** — `transition_server_residency_locked()`
   calls `ensure_residency_capacity()` exactly as before; it now simply reads

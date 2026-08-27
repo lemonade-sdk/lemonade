@@ -453,6 +453,15 @@ void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
     }
     last_llm_floor_generation_ = generation;
     llm_candidate_floor_ = floor;
+
+    const int max_loaded = config_->max_loaded_models();
+    if (max_loaded != -1 && floor > max_loaded && !config_->auto_evict()) {
+        LOG(WARNING, "Router") << "LLM pool floor raised to " << floor
+                               << " (above max_loaded_models=" << max_loaded
+                               << ") with auto_evict disabled — no VRAM-pressure "
+                               << "backstop will evict a floor-protected LLM"
+                               << std::endl;
+    }
 }
 
 void Router::prune_stale_routing_helpers_locked() {
@@ -1406,6 +1415,11 @@ json Router::get_max_model_limits() const {
         {"tts", max},
         {"classification", max}
     };
+}
+
+int Router::llm_candidate_floor() const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    return llm_candidate_floor_;
 }
 
 bool Router::is_model_loaded() const {

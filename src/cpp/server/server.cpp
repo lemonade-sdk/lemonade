@@ -404,9 +404,17 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
     model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+        // Floor reconcile first: it's a cheap lock-and-assign, while the helper
+        // reconcile below can block on a condition variable waiting for an
+        // in-flight load to finish — the cheap one shouldn't sit behind it.
+        auto floor_info = active_policy_llm_candidate_floor();
         router_->reconcile_llm_candidate_floor(
-            static_cast<int>(active_policy_llm_candidate_floor().models.size()), generation);
+            static_cast<int>(floor_info.models.size()), generation);
+        {
+            std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
+            llm_candidate_floor_info_ = std::move(floor_info);
+        }
+        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
     });
 
     // Seed the router's needed-helper set from policies already present at
@@ -419,9 +427,14 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // the watcher's authoritative state.
     const uint64_t seed_generation = model_manager_->next_notify_generation();
     const std::set<std::string> seed_needed = active_policy_helper_models();
-    router_->reconcile_routing_helpers(seed_needed, seed_generation);
+    auto seed_floor_info = active_policy_llm_candidate_floor();
     router_->reconcile_llm_candidate_floor(
-        static_cast<int>(active_policy_llm_candidate_floor().models.size()), seed_generation);
+        static_cast<int>(seed_floor_info.models.size()), seed_generation);
+    {
+        std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
+        llm_candidate_floor_info_ = std::move(seed_floor_info);
+    }
+    router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
     model_manager_->set_model_updated_callback([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
@@ -2633,13 +2646,21 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     response["max_models"] = router_->get_max_model_limits();
 
     // Candidate-floor diagnostics: what raised (or would raise) the LLM limit
-    // above, and whether autosize is actually applying it right now.
+    // above, and whether autosize is actually applying it right now. Reads
+    // the Router's own applied state (same source as max_models.llm above)
+    // plus the per-policy breakdown cached at the last reconcile, rather than
+    // recomputing live — so the two numbers can never disagree, and /health
+    // doesn't pay for a full registry walk on every poll.
     {
-        auto floor_info = active_policy_llm_candidate_floor();
+        std::map<std::string, int> per_policy_counts;
+        {
+            std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
+            per_policy_counts = llm_candidate_floor_info_.per_policy_counts;
+        }
         response["llm_pool_autosize"] = {
             {"enabled", config_->llm_pool_autosize()},
-            {"candidate_floor", static_cast<int>(floor_info.models.size())},
-            {"policies", floor_info.per_policy_counts}
+            {"candidate_floor", router_->llm_candidate_floor()},
+            {"policies", per_policy_counts}
         };
     }
 

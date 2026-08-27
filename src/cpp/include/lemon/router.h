@@ -205,6 +205,12 @@ public:
 
     json get_max_model_limits() const;
 
+    // The Router's actual applied llm_candidate_floor_ (not a fresh
+    // recomputation) — lets callers like /health report the same value that
+    // get_max_model_limits()'s "llm" entry is derived from, so the two never
+    // disagree.
+    int llm_candidate_floor() const;
+
     // Get pinned model counts per type
     json get_pinned_model_counts() const;
     // Pinned routing helpers, separated from the standard counts used by
