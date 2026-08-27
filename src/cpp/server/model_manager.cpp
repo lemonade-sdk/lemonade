@@ -114,7 +114,12 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source", "auto_update"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
+    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+    "image_defaults", "audio_defaults", "components", "recipe_options",
+    "routing", "system_prompt", "version", "source", "registry_source",
+    "auto_update"
+};
 
 static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
     std::string stem = fs::path(variant.primary_file).stem().string();
@@ -390,7 +395,8 @@ static DeviceType device_type_for_recipe(const std::string& recipe) {
     return get_device_type_from_recipe(recipe);
 }
 
-// Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
+// Fold the model-level precedence layers (lowest → highest). The full ladder
+// is documented in SDServer::build_extra_args().
 // json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
 // two-phase pattern). Pass a null json if the model JSON should be read directly instead.
 // saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
@@ -400,36 +406,26 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
                                           const json& json_recipe_options,
                                           const std::string& saved_recipe_options_key,
                                           const json& saved_recipe_options) {
-    json base_options = json::object();
+    // Non-sd recipes pass an empty image_defaults layer.
+    json image_defaults = json::object();
 
-    // Layer 1: image_defaults as base
     if (info.image_defaults.has_defaults) {
-        base_options["steps"] = info.image_defaults.steps;
-        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
-        base_options["width"] = info.image_defaults.width;
-        base_options["height"] = info.image_defaults.height;
+        image_defaults["steps"] = info.image_defaults.steps;
+        image_defaults["cfg_scale"] = info.image_defaults.cfg_scale;
+        image_defaults["width"] = info.image_defaults.width;
+        image_defaults["height"] = info.image_defaults.height;
         if (!info.image_defaults.sampling_method.empty())
-            base_options["sampling_method"] = info.image_defaults.sampling_method;
+            image_defaults["sampling_method"] = info.image_defaults.sampling_method;
         if (info.image_defaults.flow_shift > 0.0f)
-            base_options["flow_shift"] = info.image_defaults.flow_shift;
+            image_defaults["flow_shift"] = info.image_defaults.flow_shift;
     }
 
-    // Layer 2: JSON-level recipe_options override image_defaults (e.g. sdcpp_args)
-    if (!json_recipe_options.is_null() && json_recipe_options.is_object()) {
-        for (auto& [key, value] : json_recipe_options.items()) {
-            base_options[key] = value;
-        }
-    }
+    json user_saved = JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)
+                          ? saved_recipe_options[saved_recipe_options_key]
+                          : json(nullptr);
 
-    // Layer 3: User-saved recipe options override everything
-    if (JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)) {
-        auto saved = saved_recipe_options[saved_recipe_options_key];
-        for (auto& [key, value] : saved.items()) {
-            base_options[key] = value;
-        }
-    }
-
-    return RecipeOptions(info.recipe, base_options);
+    return RecipeOptions::merge_precedence_layers(
+        info.recipe, image_defaults, json_recipe_options, user_saved);
 }
 
 // Clean up orphaned HF cache blobs after deleting a symlink.
@@ -2823,6 +2819,7 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
         if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
@@ -2901,6 +2898,7 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
         if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
@@ -3567,10 +3565,28 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
-        // Filter out models that are too large for system RAM
-        // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
-            if (info.size > max_model_size_gb) {
+        // Filter out models too large to run on this machine.
+        if (!filter_out && !user_controlled_model && info.size > 0.0) {
+            const auto* desc = backends::descriptor_for(recipe);
+            if (desc && desc->streams_model_from_storage) {
+                // A streaming backend reads the model from disk on demand, so the
+                // full model need not fit in memory — only its resident working
+                // set, and only in the device's own pool. ROCm cannot address
+                // system RAM plus the iGPU carveout as one pool; it gets the
+                // larger of the pools (largest_mem_pool_gb), so that is the ceiling.
+                const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
+                if (streaming_model_exceeds_pool(working_set, largest_mem_pool_gb)) {
+                    filter_out = true;
+                    size_filtered_recipes.insert(recipe);
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(1);
+                    oss << "This model streams from disk but needs about " << working_set
+                        << " GB resident in GPU memory, and this device's largest memory "
+                        << "pool is only " << largest_mem_pool_gb << " GB.";
+                    filter_reason = oss.str();
+                }
+            } else if (system_ram_gb > 0.0 && info.size > max_model_size_gb) {
+                // Non-streaming: the whole model must fit (80% of system RAM).
                 filter_out = true;
                 size_filtered_recipes.insert(recipe);
                 std::ostringstream oss;
@@ -3632,6 +3648,15 @@ std::set<std::string> ModelManager::recipes_missing_all_models(
     return hidden;
 }
 
+double ModelManager::streaming_working_set_gb(double min_resident_gb, double size_gb) {
+    return min_resident_gb > 0.0 ? min_resident_gb : size_gb;
+}
+
+bool ModelManager::streaming_model_exceeds_pool(double working_set_gb, double pool_gb) {
+    // pool <= 0 means the device pool is unknown: don't hide on missing data.
+    return pool_gb > 0.0 && working_set_gb > pool_gb;
+}
+
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
     cloud_registry_ = registry;
 }
@@ -3673,7 +3698,8 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         models = backends::CloudServer::discover_models(
             provider, api_key, base_url,
             cloud_registry_->allow_insecure_http_for(provider),
-            cloud_registry_->auth_header_for(provider));
+            cloud_registry_->auth_header_for(provider),
+            cloud_registry_->wire_format_for(provider));
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;
@@ -5463,6 +5489,18 @@ void ModelManager::download_from_registry(const ModelInfo& info,
             }
             files_to_download[repo_id].push_back(variant);
         }
+    }
+
+    for (auto& [repo_id, files] : files_to_download) {
+        (void)repo_id;
+        std::set<std::string> seen;
+        std::vector<std::string> unique_files;
+        for (auto& filename : files) {
+            if (seen.insert(filename).second) {
+                unique_files.push_back(filename);
+            }
+        }
+        files = std::move(unique_files);
     }
 
     int total_files = 0;
