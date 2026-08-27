@@ -80,6 +80,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "llm_pool_autosize": true,
   "log_file": "auto",
   "log_level": "info",
   "log_max_file_size_mb": 10,
