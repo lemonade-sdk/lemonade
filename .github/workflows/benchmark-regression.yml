@@ -579,6 +579,8 @@ jobs:
           results_dir = Path("bench-history/results")
           leaderboard = {}
           lemonade_version = None
+          forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
+          experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
           for run_file in sorted(results_dir.rglob("run-*.json")):
             if "regression" in run_file.name:
               continue
@@ -674,6 +676,7 @@ jobs:
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
             "lemonade_version": lemonade_version,
+            "experimental_forks": experimental_forks,
             "by_model_scenario": leaderboard,
             "history": history,
           }

@@ -369,6 +369,7 @@ def run_bench(
             "fork_repo": fork["repo"],
             "fork_version": version,
             "fork_backend": backend,
+            "experimental": fork.get("experimental", False),
         }
     )
     # CI provenance so the dashboard can link each number back to its run.
@@ -656,8 +657,14 @@ def main() -> int:
                     f"  Skipping POST /install — fork provides its own prebuilt binary"
                 )
 
-        # Fetch model list from registry now that lemond is confirmed running
+        # Fetch model list: global --model-filter wins, then per-fork model_filter
+        # from benchmark_forks.json (used by experimental backends whose models are
+        # not in the hot llamacpp list), then fall back to the live registry.
         run_models = models
+        if not run_models:
+            run_models = fork.get("model_filter", [])
+            if run_models:
+                print(f"  Models (from fork model_filter): {run_models}")
         if not run_models and not args.dry_run:
             run_models = get_models_from_registry(base_url)
             if run_models:
