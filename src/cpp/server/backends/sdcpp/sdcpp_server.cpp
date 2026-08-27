@@ -30,6 +30,10 @@ namespace backends {
 
 
 namespace {
+// Diffusion on CPU runs for many minutes; HttpClient's default would cut a
+// healthy generation short. 0 here would mean "use the default", not "no limit".
+constexpr long kImageRequestTimeoutSeconds = 3600;
+
 bool is_rocm_backend(const std::string& backend) {
     return backend == "rocm" || backend == "rocm-stable";
 }
@@ -561,8 +565,7 @@ json SDServer::image_generations(const json& request) {
     LOG(DEBUG, "SDServer") << "Forwarding request to sd-server: "
                   << sd_request.dump(2) << std::endl;
 
-    // Image generation can take 20+ minutes for large models; avoid timeout.
-    return forward_request("/v1/images/generations", sd_request, 0);
+    return forward_request("/v1/images/generations", sd_request, kImageRequestTimeoutSeconds);
 }
 
 json SDServer::image_edits(const json& request) {
@@ -601,7 +604,7 @@ json SDServer::image_edits(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 0);
+    return forward_multipart_request("/v1/images/edits", fields, kImageRequestTimeoutSeconds);
 }
 
 json SDServer::image_variations(const json& request) {
@@ -633,7 +636,7 @@ json SDServer::image_variations(const json& request) {
                   << " size=" << size
                   << std::endl;
 
-    return forward_multipart_request("/v1/images/edits", fields, 0);
+    return forward_multipart_request("/v1/images/edits", fields, kImageRequestTimeoutSeconds);
 }
 
 std::string SDServer::upscale_via_cli(
