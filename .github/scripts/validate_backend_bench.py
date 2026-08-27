@@ -71,34 +71,16 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "") -> str:
+def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "", pinned: str = "") -> str:
+    if pinned:
+        return pinned
     if tag_prefix:
         releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
         for r in releases:
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    try:
-        return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
-    except Exception:
-        # Some orgs (e.g. ROCm) block API access via classic PATs and GITHUB_TOKEN.
-        # Fall back to the unauthenticated redirect: GET /releases/latest returns a
-        # 302 whose Location header contains the tag name — no auth needed.
-        url = f"https://github.com/{repo}/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "lemonade-bench"})
-        opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
-        # Don't follow redirects — we want the Location header.
-        class _NoRedirect(urllib.request.HTTPRedirectHandler):
-            def redirect_request(self, *a, **kw):
-                return None
-        opener = urllib.request.build_opener(_NoRedirect())
-        try:
-            opener.open(req, timeout=15)
-        except urllib.error.HTTPError as e:
-            location = e.headers.get("Location", "")
-            if location:
-                return location.rstrip("/").split("/")[-1]
-            raise RuntimeError(f"Could not resolve latest release for {repo}") from e
+    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
@@ -613,7 +595,8 @@ def main() -> int:
             print(f"Downloading binary for {fork_id}...")
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
-                version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+                pinned = fork.get("version", "") if fork.get("version_source") == "pinned" else ""
+                version = resolve_latest_version(fork["repo"], args.token, tag_prefix, pinned)
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
