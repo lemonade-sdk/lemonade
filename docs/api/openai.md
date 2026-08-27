@@ -647,7 +647,6 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 | `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. If not specified, a random seed is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `skip_implicit_upscaling` | No | Boolean. If `true`, skip any auto-upscale (skip any auto-upscale configured via `pixel_upscaler`). Defaults to `false`. Replaces the legacy `skip_upscale` field. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `pixel_upscaler`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `pixel_upscaler` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `pixel_upscaler` recipe option. Works with both `sd-cpp` and `thenoise` upscalers. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
