@@ -334,6 +334,52 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
           info.route_policy != nullptr);
 }
 
+// #2748 follow-up: resolve_component's own pre-filter fallback must bridge a
+// bare name to its canonical id too, not just get_model_type's -- otherwise
+// the declared-component check rejects the policy before get_model_type ever
+// runs. Here `components` lists the canonical id but the classifier
+// references the bare name, the opposite pairing from the test above.
+static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManager& manager) {
+    manager.register_user_model(
+        "user.npu-clf2",
+        json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
+             {"checkpoint", "example/npu-clf2"}});
+
+    json doc = {
+        {"model_name", "user.RouterFilteredBare"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "user.npu-clf2"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "npu-clf2"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFilteredBare", doc);
+
+    auto info = manager.get_model_info("user.RouterFilteredBare");
+    check("router policy still parses when the classifier references the "
+          "filtered component by its bare name (#2748)",
+          info.route_policy != nullptr);
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -353,6 +399,7 @@ int main() {
     test_inline_capability_matches_registration(manager);
     test_backend_capability_over_chat_indicator(manager);
     test_filtered_classifier_component_does_not_drop_policy(manager);
+    test_filtered_classifier_bare_name_resolves_through_alias(manager);
     test_register_preserves_routing(manager);
 
     fs::remove_all(temp);

@@ -3037,16 +3037,19 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Snapshot every known model's type before hardware filtering removes some
-    // of them from all_models (#2748): a router's classifier component can name
-    // a model this host can't run right now (no NPU, insufficient memory, not
-    // yet downloaded), which must not be indistinguishable from a name that
-    // isn't a model at all. The routing-policy resolver below falls back to
-    // this so that case still resolves a type and parses; the classifier then
-    // fails at evaluate() time instead, where on_error already applies per rule.
+    // Snapshot type + bare-name alias before hardware filtering removes some
+    // models from all_models (#2748): the resolver below falls back to this so
+    // a router referencing a currently-unavailable model still parses; that
+    // classifier then fails only at evaluate() time, where on_error applies.
     std::map<std::string, ModelType> pre_filter_types;
+    std::map<std::string, std::string> pre_filter_bare_aliases;
     for (const auto& [name, info] : all_models) {
         pre_filter_types[name] = info.type;
+        std::string bare = name;
+        if (auto canon = parse_canonical_id(name)) {
+            bare = canon->bare_name;
+        }
+        pre_filter_bare_aliases.emplace(bare, name);
     }
 
     // Step 2: Filter by backend availability. This is the full-registry pass, so
@@ -3099,23 +3102,22 @@ void ModelManager::build_cache() {
     cache_valid_ = true;
 
     // Parse each collection.router model's routing policy now, while the cache
-    // and its alias map are fully built and the lock is still held. The parser's
-    // component resolver needs only alias resolution, which is a direct lookup
-    // into public_model_aliases_ here - exactly what resolve_model_name() does,
-    // minus its own build_cache()+lock. Calling resolve_model_name() here would
-    // re-lock this non-recursive mutex and deadlock, so the lookup is inlined.
+    // and its alias map are fully built and the lock is still held (inlined
+    // rather than resolve_model_name()/get_model_info(), which would re-lock
+    // this non-recursive mutex). Both resolvers fall back to the pre-filter
+    // snapshots above (#2748) so a component this host can't run right now
+    // still resolves and the policy still parses; that classifier then fails
+    // only at evaluate() time, where on_error already applies.
     RoutingPolicyParseOptions policy_options;
     policy_options.resolve_component =
-        [this](const std::string& name) -> std::optional<std::string> {
+        [this, &pre_filter_bare_aliases](const std::string& name) -> std::optional<std::string> {
         auto it = public_model_aliases_.find(name);
-        return it != public_model_aliases_.end() ? it->second : name;
+        if (it != public_model_aliases_.end()) {
+            return it->second;
+        }
+        auto pre_it = pre_filter_bare_aliases.find(name);
+        return pre_it != pre_filter_bare_aliases.end() ? pre_it->second : name;
     };
-    // Direct lookup into the map already being built, same rationale as
-    // resolve_component above: models_cache_ is populated and the lock is
-    // still held, so this avoids re-entering get_model_info()'s own locking.
-    // Falls back to pre_filter_types (#2748) for a component this host
-    // currently can't run: its type is still known, so the policy still
-    // parses instead of being dropped whole over one unavailable classifier.
     policy_options.get_model_type = [this, &pre_filter_types](
                                          const std::string& name) -> std::optional<ModelType> {
         auto it = models_cache_.find(name);
