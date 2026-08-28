@@ -12,7 +12,7 @@ import {
   isCompatibleHuggingFaceVariantResult,
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
-import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
+import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -1073,6 +1073,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const unknownActiveModelDownloadsRef = useRef<Set<string>>(new Set());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
@@ -2283,6 +2284,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
     return merged;
   }, [visibleServerModels, loadedModels]);
+
+  useEffect(() => {
+    const knownNames = new Set(visibleServerModels.map(model => customModelNameKey(modelName(model))));
+    const unknownActiveIds = new Set(
+      downloadItems
+        .filter(item => item.downloadType === 'model' && isDownloadActive(item))
+        .filter(item => !knownNames.has(customModelNameKey(item.modelName)))
+        .map(item => item.id),
+    );
+    const appeared = [...unknownActiveIds].some(
+      id => !unknownActiveModelDownloadsRef.current.has(id),
+    );
+    unknownActiveModelDownloadsRef.current = unknownActiveIds;
+    if (appeared) void refresh();
+  }, [downloadItems, refresh, visibleServerModels]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
