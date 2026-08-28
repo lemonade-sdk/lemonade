@@ -486,11 +486,21 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 ### Allowed Origins
 
-The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+The `LEMONADE_ALLOWED_ORIGINS` environment variable (or `allowed_origins` in server configuration) controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
 
 > [!NOTE]
 > `LEMONADE_ALLOWED_ORIGINS` specifies the **client application/web page's origin** (where the request originates), **not** the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an `Origin` header and are not restricted by origin validation.
 
+- **Local/Loopback, Desktop & Same-Origin Access (Zero-Configuration)**:
+  - **Loopback & Subdomains**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) are permitted automatically.
+  - **Native Desktop Apps**: Native desktop application schemes (`lemonade://`, `file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for client connections.
+  - **Same-Origin LAN & mDNS Web App Access**: Direct browser requests to Lemonade's built-in web interface over active network interfaces (e.g. `http://192.168.1.50:13305/app`, `http://100.100.x.x:13305/app`) and local mDNS hostnames (`http://<hostname>.local:13305/app`) are dynamically permitted without manual configuration because they are same-origin to the server's own interfaces.
+- **When Allowed Origins Must Be Configured**:
+  - **Cross-Origin Web Applications**: Any external or third-party web application hosted on a different domain or port connecting to Lemonade in the browser (e.g. a web UI hosted at `https://app.lemonade.dev` or `http://localhost:3000` calling Lemonade on `http://192.168.1.50:13305`).
+  - **Reverse Proxies & TLS Frontends**: Reverse proxies, tunnels, or frontends terminating TLS (e.g., `https://lemonade.example.com` or Tailscale Serve at `https://mybox.tailnet.ts.net`). Because proxies forward HTTPS requests to an HTTP server and present external hostnames not belonging to local network interfaces, their external origins must be explicitly allowlisted. (By contrast, direct access via a local Tailscale interface IP `http://100.x.y.z:13305` is zero-config).
+  - **Sandboxed Frames**: Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `LEMONADE_ALLOWED_ORIGINS` to prevent CSWSH attacks.
+  > [!NOTE]
+  > When an explicit `allowed_origins` list is configured, it is authoritative: zero-configuration fallback for unlisted non-loopback LAN origins is disabled. If you access the server through both a reverse proxy and direct LAN IP in a browser, include both in `allowed_origins`.
 - **Format**: A comma-separated list of complete origins including the scheme and optional port (e.g., `https://app.lemonade.dev,http://localhost:3000`).
   > [!WARNING]
   > Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
@@ -498,7 +508,6 @@ The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web or
 - **Security Implications of `*`**:
   > [!WARNING]
   > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
-- **Local/Loopback & Desktop Access**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) and custom desktop application schemes (`file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for local client connections. Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `LEMONADE_ALLOWED_ORIGINS` to prevent CSWSH attacks.
 
 ## Model Synchronization & Auto-Updates
 
