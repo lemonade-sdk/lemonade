@@ -165,10 +165,9 @@ private:
     // policy. Passed to Router::reconcile_routing_helpers after a policy is
     // removed so helpers no remaining policy needs are reclaimed.
     std::set<std::string> active_policy_helper_models();
-    // Union of distinct local (non-cloud) LLM candidates across every active
-    // router collection's policy, plus a per-policy breakdown for /health.
-    // Only the union feeds Router::reconcile_llm_candidate_floor — the pool
-    // it floors is shared, not scoped per policy.
+    // Computes the value residency_limit() floors the LLM pool to
+    // (model_residency.h). Only `models`'s size feeds that floor;
+    // per_policy_counts exists solely for /health diagnostics.
     struct LlmCandidateFloorInfo {
         std::set<std::string> models;
         std::map<std::string, int> per_policy_counts;

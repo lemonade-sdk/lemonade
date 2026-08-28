@@ -329,13 +329,11 @@ private:
     // Highest policy-notification generation applied to needed_helper_models_.
     // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
     uint64_t last_reconcile_generation_ = 0;
-    // Union of distinct local LLM candidates across active routing policies,
-    // used to floor the Standard/LLM pool so alternating between them doesn't
-    // reload a candidate on every switch. Guarded by load_mutex_. Kept
-    // separately from needed_helper_models_/last_reconcile_generation_ even
-    // though both are stamped from the same policy-change generation — they're
-    // independent state, and reusing one counter would make the second
-    // reconcile call of a pair look like a stale duplicate of the first.
+    // Feeds residency_limit()'s LLM floor (model_residency.h). Guarded by
+    // load_mutex_. Kept separate from last_reconcile_generation_ even though
+    // both are stamped from the same policy-change generation — reusing one
+    // counter would make the second reconcile call of a pair look like a
+    // stale duplicate of the first.
     int llm_candidate_floor_ = 0;
     uint64_t last_llm_floor_generation_ = 0;
     // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
