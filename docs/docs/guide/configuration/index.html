@@ -3023,7 +3023,7 @@
 <li><strong>Linux — <code>dnf</code>/<code>.rpm</code> (Fedora/Red Hat):</strong> <code>/var/lib/lemonade/config.json</code></li>
 </ul>
 <blockquote>
-<p>Note: The systemd service runs as the <code>lemonade</code> user. Persistent config lives in <code>/var/lib/lemonade</code> (systemd StateDirectory), while cached models go to <code>/var/cache/huggingface</code> (CacheDirectory). For Debian/Ubuntu, upgrading the package automatically migrates data from the old <code>/opt/var/lib/lemonade</code> path to <code>/var/lib/lemonade</code>.</p>
+<p>Note: The systemd service runs as the <code>lemonade</code> user. Persistent config lives in <code>/var/lib/lemonade</code> (systemd StateDirectory), downloaded backends go to <code>/var/cache/lemonade</code> (CacheDirectory), and models are cached under <code>/var/lib/lemonade/.cache/huggingface</code>. For Debian/Ubuntu, upgrading the package automatically migrates data from the old <code>/opt/var/lib/lemonade</code> path to <code>/var/lib/lemonade</code>.</p>
 </blockquote>
 <ul>
 <li><strong>Windows:</strong> <code>%USERPROFILE%\.config\lemonade\config.json</code></li>
