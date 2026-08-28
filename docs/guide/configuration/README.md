@@ -63,6 +63,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "prefer_system": false
   },
   "global_timeout": 600,
+  "stream_stall_timeout": 600,
   "host": "localhost",
   "inhibit_suspend": true,
   "kokoro": {
@@ -200,6 +201,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering rotation (steady-state footprint bounded to ~`log_max_file_size_mb * (log_max_files + 1)`) |
 | `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
+| `stream_stall_timeout` | int | 600 | Seconds an unbounded streaming request may deliver no bytes before it is aborted as a dead stream (0 disables the silence bound; the backend watchdog then owns dead-backend detection). Raised from the old hard-coded 120s so long prefill / reasoning-only gaps on large models are not killed (#3386, #3415) |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond` |

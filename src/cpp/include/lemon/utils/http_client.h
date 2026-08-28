@@ -120,6 +120,21 @@ public:
         return download_rate_limit_bytes_per_second_.load();
     }
 
+    // Streaming-stall window: how long an unbounded streaming transfer may
+    // deliver no bytes before libcurl aborts it (CURLOPT_LOW_SPEED_*).
+    // Configurable via `stream_stall_timeout`; 0 disables the silence bound
+    // entirely (the backend watchdog then owns dead-backend detection).
+    // The default (600s) comfortably exceeds any legitimate prefill/thinking
+    // gap on large models — the old fixed 120s killed healthy long
+    // generations (lemonade-sdk/lemonade#3386, #3415).
+    static void set_stream_stall_seconds(long seconds) {
+        stream_stall_seconds_ = seconds;
+    }
+
+    static long get_stream_stall_seconds() {
+        return stream_stall_seconds_.load();
+    }
+
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
     static HttpResponse get(const std::string& url,
                            const std::map<std::string, std::string>& headers = {},
@@ -156,8 +171,8 @@ public:
     //
     // timeout_seconds=0 uses default_timeout_seconds_. A total timeout would
     // cut off a long but healthy generation, so this bounds upstream silence
-    // instead: the transfer is aborted only after kStreamStallSeconds with no
-    // progress, which a streaming response cannot legitimately exceed.
+    // instead: the transfer is aborted only after stream_stall_seconds (see
+    // set_stream_stall_seconds; 0 = disabled) with no progress.
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,
@@ -186,6 +201,7 @@ public:
 private:
     static std::atomic<long> default_timeout_seconds_;
     static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
+    static std::atomic<long> stream_stall_seconds_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,

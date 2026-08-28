@@ -30,6 +30,8 @@ std::atomic<long> HttpClient::default_timeout_seconds_{300};
 
 std::atomic<int64_t> HttpClient::download_rate_limit_bytes_per_second_{0};
 
+std::atomic<long> HttpClient::stream_stall_seconds_{600};
+
 // Serializes transfers so concurrent downloads cannot exceed the cap in aggregate.
 static std::mutex g_download_gate;
 
@@ -38,10 +40,6 @@ namespace {
 // Bounds the TCP handshake so an unroutable host cannot hold a worker for the
 // full request timeout.
 constexpr long kConnectTimeoutSeconds = 30;
-
-// How long a stream may deliver nothing before it is treated as dead. Well
-// above any inter-token gap, well below "never".
-constexpr long kStreamStallSeconds = 120;
 
 // Resolves the 0-means-default convention shared by every request method.
 // Without this, curl reads 0 as "no timeout" and a silent upstream parks the
@@ -776,9 +774,14 @@ HttpResponse HttpClient::post_stream(const std::string& url,
     }
     // A total timeout would kill a long but healthy generation, so an
     // unqualified request is bounded by upstream silence instead of duration.
+    // The silence window is configurable (stream_stall_timeout; 0 = disabled,
+    // e.g. when the caller explicitly wants no bound).
     if (timeout_seconds == 0) {
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kStreamStallSeconds);
+        const long stall_seconds = HttpClient::get_stream_stall_seconds();
+        if (stall_seconds > 0) {
+            curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+            curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, stall_seconds);
+        }
     } else {
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
     }

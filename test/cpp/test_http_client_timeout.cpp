@@ -153,6 +153,30 @@ int main() {
                 "post_stream: explicit timeout abandons a silent upstream");
     }
 
+    // The silence bound for timeout_seconds=0 is configurable: a tiny window
+    // abandons a silent upstream quickly (the fixed 120s regression, #3386/#3415,
+    // killed healthy long prefills instead).
+    {
+        const long saved = HttpClient::get_stream_stall_seconds();
+        HttpClient::set_stream_stall_seconds(2);
+        const bool returned = returns_within_ceiling([&] {
+            HttpClient::post_stream(
+                base + "/silent", "{}",
+                [](const char*, size_t) { return true; },
+                {}, 0, nullptr, policy);
+        });
+        HttpClient::set_stream_stall_seconds(saved);
+        r.check(returned,
+                "post_stream: timeout 0 honors the configured stream-stall window");
+    }
+
+    // And the default window must be generous enough to cover long prefill gaps
+    // (the old 120s was not), while still being a finite safety net.
+    {
+        const long stall = HttpClient::get_stream_stall_seconds();
+        r.check(stall >= 600, "post_stream: default stream-stall window is >= 600s");
+    }
+
     // The sentinel is the only way to ask for an unbounded transfer, so it must
     // not be confused with 0.
     r.check(HttpClient::kNoTimeout != 0,

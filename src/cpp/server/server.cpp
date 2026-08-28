@@ -375,6 +375,10 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
+    // Streaming-stall silence window (0 disables; backend watchdog then owns
+    // dead-backend detection during active streams)
+    utils::HttpClient::set_stream_stall_seconds(config->stream_stall_timeout());
+
     // Global download rate limit
     utils::HttpClient::set_download_rate_limit(config->download_rate_limit_bytes_per_second());
 

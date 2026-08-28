@@ -25,6 +25,7 @@
     "prefer_system": false
   },
   "global_timeout": 600,
+  "stream_stall_timeout": 600,
   "host": "localhost",
   "inhibit_suspend": true,
   "kokoro": {

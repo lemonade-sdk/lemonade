@@ -410,6 +410,11 @@ long RuntimeConfig::global_timeout() const {
     return config_["global_timeout"].get<long>();
 }
 
+long RuntimeConfig::stream_stall_timeout() const {
+    std::shared_lock lock(mutex_);
+    return config_["stream_stall_timeout"].get<long>();
+}
+
 int RuntimeConfig::max_loaded_models() const {
     std::shared_lock lock(mutex_);
     return config_["max_loaded_models"].get<int>();
@@ -857,6 +862,13 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         if (value.get<long>() <= 0) {
             throw std::invalid_argument("'global_timeout' must be positive");
+        }
+    } else if (key == "stream_stall_timeout") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'stream_stall_timeout' must be an integer");
+        }
+        if (value.get<long>() < 0) {
+            throw std::invalid_argument("'stream_stall_timeout' must be >= 0 (0 disables the silence bound)");
         }
     } else if (key == "max_loaded_models") {
         if (!value.is_number_integer()) {

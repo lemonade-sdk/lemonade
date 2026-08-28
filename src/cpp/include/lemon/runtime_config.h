@@ -42,6 +42,7 @@ public:
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
     long global_timeout() const;
+    long stream_stall_timeout() const;
     int max_loaded_models() const;
     int64_t download_rate_limit_bytes_per_second() const;
 
