@@ -412,7 +412,10 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             static_cast<int>(floor_info.models.size()), generation);
         {
             std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
-            llm_candidate_floor_info_ = std::move(floor_info);
+            if (generation > last_llm_floor_info_generation_) {
+                last_llm_floor_info_generation_ = generation;
+                llm_candidate_floor_info_ = std::move(floor_info);
+            }
         }
         router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
     });
@@ -432,7 +435,10 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         static_cast<int>(seed_floor_info.models.size()), seed_generation);
     {
         std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
-        llm_candidate_floor_info_ = std::move(seed_floor_info);
+        if (seed_generation > last_llm_floor_info_generation_) {
+            last_llm_floor_info_generation_ = seed_generation;
+            llm_candidate_floor_info_ = std::move(seed_floor_info);
+        }
     }
     router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
@@ -7421,6 +7427,12 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     udp_beacon_.startBroadcasting(13305, port_, 2);
                 }
             }
+        } else if (key == "llm_pool_autosize" || key == "max_loaded_models") {
+            // Neither key routes through a policy change, so nothing else would
+            // ever call this: without it, disabling autosize (or lowering
+            // max_loaded_models) leaves an already-over-limit pool exactly as
+            // it was until enough future admissions evict it down one at a time.
+            router_->enforce_llm_pool_capacity();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;

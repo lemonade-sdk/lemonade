@@ -77,6 +77,20 @@ struct LlmPoolFloorTestHook {
         std::lock_guard<std::mutex> lock(r.load_mutex_);
         return r.llm_candidate_floor_;
     }
+
+    static int resident_count(Router& r, const std::vector<std::string>& names) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        int count = 0;
+        for (const auto& name : names) {
+            for (const auto& s : r.loaded_servers_) {
+                if (s->get_model_name() == name) {
+                    ++count;
+                    break;
+                }
+            }
+        }
+        return count;
+    }
 };
 
 }  // namespace lemon
@@ -192,6 +206,43 @@ static void test_autosize_off_clamps_applied_floor() {
           !LlmPoolFloorTestHook::resident(router, "off.old"));
 }
 
+static void test_reconcile_converges_pool_down_when_floor_drops() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("drop.a"));
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("drop.b"));
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("drop.c"));
+    LlmPoolFloorTestHook::reconcile_floor(router, 3);
+    const int before = LlmPoolFloorTestHook::resident_count(router, {"drop.a", "drop.b", "drop.c"});
+
+    // A policy edit that drops candidates lowers the floor without any
+    // admission ever happening; the pool must converge on its own rather
+    // than waiting for future loads to evict one at a time.
+    LlmPoolFloorTestHook::reconcile_floor(router, 1);
+
+    check("reconcile converges an already-populated pool down when the floor drops",
+          before == 3 &&
+              LlmPoolFloorTestHook::resident_count(
+                  router, {"drop.a", "drop.b", "drop.c"}) == 1);
+}
+
+static void test_enforce_llm_pool_capacity_reclaims_after_live_config_change() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("cfg.a"));
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("cfg.b"));
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("cfg.c"));
+    LlmPoolFloorTestHook::reconcile_floor(router, 3);
+
+    // Mirrors Server::apply_config_side_effects: a live /internal/set toggle,
+    // not a policy change, so nothing but an explicit enforce call reclaims it.
+    config.set({{"llm_pool_autosize", false}});
+    router.enforce_llm_pool_capacity();
+
+    check("disabling autosize live reclaims an already-populated pool immediately",
+          LlmPoolFloorTestHook::resident_count(router, {"cfg.a", "cfg.b", "cfg.c"}) == 1);
+}
+
 int main() {
     // A background eviction-engine thread runs inside every Router below and
     // reads RuntimeConfig::global() for unrelated auto_evict bookkeeping; it
@@ -209,6 +260,8 @@ int main() {
     test_floor_still_evicts_past_capacity();
     test_stale_generation_ignored();
     test_autosize_off_clamps_applied_floor();
+    test_reconcile_converges_pool_down_when_floor_drops();
+    test_enforce_llm_pool_capacity_reclaims_after_live_config_change();
 
     RuntimeConfig::set_global(nullptr);
 

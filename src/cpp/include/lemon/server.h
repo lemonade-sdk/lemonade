@@ -395,6 +395,10 @@ private:
     // reads it from a different thread than the reconcile callers write it.
     std::mutex llm_candidate_floor_info_mutex_;
     LlmCandidateFloorInfo llm_candidate_floor_info_;
+    // Nothing serializes concurrent models_changed_callback invocations, so
+    // an older one can finish after a newer one; this rejects it the same
+    // way Router::last_llm_floor_generation_ does for the Router's own copy.
+    uint64_t last_llm_floor_info_generation_ = 0;
     std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;

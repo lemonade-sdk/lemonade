@@ -455,7 +455,8 @@ void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
     llm_candidate_floor_ = floor;
 
     const int max_loaded = config_->max_loaded_models();
-    if (max_loaded != -1 && floor > max_loaded && !config_->auto_evict()) {
+    const bool autosize = config_->llm_pool_autosize();
+    if (autosize && max_loaded != -1 && floor > max_loaded && !config_->auto_evict()) {
         if (floor != last_llm_floor_warned_) {
             LOG(WARNING, "Router") << "LLM pool floor raised to " << floor
                                    << " (above max_loaded_models=" << max_loaded
@@ -466,6 +467,32 @@ void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
         }
     } else {
         last_llm_floor_warned_ = 0;
+    }
+
+    enforce_llm_pool_capacity_locked();
+}
+
+void Router::enforce_llm_pool_capacity() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    enforce_llm_pool_capacity_locked();
+}
+
+void Router::enforce_llm_pool_capacity_locked() {
+    const int applied_floor = config_->llm_pool_autosize() ? llm_candidate_floor_ : 0;
+    const int effective_limit = residency_limit(ResidencyClass::Standard, ModelType::LLM,
+                                                config_->max_loaded_models(), applied_floor);
+    if (effective_limit == -1) {
+        return;
+    }
+
+    int remaining_attempts = count_servers_in_pool(ModelType::LLM, ResidencyClass::Standard, "");
+    while (remaining_attempts-- > 0 &&
+           count_servers_in_pool(ModelType::LLM, ResidencyClass::Standard, "") > effective_limit) {
+        WrappedServer* lru = find_lru_server_in_pool(ModelType::LLM, ResidencyClass::Standard, "");
+        if (!lru) {
+            break;  // nothing left to evict is pinned, not stuck
+        }
+        evict_server(lru, EVICTION_TIMEOUT);
     }
 }
 

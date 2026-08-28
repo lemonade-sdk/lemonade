@@ -184,12 +184,24 @@ public:
                                    uint64_t generation);
 
     // Raise the Standard/LLM pool's effective capacity to `floor` so active
-    // policies' local candidates can stay resident together. Never evicts
-    // here — a lower floor just means the next admission enforces the new
-    // ceiling, the same way a lowered max_loaded_models already behaves.
-    // Generation-guarded the same way as reconcile_routing_helpers, but with
-    // its own counter (see llm_candidate_floor_ above).
+    // policies' local candidates can stay resident together. Generation-
+    // guarded the same way as reconcile_routing_helpers, but with its own
+    // counter (see llm_candidate_floor_ above). Ends by calling
+    // enforce_llm_pool_capacity_locked() so a floor that just DROPPED (fewer
+    // active candidates) evicts down to it immediately rather than waiting
+    // for future admissions to do it one at a time.
     void reconcile_llm_candidate_floor(int floor, uint64_t generation);
+
+    // Evict LRU LLM residents until the pool is at or under its current
+    // effective limit. The admission path (ensure_residency_capacity) only
+    // ever evicts one resident to make room for a new one; this is the
+    // proactive counterpart for when the limit itself shrinks out from under
+    // an already-populated pool — e.g. disabling llm_pool_autosize, lowering
+    // max_loaded_models, or a policy edit that drops candidates. Called from
+    // Server::apply_config_side_effects on the config keys that change the
+    // limit, in addition to firing automatically from a policy-driven floor
+    // change above.
+    void enforce_llm_pool_capacity();
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -365,6 +377,10 @@ private:
                                                   const std::string& model_name) const;
     void ensure_residency_capacity(ModelType type, ResidencyClass residency_class,
                                    const std::string& model_name);
+    // Caller holds load_mutex_. Bounded by the pool's own size so a resident
+    // evict_server() fails to remove (busy past its timeout, or pinned)
+    // can't spin the loop forever.
+    void enforce_llm_pool_capacity_locked();
     void transition_server_residency_locked(
         WrappedServer* server,
         ResidencyClass requested_residency_class);
