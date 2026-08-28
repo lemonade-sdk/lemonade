@@ -165,8 +165,8 @@ private:
     // policy. Passed to Router::reconcile_routing_helpers after a policy is
     // removed so helpers no remaining policy needs are reclaimed.
     std::set<std::string> active_policy_helper_models();
-    // Computes the value residency_limit() floors the LLM pool to
-    // (model_residency.h). Only `models`'s size feeds that floor;
+    // Computes the LLM pool floor — see residency_limit() in
+    // model_residency.h. Only `models`'s size feeds that floor;
     // per_policy_counts exists solely for /health diagnostics.
     struct LlmCandidateFloorInfo {
         std::set<std::string> models;

@@ -329,7 +329,7 @@ private:
     // Highest policy-notification generation applied to needed_helper_models_.
     // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
     uint64_t last_reconcile_generation_ = 0;
-    // Feeds residency_limit()'s LLM floor (model_residency.h). Guarded by
+    // Feeds residency_limit() — see model_residency.h. Guarded by
     // load_mutex_. Kept separate from last_reconcile_generation_ even though
     // both are stamped from the same policy-change generation — reusing one
     // counter would make the second reconcile call of a pair look like a
