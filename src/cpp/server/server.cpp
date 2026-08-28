@@ -5957,7 +5957,7 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
         };
         if (gguf_only) response["format"] = "gguf";
         if (!recipe.empty()) {
-            response["recipe"] = recipe;
+            response["scoped_to"] = recipe;
             const std::string constraint = backends::model_constraint_summary(recipe);
             if (!constraint.empty()) response["constraint"] = constraint;
         }

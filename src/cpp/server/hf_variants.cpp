@@ -572,6 +572,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     }
     out["variants"] = std::move(variants_json);
     if (!constraint.empty()) {
+        out["scoped_to"] = recipe;
         out["constraint"] = constraint;
         out["filtered_out"] = filtered_out;
     }

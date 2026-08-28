@@ -1009,7 +1009,7 @@ curl 'http://localhost:13305/v1/registry/search?source=modelscope&query=qwen&for
 |-------|-------------|
 | `source`, `query` | Echoed input (`source` canonicalized to `huggingface` or `modelscope`). |
 | `format` | Present only when `format=gguf` was requested. |
-| `recipe`, `constraint` | Present only when `recipe=` was requested and that backend declares model constraints. `constraint` summarizes what it serves, e.g. `qwen3_moe (Q4_K_M)`. |
+| `scoped_to`, `constraint` | Present only when `recipe=` was requested and that backend declares model constraints. `scoped_to` echoes the requested recipe; `constraint` summarizes what it serves, e.g. `qwen3_moe (Q4_K_M)`. |
 | `total` | Total match count reported by the upstream registry; may exceed the number of returned results. |
 | `results[]` | Up to `limit` repositories, each with `repository_id`, `display_name`, `source`, `repository_type`, `description`, `tags`, `task`, `downloads`, `likes`, `has_gguf`, and `architecture`. `architecture` is the model architecture the registry reports and is empty whenever it reports none — which, for Hugging Face GGUF repositories, is always. Like `has_gguf` it is a hint derived from registry metadata, not proof of a servable model — [`/v1/pull/variants`](#get-v1pullvariants) performs the authoritative file-level validation. |
 
@@ -1031,7 +1031,7 @@ Inspect a Hugging Face GGUF repository and enumerate the variants (quantizations
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `checkpoint` | Yes | Hugging Face repo id, e.g. `unsloth/Qwen3-8B-GGUF`. Passed as a query string. |
-| `recipe` | No | Drop variants the named backend cannot serve, e.g. `llamacpp`. When the backend declares model constraints the response also carries `constraint` (what it serves) and `filtered_out` (how many variants were removed), so a caller never has to guess why a variant is missing. Omitted, or a recipe declaring no constraints, returns every variant. |
+| `recipe` | No | Drop variants the named backend cannot serve, e.g. `llamacpp`. When the backend declares model constraints the response also carries `scoped_to` (the requested recipe), `constraint` (what it serves), and `filtered_out` (how many variants were removed). Note `recipe` remains the recipe the repo is pulled as, which is not the same field, so a caller never has to guess why a variant is missing. Omitted, or a recipe declaring no constraints, returns every variant. |
 
 Example request:
 

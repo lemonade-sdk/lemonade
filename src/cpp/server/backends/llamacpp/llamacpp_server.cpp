@@ -311,17 +311,6 @@ void LlamaCppServer::load(const std::string& model_name,
         LOG(DEBUG, "LlamaCpp") << "Using GGUF: " << gguf_path << std::endl;
     }
 
-    if (!backends::backend_supports_model(model_info.recipe,
-                                          model_info.gguf.architecture,
-                                          extract_gguf_quant(gguf_path))) {
-        const std::string arch = model_info.gguf.architecture.empty()
-            ? std::string("unknown") : model_info.gguf.architecture;
-        throw std::runtime_error(
-            "Model '" + model_name + "' (architecture " + arch + ") is not supported by the '" +
-            model_info.recipe + "' backend, which serves: " +
-            backends::model_constraint_summary(model_info.recipe));
-    }
-
     // Get mmproj path for vision models and drafter path for mtp or other drafting strategies
     std::string mmproj_path = model_info.resolved_path("mmproj");
     std::string draft_path = model_info.resolved_path("draft");

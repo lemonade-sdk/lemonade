@@ -1,5 +1,6 @@
 #include "lemon/router.h"
 #include "lemon/cloud_provider_registry.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
@@ -14,6 +15,7 @@
 #include "lemon/server_capabilities.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/error_types.h"
+#include "lemon/hf_variants.h"
 #include "lemon/recipe_options.h"
 #include "lemon/auto_tune.h"
 #include "telemetry.h"
@@ -811,6 +813,17 @@ void Router::load_model(const std::string& model_name,
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
+
+    // Every backend reaches load through here, including those that override
+    // WrappedServer::load() entirely, so a constrained backend cannot be handed
+    // a model it was never qualified for. Refuses before any eviction.
+    const std::string refusal = backends::model_load_refusal(
+        model_info.recipe,
+        model_info.gguf.architecture,
+        extract_gguf_quant(model_info.resolved_path()));
+    if (!refusal.empty()) {
+        throw std::runtime_error("Cannot load '" + canonical_model_name + "': " + refusal);
+    }
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);

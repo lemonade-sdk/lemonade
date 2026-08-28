@@ -295,6 +295,35 @@ static void test_architecture_hint_and_model_constraints() {
     check("an unknown quant is not treated as a mismatch",
           lemon::backends::model_constraints_allow(arch_and_quant, "qwen3_moe", ""));
 
+    // Tri-state: discovery tolerates Unknown, the load gate must not.
+    using lemon::backends::ModelCompatibility;
+    using lemon::backends::model_compatibility;
+    check("a listed quant is Supported",
+          model_compatibility(arch_and_quant, "qwen3moe", "Q4_K_M") == ModelCompatibility::Supported);
+    check("an unlisted quant is Unsupported",
+          model_compatibility(arch_and_quant, "qwen3moe", "Q8_0") == ModelCompatibility::Unsupported);
+    check("a non-matching architecture is Unsupported",
+          model_compatibility(arch_and_quant, "llama", "Q4_K_M") == ModelCompatibility::Unsupported);
+    check("an undetermined architecture is Unknown, not Supported",
+          model_compatibility(arch_and_quant, "", "Q4_K_M") == ModelCompatibility::Unknown);
+    check("an undetermined quant against a quant constraint is Unknown",
+          model_compatibility(arch_and_quant, "qwen3moe", "") == ModelCompatibility::Unknown);
+    check("an undetermined quant against an arch-only constraint is Supported",
+          model_compatibility(arch_only, "qwen3moe", "") == ModelCompatibility::Supported);
+    check("no constraints is Supported",
+          model_compatibility(none, "llama", "") == ModelCompatibility::Supported);
+
+    // The discovery predicate still passes Unknown; that is the difference.
+    check("discovery lets an undetermined quant through",
+          lemon::backends::model_constraints_allow(arch_and_quant, "qwen3moe", ""));
+
+    // A renamed GGUF yields no quant token, which the load gate must refuse
+    // rather than wave through.
+    check("an unconstrained recipe never refuses a load",
+          lemon::backends::model_load_refusal("llamacpp", "", "").empty());
+    check("an unknown recipe never refuses a load",
+          lemon::backends::model_load_refusal("no-such-recipe", "llama", "").empty());
+
     // Recipes with no registered descriptor gate nothing.
     check("an unknown recipe gates nothing",
           lemon::backends::backend_supports_model("no-such-recipe", "llama", "Q8_0"));

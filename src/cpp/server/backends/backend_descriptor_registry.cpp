@@ -35,14 +35,14 @@ bool recipe_has_rocm_channels(const std::string& recipe) {
     return d != nullptr && !d->rocm_channels.empty();
 }
 
-bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
-                             const std::string& architecture,
-                             const std::string& quant) {
+ModelCompatibility model_compatibility(const std::vector<ModelConstraint>& constraints,
+                                       const std::string& architecture,
+                                       const std::string& quant) {
     if (constraints.empty()) {
-        return true;
+        return ModelCompatibility::Supported;
     }
     if (architecture.empty()) {
-        return true;
+        return ModelCompatibility::Unknown;
     }
 
     const auto fold = [](const std::string& value) {
@@ -59,12 +59,40 @@ bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
     const std::string token = utils::to_lower(quant);
     for (const ModelConstraint& c : constraints) {
         if (fold(c.architecture) != arch) continue;
-        if (c.quants.empty() || token.empty()) return true;
+        if (c.quants.empty()) return ModelCompatibility::Supported;
+        if (token.empty()) return ModelCompatibility::Unknown;
         for (const std::string& allowed : c.quants) {
-            if (utils::to_lower(allowed) == token) return true;
+            if (utils::to_lower(allowed) == token) return ModelCompatibility::Supported;
         }
     }
-    return false;
+    return ModelCompatibility::Unsupported;
+}
+
+bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
+                             const std::string& architecture,
+                             const std::string& quant) {
+    return model_compatibility(constraints, architecture, quant) != ModelCompatibility::Unsupported;
+}
+
+std::string model_load_refusal(const std::string& recipe,
+                               const std::string& architecture,
+                               const std::string& quant) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr || d->supported_models.empty()) return "";
+
+    const ModelCompatibility verdict =
+        model_compatibility(d->supported_models, architecture, quant);
+    if (verdict == ModelCompatibility::Supported) return "";
+
+    const std::string serves = model_constraint_summary(recipe);
+    if (verdict == ModelCompatibility::Unknown) {
+        return "cannot confirm this model is compatible with the '" + recipe +
+               "' backend, which serves: " + serves +
+               " (architecture or quantization could not be determined)";
+    }
+    return "architecture " + (architecture.empty() ? std::string("unknown") : architecture) +
+           (quant.empty() ? std::string() : " / " + quant) +
+           " is not supported by the '" + recipe + "' backend, which serves: " + serves;
 }
 
 bool backend_supports_model(const std::string& recipe,
