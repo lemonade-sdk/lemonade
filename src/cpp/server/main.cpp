@@ -148,8 +148,7 @@ int main(int argc, char** argv) {
 
         utils::set_cache_dir(cli_config.cache_dir);
         utils::set_config_dir(cli_config.config_dir);
-        utils::migrate_legacy_json_files_to_config_dir(cli_config.cache_dir,
-                                                       cli_config.config_dir);
+        utils::migrate_legacy_paths(cli_config.cache_dir, cli_config.config_dir);
         json config_json = ConfigFile::load(cli_config.cache_dir,
                                             cli_config.config_dir);
 
