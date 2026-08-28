@@ -1167,6 +1167,55 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
+// Recover org/repo only for the active snapshots/<hash> entry of a
+// recognized HF/ModelScope cache. Other paths keep normal directory naming.
+static std::string hf_cache_repo_name_for_path(const fs::path& path, const fs::path& stop_at) {
+    static constexpr const char kHfPrefix[] = "models--";
+    static constexpr const char kMsPrefix[] = "modelscope--models--";
+
+    fs::path cache_root;
+    std::string encoded;
+    for (fs::path cur = path; cur.has_filename() && cur != stop_at; cur = cur.parent_path()) {
+        std::string dirname = cur.filename().string();
+        if (dirname.rfind(kMsPrefix, 0) == 0) {
+            encoded = dirname.substr(sizeof(kMsPrefix) - 1);
+        } else if (dirname.rfind(kHfPrefix, 0) == 0) {
+            encoded = dirname.substr(sizeof(kHfPrefix) - 1);
+        } else {
+            continue;
+        }
+        cache_root = cur;
+        break;
+    }
+    if (cache_root.empty()) {
+        return "";
+    }
+
+    // Only recover the name for a positively-identified cache_root/snapshots/<hash>
+    // ancestor whose hash matches refs/main; anything else (a plain "models--*"
+    // folder with no snapshots/ layout, or a non-active snapshot) is left alone.
+    const fs::path snapshots_dir = cache_root / "snapshots";
+    bool is_active_snapshot = false;
+    for (fs::path cur = path; cur.has_filename() && cur != cache_root; cur = cur.parent_path()) {
+        if (cur.parent_path() != snapshots_dir) continue;
+        const std::string active_hash = read_hf_ref_main(cache_root);
+        is_active_snapshot = !active_hash.empty() && active_hash == cur.filename().string();
+        break;
+    }
+    if (!is_active_snapshot) {
+        return "";
+    }
+
+    // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo";
+    // repo names don't contain "--", so the first occurrence is the
+    // namespace boundary.
+    size_t sep = encoded.find("--");
+    if (sep == std::string::npos || sep == 0 || sep + 2 >= encoded.size()) {
+        return encoded;
+    }
+    return encoded.substr(0, sep) + "/" + encoded.substr(sep + 2);
+}
+
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
 // newcomer with its folder keeps both and leaves the first model's id alone.
@@ -1288,6 +1337,11 @@ void ModelManager::discover_extra_models_in_directory(
     std::map<std::string, ModelInfo>& discovered) const {
 
     std::string dir_name = dir_path.filename().string();
+    std::string hf_repo_name = hf_cache_repo_name_for_path(
+        dir_path, path_from_utf8(extra_models_dir_));
+    if (!hf_repo_name.empty()) {
+        dir_name = hf_repo_name;
+    }
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
     double total_size = 0.0;
