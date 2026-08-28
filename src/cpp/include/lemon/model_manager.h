@@ -104,6 +104,9 @@ struct ModelInfo {
     bool update_available = false; // Whether a newer remote-registry version exists
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
     double size = 0.0;   // Model size in GB
+    // Resident working set for a streaming backend; 0 = filter on full `size`.
+    // See streaming_working_set_gb() / filter_models_by_backend.
+    double min_resident_gb = 0.0;
     int64_t max_context_window = 0;  // Static model-supported text context, when known
 
     // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
@@ -178,6 +181,9 @@ public:
     // build_cache(). Pointer (not ownership) — Server owns the registry.
     // Must be called before the first build_cache() / get_supported_models().
     void set_cloud_registry(CloudProviderRegistry* registry);
+
+    // The wired registry, or nullptr if set_cloud_registry was never called.
+    CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
@@ -299,6 +305,11 @@ public:
     static std::set<std::string> recipes_missing_all_models(
         const std::set<std::string>& size_filtered_recipes,
         const std::set<std::string>& visible_recipes);
+
+    // Memory-fit helpers for streaming backends (see filter_models_by_backend
+    // for the rationale). Pure and hardware-independent, so unit-tested directly.
+    static double streaming_working_set_gb(double min_resident_gb, double size_gb);
+    static bool streaming_model_exceeds_pool(double working_set_gb, double pool_gb);
 
     // Test-only raw view of the side table without a cache rebuild; prefer
     // recipes_with_all_models_filtered() everywhere else.

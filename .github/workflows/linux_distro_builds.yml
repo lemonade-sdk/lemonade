@@ -243,6 +243,21 @@ jobs:
 
           echo "Endpoint tests PASSED!"
 
+      - name: Run log rotation tests
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+
+          . .venv/bin/activate
+          CLI_BINARY="$(pwd)/build/lemonade"
+
+          echo "Running log rotation tests..."
+          python test/server_log_rotation.py
+
+          echo "Log rotation tests PASSED!"
+
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs

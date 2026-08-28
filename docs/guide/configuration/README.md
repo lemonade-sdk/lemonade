@@ -11,7 +11,7 @@ If you used an installer from the Lemonade release your `config.json` will be at
 - **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/config.json`
 - **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/var/lib/lemonade/config.json`
 
-  > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), while cached models go to `/var/cache/huggingface` (CacheDirectory). For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+  > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), downloaded backends go to `/var/cache/lemonade` (CacheDirectory), and models are cached under `/var/lib/lemonade/.cache/huggingface`. For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
 - **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
 - **macOS:** `/Library/Application Support/lemonade/.config/config.json`
@@ -52,6 +52,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "ctx_size": -1,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
+  "download_rate_limit": "",
+  "ds4": {
+    "args": ""
+  },
   "enable_dgpu_gtt": false,
   "extra_models_dir": "",
   "flm": {
@@ -76,7 +80,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "log_file": "auto",
   "log_level": "info",
+  "log_max_file_size_mb": 10,
+  "log_max_files": 5,
   "max_loaded_models": 1,
   "models_dir": "auto",
   "moonshine": {
@@ -149,6 +156,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "thenoise": {
     "backend": "auto",
     "lora_dir": "",
+    "rocm_bin": "builtin",
     "upscaler_dir": ""
   },
   "thinksound": {
@@ -188,6 +196,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
+| `log_file` | string | "auto" | File logging mode: "auto" (console-only for direct server runs, lemonade-server.log for embedded tray app), "disabled", "enabled", or custom target file path |
+| `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering rotation (steady-state footprint bounded to ~`log_max_file_size_mb * (log_max_files + 1)`) |
+| `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
@@ -195,6 +206,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
+| `download_rate_limit` | string | "" | Caps model/backend download speed. Byte rate with curl-style suffixes: `512`, `100K`, `10M`, etc. Use `""` for unlimited download speed. A non-empty value also serializes concurrent transfers. |
 | `offline` | bool | false | Skip model downloads |
 | `auto_check_model_updates` | bool | true | Check downloaded Hugging Face-backed models for updates during server startup. Set to `false` to check only with `lemonade check-updates` or `POST /v1/models/check-updates`. Manual downloads and updates remain enabled. |
 | `auto_update_models` | bool | false | Automatically download model updates when available. Can be overridden per model via `auto_update` in model options. |
@@ -266,6 +278,7 @@ Backend-specific settings are nested under their backend name:
 | `allow_insecure_http` | Whether this provider may receive its API key over `http://`. |
 | `auth_header_name` | Header the API key is sent in. Omitted when it is the default `Authorization`. |
 | `auth_header_prefix` | Value prefix before the key. Omitted when it is the default `"Bearer "`. |
+| `wire_format` | `openai` or `anthropic`. Omitted when it is the default `openai`. |
 
 API keys for these providers are **not** stored in `config.json` — they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or `lemond` process memory via `POST /v1/cloud/auth` (ephemeral). Manage providers with `lemonade cloud install/uninstall/auth/list` rather than editing this section by hand.
 

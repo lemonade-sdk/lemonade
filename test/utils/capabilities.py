@@ -213,6 +213,23 @@ CAPABILITIES = {
                 "audio_generation": "ACE-Step-Music",
             },
         },
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            # Keep the duplicate backend's flat fallback a superset of its TTS
+            # entry because _build_flat_capabilities() intentionally keeps the
+            # first modality occurrence for duplicate backend names.
+            "supports": {
+                "audio_generation": True,
+                "pcm_audio_generation": True,
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "audio_generation": "MOSS-SoundEffect",
+                "tts": "OpenMOSS-TTS",
+            },
+        },
     },
     "model3d": {
         "trellis": {
@@ -244,6 +261,9 @@ CAPABILITIES = {
                 "voice_cloning": True,
                 "voice_design": True,
             },
+            # Integrated voice design is exercised through the speech model. Keep
+            # the legacy standalone id for compatibility until the GUI migration
+            # removes MOSS-VoiceGen in its own PR.
             "test_models": {
                 "tts": "OpenMOSS-TTS",
                 "tts_design": "MOSS-VoiceGen",
