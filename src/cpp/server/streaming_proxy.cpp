@@ -356,6 +356,21 @@ void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<v
     }
 }
 
+void StreamingProxy::flush_sse_line_buffer(std::string& line_buffer,
+                                           std::function<void(const std::string&)> line_callback) {
+    if (line_buffer.empty()) {
+        return;
+    }
+    std::string line = std::move(line_buffer);
+    line_buffer.clear();
+    if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+    if (!line.empty()) {
+        line_callback(line);
+    }
+}
+
 void StreamingProxy::accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text) {
     if (parsed.contains("choices") && parsed["choices"].is_array() && !parsed["choices"].empty()) {
         auto choice = parsed["choices"][0];
