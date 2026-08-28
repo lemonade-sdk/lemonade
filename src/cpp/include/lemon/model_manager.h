@@ -449,6 +449,10 @@ struct UpdateCheckResult {
     // Update a single model's downloaded state in the cache and propagate
     // to any collection that depends on it. Called after a download completes
     // or a model is removed.
+    //
+    // Public solely so tests can drive a component's downloaded state without
+    // a full download/build_cache() round trip; every production call site is
+    // internal to ModelManager.
     void update_model_in_cache(const std::string& model_name, bool downloaded);
 
 private:

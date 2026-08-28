@@ -343,7 +343,8 @@ static void write_fake_gguf(const fs::path& path, uint32_t context_length) {
 }
 
 static void register_local_gguf(ModelManager& manager, const std::string& name,
-                                const fs::path& temp, uint32_t context_length) {
+                                const fs::path& temp, uint32_t context_length,
+                                const std::vector<std::string>& labels = {}) {
     fs::path gguf = temp / (name + ".gguf");
     write_fake_gguf(gguf, context_length);
     json def = {
@@ -351,6 +352,9 @@ static void register_local_gguf(ModelManager& manager, const std::string& name,
         {"checkpoint", lemon::utils::path_to_utf8(gguf)},
         {"source", "local_path"},
     };
+    if (!labels.empty()) {
+        def["labels"] = labels;
+    }
     manager.register_user_model("user." + name, def);
 }
 
@@ -359,6 +363,12 @@ static void test_collection_aggregate_context_window(ModelManager& manager,
     register_local_gguf(manager, "ctx-large", temp, 32768);
     register_local_gguf(manager, "ctx-small", temp, 8192);
     register_local_gguf(manager, "ctx-classifier", temp, 512);
+    // Not "chat": a real omni collection's embedding/reranking component is
+    // llamacpp too, but labeled for its own mode rather than chat, and never
+    // serves /chat/completions. Deliberately given the lowest context of any
+    // component so the omni test below fails loudly if a non-chat component
+    // is allowed to drag the aggregate down.
+    register_local_gguf(manager, "ctx-embed", temp, 256, {"embeddings"});
 
     json router = {
         {"version", "1"},
@@ -396,12 +406,13 @@ static void test_collection_aggregate_context_window(ModelManager& manager,
 
     json omni = {
         {"recipe", "collection.omni"},
-        {"components", {"ctx-large", "ctx-small", "ctx-classifier", "ctx-absent"}},
+        {"components", {"ctx-large", "ctx-small", "ctx-embed", "ctx-absent"}},
     };
     manager.register_user_model("user.CtxOmni", omni);
     auto omni_info = manager.get_model_info("user.CtxOmni");
-    check("collection.omni aggregates min component context window, skipping unknowns",
-          omni_info.max_context_window == 512);
+    check("collection.omni aggregates min context window over chat components only, "
+          "skipping non-chat components and unknowns",
+          omni_info.max_context_window == 8192);
 
     manager.update_model_in_cache("user.ctx-small", false);
     router_info = manager.get_model_info("user.CtxRouter");

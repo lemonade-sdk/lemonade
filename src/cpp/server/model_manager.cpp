@@ -2741,31 +2741,47 @@ static bool check_component_downloaded(const ModelInfo& info,
     return true;
 }
 
-// A collection's usable context is bounded by the smallest model a request can
-// be dispatched to: the routing policy's resolved candidates for
-// collection.router (classifier components never serve the final completion),
-// every component otherwise. Components with unknown context (0, e.g. not yet
-// downloaded) are skipped rather than zeroing the aggregate.
+// A collection's usable context is bounded by the smallest model a chat
+// request can actually be dispatched to: routing candidates for
+// collection.router (classifiers never serve the completion), the chat/LLM
+// component(s) for collection.omni (image/audio/TTS components can't serve
+// /chat/completions and mustn't drag the value down), every component
+// otherwise. Unknown-context components (0, not yet downloaded) are skipped
+// rather than zeroing the aggregate; see docs/api/openai.md for semantics.
 static int64_t aggregate_collection_context_window(
         const ModelInfo& info,
         const std::map<std::string, ModelInfo>& model_map) {
     const bool use_candidates =
         info.route_policy && !info.route_policy->candidates.empty();
-    // For collection.router, candidates are the only valid dispatch targets.
-    // If the policy is missing or empty (parse failure), the context window is
-    // unknown rather than incorrectly aggregated over classifier components.
+    // Missing/empty policy (parse failure) means the context is unknown,
+    // rather than incorrectly aggregated over classifier components.
     if (is_router_collection_recipe(info.recipe) && !use_candidates) {
         return 0;
     }
-    const std::vector<std::string>& names =
-        use_candidates ? info.route_policy->candidates : info.components;
+    const bool is_omni = is_omni_collection_recipe(info.recipe);
+
+    // Resolve to cache keys up front: route_policy->candidates are already
+    // resolved, but info.components may contain bare alias names.
+    std::vector<std::string> resolved_names;
+    if (use_candidates) {
+        resolved_names = info.route_policy->candidates;
+    } else {
+        for (const auto& name : info.components) {
+            const std::string cache_key = resolve_collection_component_cache_key(name, model_map);
+            if (is_omni) {
+                auto it = model_map.find(cache_key);
+                const auto& labels = (it != model_map.end()) ? it->second.labels
+                                                              : std::vector<std::string>{};
+                if (std::find(labels.begin(), labels.end(), "chat") == labels.end()) {
+                    continue;  // Not the LLM component; doesn't bound chat context.
+                }
+            }
+            resolved_names.push_back(cache_key);
+        }
+    }
+
     int64_t min_ctx = 0;
-    for (const auto& name : names) {
-        // route_policy->candidates are already resolved cache keys; only
-        // info.components may contain bare alias names that need resolution.
-        const std::string cache_key =
-            use_candidates ? name
-                           : resolve_collection_component_cache_key(name, model_map);
+    for (const auto& cache_key : resolved_names) {
         auto it = model_map.find(cache_key);
         if (it == model_map.end()) continue;
         const int64_t ctx = it->second.max_context_window;
@@ -3300,9 +3316,12 @@ void ModelManager::add_model_to_cache(const std::string& model_name) {
     }
 
     populate_model_metadata(info);
-    if (is_model_collection_recipe(info.recipe)) {
-        info.max_context_window = aggregate_collection_context_window(info, models_cache_);
-    }
+    // Not aggregated here: this method has no production caller (models are
+    // added via build_cache(), which runs the aggregation pass after routing
+    // policies are parsed) and info.route_policy is never populated on this
+    // path, so a router collection added through here would hit
+    // aggregate_collection_context_window's early-return and cache a
+    // max_context_window of 0.
     models_cache_[model_name] = info;
     rebuild_public_model_aliases_locked();
     LOG(INFO, "ModelManager") << "Added '" << model_name << "' to cache (downloaded=" << info.downloaded << ")" << std::endl;
