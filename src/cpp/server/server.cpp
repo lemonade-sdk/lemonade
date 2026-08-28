@@ -1125,6 +1125,8 @@ void Server::setup_routes(httplib::Server &web_server) {
                     res.set_header("Access-Control-Allow-Private-Network", "true");
                 }
             } else {
+                LOG(WARNING, "Server") << "Rejected request from unauthorized origin: " << origin
+                                       << ". Set LEMONADE_ALLOWED_ORIGINS to allow this origin." << std::endl;
                 res.status = 403;
                 res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
                 return httplib::Server::HandlerResponse::Handled;
