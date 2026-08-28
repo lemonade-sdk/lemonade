@@ -32,6 +32,12 @@ public:
     void set_host_override(std::optional<std::string> override_val);
     int websocket_port() const;
     std::string log_level() const;
+    std::string log_file() const;
+    void set_log_file_override(std::optional<std::string> override_val);
+    int log_max_file_size_mb() const;
+    void set_log_max_file_size_mb_override(std::optional<int> override_val);
+    int log_max_files() const;
+    void set_log_max_files_override(std::optional<int> override_val);
     std::string extra_models_dir() const;
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
@@ -161,6 +167,9 @@ private:
     std::optional<int> port_override_;
     std::optional<std::string> host_override_;
     std::optional<bool> broadcast_override_;
+    std::optional<std::string> log_file_override_;
+    std::optional<int> log_max_file_size_mb_override_;
+    std::optional<int> log_max_files_override_;
 
     // Valid log levels
     static const std::vector<std::string> valid_log_levels_;
