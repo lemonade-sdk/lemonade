@@ -170,6 +170,67 @@ static void test_multimodal_folder() {
     fs::remove_all(dir);
 }
 
+static void test_direct_multimodal_model() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "chat" / "gemma.gguf");
+    touch(dir / "chat" / "mmproj-gemma.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* info = find_model(models, "extra.gemma");
+    check("direct multimodal model is discovered alone", models.size() == 1 && info != nullptr);
+    if (info != nullptr) {
+        check("direct multimodal model stays chat",
+              info->type == ModelType::LLM && has_label(*info, "chat"));
+        check("direct multimodal model gets vision", has_label(*info, "vision"));
+        check("direct multimodal model resolves its mmproj",
+              info->resolved_paths.find("mmproj") != info->resolved_paths.end() &&
+              info->resolved_paths.at("mmproj") ==
+                  (dir / "chat" / "mmproj-gemma.gguf").string());
+    }
+
+    fs::remove_all(dir);
+}
+
+static void test_ambiguous_direct_mmproj_is_not_attached() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "chat" / "gemma.gguf");
+    touch(dir / "chat" / "llama.gguf");
+    touch(dir / "chat" / "mmproj.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    check("ambiguous direct models stay separate", models.size() == 2);
+    for (const auto& model : models) {
+        const ModelInfo& info = model.second;
+        check("ambiguous direct mmproj is not guessed",
+              info.checkpoints.find("mmproj") == info.checkpoints.end() &&
+              !has_label(info, "vision"));
+    }
+
+    fs::remove_all(dir);
+}
+
+static void test_direct_shards_with_independent_model() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "chat" / "large-Q4_K_M-00001-of-00002.gguf");
+    touch(dir / "chat" / "large-Q4_K_M-00002-of-00002.gguf");
+    touch(dir / "chat" / "small.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    check("direct shard set and independent model produce two models", models.size() == 2);
+    check_type(models, "direct shards are grouped", "extra.large-Q4_K_M",
+               ModelType::LLM, "chat");
+    check_type(models, "independent direct model stays separate", "extra.small",
+               ModelType::LLM, "chat");
+
+    fs::remove_all(dir);
+}
+
 static void test_category_files_are_separate_models() {
     fs::path dir = make_temp_dir();
     touch(dir / "embeddings" / "model-a.gguf");
@@ -285,6 +346,9 @@ int main() {
     test_filename_does_not_override_category();
     test_mixed_folder_is_one_model();
     test_multimodal_folder();
+    test_direct_multimodal_model();
+    test_ambiguous_direct_mmproj_is_not_attached();
+    test_direct_shards_with_independent_model();
     test_category_files_are_separate_models();
     test_category_names_are_case_sensitive();
     test_same_name_across_categories();

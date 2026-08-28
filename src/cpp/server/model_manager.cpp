@@ -1238,7 +1238,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
-    std::vector<std::pair<fs::path, std::string>> standalone_files;  // GGUF files not in subdirectories
+    std::map<fs::path, std::vector<fs::path>> category_files;
+    std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
     // Recursively find all .gguf files
     try {
@@ -1258,8 +1259,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             const bool directly_in_category =
                 !deployment_label.empty() && relative_parent == fs::path(deployment_label);
 
-            if (parent_dir == search_path || directly_in_category) {
-                standalone_files.emplace_back(entry.path(), deployment_label);
+            if (parent_dir == search_path) {
+                standalone_files.push_back(entry.path());
+            } else if (directly_in_category) {
+                category_files[parent_dir].push_back(entry.path());
             } else {
                 dirs_with_gguf[parent_dir].push_back(entry.path());
             }
@@ -1272,27 +1275,24 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     // Root files claim their short id first, so adding a reserved directory
     // never renames an extra model that already exists.
     std::sort(standalone_files.begin(), standalone_files.end(),
-              [&search_path](const auto& lhs, const auto& rhs) {
-                  const fs::path lhs_rel = lhs.first.lexically_relative(search_path);
-                  const fs::path rhs_rel = rhs.first.lexically_relative(search_path);
-                  const bool lhs_nested = lhs_rel.has_parent_path();
-                  const bool rhs_nested = rhs_rel.has_parent_path();
-                  if (lhs_nested != rhs_nested) return !lhs_nested;
-                  return lhs_rel.generic_string() < rhs_rel.generic_string();
+              [](const fs::path& lhs, const fs::path& rhs) {
+                  return lhs.generic_string() < rhs.generic_string();
               });
 
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
     std::set<std::string> folder_ids_kept;
 
-    // Process standalone files (single-file models)
-    for (const auto& [gguf_path, deployment_label] : standalone_files) {
+    auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
+                                    const std::string& deployment_label,
+                                    const fs::path& mmproj_file = fs::path()) {
+        const fs::path& gguf_path = model_files.front();
         std::string filename = gguf_path.filename().string();
-
-        // Skip mmproj files - they're part of multimodal models
-        if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) continue;
-
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + gguf_path.stem().string();
+        std::string shard_base;
+        const bool sharded = model_files.size() > 1 &&
+            is_gguf_shard_filename(filename, &shard_base);
+        const std::string base_name = sharded ? shard_base : gguf_path.stem().string();
+        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + base_name;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
@@ -1302,12 +1302,18 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
 
-        // Calculate size in GB
-        try {
-            uintmax_t file_size = fs::file_size(gguf_path);
-            info.size = static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
-        } catch (...) {
-            info.size = 0.0;
+        uintmax_t total_size = 0;
+        for (const auto& model_file : model_files) {
+            try {
+                total_size += fs::file_size(model_file);
+            } catch (...) {}
+        }
+        info.size = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+
+        if (!mmproj_file.empty()) {
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
+            info.labels.push_back("vision");
         }
 
         if (!deployment_label.empty() && folder_ids_kept.insert(deployment_label).second) {
@@ -1315,7 +1321,55 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
-        add_extra_model(discovered, gguf_path.stem().string(), gguf_path.parent_path(), std::move(info));
+        add_extra_model(discovered, base_name, gguf_path.parent_path(), std::move(info));
+    };
+
+    for (const auto& gguf_path : standalone_files) {
+        if (gguf_reader_detail::contains_ignore_case(
+                gguf_path.filename().string(), "mmproj")) continue;
+        add_standalone_model({gguf_path}, "");
+    }
+
+    for (auto& [category_path, files] : category_files) {
+        std::sort(files.begin(), files.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return lhs.generic_string() < rhs.generic_string();
+                  });
+        std::vector<fs::path> mmproj_files;
+        std::vector<std::vector<fs::path>> logical_models;
+        std::map<std::pair<std::string, int>, size_t> shard_groups;
+
+        for (const auto& file : files) {
+            const std::string filename = file.filename().string();
+            if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) {
+                mmproj_files.push_back(file);
+                continue;
+            }
+
+            std::string shard_base;
+            int shard_total = 0;
+            if (is_gguf_shard_filename(filename, &shard_base, &shard_total)) {
+                const auto key = std::make_pair(shard_base, shard_total);
+                auto [it, inserted] = shard_groups.emplace(key, logical_models.size());
+                if (inserted) logical_models.emplace_back();
+                logical_models[it->second].push_back(file);
+            } else {
+                logical_models.push_back({file});
+            }
+        }
+
+        std::sort(logical_models.begin(), logical_models.end(),
+                  [](const auto& lhs, const auto& rhs) {
+                      return lhs.front().generic_string() < rhs.front().generic_string();
+                  });
+
+        const std::string deployment_label = category_path.filename().string();
+        const fs::path direct_mmproj = logical_models.size() == 1 && !mmproj_files.empty()
+            ? mmproj_files.front()
+            : fs::path();
+        for (const auto& model_files : logical_models) {
+            add_standalone_model(model_files, deployment_label, direct_mmproj);
+        }
     }
 
     // Process directories (multimodal and multi-shard models)

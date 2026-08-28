@@ -75,7 +75,9 @@ For a directory holding `all-MiniLM-L6-v2.gguf` and `nomic-embed-text-v2.gguf`:
 
 ### Multimodal Detection
 
-If a directory contains a file with `mmproj` anywhere in the filename, it is automatically set as the model's `mmproj` field and the `vision` label is applied. When several `mmproj` files are present, the first by filename is chosen, so the selection is stable across restarts.
+If a model directory contains a file with `mmproj` anywhere in the filename, it is automatically set as the model's `mmproj` field and the `vision` label is applied. When several `mmproj` files are present, the first by filename is chosen, so the selection is stable across restarts.
+
+A direct `mmproj` inside a reserved directory is attached only when that directory contains one logical main model. When it contains multiple main models, place each multimodal model and its `mmproj` in a separate subdirectory. Lemonade does not guess which main model an ambiguous companion belongs to.
 
 ### Embedding and Reranking Detection
 
@@ -88,7 +90,7 @@ extra_models_dir/
 └── reranking/
 ```
 
-Files directly inside a reserved directory are listed as separate models. Nested folder models and split variants inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat.
+Files directly inside a reserved directory are listed as separate models. Files whose numbered shard names declare that they belong together are grouped as one model. Nested folder models and split variants inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat.
 
 Reserved directory names must match exactly. `embeddings` is reserved; `Embedding`, `embedding`, and `embeddings 2` are ordinary directories.
 

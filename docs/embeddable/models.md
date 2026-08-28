@@ -164,6 +164,8 @@ extra.my_custom_model.gguf              Yes         llamacpp
 
 Use the reserved top-level directories `chat`, `embeddings`, and `reranking` to select how imported models run. Files directly inside a reserved directory, and models in its nested folders, inherit that mode. Models at the root or under any other directory default to chat.
 
+Direct numbered shards are grouped when their filenames declare the same shard set. A direct `mmproj` is attached only when the reserved directory contains one main model. If it contains multiple main models, put each vision model and its `mmproj` in a separate subdirectory; Lemonade does not guess which model an ambiguous companion belongs to.
+
 Reserved directory names must match exactly: `embeddings` is reserved, while `Embedding`, `embedding`, and `embeddings 2` are ordinary directories. The server does not try to infer near-matches because doing so could accidentally select the wrong runtime behavior.
 
 > Upgrading: if you already have a top-level folder named `chat`, `embeddings`, or `reranking`, its contents were previously listed as a single model called `extra.chat`, `extra.embeddings`, or `extra.reranking`. Those files are now listed individually by filename. The old name is still accepted in requests, so existing configs and scripts keep working.
