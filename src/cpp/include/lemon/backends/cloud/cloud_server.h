@@ -94,6 +94,13 @@ public:
     static utils::HttpSecurityPolicy discovery_policy(const std::string& base_url,
                                                       bool allow_insecure_http);
 
+    /// Restore the client-facing public model name on a non-streaming JSON body.
+    static json restore_public_model(json response, const std::string& public_model);
+
+    /// Rewrite `"model"` inside one SSE `data:` JSON frame, if present.
+    static std::string rewrite_sse_model_line(const std::string& line,
+                                              const std::string& public_model);
+
 private:
     struct ResolvedCreds {
         std::string api_key;
@@ -111,6 +118,9 @@ private:
     json post_with_auth(const std::string& path, const json& request,
                         const ResolvedCreds& creds, long timeout_seconds = 0);
     json rewrite_model_field(const json& request) const;
+    /// Restore the client-facing public model name after a provider call
+    /// rewrote `model` to the upstream id (mirrors LlamaCppServer).
+    json normalize_response_model(json response, const json& original_request) const;
     json missing_creds_error() const;
     std::string missing_creds_sse() const;
     json insecure_http_error() const;
