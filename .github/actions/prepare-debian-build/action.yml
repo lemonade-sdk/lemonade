@@ -3,10 +3,10 @@ description: Extract version from git and create Debian packaging metadata from 
 
 inputs:
   release:
-    description: Ubuntu version (e.g., 24.04, 25.10, 26.04)
+    description: Ubuntu version (e.g., 24.04, 26.04)
     required: true
   codename:
-    description: Debian codename (e.g., noble, questing, resolute)
+    description: Debian codename (e.g., noble, resolute)
     required: true
 
 outputs:
