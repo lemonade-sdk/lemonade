@@ -34,7 +34,7 @@ curl -s http://localhost:13305/mcp \
 
 ## Tools
 
-All tools auto-load (and download, if missing) the requested model on first call, exactly like `POST /v1/chat/completions`. Errors are returned as MCP results with `"isError": true` rather than JSON-RPC errors, matching the spec's guidance for tool failures.
+Model-backed tools reuse Lemonade's existing server loading paths, with each tool documenting whether a download is permitted. In particular, prompt-to-3D never searches for or downloads an image-generation model automatically: it uses an explicitly named local model, then a loaded image model, then a downloaded image model, or returns a clear error. Errors are returned as MCP results with `"isError": true` rather than JSON-RPC errors, matching the spec's guidance for tool failures.
 
 ### `lemonade_list_models`
 
@@ -118,6 +118,28 @@ When disk paths are provided, returns text block(s) with the absolute path(s). O
 - Override with the `LEMONADE_MCP_IMAGE_DIR` environment variable (absolute path).
 - Relative paths resolve against the sandbox root; absolute paths must stay within it. Paths that escape the sandbox (via `..` or symlinks) are rejected.
 - `output_dir` writes use auto-generated, unique filenames (`image_<token>_<i>.png`), so concurrent callers never clobber one another's images — the returned `paths` tell you the exact names. Use `output_path` when you need an exact, caller-chosen filename (it is written as named, replacing any existing file at that path).
+
+### `lemonade_generate_3d`
+
+Create a GLB from **exactly one** of an explicit image or a text prompt. The image-only path remains a thin adapter over the existing `/api/v1/3d/generations` implementation and does not invoke image generation.
+
+With `prompt`, Lemonade resolves `image_model` without network side effects: an explicitly named image model must already be loaded or downloaded; otherwise the server prefers a loaded image-generation model and then a downloaded one. If neither exists, the tool returns an error and asks the caller to pull one first. Lemonade appends reconstruction-oriented guidance (single centered subject, full object in frame, three-quarter/slightly elevated view, plain background, even studio lighting, clear geometry) and generates exactly one `1024x1024` reference image. The 3D `resolution` remains independent and is forwarded only to reconstruction.
+
+```json
+{
+  "name": "lemonade_generate_3d",
+  "arguments": {
+    "prompt": "a small industrial centrifugal pump",
+    "resolution": 1024,
+    "bg_removal": "threshold",
+    "uv": "xatlas"
+  }
+}
+```
+
+The prompt path returns a short text content block plus the generated reference image as a native MCP image block. `structuredContent` contains `reference_generated`, `image_model`, `model`, `mime_type`, and the GLB in `data_base64`. The GLB base64 is **not** duplicated into a normal text block. Image-only calls retain the same compact GLB structured result without reference-generation metadata.
+
+Pipeline failures identify the failing stage (`Reference image generation failed: ...` versus `3D reconstruction failed: ...`). No MCP resource/file-hosting protocol is introduced by this tool.
 
 ### `lemonade_omni`
 
