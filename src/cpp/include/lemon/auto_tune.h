@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iomanip>
+#include <optional>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
@@ -101,14 +102,18 @@ inline double get_available_memory_gb(DeviceType device_type,
         auto amd_dgpus = si->get_amd_dgpu_devices();
         auto nvidia_gpus = si->get_nvidia_gpu_devices();
         auto apple_gpu = si->get_apple_silicon_device();
-        const char* cuda_visible_devices = std::getenv("CUDA_VISIBLE_DEVICES");
+        const char* cuda_visible_devices_env = std::getenv("CUDA_VISIBLE_DEVICES");
+        const std::optional<std::string> cuda_visible_devices =
+            cuda_visible_devices_env
+                ? std::optional<std::string>(cuda_visible_devices_env)
+                : std::nullopt;
         auto pool = select_gpu_memory_pool(gpu_vendor,
                                            amd_igpu, amd_dgpus, nvidia_gpus, apple_gpu,
                                            gpu_device,
-                                           cuda_visible_devices ? cuda_visible_devices : "");
+                                           cuda_visible_devices);
         if (pool.total_gb > 0) {
             if (pool.used_gb >= 0.0) used_gb = pool.used_gb;
-            double available = pool.label == "Metal"
+            double available = pool.vendor == GpuMemoryVendor::Metal
                 ? (std::min)(pool.total_gb, (std::max)(0.0, apple_gpu.virtual_gb - used_gb))
                 : (std::max)(0.0, pool.total_gb - used_gb);
             LOG(DEBUG, "AutoTune") << "get_available_memory_gb: GPU (" << pool.label
@@ -290,12 +295,11 @@ inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
     std::string backend;
     std::string device;
-    if (effective_options.get_recipe() == "llamacpp") {
-        const json backend_json = effective_options.get_option("llamacpp_backend");
-        const json device_json = effective_options.get_option("llamacpp_device");
-        if (backend_json.is_string()) backend = backend_json.get<std::string>();
-        if (device_json.is_string()) device = device_json.get<std::string>();
-    }
+    const std::string recipe = effective_options.get_recipe();
+    const json backend_json = effective_options.get_option(recipe + "_backend");
+    const json device_json = effective_options.get_option(recipe + "_device");
+    if (backend_json.is_string()) backend = backend_json.get<std::string>();
+    if (device_json.is_string()) device = device_json.get<std::string>();
     double available_gb = get_available_memory_gb(
         model_info.device, gpu_memory_vendor_for_target(backend, device), device);
 

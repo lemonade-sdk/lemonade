@@ -113,6 +113,18 @@ int main() {
     check(hidden_cuda.total_gb == 0.0,
           "CUDA_VISIBLE_DEVICES=-1 leaves no NVIDIA memory pool");
 
+    auto explicitly_empty_cuda = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("cuda", ""), unavailable, amd,
+        filtered_nvidia, unavailable, "", std::string{});
+    check(explicitly_empty_cuda.total_gb == 0.0,
+          "empty CUDA_VISIBLE_DEVICES leaves no NVIDIA memory pool");
+
+    auto generic_ignores_cuda_visibility = select_gpu_memory_pool(
+        GpuMemoryVendor::Any, unavailable, {}, filtered_nvidia, unavailable,
+        "", std::string{});
+    check(generic_ignores_cuda_visibility.total_gb == 8.0,
+          "generic GPU selection ignores CUDA visibility filtering");
+
     auto bare_rocm = select_gpu_memory_pool(
         gpu_memory_vendor_for_target("system", "ROCm"), amd_igpu, two_amd, nvidia,
         unavailable, "ROCm");
@@ -130,6 +142,20 @@ int main() {
         GpuMemoryVendor::Amd, amd_igpu_unknown_usage, two_amd, nvidia, unavailable);
     check(unknown_usage.used_gb < 0.0,
           "incomplete unified-memory usage remains unknown");
+
+    std::vector<GPUInfo> mixed_usage_nvidia{
+        gpu(24.0, -1.0, 0), gpu(8.0, 1.0, 1)};
+    auto unknown_constrained = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("cuda", "CUDA0,CUDA1"), unavailable, amd,
+        mixed_usage_nvidia, unavailable, "CUDA0,CUDA1");
+    check(unknown_constrained.label == "NVIDIA CUDA0" && unknown_constrained.used_gb < 0.0,
+          "unknown usage is the most constrained selected GPU");
+
+    GPUInfo apple = gpu(16.0, 2.0);
+    auto metal = select_gpu_memory_pool(
+        GpuMemoryVendor::Metal, unavailable, amd, nvidia, apple);
+    check(metal.vendor == GpuMemoryVendor::Metal,
+          "Metal pool carries typed vendor identity");
 
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);

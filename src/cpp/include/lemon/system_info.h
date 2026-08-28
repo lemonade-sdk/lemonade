@@ -242,7 +242,8 @@ private:
     bool get_amd_is_igpu(const std::string& drm_render_minor);
 
 private:
-    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
+    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname,
+                              bool* success = nullptr);
 };
 
 // macOS implementation

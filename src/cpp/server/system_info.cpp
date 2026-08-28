@@ -3504,14 +3504,14 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
         gpu.virtual_gb = get_amd_gtt(drm_render_minor);
-        const fs::path memory_path =
-            fs::path("/sys/class/drm/renderD" + drm_render_minor) / "device";
-        if (fs::exists(memory_path / "mem_info_vram_used")) {
-            gpu.vram_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_vram_used");
-        }
-        if (fs::exists(memory_path / "mem_info_gtt_used")) {
-            gpu.virtual_used_gb = parse_memory_sysfs(drm_render_minor, "mem_info_gtt_used");
-        }
+        bool read_used = false;
+        const double vram_used_gb =
+            parse_memory_sysfs(drm_render_minor, "mem_info_vram_used", &read_used);
+        if (read_used) gpu.vram_used_gb = vram_used_gb;
+
+        const double virtual_used_gb =
+            parse_memory_sysfs(drm_render_minor, "mem_info_gtt_used", &read_used);
+        if (read_used) gpu.virtual_used_gb = virtual_used_gb;
 
         gpus.push_back(gpu);
     }
@@ -3635,7 +3635,11 @@ bool LinuxSystemInfo::get_amd_is_igpu(const std::string& drm_render_minor) {
     return !(fs::exists(board_info_path) && fs::is_regular_file(board_info_path));
 }
 
-double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname){
+double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor,
+                                           const std::string& fname,
+                                           bool* success) {
+    if (success) *success = false;
+
     // Try device-specific path first
     std::string sysfs_path = "/sys/class/drm/renderD" + drm_render_minor + "/device/" + fname;
 
@@ -3649,6 +3653,7 @@ double LinuxSystemInfo::parse_memory_sysfs(const std::string& drm_render_minor, 
 
     try {
         uint64_t memory_bytes = std::stoull(memory_str);
+        if (success) *success = true;
         return std::round(memory_bytes / (1024.0 * 1024.0 * 1024.0) * 10.0) / 10.0;
     } catch (...) {
         return 0.0;
