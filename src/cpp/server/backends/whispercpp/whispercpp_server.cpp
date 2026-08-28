@@ -14,6 +14,7 @@
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 #include "lemon/error_types.h"
+#include "whispercpp_multipart_fields.h"
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -303,9 +304,10 @@ void WhisperServer::load(const std::string& model_name,
     if (whispercpp_backend == "rocm") {
         std::string rocm_arch = SystemInfo::get_rocm_arch();
         if (!rocm_arch.empty()) {
-            std::string therock_lib = BackendUtils::get_therock_lib_path(rocm_arch);
-            if (!therock_lib.empty()) {
-                lib_path = therock_lib + ":" + lib_path;
+            std::string therock_dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(rocm_arch));
+            if (!therock_dirs.empty()) {
+                lib_path = therock_dirs + ":" + lib_path;
             }
         }
     }
@@ -329,7 +331,7 @@ void WhisperServer::load(const std::string& model_name,
         false,  // filter_health_logs
         env_vars
     );
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start whisper-server process");
@@ -502,50 +504,15 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     else if (ext == ".flac") content_type = "audio/flac";
     else if (ext == ".webm") content_type = "audio/webm";
 
-    std::vector<utils::MultipartField> fields;
-
     utils::MultipartField audio_file;
     audio_file.name = "file";
     audio_file.data = file_content;
     audio_file.filename = filepath.filename().string();
     audio_file.content_type = content_type;
-    fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    if (params.contains("temperature")) {
-        temp_field.data = std::to_string(params["temperature"].get<double>());
-    } else {
-        temp_field.data = "0.0";
-    }
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
+    std::vector<utils::MultipartField> fields =
+        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << std::endl;
@@ -572,12 +539,7 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        // If response_format is not json, return it wrapped
-        return json{{"text", res.body}};
-    }
+    return audio::interpret_transcription_body(res.body, response_format);
 }
 
 json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
@@ -601,48 +563,15 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     else if (ext == ".flac") content_type = "audio/flac";
     else if (ext == ".webm") content_type = "audio/webm";
 
-    std::vector<utils::MultipartField> fields;
-
     utils::MultipartField audio_file;
     audio_file.name = "file";
     audio_file.data = audio_data;
     audio_file.filename = filepath.filename().string();
     audio_file.content_type = content_type;
-    fields.push_back(audio_file);
 
     std::string response_format = params.value("response_format", "json");
-    utils::MultipartField fmt_field;
-    fmt_field.name = "response_format";
-    fmt_field.data = response_format;
-    fields.push_back(fmt_field);
-
-    utils::MultipartField temp_field;
-    temp_field.name = "temperature";
-    temp_field.data = params.contains("temperature")
-        ? std::to_string(params["temperature"].get<double>())
-        : "0.0";
-    fields.push_back(temp_field);
-
-    if (params.contains("language")) {
-        utils::MultipartField lang_field;
-        lang_field.name = "language";
-        lang_field.data = params["language"].get<std::string>();
-        fields.push_back(lang_field);
-    }
-
-    if (params.contains("prompt")) {
-        utils::MultipartField prompt_field;
-        prompt_field.name = "prompt";
-        prompt_field.data = params["prompt"].get<std::string>();
-        fields.push_back(prompt_field);
-    }
-
-    if (translate) {
-        utils::MultipartField translate_field;
-        translate_field.name = "translate";
-        translate_field.data = "true";
-        fields.push_back(translate_field);
-    }
+    std::vector<utils::MultipartField> fields =
+        whispercpp::detail::build_multipart_fields(std::move(audio_file), params, translate);
 
     const std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/inference";
     LOG(DEBUG, "WhisperServer") << "Sending multipart request to " << url << " (direct data)" << std::endl;
@@ -666,11 +595,7 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    try {
-        return json::parse(res.body);
-    } catch (const json::parse_error&) {
-        return json{{"text", res.body}};
-    }
+    return audio::interpret_transcription_body(res.body, response_format);
 }
 
 // ITranscriptionServer implementation

@@ -3,6 +3,7 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/rate_limit_utils.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -53,6 +54,47 @@ static bool has_backend_selection(const std::string& config_section) {
     return false;
 }
 
+static void validate_extra_models_dir_access(const std::string& raw_dir) {
+    if (raw_dir.empty()) {
+        return;
+    }
+
+    const fs::path dir = utils::path_from_utf8(raw_dir);
+    std::error_code status_ec;
+    const fs::file_status status = fs::status(dir, status_ec);
+
+    // Keep the existing runtime semantics for paths that do not exist yet:
+    // DirectoryWatcher may observe the directory if it is created shortly after
+    // configuration. Permission and I/O failures, however, must not be accepted
+    // as a successful config update.
+    if (status_ec) {
+        if (status_ec == std::errc::no_such_file_or_directory) {
+            return;
+        }
+        throw std::invalid_argument(
+            "'extra_models_dir' is not accessible by the Lemonade server: " +
+            raw_dir + " (" + status_ec.message() + ")");
+    }
+    if (!fs::exists(status)) {
+        return;
+    }
+    if (!fs::is_directory(status)) {
+        throw std::invalid_argument(
+            "'extra_models_dir' must reference a directory: " + raw_dir);
+    }
+
+    // status() can succeed when the process can traverse the path but cannot
+    // enumerate the directory. Probe enumeration so the GUI can report a
+    // permission error before RuntimeConfig::set applies either directory key.
+    std::error_code read_ec;
+    fs::directory_iterator{dir, read_ec};
+    if (read_ec) {
+        throw std::invalid_argument(
+            "'extra_models_dir' is not readable by the Lemonade server: " +
+            raw_dir + " (" + read_ec.message() + ")");
+    }
+}
+
 static std::pair<json, std::string> normalize_config_set_changes(const json& changes) {
     json normalized = changes;
     std::string message;
@@ -71,6 +113,24 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
         normalized["rocm_channel"] = "stable";
         message = "rocm_channel=preview is deprecated; using rocm_channel=stable";
         LOG(WARNING) << message << std::endl;
+    }
+
+    // Reject conflicting broadcast options
+    if (normalized.contains("broadcast") && normalized.contains("no_broadcast")) {
+        throw std::invalid_argument("Cannot specify both 'broadcast' and 'no_broadcast'");
+    }
+
+    if (normalized.contains("broadcast") && !normalized["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
+
+    // Migrate legacy no_broadcast to broadcast
+    if (normalized.contains("no_broadcast")) {
+        if (!normalized["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        normalized["broadcast"] = !normalized["no_broadcast"].get<bool>();
+        normalized.erase("no_broadcast");
     }
 
     // Promote flat backend keys (e.g. "vllm_args", "llamacpp_backend") into
@@ -137,6 +197,20 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
     }
 
     std::string recipe = config_section_to_recipe(config_section);
+
+    if (value == "system") {
+        const auto* desc = lemon::backends::descriptor_for(recipe);
+        const std::string current_os = get_current_os();
+        if (desc) {
+            auto supported = std::find_if(
+                desc->support.begin(), desc->support.end(),
+                [&](const BackendSupport& row) {
+                    return row.backend == value && row.supported_os.count(current_os) > 0;
+                });
+            if (supported != desc->support.end()) return;
+        }
+    }
+
     auto result = SystemInfo::get_supported_backends(recipe);
 
     if (std::find(result.backends.begin(), result.backends.end(), value)
@@ -147,6 +221,21 @@ void RuntimeConfig::validate_backend_choice(const std::string& config_section,
         }
         throw std::invalid_argument(
             "'" + config_section + ".backend' must be one of: " + allowed);
+    }
+}
+
+static void validate_path(const std::string& config_section,
+                            const std::string& key,
+                            const std::string& value,
+                            bool is_bin=false) {
+    if (utils::looks_like_path(value)) {
+        if (!fs::exists(value)) {
+            throw std::invalid_argument(
+                "'" + config_section + "." + key + "' path does not exist: " + value
+                + (is_bin ? (". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
+                  " or a path to a pre-downloaded binary.") : ""));
+        }
+        return;
     }
 }
 
@@ -163,16 +252,7 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
     // must exist. Relative-looking values intentionally fall through to the
     // version-tag branch so backend pins are not interpreted relative to
     // lemond's launch directory.
-    if (utils::looks_like_path(value)) {
-        if (!fs::exists(value)) {
-            throw std::invalid_argument(
-                "'" + config_section + "." + key + "' path does not exist: " + value
-                + ". Use \"builtin\", \"latest\", a version tag (e.g. \"b8664\"),"
-                  " or a path to a pre-downloaded binary.");
-        }
-        return;
-    }
-
+    validate_path(config_section, key, value, true);
     // Anything else is treated as an upstream release tag (e.g. "b8664",
     // "v1.8.2") and accepted verbatim. The download step surfaces a clear
     // error if the tag does not exist on GitHub.
@@ -180,7 +260,33 @@ void RuntimeConfig::validate_bin_path(const std::string& config_section,
 
 RuntimeConfig::RuntimeConfig(const json& config)
     : config_(config) {
-    // Config is expected to already have defaults merged in (by ConfigFile::load).
+    if (config_.contains("broadcast") && !config_["broadcast"].is_boolean()) {
+        throw std::invalid_argument("'broadcast' must be a boolean");
+    }
+    // Migrate legacy no_broadcast if present
+    if (config_.contains("no_broadcast")) {
+        if (!config_["no_broadcast"].is_boolean()) {
+            throw std::invalid_argument("'no_broadcast' must be a boolean");
+        }
+        if (!config_.contains("broadcast")) {
+            config_["broadcast"] = !config_["no_broadcast"].get<bool>();
+        }
+        config_.erase("no_broadcast");
+    }
+
+    // Validate logging settings on startup
+    if (config_.contains("log_max_file_size_mb")) {
+        validate("log_max_file_size_mb", config_["log_max_file_size_mb"]);
+    }
+    if (config_.contains("log_max_files")) {
+        validate("log_max_files", config_["log_max_files"]);
+    }
+    if (config_.contains("log_file")) {
+        validate("log_file", config_["log_file"]);
+    }
+    if (config_.contains("log_level")) {
+        validate("log_level", config_["log_level"]);
+    }
 
     // In CI mode, override log level to debug for easier diagnostics
     const char* ci_mode = std::getenv("LEMONADE_CI_MODE");
@@ -192,12 +298,28 @@ RuntimeConfig::RuntimeConfig(const json& config)
 
 int RuntimeConfig::port() const {
     std::shared_lock lock(mutex_);
+    if (port_override_.has_value()) {
+        return *port_override_;
+    }
     return config_["port"].get<int>();
+}
+
+void RuntimeConfig::set_port_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    port_override_ = override_val;
 }
 
 std::string RuntimeConfig::host() const {
     std::shared_lock lock(mutex_);
+    if (host_override_.has_value()) {
+        return *host_override_;
+    }
     return config_["host"].get<std::string>();
+}
+
+void RuntimeConfig::set_host_override(std::optional<std::string> override_val) {
+    std::unique_lock lock(mutex_);
+    host_override_ = override_val;
 }
 
 int RuntimeConfig::websocket_port() const {
@@ -214,14 +336,73 @@ std::string RuntimeConfig::log_level() const {
     return config_["log_level"].get<std::string>();
 }
 
+std::string RuntimeConfig::log_file() const {
+    {
+        std::shared_lock lock(mutex_);
+        if (log_file_override_.has_value()) {
+            return *log_file_override_;
+        }
+    }
+    return get_string_opt(nullptr, {"log_file"}, "auto");
+}
+
+void RuntimeConfig::set_log_file_override(std::optional<std::string> override_val) {
+    std::unique_lock lock(mutex_);
+    log_file_override_ = std::move(override_val);
+}
+
+int RuntimeConfig::log_max_file_size_mb() const {
+    {
+        std::shared_lock lock(mutex_);
+        if (log_max_file_size_mb_override_.has_value()) {
+            return *log_max_file_size_mb_override_;
+        }
+    }
+    return get_int_opt(nullptr, {"log_max_file_size_mb"}, 10);
+}
+
+void RuntimeConfig::set_log_max_file_size_mb_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    log_max_file_size_mb_override_ = override_val;
+}
+
+int RuntimeConfig::log_max_files() const {
+    {
+        std::shared_lock lock(mutex_);
+        if (log_max_files_override_.has_value()) {
+            return *log_max_files_override_;
+        }
+    }
+    return get_int_opt(nullptr, {"log_max_files"}, 5);
+}
+
+void RuntimeConfig::set_log_max_files_override(std::optional<int> override_val) {
+    std::unique_lock lock(mutex_);
+    log_max_files_override_ = override_val;
+}
+
 std::string RuntimeConfig::extra_models_dir() const {
     std::shared_lock lock(mutex_);
     return config_["extra_models_dir"].get<std::string>();
 }
 
-bool RuntimeConfig::no_broadcast() const {
+bool RuntimeConfig::broadcast() const {
     std::shared_lock lock(mutex_);
-    return config_["no_broadcast"].get<bool>();
+    if (broadcast_override_.has_value()) {
+        return *broadcast_override_;
+    }
+    if (config_.contains("broadcast") && config_["broadcast"].is_boolean()) {
+        return config_["broadcast"].get<bool>();
+    }
+    if (config_.contains("no_broadcast") && config_["no_broadcast"].is_boolean()) {
+        return !config_["no_broadcast"].get<bool>();
+    }
+    return true;
+}
+
+void RuntimeConfig::set_broadcast_override(std::optional<bool> override_val) {
+    std::unique_lock lock(mutex_);
+    broadcast_override_ = override_val;
 }
 
 long RuntimeConfig::global_timeout() const {
@@ -232,6 +413,19 @@ long RuntimeConfig::global_timeout() const {
 int RuntimeConfig::max_loaded_models() const {
     std::shared_lock lock(mutex_);
     return config_["max_loaded_models"].get<int>();
+}
+
+int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
+    std::shared_lock lock(mutex_);
+    if (!config_.contains("download_rate_limit") || !config_["download_rate_limit"].is_string()) {
+        return 0;
+    }
+    const int64_t parsed = utils::parse_rate_limit_to_bytes(config_["download_rate_limit"].get<std::string>());
+    if (parsed < 0) {
+        LOG(WARNING, "RuntimeConfig") << "Invalid download_rate_limit value in config, treating as unlimited" << std::endl;
+        return 0;
+    }
+    return parsed;
 }
 
 std::string RuntimeConfig::models_dir() const {
@@ -271,14 +465,24 @@ double RuntimeConfig::auto_evict_threshold_pct() const {
 }
 
 bool RuntimeConfig::offline() const {
-
     std::shared_lock lock(mutex_);
     return config_["offline"].get<bool>();
 }
 
 bool RuntimeConfig::auto_check_model_updates() const {
     std::shared_lock lock(mutex_);
-    return config_.value("auto_check_model_updates", true);
+    if (config_.contains("auto_check_model_updates")) {
+        return config_["auto_check_model_updates"].get<bool>();
+    }
+    return true;
+}
+
+bool RuntimeConfig::auto_update_models() const {
+    std::shared_lock lock(mutex_);
+    if (config_.contains("auto_update_models")) {
+        return config_["auto_update_models"].get<bool>();
+    }
+    return false;
 }
 
 bool RuntimeConfig::no_fetch_executables() const {
@@ -294,6 +498,11 @@ bool RuntimeConfig::disable_model_filtering() const {
 bool RuntimeConfig::enable_dgpu_gtt() const {
     std::shared_lock lock(mutex_);
     return config_["enable_dgpu_gtt"].get<bool>();
+}
+
+std::string RuntimeConfig::default_model_source() const {
+    std::shared_lock lock(mutex_);
+    return config_.value("default_model_source", std::string("huggingface"));
 }
 
 std::string RuntimeConfig::rocm_channel() const {
@@ -314,6 +523,10 @@ std::string RuntimeConfig::rocm_channel_for_recipe(const std::string& recipe) co
         }
     }
     return channel;
+}
+
+std::string RuntimeConfig::rocm_install_method() const {
+    return get_string_opt("LEMONADE_ROCM_INSTALL_METHOD", {"rocm_install_method"}, "auto");
 }
 
 bool RuntimeConfig::telemetry_enabled() const {
@@ -397,6 +610,46 @@ int RuntimeConfig::telemetry_otlp_send_batch_size() const {
 
 double RuntimeConfig::telemetry_otlp_batch_timeout_s() const {
     return get_double_opt(nullptr, {"telemetry", "otlp", "batch_timeout_s"}, 1.0);
+}
+
+static void extract_header_strings(const json& val, std::vector<std::string>& headers) {
+    if (val.is_array()) {
+        for (const auto& item : val) {
+            if (item.is_string()) {
+                std::string s = item.get<std::string>();
+                if (!s.empty()) headers.push_back(s);
+            }
+        }
+    } else if (val.is_string()) {
+        std::string s = val.get<std::string>();
+        if (!s.empty()) headers.push_back(s);
+    }
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_session_headers_id() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> headers;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("session") && config_["telemetry"]["session"].is_object()) {
+        const auto& sess = config_["telemetry"]["session"];
+        if (sess.contains("headers") && sess["headers"].is_object() && sess["headers"].contains("id")) {
+            extract_header_strings(sess["headers"]["id"], headers);
+        }
+    }
+    return headers;
+}
+
+std::vector<std::string> RuntimeConfig::telemetry_session_headers_client() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::string> headers;
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("session") && config_["telemetry"]["session"].is_object()) {
+        const auto& sess = config_["telemetry"]["session"];
+        if (sess.contains("headers") && sess["headers"].is_object() && sess["headers"].contains("client")) {
+            extract_header_strings(sess["headers"]["client"], headers);
+        }
+    }
+    return headers;
 }
 
 json RuntimeConfig::backend_config(const std::string& backend_name) const {
@@ -503,7 +756,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (!value.is_number_integer()) {
             throw std::invalid_argument("'port' must be an integer");
         }
-        int p = value.get<int>();
+        int64_t p = value.get<int64_t>();
         if (p < 1 || p > 65535) {
             throw std::invalid_argument("'port' must be between 1 and 65535");
         }
@@ -518,7 +771,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                     "'websocket_port' must be \"auto\" or an integer 0-65535");
             }
         } else if (value.is_number_integer()) {
-            int p = value.get<int>();
+            int64_t p = value.get<int64_t>();
             if (p < 0 || p > 65535) {
                 throw std::invalid_argument(
                     "'websocket_port' must be between 0 and 65535");
@@ -537,12 +790,62 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
             throw std::invalid_argument(
                 "'log_level' must be one of: trace, debug, info, warning, error, fatal, none");
         }
+    } else if (key == "log_file") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'log_file' must be a string");
+        }
+        std::string mode = value.get<std::string>();
+        if (mode != "auto" && mode != "enabled" && mode != "disabled" && !mode.empty()) {
+            std::error_code ec;
+            fs::path p = utils::path_from_utf8(mode);
+            if (fs::exists(p, ec) && fs::is_directory(p, ec)) {
+                throw std::invalid_argument("'log_file' path cannot be a directory: " + mode);
+            }
+        }
+    } else if (key == "log_max_file_size_mb") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be an integer");
+        }
+        int64_t sz = value.get<int64_t>();
+        if (sz < 1 || sz > 2048) {
+            throw std::invalid_argument("'log_max_file_size_mb' must be between 1 and 2048");
+        }
+    } else if (key == "log_max_files") {
+        if (!value.is_number_integer()) {
+            throw std::invalid_argument("'log_max_files' must be an integer");
+        }
+        int64_t n = value.get<int64_t>();
+        if (n < 0 || n > 100) {
+            throw std::invalid_argument("'log_max_files' must be between 0 and 100");
+        }
     } else if (key == "extra_models_dir" || key == "models_dir") {
         if (!value.is_string()) {
             throw std::invalid_argument("'" + key + "' must be a string");
         }
-    } else if (key == "no_broadcast" || key == "offline" ||
+        if (key == "extra_models_dir") {
+            validate_extra_models_dir_access(value.get<std::string>());
+        }
+    } else if (key == "default_model_source") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'default_model_source' must be a string");
+        }
+        const std::string source = value.get<std::string>();
+        if (source != "huggingface" && source != "modelscope") {
+            throw std::invalid_argument(
+                "'default_model_source' must be either 'huggingface', or 'modelscope'");
+        }
+    } else if (key == "download_rate_limit") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'download_rate_limit' must be a byte rate string");
+        }
+        if (utils::parse_rate_limit_to_bytes(value.get<std::string>()) < 0) {
+            throw std::invalid_argument(
+                "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"10M\", etc. "
+                "Use \"\" for unlimited download speed");
+        }
+    } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
+               key == "auto_update_models" ||
                key == "no_fetch_executables" ||
                key == "disable_model_filtering" || key == "enable_dgpu_gtt") {
         if (!value.is_boolean()) {
@@ -601,13 +904,22 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (channel != "stable" && channel != "nightly") {
             throw std::invalid_argument("'rocm_channel' must be either 'stable', or 'nightly'");
         }
+    } else if (key == "rocm_install_method") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'rocm_install_method' must be a string");
+        }
+        std::string method = value.get<std::string>();
+        if (method != "auto" && method != "wheel" && method != "tarball") {
+            throw std::invalid_argument(
+                "'rocm_install_method' must be 'auto', 'wheel', or 'tarball'");
+        }
     } else if (key == "telemetry") {
         if (!value.is_object()) {
             throw std::invalid_argument("'telemetry' must be an object");
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
             "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
-            "max_queue_capacity", "max_attribute_length", "otlp"
+            "max_queue_capacity", "max_attribute_length", "otlp", "session"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
@@ -723,6 +1035,43 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                 }
             }
         }
+        if (value.contains("session")) {
+            const auto& sess = value["session"];
+            if (!sess.is_object()) {
+                throw std::invalid_argument("'telemetry.session' must be an object");
+            }
+            static const std::unordered_set<std::string> valid_session_keys = {
+                "headers"
+            };
+            for (auto& [s_key, s_val] : sess.items()) {
+                if (valid_session_keys.find(s_key) == valid_session_keys.end()) {
+                    throw std::invalid_argument("Unknown config key: 'telemetry.session." + s_key + "'");
+                }
+            }
+            if (sess.contains("headers")) {
+                const auto& hdrs = sess["headers"];
+                if (!hdrs.is_object()) {
+                    throw std::invalid_argument("'telemetry.session.headers' must be an object");
+                }
+                static const std::unordered_set<std::string> valid_headers_keys = {
+                    "id", "client"
+                };
+                for (auto& [h_key, h_val] : hdrs.items()) {
+                    if (valid_headers_keys.find(h_key) == valid_headers_keys.end()) {
+                        throw std::invalid_argument("Unknown config key: 'telemetry.session.headers." + h_key + "'");
+                    }
+                    if (h_val.is_array()) {
+                        for (const auto& item : h_val) {
+                            if (!item.is_string()) {
+                                throw std::invalid_argument("'telemetry.session.headers." + h_key + "' elements must be strings");
+                            }
+                        }
+                    } else if (!h_val.is_string()) {
+                        throw std::invalid_argument("'telemetry.session.headers." + h_key + "' must be a string or array of strings");
+                    }
+                }
+            }
+        }
     } else if (is_backend_name(key)) {
         if (!value.is_object()) {
             throw std::invalid_argument("'" + key + "' must be an object");
@@ -781,6 +1130,12 @@ void RuntimeConfig::validate_backend(const std::string& backend, const std::stri
             throw std::invalid_argument("'" + backend + "." + key + "' must be positive");
         }
     }
+    else if (key == "lora_dir" || key == "upscaler_dir") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'" + backend + "." + key + "' must be a string");
+        }
+        validate_path(backend, key, value.get<std::string>());
+    }
     else {
         throw std::invalid_argument("Unknown key: '" + backend + "." + key + "'");
     }
@@ -823,6 +1178,30 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                             applied_diff["telemetry"]["otlp"][otlp_key] = otlp_val;
                         }
                     }
+                } else if (t_key == "session" && t_val.is_object()) {
+                    if (!config_["telemetry"].contains("session") || !config_["telemetry"]["session"].is_object()) {
+                        config_["telemetry"]["session"] = json::object();
+                    }
+                    if (t_val.contains("headers") && t_val["headers"].is_object()) {
+                        if (!config_["telemetry"]["session"].contains("headers") || !config_["telemetry"]["session"]["headers"].is_object()) {
+                            config_["telemetry"]["session"]["headers"] = json::object();
+                        }
+                        for (auto& [h_key, h_val] : t_val["headers"].items()) {
+                            if (!config_["telemetry"]["session"]["headers"].contains(h_key) || config_["telemetry"]["session"]["headers"][h_key] != h_val) {
+                                config_["telemetry"]["session"]["headers"][h_key] = h_val;
+                                if (!applied_diff.contains("telemetry")) {
+                                    applied_diff["telemetry"] = json::object();
+                                }
+                                if (!applied_diff["telemetry"].contains("session")) {
+                                    applied_diff["telemetry"]["session"] = json::object();
+                                }
+                                if (!applied_diff["telemetry"]["session"].contains("headers")) {
+                                    applied_diff["telemetry"]["session"]["headers"] = json::object();
+                                }
+                                applied_diff["telemetry"]["session"]["headers"][h_key] = h_val;
+                            }
+                        }
+                    }
                 } else {
                     if (!config_["telemetry"].contains(t_key) || config_["telemetry"][t_key] != t_val) {
                         config_["telemetry"][t_key] = t_val;
@@ -832,6 +1211,26 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                         applied_diff["telemetry"][t_key] = t_val;
                     }
                 }
+            }
+        } else if (key == "no_broadcast") {
+            bool bcast = !value.get<bool>();
+            bool prev_effective_bcast = (broadcast_override_.has_value())
+                ? *broadcast_override_
+                : (config_.contains("broadcast") && config_["broadcast"].is_boolean() ? config_["broadcast"].get<bool>() : true);
+            config_["broadcast"] = bcast;
+            broadcast_override_ = std::nullopt;
+            if (prev_effective_bcast != bcast) {
+                applied_diff["broadcast"] = bcast;
+            }
+        } else if (key == "broadcast") {
+            bool bcast = value.get<bool>();
+            bool prev_effective_bcast = (broadcast_override_.has_value())
+                ? *broadcast_override_
+                : (config_.contains("broadcast") && config_["broadcast"].is_boolean() ? config_["broadcast"].get<bool>() : true);
+            config_["broadcast"] = bcast;
+            broadcast_override_ = std::nullopt;
+            if (prev_effective_bcast != bcast) {
+                applied_diff["broadcast"] = bcast;
             }
         } else {
             if (!config_.contains(key) || config_[key] != value) {

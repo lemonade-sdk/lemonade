@@ -1,105 +1,22 @@
-#include <cassert>
 #include <cstdio>
 #include <iostream>
 #include <stdexcept>
-#include <unordered_set>
-#include <vector>
 #include <string>
-#include <algorithm>
+#include <vector>
+
 #include <nlohmann/json.hpp>
 #include <lemon/runtime_config.h>
 
+#include "test_config_helpers.h"
+
 using json = nlohmann::json;
 using lemon::RuntimeConfig;
-
-static int passed = 0;
-static int failures = 0;
-
-static void check(bool cond, const char* desc) {
-    if (cond) {
-        std::printf("[PASS] %s\n", desc);
-        ++passed;
-    } else {
-        std::printf("[FAIL] %s\n", desc);
-        ++failures;
-    }
-}
-
-// Replicate CLI parser logic to test it unit-wise
-static json parse_cli_args(const std::vector<std::string>& args) {
-    auto normalize_key = [](std::string s) {
-        std::replace(s.begin(), s.end(), '-', '_');
-        return s;
-    };
-    auto parse_typed_value = [](const std::string& val) -> json {
-        if (!val.empty() && (val.front() == '[' || val.front() == '{')) {
-            auto parsed = json::parse(val, nullptr, false);
-            if (!parsed.is_discarded()) {
-                return parsed;
-            }
-        }
-        if (val == "true") return true;
-        if (val == "false") return false;
-        try {
-            size_t idx;
-            int i = std::stoi(val, &idx);
-            if (idx == val.size()) return i;
-        } catch (...) {}
-        try {
-            size_t idx;
-            double d = std::stod(val, &idx);
-            if (idx == val.size()) return d;
-        } catch (...) {}
-        return val;
-    };
-
-    json updates = json::object();
-    for (const auto& arg : args) {
-        size_t eq_pos = arg.find('=');
-        if (eq_pos == std::string::npos || eq_pos == 0) continue;
-        std::string key = arg.substr(0, eq_pos);
-        std::string value = arg.substr(eq_pos + 1);
-
-        std::vector<std::string> path;
-        size_t last_pos = 0;
-        while (true) {
-            size_t next_dot = key.find('.', last_pos);
-            if (next_dot == std::string::npos) {
-                std::string part = key.substr(last_pos);
-                if (!part.empty()) {
-                    path.push_back(normalize_key(part));
-                }
-                break;
-            }
-            std::string part = key.substr(last_pos, next_dot - last_pos);
-            if (!part.empty()) {
-                path.push_back(normalize_key(part));
-            }
-            last_pos = next_dot + 1;
-        }
-
-        if (path.empty()) continue;
-
-        json* current = &updates;
-        for (size_t i = 0; i < path.size(); ++i) {
-            const std::string& k = path[i];
-            if (i == path.size() - 1) {
-                (*current)[k] = parse_typed_value(value);
-            } else {
-                if (!current->contains(k) || !(*current)[k].is_object()) {
-                    (*current)[k] = json::object();
-                }
-                current = &((*current)[k]);
-            }
-        }
-    }
-    return updates;
-}
+using test_helpers::check;
+using test_helpers::parse_cli_args;
 
 int main() {
     std::puts("=== RUNNING RUNTIME CONFIG & TELEMETRY TESTS ===");
 
-    // 1. Initial base config matching defaults
     json base_cfg = {
         {"config_version", 2},
         {"port", 13305},
@@ -125,7 +42,7 @@ int main() {
 
     RuntimeConfig config(base_cfg);
 
-    // 2. Test recursive merge: toggling telemetry should preserve existing otlp.* settings
+    // 1. Test recursive merge: toggling telemetry should preserve existing otlp.* settings
     json toggle_off = {
         {"telemetry", {
             {"enabled", false}
@@ -148,7 +65,7 @@ int main() {
     check(snapshot["telemetry"]["otlp"]["endpoint"] == "http://localhost:4318/v1/traces", "otlp.endpoint preserved on toggle on");
     check(snapshot["telemetry"]["otlp"]["semantics"] == json::array({"openinference", "otel_genai"}), "otlp.semantics preserved on toggle on");
 
-    // 3. Test validation: rejecting unknown telemetry / OTLP subkeys
+    // 2. Test validation: rejecting unknown telemetry / OTLP subkeys
     bool threw_unknown_telemetry = false;
     try {
         json invalid_telemetry = {
@@ -179,6 +96,7 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
+    // 3. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",
         "telemetry.otlp.protocol=http/json",
@@ -195,12 +113,73 @@ int main() {
     check(cli_updates["telemetry"]["otlp"]["headers"].is_object(), "CLI parses JSON object for headers");
     check(cli_updates["telemetry"]["otlp"]["headers"]["Authorization"] == "Bearer test-key", "CLI parsed object field matches");
 
-    std::printf("================================================\n");
-    if (failures > 0) {
-        std::printf("Tests finished: %d FAILURE(S)\n", failures);
-        return 1;
-    } else {
-        std::printf("All C++ config/telemetry tests PASSED (%d passed).\n", passed);
-        return 0;
+    // 4. Test telemetry.session.headers.(id|client) config, validation and snapshot
+    json session_cfg = {
+        {"telemetry", {
+            {"session", {
+                {"headers", {
+                    {"id", json::array({"x-custom-session", "x-alt-session"})},
+                    {"client", json::array({"x-custom-client"})}
+                }}
+            }}
+        }}
+    };
+    config.set(session_cfg);
+    snapshot = config.snapshot();
+    check(snapshot["telemetry"]["session"]["headers"]["id"].is_array(), "telemetry.session.headers.id is array in snapshot");
+    check(snapshot["telemetry"]["session"]["headers"]["id"].size() == 2, "telemetry.session.headers.id has 2 entries");
+    check(config.telemetry_session_headers_id().size() == 2, "telemetry_session_headers_id returns 2 headers");
+    check(config.telemetry_session_headers_id()[0] == "x-custom-session", "telemetry_session_headers_id first header matches");
+    check(config.telemetry_session_headers_client().size() == 1, "telemetry_session_headers_client returns 1 header");
+    check(config.telemetry_session_headers_client()[0] == "x-custom-client", "telemetry_session_headers_client header matches");
+
+    // Test rejection of non-string elements in array
+    bool threw_invalid_element = false;
+    try {
+        json invalid_sess = {
+            {"telemetry", {
+                {"session", {
+                    {"headers", {
+                        {"id", json::array({123})}
+                    }}
+                }}
+            }}
+        };
+        config.set(invalid_sess);
+    } catch (const std::invalid_argument& e) {
+        threw_invalid_element = true;
+        std::printf("Expected exception caught: %s\n", e.what());
     }
+    check(threw_invalid_element, "rejects non-string elements in telemetry.session.headers.id");
+
+    // Test single string format for id and client
+    json single_str_sess = {
+        {"telemetry", {
+            {"session", {
+                {"headers", {
+                    {"id", "x-single-session"},
+                    {"client", "x-single-client"}
+                }}
+            }}
+        }}
+    };
+    config.set(single_str_sess);
+    check(config.telemetry_session_headers_id().size() == 1, "telemetry_session_headers_id accepts single string header");
+    check(config.telemetry_session_headers_id()[0] == "x-single-session", "single header matches");
+    check(config.telemetry_session_headers_client().size() == 1, "telemetry_session_headers_client accepts single string client header");
+    check(config.telemetry_session_headers_client()[0] == "x-single-client", "single client header matches");
+
+    // Test CLI parsing with dotted syntax
+    std::vector<std::string> session_cli_args = {
+        "telemetry.session.headers.id=[\"x-cli-session\"]",
+        "telemetry.session.headers.client=x-cli-client"
+    };
+    json session_cli_updates = parse_cli_args(session_cli_args);
+    config.set(session_cli_updates);
+    check(config.telemetry_session_headers_id().size() == 1, "CLI sets telemetry.session.headers.id");
+    check(config.telemetry_session_headers_id()[0] == "x-cli-session", "CLI session header matches");
+    check(config.telemetry_session_headers_client().size() == 1, "CLI sets telemetry.session.headers.client");
+    check(config.telemetry_session_headers_client()[0] == "x-cli-client", "CLI client header matches");
+
+    return test_helpers::report_results("C++ config/telemetry");
 }

@@ -16,11 +16,13 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <vector>
 #include <httplib.h>
 #include "runtime_config.h"
 #include "router.h"
 #include "routing_policy.h"
+#include "alias_manager.h"
 #include "model_manager.h"
 #include "backend_manager.h"
 #include "cloud_provider_registry.h"
@@ -46,7 +48,9 @@ struct RouterDispatchResult {
 
 class Server {
 public:
-    Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir);
+    Server(std::shared_ptr<RuntimeConfig> config,
+           const std::string& cache_dir,
+           const std::string& config_dir);
 
     ~Server();
 
@@ -69,6 +73,11 @@ public:
     // main() can report failure and exit non-zero.
     bool startup_failed() const;
 
+    // Unified config endpoints (callable directly in unit tests)
+    void handle_config_set(const httplib::Request& req, httplib::Response& res);
+    void handle_config_get(const httplib::Request& req, httplib::Response& res);
+    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
+
 private:
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
@@ -83,11 +92,6 @@ private:
 
     // Stop the main-port listeners (fronts) and detach the routed servers
     void stop_http_listeners();
-
-    // Unified config endpoints
-    void handle_config_set(const httplib::Request& req, httplib::Response& res);
-    void handle_config_get(const httplib::Request& req, httplib::Response& res);
-    void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
     // Side-effect callback for RuntimeConfig::set(). Receives a nested JSON
     // mirroring the input shape, containing only entries that actually changed.
@@ -105,10 +109,43 @@ private:
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
+    void handle_model_register(const httplib::Request& req, httplib::Response& res);
+    void validate_model_registration_name(const std::string& model_name,
+                                         bool require_user_namespace);
+    void normalize_model_registration_source(nlohmann::json& request_json,
+                                             bool local_import);
+    void validate_and_canonicalize_collection_registration(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool allow_embedded_models);
+    std::string register_model_definition_internal(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool require_definition,
+        bool allow_embedded_models,
+        bool local_import);
     void handle_model_by_id(const httplib::Request& req, httplib::Response& res);
     void handle_model_update_check(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync(const httplib::Request& req, httplib::Response& res);
+    void handle_models_sync_status(const httplib::Request& req, httplib::Response& res);
     void handle_model_files(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_get(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_post(const httplib::Request& req, httplib::Response& res);
+    void handle_model_options_delete(const httplib::Request& req, httplib::Response& res);
+    // Shared body of the three model-options handlers: resolves the model from
+    // the path, applies `mutation` (skipped when null), and writes the
+    // saved/effective/defaults response. The mutation owns updating `info` to
+    // the state the response should describe; one that returns false has
+    // already written its own error response.
+    void respond_with_model_options(
+        const httplib::Request& req, httplib::Response& res,
+        const std::function<bool(const std::string& model_key, ModelInfo& info,
+                                 httplib::Response& res)>& mutation);
     void handle_chat_completions(const httplib::Request& req, httplib::Response& res);
+    // Log and atomically record one non-streaming response's telemetry
+    // (usage/timings, cached tokens) against the serving model.
+    void record_response_telemetry(const nlohmann::json& response,
+                                   const nlohmann::json& request_json);
     // Server-side tool-calling orchestration for Omni "collection" models.
     void handle_collection_chat_completions(const nlohmann::json& request_json,
                                             const ModelInfo& collection_info,
@@ -124,6 +161,10 @@ private:
     // No-op otherwise.
     std::optional<RouterDispatchResult> apply_router_collection_dispatch(
         nlohmann::json& request_json);
+    // Union of routing-helper models across every active router collection's
+    // policy. Passed to Router::reconcile_routing_helpers after a policy is
+    // removed so helpers no remaining policy needs are reclaimed.
+    std::set<std::string> active_policy_helper_models();
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
@@ -145,6 +186,11 @@ private:
     void handle_pin(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_get(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_add(const httplib::Request& req, httplib::Response& res);
+    void handle_aliases_remove(const httplib::Request& req, httplib::Response& res);
+    std::string resolve_alias_target(const std::string& model_name) const;
+    void normalize_and_resolve_request_model(nlohmann::json& request_json) const;
 
     // Cloud auth (public, all four prefixes).
     //   POST /v1/cloud/auth   body: {provider, api_key}
@@ -158,12 +204,10 @@ private:
     // loops without any keys still work.
     void handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res);
     void handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res);
-    void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
-    void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 
@@ -296,6 +340,12 @@ private:
     nlohmann::json model_info_to_json(const std::string& model_id, const ModelInfo& info,
                                       int depth = 0);
 
+    // Effective context window, or 0 when nothing knows it: a loaded backend's
+    // own ctx_size, else the resolved options, else max_context_window.
+    // Deliberately skips the VRAM auto-tuner, which probes the system on every
+    // call and would do so once per model across a full listing.
+    int64_t resolve_context_length(const std::string& model_id, const ModelInfo& info) const;
+
     // Warm model list cache in the background after startup dependencies are initialized
     void start_model_cache_warmup();
 
@@ -308,12 +358,19 @@ private:
     double get_npu_utilization();
 
     std::shared_ptr<RuntimeConfig> config_;
-    std::string cache_dir_;  // Lemonade cache dir for config.json persistence
+    std::string cache_dir_;  // Lemonade cache dir; persistent JSON may live in sibling .config dir
+    std::string config_dir_;
     std::atomic<int> port_;  // Atomic cache for lock-free reads from listener threads
 
     std::thread http_v4_thread_;
     std::thread http_v6_thread_;
     std::thread model_cache_warmup_thread_;
+    struct SyncTaskThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> finished;
+    };
+    std::vector<SyncTaskThread> background_sync_threads_;
+    std::mutex background_sync_mutex_;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port
@@ -324,6 +381,7 @@ private:
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
+    std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;
     std::unique_ptr<CloudProviderRegistry> cloud_registry_;

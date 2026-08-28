@@ -41,6 +41,11 @@ public:
             return g_cache_dir;
         }
 
+        std::string xdg_cache_home = get_environment_variable_utf8("XDG_CACHE_HOME");
+        if (!xdg_cache_home.empty()) {
+            return xdg_cache_home + "/lemonade";
+        }
+
         if (geteuid() != 0) {
             std::string home = get_environment_variable_utf8("HOME");
             if (!home.empty()) {
@@ -70,6 +75,34 @@ public:
             }
             return cache_dir;
         }
+    }
+
+    std::string get_config_dir(const std::string& g_config_dir) override {
+        if (!g_config_dir.empty()) {
+            return g_config_dir;
+        }
+
+        std::string xdg_config_home = get_environment_variable_utf8("XDG_CONFIG_HOME");
+        if (!xdg_config_home.empty()) {
+            return xdg_config_home + "/lemonade";
+        }
+
+        if (geteuid() != 0) {
+            std::string home = get_environment_variable_utf8("HOME");
+            if (!home.empty()) {
+                return home + "/.config/lemonade";
+            }
+            struct passwd* pw = getpwuid(getuid());
+            if (pw) {
+                return std::string(pw->pw_dir) + "/.config/lemonade";
+            }
+        }
+
+        return "/Library/Application Support/lemonade/.config";
+    }
+
+    std::string get_legacy_cache_dir() override {
+        return "";
     }
 
     std::string get_runtime_dir() override {

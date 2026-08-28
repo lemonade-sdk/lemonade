@@ -8,6 +8,7 @@ Tests use the skip_if_unsupported decorator to skip tests for unsupported featur
 """
 
 from functools import wraps
+import os
 import unittest
 
 # Global state for current test configuration
@@ -182,6 +183,16 @@ CAPABILITIES = {
                 "image": "SD-Turbo",
             },
         },
+        "thenoise": {
+            "backends": ["rocm"],
+            "supports": {
+                "image_generation": True,
+                "image_generation_b64": True,
+            },
+            "test_models": {
+                "image": "Anima-Turbo",
+            },
+        },
     },
     "audio_generation": {
         "thinksound": {
@@ -200,6 +211,23 @@ CAPABILITIES = {
             },
             "test_models": {
                 "audio_generation": "ACE-Step-Music",
+            },
+        },
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            # Keep the duplicate backend's flat fallback a superset of its TTS
+            # entry because _build_flat_capabilities() intentionally keeps the
+            # first modality occurrence for duplicate backend names.
+            "supports": {
+                "audio_generation": True,
+                "pcm_audio_generation": True,
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "audio_generation": "MOSS-SoundEffect",
+                "tts": "OpenMOSS-TTS",
             },
         },
     },
@@ -233,6 +261,9 @@ CAPABILITIES = {
                 "voice_cloning": True,
                 "voice_design": True,
             },
+            # Integrated voice design is exercised through the speech model. Keep
+            # the legacy standalone id for compatibility until the GUI migration
+            # removes MOSS-VoiceGen in its own PR.
             "test_models": {
                 "tts": "OpenMOSS-TTS",
                 "tts_design": "MOSS-VoiceGen",
@@ -411,3 +442,21 @@ def requires_backend(backend: str):
         return wrapper
 
     return decorator
+
+
+def skip_heavy(test_func):
+    """
+    Skip a heavy, non-critical test by default to keep CI fast.
+
+    Heavy tests (e.g. slow GPU inference) are disabled unless
+    LEMONADE_TEST_HEAVY=1 is set (e.g. on a dedicated runner).
+
+    Usage:
+        @skip_heavy
+        def test_slow_generation(self):
+            ...
+    """
+    return unittest.skipUnless(
+        os.environ.get("LEMONADE_TEST_HEAVY") == "1",
+        "Heavy test disabled by default; set LEMONADE_TEST_HEAVY=1 to enable",
+    )(test_func)

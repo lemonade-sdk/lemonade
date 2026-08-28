@@ -1,8 +1,8 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/path_platform.h>
-#include <lemon/utils/json_utils.h>
-#include <lemon/utils/process_manager.h>
+#include <lemon/utils/aixlog.hpp>
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <filesystem>
 #include <vector>
@@ -25,6 +25,7 @@ namespace lemon::utils {
 // ---------------------------------------------------------------------------
 
 static std::string g_cache_dir;
+static std::string g_config_dir;
 static std::string g_models_dir;
 
 // Platform abstraction instance (created on first use)
@@ -35,6 +36,10 @@ static PathPlatform* platform() {
 
 void set_cache_dir(const std::string& dir) {
     g_cache_dir = dir;
+}
+
+void set_config_dir(const std::string& dir) {
+    g_config_dir = dir;
 }
 
 void set_models_dir(const std::string& dir) {
@@ -173,6 +178,61 @@ std::string get_cache_dir() {
     return platform()->get_cache_dir(g_cache_dir);
 }
 
+std::string get_config_dir() {
+    return path_to_utf8(path_from_utf8(platform()->get_config_dir(g_config_dir)).make_preferred());
+}
+
+void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,
+                                             const std::string& config_dir) {
+    const fs::path cache_path = path_from_utf8(cache_dir);
+    const fs::path config_path = path_from_utf8(config_dir);
+    if (cache_path == config_path) {
+        return;
+    }
+
+    std::error_code ec;
+    fs::create_directories(config_path, ec);
+    if (ec) {
+        LOG(ERROR) << "Failed to create config directory " << path_to_utf8(config_path)
+                   << ": " << ec.message() << ". Legacy JSON files will not be migrated.";
+        return;
+    }
+
+    constexpr std::array<const char*, 5> kLegacyJsonFiles = {
+        "config.json",
+        "jobs.json",
+        "mcp_servers.json",
+        "recipe_options.json",
+        "user_models.json",
+    };
+    for (const char* filename : kLegacyJsonFiles) {
+        const fs::path old_path = cache_path / filename;
+        const fs::path new_path = config_path / filename;
+        if (!fs::exists(old_path) || fs::exists(new_path)) {
+            continue;
+        }
+        std::error_code move_ec;
+        fs::rename(old_path, new_path, move_ec);
+        if (!move_ec) {
+            continue;
+        }
+        std::error_code copy_ec;
+        fs::copy_file(old_path, new_path, fs::copy_options::overwrite_existing, copy_ec);
+        if (copy_ec) {
+            LOG(WARNING) << "Failed to migrate " << filename << " from "
+                         << path_to_utf8(cache_path) << " to " << path_to_utf8(config_path)
+                         << ": " << copy_ec.message();
+            continue;
+        }
+        std::error_code remove_ec;
+        fs::remove(old_path, remove_ec);
+        if (remove_ec) {
+            LOG(WARNING) << "Migrated " << filename << " but could not remove old copy at "
+                         << path_to_utf8(old_path) << ": " << remove_ec.message();
+        }
+    }
+}
+
 std::string default_hf_cache_dir() {
     return platform()->default_hf_cache_dir();
 }
@@ -197,6 +257,117 @@ std::string resolve_hf_cache_dir() {
     return default_hf_cache_dir();
 }
 
+// Move every entry from `src` into `dst`, preferring rename and falling back to
+// a recursive copy across filesystems. Existing entries in `dst` are kept as-is
+// so a partially-populated target is never clobbered. Top-level names in `skip`
+// are left in `src`. Returns true when `src` was fully drained.
+static bool move_tree_into(const fs::path& src, const fs::path& dst,
+                           const std::vector<std::string>& skip = {}) {
+    std::error_code ec;
+    if (!fs::is_directory(src, ec)) {
+        return true;
+    }
+    fs::create_directories(dst, ec);
+    if (ec) {
+        LOG(WARNING) << "Migration: cannot create " << path_to_utf8(dst)
+                     << ": " << ec.message();
+        return false;
+    }
+
+    std::error_code iter_ec;
+    std::vector<fs::path> entries;
+    for (const auto& entry : fs::directory_iterator(src, iter_ec)) {
+        entries.push_back(entry.path());
+    }
+    if (iter_ec) {
+        LOG(WARNING) << "Migration: cannot read " << path_to_utf8(src)
+                     << ": " << iter_ec.message();
+        return false;
+    }
+
+    bool drained = true;
+    for (const fs::path& from : entries) {
+        const std::string name = path_to_utf8(from.filename());
+        if (std::find(skip.begin(), skip.end(), name) != skip.end()) {
+            drained = false;
+            continue;
+        }
+        const fs::path to = dst / from.filename();
+        if (fs::exists(to)) {
+            if (fs::is_directory(from) && fs::is_directory(to)) {
+                if (!move_tree_into(from, to)) {
+                    drained = false;
+                } else {
+                    std::error_code rm_ec;
+                    fs::remove(from, rm_ec);
+                }
+            } else {
+                drained = false;
+            }
+            continue;
+        }
+        std::error_code mv_ec;
+        fs::rename(from, to, mv_ec);
+        if (!mv_ec) {
+            continue;
+        }
+        std::error_code cp_ec;
+        fs::copy(from, to,
+                 fs::copy_options::recursive | fs::copy_options::copy_symlinks,
+                 cp_ec);
+        if (cp_ec) {
+            LOG(WARNING) << "Migration: failed to move " << path_to_utf8(from)
+                         << " to " << path_to_utf8(to) << ": " << cp_ec.message();
+            drained = false;
+            continue;
+        }
+        std::error_code rm_ec;
+        fs::remove_all(from, rm_ec);
+    }
+    return drained;
+}
+
+void migrate_legacy_paths(const std::string& cache_dir,
+                          const std::string& config_dir) {
+    // Config JSON still sitting in the active cache dir (plain-user upgrade).
+    migrate_legacy_json_files_to_config_dir(cache_dir, config_dir);
+
+    // Pre-3028 systemd installs kept everything under $HOME/.cache. Recover the
+    // cache payload (downloaded backends, registry blobs) into the relocated
+    // cache dir and the JSON into the config dir.
+    //
+    // Gate this on the service actually relocating our directories — systemd
+    // exports CACHE_DIRECTORY / STATE_DIRECTORY when it does. Otherwise the
+    // legacy dir differs from the active one for a second, innocent reason: the
+    // user pointed lemond at a different cache dir (e.g. `lemond /tmp/scratch`),
+    // and we must not drain their real ~/.cache/lemonade into it.
+    const bool relocated_by_service =
+        !get_environment_variable_utf8("CACHE_DIRECTORY").empty() ||
+        !get_environment_variable_utf8("STATE_DIRECTORY").empty();
+    const std::string legacy_cache =
+        relocated_by_service ? platform()->get_legacy_cache_dir() : std::string();
+    if (!legacy_cache.empty()) {
+        const fs::path legacy_cache_path = path_from_utf8(legacy_cache);
+        const fs::path new_cache_path = path_from_utf8(cache_dir);
+        std::error_code exists_ec;
+        if (legacy_cache_path != new_cache_path &&
+            fs::exists(legacy_cache_path, exists_ec)) {
+            LOG(INFO) << "Migrating legacy cache " << legacy_cache << " -> " << cache_dir;
+            migrate_legacy_json_files_to_config_dir(legacy_cache, config_dir);
+            static const std::vector<std::string> kJsonFiles = {
+                "config.json", "jobs.json", "mcp_servers.json",
+                "recipe_options.json", "user_models.json"};
+            if (move_tree_into(legacy_cache_path, new_cache_path, kJsonFiles)) {
+                std::error_code rm_ec;
+                fs::remove(legacy_cache_path, rm_ec);
+            }
+        }
+    }
+    // HuggingFace models are intentionally not relocated: the service resolves
+    // them via HOME (~/.cache/huggingface), so they stay put across the upgrade
+    // and never need a cross-filesystem copy.
+}
+
 std::string get_hf_cache_dir() {
     if (!g_models_dir.empty() && g_models_dir != "auto") {
         fs::path p = path_from_utf8(g_models_dir);
@@ -205,6 +376,9 @@ std::string get_hf_cache_dir() {
         }
         return path_to_utf8(p);
     }
+    // When models_dir is "auto" or unset, resolve via the HuggingFace
+    // cache directory so HF_HOME / HF_HUB_CACHE / platform default are
+    // all respected.
     return resolve_hf_cache_dir();
 }
 

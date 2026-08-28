@@ -10,6 +10,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
+| `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
@@ -18,6 +19,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
+| `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
@@ -32,6 +34,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | cuda | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `ds4` | rocm | linux | amd_gpu (gfx1151) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
@@ -39,7 +42,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | metal | macos | metal |
 | `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx942, gfx950) |
+| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
@@ -56,6 +59,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
+| `thenoise` | rocm | linux | amd_gpu (gfx1150, gfx1151, gfx1152) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
@@ -85,6 +89,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
+
+#### `ds4` — DwarfStar4 (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `ds4_args` | `--ds4-args` | ARGS | "" | Custom arguments to pass to ds4-server |
 
 #### `flm` — FastFlowLM NPU
 
@@ -133,6 +144,22 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
+#### `thenoise` — TheNoise ROCm
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `thenoise_backend` | `--thenoise` | BACKEND | "" | TheNoise backend to use |
+| `steps` | — | SIZE | 20 | Number of denoising steps |
+| `cfg_scale` | — | SIZE | 7.0 | CFG scale (<= 1.0 disables CFG) |
+| `width` | — | SIZE | 512 | Output image width |
+| `height` | — | SIZE | 512 | Output image height |
+| `sampler` | — | ARGS | "" | Denoising solver (euler \| er_sde) |
+| `negative_prompt` | — | ARGS | "" | Negative prompt |
+| `qwen_vae_enhance` | — | BOOL | false | Nyquist notch post-filter (removes 2px grid artifacts) |
+| `film_grain` | — | SIZE | 0.0 | Film grain strength (0.0-10.0) |
+| `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
+| `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
+
 #### `thinksound` — ThinkSound
 
 | Option | CLI flag | Type | Default | Description |
@@ -144,6 +171,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `trellis_backend` | `--trellis` | BACKEND | "" | Trellis backend to use |
+| `trellis_args` | `--trellis-args` | ARGS | "" | Custom arguments to pass to trellis-server |
 
 #### `vllm` — vLLM ROCm (experimental)
 
@@ -161,285 +189,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp_args` | `--whispercpp-args` | ARGS | "" | Custom arguments to pass to whisper-server |
 <!-- END GENERATED: backend-options -->
 
-## Models
-
-<!-- BEGIN GENERATED: backend-models -->
-#### `acestep` — ACE-Step (1 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `ACE-Step-Music` | 10.5 | audio-generation |
-
-#### `collection.omni` — collection.omni (5 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `LMX-Omni-5.5B-Lite` | 9.3 | — |
-| `LMX-Omni-52B-Halo` | 44.77 | — |
-| `Lite Collection` |  | — |
-| `RPG-HaloTales-V1` | 39.77 | — |
-| `Ultra Collection` |  | — |
-
-#### `kokoro` — Kokoro (1 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `kokoro-v1` | 0.354 | tts |
-
-#### `llamacpp` — Llama.cpp GPU (87 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `Bonsai-1.7B-gguf` | 0.25 | llamacpp |
-| `Bonsai-4B-gguf` | 0.572 | llamacpp |
-| `Bonsai-8B-gguf` | 1.16 | llamacpp |
-| `Cogito-v2-llama-109B-MoE-GGUF` | 65.4 | vision |
-| `DeepSeek-Qwen3-8B-GGUF` | 5.25 | reasoning |
-| `Devstral-Small-2507-GGUF` | 14.3 | coding, tool-calling |
-| `GLM-4.5-Air-UD-Q4K-XL-GGUF` | 67.7 | reasoning |
-| `GLM-4.7-Flash-GGUF` | 17.5 | tool-calling |
-| `Gemma-3-4b-it-GGUF` | 3.34 | vision |
-| `Gemma-4-12B-it-GGUF` | 7.29 | tool-calling, vision, llamacpp |
-| `Gemma-4-12B-it-MTP-GGUF` | 7.75 | tool-calling, llamacpp, vision, mtp |
-| `Gemma-4-26B-A4B-it-GGUF` | 18.1 | hot, tool-calling, vision, llamacpp |
-| `Gemma-4-26B-A4B-it-MTP-GGUF` | 18.5 | hot, tool-calling, vision, llamacpp, mtp |
-| `Gemma-4-31B-it-GGUF` | 19.5 | hot, tool-calling, vision, llamacpp |
-| `Gemma-4-31B-it-MTP-GGUF` | 20.0 | hot, tool-calling, vision, llamacpp, mtp |
-| `Gemma-4-E2B-it-GGUF` | 4.09 | tool-calling, vision, llamacpp |
-| `Gemma-4-E4B-it-GGUF` | 5.97 | tool-calling, vision, llamacpp |
-| `Jan-nano-128k-GGUF` | 2.5 | — |
-| `Jan-v1-4B-GGUF` | 2.5 | — |
-| `LFM2-1.2B-GGUF` | 0.731 | — |
-| `LFM2-24B-A2B-GGUF` | 14.4 | — |
-| `LFM2-8B-A1B-GGUF` | 5.04 | — |
-| `LFM2.5-1.2B-Instruct-GGUF` | 0.731 | — |
-| `LFM2.5-8B-A1B` | 5.16 | — |
-| `Llama-3.2-1B-Instruct-GGUF` | 0.834 | — |
-| `Llama-3.2-3B-Instruct-GGUF` | 2.06 | — |
-| `Llama-4-Scout-17B-16E-Instruct-GGUF` | 63.2 | vision |
-| `MiniCPM-V-4-GGUF` | 3.15 | vision |
-| `MiniCPM-V-4.5-GGUF` | 6.12 | vision |
-| `MiniCPM-V-4.6-GGUF` | 1.64 | hot, vision |
-| `MiniCPM-V-4.6-Thinking-GGUF` | 1.64 | reasoning, vision |
-| `MiniCPM-o-2.6-Vision-GGUF` | 5.73 | vision |
-| `MiniCPM-o-4.5-Vision-GGUF` | 6.12 | vision |
-| `MiniCPM3-4B-GGUF` | 2.47 | — |
-| `MiniCPM4-8B-GGUF` | 4.97 | — |
-| `MiniCPM4.1-8B-GGUF` | 4.97 | reasoning |
-| `MiniCPM5-1B-GGUF` | 0.69 | hot, reasoning |
-| `Ministral-3-3B-Instruct-2512-GGUF` | 2.99 | vision |
-| `Nemotron-3-Nano-30B-A3B-GGUF` | 22.8 | — |
-| `Phi-4-mini-instruct-GGUF` | 2.49 | — |
-| `Playable1-GGUF` | 4.68 | coding |
-| `PromptBridge-0.6b-Alpha-GGUF` | 0.397 | — |
-| `Qwen2.5-Coder-32B-Instruct-GGUF` | 19.9 | coding |
-| `Qwen2.5-Omni-3B-GGUF` | 4.73 | vision, chat-transcription |
-| `Qwen2.5-Omni-7B-GGUF` | 7.33 | vision, chat-transcription |
-| `Qwen2.5-VL-3B-Instruct-GGUF` | 3.27 | vision |
-| `Qwen2.5-VL-7B-Instruct-GGUF` | 6.04 | vision |
-| `Qwen3-0.6B-GGUF` | 0.38 | reasoning |
-| `Qwen3-1.7B-GGUF` | 1.06 | reasoning |
-| `Qwen3-14B-GGUF` | 8.54 | reasoning |
-| `Qwen3-30B-A3B-GGUF` | 17.4 | reasoning |
-| `Qwen3-30B-A3B-Instruct-2507-GGUF` | 17.4 | tool-calling |
-| `Qwen3-4B-GGUF` | 2.38 | reasoning |
-| `Qwen3-4B-Instruct-2507-GGUF` | 2.5 | tool-calling |
-| `Qwen3-8B-GGUF` | 5.25 | reasoning |
-| `Qwen3-Coder-30B-A3B-Instruct-GGUF` | 18.6 | coding, tool-calling, hot |
-| `Qwen3-Coder-Next-GGUF` | 48.0 | coding, tool-calling, hot |
-| `Qwen3-Embedding-0.6B-GGUF` | 0.64 | embeddings |
-| `Qwen3-Embedding-4B-GGUF` | 4.28 | embeddings |
-| `Qwen3-Embedding-8B-GGUF` | 8.05 | embeddings |
-| `Qwen3-Next-80B-A3B-Instruct-GGUF` | 46.1 | tool-calling |
-| `Qwen3-VL-4B-Instruct-GGUF` | 3.33 | vision |
-| `Qwen3-VL-8B-Instruct-GGUF` | 6.19 | vision |
-| `Qwen3.5-0.8B-GGUF` | 0.764 | vision, tool-calling |
-| `Qwen3.5-122B-A10B-GGUF` | 77.9 | vision, tool-calling |
-| `Qwen3.5-122B-A10B-MTP-GGUF` | 79.6 | vision, tool-calling, mtp |
-| `Qwen3.5-27B-GGUF` | 18.5 | vision, tool-calling |
-| `Qwen3.5-2B-GGUF` | 2.01 | vision, tool-calling |
-| `Qwen3.5-35B-A3B-GGUF` | 23.1 | vision, tool-calling |
-| `Qwen3.5-4B-GGUF` | 3.58 | vision, tool-calling, hot |
-| `Qwen3.5-4B-MTP-GGUF` | 3.66 | vision, tool-calling, mtp |
-| `Qwen3.5-9B-GGUF` | 6.88 | vision, tool-calling |
-| `Qwen3.6-27B-GGUF` | 18.5 | vision, tool-calling |
-| `Qwen3.6-27B-MTP-GGUF` | 18.8 | vision, tool-calling, mtp, hot |
-| `Qwen3.6-35B-A3B-GGUF` | 23.3 | vision, tool-calling, hot |
-| `Qwen3.6-35B-A3B-MTP-GGUF` | 23.8 | vision, tool-calling, mtp |
-| `SmolLM3-3B-GGUF` | 1.94 | — |
-| `Tiny-Test-Model-GGUF` | 0.18 | — |
-| `bge-reranker-v2-m3-GGUF` | 0.636 | reranking |
-| `gpt-oss-120b-GGUF` | 62.8 | reasoning, tool-calling |
-| `gpt-oss-120b-mxfp-GGUF` | 63.4 | hot, reasoning, tool-calling |
-| `gpt-oss-20b-GGUF` | 11.6 | reasoning, tool-calling |
-| `gpt-oss-20b-mxfp4-GGUF` | 12.1 | hot, reasoning, tool-calling |
-| `granite-4.0-h-tiny-GGUF` | 4.25 | tool-calling |
-| `jina-reranker-v1-tiny-en-GGUF` | 0.0367 | reranking |
-| `nomic-embed-text-v1-GGUF` | 0.0781 | embeddings |
-| `nomic-embed-text-v2-moe-GGUF` | 0.51 | embeddings |
-
-#### `moonshine` — Moonshine (3 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `Moonshine-Medium-Streaming` | 1.08 | transcription, realtime-transcription, hot |
-| `Moonshine-Small-Streaming` | 0.431 | transcription, realtime-transcription |
-| `Moonshine-Tiny-Streaming` | 0.202 | transcription, realtime-transcription |
-
-#### `onnxruntime` — ONNX Runtime (2 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `Bert-Phishing-ONNX` | 1.34 | classification |
-| `Phishing-Email-Detection-ONNX` | 0.27 | classification |
-
-#### `openmoss` — OpenMOSS TTS (2 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `MOSS-VoiceGen` | 7.3 | tts, voice-design |
-| `OpenMOSS-TTS` | 12.5 | tts |
-
-#### `ryzenai-llm` — Ryzen AI LLM (79 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `AMD-OLMo-1B-SFT-DPO-Hybrid` | 1.48 | — |
-| `CodeLlama-7b-Instruct-hf-Hybrid` | 7.24 | coding |
-| `CodeLlama-7b-Instruct-hf-NPU` | 7.54 | coding |
-| `DeepSeek-R1-Distill-Llama-8B-CPU` | 6.2 | reasoning |
-| `DeepSeek-R1-Distill-Llama-8B-Hybrid` | 9.09 | reasoning |
-| `DeepSeek-R1-Distill-Llama-8B-NPU` | 9.3 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-1.5B-Hybrid` | 2.19 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-1.5B-NPU` | 2.3 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-7B-CPU` | 6.2 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-7B-Hybrid` | 8.67 | reasoning |
-| `DeepSeek-R1-Distill-Qwen-7B-NPU` | 8.87 | reasoning |
-| `Gemma-3-4b-it-mm-NPU` | 6.68 | vision |
-| `Llama-2-7b-chat-hf-Hybrid` | 7.31 | — |
-| `Llama-2-7b-chat-hf-NPU` | 7.47 | — |
-| `Llama-2-7b-hf-Hybrid` | 7.31 | — |
-| `Llama-2-7b-hf-NPU` | 7.47 | — |
-| `Llama-3.1-8B-Hybrid` | 9.09 | — |
-| `Llama-3.1-8B-NPU` | 9.3 | — |
-| `Llama-3.2-1B-Hybrid` | 1.89 | — |
-| `Llama-3.2-1B-Instruct-CPU` | 1.76 | — |
-| `Llama-3.2-1B-Instruct-Hybrid` | 1.89 | — |
-| `Llama-3.2-1B-Instruct-NPU` | 1.96 | — |
-| `Llama-3.2-1B-NPU` | 1.96 | — |
-| `Llama-3.2-3B-Hybrid` | 4.28 | — |
-| `Llama-3.2-3B-Instruct-CPU` | 3.38 | — |
-| `Llama-3.2-3B-Instruct-Hybrid` | 4.28 | — |
-| `Meta-Llama-3-8B-Hybrid` | 9.06 | — |
-| `Meta-Llama-3-8B-NPU` | 9.23 | — |
-| `Meta-Llama-3.1-8B-Instruct-Hybrid` | 9.09 | — |
-| `Meta-Llama-3.1-8B-Instruct-NPU` | 9.3 | — |
-| `Mistral-7B-Instruct-v0.1-Hybrid` | 7.34 | — |
-| `Mistral-7B-Instruct-v0.1-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.2-Hybrid` | 7.34 | — |
-| `Mistral-7B-Instruct-v0.2-NPU` | 8.01 | — |
-| `Mistral-7B-Instruct-v0.3-Hybrid` | 7.35 | — |
-| `Mistral-7B-Instruct-v0.3-NPU` | 8.09 | — |
-| `Mistral-7B-v0.3-Hybrid` | 7.35 | — |
-| `Mistral-7B-v0.3-NPU` | 8.09 | — |
-| `Phi-3-Mini-Instruct-CPU` | 2.39 | — |
-| `Phi-3-mini-128k-instruct-Hybrid` | 4.21 | — |
-| `Phi-3-mini-128k-instruct-NPU` | 4.35 | — |
-| `Phi-3-mini-4k-instruct-Hybrid` | 4.19 | — |
-| `Phi-3-mini-4k-instruct-NPU` | 4.3 | — |
-| `Phi-3.5-mini-instruct-Hybrid` | 4.21 | — |
-| `Phi-3.5-mini-instruct-NPU` | 4.35 | — |
-| `Phi-4-mini-instruct-Hybrid` | 5.47 | — |
-| `Phi-4-mini-instruct-NPU` | 5.59 | — |
-| `Phi-4-mini-reasoning-Hybrid` | 5.47 | reasoning |
-| `Qwen-1.5-7B-Chat-CPU` | 6.32 | — |
-| `Qwen-2.5-1.5B-Instruct-Hybrid` | 2.17 | — |
-| `Qwen-2.5-1.5B-Instruct-NPU` | 2.25 | — |
-| `Qwen1.5-7B-Chat-Hybrid` | 8.83 | — |
-| `Qwen1.5-7B-Chat-NPU` | 9.02 | — |
-| `Qwen2-1.5B-Hybrid` | 2.19 | — |
-| `Qwen2-1.5B-NPU` | 2.3 | — |
-| `Qwen2-7B-Hybrid` | 8.68 | — |
-| `Qwen2-7B-NPU` | 8.88 | — |
-| `Qwen2.5-0.5B-Instruct-CPU` | 0.834 | — |
-| `Qwen2.5-0.5B-Instruct-Hybrid` | 0.828 | — |
-| `Qwen2.5-14B-instruct-Hybrid` | 16.5 | — |
-| `Qwen2.5-3B-Instruct-Hybrid` | 3.97 | — |
-| `Qwen2.5-3B-Instruct-NPU` | 4.1 | — |
-| `Qwen2.5-7B-Instruct-Hybrid` | 8.65 | — |
-| `Qwen2.5-7B-Instruct-NPU` | 8.83 | — |
-| `Qwen2.5-Coder-0.5B-Instruct-Hybrid` | 0.828 | coding |
-| `Qwen2.5-Coder-1.5B-Instruct-Hybrid` | 2.17 | coding |
-| `Qwen2.5-Coder-1.5B-Instruct-NPU` | 2.25 | coding |
-| `Qwen2.5-Coder-7B-Instruct-Hybrid` | 8.65 | coding |
-| `Qwen2.5-Coder-7B-Instruct-NPU` | 8.83 | coding |
-| `Qwen3-1.7B-Hybrid` | 2.55 | reasoning |
-| `Qwen3-14B-Hybrid` | 16.5 | reasoning |
-| `Qwen3-4B-Hybrid` | 5.17 | reasoning |
-| `Qwen3-8B-Hybrid` | 9.42 | reasoning |
-| `SmolLM-135M-Instruct-Hybrid` | 0.232 | — |
-| `SmolLM2-135M-Instruct-Hybrid` | 0.233 | — |
-| `chatglm3-6b-Hybrid` | 6.9 | — |
-| `chatglm3-6b-NPU` | 7.04 | — |
-| `gemma-2-2b-Hybrid` | 4.04 | — |
-| `gpt-oss-20b-NPU` | 13.4 | — |
-
-#### `sd-cpp` — StableDiffusion.cpp (12 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `Flux-2-Klein-4B` | 16.1 | image, edit |
-| `Flux-2-Klein-9B-GGUF` | 19.0 | image, edit |
-| `Qwen-Image-2512-GGUF` | 19.4 | image |
-| `Qwen-Image-GGUF` | 18.2 | image |
-| `RealESRGAN-x4plus` | 0.064 | upscaling, image |
-| `RealESRGAN-x4plus-anime` | 0.017 | upscaling, image |
-| `SD-1.5` | 7.7 | image |
-| `SD-Turbo` | 5.21 | image |
-| `SD-Turbo-GGUF` | 2.02 | image |
-| `SDXL-Base-1.0` | 6.94 | image |
-| `SDXL-Turbo` | 6.94 | image |
-| `Z-Image-Turbo` | 20.7 | image |
-
-#### `thinksound` — ThinkSound (1 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `ThinkSound-SFX` | 6.4 | audio-generation |
-
-#### `trellis` — TRELLIS.2 (1 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `TRELLIS-3D` | 15.4 | 3d |
-
-#### `vllm` — vLLM ROCm (experimental) (11 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `GLM-4.7-Flash-FP16-vLLM` | 62.47 | reasoning, tool-calling |
-| `Qwen3.5-0.8B-FP16-vLLM` | 1.77 | reasoning |
-| `Qwen3.5-2B-FP16-vLLM` | 4.57 | reasoning, tool-calling |
-| `Qwen3.5-4B-FP16-vLLM` | 9.34 | reasoning, hot, tool-calling |
-| `Qwen3.5-9B-FP16-vLLM` | 19.3 | reasoning, tool-calling |
-| `Qwen3.6-27B-FP16-vLLM` | 55.59 | reasoning, tool-calling, vision |
-| `Qwen3.6-27B-FP8-vLLM-highconc` | 27.8 | reasoning, tool-calling, vision, mtp |
-| `Qwen3.6-27B-FP8-vLLM-lowconc` | 27.8 | reasoning, tool-calling, vision, mtp |
-| `Qwen3.6-35B-A3B-FP16-vLLM` | 71.93 | reasoning, tool-calling, vision |
-| `Qwen3.6-35B-A3B-FP8-vLLM-highconc` | 36.0 | reasoning, tool-calling, vision, mtp |
-| `Qwen3.6-35B-A3B-FP8-vLLM-lowconc` | 36.0 | reasoning, tool-calling, vision, mtp |
-
-#### `whispercpp` — Whisper.cpp (6 models)
-
-| Model | Size (GB) | Labels |
-|-------|-----------|--------|
-| `Whisper-Base` | 0.148 | transcription, realtime-transcription |
-| `Whisper-Large-v3` | 3.1 | transcription, realtime-transcription |
-| `Whisper-Large-v3-Turbo` | 1.62 | transcription, realtime-transcription, hot |
-| `Whisper-Medium` | 1.53 | transcription, realtime-transcription |
-| `Whisper-Small` | 0.488 | transcription, realtime-transcription |
-| `Whisper-Tiny` | 0.075 | transcription, realtime-transcription |
-<!-- END GENERATED: backend-models -->
 
 ## Implementation notes
 
@@ -454,6 +203,28 @@ Vocals are a two-stage pipeline. `POST /lm` with `lm_mode: "generate"` runs the 
 Errors from `audio_generations` are written into the response sink as a JSON error payload; the endpoint handler turns that into an HTTP error instead of shipping it as audio.
 
 The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (`acestep-5Hz-lm-4B-Q8_0.gguf`, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to `--models` is the directory of GGUFs; `ace-server` scans it by architecture, and `--keep-loaded` keeps models resident across requests.
+
+### OpenMOSS (`openmoss`)
+
+`moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, `server_models.json` keeps `size` as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
+
+The legacy `MOSS-VoiceGen` registry entry remains as a compatibility model for existing clients; integrated voice design on `OpenMOSS-TTS` and `MOSS-TTS-Local` does not depend on that standalone entry.
+
+`request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. `start_speech_process()` therefore calls `stop_speech_process()` rather than `unload()` on a failed readiness wait, because `unload()` takes the same exclusive lock.
+
+The transient design process is polled for readiness through its own `/health` rather than the shared `wait_for_ready()`, since it does not own `port_`; the poll also checks `ProcessManager::is_running()` each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. `spawn()` uses `find_free_port()` instead of `choose_port()` for the same reason — `choose_port()` assigns `port_`, and the caller decides which process `port_` addresses.
+
+Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit `n_ctx`; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.
+
+Lemonade does not inject `max_audio_frames` into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.
+
+Voice design is opt-in through the `voice_design_description` extension and is never inferred from `voice`, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending `"voice": "default"` gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries `reference_wav_b64`. Request fields are read with a type-checking accessor rather than `json::value()`, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.
+
+`MOSS-SoundEffect` uses the same recipe but is an audio-generation model: `audio_generations()` forwards to the backend's `/sfx` endpoint, accepting `duration`/`cfg` as aliases for `seconds`/`cfg_scale`.
+
+### Model downloads
+
+A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
 
 ### Backend auto-selection
 

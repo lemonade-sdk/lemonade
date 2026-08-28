@@ -98,6 +98,17 @@ lemonade list
 lemonade pull Gemma-4-E2B-it-GGUF
 ```
 
+To manage model aliases for environment-independent naming and active-standby failover:
+
+```
+lemonade alias add production-llm Gemma-4-E2B-it-GGUF
+lemonade alias list
+
+# Instant active-standby failover to a different model target
+lemonade alias add production-llm Qwen3-0.6B-GGUF
+lemonade alias remove production-llm
+```
+
 To see the backends available on your PC:
 
 ```
@@ -136,7 +147,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="10"><strong>Text generation</strong></td>
       <td rowspan="6"><code>llamacpp</code></td>
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
@@ -159,7 +170,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*</td>
+      <td>AMD GPUs supported by ROCm</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
@@ -183,6 +194,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td rowspan="1"><code>vllm</code> (experimental)</td>
       <td><code>rocm</code></td>
       <td>Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>ds4</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Prebuilt ds4 for AMD Strix Halo</td>
       <td>Linux</td>
     </tr>
     <tr>
@@ -280,7 +297,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="5"><strong>Image generation</strong></td>
+      <td rowspan="6"><strong>Image generation</strong></td>
       <td rowspan="5"><code>sd-cpp</code></td>
       <td><code>metal</code></td>
       <td>Apple Silicon GPU</td>
@@ -305,6 +322,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>thenoise</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm iGPU families</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>3D generation</strong></td>
@@ -483,7 +506,7 @@ Lemonade is built by the local AI community! If you would like to contribute to 
 
 ## Maintainers
 
-This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @kenvandine @Geramy @ramkrishna2910 @sawansri @siavashhub @sofiageo @superm1 @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+This is a community project with many maintainers, please see the [maintainers list here](./docs/dev/contribute.md#maintainers) to see their subject areas. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues) or joining our [Discord](https://discord.gg/5xXzkMu8Zk). This project is sponsored by [AMD](mailto:lemonade@amd.com).
 
 ## Code Signing Policy
 

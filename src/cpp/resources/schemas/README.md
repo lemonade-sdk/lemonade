@@ -81,6 +81,7 @@ v1** (pinned in the schema field descriptions):
 | `regex` | **ECMAScript** dialect (`std::regex`), case-sensitive; pattern must be non-empty; patterns with a nested unbounded quantifier (`(X+)+` — catastrophic backtracking) are rejected at policy load |
 | `min_score` / `max_score` | **inclusive** band (`>=` / `<=`); default `min_score: 0.5` when neither bound is given |
 | `min_chars` / `max_chars` | input length in **UTF-8 bytes** (not code points) |
+| `min_total_chars` / `max_total_chars` | length of **all text content in the request** in **UTF-8 bytes** — chat `messages` summed over every role, a legacy `prompt` (equal to `chars`), or a Responses `input` array summed over all items; non-text parts contribute nothing |
 | `metadata` | reads a request `metadata` key; **case-sensitive** comparison, value decoded into a comma-split, trimmed **token set** (`equals` raw exact / `any` set-intersection / `exists` presence). A missing, empty, or **whitespace-only** value counts as absent (matches only `exists:false`) |
 | multi-key leaf object | interpreted as implicit **`all`**; e.g. `{"keywords_any":[...],"max_chars":1000}` means both leaves must match |
 | `on_error` (omitted) | default **`match_false`** (fail-open) |
@@ -107,6 +108,39 @@ redistribution. Fixtures live in `test/cpp/fixtures/routing/`:
 
 Levels **compose** — one policy may mix a router, classifiers, and deterministic
 conditions across its rules.
+
+## Cost reporting (`outputs.estimated_cost`)
+
+After the engine resolves `route_to` (matched rule or `default_model`), it looks
+up cost metadata for that candidate via `CostServices` and, when any field is
+present, merges it into the decision as `outputs.estimated_cost`:
+
+```json
+"estimated_cost": {
+  "cost_tier": "medium",
+  "cost_input_per_million": 3.0,
+  "cost_output_per_million": 15.0,
+  "latency_ms_hint": 40.0
+}
+```
+
+All keys are optional. This is **illustrative, not a billing figure** — the same
+caveat as the per-million fields on `/v1/models`.
+
+**Where the numbers come from**
+
+| Field | Source |
+|-------|--------|
+| `cost_input_per_million` / `cost_output_per_million` | Typed `ModelInfo` fields when `>= 0` (cloud auto-discovery already populates these); otherwise the same keys in `ModelInfo::extras` for hand-authored entries |
+| `cost_tier` | `extras` only (`"free"` \| `"low"` \| `"medium"` \| `"high"`) |
+| `latency_ms_hint` | `extras` only (local/compute proxy) |
+
+No `server_models.json` schema change is required: unrecognized keys already land
+in `extras`. Authors can add e.g. `"cost_tier": "free"` or
+`"cost_input_per_million": 3.0` on a model entry today.
+
+Phase A is reporting only. Automated cheapest-candidate selection (`cost_select`
+on `route_to`) is deferred.
 
 ## Contract surface
 
