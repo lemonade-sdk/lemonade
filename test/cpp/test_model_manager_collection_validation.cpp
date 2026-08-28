@@ -286,6 +286,54 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
 }
 
+// #2748: a classifier component needing hardware this host lacks (ryzenai-llm,
+// reliably unsupported on any CI host) must not take the whole router policy
+// down at cache-build time -- only that classifier should fail, at evaluate()
+// time, where its own on_error already applies. Registered standalone first,
+// since register_user_model doesn't auto-register a collection's inline
+// `models[]` (only the real import/pull path does), so it still goes through
+// build_cache()'s hardware filtering like any other model.
+static void test_filtered_classifier_component_does_not_drop_policy(ModelManager& manager) {
+    manager.register_user_model(
+        "user.npu-clf",
+        json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
+             {"checkpoint", "example/npu-clf"}});
+
+    json doc = {
+        {"model_name", "user.RouterFiltered"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "user.npu-clf"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "user.npu-clf"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFiltered", doc);
+
+    auto info = manager.get_model_info("user.RouterFiltered");
+    check("router policy still parses when a classifier component is "
+          "hardware-filtered (#2748)",
+          info.route_policy != nullptr);
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -304,6 +352,7 @@ int main() {
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
     test_backend_capability_over_chat_indicator(manager);
+    test_filtered_classifier_component_does_not_drop_policy(manager);
     test_register_preserves_routing(manager);
 
     fs::remove_all(temp);

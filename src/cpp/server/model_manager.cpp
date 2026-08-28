@@ -3037,6 +3037,18 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Snapshot every known model's type before hardware filtering removes some
+    // of them from all_models (#2748): a router's classifier component can name
+    // a model this host can't run right now (no NPU, insufficient memory, not
+    // yet downloaded), which must not be indistinguishable from a name that
+    // isn't a model at all. The routing-policy resolver below falls back to
+    // this so that case still resolves a type and parses; the classifier then
+    // fails at evaluate() time instead, where on_error already applies per rule.
+    std::map<std::string, ModelType> pre_filter_types;
+    for (const auto& [name, info] : all_models) {
+        pre_filter_types[name] = info.type;
+    }
+
     // Step 2: Filter by backend availability. This is the full-registry pass, so
     // it also refreshes the recipe availability side table used to hide backends
     // that have nothing runnable on this host.
@@ -3101,9 +3113,18 @@ void ModelManager::build_cache() {
     // Direct lookup into the map already being built, same rationale as
     // resolve_component above: models_cache_ is populated and the lock is
     // still held, so this avoids re-entering get_model_info()'s own locking.
-    policy_options.get_model_type = [this](const std::string& name) -> std::optional<ModelType> {
+    // Falls back to pre_filter_types (#2748) for a component this host
+    // currently can't run: its type is still known, so the policy still
+    // parses instead of being dropped whole over one unavailable classifier.
+    policy_options.get_model_type = [this, &pre_filter_types](
+                                         const std::string& name) -> std::optional<ModelType> {
         auto it = models_cache_.find(name);
-        return it != models_cache_.end() ? std::optional<ModelType>(it->second.type) : std::nullopt;
+        if (it != models_cache_.end()) {
+            return it->second.type;
+        }
+        auto pre_it = pre_filter_types.find(name);
+        return pre_it != pre_filter_types.end() ? std::optional<ModelType>(pre_it->second)
+                                                : std::nullopt;
     };
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
