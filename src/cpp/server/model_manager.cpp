@@ -1162,22 +1162,8 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
-// A model moved (with its full hub layout) into extra_models_dir keeps its
-// "models--org--repo/snapshots/<hash>/..." shape. Walking up from a discovered
-// file to that "models--"/"modelscope--models--" ancestor recovers "org/repo"
-// so the model keeps a readable name instead of the snapshot hash that would
-// otherwise be read as the containing folder's name. Stops at `stop_at` (the
-// configured extra_models_dir root) so an unrelated ancestor name can't match.
-//
-// A cache directory can hold more than one "snapshots/<hash>" revision (a
-// stale re-download, an older pinned revision, etc). Recovering "org/repo"
-// for all of them would make every snapshot race for the same model id, with
-// whichever one the directory scan happens to visit last silently winning it
-// and the "active" snapshot getting collision-qualified with its hash
-// instead. So when a snapshots/ layout is present, only the snapshot that
-// "refs/main" actually points at is trusted with the recovered name; any
-// other snapshot falls back to the pre-existing hash-named behavior, same as
-// before this recovery existed.
+// Recover org/repo only for the active snapshots/<hash> entry of a
+// recognized HF/ModelScope cache. Other paths keep normal directory naming.
 static std::string hf_cache_repo_name_for_path(const fs::path& path, const fs::path& stop_at) {
     static constexpr const char kHfPrefix[] = "models--";
     static constexpr const char kMsPrefix[] = "modelscope--models--";
@@ -1200,16 +1186,19 @@ static std::string hf_cache_repo_name_for_path(const fs::path& path, const fs::p
         return "";
     }
 
-    // If `path` sits under cache_root/snapshots/<hash>, that hash must match
-    // refs/main before the recovered name can be trusted.
+    // Only recover the name for a positively-identified cache_root/snapshots/<hash>
+    // ancestor whose hash matches refs/main; anything else (a plain "models--*"
+    // folder with no snapshots/ layout, or a non-active snapshot) is left alone.
     const fs::path snapshots_dir = cache_root / "snapshots";
+    bool is_active_snapshot = false;
     for (fs::path cur = path; cur.has_filename() && cur != cache_root; cur = cur.parent_path()) {
         if (cur.parent_path() != snapshots_dir) continue;
         const std::string active_hash = read_hf_ref_main(cache_root);
-        if (active_hash.empty() || active_hash != cur.filename().string()) {
-            return "";
-        }
+        is_active_snapshot = !active_hash.empty() && active_hash == cur.filename().string();
         break;
+    }
+    if (!is_active_snapshot) {
+        return "";
     }
 
     // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo";

@@ -6922,9 +6922,7 @@ class EndpointTests(ServerTestBase):
         old_hash = "1111111111111111111111111111111111111a"
         active_hash = "2222222222222222222222222222222222222b"
 
-        old_gguf = os.path.join(
-            repo_dir, "snapshots", old_hash, "Qwen3-4B-Q4_K_M.gguf"
-        )
+        old_gguf = os.path.join(repo_dir, "snapshots", old_hash, "Qwen3-4B-Q4_K_M.gguf")
         active_gguf = os.path.join(
             repo_dir, "snapshots", active_hash, "Qwen3-4B-Q4_K_M.gguf"
         )
@@ -6962,6 +6960,38 @@ class EndpointTests(ServerTestBase):
             print(
                 "[OK] multi-snapshot HF cache: only refs/main snapshot recovers repo name"
             )
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021yd_extra_models_dash_dash_folder_without_snapshots_not_recovered(self):
+        """A plain 'models--*' folder with no snapshots/ layout is not an HF
+        cache and must keep normal directory naming, not a recovered repo name."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_notcache_")
+        folder_name = "models--acme--ordinary-folder"
+        gguf_path = os.path.join(extra_dir, folder_name, "model.gguf")
+        self._write_stub_gguf_file(gguf_path)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
+
+            self.assertIn(
+                f"extra.{folder_name}",
+                ids,
+                f"non-HF-cache 'models--*' folder should keep its folder name: {ids}",
+            )
+            self.assertNotIn(
+                "extra.acme/ordinary-folder",
+                ids,
+                "should not decode as an org/repo pair without a snapshots/<hash> layout",
+            )
+
+            print("[OK] plain 'models--*' folder without snapshots/ keeps folder name")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
