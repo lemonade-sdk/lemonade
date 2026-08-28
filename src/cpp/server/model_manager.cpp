@@ -1269,11 +1269,21 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
+    // Root files claim their short id first, so adding a reserved directory
+    // never renames an extra model that already exists.
     std::sort(standalone_files.begin(), standalone_files.end(),
               [&search_path](const auto& lhs, const auto& rhs) {
-                  return lhs.first.lexically_relative(search_path).generic_string() <
-                         rhs.first.lexically_relative(search_path).generic_string();
+                  const fs::path lhs_rel = lhs.first.lexically_relative(search_path);
+                  const fs::path rhs_rel = rhs.first.lexically_relative(search_path);
+                  const bool lhs_nested = lhs_rel.has_parent_path();
+                  const bool rhs_nested = rhs_rel.has_parent_path();
+                  if (lhs_nested != rhs_nested) return !lhs_nested;
+                  return lhs_rel.generic_string() < rhs_rel.generic_string();
               });
+
+    // A directory used to be listed as a single model named after itself.
+    // Reserving one splits it into separate models, so keep the old id resolving.
+    std::set<std::string> folder_ids_kept;
 
     // Process standalone files (single-file models)
     for (const auto& [gguf_path, deployment_label] : standalone_files) {
@@ -1298,6 +1308,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.size = static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
         } catch (...) {
             info.size = 0.0;
+        }
+
+        if (!deployment_label.empty() && folder_ids_kept.insert(deployment_label).second) {
+            info.input_aliases.push_back(deployment_label);
+            info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
         add_extra_model(discovered, gguf_path.stem().string(), gguf_path.parent_path(), std::move(info));

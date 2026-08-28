@@ -45,6 +45,11 @@ static bool has_label(const ModelInfo& info, const std::string& label) {
     return std::find(info.labels.begin(), info.labels.end(), label) != info.labels.end();
 }
 
+static bool has_alias(const ModelInfo& info, const std::string& alias) {
+    return std::find(info.input_aliases.begin(), info.input_aliases.end(), alias) !=
+           info.input_aliases.end();
+}
+
 static bool check_type(const std::map<std::string, ModelInfo>& models,
                        const char* name,
                        const std::string& id,
@@ -212,6 +217,45 @@ static void test_same_name_across_categories() {
     fs::remove_all(dir);
 }
 
+static void test_reserved_directory_keeps_folder_id() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "embeddings" / "all-MiniLM-L6-v2.gguf");
+    touch(dir / "embeddings" / "nomic-embed-text-v2.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* first = find_model(models, "extra.all-MiniLM-L6-v2");
+    const ModelInfo* second = find_model(models, "extra.nomic-embed-text-v2");
+    if (first == nullptr || second == nullptr) {
+        check("reserved directory files are listed individually", false);
+    } else {
+        check("folder id resolves to the first file",
+              has_alias(*first, "extra.embeddings") && has_alias(*first, "embeddings"));
+        check("folder id is not duplicated across files",
+              !has_alias(*second, "extra.embeddings"));
+    }
+
+    fs::remove_all(dir);
+}
+
+static void test_root_beats_category_for_short_id() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "nomic-embed-text-v2.gguf");
+    touch(dir / "embeddings" / "nomic-embed-text-v2.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    check("root and category duplicates are both discovered", models.size() == 2);
+    check_type(models, "root file keeps the short id", "extra.nomic-embed-text-v2",
+               ModelType::LLM, "chat");
+    check_type(models, "category duplicate gets the qualified id",
+               "extra.embeddings-nomic-embed-text-v2", ModelType::EMBEDDING, "embeddings");
+
+    fs::remove_all(dir);
+}
+
 static void test_non_normalized_search_path() {
     fs::path dir = make_temp_dir();
     touch(dir / "embeddings" / "model-a.gguf");
@@ -244,6 +288,8 @@ int main() {
     test_category_files_are_separate_models();
     test_category_names_are_case_sensitive();
     test_same_name_across_categories();
+    test_reserved_directory_keeps_folder_id();
+    test_root_beats_category_for_short_id();
     test_non_normalized_search_path();
 
     fs::remove_all(cache_dir);

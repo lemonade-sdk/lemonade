@@ -160,7 +160,13 @@ extra.my_custom_model.gguf              Yes         llamacpp
 
 > Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
 
-Use the reserved top-level directories `chat`, `embeddings`, and `reranking` to select how imported models run. Files directly inside a reserved directory and models in its nested folders inherit that mode. Models outside these directories default to chat; filenames do not affect classification.
+**Folder convention:** the folder a model sits in tells the server how to run it. Filenames are never used to guess.
+
+Use the reserved top-level directories `chat`, `embeddings`, and `reranking` to select how imported models run. Files directly inside a reserved directory, and models in its nested folders, inherit that mode. Models at the root or under any other directory default to chat.
+
+Reserved directory names must match exactly: `embeddings` is reserved, while `Embedding`, `embedding`, and `embeddings 2` are ordinary directories. The server does not try to infer near-matches because doing so could accidentally select the wrong runtime behavior.
+
+> Upgrading: if you already have a top-level folder named `chat`, `embeddings`, or `reranking`, its contents were previously listed as a single model called `extra.chat`, `extra.embeddings`, or `extra.reranking`. Those files are now listed individually by filename. The old name is still accepted in requests, so existing configs and scripts keep working.
 
 > Note: When an existing `extra_models_dir` is set at runtime, the path must be a readable directory for the `lemond` process. Permission or I/O failures are rejected instead of replacing the current model view. A path that does not exist yet is allowed and can be picked up later by the directory watcher.
 
