@@ -61,12 +61,10 @@ def collect_server_logs(output_dir):
 
 def request_json(method, url, timeout, **kwargs):
     """Perform an HTTP request and parse the JSON response when present."""
-    api_key = _auth_headers()
-    if api_key: 
-        headers = kwargs.get("headers", {})
-        headers.update(api_key)
-        kwargs["headers"] = headers
-    response = requests.request(method, url, timeout=timeout, **kwargs)
+    auth_headers = _auth_headers()
+    headers = {**(kwargs.get("headers") or {}), **auth_headers}
+    request_kwargs = { **kwargs, "headers" : headers}
+    response = requests.request(method, url, timeout=timeout, **request_kwargs)
     body = {}
     if response.content:
         try:
