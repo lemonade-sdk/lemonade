@@ -208,6 +208,121 @@ void test_systemd_cache_directory_is_used_directly() {
     fs::remove_all(root);
 }
 
+void test_systemd_relocation_recovers_cache_and_models() {
+    const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    const fs::path root = fs::temp_directory_path() /
+                          ("lemonade_relocate_" + std::to_string(unique));
+    const fs::path home = root / "home";
+    const fs::path legacy_cache = home / ".cache" / "lemonade";
+    const fs::path legacy_hub = home / ".cache" / "huggingface" / "hub";
+    const fs::path cache_dir = root / "var" / "cache" / "lemonade";
+    const fs::path config_dir = root / "var" / "lib" / "lemonade";
+
+    ScopedEnvVar home_var("HOME", home.string());
+    // Systemd exports these when it relocates the service's directories; the
+    // recovery leg only runs when it sees them.
+    ScopedEnvVar state_var("STATE_DIRECTORY", config_dir.string());
+    ScopedEnvVar cache_var("CACHE_DIRECTORY", cache_dir.string());
+
+    try {
+        write_text(legacy_cache / "config.json", "{\"port\":9000}\n");
+        write_text(legacy_cache / "bin" / "llama-server", "ELF\n");
+        const fs::path legacy_model =
+            legacy_hub / "models--demo--foo" / "snapshots" / "abc" / "model.gguf";
+        write_text(legacy_model, "GGUF\n");
+
+        lemon::utils::migrate_legacy_paths(cache_dir.string(), config_dir.string());
+
+        assert(fs::exists(config_dir / "config.json"));
+        assert(read_text(config_dir / "config.json") == "{\"port\":9000}\n");
+        assert(!fs::exists(legacy_cache / "config.json"));
+
+        assert(fs::exists(cache_dir / "bin" / "llama-server"));
+        assert(read_text(cache_dir / "bin" / "llama-server") == "ELF\n");
+        assert(!fs::exists(legacy_cache));
+
+        // Models are deliberately left in place — no cross-filesystem copy.
+        assert(fs::exists(legacy_model));
+        assert(read_text(legacy_model) == "GGUF\n");
+    } catch (...) {
+        fs::remove_all(root);
+        throw;
+    }
+
+    fs::remove_all(root);
+}
+
+void test_relocation_preserves_existing_target_files() {
+    const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    const fs::path root = fs::temp_directory_path() /
+                          ("lemonade_relocate_keep_" + std::to_string(unique));
+    const fs::path home = root / "home";
+    const fs::path legacy_cache = home / ".cache" / "lemonade";
+    const fs::path cache_dir = root / "var" / "cache" / "lemonade";
+    const fs::path config_dir = root / "var" / "lib" / "lemonade";
+
+    ScopedEnvVar home_var("HOME", home.string());
+    ScopedEnvVar state_var("STATE_DIRECTORY", config_dir.string());
+    ScopedEnvVar cache_var("CACHE_DIRECTORY", cache_dir.string());
+
+    try {
+        write_text(legacy_cache / "config.json", "{\"stale\":true}\n");
+        write_text(config_dir / "config.json", "{\"current\":true}\n");
+
+        lemon::utils::migrate_legacy_paths(cache_dir.string(), config_dir.string());
+
+        assert(read_text(config_dir / "config.json") == "{\"current\":true}\n");
+    } catch (...) {
+        fs::remove_all(root);
+        throw;
+    }
+
+    fs::remove_all(root);
+}
+
+// A user pointing lemond at an explicit cache dir (e.g. `lemond /tmp/scratch`)
+// must NOT drain their real ~/.cache/lemonade — that only happens on a service
+// upgrade, signalled by systemd's STATE_DIRECTORY / CACHE_DIRECTORY.
+void test_explicit_cache_dir_does_not_drain_legacy() {
+    const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    const fs::path root = fs::temp_directory_path() /
+                          ("lemonade_scratch_" + std::to_string(unique));
+    const fs::path home = root / "home";
+    const fs::path legacy_cache = home / ".cache" / "lemonade";
+    const fs::path scratch = root / "scratch";
+
+    ScopedEnvVar home_var("HOME", home.string());
+    // No STATE_DIRECTORY / CACHE_DIRECTORY: not a service relocation.
+    ScopedEnvVar state_var("STATE_DIRECTORY", "");
+    ScopedEnvVar cache_var("CACHE_DIRECTORY", "");
+
+    try {
+        write_text(legacy_cache / "config.json", "{\"real\":true}\n");
+        write_text(legacy_cache / "bin" / "llama-server", "ELF\n");
+
+        // Portable/explicit invocation: cache_dir == config_dir == scratch.
+        lemon::utils::migrate_legacy_paths(scratch.string(), scratch.string());
+
+        // The real install is untouched; nothing was dragged into scratch.
+        assert(fs::exists(legacy_cache / "config.json"));
+        assert(read_text(legacy_cache / "config.json") == "{\"real\":true}\n");
+        assert(fs::exists(legacy_cache / "bin" / "llama-server"));
+        assert(!fs::exists(scratch / "config.json"));
+        assert(!fs::exists(scratch / "bin"));
+    } catch (...) {
+        fs::remove_all(root);
+        throw;
+    }
+
+    fs::remove_all(root);
+}
+
 void test_xdg_cache_and_config_dirs_are_resolved_separately() {
     const auto unique = std::chrono::duration_cast<std::chrono::microseconds>(
                             std::chrono::steady_clock::now().time_since_epoch())
@@ -253,6 +368,9 @@ int main() {
 #ifndef _WIN32
     test_systemd_state_directory_takes_precedence_over_home();
     test_systemd_cache_directory_is_used_directly();
+    test_systemd_relocation_recovers_cache_and_models();
+    test_relocation_preserves_existing_target_files();
+    test_explicit_cache_dir_does_not_drain_legacy();
     test_xdg_cache_and_config_dirs_are_resolved_separately();
 #endif
     std::cout << "config dir migration tests passed\n";

@@ -27,6 +27,9 @@ public:
     virtual std::string get_config_dir(const std::string& g_config_dir) = 0;
     virtual std::string get_runtime_dir() = 0;
 
+    // Pre-3028 home-based cache dir, or "" if this platform never relocated.
+    virtual std::string get_legacy_cache_dir() = 0;
+
     // Platform-specific install prefixes for resource lookup
     virtual std::vector<std::string> get_install_prefixes() = 0;
 
