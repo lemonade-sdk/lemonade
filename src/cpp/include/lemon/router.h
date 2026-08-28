@@ -205,12 +205,6 @@ public:
 
     json get_max_model_limits() const;
 
-    // The Router's actual applied llm_candidate_floor_ (not a fresh
-    // recomputation) — lets callers like /health report the same value that
-    // get_max_model_limits()'s "llm" entry is derived from, so the two never
-    // disagree.
-    int llm_candidate_floor() const;
-
     // Get pinned model counts per type
     json get_pinned_model_counts() const;
     // Pinned routing helpers, separated from the standard counts used by
@@ -336,6 +330,10 @@ private:
     // stale duplicate of the first.
     int llm_candidate_floor_ = 0;
     uint64_t last_llm_floor_generation_ = 0;
+    // The floor value the no-VRAM-backstop warning last fired for; 0 when the
+    // condition isn't currently active. Re-warns only when the floor changes
+    // while still unguarded, not on every unrelated policy reconcile.
+    int last_llm_floor_warned_ = 0;
     // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
     // residency slot to clear wakes and returns instead of blocking teardown.
     bool reclaim_shutdown_ = false;

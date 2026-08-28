@@ -2645,22 +2645,28 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
 
-    // Candidate-floor diagnostics: what raised (or would raise) the LLM limit
-    // above, and whether autosize is actually applying it right now. Reads
-    // the Router's own applied state (same source as max_models.llm above)
-    // plus the per-policy breakdown cached at the last reconcile, rather than
-    // recomputing live — so the two numbers can never disagree, and /health
-    // doesn't pay for a full registry walk on every poll.
+    // Candidate-floor diagnostics: the true local-candidate count regardless
+    // of the off-switch (spec: /health must keep showing this even while
+    // disabled), plus the breakdown that explains it. Both read from one
+    // cached snapshot under one lock, so candidate_floor and policies can
+    // never disagree with EACH OTHER — cached at the last reconcile rather
+    // than recomputed live, so /health doesn't pay for a full registry walk
+    // on every poll. This can still be a reconcile-generation stale relative
+    // to max_models.llm above (which reads the Router's own applied state
+    // independently) during a narrow race with an in-flight policy reload;
+    // that's ordinary eventual consistency between "what's enforced" and
+    // "why", not the same defect as the two fields here disagreeing with
+    // each other.
     {
-        std::map<std::string, int> per_policy_counts;
+        LlmCandidateFloorInfo floor_snapshot;
         {
             std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
-            per_policy_counts = llm_candidate_floor_info_.per_policy_counts;
+            floor_snapshot = llm_candidate_floor_info_;
         }
         response["llm_pool_autosize"] = {
             {"enabled", config_->llm_pool_autosize()},
-            {"candidate_floor", router_->llm_candidate_floor()},
-            {"policies", per_policy_counts}
+            {"candidate_floor", static_cast<int>(floor_snapshot.models.size())},
+            {"policies", floor_snapshot.per_policy_counts}
         };
     }
 
@@ -3917,13 +3923,20 @@ Server::LlmCandidateFloorInfo Server::active_policy_llm_candidate_floor() {
         if (!info.route_policy) {
             continue;
         }
-        int local_llm_count = 0;
+        std::set<std::string> policy_models;
         for (const auto& candidate : info.route_policy->candidates) {
             ModelInfo candidate_info;
             try {
                 candidate_info = model_manager_->get_model_info(candidate);
-            } catch (const std::exception&) {
-                continue;  // candidate no longer resolvable; not this floor's problem
+            } catch (const std::exception& e) {
+                // Excluding it shrinks the floor, which can reopen the reload
+                // thrash this feature exists to prevent — worth a WARNING, not
+                // a silent skip.
+                LOG(WARNING, "Server") << "Policy '" << name << "' candidate '"
+                                       << candidate << "' is unresolvable, excluding "
+                                       << "it from the LLM pool floor: " << e.what()
+                                       << std::endl;
+                continue;
             }
             if (candidate_info.type != ModelType::LLM) {
                 continue;
@@ -3932,11 +3945,12 @@ Server::LlmCandidateFloorInfo Server::active_policy_llm_candidate_floor() {
             if (desc && desc->slot_policy == SlotPolicy::Unmetered) {
                 continue;  // cloud candidate — no local process, no slot to floor
             }
-            result.models.insert(model_manager_->resolve_model_name(candidate));
-            ++local_llm_count;
+            const std::string resolved = model_manager_->resolve_model_name(candidate);
+            result.models.insert(resolved);
+            policy_models.insert(resolved);
         }
-        if (local_llm_count > 0) {
-            result.per_policy_counts[name] = local_llm_count;
+        if (!policy_models.empty()) {
+            result.per_policy_counts[name] = static_cast<int>(policy_models.size());
         }
     }
     return result;
