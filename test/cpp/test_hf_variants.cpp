@@ -1,7 +1,6 @@
 #include <lemon/hf_variants.h>
 
 #include <cstdio>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -79,8 +78,9 @@ int main() {
         };
         const std::string error = lemon::llamacpp_gguf_incompatibility(
             untagged_image, "huggingface");
-        result.expect("untagged non-text GGUF is rejected",
-                      error.find("context length") != std::string::npos,
+        result.expect("unsupported GGUF architecture is rejected",
+                      error.find("krea2") != std::string::npos &&
+                          error.find("not supported") != std::string::npos,
                       "error was: " + error);
     }
 
@@ -103,22 +103,13 @@ int main() {
                            blank_architecture, "huggingface").empty(),
                       "blank architecture was accepted");
 
-        const nlohmann::json invalid_context = {
-            {"gguf", {{"architecture", "llama"}, {"context_length", 0}}},
+        const nlohmann::json supported_without_context = {
+            {"gguf", {{"architecture", "llama"}}},
         };
-        result.expect("zero context length is rejected",
-                      !lemon::llamacpp_gguf_incompatibility(
-                           invalid_context, "huggingface").empty(),
-                      "zero context length was accepted");
-
-        const nlohmann::json large_unsigned_context = {
-            {"gguf", {{"architecture", "llama"},
-                      {"context_length", std::numeric_limits<std::uint64_t>::max()}}},
-        };
-        result.expect("unsigned context metadata is handled without narrowing",
+        result.expect("supported architecture does not require heuristic metadata",
                       lemon::llamacpp_gguf_incompatibility(
-                          large_unsigned_context, "huggingface").empty(),
-                      "positive unsigned context length was rejected");
+                          supported_without_context, "huggingface").empty(),
+                      "supported architecture was rejected");
     }
 
     {

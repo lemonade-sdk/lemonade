@@ -381,8 +381,8 @@ public:
         if (!requested_revision.empty() && revision != "main") {
             url += "/revision/" + percent_encode(revision, true);
         }
-        url += "?blobs=true&expand%5B%5D=gguf&expand%5B%5D=pipeline_tag"
-               "&expand%5B%5D=sha&expand%5B%5D=siblings";
+        const std::string repository_url = url;
+        url += "?blobs=true";
 
         const auto response = HttpClient::get(url, auth_headers());
         if (response.status_code == 404 || response.status_code == 401 || response.status_code == 403) {
@@ -398,6 +398,21 @@ public:
         if (!metadata.contains("siblings") || !metadata["siblings"].is_array()) {
             throw std::runtime_error("Hugging Face response for " + repo_id +
                                      " is missing the siblings array");
+        }
+
+        const auto expanded_response = HttpClient::get(
+            repository_url + "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag",
+            auth_headers());
+        if (expanded_response.status_code == 200) {
+            try {
+                const json expanded_metadata = JsonUtils::parse(expanded_response.body);
+                for (const char* field : {"gguf", "pipeline_tag"}) {
+                    auto value = expanded_metadata.find(field);
+                    if (value != expanded_metadata.end()) metadata[field] = *value;
+                }
+            } catch (const std::exception&) {
+                // Mirrors may accept expand parameters without returning Hugging Face JSON.
+            }
         }
 
         RegistryRepository result;

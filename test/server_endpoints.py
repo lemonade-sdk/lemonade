@@ -7300,6 +7300,11 @@ class EndpointTests(ServerTestBase):
             )
             self.assertIsInstance(v["sharded"], bool)
             self.assertIsInstance(v["size_bytes"], int)
+            self.assertGreater(
+                v["size_bytes"],
+                0,
+                f"Variant '{v.get('name')}' has no file size metadata",
+            )
 
         print(
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "

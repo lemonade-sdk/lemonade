@@ -9,6 +9,7 @@
 #include <unordered_map>
 
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/llamacpp_architectures_generated.h"
 #include "lemon/model_types.h"
 #include "lemon/model_registry.h"
 #include "lemon/utils/http_client.h"
@@ -579,17 +580,10 @@ std::string llamacpp_gguf_incompatibility(
         return "GGUF metadata does not declare a model architecture";
     }
 
-    auto context_it = gguf_it->find("context_length");
-    bool has_positive_context = false;
-    if (context_it != gguf_it->end()) {
-        if (context_it->is_number_unsigned()) {
-            has_positive_context = context_it->get<std::uint64_t>() > 0;
-        } else if (context_it->is_number_integer()) {
-            has_positive_context = context_it->get<std::int64_t>() > 0;
-        }
-    }
-    if (!has_positive_context) {
-        return "GGUF metadata does not declare a positive text context length";
+    const std::string architecture = architecture_it->get<std::string>();
+    if (!llamacpp_architecture_is_supported(architecture)) {
+        return "GGUF architecture '" + architecture +
+               "' is not supported by Lemonade's llama.cpp backend";
     }
 
     return {};

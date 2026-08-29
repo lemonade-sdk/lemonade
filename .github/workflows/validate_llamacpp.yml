@@ -975,6 +975,9 @@ jobs:
               print("  none")
           PY
 
+      - name: Update supported llama.cpp architectures
+        run: python3 .github/scripts/update_llamacpp_architectures.py
+
       - name: Generate PR body
         shell: bash
         env:
@@ -1108,13 +1111,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Skip if backend_versions.json is already up to date
-          if git diff --quiet src/cpp/resources/backend_versions.json; then
+          if git diff --quiet src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h; then
             echo "backend_versions.json is unchanged — nothing to update."
             exit 0
           fi
 
           git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json
+          git add src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h
           git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 
