@@ -140,5 +140,117 @@ int main() {
         check(defaults["allowed_origins"] == "", "base_defaults() allowed_origins is empty string");
     }
 
+    // 9. config_migrate_allowed_origins_env helper tests
+    {
+        json cfg_missing = json::object({{"broadcast", true}});
+        check(lemon::config_migrate_allowed_origins_env(cfg_missing, "http://a.com"),
+              "migrates when allowed_origins is missing");
+        check(cfg_missing["allowed_origins"] == "http://a.com", "allowed_origins populated");
+
+        json cfg_empty = json::object({{"allowed_origins", ""}});
+        check(lemon::config_migrate_allowed_origins_env(cfg_empty, "http://b.com"),
+              "migrates when allowed_origins is empty string");
+        check(cfg_empty["allowed_origins"] == "http://b.com", "empty string replaced");
+
+        json cfg_existing = json::object({{"allowed_origins", "http://existing.com"}});
+        check(!lemon::config_migrate_allowed_origins_env(cfg_existing, "http://new.com"),
+              "does not migrate when allowed_origins is non-empty");
+        check(cfg_existing["allowed_origins"] == "http://existing.com", "existing value preserved");
+
+        json cfg_null_env = json::object({{"allowed_origins", ""}});
+        check(!lemon::config_migrate_allowed_origins_env(cfg_null_env, nullptr),
+              "does not migrate when env var is null");
+        check(!lemon::config_migrate_allowed_origins_env(cfg_null_env, ""),
+              "does not migrate when env var is empty string");
+    }
+
+    // 10. ConfigFile::load() disk migration tests
+    {
+        namespace fs = std::filesystem;
+        fs::path temp_dir = fs::temp_directory_path() / "lemonade_test_migration_origins";
+        fs::remove_all(temp_dir);
+        fs::create_directories(temp_dir);
+
+        // Case A: Fresh dir (no config.json) with env var set -> creates config.json with allowed_origins
+        {
+            fs::path dir_a = temp_dir / "case_a";
+            fs::create_directories(dir_a);
+            set_env_var("LEMONADE_ALLOWED_ORIGINS", "http://migrated-fresh.example.com");
+
+            json loaded = ConfigFile::load(dir_a.string(), dir_a.string());
+            check(loaded["allowed_origins"] == "http://migrated-fresh.example.com",
+                  "ConfigFile::load merged fresh config has migrated allowed_origins");
+
+            json raw_on_disk = ConfigFile::load_raw(dir_a.string());
+            check(raw_on_disk["allowed_origins"] == "http://migrated-fresh.example.com",
+                  "ConfigFile::load created config.json on disk with migrated allowed_origins");
+            clear_env_var("LEMONADE_ALLOWED_ORIGINS");
+        }
+
+        // Case B: Existing config.json without allowed_origins -> writes allowed_origins to disk
+        {
+            fs::path dir_b = temp_dir / "case_b";
+            fs::create_directories(dir_b);
+            ConfigFile::save(dir_b.string(), json::object({{"broadcast", true}}));
+
+            set_env_var("LEMONADE_ALLOWED_ORIGINS", "http://migrated-missing.example.com");
+            json loaded = ConfigFile::load(dir_b.string(), dir_b.string());
+            check(loaded["allowed_origins"] == "http://migrated-missing.example.com",
+                  "ConfigFile::load updated missing field");
+
+            json raw_on_disk = ConfigFile::load_raw(dir_b.string());
+            check(raw_on_disk["allowed_origins"] == "http://migrated-missing.example.com",
+                  "ConfigFile::load persisted migrated allowed_origins to existing config.json");
+            clear_env_var("LEMONADE_ALLOWED_ORIGINS");
+        }
+
+        // Case C: Existing config.json with empty allowed_origins -> updates allowed_origins on disk
+        {
+            fs::path dir_c = temp_dir / "case_c";
+            fs::create_directories(dir_c);
+            ConfigFile::save(dir_c.string(), json::object({{"allowed_origins", ""}}));
+
+            set_env_var("LEMONADE_ALLOWED_ORIGINS", "http://migrated-empty.example.com");
+            json loaded = ConfigFile::load(dir_c.string(), dir_c.string());
+            check(loaded["allowed_origins"] == "http://migrated-empty.example.com",
+                  "ConfigFile::load updated empty field");
+
+            json raw_on_disk = ConfigFile::load_raw(dir_c.string());
+            check(raw_on_disk["allowed_origins"] == "http://migrated-empty.example.com",
+                  "ConfigFile::load persisted migrated allowed_origins to empty config.json");
+            clear_env_var("LEMONADE_ALLOWED_ORIGINS");
+        }
+
+        // Case D: Existing config.json with non-empty allowed_origins (conflicting) -> does NOT overwrite on disk
+        {
+            fs::path dir_d = temp_dir / "case_d";
+            fs::create_directories(dir_d);
+            ConfigFile::save(dir_d.string(), json::object({{"allowed_origins", "http://keep-existing.example.com"}}));
+
+            set_env_var("LEMONADE_ALLOWED_ORIGINS", "http://should-not-overwrite.example.com");
+            json loaded = ConfigFile::load(dir_d.string(), dir_d.string());
+            json raw_on_disk = ConfigFile::load_raw(dir_d.string());
+            check(raw_on_disk["allowed_origins"] == "http://keep-existing.example.com",
+                  "ConfigFile::load does not overwrite existing non-empty allowed_origins on disk");
+            clear_env_var("LEMONADE_ALLOWED_ORIGINS");
+        }
+
+        // Case E: Existing config.json with matching allowed_origins -> does not modify disk
+        {
+            fs::path dir_e = temp_dir / "case_e";
+            fs::create_directories(dir_e);
+            ConfigFile::save(dir_e.string(), json::object({{"allowed_origins", "http://matching.example.com"}}));
+
+            set_env_var("LEMONADE_ALLOWED_ORIGINS", "http://matching.example.com");
+            json loaded = ConfigFile::load(dir_e.string(), dir_e.string());
+            json raw_on_disk = ConfigFile::load_raw(dir_e.string());
+            check(raw_on_disk["allowed_origins"] == "http://matching.example.com",
+                  "ConfigFile::load preserves matching allowed_origins on disk");
+            clear_env_var("LEMONADE_ALLOWED_ORIGINS");
+        }
+
+        fs::remove_all(temp_dir);
+    }
+
     return report_results("allowed_origins config");
 }

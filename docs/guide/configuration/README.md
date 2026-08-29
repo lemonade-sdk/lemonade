@@ -490,7 +490,10 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 The `allowed_origins` setting (in `config.json` or configured via `lemonade config set allowed_origins="..."`) controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
 
 > [!WARNING]
-> The `LEMONADE_ALLOWED_ORIGINS` environment variable is **deprecated** and will be removed in a future release. If set on startup and `allowed_origins` is unset or empty in `config.json`, Lemonade automatically migrates the value into `config.json`. During the deprecation transition period, `LEMONADE_ALLOWED_ORIGINS` still takes interim precedence over `config.json` when present in the process environment.
+> The `LEMONADE_ALLOWED_ORIGINS` environment variable is **deprecated** and will be removed in a future release.
+> - **Automatic Migration**: If `LEMONADE_ALLOWED_ORIGINS` is set at startup and `allowed_origins` is unset or empty in `config.json`, Lemonade automatically migrates the value into `config.json`.
+> - **Precedence & Conflict Handling**: At startup, `LEMONADE_ALLOWED_ORIGINS` takes interim precedence over `config.json`. If both exist and differ, a warning is logged advising you to unset or remove `LEMONADE_ALLOWED_ORIGINS` to avoid shadowing your configuration file.
+> - **Runtime Updates**: Running `lemonade config set allowed_origins="..."` dynamically applies changes to the active session immediately, overriding any initial environment variable value without restarting the server.
 
 > [!NOTE]
 > `allowed_origins` specifies the **client application/web page's origin** (where the request originates), **not** the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an `Origin` header and are not restricted by origin validation.
