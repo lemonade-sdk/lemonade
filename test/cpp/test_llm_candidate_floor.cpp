@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -206,6 +207,30 @@ static void test_autosize_off_clamps_applied_floor() {
           !LlmPoolFloorTestHook::resident(router, "off.old"));
 }
 
+static void test_convergence_prefers_idle_over_busy_lru() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+    StubLlmServer* busy_lru =
+        LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("busy.older"));
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("idle.newer"));
+    LlmPoolFloorTestHook::reconcile_floor(router, 2);
+    busy_lru->acquire_for_inference();
+
+    const auto start = std::chrono::steady_clock::now();
+    // busy.older is the actual LRU; without preferring an idle resident this
+    // would block on evict_server's busy wait (EVICTION_TIMEOUT seconds) even
+    // though idle.newer sits right there and could be evicted immediately.
+    LlmPoolFloorTestHook::reconcile_floor(router, 1);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    busy_lru->release_inference();
+
+    check("convergence evicts an idle resident instead of blocking on a busy LRU",
+          LlmPoolFloorTestHook::resident(router, "busy.older") &&
+              !LlmPoolFloorTestHook::resident(router, "idle.newer") &&
+              elapsed < std::chrono::seconds(2));
+}
+
 static void test_reconcile_converges_pool_down_when_floor_drops() {
     RuntimeConfig config(make_config_json(1, true));
     Router router(&config, nullptr, nullptr);
@@ -262,6 +287,7 @@ int main() {
     test_autosize_off_clamps_applied_floor();
     test_reconcile_converges_pool_down_when_floor_drops();
     test_enforce_llm_pool_capacity_reclaims_after_live_config_change();
+    test_convergence_prefers_idle_over_busy_lru();
 
     RuntimeConfig::set_global(nullptr);
 

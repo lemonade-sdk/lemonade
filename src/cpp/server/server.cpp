@@ -7428,10 +7428,10 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                 }
             }
         } else if (key == "llm_pool_autosize" || key == "max_loaded_models") {
-            // Neither key routes through a policy change, so nothing else would
-            // ever call this: without it, disabling autosize (or lowering
-            // max_loaded_models) leaves an already-over-limit pool exactly as
-            // it was until enough future admissions evict it down one at a time.
+            // See Router::enforce_llm_pool_capacity. Neither key routes
+            // through a policy change, so nothing else would call it here —
+            // without this, an over-limit pool wouldn't shrink until enough
+            // future admissions evicted it one at a time.
             router_->enforce_llm_pool_capacity();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();

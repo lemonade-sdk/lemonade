@@ -187,20 +187,16 @@ public:
     // policies' local candidates can stay resident together. Generation-
     // guarded the same way as reconcile_routing_helpers, but with its own
     // counter (see llm_candidate_floor_ above). Ends by calling
-    // enforce_llm_pool_capacity_locked() so a floor that just DROPPED (fewer
-    // active candidates) evicts down to it immediately rather than waiting
-    // for future admissions to do it one at a time.
+    // enforce_llm_pool_capacity_locked(), which both converges the pool and
+    // (re)evaluates the no-backstop warning — see that function for both.
     void reconcile_llm_candidate_floor(int floor, uint64_t generation);
 
-    // Evict LRU LLM residents until the pool is at or under its current
-    // effective limit. The admission path (ensure_residency_capacity) only
-    // ever evicts one resident to make room for a new one; this is the
-    // proactive counterpart for when the limit itself shrinks out from under
-    // an already-populated pool — e.g. disabling llm_pool_autosize, lowering
-    // max_loaded_models, or a policy edit that drops candidates. Called from
-    // Server::apply_config_side_effects on the config keys that change the
-    // limit, in addition to firing automatically from a policy-driven floor
-    // change above.
+    // Proactive counterpart to ensure_residency_capacity, which only ever
+    // evicts one resident to make room for a new one: this converges an
+    // already-populated pool down to its current limit (see
+    // model_residency.h) and re-checks the no-backstop warning, for
+    // whichever event just shrank that limit out from under it — a policy
+    // edit, or a live config change (see Server::apply_config_side_effects).
     void enforce_llm_pool_capacity();
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
@@ -375,6 +371,8 @@ private:
                                       ResidencyClass residency_class) const;
     WrappedServer* find_lru_server_in_pool(ModelType type, ResidencyClass residency_class,
                                                   const std::string& model_name) const;
+    WrappedServer* find_lru_idle_server_in_pool(ModelType type,
+                                                ResidencyClass residency_class) const;
     void ensure_residency_capacity(ModelType type, ResidencyClass residency_class,
                                    const std::string& model_name);
     // Caller holds load_mutex_. Bounded by the pool's own size so a resident
