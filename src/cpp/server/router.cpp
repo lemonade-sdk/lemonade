@@ -479,17 +479,35 @@ void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64
 }
 
 void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
     if (generation <= last_llm_floor_generation_) {
         return;
     }
     last_llm_floor_generation_ = generation;
+    // Published immediately, same reasoning as needed_helper_models_ in
+    // apply_routing_helper_reconcile: a load re-acquiring the lock after
+    // this validates against the fresh value regardless of whether the
+    // eviction pass below has run yet.
     llm_candidate_floor_ = floor;
+
+    // Same wait apply_routing_helper_reconcile uses before its own eviction
+    // pass — evicting is not safe to interleave with an in-flight load or an
+    // exclusive job session.
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
     enforce_llm_pool_capacity_locked();
 }
 
 void Router::enforce_llm_pool_capacity() {
-    std::lock_guard<std::mutex> lock(load_mutex_);
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    load_cv_.wait(lock, [&] {
+        return !is_loading_ &&
+               (!exclusive_active_ ||
+                exclusive_owner_ == std::this_thread::get_id());
+    });
     enforce_llm_pool_capacity_locked();
 }
 

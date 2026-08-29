@@ -231,6 +231,33 @@ static void test_convergence_prefers_idle_over_busy_lru() {
               elapsed < std::chrono::seconds(2));
 }
 
+static void test_reconcile_waits_for_exclusive_session_before_evicting() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("excl.a"));
+    LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("excl.b"));
+    LlmPoolFloorTestHook::reconcile_floor(router, 2);
+
+    const bool acquired = router.begin_exclusive();
+
+    std::thread worker([&] { LlmPoolFloorTestHook::reconcile_floor(router, 1); });
+
+    // The eviction pass must block while the exclusive session holds the
+    // router, same as apply_routing_helper_reconcile's does — not race
+    // ahead and evict out from under it.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const bool survived_during_session =
+        LlmPoolFloorTestHook::resident_count(router, {"excl.a", "excl.b"}) == 2;
+
+    router.end_exclusive();
+    worker.join();
+    const bool converged_after_session =
+        LlmPoolFloorTestHook::resident_count(router, {"excl.a", "excl.b"}) == 1;
+
+    check("floor reconcile waits for an exclusive session before evicting",
+          acquired && survived_during_session && converged_after_session);
+}
+
 static void test_reconcile_converges_pool_down_when_floor_drops() {
     RuntimeConfig config(make_config_json(1, true));
     Router router(&config, nullptr, nullptr);
@@ -288,6 +315,7 @@ int main() {
     test_reconcile_converges_pool_down_when_floor_drops();
     test_enforce_llm_pool_capacity_reclaims_after_live_config_change();
     test_convergence_prefers_idle_over_busy_lru();
+    test_reconcile_waits_for_exclusive_session_before_evicting();
 
     RuntimeConfig::set_global(nullptr);
 
