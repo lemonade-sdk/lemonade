@@ -286,18 +286,17 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
 }
 
-// #2748: a classifier component needing hardware this host lacks (ryzenai-llm,
-// reliably unsupported on any CI host) must not take the whole router policy
-// down at cache-build time -- only that classifier should fail, at evaluate()
-// time, where its own on_error already applies. Registered standalone first,
-// since register_user_model doesn't auto-register a collection's inline
-// `models[]` (only the real import/pull path does), so it still goes through
-// build_cache()'s hardware filtering like any other model.
+// #2748: a classifier needing unavailable hardware (ryzenai-llm) must not
+// drop the whole policy -- only that classifier fails, at evaluate() time,
+// via its own on_error. Registered standalone since register_user_model
+// doesn't auto-register a collection's inline `models[]`.
 static void test_filtered_classifier_component_does_not_drop_policy(ModelManager& manager) {
     manager.register_user_model(
         "user.npu-clf",
         json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
              {"checkpoint", "example/npu-clf"}});
+    check("npu-clf is actually hardware-filtered on this host (test premise)",
+          !manager.model_exists("user.npu-clf"));
 
     json doc = {
         {"model_name", "user.RouterFiltered"},
@@ -334,16 +333,15 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
           info.route_policy != nullptr);
 }
 
-// #2748 follow-up: resolve_component's own pre-filter fallback must bridge a
-// bare name to its canonical id too, not just get_model_type's -- otherwise
-// the declared-component check rejects the policy before get_model_type ever
-// runs. Here `components` lists the canonical id but the classifier
-// references the bare name, the opposite pairing from the test above.
+// #2748 follow-up: `components` lists the canonical id, classifier
+// references the bare name -- the opposite pairing from the test above.
 static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManager& manager) {
     manager.register_user_model(
         "user.npu-clf2",
         json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
              {"checkpoint", "example/npu-clf2"}});
+    check("npu-clf2 is actually hardware-filtered on this host (test premise)",
+          !manager.model_exists("user.npu-clf2"));
 
     json doc = {
         {"model_name", "user.RouterFilteredBare"},

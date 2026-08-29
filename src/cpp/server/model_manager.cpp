@@ -2787,6 +2787,40 @@ void ModelManager::download_from_huggingface_engine(
     download_from_registry_engine(info, progress_callback);
 }
 
+// Bare name -> winning canonical cache key, by source precedence (Registered
+// > Imported > Builtin), same rule as rebuild_public_model_aliases_locked()
+// but over every known model, not just hardware-filtering survivors (#2748):
+// a bare name must not silently resolve to a lower-precedence model just
+// because the true winner is temporarily unavailable.
+static std::map<std::string, std::string> compute_bare_name_precedence(
+    const std::map<std::string, ModelInfo>& models) {
+    struct Candidate {
+        std::string cache_key;
+        ModelSource source;
+    };
+    std::map<std::string, std::vector<Candidate>> by_bare;
+    for (const auto& [cache_key, info] : models) {
+        ModelSource source;
+        std::string bare;
+        if (auto canon = parse_canonical_id(cache_key)) {
+            source = canon->source;
+            bare = canon->bare_name;
+        } else {
+            source = ModelSource::Builtin;
+            bare = cache_key;
+        }
+        by_bare[bare].push_back({cache_key, source});
+    }
+    std::map<std::string, std::string> winners;
+    for (auto& [bare, entries] : by_bare) {
+        std::sort(entries.begin(), entries.end(), [](const Candidate& a, const Candidate& b) {
+            return precedence_rank(a.source) < precedence_rank(b.source);
+        });
+        winners[bare] = entries.front().cache_key;
+    }
+    return winners;
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -3037,20 +3071,14 @@ void ModelManager::build_cache() {
         }
     }
 
-    // Snapshot type + bare-name alias before hardware filtering removes some
-    // models from all_models (#2748): the resolver below falls back to this so
-    // a router referencing a currently-unavailable model still parses; that
-    // classifier then fails only at evaluate() time, where on_error applies.
+    // Pre-filter snapshots for the routing-policy resolver below (#2748); see
+    // compute_bare_name_precedence() for why the alias needs its own pass.
     std::map<std::string, ModelType> pre_filter_types;
-    std::map<std::string, std::string> pre_filter_bare_aliases;
     for (const auto& [name, info] : all_models) {
         pre_filter_types[name] = info.type;
-        std::string bare = name;
-        if (auto canon = parse_canonical_id(name)) {
-            bare = canon->bare_name;
-        }
-        pre_filter_bare_aliases.emplace(bare, name);
     }
+    const std::map<std::string, std::string> pre_filter_bare_aliases =
+        compute_bare_name_precedence(all_models);
 
     // Step 2: Filter by backend availability. This is the full-registry pass, so
     // it also refreshes the recipe availability side table used to hide backends
@@ -3101,22 +3129,20 @@ void ModelManager::build_cache() {
 
     cache_valid_ = true;
 
-    // Parse each collection.router model's routing policy now, while the cache
-    // and its alias map are fully built and the lock is still held (inlined
-    // rather than resolve_model_name()/get_model_info(), which would re-lock
-    // this non-recursive mutex). Both resolvers fall back to the pre-filter
-    // snapshots above (#2748) so a component this host can't run right now
-    // still resolves and the policy still parses; that classifier then fails
-    // only at evaluate() time, where on_error already applies.
+    // Parse each collection.router model's routing policy while the cache and
+    // alias map are built and the lock is held (avoids re-locking via
+    // resolve_model_name()/get_model_info()). public_model_aliases_ only
+    // backstops what the precedence map doesn't cover (e.g. an
+    // extra_models_dir input_alias).
     RoutingPolicyParseOptions policy_options;
     policy_options.resolve_component =
         [this, &pre_filter_bare_aliases](const std::string& name) -> std::optional<std::string> {
-        auto it = public_model_aliases_.find(name);
-        if (it != public_model_aliases_.end()) {
-            return it->second;
-        }
         auto pre_it = pre_filter_bare_aliases.find(name);
-        return pre_it != pre_filter_bare_aliases.end() ? pre_it->second : name;
+        if (pre_it != pre_filter_bare_aliases.end()) {
+            return pre_it->second;
+        }
+        auto it = public_model_aliases_.find(name);
+        return it != public_model_aliases_.end() ? it->second : name;
     };
     policy_options.get_model_type = [this, &pre_filter_types](
                                          const std::string& name) -> std::optional<ModelType> {
