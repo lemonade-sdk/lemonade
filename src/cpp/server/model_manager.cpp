@@ -1190,10 +1190,11 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
                             const std::string& base_name,
                             const fs::path& folder,
-                            ModelInfo info) {
+                            ModelInfo info,
+                            const std::set<std::string>* reserved_ids = nullptr) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
     std::string id = prefix + base_name;
-    if (discovered.count(id)) {
+    if (discovered.count(id) || (reserved_ids && reserved_ids->count(id))) {
         const std::string qualified = folder.filename().string() + "-" + base_name;
         id = prefix + qualified;
         for (int n = 2; discovered.count(id); ++n) {
@@ -1282,6 +1283,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
     std::set<std::string> folder_ids_kept;
+    const std::set<std::string> reserved_folder_ids = {
+        std::string(EXTRA_MODEL_PREFIX) + "chat",
+        std::string(EXTRA_MODEL_PREFIX) + "embeddings",
+        std::string(EXTRA_MODEL_PREFIX) + "reranking",
+    };
 
     auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
                                     const std::string& deployment_label,
@@ -1321,7 +1327,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
-        add_extra_model(discovered, base_name, gguf_path.parent_path(), std::move(info));
+        add_extra_model(discovered, base_name, gguf_path.parent_path(),
+                        std::move(info), deployment_label.empty()
+                            ? nullptr
+                            : &reserved_folder_ids);
     };
 
     for (const auto& gguf_path : standalone_files) {

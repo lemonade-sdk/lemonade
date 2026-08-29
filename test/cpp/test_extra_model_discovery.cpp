@@ -300,6 +300,45 @@ static void test_reserved_directory_keeps_folder_id() {
     fs::remove_all(dir);
 }
 
+static void test_reserved_directory_model_cannot_claim_folder_id() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "embeddings" / "a.gguf");
+    touch(dir / "embeddings" / "embeddings.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* first = find_model(models, "extra.a");
+    const ModelInfo* colliding = find_model(models, "extra.embeddings-embeddings");
+    check("reserved directory collision discovers both models", models.size() == 2);
+    check("first model keeps the reserved directory aliases",
+          first != nullptr && has_alias(*first, "embeddings") &&
+          has_alias(*first, "extra.embeddings"));
+    check("colliding model gets a qualified id without the reserved aliases",
+          colliding != nullptr && !has_alias(*colliding, "embeddings") &&
+          !has_alias(*colliding, "extra.embeddings"));
+
+    fs::remove_all(dir);
+}
+
+static void test_category_model_cannot_claim_another_folder_id() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "chat" / "embeddings.gguf");
+    touch(dir / "embeddings" / "a.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* embedding = find_model(models, "extra.a");
+    check("cross-category reserved id collision discovers both models", models.size() == 2);
+    check_type(models, "cross-category collision gets a qualified id",
+               "extra.chat-embeddings", ModelType::LLM, "chat");
+    check("other category keeps its reserved directory alias",
+          embedding != nullptr && has_alias(*embedding, "extra.embeddings"));
+
+    fs::remove_all(dir);
+}
+
 static void test_root_beats_category_for_short_id() {
     fs::path dir = make_temp_dir();
     touch(dir / "nomic-embed-text-v2.gguf");
@@ -353,6 +392,8 @@ int main() {
     test_category_names_are_case_sensitive();
     test_same_name_across_categories();
     test_reserved_directory_keeps_folder_id();
+    test_reserved_directory_model_cannot_claim_folder_id();
+    test_category_model_cannot_claim_another_folder_id();
     test_root_beats_category_for_short_id();
     test_non_normalized_search_path();
 
