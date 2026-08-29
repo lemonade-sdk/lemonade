@@ -62,7 +62,7 @@ def request_json(method, url, timeout, **kwargs):
     """Perform an HTTP request and parse the JSON response when present."""
     auth_headers = _auth_headers()
     headers = {**(kwargs.get("headers") or {}), **auth_headers}
-    request_kwargs = { **kwargs, "headers" : headers}
+    request_kwargs = {**kwargs, "headers": headers}
     response = requests.request(method, url, timeout=timeout, **request_kwargs)
     body = {}
     if response.content:
