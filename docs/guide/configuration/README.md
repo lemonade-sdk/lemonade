@@ -64,6 +64,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "global_timeout": 600,
   "host": "localhost",
+  "hrx": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
