@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.8.1)
+project(lemon_cpp VERSION 11.6.0)
 
 include(CTest)
 
@@ -154,7 +154,6 @@ include(GNUInstallDirs)
 set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
-    "llamacpp-hrx|hrx"
     "whispercpp|whispercpp"
     "moonshine|moonshine"
     "kokoro|kokoro"
@@ -163,7 +162,6 @@ set(LEMON_BACKENDS
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
-    "ds4|ds4"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -981,7 +979,6 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
-    src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
@@ -1035,7 +1032,6 @@ set(LEMON_DESCRIPTOR_INCLUDES "")
 set(LEMON_DESCRIPTOR_ENTRIES "")
 set(LEMON_FACTORY_INCLUDES "")
 set(LEMON_FACTORY_ENTRIES "")
-set(LEMON_CAPABILITY_ENTRIES "")
 # The data registry (descriptors, header-only) links into both binaries; the
 # factory registry + per-backend server sources are server-only.
 # Absolute paths so the CLI subdirectory can reuse LEMON_BACKEND_DESCRIPTOR_SOURCES.
@@ -1064,8 +1060,6 @@ foreach(_backend_entry ${LEMON_BACKENDS})
         "#include \"lemon/backends/${_backend_stem}/${_backend_stem}_server.h\"\n")
     string(APPEND LEMON_FACTORY_ENTRIES
         "        { &lemon::backends::${_backend_stem}::descriptor, &lemon::backends::${_backend_stem}::create, lemon::backends::${_backend_stem}::spec(), lemon::backends::${_backend_stem}::ops() },\n")
-    string(APPEND LEMON_CAPABILITY_ENTRIES
-        "        { &lemon::backends::${_backend_stem}::descriptor, lemon::backends::${_backend_stem}::capabilities() },\n")
 endforeach()
 
 configure_file(
@@ -1075,10 +1069,6 @@ configure_file(
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_factories_generated.h.in
     ${CMAKE_CURRENT_BINARY_DIR}/include/backend_factories_generated.h
-    @ONLY)
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_capabilities_generated.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/include/backend_capabilities_generated.h
     @ONLY)
 
 # lemond gets both descriptor data and factories; the CLI gets only the data
@@ -1169,7 +1159,7 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
         src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
-    add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
+    add_cpp_ci_test(vllm_arg_resolver CI OFF COMMAND test_vllm_arg_resolver)
 endif()
 
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
@@ -1189,8 +1179,9 @@ if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
 
     add_executable(test_mcp_client_config
         ${MCP_CLIENT_CONFIG_TEST_SOURCE}
+        src/cpp/server/mcp_client.cpp
     )
-    target_link_libraries(test_mcp_client_config PRIVATE lemonade-server-core)
+    target_link_libraries(test_mcp_client_config PRIVATE nlohmann_json::nlohmann_json Threads::Threads lemonade-httplib)
 
     if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
         file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
@@ -1535,10 +1526,6 @@ if(CAN_BUILD_WEB_APP AND BUILD_WEB_APP)
         install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-web-app.desktop
             DESTINATION share/applications
         )
-        # Install MetaInfo file for web app
-        install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.webapp.metainfo.xml
-            DESTINATION share/metainfo
-        )
         # Create symlink in standard applications path only if not installing to /usr
         if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
             install(CODE "
@@ -1652,8 +1639,8 @@ if(APPLE)
     endif()
 
     # Configure Plists & Entitlements
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/ai.lemonadeserver.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.server.plist @ONLY)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/ai.lemonadeserver.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.tray.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/com.lemonade.server.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist @ONLY)
+    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/com.lemonade.tray.plist.in ${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist @ONLY)
 
     set(ENTITLEMENTS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/entitlements.plist")
     if(NOT EXISTS "${ENTITLEMENTS_PATH}")
@@ -1808,8 +1795,8 @@ if(APPLE)
     )
 
     # Plists -> /Library/...
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.server.plist" DESTINATION "/Library/LaunchDaemons" COMPONENT Runtime)
-    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/ai.lemonadeserver.tray.plist" DESTINATION "/Library/LaunchAgents" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.server.plist" DESTINATION "/Library/LaunchDaemons" COMPONENT Runtime)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/com.lemonade.tray.plist" DESTINATION "/Library/LaunchAgents" COMPONENT Runtime)
 
     # Placeholder -> /usr/local/share/lemonade-server
     file(WRITE "${CMAKE_BINARY_DIR}/.keep" "")
@@ -1818,7 +1805,7 @@ if(APPLE)
     # ackaging & Notarization
     set(CPACK_GENERATOR "productbuild")
     set(CPACK_PACKAGE_NAME "Lemonade")
-    set(CPACK_PRODUCTBUILD_IDENTIFIER "ai.lemonadeserver.server")
+    set(CPACK_PRODUCTBUILD_IDENTIFIER "com.lemonade.server")
 
     # Declare the package arm64-only so the macOS Installer does not assume our
     # postflight script needs x86_64 and prompt to install Rosetta on Apple Silicon.
@@ -1831,8 +1818,8 @@ if(APPLE)
     endif()
     set(CPACK_PRODUCTBUILD_RELOCATE OFF)  # Prevent install_name_tool from invalidating signatures
     set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
-    set(CPACK_PRODUCTBUILD_BUNDLE ai.lemonadeserver.server.Applications OFF)
-    set(CPACK_PRODUCTBUILD_BUNDLE_ID ai.lemonadeserver.server.Applications)
+    set(CPACK_PRODUCTBUILD_BUNDLE com.lemonade.server.Applications OFF)
+    set(CPACK_PRODUCTBUILD_BUNDLE_ID com.lemonade.server.Applications)
 
     set(CPACK_PACKAGING_INSTALL_PREFIX "/usr/local")
     set(CPACK_SET_DESTDIR ON)
@@ -1974,12 +1961,11 @@ if(UNIX AND NOT APPLE)
         RENAME lemond.service
     )
 
-    # Install the optional environment-file template loaded by the unit via
-    # EnvironmentFile=-/etc/default/lemond (LEMONADE_API_KEY and other secrets).
+    # Install secrets.conf for LEMONADE_API_KEY (still loaded via EnvironmentFile)
     install(FILES ${CMAKE_SOURCE_DIR}/data/secrets.conf
-        DESTINATION /etc/default
-        RENAME lemond
-        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ
+        DESTINATION /etc/lemonade/conf.d
+        RENAME zz-secrets.conf
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ GROUP_WRITE
     )
 
     # Create symlinks for KaTeX fonts if they exist on the system
@@ -2062,10 +2048,6 @@ if(UNIX AND NOT APPLE)
             # Install .desktop file for the Tauri app
             install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade-app.desktop
                 DESTINATION share/applications
-            )
-            # Install MetaInfo file for the Tauri app
-            install(FILES ${CMAKE_SOURCE_DIR}/data/ai.lemonadeserver.app.metainfo.xml
-                DESTINATION share/metainfo
             )
             # Create symlink in standard applications path only if not installing to /usr
             if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
@@ -2271,19 +2253,6 @@ if(BUILD_TESTING AND EXISTS "${_FLM_ARG_RESOLVER_TEST_SRC}" AND EXISTS "${_FLM_A
     add_cpp_ci_test(FlmArgResolverTest CI OFF COMMAND test_flm_arg_resolver)
 endif()
 
-# Pure SystemInfo mapping/matching helpers. The production server calls the same
-# header-only implementation, so this replaces the old Python replica tests.
-set(_SYSTEM_INFO_HELPERS_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_system_info_helpers.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
-    add_executable(test_system_info_helpers ${_SYSTEM_INFO_HELPERS_TEST_SRC})
-    target_include_directories(test_system_info_helpers PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
-    )
-    add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)
-endif()
-
 # Custom arg parsing helpers (header-only utility shared by all arg resolvers).
 set(_CUSTOM_ARGS_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_custom_args.cpp"
@@ -2294,18 +2263,6 @@ if(BUILD_TESTING AND EXISTS "${_CUSTOM_ARGS_TEST_SRC}")
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
     add_cpp_ci_test(CustomArgsTest CI ON COMMAND test_custom_args)
-endif()
-
-# Recipe custom-argument scope resolution.
-set(_RECIPE_ARG_RESOLVER_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_arg_resolution.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_RECIPE_ARG_RESOLVER_TEST_SRC}")
-    add_executable(test_recipe_arg_resolution ${_RECIPE_ARG_RESOLVER_TEST_SRC})
-    target_include_directories(test_recipe_arg_resolution PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-    )
-    add_cpp_ci_test(RecipeArgResolutionTest CI ON COMMAND test_recipe_arg_resolution)
 endif()
 
 set(_DIR_WATCHER_TEST_SRC
@@ -2352,44 +2309,6 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_CAPS_TEST_SRC}")
     add_cpp_ci_test(GgufCapabilitiesTest CI OFF COMMAND test_gguf_capabilities)
 endif()
 
-# Transcription response_format interpretation (issue #1833): the requested
-# format, not a parse attempt, decides how a successful body is read.
-# Header-only unit under test, so no extra source files are required.
-set(_TRANSCRIPTION_FORMAT_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_transcription_response_format.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
-    add_executable(test_transcription_response_format
-        test/cpp/test_transcription_response_format.cpp
-    )
-    target_include_directories(test_transcription_response_format PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-        ${CMAKE_CURRENT_BINARY_DIR}/include
-    )
-    target_link_libraries(test_transcription_response_format PRIVATE nlohmann_json::nlohmann_json)
-
-    include(CTest)
-    add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
-endif()
-
-set(_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_whispercpp_multipart_fields.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC}")
-    add_executable(test_whispercpp_multipart_fields
-        test/cpp/test_whispercpp_multipart_fields.cpp
-    )
-    target_include_directories(test_whispercpp_multipart_fields PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/whispercpp
-        ${CMAKE_CURRENT_BINARY_DIR}/include
-    )
-    target_link_libraries(test_whispercpp_multipart_fields PRIVATE nlohmann_json::nlohmann_json)
-
-    include(CTest)
-    add_cpp_ci_test(WhisperCppMultipartFieldsTest CI ON COMMAND test_whispercpp_multipart_fields)
-endif()
-
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
@@ -2406,26 +2325,6 @@ if(BUILD_TESTING AND EXISTS "${_GGUF_SHARD_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(GgufShardUtilsTest CI ON COMMAND test_gguf_shard_utils)
-endif()
-
-# Per-model artifact selection and snapshot baselines used to decide whether an
-# upstream commit actually touches a downloaded model.
-set(_HF_UPDATE_CHECK_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hf_update_check.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_HF_UPDATE_CHECK_TEST_SRC}")
-    add_executable(test_hf_update_check
-        test/cpp/test_hf_update_check.cpp
-    )
-    target_include_directories(test_hf_update_check PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-        ${CMAKE_CURRENT_BINARY_DIR}/include
-    )
-    target_link_libraries(test_hf_update_check PRIVATE lemonade-server-core)
-    add_dependencies(test_hf_update_check copy_resources)
-
-    include(CTest)
-    add_cpp_ci_test(HfUpdateCheckTest CI ON COMMAND test_hf_update_check)
 endif()
 
 # Model residency role/pool contract for router dependencies
@@ -2481,40 +2380,6 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
-endif()
-
-# Descriptor contract: every mode a backend advertises in `supported_modes` is
-# backed by a capability interface its server class implements. Compiles the
-# server class definitions (for the compile-time capability mask) but calls
-# nothing on them, so it links only the descriptor registry.
-set(_BACKEND_MODE_CONTRACT_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_mode_contract.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
-    add_executable(test_backend_mode_contract
-        test/cpp/test_backend_mode_contract.cpp
-        ${LEMON_BACKEND_DESCRIPTOR_SOURCES}
-    )
-    target_include_directories(test_backend_mode_contract PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
-        ${CMAKE_CURRENT_BINARY_DIR}/include
-    )
-    target_compile_definitions(test_backend_mode_contract PRIVATE
-        SERVER_MODELS_JSON_PATH="${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/resources/server_models.json"
-    )
-    target_link_libraries(test_backend_mode_contract PRIVATE
-        nlohmann_json::nlohmann_json
-        lemonade-httplib
-    )
-
-    include(CTest)
-    add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
-endif()
-
-if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
-    add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
-    target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
-    add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
@@ -2847,45 +2712,6 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
-set(_MODEL_DOWNLOAD_STATE_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_download_state.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_MODEL_DOWNLOAD_STATE_TEST_SRC}")
-    add_executable(test_model_download_state
-        test/cpp/test_model_download_state.cpp
-    )
-    target_link_libraries(test_model_download_state PRIVATE lemonade-server-core)
-    add_dependencies(test_model_download_state copy_resources)
-
-    include(CTest)
-    add_cpp_ci_test(ModelDownloadStateTest CI ON COMMAND test_model_download_state)
-endif()
-
-
-# Recipe hiding: a backend with every built-in model dropped by the system-memory
-# heuristic (and no user model left) is hidden from the recipe/backends listing.
-set(_RECIPE_HIDING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_hiding.cpp")
-if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
-    add_executable(test_recipe_hiding test/cpp/test_recipe_hiding.cpp)
-    target_link_libraries(test_recipe_hiding PRIVATE lemonade-server-core)
-    add_dependencies(test_recipe_hiding copy_resources)
-
-    include(CTest)
-    add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
-endif()
-
-# Streaming memory filter: backends that stream the model from storage are
-# size-filtered on their resident working set vs the device pool, not full size.
-set(_STREAMING_MEM_FILTER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_memory_filter.cpp")
-if(BUILD_TESTING AND EXISTS "${_STREAMING_MEM_FILTER_TEST_SRC}")
-    add_executable(test_streaming_memory_filter test/cpp/test_streaming_memory_filter.cpp)
-    target_link_libraries(test_streaming_memory_filter PRIVATE lemonade-server-core)
-    add_dependencies(test_streaming_memory_filter copy_resources)
-
-    include(CTest)
-    add_cpp_ci_test(StreamingMemoryFilterTest CI ON COMMAND test_streaming_memory_filter)
-endif()
-
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
 # and persistence of ModelScope provenance in ModelInfo.
 set(_MODEL_REGISTRY_TEST_SRC
@@ -2956,9 +2782,8 @@ endif()
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
 if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)
-    target_include_directories(test_telemetry_helpers PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server")
     target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
-    add_cpp_ci_test(TelemetryHelpersTest CI ON COMMAND test_telemetry_helpers)
+    add_cpp_ci_test(TelemetryHelpersTest CI OFF COMMAND test_telemetry_helpers)
 endif()
 
 set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")
@@ -2975,45 +2800,11 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_MIGRATION_TEST_SRC}")
     add_cpp_ci_test(ConfigMigrationTest CI OFF COMMAND test_config_migration)
 endif()
 
-set(_CONFIG_DIR_MIGRATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_dir_migration.cpp")
-if(BUILD_TESTING AND EXISTS "${_CONFIG_DIR_MIGRATION_TEST_SRC}")
-    add_executable(test_config_dir_migration test/cpp/test_config_dir_migration.cpp)
-    target_link_libraries(test_config_dir_migration PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigDirMigrationTest CI ON COMMAND test_config_dir_migration)
-endif()
-
-set(_CONFIG_MERGING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_merging.cpp")
-if(BUILD_TESTING AND EXISTS "${_CONFIG_MERGING_TEST_SRC}")
-    add_executable(test_config_merging test/cpp/test_config_merging.cpp)
-    target_link_libraries(test_config_merging PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigMergingTest CI ON COMMAND test_config_merging)
-endif()
-
-set(_CONFIG_DISCOVERY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_discovery.cpp")
-if(BUILD_TESTING AND EXISTS "${_CONFIG_DISCOVERY_TEST_SRC}")
-    add_executable(test_config_discovery test/cpp/test_config_discovery.cpp)
-    target_link_libraries(test_config_discovery PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigDiscoveryTest CI ON COMMAND test_config_discovery)
-endif()
-
 set(_CONFIG_TELEMETRY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_telemetry.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_executable(test_config_telemetry test/cpp/test_config_telemetry.cpp)
     target_link_libraries(test_config_telemetry PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
-endif()
-
-set(_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_download_rate_limit.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC}")
-    add_executable(test_config_download_rate_limit
-        test/cpp/test_config_download_rate_limit.cpp
-    )
-    target_link_libraries(test_config_download_rate_limit PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ConfigDownloadRateLimitTest CI ON
-        COMMAND test_config_download_rate_limit
-    )
+    add_cpp_ci_test(ConfigTelemetryTest CI OFF COMMAND test_config_telemetry)
 endif()
 
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
@@ -3029,38 +2820,11 @@ if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC}")
     )
 endif()
 
-set(_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_directory_validation.cpp"
-)
-if(BUILD_TESTING AND EXISTS "${_RUNTIME_CONFIG_DIRECTORY_VALIDATION_TEST_SRC}")
-    add_executable(test_runtime_config_directory_validation
-        test/cpp/test_runtime_config_directory_validation.cpp
-    )
-    target_link_libraries(test_runtime_config_directory_validation PRIVATE lemonade-server-core)
-    add_cpp_ci_test(RuntimeConfigDirectoryValidationTest CI ON
-        COMMAND test_runtime_config_directory_validation
-    )
-endif()
-
 set(_CONFIG_DEFAULT_SOURCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_default_source.cpp")
 if(BUILD_TESTING AND EXISTS "${_CONFIG_DEFAULT_SOURCE_TEST_SRC}")
     add_executable(test_config_default_source test/cpp/test_config_default_source.cpp)
     target_link_libraries(test_config_default_source PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigDefaultSourceTest CI ON COMMAND test_config_default_source)
-endif()
-
-set(_CLI_RUNTIME_OVERRIDE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cli_runtime_override.cpp")
-if(BUILD_TESTING AND EXISTS "${_CLI_RUNTIME_OVERRIDE_TEST_SRC}")
-    add_executable(test_cli_runtime_override test/cpp/test_cli_runtime_override.cpp)
-    target_link_libraries(test_cli_runtime_override PRIVATE lemonade-server-core)
-    add_cpp_ci_test(CliRuntimeOverrideTest CI ON COMMAND test_cli_runtime_override)
-endif()
-
-set(_LOG_ROTATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_log_rotation.cpp")
-if(BUILD_TESTING AND EXISTS "${_LOG_ROTATION_TEST_SRC}")
-    add_executable(test_log_rotation test/cpp/test_log_rotation.cpp)
-    target_link_libraries(test_log_rotation PRIVATE lemonade-server-core)
-    add_cpp_ci_test(LogRotationTest CI ON COMMAND test_log_rotation)
 endif()
 
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
@@ -3079,42 +2843,6 @@ if(BUILD_TESTING AND EXISTS "${_GPU_ENV_TEST_SRC}")
     add_cpp_ci_test(BackendUtilsGpuEnvTest CI ON COMMAND test_backend_utils_gpu_env)
 endif()
 
-set(_LLAMACPP_SYSTEM_BACKEND_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_system_backend.cpp"
-)
-if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_SYSTEM_BACKEND_TEST_SRC}")
-    add_executable(test_llamacpp_system_backend
-        test/cpp/test_llamacpp_system_backend.cpp
-    )
-    target_include_directories(test_llamacpp_system_backend PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
-    )
-    target_link_libraries(test_llamacpp_system_backend PRIVATE lemonade-server-core)
-    add_dependencies(test_llamacpp_system_backend copy_resources)
-    add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
-endif()
-
-set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
-if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
-    add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)
-    target_link_libraries(test_backend_utils_dll_version PRIVATE lemonade-server-core)
-    add_cpp_ci_test(BackendUtilsDllVersionTest CI ON COMMAND test_backend_utils_dll_version)
-endif()
-
-set(_PIP_DL_PARSER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_pip_download_parser.cpp")
-if(BUILD_TESTING AND EXISTS "${_PIP_DL_PARSER_TEST_SRC}")
-    add_executable(test_pip_download_parser test/cpp/test_pip_download_parser.cpp)
-    target_link_libraries(test_pip_download_parser PRIVATE lemonade-server-core)
-    add_cpp_ci_test(PipDownloadParserTest CI ON COMMAND test_pip_download_parser)
-endif()
-
-set(_GFX_ARCH_GATING_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gfx_arch_gating.cpp")
-if(BUILD_TESTING AND EXISTS "${_GFX_ARCH_GATING_TEST_SRC}")
-    add_executable(test_gfx_arch_gating test/cpp/test_gfx_arch_gating.cpp)
-    target_link_libraries(test_gfx_arch_gating PRIVATE lemonade-server-core)
-    add_cpp_ci_test(GfxArchGatingTest CI ON COMMAND test_gfx_arch_gating)
-endif()
-
 set(_NETWORK_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_network_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_NETWORK_UTILS_TEST_SRC}")
     add_executable(test_network_utils test/cpp/test_network_utils.cpp)
@@ -3128,6 +2856,22 @@ if(BUILD_TESTING AND EXISTS "${_URL_UTILS_TEST_SRC}")
     target_link_libraries(test_url_utils PRIVATE lemonade-server-core)
     add_cpp_ci_test(UrlUtilsTest CI OFF COMMAND test_url_utils)
 endif()
+
+
+set(_PROCESS_SSE_LINES_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_process_sse_lines.cpp")
+if(BUILD_TESTING AND EXISTS "${_PROCESS_SSE_LINES_TEST_SRC}")
+    add_executable(test_process_sse_lines test/cpp/test_process_sse_lines.cpp)
+    target_link_libraries(test_process_sse_lines PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ProcessSseLinesTest CI ON COMMAND test_process_sse_lines)
+endif()
+
+set(_CLOUD_RESPONSE_MODEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_response_model.cpp")
+if(BUILD_TESTING AND EXISTS "${_CLOUD_RESPONSE_MODEL_TEST_SRC}")
+    add_executable(test_cloud_response_model test/cpp/test_cloud_response_model.cpp)
+    target_link_libraries(test_cloud_response_model PRIVATE lemonade-server-core)
+    add_cpp_ci_test(CloudResponseModelTest CI ON COMMAND test_cloud_response_model)
+endif()
+
 
 set(_GITHUB_API_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_github_api.cpp")
 if(BUILD_TESTING AND EXISTS "${_GITHUB_API_TEST_SRC}")
@@ -3153,16 +2897,6 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
 endif()
 
-# ds4 install params: upstream ds4 ships no binaries, so assets come from
-# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
-# plus the detected ISA. Only gfx1151 is validated upstream.
-set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
-if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
-    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
-    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
-    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
-endif()
-
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
 # published, so the shared Windows/Linux support row must not advertise Windows
 # or nightly installs for gfx950.
@@ -3180,39 +2914,11 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
 endif()
 
-set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_timeout.cpp")
-if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
-    add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
-    target_link_libraries(test_http_client_timeout PRIVATE lemonade-server-core)
-    add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
-endif()
-
-set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
-if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
-    add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
-    target_link_libraries(test_streaming_proxy_cancel PRIVATE lemonade-server-core)
-    add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
-endif()
-
-set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
-if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
-    add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)
-    target_link_libraries(test_streaming_heartbeat PRIVATE lemonade-server-core)
-    add_cpp_ci_test(StreamingHeartbeatTest CI ON COMMAND test_streaming_heartbeat)
-endif()
-
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")
 if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_executable(test_cloud_discovery_policy test/cpp/test_cloud_discovery_policy.cpp)
     target_link_libraries(test_cloud_discovery_policy PRIVATE lemonade-server-core)
-    add_cpp_ci_test(CloudDiscoveryPolicyTest CI ON COMMAND test_cloud_discovery_policy)
-endif()
-
-set(_CLOUD_PROVIDER_REGISTRY_CONFIG_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_provider_registry_config.cpp")
-if(BUILD_TESTING AND EXISTS "${_CLOUD_PROVIDER_REGISTRY_CONFIG_TEST_SRC}")
-    add_executable(test_cloud_provider_registry_config test/cpp/test_cloud_provider_registry_config.cpp)
-    target_link_libraries(test_cloud_provider_registry_config PRIVATE lemonade-server-core)
-    add_cpp_ci_test(CloudProviderRegistryConfigTest CI ON COMMAND test_cloud_provider_registry_config)
+    add_cpp_ci_test(CloudDiscoveryPolicyTest CI OFF COMMAND test_cloud_discovery_policy)
 endif()
 
 set(_ANTHROPIC_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_error.cpp")
@@ -3222,66 +2928,11 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
 endif()
 
-set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")
-if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_RELAY_HEADERS_TEST_SRC}")
-    add_executable(test_anthropic_relay_headers test/cpp/test_anthropic_relay_headers.cpp)
-    target_link_libraries(test_anthropic_relay_headers PRIVATE lemonade-server-core)
-    add_cpp_ci_test(AnthropicRelayHeadersTest CI ON COMMAND test_anthropic_relay_headers)
-endif()
-
 set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
     target_link_libraries(test_origin_utils PRIVATE lemonade-server-core)
     add_cpp_ci_test(OriginUtilsTest CI ON COMMAND test_origin_utils)
-endif()
-
-# RecipeOptions precedence: verify that values are merged in the correct order:
-#   1. Per-request settings (highest)
-#   2. User-saved recipe options
-#   3. Model recipe_options (registry entry)
-#   4. Model image_defaults
-#   5. Architecture defaults
-#   6. Global config defaults (lowest)
-set(_RECIPE_OPTIONS_PRECEDENCE_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_recipe_options_precedence.cpp")
-if(BUILD_TESTING AND EXISTS "${_RECIPE_OPTIONS_PRECEDENCE_TEST_SRC}")
-    add_executable(test_recipe_options_precedence test/cpp/test_recipe_options_precedence.cpp)
-    target_link_libraries(test_recipe_options_precedence PRIVATE lemonade-server-core)
-    add_cpp_ci_test(RecipeOptionsPrecedence CI ON COMMAND test_recipe_options_precedence)
-endif()
-
-set(_GLIBC_MALLOPT_PROBE_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/glibc_mallopt_probe.cpp"
-)
-set(_GLIBC_ALLOCATOR_POLICY_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_glibc_allocator_policy.py"
-)
-if(BUILD_TESTING AND
-   CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
-   EXISTS "${_GLIBC_MALLOPT_PROBE_SRC}" AND
-   EXISTS "${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}")
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if(Python3_Interpreter_FOUND)
-        add_library(test_glibc_mallopt_probe SHARED
-            ${_GLIBC_MALLOPT_PROBE_SRC}
-        )
-        add_cpp_ci_test(
-            GlibcAllocatorPolicyTest
-            CI ON
-            COMMAND
-                ${Python3_EXECUTABLE}
-                ${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}
-                --lemond $<TARGET_FILE:${EXECUTABLE_NAME}>
-                --probe $<TARGET_FILE:test_glibc_mallopt_probe>
-            DEPENDS
-                ${EXECUTABLE_NAME}
-                test_glibc_mallopt_probe
-        )
-        set_tests_properties(
-            GlibcAllocatorPolicyTest
-            PROPERTIES SKIP_RETURN_CODE 77
-        )
-    endif()
 endif()
 
 if(BUILD_TESTING)
@@ -3308,23 +2959,4 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_executable(test_routing_helper_reconcile test/cpp/test_routing_helper_reconcile.cpp)
     target_link_libraries(test_routing_helper_reconcile PRIVATE lemonade-server-core)
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
-endif()
-
-# Launch command bookkeeping: the command recorded at spawn must keep describing
-# the process currently held, so a restart replaces it and cleanup erases it.
-set(_LAUNCH_COMMAND_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_launch_command.cpp")
-if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
-    add_executable(test_launch_command test/cpp/test_launch_command.cpp)
-    target_link_libraries(test_launch_command PRIVATE lemonade-server-core)
-    add_cpp_ci_test(LaunchCommandTest CI ON COMMAND test_launch_command)
-endif()
-
-set(_MODEL_SYNC_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_sync_and_auto_update.cpp")
-if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
-    add_executable(test_model_sync_and_auto_update test/cpp/test_model_sync_and_auto_update.cpp)
-    target_link_libraries(test_model_sync_and_auto_update PRIVATE lemonade-server-core)
-    add_dependencies(test_model_sync_and_auto_update copy_resources)
-
-    include(CTest)
-    add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
 endif()

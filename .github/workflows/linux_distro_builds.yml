@@ -35,7 +35,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     strategy:
-      fail-fast: ${{ github.event_name == 'merge_group' }}
+      fail-fast: false
       matrix:
         include:
           - distro: Arch
@@ -120,13 +120,6 @@ jobs:
           set -e
 
           echo "Building lemond and lemonade on ${{ matrix.distro }}..."
-
-          # setup.sh configures with testing on and the build below has no
-          # --target, so every unit-test binary would be built and then left out
-          # of the package. Same reasoning as BUILD_TESTING=OFF in
-          # contrib/debian/rules and the RPM job.
-          echo "Reconfiguring without the unit-test targets..."
-          cmake --preset default -DBUILD_TESTING=OFF
 
           # Build
           echo "Building binaries..."
@@ -242,21 +235,6 @@ jobs:
           python test/server_endpoints.py --cli-binary "$CLI_BINARY"
 
           echo "Endpoint tests PASSED!"
-
-      - name: Run log rotation tests
-        env:
-          LEMONADE_CI_MODE: "True"
-          PYTHONIOENCODING: utf-8
-        run: |
-          set -e
-
-          . .venv/bin/activate
-          CLI_BINARY="$(pwd)/build/lemonade"
-
-          echo "Running log rotation tests..."
-          python test/server_log_rotation.py
-
-          echo "Log rotation tests PASSED!"
 
       - name: Capture and upload server logs
         if: always()
