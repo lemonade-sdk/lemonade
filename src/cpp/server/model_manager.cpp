@@ -1205,6 +1205,15 @@ static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
     discovered.emplace(id, std::move(info));
 }
 
+static const std::set<std::string>& reserved_extra_model_ids() {
+    static const std::set<std::string> ids = {
+        std::string(EXTRA_MODEL_PREFIX) + "chat",
+        std::string(EXTRA_MODEL_PREFIX) + "embeddings",
+        std::string(EXTRA_MODEL_PREFIX) + "reranking",
+    };
+    return ids;
+}
+
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<std::string, ModelInfo> discovered;
 
@@ -1283,12 +1292,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
     std::set<std::string> folder_ids_kept;
-    const std::set<std::string> reserved_folder_ids = {
-        std::string(EXTRA_MODEL_PREFIX) + "chat",
-        std::string(EXTRA_MODEL_PREFIX) + "embeddings",
-        std::string(EXTRA_MODEL_PREFIX) + "reranking",
-    };
-
     auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
                                     const std::string& deployment_label,
                                     const fs::path& mmproj_file = fs::path()) {
@@ -1330,7 +1333,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         add_extra_model(discovered, base_name, gguf_path.parent_path(),
                         std::move(info), deployment_label.empty()
                             ? nullptr
-                            : &reserved_folder_ids);
+                            : &reserved_extra_model_ids());
     };
 
     for (const auto& gguf_path : standalone_files) {
@@ -1491,7 +1494,10 @@ void ModelManager::discover_extra_models_in_directory(
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), dir_path, std::move(info));
+            add_extra_model(discovered, visible_extra_variant_name(v), dir_path,
+                            std::move(info), deployment_label.empty()
+                                ? nullptr
+                                : &reserved_extra_model_ids());
         }
     } else {
         // Keep the folder as one model when splitting would be ambiguous.
@@ -1512,7 +1518,10 @@ void ModelManager::discover_extra_models_in_directory(
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, dir_name, dir_path, std::move(info));
+        add_extra_model(discovered, dir_name, dir_path, std::move(info),
+                        deployment_label.empty()
+                            ? nullptr
+                            : &reserved_extra_model_ids());
     }
 }
 

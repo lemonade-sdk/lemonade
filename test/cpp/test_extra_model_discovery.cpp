@@ -339,6 +339,24 @@ static void test_category_model_cannot_claim_another_folder_id() {
     fs::remove_all(dir);
 }
 
+static void test_nested_category_model_cannot_claim_folder_id() {
+    fs::path dir = make_temp_dir();
+    touch(dir / "embeddings" / "a.gguf");
+    touch(dir / "embeddings" / "embeddings" / "model.gguf");
+
+    ModelManager manager(dir.string());
+    auto models = manager.discover_extra_models_for_test();
+
+    const ModelInfo* direct = find_model(models, "extra.a");
+    check("nested reserved id collision discovers both models", models.size() == 2);
+    check_type(models, "nested reserved id collision gets a qualified id",
+               "extra.embeddings-embeddings", ModelType::EMBEDDING, "embeddings");
+    check("direct model keeps the reserved directory alias",
+          direct != nullptr && has_alias(*direct, "extra.embeddings"));
+
+    fs::remove_all(dir);
+}
+
 static void test_root_beats_category_for_short_id() {
     fs::path dir = make_temp_dir();
     touch(dir / "nomic-embed-text-v2.gguf");
@@ -394,6 +412,7 @@ int main() {
     test_reserved_directory_keeps_folder_id();
     test_reserved_directory_model_cannot_claim_folder_id();
     test_category_model_cannot_claim_another_folder_id();
+    test_nested_category_model_cannot_claim_folder_id();
     test_root_beats_category_for_short_id();
     test_non_normalized_search_path();
 
