@@ -1169,32 +1169,36 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 </div>
 
                 <div className="backend-card__variant-meta">
-                  {version && (installedReleaseUrl ? (
-                    <a
-                      className="backend-card__version"
-                      href={installedReleaseUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`Open installed ${engineName} ${version} release page`}
-                    >
-                      {version}
-                      <Icon name="external-link" size={11} aria-hidden="true" />
-                    </a>
-                  ) : (
-                    <span className="backend-card__version">{version}</span>
-                  ))}
-                  {isUpdate && targetReleaseUrl && targetVersion && targetVersion !== version && (
-                    <a
-                      className="backend-card__version"
-                      href={targetReleaseUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`Open ${engineName} ${targetVersion} update release page`}
-                    >
-                      <Icon name="chevron-right" size={11} aria-hidden="true" />
-                      {targetVersion}
-                      <Icon name="external-link" size={11} aria-hidden="true" />
-                    </a>
+                  {showTech && (
+                    <>
+                      {version && (installedReleaseUrl ? (
+                        <a
+                          className="backend-card__version"
+                          href={installedReleaseUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Open installed ${engineName} ${version} release page`}
+                        >
+                          {version}
+                          <Icon name="external-link" size={11} aria-hidden="true" />
+                        </a>
+                      ) : (
+                        <span className="backend-card__version">{version}</span>
+                      ))}
+                      {isUpdate && targetReleaseUrl && targetVersion && targetVersion !== version && (
+                        <a
+                          className="backend-card__version"
+                          href={targetReleaseUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Open ${engineName} ${targetVersion} update release page`}
+                        >
+                          <Icon name="chevron-right" size={11} aria-hidden="true" />
+                          {targetVersion}
+                          <Icon name="external-link" size={11} aria-hidden="true" />
+                        </a>
+                      )}
+                    </>
                   )}
                   {tuning && (
                     <span className={`cell__args-state cell__args-state--${tuning.source}`} data-cell-backend-args={tuning.source}>
@@ -1287,7 +1291,7 @@ const BackendManager: React.FC<BackendManagerProps> = ({ isActive = true }) => {
                 )}
                 {backendDownload?.status === 'error' && backendDownload.error ? (
                   <p className="backend-card__note backend-card__note--error">{backendDownload.error}</p>
-                ) : ((showTech || info.state === 'update_available' || info.state === 'update_required') && info.message && (
+                ) : (showTech && info.message && (
                   <p className="backend-card__note">{info.message}</p>
                 ))}
               </div>
