@@ -3811,6 +3811,9 @@ optgroup {
       "composer";
   }
   .rail { display: none; }
+  .composer__model-picker--loaded .composer__model-mode > span:not(.capability-icon-pair) {
+    display: none;
+  }
   .manager--with-rail, .backends--with-rail { grid-template-columns: 1fr; }
   .context-rail { display: none; }
   .manager__main { height: 100%; }
@@ -6023,6 +6026,10 @@ optgroup {
   flex-shrink: 0;
 }
 
+.composer__model-button-empty-label {
+  display: none;
+}
+
 .composer__model-error {
   margin-top: var(--space-2);
   padding: var(--space-2);
@@ -6148,8 +6155,10 @@ optgroup {
 @media (max-width: 480px) {
   .composer__model-picker {
     flex: 1 1 auto;
-    min-width: 30px;
+    min-width: 0;
     order: 0;
+    container-type: inline-size;
+    container-name: compact-model-picker;
   }
 
   .composer__effective-settings {
@@ -6160,18 +6169,19 @@ optgroup {
   .composer__tools-toggle:not(.composer__effective-settings) { order: 2; }
 
   .composer__model-label,
-  .composer__model-picker:not(.composer__model-picker--loaded) .composer__model-button > :not(.composer__model-button-caret) {
+  .composer__model-picker:not(.composer__model-picker--loaded) .composer__model-default-icon,
+  .composer__model-picker:not(.composer__model-picker--loaded) .composer__model-button-badge {
     display: none;
   }
 
   .composer__model-button {
     width: max-content;
     height: 30px;
-    min-width: 30px;
-    max-width: 30px;
-    flex: 0 0 30px;
-    padding: 0;
-    justify-content: center;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 0 auto;
+    padding: 5px var(--space-2);
+    justify-content: flex-start;
     overflow: hidden;
     white-space: nowrap;
     transition:
@@ -6184,23 +6194,37 @@ optgroup {
 
   .composer__model-picker--loaded .composer__model-button {
     max-width: min(260px, 100%);
-    flex: 0 0 auto;
-    padding: 5px var(--space-2);
-    justify-content: flex-start;
   }
 
-  .composer__model-picker--loaded .composer__model-button-name {
+  .composer__model-button-empty-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-tertiary);
+  }
+
+  .composer__model-picker:not(.composer__model-picker--loaded) .composer__model-button-empty-label {
+    display: inline-flex;
+  }
+
+  .composer__model-picker:not(.composer__model-picker--loaded) .composer__model-button {
+    gap: 5px;
+  }
+
+  .composer__model-button-name {
     flex: 1 1 auto;
     min-width: 0;
   }
 
   .composer__model-button-caret {
-    width: 100%;
-    height: 100%;
+    width: 16px;
+    height: 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    margin-left: 0;
+    flex: 0 0 16px;
+    margin-left: auto;
     font-size: 0;
   }
 
@@ -6211,19 +6235,12 @@ optgroup {
     align-items: center;
     justify-content: center;
     flex: 0 0 16px;
-    font-size: 16px;
+    font-size: var(--text-sm);
     line-height: 1;
     transform: rotate(0deg);
     transform-origin: 50% 50%;
     transition: transform var(--duration-base) var(--ease-out);
     will-change: transform;
-  }
-
-  .composer__model-picker--loaded .composer__model-button-caret {
-    width: 16px;
-    height: 16px;
-    flex: 0 0 16px;
-    margin-left: auto;
   }
 
   .composer__model-button[aria-expanded="true"] .composer__model-button-caret-glyph {
@@ -6233,6 +6250,24 @@ optgroup {
   .composer__model-menu {
     right: auto;
     left: 0;
+  }
+}
+
+@container compact-model-picker (max-width: 215px) {
+  .composer__model-picker--loaded .composer__model-button-badge {
+    display: none;
+  }
+}
+
+@container compact-model-picker (max-width: 200px) {
+  .composer__model-picker--loaded .composer__model-button {
+    padding-block: 5px;
+    gap: 5px;
+  }
+
+  .composer__model-picker--loaded .composer__model-default-icon,
+  .composer__model-picker--loaded .composer__model-button-badge {
+    display: none;
   }
 }
 
