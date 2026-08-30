@@ -3293,15 +3293,15 @@ test.describe('Effective Settings modal accessibility', () => {
     await page.waitForTimeout(200);
   }
 
-  test('A191 — Settings by source has an authority note referencing the Effective load command', async ({ page }) => {
+  test('A191 — Settings by source has an authority note referencing the Effective load request', async ({ page }) => {
     await openEffectiveSettings(page);
     const note = page.locator('.effective-settings__section').first().locator('.effective-settings__note');
     await expect(note).toBeVisible();
-    await expect(note).toContainText('Effective load command');
+    await expect(note).toContainText('Effective load request');
     await expect(note).toContainText('authoritative');
     const copy = note.locator('.effective-settings__note-copy');
     await expect(copy).toHaveCount(1);
-    await expect(copy.locator('strong')).toHaveText('Effective load command');
+    await expect(copy.locator('strong')).toHaveText('Effective load request');
   });
 
   test('A192 — modal passes a WCAG 2.1 AA axe-core scan with no critical/serious violations', async ({ page }) => {

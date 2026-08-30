@@ -1,12 +1,13 @@
 #pragma once
 
-#include <string>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
 #include <shared_mutex>
 #include <string>
 #include <vector>
+
 #include <nlohmann/json.hpp>
 
 namespace lemon {
@@ -26,14 +27,24 @@ public:
     // --- Thread-safe typed getters (shared lock) ---
     // Top-level server settings
     int port() const;
+    void set_port_override(std::optional<int> override_val);
     std::string host() const;
+    void set_host_override(std::optional<std::string> override_val);
     int websocket_port() const;
     std::string log_level() const;
+    std::string log_file() const;
+    void set_log_file_override(std::optional<std::string> override_val);
+    int log_max_file_size_mb() const;
+    void set_log_max_file_size_mb_override(std::optional<int> override_val);
+    int log_max_files() const;
+    void set_log_max_files_override(std::optional<int> override_val);
     std::string extra_models_dir() const;
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
     long global_timeout() const;
     int max_loaded_models() const;
+    int64_t download_rate_limit_bytes_per_second() const;
+
     std::string models_dir() const;
     int ctx_size() const;
     bool auto_evict() const;
@@ -56,17 +67,19 @@ public:
     double telemetry_otlp_retry_backoff_base_s() const;
     int telemetry_otlp_send_batch_size() const;
     double telemetry_otlp_batch_timeout_s() const;
-
-
+    std::vector<std::string> telemetry_session_headers_id() const;
+    std::vector<std::string> telemetry_session_headers_client() const;
     // Feature flags
     bool offline() const;
     bool auto_check_model_updates() const;
+    bool auto_update_models() const;
     bool no_fetch_executables() const;
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
     std::string default_model_source() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;
+    std::string rocm_install_method() const;
 
     // Backend settings (nested)
     json backend_config(const std::string& backend_name) const;
@@ -151,7 +164,12 @@ private:
     json config_;
 
     // Transient CLI overrides (not persisted to disk)
+    std::optional<int> port_override_;
+    std::optional<std::string> host_override_;
     std::optional<bool> broadcast_override_;
+    std::optional<std::string> log_file_override_;
+    std::optional<int> log_max_file_size_mb_override_;
+    std::optional<int> log_max_files_override_;
 
     // Valid log levels
     static const std::vector<std::string> valid_log_levels_;

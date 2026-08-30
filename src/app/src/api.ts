@@ -238,7 +238,6 @@ export interface ModelOptions {
   effective: Record<string, unknown>;
   defaults: Record<string, unknown>;
   resolved_ctx_size: number;
-  load_command: string;
 }
 
 export interface EffectiveLoadCommand {
@@ -246,8 +245,6 @@ export interface EffectiveLoadCommand {
   recipe: string;
   backend: string;
   options: Record<string, unknown>;
-  args: string[];
-  ctx_size_auto_resolved?: boolean;
 }
 
 export interface ModelInfo {
@@ -1448,15 +1445,18 @@ class LemonadeAPI {
         recipe: 'collection.router',
         backend: 'virtual',
         options: {},
-        args: [],
       };
     }
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
     const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
-    return this._json<EffectiveLoadCommand>('/api/v1/load/command', { method: 'POST', body });
+    const body: Record<string, unknown> = { ...(stagedOptions || {}), ...recipeOptions, dry_run: true };
+    const result = await this._json<ModelOptions>(this._modelOptionsPath(modelName), { method: 'POST', body });
+    const options = result.effective;
+    const backendEntry = Object.entries(options).find(([key, value]) => key.endsWith('_backend') && typeof value === 'string');
+    const backend = typeof backendEntry?.[1] === 'string' ? backendEntry[1] : '';
+    return { model_name: result.model_name, recipe: result.recipe, backend, options };
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {

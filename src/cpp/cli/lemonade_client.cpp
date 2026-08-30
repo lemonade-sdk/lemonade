@@ -134,6 +134,7 @@ static void assert_http_ok(const httplib::Result& res) {
         throw HttpError(res->status, res->body,
                         "Request failed: " + std::to_string(res->status));
     }
+
 }
 
 std::string extract_server_error_message(const HttpError& error) {
@@ -298,6 +299,14 @@ int LemonadeClient::check_model_updates() const {
             throw std::runtime_error("Server returned an invalid model update response");
         }
 
+        if (result.contains("failed_models") && result["failed_models"].is_object() && !result["failed_models"].empty()) {
+            std::cerr << "Failed to check updates for:" << std::endl;
+            for (const auto& [name, err] : result["failed_models"].items()) {
+                std::cerr << "  - " << name << ": " << err.get<std::string>() << std::endl;
+            }
+            return 1;
+        }
+
         if (models.empty()) {
             std::cout << "All downloaded models are up to date." << std::endl;
             return 0;
@@ -320,10 +329,281 @@ int LemonadeClient::check_model_updates() const {
     }
 }
 
+json LemonadeClient::fetch_health() const {
+    return json::parse(make_request("/api/v1/health", "GET", "", "", 500, 500));
+}
+
+int LemonadeClient::update_models(const std::vector<std::string>& models, bool check_only, bool json_output, bool wait_for_completion) const {
+
+    try {
+        if (check_only) {
+            json body = {
+                {"models", models},
+                {"dry_run", true}
+            };
+
+            std::string response = make_request(
+                "/internal/models/sync",
+                "POST",
+                body.dump(),
+                "application/json",
+                DEFAULT_CONNECTION_TIMEOUT_MS,
+                LONG_TIMEOUT_MS);
+            auto result = json::parse(response);
+
+            if (json_output) {
+                std::cout << result.dump(2) << std::endl;
+                bool failed = (result.value("status", "") == "failed") ||
+                              (result.contains("failed_models") && result["failed_models"].is_object() && !result["failed_models"].empty()) ||
+                              (result.contains("terminal_error") && !result["terminal_error"].get<std::string>().empty());
+                return failed ? 1 : 0;
+            }
+
+            int updated_count = result.value("updated_count", 0);
+            int checked_count = result.value("checked_count", 0);
+            std::cout << "Checked " << checked_count << " model(s). " << updated_count << " update(s) available." << std::endl;
+
+            if (result.contains("models_updated") && result["models_updated"].is_array() && !result["models_updated"].empty()) {
+                std::cout << "Updates available:" << std::endl;
+                for (const auto& m : result["models_updated"]) {
+                    std::cout << "  - " << m.get<std::string>() << std::endl;
+                }
+            }
+
+            if (result.contains("models_up_to_date") && result["models_up_to_date"].is_array() && !result["models_up_to_date"].empty()) {
+                std::cout << "Up to date:" << std::endl;
+                for (const auto& m : result["models_up_to_date"]) {
+                    std::cout << "  - " << m.get<std::string>() << std::endl;
+                }
+            }
+
+            if ((result.contains("failed_models") && result["failed_models"].is_object() && !result["failed_models"].empty()) ||
+                (result.contains("terminal_error") && !result["terminal_error"].get<std::string>().empty())) {
+                if (result.contains("failed_models") && result["failed_models"].is_object() && !result["failed_models"].empty()) {
+                    std::cerr << "Failed:" << std::endl;
+                    for (const auto& [name, err] : result["failed_models"].items()) {
+                        std::cerr << "  - " << name << ": " << err.get<std::string>() << std::endl;
+                    }
+                }
+                if (result.contains("terminal_error") && !result["terminal_error"].get<std::string>().empty()) {
+                    std::cerr << "Terminal error: " << result["terminal_error"].get<std::string>() << std::endl;
+                }
+                return 1;
+            }
+            return 0;
+        }
+
+        auto post_sync = [this](const json& body) -> json {
+            try {
+                std::string resp = make_request(
+                    "/internal/models/sync",
+                    "POST",
+                    body.dump(),
+                    "application/json",
+                    DEFAULT_CONNECTION_TIMEOUT_MS,
+                    LONG_TIMEOUT_MS);
+                return json::parse(resp);
+            } catch (const HttpError& e) {
+                if (e.status_code() == 202 && !e.response_body().empty()) {
+                    return json::parse(e.response_body());
+                }
+                throw;
+            }
+        };
+
+        auto is_failed_result = [](const json& res) -> bool {
+            std::string status = res.value("status", "");
+            return (status == "failed") || (status == "not_found") ||
+                   (res.contains("failed_models") && res["failed_models"].is_object() && !res["failed_models"].empty()) ||
+                   (res.contains("terminal_error") && !res["terminal_error"].get<std::string>().empty());
+        };
+
+        if (!wait_for_completion) {
+            json body = {
+                {"models", models},
+                {"async", true}
+            };
+
+            auto result = post_sync(body);
+
+            if (json_output) {
+                std::cout << result.dump(2) << std::endl;
+                return is_failed_result(result) ? 1 : 0;
+            }
+
+            if (result.value("already_in_progress", false)) {
+                std::cout << "Model synchronization is already in progress." << std::endl;
+                return 0;
+            }
+
+            if (is_failed_result(result)) {
+                if (result.contains("failed_models") && result["failed_models"].is_object() && !result["failed_models"].empty()) {
+                    std::cerr << "Failed:" << std::endl;
+                    for (const auto& [name, err] : result["failed_models"].items()) {
+                        std::cerr << "  - " << name << ": " << err.get<std::string>() << std::endl;
+                    }
+                }
+                if (result.contains("terminal_error") && !result["terminal_error"].get<std::string>().empty()) {
+                    std::cerr << "Terminal error: " << result["terminal_error"].get<std::string>() << std::endl;
+                }
+                return 1;
+            }
+
+            std::cout << "Model synchronization dispatched in background." << std::endl;
+            std::cout << "Use 'lemonade update-models --wait' to monitor progress." << std::endl;
+
+            return 0;
+        }
+
+        json dispatch_body = {
+            {"models", models},
+            {"async", true},
+            {"attach_if_running", models.empty()}
+        };
+
+        auto dispatch_result = post_sync(dispatch_body);
+
+        if (is_failed_result(dispatch_result) && !dispatch_result.value("already_in_progress", false)) {
+            if (json_output) {
+                std::cout << dispatch_result.dump(2) << std::endl;
+            } else {
+                std::cerr << "Error starting model update: " << dispatch_result.value("terminal_error", "Operation failed") << std::endl;
+            }
+            return 1;
+        }
+        bool already_running = dispatch_result.value("already_in_progress", false);
+        uint64_t target_sync_id = dispatch_result.value("sync_id", 0);
+
+        if (!json_output) {
+            if (already_running) {
+                std::cout << "Model synchronization is currently running in background. Waiting for completion..." << std::endl;
+            } else {
+                std::cout << "Starting model synchronization on server... Waiting for completion..." << std::endl;
+            }
+        }
+
+        json final_result;
+        std::string last_reported_model;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::string poll_url = target_sync_id > 0
+                ? ("/internal/models/sync/status?sync_id=" + std::to_string(target_sync_id))
+                : "/internal/models/sync/status";
+            std::string check_resp = make_request(
+                poll_url,
+                "GET",
+                "",
+                "",
+                DEFAULT_CONNECTION_TIMEOUT_MS,
+                LONG_TIMEOUT_MS);
+            final_result = json::parse(check_resp);
+            if (target_sync_id > 0) {
+                if (final_result.value("status", "") != "in_progress" &&
+                    (final_result.value("completed_sync_id", 0) >= target_sync_id ||
+                     final_result.value("sync_id", 0) == target_sync_id)) {
+                    break;
+                }
+            } else {
+                if (!final_result.value("already_in_progress", false) && final_result.value("status", "") != "in_progress") {
+                    break;
+                }
+            }
+
+            if (final_result.contains("progress") && final_result["progress"].is_object()) {
+                const auto& prog = final_result["progress"];
+                std::string cur_model = prog.value("current_model", "");
+                int percent = prog.value("percent", 0);
+                size_t bytes = prog.value("bytes_downloaded", (size_t)0);
+                size_t total = prog.value("bytes_total", (size_t)0);
+                if (!cur_model.empty() && !json_output) {
+                    last_reported_model = cur_model;
+                    std::cerr << "\r\033[K[sync] " << cur_model;
+                    if (total > 0) {
+                        double mb_dl = static_cast<double>(bytes) / (1024.0 * 1024.0);
+                        double mb_total = static_cast<double>(total) / (1024.0 * 1024.0);
+                        std::cerr << " (" << percent << "% - " << std::fixed << std::setprecision(1) << mb_dl << " MB / " << mb_total << " MB)";
+                    }
+                    std::cerr << std::flush;
+                }
+            }
+        }
+
+        if (!last_reported_model.empty()) {
+            std::cerr << std::endl;
+        }
+
+        if (json_output) {
+            std::cout << final_result.dump(2) << std::endl;
+            return is_failed_result(final_result) ? 1 : 0;
+        }
+
+        int checked_count = final_result.value("checked_count", 0);
+        int updated_count = final_result.value("updated_count", 0);
+        std::cout << "Model synchronization completed." << std::endl;
+        std::cout << "Checked " << checked_count << " model(s). " << updated_count << " update(s) applied." << std::endl;
+
+        if (final_result.contains("terminal_error") && !final_result["terminal_error"].get<std::string>().empty()) {
+            std::cerr << "Terminal error: " << final_result["terminal_error"].get<std::string>() << std::endl;
+        }
+
+        if (final_result.contains("models_updated") && final_result["models_updated"].is_array() && !final_result["models_updated"].empty()) {
+            std::cout << "Updated models:" << std::endl;
+            for (const auto& m : final_result["models_updated"]) {
+                std::cout << "  - " << m.get<std::string>() << std::endl;
+            }
+        }
+
+        if (is_failed_result(final_result)) {
+            if (final_result.value("status", "") == "not_found") {
+                std::cerr << "Sync job " << (target_sync_id > 0 ? std::to_string(target_sync_id) : "") << " was not found or has expired on the server." << std::endl;
+            }
+            if (final_result.contains("failed_models") && final_result["failed_models"].is_object() && !final_result["failed_models"].empty()) {
+                std::cerr << "Failed:" << std::endl;
+                for (const auto& [name, err] : final_result["failed_models"].items()) {
+                    std::cerr << "  - " << name << ": " << err.get<std::string>() << std::endl;
+                }
+            }
+            return 1;
+        }
+
+        return 0;
+    } catch (const HttpError& e) {
+
+        std::cerr << "Error syncing models: "
+                  << extract_server_error_message(e) << std::endl;
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error syncing models: " << e.what() << std::endl;
+        return 1;
+    }
+}
+
+// Shared by status() and status_json() so an unreachable/erroring server
+// prints the exact same message on both paths.
+static int print_health_fetch_error(const json::exception& e) {
+    std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
+    return 1;
+}
+
+static int print_health_fetch_error(const HttpError& e) {
+    std::cerr << "Error fetching health status: " << extract_server_error_message(e)
+              << std::endl;
+    return 1;
+}
+
+static int print_health_fetch_error(const std::exception& e) {
+    const std::string error = e.what();
+    if (error.find("Connection failed:") == 0) {
+        std::cerr << "Server is not running" << std::endl;
+    } else {
+        std::cerr << "Error fetching health status: " << error << std::endl;
+    }
+    return 1;
+}
+
 int LemonadeClient::status(int display_port) const {
     try {
-        std::string response = make_request("/api/v1/health", "GET", "", "", 500, 500);
-        auto json_response = json::parse(response);
+        auto json_response = fetch_health();
 
         int port = display_port > 0 ? display_port : port_;
         std::cout << "Server is running on port " << port << std::endl;
@@ -355,8 +635,10 @@ int LemonadeClient::status(int display_port) const {
                       << std::setw(10) << "Type"
                       << std::setw(10) << "Device"
                       << std::setw(14) << "Recipe"
+                      << std::setw(9) << "Ctx"
+                      << std::setw(10) << "Status"
                       << "Checkpoint" << std::endl;
-            std::cout << std::string(100, '-') << std::endl;
+            std::cout << std::string(119, '-') << std::endl;
 
             for (const auto& model : json_response["all_models_loaded"]) {
                 if (!model.is_object()) continue;
@@ -366,11 +648,19 @@ int LemonadeClient::status(int display_port) const {
                     model_name += " (pinned)";
                 }
 
+                const json recipe_options = model.value("recipe_options", json::object());
+                std::string ctx_size = "-";
+                if (recipe_options.contains("ctx_size") && recipe_options["ctx_size"].is_number()) {
+                    ctx_size = std::to_string(recipe_options["ctx_size"].get<int>());
+                }
+
                 std::cout << std::left
                           << std::setw(30) << model_name
                           << std::setw(10) << model.value("type", "-")
                           << std::setw(10) << model.value("device", "-")
                           << std::setw(14) << model.value("recipe", "-")
+                          << std::setw(9) << ctx_size
+                          << std::setw(10) << model.value("status", "-")
                           << model.value("checkpoint", "-") << std::endl;
             }
         } else {
@@ -381,20 +671,50 @@ int LemonadeClient::status(int display_port) const {
         return 0;
 
     } catch (const json::exception& e) {
-        std::cerr << "Error parsing health response JSON: " << e.what() << std::endl;
-        return 1;
+        return print_health_fetch_error(e);
     } catch (const HttpError& e) {
-        std::cerr << "Error fetching health status: " << extract_server_error_message(e)
-                  << std::endl;
-        return 1;
+        return print_health_fetch_error(e);
     } catch (const std::exception& e) {
-        const std::string error = e.what();
-        if (error.find("Connection failed:") == 0) {
-            std::cerr << "Server is not running" << std::endl;
-        } else {
-            std::cerr << "Error fetching health status: " << error << std::endl;
+        return print_health_fetch_error(e);
+    }
+}
+
+int LemonadeClient::status_json(int display_port) const {
+    try {
+        auto health = fetch_health();
+
+        json out;
+        out["port"] = display_port > 0 ? display_port : port_;
+        out["version"] = health.value("version", "");
+        out["websocket_port"] = health.value("websocket_port", 0);
+        out["models"] = json::array();
+
+        for (const auto& model : health.value("all_models_loaded", json::array())) {
+            if (!model.is_object()) continue;
+
+            json entry;
+            entry["model_name"] = model.value("model_name", "");
+            entry["checkpoint"] = model.value("checkpoint", "");
+            entry["type"] = model.value("type", "");
+            entry["device"] = model.value("device", "");
+            entry["recipe"] = model.value("recipe", "");
+            entry["recipe_options"] = model.value("recipe_options", json::object());
+            entry["status"] = model.value("status", "");
+            entry["pinned"] = model.value("pinned", false);
+            entry["pid"] = model.value("pid", 0);
+            entry["backend_url"] = model.value("backend_url", "");
+            out["models"].push_back(entry);
         }
-        return 1;
+
+        std::cout << out.dump(2) << std::endl;
+        return 0;
+
+    } catch (const json::exception& e) {
+        return print_health_fetch_error(e);
+    } catch (const HttpError& e) {
+        return print_health_fetch_error(e);
+    } catch (const std::exception& e) {
+        return print_health_fetch_error(e);
     }
 }
 
@@ -968,7 +1288,20 @@ int LemonadeClient::list_recipes(bool show_all) const {
             return 0;
         }
 
+        // Hidden unless --all (see /system-info's unavailable_recipes).
+        std::set<std::string> unavailable_recipes;
+        if (json_response.contains("unavailable_recipes") &&
+            json_response["unavailable_recipes"].is_array()) {
+            for (const auto& r : json_response["unavailable_recipes"]) {
+                if (r.is_string()) unavailable_recipes.insert(r.get<std::string>());
+            }
+        }
+
         for (const auto& [recipe_name, recipe_data] : json_response["recipes"].items()) {
+            if (!show_all && unavailable_recipes.count(recipe_name)) {
+                continue;
+            }
+
             RecipeStatus status;
             status.name = recipe_name;
 
@@ -1137,7 +1470,10 @@ int LemonadeClient::uninstall_backend(const std::string& recipe, const std::stri
 int LemonadeClient::install_cloud_provider(const std::string& provider,
                                             const std::string& base_url,
                                             const std::string& api_key,
-                                            bool allow_insecure_http) {
+                                            bool allow_insecure_http,
+                                            const std::optional<std::string>& auth_header_name,
+                                            const std::optional<std::string>& auth_header_prefix,
+                                            const std::optional<std::string>& wire_format) {
     std::cout << "Installing cloud provider: " << provider
               << " (" << base_url << ")" << std::endl;
     try {
@@ -1151,6 +1487,15 @@ int LemonadeClient::install_cloud_provider(const std::string& provider,
         }
         if (!api_key.empty()) {
             body["api_key"] = api_key;
+        }
+        if (auth_header_name) {
+            body["auth_header_name"] = *auth_header_name;
+        }
+        if (auth_header_prefix) {
+            body["auth_header_prefix"] = *auth_header_prefix;
+        }
+        if (wire_format) {
+            body["wire_format"] = *wire_format;
         }
         std::string response = make_request("/api/v1/install", "POST",
                                              body.dump(), "application/json");
@@ -1262,15 +1607,19 @@ int LemonadeClient::cloud_auth_clear(const std::string& provider) {
     }
 }
 
-int LemonadeClient::cloud_list() const {
+int LemonadeClient::cloud_list(bool json_output) const {
     try {
         std::string response = make_request("/api/v1/system-info", "GET");
         auto info = json::parse(response);
-        if (!info.contains("cloud") || !info["cloud"].contains("providers")) {
-            std::cout << "No cloud providers installed." << std::endl;
+        json providers = json::array();
+        if (info.contains("cloud") && info["cloud"].contains("providers") &&
+            info["cloud"]["providers"].is_array()) {
+            providers = info["cloud"]["providers"];
+        }
+        if (json_output) {
+            std::cout << providers.dump() << std::endl;
             return 0;
         }
-        const auto& providers = info["cloud"]["providers"];
         if (providers.empty()) {
             std::cout << "No cloud providers installed." << std::endl;
             return 0;
@@ -1286,6 +1635,18 @@ int LemonadeClient::cloud_list() const {
                       << ", runtime_key_set=" << (p.value("runtime_key_set", false) ? "yes" : "no")
                       << ", models_discovered=" << p.value("models_discovered", size_t{0})
                       << std::endl;
+            const std::string header_name = p.value("auth_header_name", std::string("Authorization"));
+            const std::string header_prefix = p.value("auth_header_prefix", std::string("Bearer "));
+            if (header_name != "Authorization" || header_prefix != "Bearer ") {
+                // Quoted so a trailing space or a deliberately empty prefix is
+                // visible rather than indistinguishable from the default.
+                std::cout << "    auth header: " << header_name
+                          << ": \"" << header_prefix << "\"<key>" << std::endl;
+            }
+            const std::string wire_format = p.value("wire_format", std::string("openai"));
+            if (wire_format != "openai") {
+                std::cout << "    wire format: " << wire_format << std::endl;
+            }
             print_response_warnings(p, "    ");
         }
         return 0;
