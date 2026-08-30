@@ -74,11 +74,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-827-97d2990",
-    "rocm-stable": "master-827-97d2990",
-    "vulkan": "master-827-97d2990",
-    "cuda": "master-827-e2329c3",
-    "metal": "master-827-97d2990"
+    "cpu": "master-835-dc4000d",
+    "rocm-stable": "master-835-dc4000d",
+    "vulkan": "master-835-dc4000d",
+    "cuda": "master-831-017cc8e",
+    "metal": "master-835-dc4000d"
   },
   "ds4": {
     "rocm": "b0001"
