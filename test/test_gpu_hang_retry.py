@@ -20,12 +20,16 @@ import concurrent.futures
 
 # Add test/ to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from utils.test_models import ENDPOINT_TEST_MODEL, get_default_lemond_binary
 from utils.server_base import (
     get_cli_binary,
     parse_args,
     pull_model_with_retry,
     run_server_tests,
+)
+from utils.test_models import (
+    ENDPOINT_TEST_MODEL,
+    TIMEOUT_MODEL_OPERATION,
+    get_default_lemond_binary,
 )
 
 args = parse_args()
@@ -388,7 +392,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         load_resp = self.session.post(
             f"{self.base_url}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(load_resp.status_code, 200)
 
@@ -401,7 +405,9 @@ class TestGpuHangRecovery(unittest.TestCase):
         }
 
         resp = self.session.post(
-            f"{self.base_url}/api/v1/chat/completions", json=payload, timeout=60
+            f"{self.base_url}/api/v1/chat/completions",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Verify request succeeded
@@ -434,7 +440,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         load_resp = self.session.post(
             f"{self.base_url}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(load_resp.status_code, 200)
 
@@ -450,7 +456,7 @@ class TestGpuHangRecovery(unittest.TestCase):
             f"{self.base_url}/api/v1/chat/completions",
             json=payload,
             stream=True,
-            timeout=60,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
 
         # Consume the stream
@@ -494,7 +500,7 @@ class TestGpuHangRecovery(unittest.TestCase):
         load_resp = self.session.post(
             f"{self.base_url}/api/v1/load",
             json={"model_name": ENDPOINT_TEST_MODEL},
-            timeout=60,
+            timeout=TIMEOUT_MODEL_OPERATION,
         )
         self.assertEqual(load_resp.status_code, 200)
 
@@ -512,7 +518,9 @@ class TestGpuHangRecovery(unittest.TestCase):
                 s = requests.Session()
                 s.trust_env = False
                 return s.post(
-                    f"{self.base_url}/api/v1/chat/completions", json=payload, timeout=60
+                    f"{self.base_url}/api/v1/chat/completions",
+                    json=payload,
+                    timeout=TIMEOUT_MODEL_OPERATION,
                 )
             except Exception as e:
                 return e

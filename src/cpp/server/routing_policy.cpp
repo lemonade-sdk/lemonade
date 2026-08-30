@@ -269,10 +269,12 @@ class LlmClassifier final : public Classifier {
 public:
     LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
                   OnError on_error, std::vector<std::string> labels,
-                  std::optional<std::string> default_label)
+                  std::optional<std::string> default_label,
+                  bool expose_request_features)
         : Classifier(std::move(id), std::move(type), on_error, std::move(model),
                      std::move(labels), std::move(default_label)),
-          prompt_(std::move(prompt)) {
+          prompt_(std::move(prompt)),
+          expose_request_features_(expose_request_features) {
         if (model_name_.empty()) {
             throw std::invalid_argument("llm classifier requires model");
         }
@@ -329,29 +331,35 @@ public:
     }
 
 private:
-    // The user message handed to the router LLM: a structured JSON view of the
-    // routing context, so the router can see everything a deterministic rule
-    // could — not just the latest text. An image-only request is visible as
-    // has_images=true with empty text; a tool-bearing request as
-    // has_tools=true; length via chars; caller routing hints via metadata.
+    // The user message handed to the judge: a structured JSON view of the
+    // routing context — not just the latest text. has_tools/has_images are
+    // only present when expose_request_features_ is set (see
+    // effective_prompt below for which classifiers that is); when present, an
+    // image-only request is visible as has_images=true with empty text and a
+    // tool-bearing request as has_tools=true. chars and metadata are always
+    // present regardless.
     //
     // History policy (explicit, per the frozen v1 RouteContext contract):
     // `text` is the LATEST USER TURN ONLY. RouteContext deliberately carries a
     // single turn so earlier assistant/system turns can't skew routing;
     // supplying more history to the router requires extending that contract
     // for all classifiers, which is out of scope for this classifier.
-    static std::string build_context_payload(const RouteContext& request) {
+    std::string build_context_payload(const RouteContext& request) const {
         json metadata = json::object();
         for (const auto& [key, value] : request.metadata) {
             metadata[key] = value;
         }
-        const json payload = {
+        json payload = {
             {"text", request.input},
-            {"has_tools", request.params.has_tools},
-            {"has_images", request.params.has_images},
             {"chars", request.params.chars},
             {"metadata", std::move(metadata)},
         };
+        // Withheld entirely (not just disclaimed) unless the policy actually
+        // has a use for these fields — see expose_request_features_.
+        if (expose_request_features_) {
+            payload["has_tools"] = request.params.has_tools;
+            payload["has_images"] = request.params.has_images;
+        }
         return payload.dump();
     }
 
@@ -359,13 +367,39 @@ private:
     // input format, candidate vocabulary, and the required JSON shape — is
     // appended here so every llm router speaks the same protocol regardless
     // of authoring.
+    //
+    // has_tools/has_images reach the judge only when expose_request_features_
+    // is set, which the parser sets true solely for the routing.router
+    // sugar's synthesized classifier (#2789): it's the sole decision
+    // mechanism, so it needs them directly (e.g. "use the vision model when
+    // has_images"). An author-declared classifier always gets false — even
+    // one composed alongside a deterministic has_tools/has_images rule
+    // (risky-tool-calls-stay-local) would otherwise leak the same field into
+    // its own judgment, recreating #2789. Compose the leaf in a rule instead
+    // of trusting the judge to weigh it.
     std::string effective_prompt() const {
-        std::string suffix =
-            "The user message is a JSON object describing the request to "
-            "route: {\"text\": latest user turn only, \"has_tools\": whether "
-            "the request carries tools, \"has_images\": whether it carries "
-            "images, \"chars\": byte length of text, \"metadata\": caller "
-            "routing hints}. You must choose exactly one of these models: ";
+        std::string suffix;
+        if (expose_request_features_) {
+            suffix =
+                "The user message is a JSON object describing the request to "
+                "route: {\"text\": latest user turn only, \"has_tools\": "
+                "whether the API call includes a non-empty tools parameter, "
+                "\"has_images\": whether it includes image content, "
+                "\"chars\": byte length of text, \"metadata\": caller routing "
+                "hints}. has_tools and has_images describe the request's "
+                "FORMAT, not its content: treat either as evidence of intent "
+                "or risk only when the routing criteria above explicitly ask "
+                "you to condition on tool or image presence; otherwise judge "
+                "the request using \"text\" alone. You must choose exactly "
+                "one of these models: ";
+        } else {
+            suffix =
+                "The user message is a JSON object describing the request to "
+                "route: {\"text\": latest user turn only, \"chars\": byte "
+                "length of text, \"metadata\": caller routing hints}. Judge "
+                "the request using \"text\" against the routing criteria "
+                "above. You must choose exactly one of these models: ";
+        }
         for (std::size_t i = 0; i < labels().size(); ++i) {
             if (i > 0) suffix += ", ";
             suffix += labels()[i];
@@ -412,6 +446,7 @@ private:
 
 private:
     std::string prompt_;
+    bool expose_request_features_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {
@@ -1080,7 +1115,7 @@ ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_f
     return compile_match_expr_impl(expr, leaf_factory, 0);
 }
 
-ClassifierPtr make_classifier(const json& config) {
+ClassifierPtr make_classifier(const json& config, bool expose_request_features) {
     if (!config.is_object()) {
         throw std::invalid_argument("classifier entry must be an object");
     }
@@ -1128,7 +1163,8 @@ ClassifierPtr make_classifier(const json& config) {
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<LlmClassifier>(
             id, type, config.value("model", ""), config.value("prompt", ""),
-            on_error, std::move(labels), std::move(default_label));
+            on_error, std::move(labels), std::move(default_label),
+            expose_request_features);
     }
 
     if (type == "pii_detection" || type == "prompt_safety" ||
@@ -1140,7 +1176,8 @@ ClassifierPtr make_classifier(const json& config) {
     throw std::invalid_argument("unknown classifier type: " + type);
 }
 
-std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json) {
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json,
+                                                       bool expose_request_features) {
     std::map<std::string, ClassifierPtr> classifiers;
     if (classifiers_json.is_null()) {
         return classifiers;
@@ -1150,7 +1187,7 @@ std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_js
     }
 
     for (const auto& item : classifiers_json) {
-        auto classifier = make_classifier(item);
+        auto classifier = make_classifier(item, expose_request_features);
         if (!classifiers.emplace(classifier->id(), classifier).second) {
             throw std::invalid_argument("duplicate classifier id: " + classifier->id());
         }
