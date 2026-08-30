@@ -378,6 +378,50 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
           info.route_policy != nullptr);
 }
 
+// #2748 follow-up: builtin.<X> is a distinct alias form from the bare name,
+// added only by compute_model_alias_maps()'s builtin.<X> pass. Uses a real
+// builtin (ryzenai-llm, reliably filtered on any non-NPU CI host) so no
+// registration is needed to test it.
+static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManager& manager) {
+    check("Qwen2.5-0.5B-Instruct-CPU is actually hardware-filtered on this "
+          "host (test premise)",
+          !manager.model_exists("Qwen2.5-0.5B-Instruct-CPU"));
+
+    json doc = {
+        {"model_name", "user.RouterFilteredBuiltin"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "Qwen2.5-0.5B-Instruct-CPU"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "builtin.Qwen2.5-0.5B-Instruct-CPU"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFilteredBuiltin", doc);
+
+    auto info2 = manager.get_model_info("user.RouterFilteredBuiltin");
+    check("router policy still parses when the classifier references a "
+          "filtered builtin via its builtin.<X> alias (#2748)",
+          info2.route_policy != nullptr);
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -398,6 +442,7 @@ int main() {
     test_backend_capability_over_chat_indicator(manager);
     test_filtered_classifier_component_does_not_drop_policy(manager);
     test_filtered_classifier_bare_name_resolves_through_alias(manager);
+    test_filtered_classifier_builtin_prefixed_alias_resolves(manager);
     test_register_preserves_routing(manager);
 
     fs::remove_all(temp);

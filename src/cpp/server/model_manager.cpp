@@ -2787,18 +2787,26 @@ void ModelManager::download_from_huggingface_engine(
     download_from_registry_engine(info, progress_callback);
 }
 
-// Bare name -> winning canonical cache key, by source precedence (Registered
-// > Imported > Builtin), same rule as rebuild_public_model_aliases_locked()
-// but over every known model, not just hardware-filtering survivors (#2748):
-// a bare name must not silently resolve to a lower-precedence model just
-// because the true winner is temporarily unavailable.
-static std::map<std::string, std::string> compute_bare_name_precedence(
-    const std::map<std::string, ModelInfo>& models) {
-    struct Candidate {
+// Every alias form rebuild_public_model_aliases_locked() computes -- bare
+// name (by source precedence), builtin.<X>, and ModelInfo::input_aliases --
+// as a pure function of an arbitrary model set, so it can also run against
+// the pre-filter set (#2748): a component's alias must resolve the same way
+// whether or not its model currently survives hardware filtering. See that
+// function's own doc comment for what each field means.
+struct ModelAliasMaps {
+    std::map<std::string, std::string> public_model_aliases;
+    std::map<std::string, std::string> canonical_public_names;
+};
+
+static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, ModelInfo>& models) {
+    ModelAliasMaps result;
+
+    struct Entry {
         std::string cache_key;
         ModelSource source;
     };
-    std::map<std::string, std::vector<Candidate>> by_bare;
+    std::map<std::string, std::vector<Entry>> by_bare;
+
     for (const auto& [cache_key, info] : models) {
         ModelSource source;
         std::string bare;
@@ -2811,14 +2819,70 @@ static std::map<std::string, std::string> compute_bare_name_precedence(
         }
         by_bare[bare].push_back({cache_key, source});
     }
-    std::map<std::string, std::string> winners;
+
     for (auto& [bare, entries] : by_bare) {
-        std::sort(entries.begin(), entries.end(), [](const Candidate& a, const Candidate& b) {
+        std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
             return precedence_rank(a.source) < precedence_rank(b.source);
         });
-        winners[bare] = entries.front().cache_key;
+
+        const Entry& winner = entries.front();
+        result.public_model_aliases[bare] = winner.cache_key;
+
+        const auto winner_it = models.find(winner.cache_key);
+        const bool winner_is_prefixed_collection =
+            winner.source != ModelSource::Builtin &&
+            winner_it != models.end() &&
+            is_model_collection_recipe(winner_it->second.recipe);
+        result.canonical_public_names[winner.cache_key] =
+            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
+
+        for (size_t i = 1; i < entries.size(); ++i) {
+            const Entry& shadowed = entries[i];
+            std::string canonical = canonical_id(shadowed.source, bare);
+            result.canonical_public_names[shadowed.cache_key] = canonical;
+            if (canonical != shadowed.cache_key) {
+                result.public_model_aliases[canonical] = shadowed.cache_key;
+            }
+        }
     }
-    return winners;
+
+    for (const auto& [cache_key, _info] : models) {
+        if (parse_canonical_id(cache_key)) continue;
+        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
+        result.public_model_aliases.try_emplace(canonical, cache_key);
+    }
+
+    auto source_for_cache_key = [](const std::string& cache_key) {
+        if (auto canon = parse_canonical_id(cache_key)) {
+            return canon->source;
+        }
+        return ModelSource::Builtin;
+    };
+
+    for (const auto& [cache_key, info] : models) {
+        for (const auto& alias : info.input_aliases) {
+            if (parse_canonical_id(alias)) {
+                if (models.find(alias) == models.end()) {
+                    result.public_model_aliases[alias] = cache_key;
+                }
+            } else {
+                auto existing = result.public_model_aliases.find(alias);
+                if (existing == result.public_model_aliases.end()) {
+                    result.public_model_aliases[alias] = cache_key;
+                    continue;
+                }
+
+                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
+                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
+                    result.canonical_public_names[existing->second] = builtin_canonical;
+                    result.public_model_aliases[builtin_canonical] = existing->second;
+                    result.public_model_aliases[alias] = cache_key;
+                }
+            }
+        }
+    }
+
+    return result;
 }
 
 void ModelManager::build_cache() {
@@ -3072,13 +3136,14 @@ void ModelManager::build_cache() {
     }
 
     // Pre-filter snapshots for the routing-policy resolver below (#2748); see
-    // compute_bare_name_precedence() for why the alias needs its own pass.
+    // compute_model_alias_maps() for why the alias needs the full algorithm
+    // rather than a plain bare-name map.
     std::map<std::string, ModelType> pre_filter_types;
     for (const auto& [name, info] : all_models) {
         pre_filter_types[name] = info.type;
     }
-    const std::map<std::string, std::string> pre_filter_bare_aliases =
-        compute_bare_name_precedence(all_models);
+    const std::map<std::string, std::string> pre_filter_aliases =
+        compute_model_alias_maps(all_models).public_model_aliases;
 
     // Step 2: Filter by backend availability. This is the full-registry pass, so
     // it also refreshes the recipe availability side table used to hide backends
@@ -3131,18 +3196,14 @@ void ModelManager::build_cache() {
 
     // Parse each collection.router model's routing policy while the cache and
     // alias map are built and the lock is held (avoids re-locking via
-    // resolve_model_name()/get_model_info()). public_model_aliases_ only
-    // backstops what the precedence map doesn't cover (e.g. an
-    // extra_models_dir input_alias).
+    // resolve_model_name()/get_model_info()). pre_filter_aliases is computed
+    // over all_models, a strict superset of models_cache_, so it alone
+    // covers everything public_model_aliases_ would (#2748).
     RoutingPolicyParseOptions policy_options;
     policy_options.resolve_component =
-        [this, &pre_filter_bare_aliases](const std::string& name) -> std::optional<std::string> {
-        auto pre_it = pre_filter_bare_aliases.find(name);
-        if (pre_it != pre_filter_bare_aliases.end()) {
-            return pre_it->second;
-        }
-        auto it = public_model_aliases_.find(name);
-        return it != public_model_aliases_.end() ? it->second : name;
+        [&pre_filter_aliases](const std::string& name) -> std::optional<std::string> {
+        auto it = pre_filter_aliases.find(name);
+        return it != pre_filter_aliases.end() ? it->second : name;
     };
     policy_options.get_model_type = [this, &pre_filter_types](
                                          const std::string& name) -> std::optional<ModelType> {
@@ -6410,103 +6471,14 @@ std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
 //       fetch, and chat (the bare name still resolves via public_model_aliases_)
 //     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
 //
-// Precedence: Registered > Imported > Builtin.
+// Precedence: Registered > Imported > Builtin. The algorithm itself is
+// compute_model_alias_maps(), shared with build_cache()'s pre-filter
+// resolver snapshot (#2748); this just runs it against models_cache_ and
+// commits the result to member state.
 void ModelManager::rebuild_public_model_aliases_locked() {
-    public_model_aliases_.clear();
-    canonical_public_names_.clear();
-
-    struct Entry {
-        std::string cache_key;
-        ModelSource source;
-    };
-    std::map<std::string, std::vector<Entry>> by_bare;
-
-    for (const auto& [cache_key, info] : models_cache_) {
-        ModelSource source;
-        std::string bare;
-        if (auto canon = parse_canonical_id(cache_key)) {
-            source = canon->source;
-            bare = canon->bare_name;
-        } else {
-            // Unprefixed cache keys are built-ins (server_models.json).
-            source = ModelSource::Builtin;
-            bare = cache_key;
-        }
-        by_bare[bare].push_back({cache_key, source});
-    }
-
-    for (auto& [bare, entries] : by_bare) {
-        std::sort(entries.begin(), entries.end(),
-                  [](const Entry& a, const Entry& b) {
-                      return precedence_rank(a.source) < precedence_rank(b.source);
-                  });
-
-        const Entry& winner = entries.front();
-        public_model_aliases_[bare] = winner.cache_key;
-
-        // Collections registered under a prefixed namespace (user.* / extra.*)
-        // must list with their prefix so the id emitted by /v1/models matches the
-        // id used for registration, fetch, and chat. The bare name still resolves
-        // via the alias above, preserving dual-id (bare + prefixed) invocation.
-        const auto winner_it = models_cache_.find(winner.cache_key);
-        const bool winner_is_prefixed_collection =
-            winner.source != ModelSource::Builtin &&
-            winner_it != models_cache_.end() &&
-            is_model_collection_recipe(winner_it->second.recipe);
-        canonical_public_names_[winner.cache_key] =
-            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
-
-        for (size_t i = 1; i < entries.size(); ++i) {
-            const Entry& shadowed = entries[i];
-            std::string canonical = canonical_id(shadowed.source, bare);
-            canonical_public_names_[shadowed.cache_key] = canonical;
-            if (canonical != shadowed.cache_key) {
-                public_model_aliases_[canonical] = shadowed.cache_key;
-            }
-        }
-    }
-
-    // Always accept builtin.<X> as an input alias for the bare cache key,
-    // even when no other source shadows the built-in.
-    for (const auto& [cache_key, _info] : models_cache_) {
-        if (parse_canonical_id(cache_key)) continue;
-        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
-        public_model_aliases_.try_emplace(canonical, cache_key);
-    }
-
-    // A split extra_models_dir folder should show only its variant models in
-    // /models. Keep the old folder name working for existing scripts, but only
-    // as an input alias. Do not let that alias replace a user model or another
-    // real extra model with the same name.
-    auto source_for_cache_key = [](const std::string& cache_key) {
-        if (auto canon = parse_canonical_id(cache_key)) {
-            return canon->source;
-        }
-        return ModelSource::Builtin;
-    };
-
-    for (const auto& [cache_key, info] : models_cache_) {
-        for (const auto& alias : info.input_aliases) {
-            if (parse_canonical_id(alias)) {
-                if (models_cache_.find(alias) == models_cache_.end()) {
-                    public_model_aliases_[alias] = cache_key;
-                }
-            } else {
-                auto existing = public_model_aliases_.find(alias);
-                if (existing == public_model_aliases_.end()) {
-                    public_model_aliases_[alias] = cache_key;
-                    continue;
-                }
-
-                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
-                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
-                    canonical_public_names_[existing->second] = builtin_canonical;
-                    public_model_aliases_[builtin_canonical] = existing->second;
-                    public_model_aliases_[alias] = cache_key;
-                }
-            }
-        }
-    }
+    ModelAliasMaps computed = compute_model_alias_maps(models_cache_);
+    public_model_aliases_ = std::move(computed.public_model_aliases);
+    canonical_public_names_ = std::move(computed.canonical_public_names);
 }
 
 } // namespace lemon
