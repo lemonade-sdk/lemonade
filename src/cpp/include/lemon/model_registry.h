@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -117,6 +118,16 @@ RegistrySearchResponse normalize_registry_search_response(
     std::size_t limit = 12);
 
 bool registry_task_is_excluded(const std::string& task);
+
+bool is_official_huggingface_endpoint(const std::string& endpoint);
+std::string huggingface_repository_api_url(
+    const std::string& endpoint,
+    const std::string& repo_id,
+    const std::string& revision = "");
+std::optional<nlohmann::json> parse_huggingface_compatibility_response(
+    int status_code,
+    const std::string& body,
+    bool metadata_required);
 
 // Search a remote model registry. Provider-side GGUF filters are candidate
 // hints only; callers must use /pull/variants as the authoritative file-level

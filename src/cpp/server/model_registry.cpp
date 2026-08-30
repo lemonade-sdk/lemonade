@@ -377,10 +377,10 @@ public:
         std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
         if (endpoint.empty()) endpoint = "https://huggingface.co";
 
-        std::string url = endpoint + "/api/models/" + percent_encode(repo_id, true);
-        if (!requested_revision.empty() && revision != "main") {
-            url += "/revision/" + percent_encode(revision, true);
-        }
+        std::string url = huggingface_repository_api_url(
+            endpoint,
+            repo_id,
+            !requested_revision.empty() && revision != "main" ? revision : "");
         const std::string repository_url = url;
         url += "?blobs=true";
 
@@ -400,18 +400,23 @@ public:
                                      " is missing the siblings array");
         }
 
+        const std::string snapshot_id = metadata.value("sha", std::string());
+        std::string compatibility_url = repository_url;
+        if (!snapshot_id.empty()) {
+            compatibility_url = huggingface_repository_api_url(
+                endpoint, repo_id, snapshot_id);
+        }
         const auto expanded_response = HttpClient::get(
-            repository_url + "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag",
+            compatibility_url + "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag",
             auth_headers());
-        if (expanded_response.status_code == 200) {
-            try {
-                const json expanded_metadata = JsonUtils::parse(expanded_response.body);
-                for (const char* field : {"gguf", "pipeline_tag"}) {
-                    auto value = expanded_metadata.find(field);
-                    if (value != expanded_metadata.end()) metadata[field] = *value;
-                }
-            } catch (const std::exception&) {
-                // Mirrors may accept expand parameters without returning Hugging Face JSON.
+        const auto expanded_metadata = parse_huggingface_compatibility_response(
+            expanded_response.status_code,
+            expanded_response.body,
+            is_official_huggingface_endpoint(endpoint));
+        if (expanded_metadata) {
+            for (const char* field : {"gguf", "pipeline_tag"}) {
+                auto value = expanded_metadata->find(field);
+                if (value != expanded_metadata->end()) metadata[field] = *value;
             }
         }
 
@@ -419,7 +424,7 @@ public:
         result.repo_id = repo_id;
         result.revision = revision;
         result.raw_metadata = metadata;
-        result.snapshot_id = metadata.value("sha", std::string());
+        result.snapshot_id = snapshot_id;
         if (result.snapshot_id.empty()) result.snapshot_id = revision;
         // Resolve downloads against the immutable commit whenever HF provides it.
         result.revision = result.snapshot_id;
@@ -649,6 +654,46 @@ RegistrySearchResponse normalize_registry_search_response(
 
 bool registry_task_is_excluded(const std::string& task) {
     return excluded_generation_task(task);
+}
+
+bool is_official_huggingface_endpoint(const std::string& endpoint) {
+    return trim_trailing_slash(endpoint) == "https://huggingface.co";
+}
+
+std::string huggingface_repository_api_url(
+    const std::string& endpoint,
+    const std::string& repo_id,
+    const std::string& revision) {
+    std::string url = trim_trailing_slash(endpoint) +
+                      "/api/models/" + percent_encode(repo_id, true);
+    if (!revision.empty()) {
+        url += "/revision/" + percent_encode(revision, true);
+    }
+    return url;
+}
+
+std::optional<json> parse_huggingface_compatibility_response(
+    int status_code,
+    const std::string& body,
+    bool metadata_required) {
+    if (status_code != 200) {
+        const bool mirror_does_not_support_metadata =
+            !metadata_required &&
+            (status_code == 400 || status_code == 404 ||
+             status_code == 405 || status_code == 422);
+        if (mirror_does_not_support_metadata) {
+            return std::nullopt;
+        }
+        throw std::runtime_error(
+            "Hugging Face compatibility metadata returned status " +
+            std::to_string(status_code));
+    }
+    try {
+        return JsonUtils::parse(body);
+    } catch (const std::exception&) {
+        if (metadata_required) throw;
+        return std::nullopt;
+    }
 }
 
 RegistrySearchResponse search_registry_models(RemoteRegistrySource source,

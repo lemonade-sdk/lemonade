@@ -161,6 +161,69 @@ static void test_tree_snapshot_fingerprint() {
           first.rfind("modelscope-master-", 0) == 0);
 }
 
+static void test_huggingface_compatibility_metadata_policy() {
+    check("official Hugging Face endpoint requires compatibility metadata",
+          lemon::is_official_huggingface_endpoint("https://huggingface.co/") &&
+              !lemon::is_official_huggingface_endpoint("https://hf.example.test"));
+    check("compatibility metadata URL is pinned to the file-tree SHA",
+          lemon::huggingface_repository_api_url(
+              "https://huggingface.co/", "org/model", "abc123") ==
+              "https://huggingface.co/api/models/org/model/revision/abc123");
+
+    bool rate_limit_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(429, "", true);
+    } catch (const std::runtime_error&) {
+        rate_limit_rejected = true;
+    }
+    check("official Hugging Face rate limits do not fail open", rate_limit_rejected);
+
+    bool server_failure_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(503, "", true);
+    } catch (const std::runtime_error&) {
+        server_failure_rejected = true;
+    }
+    check("official Hugging Face server errors do not fail open", server_failure_rejected);
+
+    const auto mirror_failure =
+        lemon::parse_huggingface_compatibility_response(404, "", false);
+    check("metadata-unaware mirrors remain compatible", !mirror_failure.has_value());
+
+    bool mirror_rate_limit_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(429, "", false);
+    } catch (const std::runtime_error&) {
+        mirror_rate_limit_rejected = true;
+    }
+    check("mirror rate limits do not fail open", mirror_rate_limit_rejected);
+
+    bool mirror_server_failure_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(503, "", false);
+    } catch (const std::runtime_error&) {
+        mirror_server_failure_rejected = true;
+    }
+    check("mirror server errors do not fail open", mirror_server_failure_rejected);
+
+    bool malformed_official_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(200, "not json", true);
+    } catch (const std::exception&) {
+        malformed_official_rejected = true;
+    }
+    check("malformed official metadata does not fail open", malformed_official_rejected);
+
+    const auto malformed_mirror =
+        lemon::parse_huggingface_compatibility_response(200, "not json", false);
+    check("malformed mirror metadata remains optional", !malformed_mirror.has_value());
+
+    const auto valid = lemon::parse_huggingface_compatibility_response(
+        200, R"({"gguf":{"architecture":"llama"}})", true);
+    check("valid compatibility metadata is parsed",
+          valid && (*valid)["gguf"]["architecture"] == "llama");
+}
+
 static void test_registration_persists_remote_provenance() {
     fs::path temp = make_temp_dir();
     lemon::utils::set_cache_dir(temp.string());
@@ -193,6 +256,7 @@ int main() {
     test_search_result_normalization();
     test_search_response_normalization();
     test_tree_snapshot_fingerprint();
+    test_huggingface_compatibility_metadata_policy();
     test_registration_persists_remote_provenance();
 
     if (g_failures == 0) {
