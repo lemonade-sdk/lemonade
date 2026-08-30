@@ -206,7 +206,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
-| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond` |
+| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. Top-level `chat`, `embeddings`, and `reranking` directories select how models run, see [Model Management](../../embeddable/models.md) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
