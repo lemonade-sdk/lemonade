@@ -71,6 +71,26 @@ static bool check_type(const std::map<std::string, ModelInfo>& models,
     return ok;
 }
 
+static std::map<std::string, std::string> discovery_signature(
+    const std::map<std::string, ModelInfo>& models) {
+    std::map<std::string, std::string> signature;
+    for (const auto& [id, info] : models) {
+        std::vector<std::string> labels = info.labels;
+        std::vector<std::string> aliases = info.input_aliases;
+        std::sort(labels.begin(), labels.end());
+        std::sort(aliases.begin(), aliases.end());
+
+        std::string value = model_type_to_string(info.type);
+        for (const auto& label : labels) value += "|label:" + label;
+        for (const auto& alias : aliases) value += "|alias:" + alias;
+        for (const auto& [kind, path] : info.resolved_paths) {
+            value += "|path:" + kind + "=" + fs::path(path).filename().string();
+        }
+        signature.emplace(id, std::move(value));
+    }
+    return signature;
+}
+
 static void test_root_files() {
     fs::path dir = make_temp_dir();
     touch(dir / "nomic-embed-text-v2.gguf");
@@ -391,6 +411,34 @@ static void test_non_normalized_search_path() {
     fs::remove_all(dir);
 }
 
+static void test_discovery_is_independent_of_creation_order() {
+    const std::vector<fs::path> files = {
+        "root.gguf",
+        fs::path("chat") / "vision" / "model.gguf",
+        fs::path("chat") / "vision" / "mmproj-model.gguf",
+        fs::path("embeddings") / "duplicate.gguf",
+        fs::path("embeddings") / "nested" / "nested-Q8_0.gguf",
+        fs::path("embeddings") / "nested" / "nested-Q4_K_M.gguf",
+        fs::path("reranking") / "duplicate.gguf",
+    };
+
+    auto discover_in_order = [&](std::vector<fs::path> ordered_files) {
+        fs::path dir = make_temp_dir();
+        for (const auto& file : ordered_files) touch(dir / file);
+        ModelManager manager(dir.string());
+        auto signature = discovery_signature(manager.discover_extra_models_for_test());
+        fs::remove_all(dir);
+        return signature;
+    };
+
+    const auto forward = discover_in_order(files);
+    auto reversed_files = files;
+    std::reverse(reversed_files.begin(), reversed_files.end());
+    const auto reversed = discover_in_order(reversed_files);
+
+    check("discovery result is independent of file creation order", forward == reversed);
+}
+
 int main() {
     // The constructor loads the registry JSON files unconditionally, so point it
     // at a scratch dir to keep the test off the real user cache.
@@ -415,6 +463,7 @@ int main() {
     test_nested_category_model_cannot_claim_folder_id();
     test_root_beats_category_for_short_id();
     test_non_normalized_search_path();
+    test_discovery_is_independent_of_creation_order();
 
     fs::remove_all(cache_dir);
 

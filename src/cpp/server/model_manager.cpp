@@ -1385,8 +1385,12 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     }
 
     // Process directories (multimodal and multi-shard models)
-    for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
+    for (auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
+        std::sort(gguf_files.begin(), gguf_files.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return lhs.generic_string() < rhs.generic_string();
+                  });
         discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path);
     }
 
