@@ -23,6 +23,7 @@ except ImportError:
 
 from utils.server_base import (
     ServerTestBase,
+    _auth_headers,
     model_recipe_options,
     run_server_tests,
     unload_all_models,
@@ -854,6 +855,94 @@ class OllamaTests(ServerTestBase):
         self.assertIn("message_start", event_types)
         self.assertIn("content_block_start", event_types)
         self.assertIn("message_stop", event_types)
+
+    def test_025b_anthropic_messages_resolves_alias(self):
+        """A registered alias must work on /v1/messages like any other surface."""
+        self.ensure_model_pulled()
+
+        alias_name = "test-anthropic-alias"
+        internal_url = f"{OLLAMA_BASE_URL}/internal"
+
+        add_res = requests.post(
+            f"{internal_url}/aliases",
+            json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200, add_res.text)
+        self.addCleanup(
+            requests.delete,
+            f"{internal_url}/aliases/{requests.utils.quote(alias_name)}",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        payload = {
+            "model": alias_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "Say hello"}],
+                }
+            ],
+            "max_tokens": 16,
+            "stream": False,
+        }
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/v1/messages?beta=true",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json().get("type"), "message")
+
+        # The same alias on the OpenAI surface has always worked; the two
+        # surfaces must not disagree about whether the model exists.
+        chat_response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/v1/chat/completions",
+            json={
+                "model": alias_name,
+                "messages": [{"role": "user", "content": "Say hello"}],
+                "max_tokens": 16,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(chat_response.status_code, 200, chat_response.text)
+
+    def test_025c_ollama_chat_resolves_alias(self):
+        """POST /api/chat shares the alias resolution path with /v1/messages."""
+        self.ensure_model_pulled()
+
+        alias_name = "test-ollama-chat-alias"
+        internal_url = f"{OLLAMA_BASE_URL}/internal"
+
+        add_res = requests.post(
+            f"{internal_url}/aliases",
+            json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200, add_res.text)
+        self.addCleanup(
+            requests.delete,
+            f"{internal_url}/aliases/{requests.utils.quote(alias_name)}",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": alias_name,
+                "messages": [{"role": "user", "content": "Say hello"}],
+                "stream": False,
+                "options": {"num_predict": 10},
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json().get("done"))
 
     def test_026_anthropic_messages_tool_calling(self):
         """Test Anthropic-compatible tool calling maps to tool_use blocks."""

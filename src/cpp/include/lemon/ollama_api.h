@@ -16,7 +16,10 @@ using json = nlohmann::json;
 
 class OllamaApi : public std::enable_shared_from_this<OllamaApi> {
 public:
-    OllamaApi(Router* router, ModelManager* model_manager);
+    using AliasResolver = std::function<std::string(const std::string&)>;
+
+    OllamaApi(Router* router, ModelManager* model_manager,
+              AliasResolver resolve_alias);
 
     // Must be called on a shared_ptr instance (uses shared_from_this internally)
     void register_routes(httplib::Server& server);
@@ -24,6 +27,7 @@ public:
 private:
     Router* router_;
     ModelManager* model_manager_;
+    AliasResolver resolve_alias_;
 
     // Endpoint handlers
     void handle_chat(const httplib::Request& req, httplib::Response& res);
@@ -44,6 +48,8 @@ private:
     void auto_load_model(const std::string& model, const json& request_options = json::object());
     static json extract_auto_load_options(const json& request);
     std::string normalize_model_name(const std::string& name);
+    // Not called from show/pull/delete: resolving there would act on the target.
+    void resolve_request_model(json& request_json);
     json build_ollama_model_entry(const std::string& id, const ModelInfo& info);
     json convert_openai_chat_to_ollama(const json& openai_response, const std::string& model);
     json convert_openai_delta_to_ollama(const json& openai_chunk, const std::string& model);
