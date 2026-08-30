@@ -20,12 +20,17 @@ import concurrent.futures
 
 # Add test/ to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from utils.server_base import (
+    get_cli_binary,
+    parse_args,
+    pull_model_with_retry,
+    run_server_tests,
+)
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     TIMEOUT_MODEL_OPERATION,
     get_default_lemond_binary,
 )
-from utils.server_base import parse_args, get_cli_binary, run_server_tests
 
 args = parse_args()
 
@@ -322,6 +327,10 @@ class TestGpuHangRecovery(unittest.TestCase):
             with open(self.log_file_path, "r") as f:
                 print("Lemond output:", f.read())
             self.fail("lemond failed to start / respond to health check")
+
+        # These tests time /load tightly to observe the reload, so the model has
+        # to be in this server's cache before that clock starts.
+        pull_model_with_retry(ENDPOINT_TEST_MODEL, port=self.port)
 
     def tearDown(self):
         # Terminate lemond
