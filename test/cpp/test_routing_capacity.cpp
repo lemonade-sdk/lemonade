@@ -98,6 +98,48 @@ static void test_estimate_prompt_tokens() {
     check("estimate counts UTF-8 bytes",
           cap::estimate_prompt_tokens(accented) > cap::estimate_prompt_tokens(ascii));
 
+    // Responses API: `input` is either a bare string or an array of
+    // message-shaped items whose text sits one level deeper, under content
+    // parts. The nested form must be counted, not collapse to ~0.
+    const std::string responses_text(400, 'r');
+    json responses_items = {
+        {"input", json::array({
+            json{{"role", "user"},
+                 {"content", json::array({
+                     json{{"type", "input_text"}, {"text", responses_text}}})}}})}};
+    check("responses structured input counts nested content text",
+          cap::estimate_prompt_tokens(responses_items) ==
+              static_cast<int64_t>(responses_text.size()) / 4 +
+                  cap::TOKENS_PER_MESSAGE_OVERHEAD);
+
+    // The bug this guards: the same text via the structured form must cost the
+    // same as via the flat string form.
+    json responses_flat = {{"input", responses_text}};
+    check("structured and flat responses input agree on text cost",
+          cap::estimate_prompt_tokens(responses_items) ==
+              cap::estimate_prompt_tokens(responses_flat) +
+                  cap::TOKENS_PER_MESSAGE_OVERHEAD);
+
+    // A structured item carrying an image part still contributes no image bytes.
+    json responses_image = {
+        {"input", json::array({
+            json{{"role", "user"},
+                 {"content", json::array({
+                     json{{"type", "input_text"}, {"text", responses_text}},
+                     json{{"type", "input_image"},
+                          {"image_url", std::string(5000, 'Z')}}})}}})}};
+    check("responses image parts are not counted",
+          cap::estimate_prompt_tokens(responses_image) ==
+              cap::estimate_prompt_tokens(responses_items));
+
+    // Deeply nested chat content parts resolve too.
+    json nested_chat = {{"messages", json::array({
+                            json{{"role", "user"},
+                                 {"content", json::array({
+                                     json{{"type", "text"}, {"text", content}}})}}})}};
+    check("chat content parts and plain string content agree",
+          cap::estimate_prompt_tokens(nested_chat) == expected);
+
     // Each message pays the template overhead, so many short turns cost more
     // than one long turn of the same total text.
     json many = {{"messages", json::array()}};
@@ -231,6 +273,18 @@ static void test_is_context_overflow_error() {
                  {{"request",
                    {{"messages",
                      "explain the error exceeds the available context size"}}}}}}}}));
+    // The exact payload llama-server emits (verified against the vendored
+    // binary): `code` is the numeric HTTP status, not a string. Reading it as a
+    // string would throw, so this must be type-safe as well as detected.
+    check("llama-server's real rejection payload is detected",
+          cap::is_context_overflow_error(json::parse(
+              R"({"error":{"code":400,"message":"request (6009 tokens) exceeds )"
+              R"(the available context size (512 tokens), try increasing it",)"
+              R"("n_ctx":512,"n_prompt_tokens":6009,"status_code":400,)"
+              R"("type":"exceed_context_size_error"}})")));
+    check("a numeric code on an unrelated error does not throw or match",
+          !cap::is_context_overflow_error(
+              json{{"error", {{"code", 500}, {"message", "internal"}}}}));
     check("a nested provider code is detected",
           cap::is_context_overflow_error(json{
               {"error",

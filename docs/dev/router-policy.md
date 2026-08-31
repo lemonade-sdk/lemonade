@@ -252,21 +252,44 @@ larger candidate.
 
 The estimate can undercount, and a candidate that reports no window is never
 skipped — so a routed candidate may still reject the prompt for length at
-inference. The router then re-routes past it and retries, repeating up to the
-number of candidates in the policy, so a replacement that is also too small
-does not end the attempt.
+inference. The router then re-routes past it and retries.
+
+The retry walk is bounded, because recovery is not free: each re-route costs an
+upstream call, and a replacement that is not already resident also costs an
+evict-and-load cycle while the client waits with no output. So one request may
+re-route at most 3 times, at most **one** of which may require loading local
+weights; a replacement that is already resident, or an unmetered one such as a
+cloud model, is cheap and only counts against the first limit. A policy listing
+many candidates therefore cannot turn one request into many model loads.
 
 This applies to streaming too. A backend length rejection arrives as the first
-SSE event with nothing written before it, so it is withheld from the client
-while the re-route runs; only the surviving attempt's events are released, and
-the client never sees the intermediate failure. One caveat: the
-`x-lemonade-route` **header** is committed with the response, so on a re-routed
-stream it still names the initially matched rule — the first SSE event's
-`x_lemonade_route` object is authoritative for which candidate answered.
+SSE event with no data event before it, so it is withheld from the client while
+the re-route runs; only the surviving attempt's events are released, and the
+client never sees the intermediate failure. Keep-alive comments (`: ping`) are
+passed through immediately so a long prefill cannot time the client out, and
+they do not spend the re-route opportunity.
 
-If every candidate rejects the request for length, the last rejection is
-surfaced to the client unchanged (a 400 for a normal request, an in-stream
-error event for a streaming one).
+How far that "first event" property is actually established differs by backend.
+It is verified empirically against llama-server, which answers HTTP 200 and
+makes the rejection its first and only SSE event. For the OpenAI-wire cloud
+path it is established from the code path plus a mock provider: a provider that
+rejects with a 4xx has its error envelope written first, before anything else
+reaches the sink. A provider that instead answers 200 and reports the overflow
+in-band, after content, falls under the mid-stream case below.
+
+Two limits worth knowing:
+
+- The `x-lemonade-route` **header** is committed with the response, so on a
+  re-routed stream it still names the initially matched rule. The first SSE
+  event's `x_lemonade_route` object is authoritative for which candidate
+  answered.
+- A rejection that arrives *after* real content has already been streamed
+  cannot be undone, so it is passed through to the client as an in-stream
+  error, exactly as before.
+
+If every candidate rejects the request for length — or the retry budget runs
+out — the last rejection is surfaced unchanged (a 400 for a normal request, an
+in-stream error event for a streaming one).
 
 ## Cloud candidates
 

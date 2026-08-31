@@ -1605,6 +1605,127 @@ class RouterTests(ServerTestBase):
         self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
         print(f"[OK] request max_tokens overrides the policy headroom")
 
+    # A deliberately permissive policy plus dense text that tokenizes far worse
+    # than the estimator's four-bytes-per-token approximation: the preflight
+    # passes, then the real backend rejects. This exercises the inference-time
+    # backstop against a real llama.cpp backend rather than a mock.
+    _UNDERCOUNT_CAPACITY = {"safety_margin": 1.0, "generation_headroom": 0}
+    _UNDERCOUNT_CTX = 512
+
+    def _undercount_prompt(self, keyword):
+        """~1800 chars of hex — about 1600 real tokens, but only ~450 estimated,
+        so it clears a 512-token preflight and then overflows it for real."""
+        import random
+
+        rng = random.Random(7)
+        dense = "".join(rng.choice("0123456789abcdef") for _ in range(1800))
+        return f"{keyword} {dense}"
+
+    def _load_undercount_candidate(self):
+        resp = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": CAPABLE_MODEL,
+                "ctx_size": self._UNDERCOUNT_CTX,
+                "save_options": False,
+            },
+            timeout=600,
+        )
+        self.assertEqual(resp.status_code, 200, f"load failed: {resp.text}")
+
+    def test_655_local_undercount_triggers_backstop(self):
+        """A local candidate that the estimator wrongly cleared must re-route.
+
+        No mock involved: llama-server itself rejects the prompt for length, and
+        the request has to come back answered by another candidate.
+        """
+        collection = "user.Test-Router-LocalUndercount"
+        keyword = "capacity-probe"
+
+        self._register_capacity_collection(
+            collection, keyword, CAPABLE_MODEL, capacity=self._UNDERCOUNT_CAPACITY
+        )
+        try:
+            self._load_undercount_candidate()
+            resp = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": collection,
+                    "messages": [
+                        {"role": "user", "content": self._undercount_prompt(keyword)}
+                    ],
+                    "max_tokens": 8,
+                    "route_trace": True,
+                },
+                timeout=600,
+            )
+            self.assertEqual(resp.status_code, 200, f"expected a re-route: {resp.text}")
+            data = resp.json()
+            self.assertEqual(
+                data.get("x_lemonade_route", {}).get("route_to"),
+                DEFAULT_MODEL,
+                "the local rejection should have re-routed to the default",
+            )
+            self.assertNotIn("error", data)
+            print(
+                f"[OK] local llama.cpp length rejection -> re-routed to {DEFAULT_MODEL}"
+            )
+        finally:
+            self._delete_collection(collection)
+
+    def test_656_local_streaming_undercount_withholds_rejection(self):
+        """The same local under-count on the streaming path.
+
+        Validates the assumption the streaming backstop rests on against the
+        real llama-server: its length rejection is the first SSE event with no
+        data event before it, so it can be withheld and the request re-routed.
+        """
+        collection = "user.Test-Router-LocalUndercountStream"
+        keyword = "capacity-probe"
+
+        self._register_capacity_collection(
+            collection, keyword, CAPABLE_MODEL, capacity=self._UNDERCOUNT_CAPACITY
+        )
+        try:
+            self._load_undercount_candidate()
+            resp = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": collection,
+                    "messages": [
+                        {"role": "user", "content": self._undercount_prompt(keyword)}
+                    ],
+                    "max_tokens": 8,
+                    "stream": True,
+                },
+                stream=True,
+                timeout=600,
+            )
+            self.assertEqual(resp.status_code, 200, f"expected a stream: {resp.text}")
+            body = resp.text
+
+            self.assertNotIn(
+                "exceeds the available context size",
+                body,
+                "the withheld local rejection must never reach the client",
+            )
+            self.assertNotIn("exceed_context_size_error", body)
+
+            decision = None
+            for line in body.splitlines():
+                if line.startswith("data: ") and "x_lemonade_route" in line:
+                    decision = _json.loads(line[6:])["x_lemonade_route"]
+                    break
+            self.assertIsNotNone(decision, f"no route decision in stream: {body[:400]}")
+            self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+            self.assertIn("data: [DONE]", body, "the re-routed stream must complete")
+            print(
+                f"[OK] local streaming rejection withheld -> re-routed to "
+                f"{DEFAULT_MODEL}"
+            )
+        finally:
+            self._delete_collection(collection)
+
 
 if __name__ == "__main__":
     run_server_tests(RouterTests, description="ROUTER TESTS")

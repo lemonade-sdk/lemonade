@@ -19,24 +19,45 @@ std::string lower_copy(std::string value) {
     return value;
 }
 
-// UTF-8 byte length of a text-bearing field: a plain string, or the
-// concatenated `text` parts of an OpenAI content array. Non-text parts (image
-// blobs) are skipped — their base64 never reaches the model as prompt text.
-int64_t text_bytes(const json& value) {
+// Guard against a pathologically nested body; real shapes are 3 levels deep at
+// most (input -> item -> content -> part).
+constexpr int kMaxTextDepth = 8;
+
+// UTF-8 byte length of the model-visible text in a field. Handles every shape
+// the chat and Responses APIs use:
+//   "hi"                                        -> a plain string
+//   [{"type":"text","text":"hi"}]               -> chat content parts
+//   [{"role":..,"content":[{"type":"input_text","text":"hi"}]}]
+//                                               -> Responses input items, whose
+//                                                  text sits one level deeper
+// Parts carrying no text (image blobs, audio) contribute nothing: their base64
+// never reaches the model as prompt text, and counting it would wildly
+// over-skip otherwise capable candidates.
+int64_t text_bytes(const json& value, int depth = 0) {
     if (value.is_string()) {
         return static_cast<int64_t>(value.get<std::string>().size());
     }
+    if (depth >= kMaxTextDepth) {
+        return 0;
+    }
+
     int64_t bytes = 0;
     if (value.is_array()) {
         for (const auto& part : value) {
-            if (part.is_string()) {
-                bytes += static_cast<int64_t>(part.get<std::string>().size());
-            } else if (part.is_object()) {
-                auto text = part.find("text");
-                if (text != part.end() && text->is_string()) {
-                    bytes += static_cast<int64_t>(text->get<std::string>().size());
-                }
-            }
+            bytes += text_bytes(part, depth + 1);
+        }
+        return bytes;
+    }
+    if (value.is_object()) {
+        auto text = value.find("text");
+        if (text != value.end() && text->is_string()) {
+            bytes += static_cast<int64_t>(text->get<std::string>().size());
+        }
+        // A Responses input item nests its parts under `content`; recursing
+        // reaches them without having to enumerate every part `type`.
+        auto content = value.find("content");
+        if (content != value.end()) {
+            bytes += text_bytes(*content, depth + 1);
         }
     }
     return bytes;
@@ -71,7 +92,12 @@ bool error_object_indicates_overflow(const json& error) {
     if (!error.is_object()) {
         return false;
     }
-    if (error.value("code", std::string()) == "context_length_exceeded") {
+    // `code` is checked for the exact normalized value, and only when it is a
+    // string: llama-server sends a numeric `code` (the HTTP status), and
+    // json::value() with a string default throws on a type mismatch.
+    auto code = error.find("code");
+    if (code != error.end() && code->is_string() &&
+        code->get<std::string>() == "context_length_exceeded") {
         return true;
     }
     auto message = error.find("message");
@@ -104,8 +130,22 @@ int64_t estimate_prompt_tokens(const json& request) {
 
     bytes += field_text_bytes(request, "system");
     bytes += field_text_bytes(request, "prompt");
-    bytes += field_text_bytes(request, "input");
     bytes += serialized_bytes(request, "tools");
+
+    // The Responses API carries the conversation on `input`: either a bare
+    // string or an array of message-shaped items. Items pay the same template
+    // overhead as chat messages.
+    auto input = request.find("input");
+    if (input != request.end()) {
+        bytes += text_bytes(*input);
+        if (input->is_array()) {
+            for (const auto& item : *input) {
+                if (item.is_object() && item.contains("role")) {
+                    ++message_count;
+                }
+            }
+        }
+    }
 
     return (bytes + 3) / 4 + message_count * TOKENS_PER_MESSAGE_OVERHEAD;
 }

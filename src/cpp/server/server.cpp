@@ -4,6 +4,7 @@
 #include "lemon/error_types.h"
 #include <optional>
 #include "lemon/collection_orchestrator.h"
+#include "lemon/context_overflow_probe_sink.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
 #include "lemon/route_decision_response.h"
@@ -174,114 +175,6 @@ void set_router_residency_conflict_response(
         }},
     };
     res.set_content(response.dump(), "application/json");
-}
-
-// Offset just past the first complete SSE event in `buffer`, or npos. Events
-// are terminated by a blank line; both LF and CRLF framings are accepted.
-std::size_t sse_event_end(const std::string& buffer) {
-    const std::size_t lf = buffer.find("\n\n");
-    const std::size_t crlf = buffer.find("\r\n\r\n");
-    if (crlf != std::string::npos && (lf == std::string::npos || crlf < lf)) {
-        return crlf + 4;
-    }
-    return lf == std::string::npos ? std::string::npos : lf + 2;
-}
-
-// Withholds a streaming attempt's bytes until the first complete SSE event is
-// known. A backend length rejection is delivered as that first event with
-// nothing before it (see StreamingProxy), so it can be swallowed and the
-// request re-routed while the client has still seen nothing. Once the first
-// event proves to be real content, the buffer is released and later writes
-// pass straight through.
-class ContextOverflowProbeSink {
-public:
-    explicit ContextOverflowProbeSink(httplib::DataSink& inner) : inner_(inner) {}
-
-    bool overflow_detected() const { return overflow_; }
-    const std::string& withheld_event() const { return buffer_; }
-
-    bool write(const char* data, std::size_t length) {
-        if (decided_) {
-            return inner_.write(data, length);
-        }
-        buffer_.append(data, length);
-        const std::size_t end = sse_event_end(buffer_);
-        if (end == std::string::npos) {
-            return true;
-        }
-        if (routing_capacity::sse_event_is_context_overflow(buffer_.substr(0, end))) {
-            overflow_ = true;
-            decided_ = true;
-            // Stop the relay: nothing has reached the client, so the caller is
-            // free to re-route and stream a different candidate instead.
-            return false;
-        }
-        decided_ = true;
-        return release();
-    }
-
-    // A withheld attempt must not close the client's response: the caller is
-    // about to stream a different candidate into the very same sink.
-    void done() {
-        if (overflow_) {
-            return;
-        }
-        if (!decided_) {
-            decided_ = true;
-            release();
-        }
-        if (inner_.done) {
-            inner_.done();
-        }
-    }
-
-    void done_with_trailer(const httplib::Headers& trailer) {
-        if (overflow_) {
-            return;
-        }
-        if (!decided_) {
-            decided_ = true;
-            release();
-        }
-        if (inner_.done_with_trailer) {
-            inner_.done_with_trailer(trailer);
-        } else if (inner_.done) {
-            inner_.done();
-        }
-    }
-
-    bool is_writable() const {
-        return !inner_.is_writable || inner_.is_writable();
-    }
-
-private:
-    bool release() {
-        if (buffer_.empty()) {
-            return true;
-        }
-        const bool ok = inner_.write(buffer_.c_str(), buffer_.size());
-        buffer_.clear();
-        return ok;
-    }
-
-    httplib::DataSink& inner_;
-    std::string buffer_;
-    bool decided_ = false;
-    bool overflow_ = false;
-};
-
-// Point a DataSink's std::function members at `wrapper`. DataSink is neither
-// copyable nor movable, so it is filled in place rather than returned.
-template <typename Wrapper>
-void bind_sink(httplib::DataSink& sink, Wrapper& wrapper) {
-    sink.write = [&wrapper](const char* data, std::size_t len) {
-        return wrapper.write(data, len);
-    };
-    sink.done = [&wrapper]() { wrapper.done(); };
-    sink.done_with_trailer = [&wrapper](const httplib::Headers& trailer) {
-        wrapper.done_with_trailer(trailer);
-    };
-    sink.is_writable = [&wrapper]() { return wrapper.is_writable(); };
 }
 
 void set_context_window_exceeded_response(
@@ -3910,22 +3803,54 @@ int64_t Server::candidate_context_window(const std::string& model_name,
     return window;
 }
 
-std::size_t Server::collection_candidate_count(const std::string& collection_name) const {
+Server::RerouteBudget Server::make_reroute_budget(
+    const std::string& collection_name) const {
+    std::size_t candidates = 1;
     try {
         const ModelInfo info = model_manager_->get_model_info(collection_name);
         if (info.route_policy) {
-            return info.route_policy->candidates.size();
+            candidates = info.route_policy->candidates.size();
         }
     } catch (const std::exception&) {
-        // Fall through to the conservative bound below.
+        // Unknown collection: leave the conservative single-candidate bound.
     }
-    return 1;
+
+    RerouteBudget budget;
+    // At most one re-route per remaining candidate, and never more than the
+    // global cap however long the candidate list is.
+    budget.reroutes_left = (std::min)(
+        candidates > 0 ? candidates - 1 : 0, MAX_CONTEXT_OVERFLOW_REROUTES);
+    budget.reloads_left = MAX_CONTEXT_OVERFLOW_RELOADS;
+    return budget;
+}
+
+bool Server::reroute_requires_reload(const std::string& model_name) const {
+    if (router_->is_model_loaded(model_name)) {
+        return false;
+    }
+    try {
+        const ModelInfo info = model_manager_->get_model_info(model_name);
+        const BackendDescriptor* descriptor = backends::descriptor_for(info.recipe);
+        // Unmetered backends (cloud) hold no weights and evict nothing, so
+        // "loading" one is a bookkeeping step, not a reload cycle.
+        if (descriptor != nullptr &&
+            descriptor->slot_policy == SlotPolicy::Unmetered) {
+            return false;
+        }
+    } catch (const std::exception&) {
+        // Unknown model: assume the expensive case.
+    }
+    return true;
 }
 
 std::optional<RouterDispatchResult> Server::reroute_excluding(
     nlohmann::json& request_json,
     const RouterDispatchResult& current,
-    const std::set<std::string>& failed_models) {
+    const std::set<std::string>& failed_models,
+    RerouteBudget& budget) {
+    if (budget.exhausted()) {
+        return std::nullopt;
+    }
     const std::string collection_name = current.requested_model;
     try {
         const ModelInfo collection_info = model_manager_->get_model_info(collection_name);
@@ -3934,10 +3859,28 @@ std::optional<RouterDispatchResult> Server::reroute_excluding(
         if (!retry.has_value() || failed_models.count(retry->selected_model) > 0) {
             return std::nullopt;
         }
+
+        // Resolution is cheap; the load is not. Check affordability before
+        // touching the router so a refused retry costs nothing.
+        const bool needs_reload = reroute_requires_reload(retry->selected_model);
+        if (needs_reload && budget.reloads_left == 0) {
+            LOG(INFO, "Server") << "Router collection '" << collection_name
+                                << "': not re-routing to '" << retry->selected_model
+                                << "' — it would need another model load and this "
+                                << "request has already spent its reload budget"
+                                << std::endl;
+            return std::nullopt;
+        }
+
         retry->requested_model = collection_name;
         request_json["model"] = retry->selected_model;
         auto_load_model_if_needed(retry->selected_model,
                                   extract_auto_load_options(request_json));
+
+        --budget.reroutes_left;
+        if (needs_reload) {
+            --budget.reloads_left;
+        }
         return retry;
     } catch (const std::exception& e) {
         LOG(WARNING, "Server") << "Context-overflow re-route failed for '"
@@ -3959,15 +3902,15 @@ nlohmann::json Server::retry_dispatch_on_context_overflow(
     // A candidate can reach inference despite being too small because it
     // reported no window at all, and its replacement may be another such
     // candidate — so keep re-routing past each rejection rather than stopping
-    // after one. The candidate count bounds the walk.
-    const std::size_t max_attempts =
-        collection_candidate_count(route_dispatch->requested_model);
+    // after one. The budget bounds both how many re-routes and how many model
+    // loads one request may spend doing it.
+    RerouteBudget budget = make_reroute_budget(route_dispatch->requested_model);
     std::set<std::string> failed;
 
-    for (std::size_t attempt = 0; attempt < max_attempts; ++attempt) {
+    while (!budget.exhausted()) {
         failed.insert(route_dispatch->selected_model);
         std::optional<RouterDispatchResult> retry =
-            reroute_excluding(request_json, *route_dispatch, failed);
+            reroute_excluding(request_json, *route_dispatch, failed, budget);
         if (!retry.has_value()) {
             return response;
         }
@@ -3996,15 +3939,18 @@ void Server::stream_with_context_overflow_backstop(
         return;
     }
 
-    // One attempt per candidate — attempt 0 is the route already resolved, the
-    // rest are re-routes. A replacement may itself be a no-window candidate
-    // that is also too small, so stopping after the first re-route would hand
-    // the client exactly the hard failure this is here to avoid.
-    const std::size_t max_attempts =
-        collection_candidate_count(route_dispatch->requested_model);
+    // A replacement may itself be a no-window candidate that is also too small,
+    // so stopping after the first re-route would hand the client exactly the
+    // hard failure this is here to avoid. The budget bounds both how many
+    // re-routes and how many model loads one request may spend recovering.
+    RerouteBudget budget = make_reroute_budget(route_dispatch->requested_model);
     std::set<std::string> failed;
     std::string withheld;
 
+    // The budget already terminates this walk; the explicit attempt bound is a
+    // second, independent guard so a future change to the budget accounting can
+    // never spin here while holding a client connection open.
+    const std::size_t max_attempts = MAX_CONTEXT_OVERFLOW_REROUTES + 1;
     for (std::size_t attempt = 0; attempt < max_attempts; ++attempt) {
         json decision_json = route_decision_to_json(route_dispatch->decision);
         RouteDecisionSseSink decision_wrapper(sink, decision_json);
@@ -4025,7 +3971,7 @@ void Server::stream_with_context_overflow_backstop(
 
         failed.insert(route_dispatch->selected_model);
         std::optional<RouterDispatchResult> retry =
-            reroute_excluding(request_json, *route_dispatch, failed);
+            reroute_excluding(request_json, *route_dispatch, failed, budget);
         if (!retry.has_value()) {
             break;
         }

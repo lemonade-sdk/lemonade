@@ -177,18 +177,40 @@ private:
     int64_t candidate_context_window(const std::string& model_name,
                                      CandidateWindowCache& cache) const;
 
+    // Budget for one request's recovery from length rejections. Re-routing
+    // costs an upstream call, and a replacement that is not resident also costs
+    // an evict+load cycle while the client waits with no output — so a policy
+    // listing many candidates must not turn one request into that many model
+    // loads. Cheap retries (an already-resident candidate, or an unmetered one
+    // such as cloud, which allocates no weights and evicts nothing) are capped
+    // only by MAX_REROUTES; expensive ones are capped far tighter.
+    struct RerouteBudget {
+        std::size_t reroutes_left = 0;
+        std::size_t reloads_left = 0;
+
+        bool exhausted() const { return reroutes_left == 0; }
+    };
+    static constexpr std::size_t MAX_CONTEXT_OVERFLOW_REROUTES = 3;
+    static constexpr std::size_t MAX_CONTEXT_OVERFLOW_RELOADS = 1;
+
+    // Budget for a collection: never more re-routes than it has candidates.
+    RerouteBudget make_reroute_budget(const std::string& collection_name) const;
+
+    // True when routing to `model_name` would require loading local weights
+    // (evicting something else in the process) rather than reusing a resident
+    // or unmetered backend.
+    bool reroute_requires_reload(const std::string& model_name) const;
+
     // Re-resolve `current`'s collection with `failed_models` excluded, rewrite
-    // request_json's model to the replacement and load it. Returns nullopt when
-    // no different candidate is available (or re-resolution failed), leaving
-    // request_json untouched.
+    // request_json's model to the replacement and load it. Consumes from
+    // `budget`. Returns nullopt when no different candidate is available, when
+    // the budget cannot pay for the replacement, or when re-resolution failed —
+    // leaving request_json untouched.
     std::optional<RouterDispatchResult> reroute_excluding(
         nlohmann::json& request_json,
         const RouterDispatchResult& current,
-        const std::set<std::string>& failed_models);
-
-    // Number of candidates in a router collection's policy — the bound on how
-    // many times the inference-time backstop may re-route.
-    std::size_t collection_candidate_count(const std::string& collection_name) const;
+        const std::set<std::string>& failed_models,
+        RerouteBudget& budget);
 
     // Inference-time backstop (#2959): the preflight estimate can undercount,
     // and a candidate reporting no window is never skipped, so a routed

@@ -2692,6 +2692,33 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_ENGINE_TEST_SRC}")
     add_cpp_ci_test(RoutingPolicyEngineTest CI ON COMMAND test_routing_policy_engine)
 endif()
 
+# Streaming context-overflow probe (issue #2959): withholding a backend length
+# rejection before it reaches the client, keep-alive comments not settling the
+# decision, no leak after a withheld rejection, and mid-stream pass-through.
+set(_CONTEXT_OVERFLOW_PROBE_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_context_overflow_probe.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONTEXT_OVERFLOW_PROBE_TEST_SRC}")
+    add_executable(test_context_overflow_probe
+        test/cpp/test_context_overflow_probe.cpp
+        src/cpp/server/routing_capacity.cpp
+    )
+    target_include_directories(test_context_overflow_probe PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_context_overflow_probe PRIVATE nlohmann_json::nlohmann_json)
+    if(USE_SYSTEM_HTTPLIB)
+        target_link_libraries(test_context_overflow_probe PRIVATE lemonade-httplib)
+    else()
+        target_link_libraries(test_context_overflow_probe PRIVATE httplib::httplib)
+    endif()
+
+    include(CTest)
+    add_cpp_ci_test(ContextOverflowProbeTest CI ON COMMAND test_context_overflow_probe)
+endif()
+
 # Routing capacity filtering (issue #2959): prompt-token estimator, generation
 # headroom, effective-context-window resolution (loaded / cloud / unloaded /
 # unknown=unconstrained), and the fit predicate with its safety margin.
