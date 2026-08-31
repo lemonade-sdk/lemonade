@@ -97,6 +97,18 @@ int main() {
             });
     });
 
+    // Sleeps briefly before streaming a small payload, standing in for a
+    // slow prefill that looks "silent" to the stall detector.
+    svr.Post("/slow-start", [](const httplib::Request&, httplib::Response& res) {
+        res.set_chunked_content_provider(
+            "text/event-stream", [](size_t, httplib::DataSink& sink) {
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+                sink.write("data: hello\n\n", 13);
+                sink.done();
+                return true;
+            });
+    });
+
     std::thread server_thread([&svr]() { svr.listen_after_bind(); });
     svr.wait_until_ready();
 
@@ -151,6 +163,48 @@ int main() {
                         {}, 2, nullptr, policy);
                 }),
                 "post_stream: explicit timeout abandons a silent upstream");
+    }
+
+    // Regression for the streaming stall bound: timeout_seconds=0 used to
+    // apply a hardcoded 120s stall constant regardless of global_timeout.
+    // The silence bound must instead follow the configured default, so a 2s
+    // default has to give up well inside the ceiling (the old constant blew
+    // past it).
+    {
+        const long saved = HttpClient::get_default_timeout();
+        HttpClient::set_default_timeout(2);
+        const bool returned = returns_within_ceiling([&] {
+            HttpClient::post_stream(
+                base + "/silent", "{}",
+                [](const char*, size_t) { return true; },
+                {}, 0, nullptr, policy);
+        });
+        HttpClient::set_default_timeout(saved);
+        r.check(returned,
+                "post_stream: timeout 0 bounds silence by the configured default, not a hardcoded stall constant");
+    }
+
+    // The silence window tracks the configured default without being
+    // needlessly tight: an upstream that starts producing after a short
+    // silent spell is not cut off.
+    {
+        const long saved = HttpClient::get_default_timeout();
+        HttpClient::set_default_timeout(30);
+        std::string streamed;
+        bool delivered = false;
+        const bool returned = returns_within_ceiling([&] {
+            auto response = HttpClient::post_stream(
+                base + "/slow-start", "{}",
+                [&streamed](const char* data, size_t len) {
+                    streamed.append(data, len);
+                    return true;
+                },
+                {}, 0, nullptr, policy);
+            delivered = response.curl_code == 0;
+        });
+        HttpClient::set_default_timeout(saved);
+        r.check(returned && delivered && streamed.find("hello") != std::string::npos,
+                "post_stream: slow-start upstream within the default window is delivered intact");
     }
 
     // The sentinel is the only way to ask for an unbounded transfer, so it must
