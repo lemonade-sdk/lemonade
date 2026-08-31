@@ -86,6 +86,16 @@ void RyzenAISDServer::load(const std::string& model_name,
     LOG(INFO, "RyzenAISDServer") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "RyzenAISDServer") << "Per-model settings: " << options.to_log_string() << std::endl;
 
+    // Capture the currently-loaded model's resolution (if any) before
+    // image_defaults_/recipe_options_ get overwritten below -- needed to
+    // decide whether a hot-swap is safe (see resolution_changed below).
+    int old_width = image_defaults_.has_defaults
+                       ? image_defaults_.width
+                       : static_cast<int>(recipe_options_.get_option("width"));
+    int old_height = image_defaults_.has_defaults
+                        ? image_defaults_.height
+                        : static_cast<int>(recipe_options_.get_option("height"));
+
     image_defaults_ = model_info.image_defaults;
     device_type_ = DEVICE_NPU;
 
@@ -108,7 +118,36 @@ void RyzenAISDServer::load(const std::string& model_name,
     // This avoids the full startup cost (ONNX Runtime init, DLL loading, etc.)
     // when switching between ryzenai-sd models.
     ProcessHandle current_handle = get_process_handle_snapshot();
-    if (has_process_handle(current_handle) && utils::ProcessManager::is_running(current_handle)) {
+    bool process_alive = has_process_handle(current_handle) &&
+                         utils::ProcessManager::is_running(current_handle);
+
+    // The RyzenAI NPU EP holds a shared, process-wide instruction buffer sized
+    // by whichever model loads first in the process; swapping to a different
+    // resolution needs a different buffer size and crashes the process, even
+    // though the swap itself is otherwise clean (observed empirically: same-
+    // resolution hot-swaps -- e.g. SD-Turbo -> SD-1.5 at 512x512, or
+    // SDXL-Base -> Segmind-Vega at 1024x1024 -- are reliable; cross-resolution
+    // hot-swaps are not). Force a full process restart instead of a hot-swap
+    // whenever the resolution changes, so the new process sizes its own
+    // buffer fresh.
+    int new_width = model_info.image_defaults.has_defaults
+                       ? model_info.image_defaults.width
+                       : static_cast<int>(options.get_option("width"));
+    int new_height = model_info.image_defaults.has_defaults
+                        ? model_info.image_defaults.height
+                        : static_cast<int>(options.get_option("height"));
+    bool resolution_changed = old_width > 0 && old_height > 0 &&
+                              (old_width != new_width || old_height != new_height);
+
+    if (process_alive && resolution_changed) {
+        LOG(INFO, "RyzenAISDServer") << "Resolution changed (" << old_width << "x" << old_height
+                                     << " -> " << new_width << "x" << new_height
+                                     << ") -- restarting process instead of hot-swapping" << std::endl;
+        unload();
+        process_alive = false;
+    }
+
+    if (process_alive) {
         LOG(INFO, "RyzenAISDServer") << "Process already running — hot-swapping model via /v1/internal/load" << std::endl;
         std::string url = "http://127.0.0.1:" + std::to_string(get_backend_port()) + "/v1/internal/load";
         json body = {{"model_path", model_path}};
@@ -121,6 +160,19 @@ void RyzenAISDServer::load(const std::string& model_name,
                                              utils::HttpSecurityPolicy::TrustedLoopback);
         if (resp.status_code != 200) {
             throw std::runtime_error("Failed to hot-swap model: " + resp.body);
+        }
+        // The hot-swap response only confirms the swap request was handled; it
+        // doesn't guarantee the process is still alive and responsive (the NPU
+        // EP can crash the process shortly after acking the swap). Apply the
+        // same readiness check the cold-start path uses, just with a short
+        // timeout since the process is already up.
+        if (!wait_for_ready("/health", /*timeout_seconds=*/10)) {
+            // The process is gone or wedged; clean up so the next load() call
+            // takes the cold-start path instead of hot-swapping into a dead
+            // process again.
+            unload();
+            throw std::runtime_error(
+                "ryzenai-sd-server became unresponsive after hot-swapping to: " + model_path);
         }
         LOG(INFO, "RyzenAISDServer") << "Model hot-swapped to: " << model_path << std::endl;
         return;
