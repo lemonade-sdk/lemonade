@@ -39,10 +39,6 @@ namespace {
 // full request timeout.
 constexpr long kConnectTimeoutSeconds = 30;
 
-// How long a stream may deliver nothing before it is treated as dead. Well
-// above any inter-token gap, well below "never".
-constexpr long kStreamStallSeconds = 120;
-
 // Resolves the 0-means-default convention shared by every request method.
 // Without this, curl reads 0 as "no timeout" and a silent upstream parks the
 // calling httplib worker permanently.
@@ -775,10 +771,14 @@ HttpResponse HttpClient::post_stream(const std::string& url,
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
     // A total timeout would kill a long but healthy generation, so an
-    // unqualified request is bounded by upstream silence instead of duration.
+    // unqualified request is bounded by upstream silence instead of duration,
+    // using the same window as the configured default timeout.
     if (timeout_seconds == 0) {
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kStreamStallSeconds);
+        const long stall_seconds = HttpClient::get_default_timeout();
+        if (stall_seconds > 0) {
+            curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+            curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, stall_seconds);
+        }
     } else {
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
     }
