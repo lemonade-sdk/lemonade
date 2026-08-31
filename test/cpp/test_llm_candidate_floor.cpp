@@ -231,6 +231,32 @@ static void test_convergence_prefers_idle_over_busy_lru() {
               elapsed < std::chrono::seconds(2));
 }
 
+static void test_convergence_defers_when_nothing_is_idle() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+    StubLlmServer* busy_a =
+        LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("allbusy.a"));
+    StubLlmServer* busy_b =
+        LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("allbusy.b"));
+    LlmPoolFloorTestHook::reconcile_floor(router, 2);
+    busy_a->acquire_for_inference();
+    busy_b->acquire_for_inference();
+
+    const auto start = std::chrono::steady_clock::now();
+    // Every resident is busy; convergence must give up rather than block
+    // load_mutex_ waiting on one of them.
+    LlmPoolFloorTestHook::reconcile_floor(router, 1);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    busy_a->release_inference();
+    busy_b->release_inference();
+
+    check("convergence defers instead of blocking when nothing is idle",
+          LlmPoolFloorTestHook::resident(router, "allbusy.a") &&
+              LlmPoolFloorTestHook::resident(router, "allbusy.b") &&
+              elapsed < std::chrono::seconds(2));
+}
+
 static void test_reconcile_waits_for_exclusive_session_before_evicting() {
     RuntimeConfig config(make_config_json(1, true));
     Router router(&config, nullptr, nullptr);
@@ -315,6 +341,7 @@ int main() {
     test_reconcile_converges_pool_down_when_floor_drops();
     test_enforce_llm_pool_capacity_reclaims_after_live_config_change();
     test_convergence_prefers_idle_over_busy_lru();
+    test_convergence_defers_when_nothing_is_idle();
     test_reconcile_waits_for_exclusive_session_before_evicting();
 
     RuntimeConfig::set_global(nullptr);

@@ -541,16 +541,14 @@ void Router::enforce_llm_pool_capacity_locked() {
     int remaining_attempts = count_servers_in_pool(ModelType::LLM, ResidencyClass::Standard, "");
     while (remaining_attempts-- > 0 &&
            count_servers_in_pool(ModelType::LLM, ResidencyClass::Standard, "") > effective_limit) {
-        // Prefer an idle resident so this doesn't block on a busy one while a
-        // less-recently-used but perfectly evictable idle candidate sits
-        // right there; only fall back to the (bounded) busy wait once every
-        // remaining resident actually is busy.
+        // Idle candidates only — this already holds load_mutex_, so blocking
+        // on a busy one (evict_server's wait_until_not_busy) would stall
+        // every other router operation for up to EVICTION_TIMEOUT. Give up
+        // for now rather than hold the lock hostage; the next admission or
+        // reconcile picks up where this left off.
         WrappedServer* lru = find_lru_idle_server_in_pool(ModelType::LLM, ResidencyClass::Standard);
         if (!lru) {
-            lru = find_lru_server_in_pool(ModelType::LLM, ResidencyClass::Standard, "");
-        }
-        if (!lru) {
-            break;  // nothing left to evict is pinned, not stuck
+            break;  // nothing idle and evictable — defer, don't block the lock
         }
         evict_server(lru, EVICTION_TIMEOUT);
     }
@@ -1199,8 +1197,14 @@ void Router::load_model(const std::string& model_name,
             // was released above for the slow backend start; re-validate
             // now that the lock is held again, same as the routing-helper
             // check above, so this admission can't land the pool over a
-            // limit that shrank mid-load.
+            // limit that shrank mid-load. Full convergence first for LLM —
+            // a single ensure_residency_capacity eviction only frees one
+            // slot, not enough if the limit dropped by more than that.
             if (!is_unmetered_load) {
+                if (model_type == ModelType::LLM &&
+                    requested_residency_class == ResidencyClass::Standard) {
+                    enforce_llm_pool_capacity_locked();
+                }
                 ensure_residency_capacity(model_type, requested_residency_class,
                                           canonical_model_name);
             }

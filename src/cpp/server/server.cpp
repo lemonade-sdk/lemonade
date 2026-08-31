@@ -404,9 +404,10 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
     model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        // Floor reconcile first: it's a cheap lock-and-assign, while the helper
-        // reconcile below can block on a condition variable waiting for an
-        // in-flight load to finish — the cheap one shouldn't sit behind it.
+        // Both reconciles below wait for the same load-quiescence condition
+        // (see Router::reconcile_llm_candidate_floor); order between them no
+        // longer matters for blocking, only for which lands its generation
+        // check first.
         auto floor_info = active_policy_llm_candidate_floor();
         router_->reconcile_llm_candidate_floor(
             static_cast<int>(floor_info.models.size()), generation);
@@ -7431,8 +7432,11 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             // See Router::enforce_llm_pool_capacity. Neither key routes
             // through a policy change, so nothing else would call it here —
             // without this, an over-limit pool wouldn't shrink until enough
-            // future admissions evicted it one at a time.
-            router_->enforce_llm_pool_capacity();
+            // future admissions evicted it one at a time. Dispatched off this
+            // thread: enforcement can wait behind an in-flight load or
+            // exclusive session, and every other /internal/set key returns
+            // immediately.
+            std::thread([this]() { router_->enforce_llm_pool_capacity(); }).detach();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;

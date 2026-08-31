@@ -647,13 +647,13 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `download_rate_limit` | string (`0`/`""` = unlimited) | Sets the active download-rate cap (curl-style byte rate) |
 | `broadcast` | bool | Starts or stops UDP beacon |
 | `extra_models_dir` | string | Updates model manager search path |
+| `max_loaded_models` | int (-1 or positive) | Reclaims an over-limit LLM pool now, not just on the next load |
+| `llm_pool_autosize` | bool | Same as above |
 
 **Deferred keys** (affect the next model load or eviction decision, no immediate side effect):
 
 | Key | Type |
 |-----|------|
-| `max_loaded_models` | int (-1 or positive) |
-| `llm_pool_autosize` | bool |
 | `ctx_size` | int (positive) |
 | `llamacpp_backend` | string |
 | `llamacpp_args` | string |
