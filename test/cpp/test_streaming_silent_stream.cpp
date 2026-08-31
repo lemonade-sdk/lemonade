@@ -122,6 +122,33 @@ static void test_stream_without_done_marker_still_completes() {
     check(result.error_message.empty(), "missing [DONE]: telemetry reports success");
 }
 
+// SSE makes the space after the colon optional, so a backend that omits it is
+// still delivering events.
+static void test_data_field_without_space_counts_as_an_event() {
+    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
+        const std::string chunk = "data:{\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
+        sink.write(chunk.data(), chunk.size());
+    });
+
+    check(contains(result.downstream, "Hello"), "no space after colon: content is forwarded");
+    check(contains(result.downstream, "data: [DONE]"), "no space after colon: marker is synthesized");
+    check(!contains(result.downstream, "\"error\""), "no space after colon: no error event");
+    check(result.error_message.empty(), "no space after colon: telemetry reports success");
+}
+
+// A data field is only dispatched once its blank line arrives, so a stream cut
+// off before that leaves the client with nothing to show.
+static void test_unterminated_event_is_reported_as_an_error() {
+    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
+        const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n";
+        sink.write(chunk.data(), chunk.size());
+    });
+
+    check(contains(result.downstream, "\"error\""), "unterminated event: event carries an error object");
+    check(!contains(result.downstream, "[DONE]"), "unterminated event: no [DONE] claims success");
+    check(!result.error_message.empty(), "unterminated event: telemetry records the failure");
+}
+
 static void test_complete_stream_is_unchanged() {
     const StreamResult result = run_proxy([](httplib::DataSink& sink) {
         const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
@@ -139,6 +166,8 @@ int main() {
     test_empty_stream_is_reported_as_an_error();
     test_unframed_backend_output_is_reported_as_an_error();
     test_stream_without_done_marker_still_completes();
+    test_data_field_without_space_counts_as_an_event();
+    test_unterminated_event_is_reported_as_an_error();
     test_complete_stream_is_unchanged();
 
     if (g_failures == 0) {

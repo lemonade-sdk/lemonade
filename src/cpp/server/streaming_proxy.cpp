@@ -121,17 +121,30 @@ void StreamingProxy::forward_sse_stream(
     static constexpr size_t max_error_body = 64 * 1024;
 
     // Chunk boundaries are arbitrary, so whether the stream carried any event
-    // at all is decided per reassembled line rather than per received chunk.
+    // at all is decided per reassembled line rather than per received chunk. An
+    // event only counts once its blank-line terminator arrives: a data field cut
+    // off before that is discarded by the client, so it delivered nothing.
     bool has_data_event = false;
+    bool has_pending_data_field = false;
 
-    auto process_line = [&telemetry, &has_data_event](const std::string& line) {
+    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field](const std::string& line) {
+        if (line.empty()) {
+            has_data_event = has_data_event || has_pending_data_field;
+            has_pending_data_field = false;
+            return;
+        }
+
         std::string json_str;
-        if (line.find("data: ") == 0) {
-            json_str = line.substr(6);
+        if (line.find("data:") == 0) {
+            json_str = line.substr(5);
+            // The single space after the colon is optional in SSE.
+            if (!json_str.empty() && json_str.front() == ' ') {
+                json_str.erase(0, 1);
+            }
+            has_pending_data_field = true;
         } else if (line.find("ChatCompletionChunk: ") == 0) {
             json_str = line.substr(21);
-        }
-        if (!json_str.empty()) {
+            // Not SSE, so there is no blank-line terminator to wait for.
             has_data_event = true;
         }
         if (!json_str.empty() && json_str != "[DONE]") {
