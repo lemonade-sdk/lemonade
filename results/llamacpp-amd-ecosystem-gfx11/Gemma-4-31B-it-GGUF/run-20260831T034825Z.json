@@ -1,0 +1,219 @@
+{
+  "compare_file": "ci/results/llamacpp-amd-ecosystem-gfx11/Gemma-4-31B-it-GGUF/run-20260829T040706Z.json",
+  "hardware": {
+    "backends": {
+      "llamacpp/rocm": "b1311"
+    },
+    "cpu": "AMD RYZEN AI MAX+ 395 w/ Radeon 8060S",
+    "gpu": [
+      {
+        "integrated": true,
+        "name": "110501",
+        "type": "amd",
+        "vram_gb": 32.0
+      }
+    ],
+    "lemonade_version": "11.8.1",
+    "os": "linux",
+    "ram_gb": 30.99
+  },
+  "model_summary": {
+    "current_models": [
+      "Gemma-4-31B-it-GGUF"
+    ],
+    "matched_models": [
+      "Gemma-4-31B-it-GGUF"
+    ],
+    "new_models": [],
+    "previous_models": [
+      "Gemma-4-31B-it-GGUF"
+    ],
+    "removed_models": []
+  },
+  "models": [
+    {
+      "compare_file": "ci/results/llamacpp-amd-ecosystem-gfx11/Gemma-4-31B-it-GGUF/run-20260829T040706Z.json",
+      "comparison": [
+        {
+          "backend": "llamacpp/rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "scenario": "chat-short",
+          "status": "matched",
+          "tps_pct_change": -5.868877238390587,
+          "ttft_pct_change": 5.723924322024216,
+          "vram_gb_change": -4.845111846923828
+        },
+        {
+          "backend": "llamacpp/rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "scenario": "code-short",
+          "status": "matched",
+          "tps_pct_change": -1.4986301805151898,
+          "ttft_pct_change": 14.035802261236668,
+          "vram_gb_change": -4.845119476318359
+        }
+      ],
+      "config": {
+        "measurement_runs": 5,
+        "memory_tracking": true,
+        "warmup_runs": 1
+      },
+      "model": "Gemma-4-31B-it-GGUF",
+      "previous_results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "chat",
+              "duration_ms": {
+                "max": 2191.837668,
+                "mean": 2152.1790866,
+                "min": 2112.264788,
+                "p50": 2155.136879,
+                "p95": 2184.6609542
+              },
+              "failed_runs": 0,
+              "input_tokens": 30,
+              "memory_peak_gb": 3.9,
+              "name": "chat-short",
+              "output_tokens": 20,
+              "tps": {
+                "max": 11.266423035209943,
+                "mean": 10.847789332839834,
+                "min": 10.408101666337078,
+                "p50": 10.869963202314043,
+                "p95": 11.221060802265539
+              },
+              "ttft_ms": {
+                "max": 442.126,
+                "mean": 391.04639999999995,
+                "min": 358.926,
+                "p50": 363.051,
+                "p95": 439.85679999999996
+              },
+              "vram_peak_gb": 25.268081665039062
+            },
+            {
+              "category": "coding",
+              "duration_ms": {
+                "max": 5737.149572,
+                "mean": 5694.3269506000015,
+                "min": 5654.068065,
+                "p50": 5691.998951,
+                "p95": 5731.5182638
+              },
+              "failed_runs": 0,
+              "input_tokens": 37,
+              "memory_peak_gb": 3.8,
+              "name": "code-short",
+              "output_tokens": 60,
+              "tps": {
+                "max": 11.310254662844184,
+                "mean": 11.171889897705388,
+                "min": 11.08943554585115,
+                "p50": 11.149816302051926,
+                "p95": 11.28573852820794
+              },
+              "ttft_ms": {
+                "max": 458.863,
+                "mean": 408.5552,
+                "min": 383.29,
+                "p50": 383.961,
+                "p95": 453.681
+              },
+              "vram_peak_gb": 25.272003173828125
+            }
+          ]
+        }
+      ],
+      "previous_timestamp": "2026-08-28T21:16:28Z",
+      "results": [
+        {
+          "backend": "rocm",
+          "backend_args": "",
+          "ctx_size": 4096,
+          "recipe": "llamacpp",
+          "scenarios": [
+            {
+              "category": "chat",
+              "duration_ms": {
+                "max": 2535.034326,
+                "mean": 2295.0532476,
+                "min": 2061.268587,
+                "p50": 2338.649066,
+                "p95": 2504.0629508
+              },
+              "failed_runs": 0,
+              "input_tokens": 30,
+              "memory_peak_gb": 3.3,
+              "name": "chat-short",
+              "output_tokens": 20,
+              "tps": {
+                "max": 11.301807634906407,
+                "mean": 10.211145893816235,
+                "min": 9.027899535633358,
+                "p50": 10.568596028766605,
+                "p95": 11.175196308666099
+              },
+              "ttft_ms": {
+                "max": 537.853,
+                "mean": 413.42960000000005,
+                "min": 350.119,
+                "p50": 376.598,
+                "p95": 515.6565999999999
+              },
+              "vram_peak_gb": 20.422969818115234
+            },
+            {
+              "category": "coding",
+              "duration_ms": {
+                "max": 5907.68362,
+                "mean": 5832.1634636,
+                "min": 5645.363072,
+                "p50": 5852.324456,
+                "p95": 5907.045955199999
+              },
+              "failed_runs": 0,
+              "input_tokens": 37,
+              "memory_peak_gb": 3.2,
+              "name": "code-short",
+              "output_tokens": 60,
+              "tps": {
+                "max": 11.313306097028283,
+                "mean": 11.004464583964447,
+                "min": 10.78216374269006,
+                "p50": 10.946862814657369,
+                "p95": 11.25900475494262
+              },
+              "ttft_ms": {
+                "max": 557.756,
+                "mean": 465.8992,
+                "min": 375.345,
+                "p50": 454.883,
+                "p95": 549.067
+              },
+              "vram_peak_gb": 20.426883697509766
+            }
+          ]
+        }
+      ],
+      "timestamp": "2026-08-30T20:57:39Z"
+    }
+  ],
+  "previous_timestamp": "2026-08-28T21:16:28Z",
+  "timestamp": "2026-08-30T20:57:39Z",
+  "fork_id": "llamacpp-amd-ecosystem-gfx11",
+  "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+  "fork_repo": "AMD-Ecosystem/llama.cpp",
+  "fork_version": "gfx11-rocm-nightly-20260830",
+  "fork_backend": "rocm-gfx11",
+  "run_id": "33349600088",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/33349600088",
+  "commit": "4ed0ce19abd806727453c1d35bc82702f392a380",
+  "lemonade_version": "v11.8.1"
+}
