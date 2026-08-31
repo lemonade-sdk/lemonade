@@ -1,0 +1,39 @@
+# Per-Dockerfile ignore override for Dockerfile.momentum-tests. BuildKit uses
+# this file instead of the root .dockerignore for this specific build, since
+# the root one excludes `test/` (the production runtime Dockerfile never
+# needs it) — this Dockerfile's whole purpose is to run that test suite, so
+# it must stay in the build context. Everything else mirrors the root file.
+
+# Local build output
+build
+
+# Node / Rust build artifacts (rebuilt inside the image)
+**/node_modules
+**/target
+
+# Git / repo metadata
+.git
+.github
+.gitattributes
+.gitignore
+.vscode
+
+# Dev & CI tooling
+.devcontainer
+!.devcontainer/reinstall-cmake.sh
+.pylintrc
+
+# Docs
+mkdocs.yml
+LICENSE
+
+# Python packaging (not used in image)
+pyproject.toml
+setup.py
+**/__pycache__
+
+# Local build artifacts (must not be copied into build context)
+build/
+**/node_modules/
+**/target/
+**/dist/

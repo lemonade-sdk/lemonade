@@ -3,7 +3,10 @@
 The Lemonade **Router** selects a model per request from a policy you author. The
 policy is a `collection.router` collection (a sibling of `collection.omni`).
 Pointing the OpenAI `model` field at the collection's name triggers the routing
-engine — there is no `/v1/route` endpoint and no `"auto"` model. Rules are
+engine — there is no `/v1/route` endpoint that dispatches a request, and no
+`"auto"` model (though
+[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) lets you
+preview a decision for an ad-hoc policy before registering it). Rules are
 evaluated top-to-bottom, **first match wins**, and any request that matches
 nothing **falls open** to `default_model`.
 
@@ -151,6 +154,17 @@ and every entry's `model` must be one of `components`:
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
 > labels are the candidate models); a `type: "llm"` classifier only produces a
 > label that rules combine with any other condition.
+
+## Testing a policy before registering
+
+`POST /v1/routing/validate` runs the routing engine against a policy document
+directly — no `POST /v1/pull` registration needed, and candidate/component names
+aren't checked against the live model registry, so a policy can be validated
+before its models are pulled. It accepts the same policy shape as above, plus
+either a flattened `{prompt, has_images, has_tools, metadata}` preview or a real
+`messages`/`input`/`tools` request body (derived the same way a live request is).
+See [the API reference](../api/lemonade.md#post-v1routingvalidate) for the full
+request/response shape.
 
 ## Registering and invoking
 

@@ -20,6 +20,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/classify`](#post-v1classify) | Classify input text with an encoder classifier (label scores) |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Test-run an ad-hoc routing policy against a sample prompt or request |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
@@ -111,6 +112,111 @@ The decision is reported on the response:
   attached to the first SSE event.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
+
+## `POST /v1/routing/validate`
+<sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
+
+Evaluate an ad-hoc [routing policy](../dev/router-policy.md) against a sample
+prompt or request and return the decision it would produce, without registering
+the policy as a `collection.router` model first. This is the Router Builder's
+"Test Prompt" preview.
+
+The policy document is validated the same way registration would validate it —
+every `candidates`/`default_model`/rule `route_to`/classifier `model` must be
+listed in `policy.components` — except candidate/component names are **not**
+checked against the live model registry, so a policy can be validated before its
+models are pulled.
+
+The endpoint is available at:
+
+- `/v1/routing/validate`
+- `/api/v1/routing/validate`
+- `/v0/routing/validate`
+- `/api/v0/routing/validate`
+
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `policy` | object | yes | A `collection.router` policy document (same shape `POST /v1/pull` would register). |
+| `prompt` | string or array | no | The request text. A string is the plain single-turn preview; an array of strings mirrors the legacy completions `prompt` form (segments are concatenated as separate lines). |
+| `has_images` | boolean | no | Simulated `has_images` signal. Cannot be combined with `messages`, `input`, `tools`, or an array `prompt`. |
+| `has_tools` | boolean | no | Simulated `has_tools` signal. Cannot be combined with `messages`, `input`, `tools`, or an array `prompt`. |
+| `metadata` | object of strings | no | Simulated request `metadata`, for `metadata` match conditions. |
+| `messages` | array | no | A real chat-form `messages` array. When this, `input`, or `tools` is present, or `prompt` is an array, the context is derived the same way a live `chat/completions`/`completions`/`responses` request is — `has_images`/`has_tools` computed from actual content parts/the `tools` array, and the latest user turn's text driving length-based conditions — instead of the flattened fields above. |
+| `input` | string or array | no | A real Responses-form `input`, derived the same way. |
+| `tools` | array | no | A real `tools` array; a non-empty array sets `has_tools`. |
+
+Provide either the flattened preview fields (`prompt`/`has_images`/`has_tools`) or
+a real request body (`messages`/`input`/`tools`/array `prompt`) — combining the
+two is rejected with `400`.
+
+### Example request (flattened preview)
+
+```bash
+curl -X POST http://localhost:13305/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{
+           "policy": {
+             "version": "1",
+             "recipe": "collection.router",
+             "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+             "routing": {
+               "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+               "default_model": "Qwen3-8B-GGUF",
+               "rules": [
+                 { "id": "code-to-big", "match": { "keywords_any": ["def ", "function"] }, "route_to": "vllm.qwen3-32b" }
+               ]
+             }
+           },
+           "prompt": "please write a def to reverse a list"
+         }'
+```
+
+### Example request (real body)
+
+```bash
+curl -X POST http://localhost:13305/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{
+           "policy": { "...": "same policy document as above" },
+           "messages": [
+             { "role": "user", "content": "earlier turn" },
+             { "role": "user", "content": [
+               { "type": "text", "text": "please write a def to reverse a list" }
+             ] }
+           ],
+           "tools": [{ "type": "function", "function": { "name": "lookup" } }]
+         }'
+```
+
+### Response format
+
+```json
+{
+  "decision": {
+    "route_to": "vllm.qwen3-32b",
+    "matched_rule": "code-to-big",
+    "default_used": false,
+    "outputs": {},
+    "trace": [
+      { "condition": "keywords_any", "result": true }
+    ]
+  },
+  "normalized_policy": {
+    "...": "the as-authored policy, with routing.router (if used) desugared into explicit classifiers/rules"
+  }
+}
+```
+
+`normalized_policy` echoes the policy actually evaluated, so `decision.matched_rule`
+can be matched against a real rule id even when the input only declared
+[`routing.router`](../dev/router-policy.md#llm-as-router-routingrouter) (which
+desugars into synthetic rule ids like `__route_0`).
+
+Malformed requests (missing/non-object `policy`, a wrong-typed `prompt`/`has_images`/
+`has_tools`/`metadata`, a real body combined with `has_images`/`has_tools`, or an
+internally-inconsistent policy) return `400` with an `error` object.
 
 ## `POST /v1/models/check-updates`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

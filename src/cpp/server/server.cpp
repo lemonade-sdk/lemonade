@@ -3733,13 +3733,38 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         res.set_content(error.dump(), "application/json");
         return;
     }
-    if (request_json.contains("prompt") && !request_json["prompt"].is_string()) {
+
+    // A real request body (chat's `messages`, an explicit `tools` array, the
+    // Responses API's `input`, or the completions form's multi-segment array
+    // `prompt`) opts into deriving RouteContext via build_route_context, the
+    // same function production uses — this is what lets the preview pick up
+    // any signal that function knows how to compute (multi-turn text, image
+    // content parts, tool arrays) without hand-plumbing each one here, and
+    // it's why the flattened has_images/has_tools/prompt shape below is kept
+    // working unchanged rather than being routed through the same function.
+    const bool prompt_is_array =
+        request_json.contains("prompt") && request_json["prompt"].is_array();
+    const bool real_body = request_json.contains("messages") ||
+                            request_json.contains("input") ||
+                            request_json.contains("tools") || prompt_is_array;
+
+    if (real_body &&
+        (request_json.contains("has_images") || request_json.contains("has_tools"))) {
+        res.status = 400;
+        nlohmann::json error = {{"error",
+            "cannot combine 'has_images'/'has_tools' with a real request body "
+            "('messages', 'input', 'tools', or an array 'prompt'); use one shape "
+            "or the other"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (!real_body && request_json.contains("prompt") && !request_json["prompt"].is_string()) {
         res.status = 400;
         nlohmann::json error = {{"error", "'prompt' must be a string"}};
         res.set_content(error.dump(), "application/json");
         return;
     }
-    const std::string prompt = request_json.value("prompt", std::string());
 
     if (request_json.contains("has_images") && !request_json["has_images"].is_boolean()) {
         res.status = 400;
@@ -3803,11 +3828,16 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
         RouteContext ctx;
-        ctx.input = prompt;
-        ctx.params.chars = prompt.size();
-        ctx.params.has_images = has_images;
-        ctx.params.has_tools = has_tools;
-        ctx.metadata = std::move(metadata);
+        if (real_body) {
+            ctx = build_route_context(request_json, std::string());
+        } else {
+            const std::string prompt = request_json.value("prompt", std::string());
+            ctx.input = prompt;
+            ctx.params.chars = prompt.size();
+            ctx.params.has_images = has_images;
+            ctx.params.has_tools = has_tools;
+            ctx.metadata = std::move(metadata);
+        }
 
         Decision decision = engine.route(ctx, /*want_trace=*/true);
 
