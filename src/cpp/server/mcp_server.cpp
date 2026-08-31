@@ -215,10 +215,12 @@ std::string unique_token() {
 
 }  // namespace
 
-McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded)
+McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded,
+                     AliasResolver resolve_alias)
     : router_(router),
       model_manager_(model_manager),
-      ensure_loaded_(std::move(ensure_loaded)) {}
+      ensure_loaded_(std::move(ensure_loaded)),
+      resolve_alias_(std::move(resolve_alias)) {}
 
 McpServer::~McpServer() = default;
 
@@ -440,6 +442,10 @@ json McpServer::make_needs_model_result(const char* type_str,
     };
 }
 
+std::string McpServer::resolve_requested_model(const std::string& model) const {
+    return resolve_alias_ ? resolve_alias_(model) : model;
+}
+
 std::variant<std::string, json> McpServer::resolve_model_for_tool(
         const json& arguments,
         ModelType want_type,
@@ -449,7 +455,7 @@ std::variant<std::string, json> McpServer::resolve_model_for_tool(
     // 1. Explicit model argument always wins.
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        return arguments["model"].get<std::string>();
+        return resolve_requested_model(arguments["model"].get<std::string>());
     }
 
     // 2. Reuse a model of the right type that's already loaded \u2014 zero cost.
@@ -815,7 +821,7 @@ json McpServer::tool_omni(const json& arguments) {
     std::string model;
     if (arguments.contains("model") && arguments["model"].is_string() &&
         !arguments["model"].get<std::string>().empty()) {
-        model = arguments["model"].get<std::string>();
+        model = resolve_requested_model(arguments["model"].get<std::string>());
     } else {
         for (const auto& [name, info] : model_manager_->get_downloaded_models()) {
             if (is_omni_collection_recipe(info.recipe)) {

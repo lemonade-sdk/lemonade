@@ -1518,7 +1518,8 @@ void Server::setup_routes(httplib::Server &web_server) {
     auto mcp_server = std::make_shared<McpServer>(
         router_.get(),
         model_manager_.get(),
-        [this](const std::string& m) { auto_load_model_if_needed(m); });
+        [this](const std::string& m) { auto_load_model_if_needed(m); },
+        [this](const std::string& m) { return resolve_alias_target(m); });
     mcp_server->register_routes(web_server);
 
     // Setup static file serving for web UI

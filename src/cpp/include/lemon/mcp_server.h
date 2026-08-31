@@ -22,8 +22,10 @@ using json = nlohmann::json;
 class McpServer : public std::enable_shared_from_this<McpServer> {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
+    using AliasResolver = std::function<std::string(const std::string&)>;
 
-    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
+    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded,
+              AliasResolver resolve_alias);
     ~McpServer();
 
     // Must be called on a shared_ptr instance — handlers capture shared_from_this().
@@ -46,7 +48,7 @@ private:
     json tool_list_models(const json& arguments);
 
     // Resolve which model a tool should use when `model` is omitted. Precedence:
-    //   1. an explicit `model` argument always wins;
+    //   1. an explicit `model` argument always wins, resolved through aliases;
     //   2. a model of the right type that's already LOADED (zero cost);
     //   3. a model of the right type that's already DOWNLOADED (no network);
     //   4. the tool's hard-coded default, but only when the caller passed
@@ -60,6 +62,8 @@ private:
         const char* type_str,
         const char* default_model,
         bool allow_download);
+
+    std::string resolve_requested_model(const std::string& model) const;
 
     static json text_content_block(const std::string& text);
     static json make_error_response(const json& id, int code, const std::string& message);
@@ -76,6 +80,7 @@ private:
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    AliasResolver resolve_alias_;
 };
 
 }  // namespace lemon
