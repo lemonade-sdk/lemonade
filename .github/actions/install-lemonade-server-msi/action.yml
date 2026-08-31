@@ -280,7 +280,7 @@ runs:
           exit 0
         }
 
-        $lines = Get-Content $logFile
+        $lines = @(Get-Content $logFile)
         $hit = $lines | Select-String -Pattern "Backend availability:" | Select-Object -First 1
         if (-not $hit) {
           Write-Host "::warning title=No hardware report::'Backend availability' not found in $logFile"
