@@ -80,7 +80,22 @@ def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "", p
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
+    release = gh_api(f"repos/{repo}/releases/latest", token)
+    tag = release["tag_name"]
+    # ggml-org/llama.cpp moved to semver (v0.3.0+) for the "latest" release but
+    # publishes actual binaries under b-tagged releases. The semver release
+    # contains a nightly-tag.txt asset whose content is the real binary tag.
+    for asset in release.get("assets", []):
+        if asset["name"] == "nightly-tag.txt":
+            url = asset["browser_download_url"]
+            headers = {}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as r:
+                tag = r.read().decode().strip()
+            break
+    return tag
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
