@@ -2969,4 +2969,13 @@ void Router::set_model_pinned(const std::string& model_name, bool pinned) {
     server->set_pinned(pinned);
 }
 
+void Router::validate_chat_request(const std::string& model_name, const json& request) const {
+    WrappedServer* server = model_name.empty()
+        ? get_most_recent_server()
+        : find_server_by_model_name(resolve_model_name(model_name));
+    if (server) {
+        server->validate_chat_request(request);
+    }
+}
+
 } // namespace lemon
