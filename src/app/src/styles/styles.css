@@ -465,6 +465,10 @@ input[type="checkbox"]:disabled {
   color: var(--text-secondary);
 }
 
+.titlebar--desktop .titlebar__utilities-toggle {
+  background: transparent;
+}
+
 .titlebar__utilities-toggle:hover,
 .titlebar__utilities-toggle[aria-expanded="true"] {
   border-color: var(--border-strong);
