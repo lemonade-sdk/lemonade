@@ -120,12 +120,19 @@ void StreamingProxy::forward_sse_stream(
     std::string error_body;
     static constexpr size_t max_error_body = 64 * 1024;
 
-    auto process_line = [&telemetry](const std::string& line) {
+    // Chunk boundaries are arbitrary, so whether the stream carried any event
+    // at all is decided per reassembled line rather than per received chunk.
+    bool has_data_event = false;
+
+    auto process_line = [&telemetry, &has_data_event](const std::string& line) {
         std::string json_str;
         if (line.find("data: ") == 0) {
             json_str = line.substr(6);
         } else if (line.find("ChatCompletionChunk: ") == 0) {
             json_str = line.substr(21);
+        }
+        if (!json_str.empty()) {
+            has_data_event = true;
         }
         if (!json_str.empty() && json_str != "[DONE]") {
             try {
@@ -261,6 +268,23 @@ void StreamingProxy::forward_sse_stream(
             // adapters downstream would have to guess one.
             payload["error"]["status_code"] = status;
         }
+        const std::string event = "data: " + payload.dump() + "\n\n";
+        sink.write(event.data(), event.size());
+    }
+
+    // A backend that closed a 200 event-stream without ever emitting a data
+    // event produced no response at all. Synthesizing [DONE] below would report
+    // that failure to the client as an empty but successful completion.
+    if (!stream_error && !has_data_event) {
+        static constexpr const char* empty_stream_message =
+            "Backend closed the stream without producing a response";
+        LOG(ERROR, "StreamingProxy") << empty_stream_message << std::endl;
+        telemetry.error_message = empty_stream_message;
+        stream_error = true;
+
+        const json payload{{"error", {{"message", empty_stream_message},
+                                      {"type", "backend_error"},
+                                      {"status_code", 502}}}};
         const std::string event = "data: " + payload.dump() + "\n\n";
         sink.write(event.data(), event.size());
     }
