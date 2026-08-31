@@ -176,6 +176,11 @@ class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
 
+    // Joins the watcher thread. Required, not incidental: the watcher callback
+    // locks models_cache_mutex_, which is declared after directory_watcher_ and
+    // so freed first by reverse-order destruction.
+    ~ModelManager();
+
     std::map<std::string, ModelInfo> discover_extra_models_for_test() const {
         return discover_extra_models();
     }
