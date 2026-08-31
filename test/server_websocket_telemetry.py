@@ -369,7 +369,7 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         self.assertEqual(
             res.headers.get("Access-Control-Allow-Private-Network"), "true"
         )
-        self.assertEqual(res.headers.get("Vary"), "Origin")
+        self.assertIn("Origin", res.headers.get("Vary", ""))
 
         # 2. Rejected malicious origin (OPTIONS returns 403)
         headers = {
@@ -385,7 +385,7 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         self.assertEqual(res.status_code, 403)
         self.assertNotIn("Access-Control-Allow-Origin", res.headers)
         self.assertNotIn("Access-Control-Allow-Private-Network", res.headers)
-        self.assertEqual(res.headers.get("Vary"), "Origin")
+        self.assertIn("Origin", res.headers.get("Vary", ""))
 
         # 3. Rejected malicious origin (POST returns 403, not dispatched)
         headers = {
@@ -497,7 +497,25 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
             headers={"Authorization": "Bearer admin_key"},
             timeout=5,
         )
-        self.assertEqual(res.headers.get("Vary"), "Origin")
+        self.assertIn("Origin", res.headers.get("Vary", ""))
+
+        # 7. Verify unauthorized origin rejections logged warnings with origin name and remediation hint
+        for _, log_f, _ in self.procs:
+            log_f.flush()
+
+        with open(self.procs[0][2], "r") as f:
+            default_server_logs = f.read()
+        self.assertIn(
+            "Rejected request from unauthorized origin: http://malicious.com. Set LEMONADE_ALLOWED_ORIGINS to allow this origin.",
+            default_server_logs,
+        )
+
+        with open(self.procs[1][2], "r") as f:
+            remote_server_logs = f.read()
+        self.assertIn(
+            "Rejected request from unauthorized origin: https://unconfigured.com. Set LEMONADE_ALLOWED_ORIGINS to allow this origin.",
+            remote_server_logs,
+        )
 
 
 class TelemetryFallbackSecurityTests(TelemetrySecurityTestBase):
