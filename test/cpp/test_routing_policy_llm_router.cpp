@@ -245,7 +245,7 @@ static void capture_judge_exchange(ClassifierPtr judge, std::string* seen_prompt
     judge->evaluate(ClassifierContext{make_route("do it"), svc});
 }
 
-static void test_author_classifier_never_serializes_request_features() {
+static void test_parsed_author_classifier_never_serializes_request_features() {
     for (bool feature_rule : {false, true}) {
         RoutePolicy policy = parse_l0a(classifier_collection(feature_rule));
         std::string seen_prompt, seen_payload;
@@ -501,7 +501,7 @@ int main() {
     test_classifier_structured_choice();
     test_classifier_receives_structured_context();
     test_classifier_prompt_carries_contract();
-    test_author_classifier_never_serializes_request_features();
+    test_parsed_author_classifier_never_serializes_request_features();
     test_2789_regression_judge_never_sees_leaked_tool_signal();
     test_router_sugar_always_exposes_request_features();
     test_classifier_fenced_json_is_tolerated();

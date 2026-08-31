@@ -355,7 +355,9 @@ private:
             {"metadata", std::move(metadata)},
         };
         // Withheld entirely (not just disclaimed) unless expose_request_features_
-        // is set — currently only the routing.router sugar's synthesized classifier.
+        // is set. When constructed through the policy parser this is only the
+        // routing.router sugar's synthesized classifier; the make_classifier(s)
+        // helpers default it to true for direct callers.
         if (expose_request_features_) {
             payload["has_tools"] = request.params.has_tools;
             payload["has_images"] = request.params.has_images;
