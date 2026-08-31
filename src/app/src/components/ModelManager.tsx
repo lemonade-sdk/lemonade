@@ -12,7 +12,7 @@ import {
   isCompatibleHuggingFaceVariantResult,
 } from '../features/models/huggingFaceSearch';
 import { DEFAULT_CONTEXT_SIZE } from '../modelConfiguration';
-import { DownloadListItem, activeDownloadForModel, downloadStore } from '../features/downloadManager/downloadStore';
+import { DownloadListItem, activeDownloadForModel, downloadStore, isDownloadActive } from '../features/downloadManager/downloadStore';
 import { ModelListPanel, capabilityTagIconTarget, modelIsCustom, modelMatchesBackends, modelMatchesTags, modelMatchesTasks } from './ModelListPanel';
 import type { FilterTab, PrimaryFilter } from './ModelListPanel';
 import { ModelNavRail } from './ModelNavRail';
@@ -1073,6 +1073,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   const [loadError, setLoadError] = useState<{ modelName: string; message: string } | null>(null);
   const [pulling, setPulling] = useState<Record<string, number>>({});  // model -> percent
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>(() => downloadStore.snapshot());
+  const unknownActiveModelDownloadsRef = useRef<Set<string>>(new Set());
   const pullAbortRef = useRef<Record<string, AbortController>>({});
   const [selectedDetailModelId, setSelectedDetailModelId] = useState<string | null>(null);
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
@@ -1527,23 +1528,23 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       const source = String((model as any).registry_source || (model as any).source || '').toLowerCase();
       return !source || source === provider;
     };
+    const activeDownloadForRegisteredModel = (model: ModelInfo): DownloadListItem | undefined => {
+      const name = modelName(model);
+      return activeDownloadForModel(downloadItems, name)
+        || activeDownloadForModel(downloadItems, `user.${name}`);
+    };
     const registered = allModels.find(model => {
       const checkpoint = modelCheckpoint(model);
       return sourceMatches(model)
         && (checkpoint === modelId || checkpoint.startsWith(`${modelId}:`))
-        && Boolean(activeDownloadForModel(downloadItems, modelName(model)));
+        && Boolean(activeDownloadForRegisteredModel(model));
     });
     if (registered) {
       const name = modelName(registered);
-      const download = activeDownloadForModel(downloadItems, name);
+      const download = activeDownloadForRegisteredModel(registered);
       if (download) return { modelName: name, percent: download.percent, downloadId: download.id };
     }
 
-    for (const variant of variants?.variants || []) {
-      const name = resolveRemoteModelName(provider, modelId, variant.name, variants?.recipe || '', variants);
-      const download = activeDownloadForModel(downloadItems, name);
-      if (download) return { modelName: name, percent: download.percent, downloadId: download.id };
-    }
     return null;
   };
 
@@ -2283,6 +2284,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     }
     return merged;
   }, [visibleServerModels, loadedModels]);
+
+  useEffect(() => {
+    const knownNames = new Set(visibleServerModels.map(model => customModelNameKey(modelName(model))));
+    const unknownActiveIds = new Set(
+      downloadItems
+        .filter(item => item.downloadType === 'model' && isDownloadActive(item))
+        .filter(item => !knownNames.has(customModelNameKey(item.modelName)))
+        .map(item => item.id),
+    );
+    const appeared = [...unknownActiveIds].some(
+      id => !unknownActiveModelDownloadsRef.current.has(id),
+    );
+    unknownActiveModelDownloadsRef.current = unknownActiveIds;
+    if (appeared) void refresh();
+  }, [downloadItems, refresh, visibleServerModels]);
 
   const omniComponentOptions = useMemo(() => {
     const roles: Record<OmniComponentRole, OmniComponentOption[]> = {
