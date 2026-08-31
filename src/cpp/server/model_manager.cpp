@@ -1158,6 +1158,10 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
     notify_models_changed();
 }
 
+ModelManager::~ModelManager() {
+    directory_watcher_.reset();
+}
+
 void ModelManager::start_directory_watcher() {
     directory_watcher_ = std::make_unique<DirectoryWatcher>(extra_models_dir_);
     directory_watcher_->set_callback([this]() {
