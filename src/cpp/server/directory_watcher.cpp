@@ -55,37 +55,27 @@ public:
 
     ~Impl() { stop(); }
 
+    // event_fd_ is created here, before the thread exists, and closed only after
+    // it is joined. run_loop() never reassigns it, so stop() always has a valid
+    // fd to signal and neither thread writes a descriptor the other reads.
     void start() {
+        event_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         thread_ = std::thread([this]() { run_loop(); });
     }
 
     void stop() {
-        bool expected = false;
-        if (stop_flag_.compare_exchange_strong(expected, true)) {
-#ifdef HAS_EVENTFD
-            if (event_fd_ >= 0) {
-                uint64_t one = 1;
-                ssize_t ret;
-                do { ret = write(event_fd_, &one, sizeof(one)); }
-                while (ret < 0 && errno == EINTR);
-            }
-#endif
-            if (epoll_fd_ >= 0) {
-                ::close(epoll_fd_);
-                epoll_fd_ = -1;
-            }
-            if (event_fd_ >= 0) {
-                ::close(event_fd_);
-                event_fd_ = -1;
-            }
-            if (wd_ >= 0) {
-                inotify_rm_watch(inotify_fd_, wd_);
-                wd_ = -1;
-            }
+        stop_flag_.store(true);
+        if (event_fd_ >= 0) {
+            uint64_t one = 1;
+            ssize_t ret;
+            do { ret = write(event_fd_, &one, sizeof(one)); }
+            while (ret < 0 && errno == EINTR);
         }
         if (thread_.joinable()) {
             thread_.join();
         }
+        // Sole owner again: the thread is gone and cannot race this close.
+        if (event_fd_ >= 0) { ::close(event_fd_); event_fd_ = -1; }
     }
 
     void set_callback(std::function<void()> cb) { callback_ = std::move(cb); }
@@ -107,6 +97,7 @@ public:
 
         inotify_fd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
         if (inotify_fd_ < 0) {
+            inotify_fd_ = -1;
             return;
         }
 
@@ -116,20 +107,24 @@ public:
         wd_ = inotify_add_watch(inotify_fd_, dir_path_.c_str(), mask);
         if (wd_ < 0) {
             ::close(inotify_fd_);
+            inotify_fd_ = -1;
             return;
         }
 
-        event_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         if (event_fd_ < 0) {
+            inotify_rm_watch(inotify_fd_, wd_);
+            wd_ = -1;
             ::close(inotify_fd_);
+            inotify_fd_ = -1;
             return;
         }
 
         epoll_fd_ = epoll_create1(EPOLL_CLOEXEC);
         if (epoll_fd_ < 0) {
-            ::close(event_fd_);
-            event_fd_ = -1;
+            inotify_rm_watch(inotify_fd_, wd_);
+            wd_ = -1;
             ::close(inotify_fd_);
+            inotify_fd_ = -1;
             return;
         }
 
@@ -191,7 +186,6 @@ public:
         }
 
         if (epoll_fd_ >= 0) { ::close(epoll_fd_); epoll_fd_ = -1; }
-        if (event_fd_ >= 0) { ::close(event_fd_); event_fd_ = -1; }
         if (wd_ >= 0)       { inotify_rm_watch(inotify_fd_, wd_); wd_ = -1; }
         if (inotify_fd_ >= 0) { ::close(inotify_fd_); inotify_fd_ = -1; }
         has_watch_ = false;
