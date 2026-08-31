@@ -188,6 +188,125 @@ static void test_classifier_prompt_carries_contract() {
           seen_prompt.find("\"rationale\"") != std::string::npos);
     check("llm: composed prompt describes the structured input and history policy",
           seen_prompt.find("latest user turn only") != std::string::npos);
+    // Not pinned to the disclaimer's exact prose: that it exists and holds up
+    // is proven behaviorally by test_2789_regression_judge_never_sees_leaked_tool_signal
+    // and test_router_sugar_always_exposes_request_features instead.
+}
+
+// #2789 follow-up: an author-declared `llm` classifier never receives
+// has_tools/has_images, even when composed in the *same* rule as the
+// deterministic leaf — mirroring the risky-tool-calls-stay-local doc example
+// exactly, since that's the shape that would otherwise leak the signal into
+// the very judgment it's already gating deterministically.
+static json classifier_collection(bool feature_rule) {
+    json risky_match = feature_rule
+        ? json{{"all", json::array({
+              json{{"classifier", "judge"}, {"label", "risky"}},
+              json{{"has_tools", true}},
+          })}}
+        : json{{"classifier", "judge"}, {"label", "risky"}};
+    return json{
+        {"version", "1"},
+        {"model_name", "user.Router-Auto"},
+        {"recipe", "collection.router"},
+        {"components", {"local-model", "cloud-model", "judge-model"}},
+        {"routing", {
+            {"candidates", {"local-model", "cloud-model"}},
+            {"default_model", "local-model"},
+            {"classifiers", json::array({json{
+                {"id", "judge"},
+                {"type", "llm"},
+                {"model", "judge-model"},
+                {"prompt", "Classify whether this request is risky."},
+                {"labels", {"risky", "safe"}},
+            }})},
+            {"rules", json::array({
+                json{{"id", "r0"}, {"match", risky_match}, {"route_to", "local-model"}},
+                json{{"id", "r1"},
+                     {"match", {{"classifier", "judge"}, {"label", "safe"}}},
+                     {"route_to", "cloud-model"}},
+            })},
+        }},
+    };
+}
+
+static void capture_judge_exchange(ClassifierPtr judge, std::string* seen_prompt,
+                                   std::string* seen_payload) {
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_chat_reply("judge-model", "{\"model\": \"safe\", \"rationale\": \"ok\"}");
+    ClassifierServices svc = fake.make();
+    auto inner = svc.chat;
+    svc.chat = [seen_prompt, seen_payload, inner](const std::string& m, const std::string& p,
+                                                  const std::string& i) {
+        *seen_prompt = p;
+        *seen_payload = i;
+        return inner(m, p, i);
+    };
+    judge->evaluate(ClassifierContext{make_route("do it"), svc});
+}
+
+static void test_feature_serialization_opt_in() {
+    for (bool feature_rule : {false, true}) {
+        RoutePolicy policy = parse_l0a(classifier_collection(feature_rule));
+        std::string seen_prompt, seen_payload;
+        capture_judge_exchange(policy.classifiers.at("judge"), &seen_prompt, &seen_payload);
+        json payload = json::parse(seen_payload);
+        check("llm: author-declared classifier never receives has_tools/has_images",
+              !payload.contains("has_tools") && !payload.contains("has_images"));
+        check("llm: prompt contract omits has_tools/has_images entirely",
+              seen_prompt.find("has_tools") == std::string::npos &&
+              seen_prompt.find("has_images") == std::string::npos);
+    }
+}
+
+// The direct #2789 repro: a judge that actively looks for has_tools in its
+// payload and answers RISKY if present, SAFE otherwise — simulating exactly
+// the bias the fix must prevent, not just checking the field's absence.
+static void test_2789_regression_judge_never_sees_leaked_tool_signal() {
+    RoutePolicy policy = parse_l0a(classifier_collection(/*feature_rule=*/true));
+    ClassifierServices svc;
+    svc.chat = [](const std::string&, const std::string&, const std::string& payload) {
+        const bool leaked = json::parse(payload).contains("has_tools");
+        return leaked
+            ? std::string("{\"model\": \"risky\", \"rationale\": \"has_tools present\"}")
+            : std::string("{\"model\": \"safe\", \"rationale\": \"no tool signal\"}");
+    };
+
+    RouteContext route = make_route("What's the capital of France?");
+    route.params.has_tools = true;
+    Score s = policy.classifiers.at("judge")->evaluate(ClassifierContext{route, svc});
+
+    check("llm: #2789 repro no longer mislabels a tool-bearing unrelated "
+          "question as risky",
+          s.ok && s.score_of("safe") == 1.0 && s.score_of("risky") == 0.0);
+}
+
+// #2789 follow-up, opposite case: routing.router has no sibling rule to
+// compose has_tools/has_images against (it IS the rule), so it must always
+// expose them — otherwise a legitimate modality-routing prompt like "use the
+// vision model when the request includes images" would silently break.
+static void test_router_sugar_always_exposes_request_features() {
+    RoutePolicy policy = parse_l0a(l0a_collection());
+    std::string seen_prompt, seen_payload;
+    lemon::testing::FakeClassifierServices fake;
+    fake.set_chat_reply("router-model",
+        "{\"model\": \"Qwen3-8B-GGUF\", \"rationale\": \"ok\"}");
+    ClassifierServices svc = fake.make();
+    auto inner = svc.chat;
+    svc.chat = [&seen_prompt, &seen_payload, inner](const std::string& m, const std::string& p,
+                                                    const std::string& i) {
+        seen_prompt = p;
+        seen_payload = i;
+        return inner(m, p, i);
+    };
+    policy.classifiers.at("__router")->evaluate(ClassifierContext{make_route("hi"), svc});
+    json payload = json::parse(seen_payload);
+    check("llm: routing.router sugar always exposes has_tools/has_images "
+          "(no sibling rule to compose against)",
+          payload.contains("has_tools") && payload.contains("has_images"));
+    check("llm: routing.router sugar's prompt carries the field descriptions",
+          seen_prompt.find("has_tools") != std::string::npos &&
+          seen_prompt.find("has_images") != std::string::npos);
 }
 
 static void test_classifier_fenced_json_is_tolerated() {
@@ -382,6 +501,9 @@ int main() {
     test_classifier_structured_choice();
     test_classifier_receives_structured_context();
     test_classifier_prompt_carries_contract();
+    test_feature_serialization_opt_in();
+    test_2789_regression_judge_never_sees_leaked_tool_signal();
+    test_router_sugar_always_exposes_request_features();
     test_classifier_fenced_json_is_tolerated();
     test_classifier_rejects_non_exact_replies();
     test_classifier_backend_failure();

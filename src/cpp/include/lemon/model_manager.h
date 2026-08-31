@@ -176,6 +176,10 @@ class ModelManager {
 public:
     explicit ModelManager(const std::string& extra_models_dir = "");
 
+    std::map<std::string, ModelInfo> discover_extra_models_for_test() const {
+        return discover_extra_models();
+    }
+
     // Wires the cloud provider registry. ModelManager uses it to look up
     // {base_url, api_key} per provider when refreshing cloud models during
     // build_cache(). Pointer (not ownership) — Server owns the registry.
@@ -538,7 +542,8 @@ private:
     void discover_extra_models_in_directory(
         const std::filesystem::path& dir_path,
         const std::vector<std::filesystem::path>& gguf_files,
-        std::map<std::string, ModelInfo>& discovered) const;
+        std::map<std::string, ModelInfo>& discovered,
+        const std::filesystem::path& search_path) const;
 
     json server_models_;
     json user_models_;
