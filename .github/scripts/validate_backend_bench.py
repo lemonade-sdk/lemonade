@@ -80,22 +80,19 @@ def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "", p
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    release = gh_api(f"repos/{repo}/releases/latest", token)
-    tag = release["tag_name"]
-    # ggml-org/llama.cpp moved to semver (v0.3.0+) for the "latest" release but
-    # publishes actual binaries under b-tagged releases. The semver release
-    # contains a nightly-tag.txt asset whose content is the real binary tag.
-    for asset in release.get("assets", []):
-        if asset["name"] == "nightly-tag.txt":
-            url = asset["browser_download_url"]
-            headers = {}
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=15) as r:
-                tag = r.read().decode().strip()
-            break
-    return tag
+    # /releases/latest on ggml-org/llama.cpp now returns a semver tag (v0.3.0+)
+    # with no binaries — the actual bNNNN nightlies are flagged as pre-releases.
+    # Scan the release list for the newest bNNNN tag, matching PR #3450's approach
+    # in validate_llamacpp.yml. Falls back to /releases/latest for other repos.
+    releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
+    for r in releases:
+        tag = r.get("tag_name", "")
+        if r.get("draft"):
+            continue
+        if tag.startswith("b") and tag[1:].isdigit():
+            return tag
+    # Fallback: no bNNNN found, use whatever /releases/latest returns
+    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
