@@ -54,8 +54,17 @@ Lemonade consists of these main executables:
 - Internet connection (first build downloads dependencies)
 
 **Windows:**
-- Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
-- WiX 5.x (only required for building the installer)
+
+  - **Lemond**:
+    - Visual Studio 2022 or later (2022 and 2026 are supported via CMake presets)
+    - Visual Studio -> Tools -> Get Tools and Features -> Install Desktop development with C++
+  
+  - **Tauri app**:
+    - Download and install [Rustup](https://rustup.rs/)
+
+  - **Windows Installer**
+    - Download and install [WiX Toolset](https://github.com/wixtoolset/wix/releases)
+    - Download and install [Python 3](https://www.python.org/downloads/windows)
 
 **Linux:**
  - Ninja build system (optional, recommended)
