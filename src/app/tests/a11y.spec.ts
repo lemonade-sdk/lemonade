@@ -3035,6 +3035,32 @@ test.describe('Chat toolbar accessibility', () => {
     await page.waitForTimeout(300);
   }
 
+  async function goToChatWithoutLoadedModel(page: Page): Promise<void> {
+    await page.route('**/api/v1/health**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', version: 'test', all_models_loaded: [] }),
+      }),
+    );
+    await page.route('**/api/v1/models**', async route =>
+      route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [{
+            id: 'Llama-3.1-8B-Instruct',
+            name: 'Llama-3.1-8B-Instruct',
+            labels: ['chat'],
+            recipe: 'llamacpp',
+            downloaded: true,
+          }],
+        }),
+      }),
+    );
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+    await page.waitForTimeout(300);
+  }
+
   test('A186 — composer toolbar retains model selector, settings, add menu, and Logs buttons', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     // Model picker button is present (model is loaded so it appears)
@@ -3044,6 +3070,238 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
     // Effective Settings button (requires current model)
     await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
+  });
+
+  test('A186b — Logs remains beside Effective Settings at narrow widths', async ({ page }) => {
+    await page.setViewportSize({ width: 851, height: 800 });
+    await goToChatWithLoadedModel(page, ['text', 'image', 'audio']);
+
+    const settings = page.getByRole('button', { name: 'Effective settings' });
+    const logs = page.getByRole('button', { name: /Logs/i });
+    const modelButton = page.getByRole('button', { name: 'Select model, current Llama-3.1-8B-Instruct' });
+    const modelCaretGlyph = page.locator('.composer__model-button-caret-glyph');
+    const standardCaretFontSize = await modelCaretGlyph.evaluate(element => getComputedStyle(element).fontSize);
+    const waitForModelSelectorMotion = () => modelButton.evaluate(async element => {
+      await Promise.all(element.getAnimations().map(animation => animation.finished.catch(() => undefined)));
+    });
+
+    for (const width of [851, 480, 400, 360, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      if (width <= 480) {
+        await expect.poll(async () => {
+          const [modelBox, settingsBox] = await Promise.all([
+            modelButton.boundingBox(),
+            settings.boundingBox(),
+          ]);
+          return modelBox && settingsBox
+            ? Math.abs(modelBox.y - settingsBox.y)
+            : Number.POSITIVE_INFINITY;
+        }).toBeLessThan(2);
+      }
+      const [settingsBox, logsBox, modelBox] = await Promise.all([
+        settings.boundingBox(),
+        logs.boundingBox(),
+        modelButton.boundingBox(),
+      ]);
+
+      expect(settingsBox).not.toBeNull();
+      expect(logsBox).not.toBeNull();
+      expect(modelBox).not.toBeNull();
+      if (width <= 480) {
+        expect(Math.abs(modelBox!.y - settingsBox!.y)).toBeLessThan(2);
+      }
+      expect(Math.abs(logsBox!.y - settingsBox!.y)).toBeLessThan(2);
+      expect(logsBox!.x).toBeGreaterThan(settingsBox!.x + settingsBox!.width);
+      expect(logsBox!.x + logsBox!.width).toBeLessThanOrEqual(width);
+    }
+
+    const rail = page.locator('.rail');
+    const modelModeLabel = page.locator('.composer__model-mode > span:not(.capability-icon-pair)');
+
+    await page.setViewportSize({ width: 769, height: 800 });
+    await waitForModelSelectorMotion();
+    await expect(rail).toBeVisible();
+    await expect(modelModeLabel).toBeVisible();
+
+    await page.setViewportSize({ width: 768, height: 800 });
+    await waitForModelSelectorMotion();
+    await expect(rail).toBeHidden();
+    await expect(modelModeLabel).toBeHidden();
+
+    await page.setViewportSize({ width: 480, height: 800 });
+    await waitForModelSelectorMotion();
+    await expect(page.locator('.composer__model-label')).toBeHidden();
+    await expect(page.locator('.composer__model-picker')).toHaveClass(/composer__model-picker--loaded/);
+    await expect(page.locator('.composer__model-button-empty-label')).toBeHidden();
+    await expect(page.locator('.composer__model-mode')).toBeVisible();
+    await expect(modelModeLabel).toBeHidden();
+    await expect(modelModeLabel).toHaveText('Chat + Image + Audio');
+    await expect(page.locator('.composer__model-button-name')).toBeVisible();
+    await expect(page.locator('.composer__model-button-badge')).toBeVisible();
+    expect(await modelButton.evaluate(element => getComputedStyle(element).transitionProperty)).toContain('max-width');
+    const [compactSettingsBox, compactLogsBox, compactModelBox] = await Promise.all([
+      settings.boundingBox(),
+      logs.boundingBox(),
+      modelButton.boundingBox(),
+    ]);
+    expect(compactSettingsBox).not.toBeNull();
+    expect(compactLogsBox).not.toBeNull();
+    expect(compactModelBox).not.toBeNull();
+    expect(compactModelBox!.width).toBeGreaterThan(30);
+    expect(compactSettingsBox!.x).toBeGreaterThan(compactModelBox!.x + compactModelBox!.width);
+    expect(compactLogsBox!.x).toBeGreaterThan(compactSettingsBox!.x + compactSettingsBox!.width);
+    const compactCaret = page.locator('.composer__model-button-caret');
+    const compactCaretGlyph = modelCaretGlyph;
+    await expect(compactCaret).toHaveText('▾');
+    await expect(compactCaretGlyph).toHaveCSS('font-size', standardCaretFontSize);
+    await expect(compactCaretGlyph).toHaveCSS('width', '16px');
+    await expect(compactCaretGlyph).toHaveCSS('height', '16px');
+    await expect(compactCaretGlyph).toHaveCSS('transform-origin', '8px 8px');
+    await expect(compactCaretGlyph).toHaveCSS('transition-property', 'transform');
+    const compactCaretBox = await compactCaret.boundingBox();
+    expect(compactCaretBox).not.toBeNull();
+    expect(
+      (compactModelBox!.x + compactModelBox!.width) - (compactCaretBox!.x + compactCaretBox!.width),
+    ).toBeLessThanOrEqual(10);
+    await page.setViewportSize({ width: 400, height: 800 });
+    await waitForModelSelectorMotion();
+    const narrowerCompactModelBox = await modelButton.boundingBox();
+    expect(narrowerCompactModelBox).not.toBeNull();
+    expect(Math.abs(narrowerCompactModelBox!.width - compactModelBox!.width)).toBeLessThanOrEqual(2);
+
+    await page.setViewportSize({ width: 360, height: 800 });
+    await waitForModelSelectorMotion();
+    const intermediatePickerBox = await page.locator('.composer__model-picker').boundingBox();
+    expect(intermediatePickerBox).not.toBeNull();
+    expect(intermediatePickerBox!.width).toBeGreaterThan(200);
+    expect(intermediatePickerBox!.width).toBeLessThanOrEqual(240);
+    await expect(page.locator('.composer__model-button-empty-label')).toBeHidden();
+    await expect(modelModeLabel).toBeHidden();
+    await expect(page.locator('.composer__model-button-name')).toBeVisible();
+    const compactModeIcons = page.locator('.composer__model-mode .app-icon');
+    expect(await compactModeIcons.count()).toBe(3);
+    const expectedModeIconSizes = ['14px', '13px', '13px'];
+    for (const [index, icon] of (await compactModeIcons.all()).entries()) {
+      await expect(icon).toHaveCSS('width', expectedModeIconSizes[index]);
+      await expect(icon).toHaveCSS('height', expectedModeIconSizes[index]);
+      await expect(icon).toHaveCSS('border-radius', '0px');
+    }
+
+    const closedCaretTransform = await compactCaretGlyph.evaluate(element => getComputedStyle(element).transform);
+    const expectCaretCenterFixed = async () => {
+      const [containerBox, glyphBox] = await Promise.all([
+        compactCaret.boundingBox(),
+        compactCaretGlyph.boundingBox(),
+      ]);
+      expect(containerBox).not.toBeNull();
+      expect(glyphBox).not.toBeNull();
+      expect(Math.abs(
+        (containerBox!.x + containerBox!.width / 2) - (glyphBox!.x + glyphBox!.width / 2),
+      )).toBeLessThan(0.5);
+      expect(Math.abs(
+        (containerBox!.y + containerBox!.height / 2) - (glyphBox!.y + glyphBox!.height / 2),
+      )).toBeLessThan(0.5);
+    };
+    await expectCaretCenterFixed();
+
+    await page.setViewportSize({ width: 320, height: 800 });
+    await waitForModelSelectorMotion();
+    await expect(page.locator('.composer__model-button-empty-label')).toHaveCount(0);
+    await expect(page.locator('.composer__model-mode')).toBeVisible();
+    await expect(modelModeLabel).toBeHidden();
+    expect(await compactModeIcons.count()).toBe(3);
+    await expect(page.locator('.composer__model-button-name')).toBeVisible();
+    await expect(page.locator('.composer__model-button-name')).toHaveText('Llama-3.1-8B-Instruct');
+    await expect(page.locator('.composer__model-button-badge')).toBeHidden();
+    const overflowModelBox = await modelButton.boundingBox();
+    expect(overflowModelBox).not.toBeNull();
+    expect(overflowModelBox!.width).toBeGreaterThan(30);
+    await expect(modelButton).toHaveCSS('gap', '5px');
+    await modelButton.click();
+    await expect(modelButton).toHaveAttribute('aria-expanded', 'true');
+    const modelMenu = page.getByRole('dialog', { name: 'Search models' });
+    await expect(modelMenu).toBeVisible();
+    const modelMenuBox = await modelMenu.boundingBox();
+    expect(modelMenuBox).not.toBeNull();
+    expect(modelMenuBox!.x).toBeGreaterThanOrEqual(0);
+    expect(modelMenuBox!.x + modelMenuBox!.width).toBeLessThanOrEqual(320);
+    expect(modelMenuBox!.y + modelMenuBox!.height).toBeLessThanOrEqual(overflowModelBox!.y);
+    await page.waitForTimeout(100);
+    await expectCaretCenterFixed();
+    await page.waitForTimeout(150);
+    const openCaretTransform = await compactCaretGlyph.evaluate(element => getComputedStyle(element).transform);
+    expect(openCaretTransform).not.toBe(closedCaretTransform);
+    await modelButton.click();
+    await expect(modelButton).toHaveAttribute('aria-expanded', 'false');
+    await page.waitForTimeout(100);
+    await expectCaretCenterFixed();
+    await page.waitForTimeout(150);
+    expect(await compactCaretGlyph.evaluate(element => getComputedStyle(element).transform)).toBe(closedCaretTransform);
+  });
+
+  test('A186c — compact unloaded model selector retains the selected model name', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 800 });
+    await goToChatWithoutLoadedModel(page);
+
+    const picker = page.locator('.composer__model-picker');
+    const modelButton = page.locator('.composer__model-button');
+    const caret = page.locator('.composer__model-button-caret');
+    const glyph = page.locator('.composer__model-button-caret-glyph');
+
+    await expect(picker).not.toHaveClass(/composer__model-picker--loaded/);
+    await expect(page.locator('.composer__model-label')).toBeHidden();
+    const modelModeIcons = modelButton.locator(':scope > .capability-icon-pair .app-icon, :scope > .app-icon');
+    expect(await modelModeIcons.count()).toBe(1);
+    await expect(modelModeIcons.first()).toHaveCSS('width', '14px');
+    await expect(modelModeIcons.first()).toHaveCSS('height', '14px');
+    await expect(modelModeIcons.first()).toHaveCSS('border-radius', '0px');
+    const [iconColor, buttonColor] = await Promise.all([
+      modelModeIcons.first().evaluate(element => getComputedStyle(element).color),
+      modelButton.evaluate(element => getComputedStyle(element).color),
+    ]);
+    expect(iconColor).toBe(buttonColor);
+    const modelName = page.locator('.composer__model-button-name');
+    await expect(modelName).toBeVisible();
+    const selectedModelName = (await modelName.innerText()).trim();
+    expect(selectedModelName.length).toBeGreaterThan(0);
+    await expect(modelButton).toHaveCSS('height', '30px');
+    await expect(modelButton).toHaveCSS('gap', '5px');
+    await expect(modelButton).toContainText(selectedModelName);
+    await expect(modelButton).not.toContainText('Models');
+    await expect(caret).toHaveText('▾');
+
+    const visibleDirectChildren = await modelButton.locator(':scope > *').evaluateAll(elements =>
+      elements
+        .filter(element => {
+          const style = getComputedStyle(element);
+          return style.display !== 'none' && style.visibility !== 'hidden';
+        })
+        .map(element => element.className),
+    );
+    expect(visibleDirectChildren).toEqual([
+      'capability-icon-pair',
+      'composer__model-button-name',
+      'composer__model-button-caret',
+    ]);
+
+    const [buttonBox, caretBox, glyphBox] = await Promise.all([
+      modelButton.boundingBox(),
+      caret.boundingBox(),
+      glyph.boundingBox(),
+    ]);
+    expect(buttonBox).not.toBeNull();
+    expect(caretBox).not.toBeNull();
+    expect(glyphBox).not.toBeNull();
+    expect(buttonBox!.width).toBeGreaterThan(30);
+    expect(Math.abs((caretBox!.x + caretBox!.width / 2) - (glyphBox!.x + glyphBox!.width / 2))).toBeLessThan(0.5);
+    expect(Math.abs((caretBox!.y + caretBox!.height / 2) - (glyphBox!.y + glyphBox!.height / 2))).toBeLessThan(0.5);
+
+    await modelButton.click();
+    const modelMenu = page.getByRole('dialog', { name: 'Search models' });
+    await expect(modelMenu).toBeVisible();
+    const modelMenuBox = await modelMenu.boundingBox();
+    expect(modelMenuBox).not.toBeNull();
+    expect(modelMenuBox!.y + modelMenuBox!.height).toBeLessThanOrEqual(buttonBox!.y);
   });
 
   test('A187 — add menu exposes one unified tools entry and is keyboard-operable', async ({ page }) => {

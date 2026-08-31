@@ -186,10 +186,16 @@ assert.match(chatViewSource, /const ModelModeIcons:/,
   'chat UI must use a paired model-mode icon component');
 assert.match(chatViewSource, /<CapabilityIcon capability="audio"/,
   'paired mode icons must include the Audio glyph');
+assert.match(chatViewSource, /<CapabilityIcon capability="image"/,
+  'paired mode icons must include the Image glyph when Chat accepts images');
 assert.match(chatViewSource, /const showAudio = audioInput && capability === 'chat'/,
   'the paired Audio icon must only decorate Chat mode, not Omni collections');
-assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{modelModeBadge\(currentCapability, currentRecipe\)\}[\s\S]*modelModeDisplayLabel\(currentCapability, supportsChatAudioInput, currentRecipe\)/,
+assert.match(chatViewSource, /const showImage = imageInput && capability === 'chat'/,
+  'the paired Image icon must only decorate Chat mode, not Omni collections');
+assert.match(chatViewSource, /currentLoadedModel \? \([\s\S]*composer__model-mode--\$\{modelModeBadge\(currentCapability, currentRecipe\)\}[\s\S]*modelModeDisplayLabel\(currentCapability, supportsChatAudioInput, currentRecipe, supportsChatImageInput\)/,
   'the active model pill must include the colored mode label only for the currently loaded model');
+assert.match(chatViewSource, /\) : currentModel \? \(\s*<ModelModeIcons/,
+  'an unloaded selected model must render modality icons outside the colored mode wrapper');
 assert.doesNotMatch(chatViewSource, /composer__mode-badge--interactive/,
   'the redundant standalone mode pill must not remain in the chat composer');
 assert.match(stylesSource, /\.composer__model-mode--chat \{ color: var\(--cap-chat\); \}/,

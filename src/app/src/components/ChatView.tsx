@@ -425,31 +425,39 @@ function modelModeBadge(capability: ModelCapability, recipe?: string | null): st
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
   recipe?: string | null;
+  imageInput?: boolean;
   audioInput?: boolean;
   size?: number;
-}> = ({ capability, recipe, audioInput = false, size = 14 }) => {
+}> = ({ capability, recipe, imageInput = false, audioInput = false, size = 14 }) => {
   const identity = identityFor(capability, recipe);
   if (identity !== capability) {
     return <CapabilityIcon capability={identity} size={size} aria-hidden="true" />;
   }
+  const showImage = imageInput && capability === 'chat';
   const showAudio = audioInput && capability === 'chat';
   return (
     <span className="capability-icon-pair" aria-hidden="true">
       <CapabilityIcon capability={capability} size={size} />
+      {showImage && <CapabilityIcon capability="image" size={Math.max(11, size - 1)} />}
       {showAudio && <CapabilityIcon capability="audio" size={Math.max(11, size - 1)} />}
     </span>
   );
 };
 
-function modelModeLabel(capability: ModelCapability, audioInput = false): string {
-  return audioInput && capability === 'chat'
-    ? 'Chat + Audio'
-    : capabilityLabel(capability);
+function modelModeLabel(capability: ModelCapability, audioInput = false, imageInput = false): string {
+  if (capability !== 'chat') return capabilityLabel(capability);
+  const inputs = [imageInput ? 'Image' : '', audioInput ? 'Audio' : ''].filter(Boolean);
+  return inputs.length > 0 ? `Chat + ${inputs.join(' + ')}` : capabilityLabel(capability);
 }
 
-function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
+function modelModeDisplayLabel(
+  capability: ModelCapability,
+  audioInput = false,
+  recipe?: string | null,
+  imageInput = false,
+): string {
   const identity = identityFor(capability, recipe);
-  return identity === capability ? modelModeLabel(capability, audioInput) : capabilityLabel(identity);
+  return identity === capability ? modelModeLabel(capability, audioInput, imageInput) : capabilityLabel(identity);
 }
 
 function loadedOverviewSizeLabel(info: ModelInfo | null): string | null {
@@ -3634,7 +3642,10 @@ ${finalText}`
       <div className="composer" onDrop={handleDrop} onDragOver={handleDragOver}>
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
-            <div className="composer__model-picker" ref={modelPickerRef}>
+            <div
+              className={`composer__model-picker${currentLoadedModel ? ' composer__model-picker--loaded' : ''}`}
+              ref={modelPickerRef}
+            >
               <span className="composer__model-label">Model</span>
               <button
                 type="button"
@@ -3642,15 +3653,17 @@ ${finalText}`
                 onClick={() => { setModelPickerOpen(v => !v); setModelPickerError(null); }}
                 aria-haspopup="listbox"
                 aria-expanded={modelPickerOpen}
+                aria-label={currentModel ? `Select model, current ${currentModel}` : 'Select model'}
               >
+                {!currentModel && <span className="composer__model-button-empty-label">Models</span>}
                 {currentLoadedModel ? (
                   <span className={`composer__model-mode composer__model-mode--${modelModeBadge(currentCapability, currentRecipe)}`}>
-                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe)}</span>
+                    <ModelModeIcons capability={currentCapability} recipe={currentRecipe} imageInput={supportsChatImageInput} audioInput={supportsChatAudioInput} size={14} />
+                    <span>{modelModeDisplayLabel(currentCapability, supportsChatAudioInput, currentRecipe, supportsChatImageInput)}</span>
                   </span>
-                ) : (
-                  <ModelModeIcons capability={currentCapability} recipe={currentRecipe} audioInput={supportsChatAudioInput} size={14} />
-                )}
+                ) : currentModel ? (
+                  <ModelModeIcons capability={currentCapability} recipe={currentRecipe} imageInput={supportsChatImageInput} audioInput={supportsChatAudioInput} size={14} />
+                ) : null}
                 {!currentLoadedModel && currentDefaultModel && (
                   <span className="composer__model-default-icon" title={currentDefaultModel.label} aria-label={currentDefaultModel.label}>
                   </span>
@@ -3663,7 +3676,9 @@ ${finalText}`
                 {selectableModels.length > 0 && (
                   <span className="composer__model-button-badge">({selectableModels.length})</span>
                 )}
-                <span className="composer__model-button-caret">▾</span>
+                <span className="composer__model-button-caret" aria-hidden="true">
+                  <span className="composer__model-button-caret-glyph">▾</span>
+                </span>
               </button>
               {modelPickerOpen && (
                 <div className="composer__model-menu" role="dialog" aria-label="Search models">
