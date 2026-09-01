@@ -71,8 +71,13 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "",
-                           pinned: str = "", fallback: str = "") -> str:
+def resolve_latest_version(
+    repo: str,
+    token: str | None,
+    tag_prefix: str = "",
+    pinned: str = "",
+    fallback: str = "",
+) -> str:
     if pinned:
         return pinned
     if tag_prefix:
@@ -97,11 +102,15 @@ def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "",
                 return tag
     except Exception as e:
         if fallback:
-            print(f"  [WARN] Could not resolve latest release for {repo} ({e}); using fallback {fallback}")
+            print(
+                f"  [WARN] Could not resolve latest release for {repo} ({e}); using fallback {fallback}"
+            )
             return fallback
         raise
     if fallback:
-        print(f"  [WARN] No suitable release found for {repo}; using fallback {fallback}")
+        print(
+            f"  [WARN] No suitable release found for {repo}; using fallback {fallback}"
+        )
         return fallback
     raise RuntimeError(f"No suitable release found for {repo}")
 
