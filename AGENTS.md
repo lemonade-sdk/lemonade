@@ -205,6 +205,7 @@ Pass `DEPENDS` only when the CI build needs targets beyond the `COMMAND` executa
 | `src/cpp/server/router.cpp` | Request routing and multi-model orchestration |
 | `src/cpp/server/model_manager.cpp` | Model registry, downloads, recipe resolution |
 | `src/cpp/include/lemon/wrapped_server.h` | Backend abstract base class |
+| `docs/dev/llamacpp-runtime-defaults.md` | llama.cpp backend's pinned launch defaults (`--parallel 1`, `kv_unified`) and how soft-idle downsize maps to `--sleep-idle-seconds` |
 | `src/cpp/include/lemon/server_capabilities.h` | Backend capability interfaces |
 | `src/cpp/resources/server_models.json` | Model registry |
 | `src/cpp/resources/backend_versions.json` | Backend version pins |

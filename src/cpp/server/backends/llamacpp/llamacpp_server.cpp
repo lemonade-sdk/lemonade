@@ -113,7 +113,8 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
                                                  const std::string& custom_args,
-                                                 bool merge_args) {
+                                                 bool merge_args,
+                                                 long sleep_idle_seconds = -1) {
     if (!merge_args) return custom_args;
 
     std::vector<RuntimeArgDefault> defaults;
@@ -138,6 +139,19 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // full ctx_size to every slot instead of dividing it. Pinning the count keeps
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
+    // Soft-idle downsize is delegated to llama-server's own idle-sleep: unlike
+    // slot erase, it actually frees the VRAM backing the model (see
+    // LlamaCppServer::downsize()). It does NOT preserve the host-RAM prompt
+    // cache under our forced --parallel 1 (see docs/dev/llamacpp-runtime-defaults.md) —
+    // every wake is a full re-prefill, same as erase, just with VRAM actually released.
+    // llama-server rejects 0 (valid range is -1=disabled or >=1), so a
+    // downsize_idle_timeout of 0 ("downsize as soon as idle") maps to the
+    // smallest valid finite value instead of being passed through verbatim.
+    if (sleep_idle_seconds >= 0) {
+        defaults.push_back({"--sleep-idle-seconds " + std::to_string(std::max(1L, sleep_idle_seconds)),
+                            "--sleep-idle-seconds"});
+    }
 
     return append_runtime_arg_defaults(custom_args, defaults);
 }
@@ -599,24 +613,17 @@ void LlamaCppServer::unload() {
 }
 
 bool LlamaCppServer::downsize() {
-    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
-    try {
-        json slots = get_slots();
-        if (slots.is_array()) {
-            for (const auto& slot : slots) {
-                if (slot.contains("id") && slot["id"].is_number()) {
-                    int id = slot["id"].get<int>();
-                    slots_action(id, "erase", json::object());
-                }
-            }
-        } else if (slots.contains("id")) {
-            slots_action(slots["id"].get<int>(), "erase", json::object());
-        }
-        return true;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
-        return false;
-    }
+    // Slot erase only clears bookkeeping (llama-server's SERVER_TASK_TYPE_SLOT_ERASE
+    // calls prompt_clear(), never a backend free) — it destroys reusable KV state
+    // without releasing any VRAM. Actual VRAM release is delegated to llama-server's
+    // own --sleep-idle-seconds (passed at launch when auto_evict is enabled; see
+    // resolve_llamacpp_runtime_args), which frees the whole model and transparently
+    // reloads it on the next request. That reload is always a full re-prefill — the
+    // host-RAM prompt cache is NOT preserved under our forced --parallel 1, so this
+    // is strictly better than erase (VRAM is actually freed) but no faster to resume.
+    LOG(INFO, "LlamaCpp") << "Downsize delegated to llama-server's --sleep-idle-seconds; "
+                             "no explicit action taken." << std::endl;
+    return true;
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
@@ -791,9 +798,22 @@ public:
         const json custom_args_value = options.get_option("llamacpp_args");
         const std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+
+        const json auto_evict_value = options.get_option("auto_evict");
+        const bool auto_evict = auto_evict_value.is_boolean()
+                                     ? auto_evict_value.get<bool>()
+                                     : RuntimeConfig::global()->auto_evict();
+        long sleep_idle_seconds = -1;
+        if (auto_evict) {
+            const json downsize_timeout_value = options.get_option("downsize_idle_timeout");
+            sleep_idle_seconds = downsize_timeout_value.is_number_integer()
+                                      ? downsize_timeout_value.get<long>()
+                                      : 60;
+        }
+
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
+            resolve_llamacpp_runtime_args(info, custom_args, merge_args, sleep_idle_seconds));
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {

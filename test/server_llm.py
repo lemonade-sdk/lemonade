@@ -1170,6 +1170,72 @@ class LLMTests(ServerTestBase):
             f"cache_tokens_total={data['cache_tokens_total']}"
         )
 
+    @skip_if_unsupported("slots")
+    def test_023c_downsize_sleep_wakes_transparently(self):
+        """A model downsized via --sleep-idle-seconds still serves the next
+        request transparently (no error, no manual reload), but does not
+        cache-restore the prompt -- see docs/dev/llamacpp-runtime-defaults.md
+        for why --parallel 1 rules out RAM-cache restoration on wake."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+        downsize_idle_timeout = 3
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": model,
+                "auto_evict": True,
+                "downsize_idle_timeout": downsize_idle_timeout,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        shared_history = [
+            {"role": "user", "content": "Reply with the single word: ready."},
+        ]
+        client.chat.completions.create(
+            model=model,
+            messages=shared_history,
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        # Wait past downsize_idle_timeout so llama-server's own
+        # --sleep-idle-seconds timer puts the backend to sleep.
+        time.sleep(downsize_idle_timeout + 5)
+
+        # The wake must be transparent: this must succeed, not error or hang,
+        # even though llama-server fully released the model and has to
+        # reload and re-prefill it from disk before answering.
+        woken = client.chat.completions.create(
+            model=model,
+            messages=shared_history,
+            max_completion_tokens=10,
+            stream=False,
+        )
+        self.assertTrue(woken.choices[0].message.content)
+
+        response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("cache_tokens", data)
+        # Documented limitation, not a bug: under Lemonade's forced
+        # --parallel 1, --sleep-idle-seconds tears the slot down directly
+        # without ever going through --cache-idle-slots' displacement path,
+        # so the RAM prompt cache is never populated and wake always
+        # re-prefills from scratch. If a future change (e.g. a --parallel > 1
+        # default) makes this untrue, update this assertion deliberately
+        # rather than letting it silently start passing.
+        self.assertEqual(
+            data["cache_tokens"],
+            0,
+            "expected a cold re-prefill on wake (no --parallel 1 slot "
+            f"displacement to populate the RAM cache), got stats: {data}",
+        )
+
     @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):
         """Test the /api/v1/tokenize endpoint for llamacpp backend."""
