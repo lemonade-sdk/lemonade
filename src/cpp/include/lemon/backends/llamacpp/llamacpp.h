@@ -29,6 +29,14 @@ inline const BackendDescriptor descriptor = {
          "Comma-separated list of accelerator devices to use (e.g. Vulkan0)", "Llama.cpp Backend Options"},
         {"llamacpp_args", "--llamacpp-args", "", "ARGS",
          "Custom arguments to pass to llama-server", "Llama.cpp Backend Options"},
+        {"kv_cache_quantization", "--kv-cache-quantization", "f16", "ARGS",
+         "KV cache quantization: f16 (default), auto, q8_0, or q4_0", "Llama.cpp Backend Options"},
+        {"max_kv_quantization", "--max-kv-quantization", "f16", "ARGS",
+         "Highest-quality KV cache tier the auto ladder may select", "Llama.cpp Backend Options"},
+        {"min_kv_quantization", "--min-kv-quantization", "q8_0", "ARGS",
+         "Lowest-quality KV cache tier the auto ladder may select", "Llama.cpp Backend Options"},
+        {"kv_cache_priority", "--kv-cache-priority", "balanced", "ARGS",
+         "KV cache ladder bias: max_context, balanced (default), or max_speed", "Llama.cpp Backend Options"},
     },
     /*support*/ {
         {"system", {"linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64/ARM64 CPU, GPU"},
@@ -59,7 +67,13 @@ inline const BackendDescriptor descriptor = {
     /*takes_args*/      true,
     /*arg_variants*/    {"rocm", "vulkan", "cpu"},
     /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
-    /*config_extra*/    {{"prefer_system", true}},
+    /*config_extra*/    {
+        {"prefer_system", true},
+        {"kv_cache_quantization", "f16"},
+        {"max_kv_quantization", "f16"},
+        {"min_kv_quantization", "q8_0"},
+        {"kv_cache_priority", "balanced"},
+    },
 };
 
 }  // namespace llamacpp

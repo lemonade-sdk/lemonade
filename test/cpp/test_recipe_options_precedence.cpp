@@ -253,6 +253,96 @@ int main() {
             !merged.has_option("cfg_scale"), "", "");
     }
 
+    // --- KV cache quantization config surface (U3): four new llamacpp options ---
+
+    // D1: each of the four keys resolves to its documented default when unset
+    {
+        RecipeOptions defaults_only("llamacpp", json::object());
+        failures += fail("kv-cache: kv_cache_quantization defaults to f16",
+            defaults_only.get_option("kv_cache_quantization").get<std::string>() == "f16",
+            defaults_only.get_option("kv_cache_quantization").get<std::string>(), "f16");
+        failures += fail("kv-cache: max_kv_quantization defaults to f16",
+            defaults_only.get_option("max_kv_quantization").get<std::string>() == "f16",
+            defaults_only.get_option("max_kv_quantization").get<std::string>(), "f16");
+        failures += fail("kv-cache: min_kv_quantization defaults to q8_0",
+            defaults_only.get_option("min_kv_quantization").get<std::string>() == "q8_0",
+            defaults_only.get_option("min_kv_quantization").get<std::string>(), "q8_0");
+        failures += fail("kv-cache: kv_cache_priority defaults to balanced",
+            defaults_only.get_option("kv_cache_priority").get<std::string>() == "balanced",
+            defaults_only.get_option("kv_cache_priority").get<std::string>(), "balanced");
+    }
+
+    // D2: "auto" set at the saved-model layer survives merge and is readable —
+    // the regression the sentinel carve-out exists to prevent.
+    {
+        json saved_model_ro = {{"kv_cache_quantization", "auto"}};
+        RecipeOptions merged = RecipeOptions::merge_precedence_layers(
+            "llamacpp", json::object(), saved_model_ro, json(nullptr));
+        failures += fail("kv-cache: auto survives merge_precedence_layers",
+            merged.get_option("kv_cache_quantization").get<std::string>() == "auto",
+            merged.get_option("kv_cache_quantization").get<std::string>(), "auto");
+    }
+
+    // D3: "auto" at a lower layer is overridden by an explicit q8_0 at a higher layer
+    {
+        json lower = {{"kv_cache_quantization", "auto"}};
+        json higher = {{"kv_cache_quantization", "q8_0"}};
+        RecipeOptions merged = RecipeOptions::merge_precedence_layers(
+            "llamacpp", lower, higher, json(nullptr));
+        failures += fail("kv-cache: explicit q8_0 overrides lower-layer auto",
+            merged.get_option("kv_cache_quantization").get<std::string>() == "q8_0",
+            merged.get_option("kv_cache_quantization").get<std::string>(), "q8_0");
+    }
+
+    // D4: an unset kv_cache_priority at the model layer inherits the global
+    // value rather than snapping back to the default.
+    {
+        json global_opts = {{"kv_cache_priority", "max_context"}};
+        RecipeOptions global("llamacpp", global_opts);
+        RecipeOptions model("llamacpp", json::object());
+        RecipeOptions merged = model.inherit(global);
+        failures += fail("kv-cache: unset kv_cache_priority inherits global value",
+            merged.get_option("kv_cache_priority").get<std::string>() == "max_context",
+            merged.get_option("kv_cache_priority").get<std::string>(), "max_context");
+    }
+
+    // D5: min_kv_quantization set to q4_0 is stored, not discarded as a sentinel
+    {
+        json opts = {{"min_kv_quantization", "q4_0"}};
+        RecipeOptions ro("llamacpp", opts);
+        failures += fail("kv-cache: min_kv_quantization q4_0 is stored",
+            ro.has_option("min_kv_quantization") &&
+                ro.get_option("min_kv_quantization").get<std::string>() == "q4_0",
+            ro.get_option("min_kv_quantization").get<std::string>(), "q4_0");
+    }
+
+    // D6: an imported/round-tripped model definition carrying all four keys
+    // retains all four — recipe_options is preserved wholesale by the import
+    // allowlist, and RecipeOptions' descriptor-driven key list (U3 step 1)
+    // is what makes each of the four keys survive construction rather than
+    // being silently dropped as unrecognized.
+    {
+        json imported_recipe_options = {
+            {"kv_cache_quantization", "auto"},
+            {"max_kv_quantization", "f16"},
+            {"min_kv_quantization", "q4_0"},
+            {"kv_cache_priority", "max_context"},
+        };
+        RecipeOptions ro("llamacpp", imported_recipe_options);
+        failures += fail("kv-cache: round-tripped kv_cache_quantization retained",
+            ro.get_option("kv_cache_quantization").get<std::string>() == "auto",
+            ro.get_option("kv_cache_quantization").get<std::string>(), "auto");
+        failures += fail("kv-cache: round-tripped max_kv_quantization retained",
+            ro.get_option("max_kv_quantization").get<std::string>() == "f16",
+            ro.get_option("max_kv_quantization").get<std::string>(), "f16");
+        failures += fail("kv-cache: round-tripped min_kv_quantization retained",
+            ro.get_option("min_kv_quantization").get<std::string>() == "q4_0",
+            ro.get_option("min_kv_quantization").get<std::string>(), "q4_0");
+        failures += fail("kv-cache: round-tripped kv_cache_priority retained",
+            ro.get_option("kv_cache_priority").get<std::string>() == "max_context",
+            ro.get_option("kv_cache_priority").get<std::string>(), "max_context");
+    }
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }
