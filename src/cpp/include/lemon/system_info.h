@@ -29,6 +29,11 @@ struct GPUInfo : DeviceInfo {
     int index = -1;  // NVIDIA only: physical device index from nvidia-smi, when available
     std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
+    // AMD on Windows only: the Radeon Software release users recognize (e.g. "26.7.1")
+    // and the edition that names it (e.g. "AMD Software: Adrenalin Edition"), which are
+    // versioned separately from the WDDM driver_version above.
+    std::string software_version;
+    std::string software_edition;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
     double virtual_gb = 0.0;

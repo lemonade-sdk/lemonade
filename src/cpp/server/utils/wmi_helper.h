@@ -64,6 +64,14 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
 // Much faster than Win32_PnPSignedDriver WMI queries (~5-50 ms vs ~10 s).
 std::string get_driver_version_setupapi(const std::string& device_name_substr);
 
+// Reads a named value from the matched device's class driver key under
+// HKLM\SYSTEM\CurrentControlSet\Control\Class. Device matching follows the
+// same rule as get_driver_version_setupapi(). This is where AMD records the
+// Radeon Software release the user actually recognizes (RadeonSoftwareVersion,
+// e.g. "26.7.1"), as opposed to the WDDM driver version.
+std::string get_driver_key_value_setupapi(const std::string& device_name_substr,
+                                          const std::wstring& value_name);
+
 } // namespace wmi
 } // namespace lemon
 

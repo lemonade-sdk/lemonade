@@ -3643,6 +3643,15 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
             for (const auto& gpu : hardware["amd_gpu"]) {
                 if (!gpu.value("available", false)) continue;
                 std::string suffix = gpu.value("integrated", false) ? "integrated" : "discrete";
+                std::string software = gpu.value("software_version", "");
+                if (!software.empty()) {
+                    std::string edition = gpu.value("software_edition", "");
+                    const std::string edition_prefix = "AMD Software: ";
+                    if (edition.rfind(edition_prefix, 0) == 0) {
+                        edition.erase(0, edition_prefix.size());
+                    }
+                    suffix += ", " + (edition.empty() ? software : edition + " " + software);
+                }
                 std::string driver = gpu.value("driver_version", "");
                 if (!driver.empty()) suffix += ", driver " + driver;
                 LOG(INFO, "ModelManager") << "  - AMD GPU: " << gpu.value("name", "unknown")
