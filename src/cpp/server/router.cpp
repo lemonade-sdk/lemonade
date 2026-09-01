@@ -888,6 +888,14 @@ void Router::load_model(const std::string& model_name,
                 existing_opts.erase("ctx_size");
                 requested_opts.erase("ctx_size");
             }
+            // Same shape, for the KV cache quant tier (KTD12): a quant-auto-
+            // resolved process holds the concrete tier the ladder picked, which
+            // no request can spell. Asking for auto again asks for what is running.
+            if (existing->kv_cache_quant_is_auto() &&
+                requested_opts.value("kv_cache_quantization", json(nullptr)) == "auto") {
+                existing_opts.erase("kv_cache_quantization");
+                requested_opts.erase("kv_cache_quantization");
+            }
             if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
                 evict_server(existing);
@@ -1016,6 +1024,8 @@ void Router::load_model(const std::string& model_name,
         }
         const int64_t auto_ctx = kv_resolution.ctx_size;
         const bool ctx_size_auto = kv_resolution.ctx_size_is_auto;
+        const json kv_quant_config_json = effective_options.get_option("kv_cache_quantization");
+        const bool kv_cache_quant_auto = kv_quant_config_json.is_string() && kv_quant_config_json == "auto";
         effective_options.set_option("ctx_size", auto_ctx);
         // Internal key, deliberately outside get_keys_for_recipe() (R13): never
         // appears in to_resolved_json(), so it cannot leak into the replayable
@@ -1064,6 +1074,7 @@ void Router::load_model(const std::string& model_name,
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         new_server->set_ctx_size_auto(ctx_size_auto);
+        new_server->set_kv_cache_quant_auto(kv_cache_quant_auto);
         new_server->set_residency_class(requested_residency_class);
         new_server->set_pinned(final_pinned);
         new_server->update_access_time();
@@ -1173,6 +1184,7 @@ void Router::load_model(const std::string& model_name,
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->set_ctx_size_auto(ctx_size_auto);
+            retry_server->set_kv_cache_quant_auto(kv_cache_quant_auto);
             retry_server->set_residency_class(requested_residency_class);
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();

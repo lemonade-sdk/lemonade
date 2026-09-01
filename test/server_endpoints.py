@@ -2020,6 +2020,76 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] load launches llama-server with matching cache-type flags")
 
+    def test_012x_auto_kv_cache_quant_reload_equivalence(self):
+        """U11/R12: a repeat `auto` load against an already auto-resolved
+        process is the same load, not an options change; an explicit tier or
+        a changed ladder bound is a genuine change and still reloads."""
+        self.addCleanup(self._reset_options)
+        self.addCleanup(
+            lambda: requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        )
+        self._reset_options()
+
+        def load(body):
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": ENDPOINT_TEST_MODEL, "save_options": True, **body},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            return self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pid"]
+
+        pid_auto_1 = load({"kv_cache_quantization": "auto", "llamacpp_backend": "metal"})
+        pid_auto_2 = load({"kv_cache_quantization": "auto", "llamacpp_backend": "metal"})
+        self.assertEqual(
+            pid_auto_1, pid_auto_2,
+            "repeat auto load with everything else unchanged must not reload",
+        )
+
+        pid_explicit = load({"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"})
+        self.assertNotEqual(
+            pid_auto_2, pid_explicit,
+            "an explicit tier is a different intent than auto and must reload",
+        )
+
+        pid_explicit_again = load({"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"})
+        self.assertEqual(
+            pid_explicit, pid_explicit_again,
+            "repeat identical explicit tier must not reload",
+        )
+
+        pid_auto_3 = load({"kv_cache_quantization": "auto", "llamacpp_backend": "metal"})
+        self.assertNotEqual(
+            pid_explicit_again, pid_auto_3,
+            "switching from explicit back to auto must reload",
+        )
+
+        pid_auto_changed_bound = load({
+            "kv_cache_quantization": "auto",
+            "llamacpp_backend": "metal",
+            "min_kv_quantization": "q4_0",
+        })
+        self.assertNotEqual(
+            pid_auto_3, pid_auto_changed_bound,
+            "a changed ladder bound is a genuine options change and must reload",
+        )
+
+        # Replaying the options endpoint's `effective` body — which reports
+        # ctx_size resolved and kv_cache_quantization still "auto" (R13) —
+        # as a load must not reload the resident, auto-resolved process.
+        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["effective"]
+        pid_replayed = load(effective)
+        self.assertEqual(
+            pid_auto_changed_bound, pid_replayed,
+            "replaying the effective load body must not reload an auto-resolved process",
+        )
+
+        print("[OK] auto KV cache quant reload equivalence holds; explicit/bound changes still reload")
+
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
         into recipe_options on auto-load.

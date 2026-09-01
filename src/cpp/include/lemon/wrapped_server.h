@@ -408,6 +408,19 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         return ctx_size_auto_;
     }
+
+    // Same shape as ctx_size_auto_ (KTD12): recipe_options_ holds the concrete
+    // tier the ladder picked, which no request can spell as "auto" again.
+    // Keep the request's intent so a later load spelling kv_cache_quantization:
+    // auto can be recognized as the same load rather than an options change.
+    void set_kv_cache_quant_auto(bool kv_cache_quant_auto) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        kv_cache_quant_auto_ = kv_cache_quant_auto;
+    }
+    bool kv_cache_quant_is_auto() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return kv_cache_quant_auto_;
+    }
     int get_process_id() const { return get_process_handle_snapshot().pid; }
     std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
@@ -648,6 +661,7 @@ protected:
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
     bool ctx_size_auto_ = false;
+    bool kv_cache_quant_auto_ = false;
 
     // Busy state tracking (for safe eviction)
     mutable std::mutex state_mutex_;
