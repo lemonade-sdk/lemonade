@@ -1039,6 +1039,24 @@ namespace lemon::backends {
         return (therock_base / (arch + "-" + version)).string();
     }
 
+    bool BackendUtils::therock_wheel_path_too_long(const std::string& arch,
+                                                   const std::string& version) {
+#ifndef _WIN32
+        (void)arch;
+        (void)version;
+        return false;
+#else
+        // Deepest path rocBLAS resolves relative to its own directory. The
+        // kernel pack is named after the architecture, so derive it rather than
+        // pinning the one this was measured on.
+        static constexpr size_t kMaxWorkingLength = 174;
+        const std::string deepest = get_therock_wheel_dir(arch, version) +
+            "\\venv\\Lib\\site-packages\\_rocm_sdk_libraries\\.kpack\\blas_lib_" +
+            arch + ".kpack";
+        return deepest.size() > kMaxWorkingLength;
+#endif
+    }
+
     std::string BackendUtils::get_therock_wheel_dir(const std::string& arch, const std::string& version) {
         fs::path base = fs::path(utils::get_downloaded_bin_dir()) / "therock-wheels";
         return (base / (arch + "-" + version)).string();
@@ -1232,6 +1250,22 @@ namespace lemon::backends {
         if (auto* cfg = RuntimeConfig::global()) {
             method = cfg->rocm_install_method();
         }
+
+#ifdef _WIN32
+        // rocBLAS crashes (access violation inside Tensile) when its files sit
+        // deeper than ~174 characters, measured on gfx1151: a runtime installed
+        // at 174 loads, one at 175 faults, identically across four hosts. The
+        // wheel layout buries the runtime under venv/Lib/site-packages, which
+        // costs ~45 characters more than the tarball, so a deep enough cache
+        // directory pushes it over. Prefer the tarball there rather than
+        // installing something that cannot work.
+        if (method == "auto" && therock_wheel_path_too_long(arch, version)) {
+            LOG(INFO, "BackendUtils")
+                << "Wheel runtime would install past the ROCm path-length limit; "
+                << "using the TheRock tarball instead" << std::endl;
+            method = "tarball";
+        }
+#endif
 
         reset_therock_wheels_cancelled();
 
