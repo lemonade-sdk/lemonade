@@ -1,6 +1,7 @@
 # Core Hardening — Plan
 
-Companion to `core-hardening-analysis.md`. Goal: split the tree into layered libraries
+Companion to `core-hardening-analysis.md` and `core-hardening-standards.md`. Goal:
+split the tree into layered libraries
 with thin executables, put a compile-time typed JSON codec under the whole API surface,
 and rebuild HTTP handling around CRTP endpoint and protocol-adapter bases so a compat
 layer (Anthropic, Ollama, future protocols) is only a remap.
@@ -100,7 +101,9 @@ generate:
   preserved during migration.
 
 Supported field kinds: scalars, `std::optional<T>`, `std::vector<T>`, `std::map`,
-nested `LEMON_JSON` types, enums via a `LEMON_JSON_ENUM` name table, `JsonValue`
+nested `LEMON_JSON` types, enums declared with `LEMON_ENUM` (the X-macro enum +
+wire-name mechanism defined in `core-hardening-standards.md` §2, which also delivers
+the central vocabulary header `include/lemon/core/vocab.h` in this phase), `JsonValue`
 (escape hatch for genuinely dynamic subtrees — content parts, tool arguments), and
 renamed keys via `lemon::json::named<&T::member>("wire_name")` for the few wire names
 that aren't valid identifiers.
@@ -246,7 +249,9 @@ class OllamaAdapter    : ProtocolAdapter<OllamaAdapter> { /* NDJSON framing */ }
   3 and are called out as such) before each phase, replay after.
 - CI grep gates added incrementally: no `#include "../server/` from cli/ or tray/; no
   `json::parse(req.body)` outside the endpoint base; no `"data: "` framing outside
-  `SseWriter`; DTO wire-key lock tests.
+  `SseWriter`; DTO wire-key lock tests; the coding-standards gates from
+  `core-hardening-standards.md` §4 (no new `std::pair<bool`, no stringly bools, enum
+  wire names covered by the lock tests).
 - Distro constraints respected: `BUILD_TESTING=OFF` still builds no test targets; the
   web-app package.json split and system-nlohmann ≥ 3.11.3 path are untouched;
   `add_cpp_ci_test` remains the only test registration mechanism.
