@@ -36,30 +36,36 @@ constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
 ///   ~32B  (64 layers)  → ~512 KB/token
 ///   ~70B  (80 layers)  → ~640 KB/token
 ///   ~100B+ (96 layers) → ~768 KB/token
-static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb) {
+///
+/// The buckets above are derived assuming 2 bytes per KV element (F16); a
+/// non-default bytes_per_element scales the result by bytes_per_element/2.0.
+static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb,
+                                                           double bytes_per_element = 2.0) {
     // Layer count scales with model size; 16 KV heads assumed uniformly.
+    double f16_bytes_per_token;
     if (model_size_gb < 1.0) {
         // Tiny model (< 1B)
-        return 128.0 * 1024.0;  // 128 KB/token (12 layers)
+        f16_bytes_per_token = 128.0 * 1024.0;  // 128 KB/token (12 layers)
     } else if (model_size_gb < 3.0) {
         // ~3B class
-        return 224.0 * 1024.0;  // 224 KB/token (28 layers)
+        f16_bytes_per_token = 224.0 * 1024.0;  // 224 KB/token (28 layers)
     } else if (model_size_gb < 8.0) {
         // ~7B class
-        return 256.0 * 1024.0;  // 256 KB/token (32 layers)
+        f16_bytes_per_token = 256.0 * 1024.0;  // 256 KB/token (32 layers)
     } else if (model_size_gb < 16.0) {
         // ~14B class
-        return 320.0 * 1024.0;  // 320 KB/token (40 layers)
+        f16_bytes_per_token = 320.0 * 1024.0;  // 320 KB/token (40 layers)
     } else if (model_size_gb < 32.0) {
         // ~32B class
-        return 512.0 * 1024.0; // 512 KB/token (64 layers)
+        f16_bytes_per_token = 512.0 * 1024.0; // 512 KB/token (64 layers)
     } else if (model_size_gb < 64.0) {
         // ~70B class
-        return 640.0 * 1024.0; // 640 KB/token (80 layers)
+        f16_bytes_per_token = 640.0 * 1024.0; // 640 KB/token (80 layers)
     } else {
         // 100B+
-        return 768.0 * 1024.0; // 768 KB/token (96 layers)
+        f16_bytes_per_token = 768.0 * 1024.0; // 768 KB/token (96 layers)
     }
+    return f16_bytes_per_token * (bytes_per_element / 2.0);
 }
 
 /// Get the amount of memory currently in use by the platform.
@@ -194,7 +200,8 @@ inline double get_available_memory_gb(DeviceType device_type) {
 }
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
-                                          bool is_embedding = false) {
+                                          bool is_embedding = false,
+                                          double bytes_per_element = 2.0) {
     if (available_memory_gb <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
@@ -213,7 +220,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 
     if (block_count > 0 && head_count_kv > 0 && key_length > 0) {
         kv_bytes_per_token = compute_weighted_kv_cache_bytes_per_token(
-            model_info.gguf, &kv_cache_scale);
+            model_info.gguf, &kv_cache_scale, bytes_per_element);
         if (kv_cache_scale < 1.0) {
             estimated = true;  // mark as architecture-adjusted
         }
@@ -239,7 +246,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         }
     } else {
         // GGUF metadata missing — estimate from model size
-        kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(model_info.size);
+        kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(
+            model_info.size, bytes_per_element);
         estimated = true;
     }
 

@@ -37,6 +37,7 @@ struct GgufMetadata {
     int64_t embedding_length = 0;
     int64_t head_count_kv = 0;       // total across all blocks (derived)
     int64_t key_length = 0;
+    int64_t value_length = 0;   // value head dimension; 0 when the GGUF field is absent
     int64_t key_length_swa = 0;      // SWA-reduced key length (Gemma4, etc.)
     int64_t swa_layer_count = 0;     // layers with sliding-window attention (derived)
     int64_t full_attention_interval = 0; // every Nth layer does full attention (Qwen SSM)
@@ -286,6 +287,12 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
                     out.key_length = value;
                 continue;
             }
+            if (key == out.architecture + ".attention.value_length") {
+                int64_t value = 0;
+                if (read_gguf_integer_value(in, type, value) && value > 0)
+                    out.value_length = value;
+                continue;
+            }
             if (key == out.architecture + ".attention.key_length_swa") {
                 int64_t value = 0;
                 if (read_gguf_integer_value(in, type, value) && value > 0)
@@ -397,9 +404,14 @@ inline bool read_gguf_metadata(GgufMetadata& out, const std::string& path) {
 /// @param gguf       GGUF metadata with raw arrays populated
 /// @param[out] scale_out  Output scaling factor (for logging). Set to 1.0 if
 ///                        no architecture-specific scaling applies. May be null.
+/// @param bytes_per_element  KV element size in bytes (default 2.0 = F16).
+///                           Pass kv_cache_quant_bytes_per_element(tier) for a
+///                           quantized KV cache; every existing caller keeps
+///                           today's F16 behavior by omitting this argument.
 /// @return Bytes per token for KV cache, or 0 if metadata is insufficient.
 inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf,
-                                                        double* scale_out = nullptr) {
+                                                        double* scale_out = nullptr,
+                                                        double bytes_per_element = 2.0) {
     int64_t block_count = gguf.block_count;
     int64_t key_length = gguf.key_length;
     int64_t key_length_swa = gguf.key_length_swa;
@@ -421,7 +433,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
             return 0.0;
         return static_cast<double>(total_heads)
              * static_cast<double>(key_length)
-             * 2.0  // F16
+             * bytes_per_element
              * 2.0  // K+V
              * factor;
     }
@@ -432,7 +444,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
     if (has_swa && !gguf.head_count_kv_per_layer.empty() && !gguf.sliding_window_pattern.empty()
         && gguf.head_count_kv_per_layer.size() == gguf.sliding_window_pattern.size()) {
         // Precise per-layer weighted sum using raw arrays.
-        // Each layer contributes: heads[layer] × key_len[layer] × 2[F16] × 2[K+V]
+        // Each layer contributes: heads[layer] × key_len[layer] × bytes_per_element × 2[K+V]
         // where key_len[layer] = key_length_swa if SWA, key_length otherwise.
         size_t n = gguf.head_count_kv_per_layer.size();
         double weighted_sum = 0.0;
@@ -450,7 +462,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
             *scale_out = (unweighted_sum > 0) ? weighted_sum / unweighted_sum : 1.0;
         }
 
-        return weighted_sum * 2.0 * 2.0;
+        return weighted_sum * bytes_per_element * 2.0;
     }
 
     // Scalar/uniform case: use proportional approximation.
@@ -473,7 +485,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
 
     return static_cast<double>(total_heads)
          * static_cast<double>(key_length)
-         * 2.0  // F16
+         * bytes_per_element
          * 2.0  // K+V
          * factor;
 }

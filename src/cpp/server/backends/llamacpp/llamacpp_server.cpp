@@ -82,15 +82,7 @@ static void push_arg(std::vector<std::string>& args,
 }
 
 static std::string resolve_llamacpp_backend(const std::string& backend) {
-    if (backend == "rocm") {
-        // Map "rocm" to the appropriate channel based on config
-        std::string channel = "stable";  // default to stable for now
-        if (auto* cfg = RuntimeConfig::global()) {
-            channel = cfg->rocm_channel();
-        }
-        return "rocm-" + channel;
-    }
-    return backend;
+    return backends::normalize_backend_name(llamacpp::spec()->recipe, backend);
 }
 
 static bool is_llamacpp_rocm_backend(const std::string& backend) {
