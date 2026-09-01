@@ -194,6 +194,15 @@ public:
     // The wired registry, or nullptr if set_cloud_registry was never called.
     CloudProviderRegistry* cloud_registry() const { return cloud_registry_; }
 
+    // Wires a provider returning the server-wide default_model_source
+    // ("huggingface"/"modelscope"). Self-managed backends (flm) are excluded
+    // from apply_default_pull_source, so they consult this to honor the default.
+    void set_default_model_source_provider(std::function<std::string()> provider);
+
+    // Effective remote registry for a model: an explicit per-model ModelScope
+    // provenance wins, otherwise the server-wide default_model_source applies.
+    std::string effective_model_source(const ModelInfo& info) const;
+
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the
     // provider's entries (drop-then-add semantics). No-op + warning if the
@@ -556,6 +565,7 @@ private:
     json architecture_defaults_;  // Per-architecture recipe option overlays (from resources)
     std::string extra_models_dir_;  // Secondary directory for GGUF model discovery
     CloudProviderRegistry* cloud_registry_ = nullptr;  // Not owned
+    std::function<std::string()> default_model_source_provider_;
     std::unique_ptr<DirectoryWatcher> directory_watcher_;
 
     // Fired after the model registry changes (add/edit/remove). Guarded by its

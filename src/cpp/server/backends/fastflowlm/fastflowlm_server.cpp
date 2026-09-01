@@ -181,7 +181,8 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    bool modelscope = options.get_option("modelscope");
+    bool modelscope = model_manager_ &&
+                      model_manager_->effective_model_source(model_info) == "modelscope";
 
     download_model(model_info.checkpoint(), do_not_upgrade, modelscope);
 
@@ -487,8 +488,10 @@ public:
     }
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
-                        const BackendOpsContext&) const override {
-        flm_download(info.checkpoint(), do_not_upgrade, progress);
+                        const BackendOpsContext& ctx) const override {
+        bool modelscope = ctx.model_manager &&
+                          ctx.model_manager->effective_model_source(info) == "modelscope";
+        flm_download(info.checkpoint(), do_not_upgrade, progress, modelscope);
     }
 
     bool invalidates_cache_after_download() const override { return true; }

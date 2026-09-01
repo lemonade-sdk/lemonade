@@ -45,9 +45,10 @@ bool run_flm_validate(const std::string& flm_path, std::string& error_message);
 // Detect the installed FLM version via `flm version` ("unknown" if unavailable).
 std::string flm_version();
 
-// Download (pull) an FLM model by checkpoint via the `flm` CLI.
+// Download (pull) an FLM model by checkpoint via the `flm` CLI. When modelscope
+// is set, resolve from ModelScope instead of HuggingFace (`--modelscope 1`).
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
-                  DownloadProgressCallback progress_callback);
+                  DownloadProgressCallback progress_callback, bool modelscope = false);
 
 // Remove an installed FLM model by checkpoint via `flm remove`; throws on failure.
 void flm_remove(const std::string& checkpoint);

@@ -217,6 +217,23 @@ static std::string effective_registry_source(const ModelInfo& info) {
     return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
 }
 
+void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
+    default_model_source_provider_ = std::move(provider);
+}
+
+std::string ModelManager::effective_model_source(const ModelInfo& info) const {
+    RemoteRegistrySource per_model = parse_remote_registry_source(
+        info.registry_source.empty() ? std::string("huggingface") : info.registry_source);
+    if (per_model == RemoteRegistrySource::ModelScope) {
+        return remote_registry_source_name(per_model);
+    }
+    if (default_model_source_provider_) {
+        return remote_registry_source_name(
+            parse_remote_registry_source(default_model_source_provider_()));
+    }
+    return remote_registry_source_name(per_model);
+}
+
 static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
     const std::string raw_source = JsonUtils::get_or_default<std::string>(model_json, "source", "");
     const std::string explicit_registry = JsonUtils::get_or_default<std::string>(

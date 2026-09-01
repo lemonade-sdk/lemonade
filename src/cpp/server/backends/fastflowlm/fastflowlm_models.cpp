@@ -336,7 +336,7 @@ std::vector<ModelInfo> flm_discover_models() {
 
 
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
-                  DownloadProgressCallback progress_callback) {
+                  DownloadProgressCallback progress_callback, bool modelscope) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
     auto status = SystemInfoCache::get_flm_status();
@@ -352,6 +352,10 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
     std::vector<std::string> args = {"pull", checkpoint};
     if (!do_not_upgrade) {
         args.push_back("--force");
+    }
+    if (modelscope) {
+        args.push_back("--modelscope");
+        args.push_back("1");
     }
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";

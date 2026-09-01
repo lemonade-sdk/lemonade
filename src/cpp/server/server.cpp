@@ -392,6 +392,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
+    model_manager_->set_default_model_source_provider(
+        [this]() { return config_->default_model_source(); });
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
