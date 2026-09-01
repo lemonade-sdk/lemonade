@@ -359,7 +359,9 @@ def run_bench(
     print(f"    cmd: {' '.join(cmd)}")
     recipe = fork.get("recipe", "llamacpp")
     cfg_section = fork.get("config_section", recipe)
-    print(f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)")
+    print(
+        f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)"
+    )
 
     if dry_run:
         print("    [dry-run] skipping execution")
@@ -620,9 +622,15 @@ def main() -> int:
             print(f"Downloading binary for {fork_id}...")
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
-                pinned = fork.get("version", "") if fork.get("version_source") == "pinned" else ""
+                pinned = (
+                    fork.get("version", "")
+                    if fork.get("version_source") == "pinned"
+                    else ""
+                )
                 fallback = fork.get("version_fallback", "")
-                version = resolve_latest_version(fork["repo"], args.token, tag_prefix, pinned, fallback)
+                version = resolve_latest_version(
+                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                )
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
@@ -646,8 +654,14 @@ def main() -> int:
 
         try:
             tag_prefix = fork.get("version_tag_prefix", "")
-            pinned = fork.get("version", "") if fork.get("version_source") == "pinned" else ""
-            version = resolve_latest_version(fork["repo"], args.token, tag_prefix, pinned)
+            pinned = (
+                fork.get("version", "")
+                if fork.get("version_source") == "pinned"
+                else ""
+            )
+            version = resolve_latest_version(
+                fork["repo"], args.token, tag_prefix, pinned
+            )
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve version: {e}")
