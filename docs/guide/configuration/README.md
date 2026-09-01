@@ -18,7 +18,7 @@ If you used an installer from the Lemonade release your `config.json` will be at
 
 If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 
-On startup, Lemonade automatically migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
+> **Windows breaking change:** Before the configuration-directory change, persistent configuration was stored in `%USERPROFILE%\.cache\lemonade`. It is now stored in `%USERPROFILE%\.config\lemonade`; `%LOCALAPPDATA%\lemonade` has never been the default Lemonade configuration directory. On startup, Lemonade migrates persistent JSON files from the legacy `.cache` location into the new `.config` location.
 
 > Note: `config.json` is a sparse override file. It only contains settings you explicitly customize; all unspecified settings automatically inherit default values and receive upstream improvements across updates.
 
