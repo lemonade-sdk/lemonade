@@ -348,6 +348,46 @@ jobs:
             $env:PATH = $saved
           }
 
+      - name: Reproduce the sd-server DLL layout
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $root = Join-Path $env:RUNNER_TEMP "rocm-diag"
+          $bin  = Get-ChildItem -Path (Join-Path $root "7.14.0") -Recurse -Directory -Filter "bin" -ErrorAction SilentlyContinue |
+                  Where-Object { Test-Path (Join-Path $_.FullName "amdhip64_7.dll") } |
+                  Select-Object -First 1 -ExpandProperty FullName
+          if (-not $bin) { Write-Host "::error::7.14.0 bin not found"; exit 1 }
+
+          Write-Host "--- TheRock 7.14 DLLs that System32 also provides (shadowing set) ---"
+          $sys = "$env:WINDIR\System32"
+          Get-ChildItem "$bin\*.dll" | ForEach-Object {
+            $twin = Join-Path $sys $_.Name
+            if (Test-Path $twin) {
+              Write-Host ("  {0}: TheRock={1}  System32={2}" -f $_.Name,
+                $_.VersionInfo.FileVersion, (Get-Item $twin).VersionInfo.FileVersion)
+            }
+          }
+
+          # sd-server.exe lives in its own directory with only amdhip64_7.dll
+          # staged next to it and TheRock on PATH. The exe directory and System32
+          # both precede PATH in the loader search order, so any companion DLL
+          # that System32 also provides resolves to the driver's copy.
+          $repro = Join-Path $root "repro"
+          Remove-Item -Recurse -Force $repro -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $repro | Out-Null
+          Copy-Item "$bin\hipInfo.exe" $repro
+          Copy-Item "$bin\amdhip64_7.dll" $repro
+
+          $env:PATH = "$bin;$env:PATH"
+
+          Write-Host "--- A: sd-server layout (only amdhip64_7.dll staged) ---"
+          & (Join-Path $repro "hipInfo.exe") 2>&1 | Select-Object -First 6 | Out-String | Write-Host
+
+          Copy-Item "$bin\amd_comgr.dll" $repro -ErrorAction SilentlyContinue
+          Write-Host "--- B: same, plus TheRock amd_comgr.dll staged ---"
+          & (Join-Path $repro "hipInfo.exe") 2>&1 | Select-Object -First 6 | Out-String | Write-Host
+
+
   build:
     name: Build Lemonade with sd-cpp pins
     needs: discover-release
