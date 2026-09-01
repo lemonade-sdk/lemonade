@@ -4,6 +4,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
@@ -998,13 +999,33 @@ void Router::load_model(const std::string& model_name,
                                       canonical_model_name);
         }
 
-        // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
+        // Auto-tune: resolve ctx_size = -1 and the KV cache quant tier together.
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
-        const bool ctx_size_auto = auto_ctx != -2;
-        if (auto_ctx > 0) {
-            LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
-            effective_options.set_option("ctx_size", auto_ctx);
+        json backend_choice_json = effective_options.get_option(model_info.recipe + "_backend");
+        std::string normalized_backend = backends::normalize_backend_name(
+            model_info.recipe,
+            backend_choice_json.is_string() ? backend_choice_json.get<std::string>() : "");
+        const double kv_available_memory_gb = get_available_memory_gb(model_info.device);
+        KvCacheResolution kv_resolution = resolve_kv_cache(
+            effective_options, model_info, kv_available_memory_gb, normalized_backend,
+            backends::llamacpp::kv_cache_quant_safety_table);
+        if (!kv_resolution.ok()) {
+            // R8/R11: raised here, before a backend server is constructed, so
+            // neither reaches the evict-all-and-retry branch below (KTD13).
+            throw std::invalid_argument(kv_resolution.failure);
+        }
+        const int64_t auto_ctx = kv_resolution.ctx_size;
+        const bool ctx_size_auto = kv_resolution.ctx_size_is_auto;
+        effective_options.set_option("ctx_size", auto_ctx);
+        // Internal key, deliberately outside get_keys_for_recipe() (R13): never
+        // appears in to_resolved_json(), so it cannot leak into the replayable
+        // `effective`/`defaults` option bodies the options endpoint returns.
+        effective_options.set_option("resolved_kv_cache_tier",
+                                     kv_cache_quant_tier_to_string(kv_resolution.tier));
+        if (kv_resolution.ctx_size_is_auto) {
+            LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx
+                                << ", KV cache tier " << kv_cache_quant_tier_to_string(kv_resolution.tier)
+                                << std::endl;
         }
 
         // NPU models on memory-constrained systems: when auto-tune can only

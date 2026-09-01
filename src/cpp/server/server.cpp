@@ -16,6 +16,7 @@
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/thenoise/thenoise_server.h"
@@ -3484,10 +3485,18 @@ void Server::respond_with_model_options(
         effective_json["model_name"] = model_id;
         defaults_json["model_name"] = model_id;
 
-        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
-        const nlohmann::json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
-            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        const nlohmann::json backend_choice_json = effective.get_option(info.recipe + "_backend");
+        const std::string normalized_backend = backends::normalize_backend_name(
+            info.recipe,
+            backend_choice_json.is_string() ? backend_choice_json.get<std::string>() : "");
+        const double kv_available_memory_gb = get_available_memory_gb(info.device);
+        const KvCacheResolution kv_resolution = resolve_kv_cache(
+            effective, info, kv_available_memory_gb, normalized_backend,
+            backends::llamacpp::kv_cache_quant_safety_table);
+        if (!kv_resolution.ok()) {
+            throw std::runtime_error(kv_resolution.failure);
+        }
+        const int64_t resolved_ctx = kv_resolution.ctx_size;
 
         nlohmann::json response = {
             {"model_name", model_id},
