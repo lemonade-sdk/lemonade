@@ -33,6 +33,31 @@ Sentinel precedent worth noting: `Telemetry::cache_tokens = -1` meaning "not rep
 (`wrapped_server.h:45`) needed a comment and a special JSON-null rendering to stay
 safe — exactly the cost `std::optional<int>` removes.
 
+### 1a. Tri-state wire fields: `JsonOptional<T>`
+
+On the wire, "key absent" and "key present with `null`" are different states, and
+`std::optional<T>` can only represent one of them. DTO fields where that distinction
+carries meaning (nullable API fields like `"stop": null`, PATCH-style partial updates
+where absent = leave alone and null = clear, nullable telemetry) use
+`JsonOptional<T>` — unset / null / value — defined in `lemon-json` and adapted from
+the donor implementation in `docs/dev/reference/json_optional_reference.md` (see the
+plan's Phase 1 for the adaptation deltas: unset omits the key on serialize, single
+source of truth for the flags, bitfield portability).
+
+Call sites use the uniform free-function queries, overloaded across `T`,
+`std::optional<T>`, and `JsonOptional<T>` so a DTO can change a field's kind without
+rewriting its readers:
+
+```cpp
+if (is_set(req.temperature)) { ... }   // key was present at all
+if (is_null(req.stop))       { ... }   // present and explicitly null
+if (has_value(req.model))    { ... }   // present with a real value
+```
+
+`std::optional<T>` remains correct for plain omit-or-value fields and for everything
+outside the wire layer; `JsonOptional<T>` is a wire-DTO type, not a general-purpose
+maybe.
+
 ## 2. Enums over raw strings
 
 ### Rule

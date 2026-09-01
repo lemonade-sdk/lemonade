@@ -100,13 +100,63 @@ generate:
 - `from_json_lenient` — defaults applied, used only where today's behavior must be
   preserved during migration.
 
-Supported field kinds: scalars, `std::optional<T>`, `std::vector<T>`, `std::map`,
-nested `LEMON_JSON` types, enums declared with `LEMON_ENUM` (the X-macro enum +
-wire-name mechanism defined in `core-hardening-standards.md` §2, which also delivers
-the central vocabulary header `include/lemon/core/vocab.h` in this phase), `JsonValue`
-(escape hatch for genuinely dynamic subtrees — content parts, tool arguments), and
-renamed keys via `lemon::json::named<&T::member>("wire_name")` for the few wire names
-that aren't valid identifiers.
+Supported field kinds: scalars, `std::optional<T>`, `JsonOptional<T>` (tri-state, see
+below), `std::vector<T>`, `std::map`, nested `LEMON_JSON` types, enums declared with
+`LEMON_ENUM` (the X-macro enum + wire-name mechanism defined in
+`core-hardening-standards.md` §2, which also delivers the central vocabulary header
+`include/lemon/core/vocab.h` in this phase), `JsonValue` (escape hatch for genuinely
+dynamic subtrees — content parts, tool arguments), and renamed keys via
+`lemon::json::named<&T::member>("wire_name")` for the few wire names that aren't valid
+identifiers.
+
+### Tri-state fields: `JsonOptional<T>`
+
+`std::optional<T>` conflates two wire states that this API surface must distinguish:
+**key absent** and **key present with `null`** (OpenAI's `"stop": null` vs. omitted,
+nullable telemetry like `cache_tokens`, and PATCH-style partial config updates where
+"not mentioned" must not clobber and `null` means "clear"). `JsonOptional<T>` is the
+codec's tri-state field type — unset / explicitly null / value — adapted from the
+donor implementation vendored at `docs/dev/reference/json_optional_reference.md`
+(bitfield flags for `is_set`/`is_null`, an `adl_serializer` that exploits the fact
+that `from_json` only runs when the key exists, and `underlying_type_t`/trait helpers
+the codec's field loop dispatches on).
+
+Uniform free-function queries are part of the API, overloaded across all three field
+kinds so call sites don't care which one a DTO chose:
+
+```cpp
+is_set(req.temperature)      // JsonOptional: was the key present at all?
+is_null(req.stop)            // JsonOptional: present and explicitly null?
+has_value(req.model)         // T (always true) / optional / JsonOptional
+```
+
+Adaptation notes against the reference (deliberate deltas, recorded so review happens
+once):
+
+1. **Unset must omit the key on serialize.** The reference's `SAFE_JSON_TO` /
+   `adl_serializer::to_json` emit `null` for an unset field, so unset → null after one
+   round trip and the tri-state collapses. An `adl_serializer` *cannot* omit a key (it
+   only sees the value slot), so tri-state emission lives in the codec's field loop —
+   which knows the key — with the serializer kept only for nested/non-codec contexts:
+   unset → key omitted, null → `"key": null`, value → serialized value. This is what
+   makes round trips lossless.
+2. **Single source of truth for state.** The reference stores `is_null` alongside
+   `value.has_value()`, which can drift (and its default constructor starts as
+   `is_set=0, is_null=1`). The adaptation derives null-ness from
+   `is_set && !value.has_value()` where possible, keeps the flag byte only for
+   `is_set`, and `static_assert`s the invariants in tests.
+3. **Portability of the flag bits.** The anonymous-struct-in-union bitfield is a
+   compiler extension (accepted by MSVC, GCC, and AppleClang — the three compilers CI
+   requires — but warned under `-Wpedantic`). The adaptation keeps the same public
+   API but may back it with a plain flags byte + accessors if the warning budget
+   demands; either way the layout stays one byte.
+4. Small API trims: one `has_value()` (const), `value_or` takes by const-ref,
+   implicit `operator const T&` (which throws on unset) becomes explicit `get()` /
+   `operator*` only, and `[[nodiscard]]` per the standards doc. The pqxx block is
+   inert here and dropped from the adapted header.
+
+`std::optional<T>` remains the right type for plain omit-or-value fields where `null`
+has no distinct meaning; DTO declarations choose per field.
 
 C++17-only (member-pointer tuples + folds), header-only, works with the pinned
 nlohmann ≥ 3.11.3, and interoperates with plain `nlohmann::json` at the edges. The
