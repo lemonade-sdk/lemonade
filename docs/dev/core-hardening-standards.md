@@ -36,13 +36,18 @@ safe — exactly the cost `std::optional<int>` removes.
 ### 1a. Tri-state wire fields: `JsonOptional<T>`
 
 On the wire, "key absent" and "key present with `null`" are different states, and
-`std::optional<T>` can only represent one of them. DTO fields where that distinction
-carries meaning (nullable API fields like `"stop": null`, PATCH-style partial updates
-where absent = leave alone and null = clear, nullable telemetry) use
-`JsonOptional<T>` — unset / null / value — defined in `lemon-json` and adapted from
+`std::optional<T>` can only represent one of them. **Anything JSON-related uses
+`JsonOptional<T>`** — unset / null / value — defined in `lemon-json` and adapted from
 the donor implementation in `docs/dev/reference/json_optional_reference.md` (see the
 plan's Phase 1 for the adaptation deltas: unset omits the key on serialize, single
-source of truth for the flags, bitfield portability).
+source of truth for the flags, bitfield portability). The rule is unconditional:
+every non-required wire-DTO field, every `JsonTree` object lookup, every codec result
+carries the tri-state, and `std::optional` never appears in a JSON-facing
+declaration. Beyond correctness for null-meaningful fields (`"stop": null`,
+PATCH-style updates where absent = leave alone and null = clear, nullable telemetry),
+the universal rule keeps proxy forwarding byte-faithful — `std::optional` would
+collapse a client's explicit `null` into an omitted key on re-serialization — and is
+mechanically enforceable where a per-field choice is not.
 
 Call sites use the uniform free-function queries, overloaded across `T`,
 `std::optional<T>`, and `JsonOptional<T>` so a DTO can change a field's kind without
@@ -54,9 +59,10 @@ if (is_null(req.stop))       { ... }   // present and explicitly null
 if (has_value(req.model))    { ... }   // present with a real value
 ```
 
-`std::optional<T>` remains correct for plain omit-or-value fields and for everything
-outside the wire layer; `JsonOptional<T>` is a wire-DTO type, not a general-purpose
-maybe.
+`std::optional<T>` remains correct for everything outside the JSON layer — function
+returns, internal state, lookups (§1); `JsonOptional<T>` is the JSON-layer type, not
+a general-purpose maybe. The boundary is the codec: below it (DTOs, trees, parse
+results) tri-state; above it, plain `optional`.
 
 ## 2. Enums over raw strings
 
@@ -158,5 +164,6 @@ may depend on it.
   touches their file; the vocabulary header lands in Phase 1 alongside the JSON codec,
   since the codec consumes it).
 - CI grep gates (added with Phase 1): no new `std::pair<bool`, no `== "true"` /
-  `== "false"` outside parse boundaries, and the wire-key lock tests cover enum wire
-  names exactly as they cover DTO field names.
+  `== "false"` outside parse boundaries, no `std::optional` in `lemon-api` DTO
+  declarations (JSON layer is `JsonOptional`-only, §1a), and the wire-key lock tests
+  cover enum wire names exactly as they cover DTO field names.

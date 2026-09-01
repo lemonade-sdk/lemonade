@@ -79,8 +79,8 @@ no manually written `j["key"]` anywhere at call sites:
 struct ChatMessage {
     ChatRole role;                                    // LEMON_ENUM
     OneOf<std::string, std::vector<ContentPart>> content;
-    std::optional<std::string> name;
-    std::optional<std::vector<ToolCall>> tool_calls;
+    JsonOptional<std::string> name;
+    JsonOptional<std::vector<ToolCall>> tool_calls;
 
     LEMON_JSON(ChatMessage, role, content, name, tool_calls);
 };
@@ -91,7 +91,8 @@ of `field_descriptor{member-pointer, name}` (names from preprocessor stringifica
 compile-time, spelled once, never at a use site). Over that tuple, fold expressions
 generate:
 
-- `to_json(const T&) -> json` — omits empty `std::optional`, emits declared order.
+- `to_json(const T&) -> json` — omits unset `JsonOptional` fields, emits declared
+  order.
 - `from_json_strict(const json&) -> Expected<T, ParseError>` — type-checked per field,
   `ParseError` carries a JSON-pointer path (`/messages/2/tool_calls/0/id`) and reason;
   policy enum for unknown keys: `Reject` (config, registry) or `Preserve` (API bodies —
@@ -100,8 +101,9 @@ generate:
 - `from_json_lenient` — defaults applied, used only where today's behavior must be
   preserved during migration.
 
-Supported field kinds: scalars, `std::optional<T>`, `JsonOptional<T>` (tri-state, see
-below), `std::vector<T>`, `std::map`, nested `LEMON_JSON` types, enums declared with
+Supported field kinds: scalars, `JsonOptional<T>` (tri-state — the sole optionality
+type in the JSON layer, see below), `std::vector<T>`, `std::map`, nested
+`LEMON_JSON` types, enums declared with
 `LEMON_ENUM` (the X-macro enum + wire-name mechanism defined in
 `core-hardening-standards.md` §2, which also delivers the central vocabulary header
 `include/lemon/core/vocab.h` in this phase), `OneOf`/`TaggedOneOf` sum types and
@@ -146,8 +148,11 @@ using JsonTree = std::variant<std::nullptr_t, bool, int64_t, double, std::string
 // JsonTree<0>: scalars only. Typical: using ToolArgs = JsonTree<8>;
 ```
 
-(Spelled here as the concept; the implementation wraps the variant in a class template
-so the recursion terminates cleanly and accessors return `std::optional`.) Every level
+(Spelled here as the concept; the implementation wraps the variant in a class
+template so the recursion terminates cleanly. Object-key lookups return the tri-state
+— `tree.at("key")` yields a `JsonOptional`-shaped result distinguishing absent /
+null / value, queried with the same `is_set`/`is_null`/`has_value` free functions as
+DTO fields.) Every level
 is a real variant — exhaustively visitable, no stringly `type()` checks — and a
 document deeper than the bound is a `ParseError` at the offending path rather than
 unbounded recursion on hostile input, which also gives the parser a hard nesting limit
@@ -200,8 +205,17 @@ once):
    `operator*` only, and `[[nodiscard]]` per the standards doc. The pqxx block is
    inert here and dropped from the adapted header.
 
-`std::optional<T>` remains the right type for plain omit-or-value fields where `null`
-has no distinct meaning; DTO declarations choose per field.
+**Anything JSON-related uses `JsonOptional<T>` — without exception.** Every
+non-required field of every wire DTO, `JsonTree` object lookups, and codec results
+share the tri-state; `std::optional` never appears in a JSON-facing declaration. The
+rule is unconditional rather than per-field because of passthrough fidelity: lemond
+is a proxy, and with `std::optional` a client's `"name": null` and an absent `"name"`
+both collapse to `nullopt` and re-serialize as *omitted* — the proxy silently
+rewrites the request on its way to the backend. Tri-state fields make forwarding
+byte-faithful by construction, and one universal rule is greppable (a CI gate rejects
+`std::optional` inside `lemon-api`) where a per-field judgment call is not. Outside
+the JSON layer — function returns, internal state — `std::optional` remains the
+right type per §1 of the standards doc.
 
 C++17-only (member-pointer tuples + folds), header-only, works with the pinned
 nlohmann ≥ 3.11.3, and interoperates with plain `nlohmann::json` at the edges. The
