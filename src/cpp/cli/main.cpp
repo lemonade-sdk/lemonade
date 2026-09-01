@@ -164,6 +164,7 @@ struct CliConfig {
     std::string backend_spec;  // Format: "recipe:backend"
     bool backends_showall = false;
     bool force = false;
+    std::string backend_arch;  // Optional target arch (e.g. sm_89, gfx1151) for --force installs
     std::string output_file;
     bool downloaded = false;
     bool dry_run = false;
@@ -592,7 +593,7 @@ static int handle_backends_command(lemonade::LemonadeClient& client,
         int result = 0;
         handle_backend_operation(config.backend_spec, "Install",
             [&client, &config, &result](const std::string& recipe, const std::string& backend) {
-                result = client.install_backend(recipe, backend, config.force);
+                result = client.install_backend(recipe, backend, config.force, config.backend_arch);
                 return result;
             });
         return result;
@@ -1316,6 +1317,10 @@ int main(int argc, char* argv[]) {
     // Backend management options
     backends_install_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
     backends_install_cmd->add_flag("--force", config.force, "Bypass hardware filtering when installing a backend");
+    backends_install_cmd->add_option("--arch", config.backend_arch,
+        "Target architecture to install for when no compatible device is present "
+        "(e.g. sm_89 for CUDA, gfx1151 for ROCm). Requires --force.")
+        ->type_name("ARCH");
     backends_uninstall_cmd->add_option("spec", config.backend_spec, "Backend spec (recipe:backend)")->required()->type_name("SPEC");
 
     // Cloud provider commands. `cloud` is a subcommand group with install /
