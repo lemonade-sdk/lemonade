@@ -2966,12 +2966,13 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     target_link_libraries(test_auto_tune PRIVATE nlohmann_json::nlohmann_json)
 
     include(CTest)
-    add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
+    add_cpp_ci_test(AutoTuneTest CI ON COMMAND test_auto_tune)
 endif()
 
 # KV-cache quant tier vocabulary (U1), safety table + eligibility gates (U4),
-# and the ladder resolver (U5). Pure arithmetic/logic over fabricated
-# metadata and options; no backend, GPU, or model file required.
+# and the ladder resolver (U5, U7). Pure arithmetic/logic over fabricated
+# metadata and options; no backend, GPU, or model file required. Links
+# lemonade-server-core from U5 onward (resolve_kv_cache takes a RecipeOptions).
 set(_KV_CACHE_QUANT_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_kv_cache_quant.cpp"
 )

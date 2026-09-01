@@ -1980,7 +1980,9 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(rejected.status_code, 400, rejected.text)
 
-        print("[OK] options endpoint reports resolved KV cache tier and ineligibility reason")
+        print(
+            "[OK] options endpoint reports resolved KV cache tier and ineligibility reason"
+        )
 
     def test_012w_load_emits_cache_type_flags_for_resolved_tier(self):
         """U5/U6/U7 end-to-end: loading with an explicit quant tier launches
@@ -2016,7 +2018,9 @@ class EndpointTests(ServerTestBase):
         v_idx = command.index("--cache-type-v")
         self.assertEqual(command[k_idx + 1], "q8_0")
         self.assertEqual(command[v_idx + 1], "q8_0")
-        self.assertEqual(model.get("recipe_options", {}).get("resolved_kv_cache_tier"), "q8_0")
+        self.assertEqual(
+            model.get("recipe_options", {}).get("resolved_kv_cache_tier"), "q8_0"
+        )
 
         print("[OK] load launches llama-server with matching cache-type flags")
 
@@ -2043,52 +2047,106 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(response.status_code, 200, response.text)
             return self._get_loaded_model_info(ENDPOINT_TEST_MODEL)["pid"]
 
-        pid_auto_1 = load({"kv_cache_quantization": "auto", "llamacpp_backend": "metal"})
-        pid_auto_2 = load({"kv_cache_quantization": "auto", "llamacpp_backend": "metal"})
+        pid_auto_1 = load(
+            {"kv_cache_quantization": "auto", "llamacpp_backend": "metal"}
+        )
+        pid_auto_2 = load(
+            {"kv_cache_quantization": "auto", "llamacpp_backend": "metal"}
+        )
         self.assertEqual(
-            pid_auto_1, pid_auto_2,
+            pid_auto_1,
+            pid_auto_2,
             "repeat auto load with everything else unchanged must not reload",
         )
 
-        pid_explicit = load({"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"})
+        pid_explicit = load(
+            {"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"}
+        )
         self.assertNotEqual(
-            pid_auto_2, pid_explicit,
+            pid_auto_2,
+            pid_explicit,
             "an explicit tier is a different intent than auto and must reload",
         )
 
-        pid_explicit_again = load({"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"})
+        pid_explicit_again = load(
+            {"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"}
+        )
         self.assertEqual(
-            pid_explicit, pid_explicit_again,
+            pid_explicit,
+            pid_explicit_again,
             "repeat identical explicit tier must not reload",
         )
 
-        pid_auto_3 = load({"kv_cache_quantization": "auto", "llamacpp_backend": "metal"})
+        pid_auto_3 = load(
+            {"kv_cache_quantization": "auto", "llamacpp_backend": "metal"}
+        )
         self.assertNotEqual(
-            pid_explicit_again, pid_auto_3,
+            pid_explicit_again,
+            pid_auto_3,
             "switching from explicit back to auto must reload",
         )
 
-        pid_auto_changed_bound = load({
-            "kv_cache_quantization": "auto",
-            "llamacpp_backend": "metal",
-            "min_kv_quantization": "q4_0",
-        })
+        pid_auto_changed_bound = load(
+            {
+                "kv_cache_quantization": "auto",
+                "llamacpp_backend": "metal",
+                "min_kv_quantization": "q4_0",
+            }
+        )
         self.assertNotEqual(
-            pid_auto_3, pid_auto_changed_bound,
+            pid_auto_3,
+            pid_auto_changed_bound,
             "a changed ladder bound is a genuine options change and must reload",
         )
 
         # Replaying the options endpoint's `effective` body — which reports
         # ctx_size resolved and kv_cache_quantization still "auto" (R13) —
         # as a load must not reload the resident, auto-resolved process.
-        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["effective"]
+        effective = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "effective"
+        ]
         pid_replayed = load(effective)
         self.assertEqual(
-            pid_auto_changed_bound, pid_replayed,
+            pid_auto_changed_bound,
+            pid_replayed,
             "replaying the effective load body must not reload an auto-resolved process",
         )
 
-        print("[OK] auto KV cache quant reload equivalence holds; explicit/bound changes still reload")
+        print(
+            "[OK] auto KV cache quant reload equivalence holds; explicit/bound changes still reload"
+        )
+
+    def test_012y_kv_cache_quant_out_of_set_value_fails_gracefully(self):
+        """An out-of-set kv_cache_quantization value is rejected at the
+        resolver (U5's validate-before-any-memory-query), naming the
+        accepted set. Saving it does not crash the server or the model
+        entry; DELETE always recovers it (documented follow-up: this
+        endpoint does not pre-validate the string value at write time, so
+        a bad saved value surfaces as a 500 here rather than a 400)."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        bad = requests.post(
+            self._options_url(),
+            json={"kv_cache_quantization": "bogus"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad.status_code, 500, bad.text)
+        self.assertIn("f16, auto, q8_0, q4_0", bad.json()["error"]["message"])
+
+        # The bad value round-trips consistently rather than corrupting state.
+        still_bad = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(still_bad.status_code, 500, still_bad.text)
+
+        recovered = self._reset_options()
+        self.assertEqual(recovered.status_code, 200, recovered.text)
+        healthy = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(healthy.status_code, 200, healthy.text)
+        self.assertEqual(healthy.json()["resolved_kv_cache_tier"], "f16")
+
+        print(
+            "[OK] out-of-set kv_cache_quantization value fails gracefully and recovers"
+        )
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
