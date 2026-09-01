@@ -71,7 +71,8 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "", pinned: str = "") -> str:
+def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "",
+                           pinned: str = "", fallback: str = "") -> str:
     if pinned:
         return pinned
     if tag_prefix:
@@ -80,19 +81,29 @@ def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "", p
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    # /releases/latest on ggml-org/llama.cpp now returns a semver tag (v0.3.0+)
-    # with no binaries — the actual bNNNN nightlies are flagged as pre-releases.
-    # Scan the release list for the newest bNNNN tag, matching PR #3450's approach
-    # in validate_llamacpp.yml. Falls back to /releases/latest for other repos.
-    releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
-    for r in releases:
-        tag = r.get("tag_name", "")
-        if r.get("draft"):
-            continue
-        if tag.startswith("b") and tag[1:].isdigit():
-            return tag
-    # Fallback: no bNNNN found, use whatever /releases/latest returns
-    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
+    try:
+        # /releases/latest on ggml-org/llama.cpp now returns a semver tag (v0.3.0+)
+        # with no binaries — actual bNNNN nightlies are pre-releases. Scan the list
+        # for the newest non-draft non-prerelease tag first, then bNNNN pre-releases.
+        releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
+        # Prefer a non-prerelease "latest" tag
+        for r in releases:
+            if not r.get("draft") and not r.get("prerelease"):
+                return r["tag_name"]
+        # Fall back to newest bNNNN pre-release (ggml-org nightly pattern)
+        for r in releases:
+            tag = r.get("tag_name", "")
+            if not r.get("draft") and tag.startswith("b") and tag[1:].isdigit():
+                return tag
+    except Exception as e:
+        if fallback:
+            print(f"  [WARN] Could not resolve latest release for {repo} ({e}); using fallback {fallback}")
+            return fallback
+        raise
+    if fallback:
+        print(f"  [WARN] No suitable release found for {repo}; using fallback {fallback}")
+        return fallback
+    raise RuntimeError(f"No suitable release found for {repo}")
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
@@ -610,7 +621,8 @@ def main() -> int:
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
                 pinned = fork.get("version", "") if fork.get("version_source") == "pinned" else ""
-                version = resolve_latest_version(fork["repo"], args.token, tag_prefix, pinned)
+                fallback = fork.get("version_fallback", "")
+                version = resolve_latest_version(fork["repo"], args.token, tag_prefix, pinned, fallback)
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
