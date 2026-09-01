@@ -73,10 +73,12 @@ int WebSocketServer::ws_callback(struct lws* wsi,
             auto origin_opt = get_header(wsi, WSI_TOKEN_ORIGIN);
             if (origin_opt && !origin_opt->empty()) {
                 std::string origin = *origin_opt;
-                const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-                std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+                auto host_opt = get_header(wsi, WSI_TOKEN_HOST);
+                std::string host = host_opt.value_or("");
+                std::string allowed_origins = utils::resolve_allowed_origins();
+                std::string bound_host = server ? server->host_ : "";
 
-                if (!utils::is_websocket_origin_allowed(origin, allowed_origins)) {
+                if (!utils::is_websocket_origin_allowed(origin, allowed_origins, host, "http", bound_host)) {
                     LOG(WARNING, "WebSocket") << "Rejected connection from unauthorized origin: " << origin << std::endl;
                     return 1;
                 }

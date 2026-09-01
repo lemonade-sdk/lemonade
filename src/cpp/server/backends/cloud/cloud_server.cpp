@@ -26,11 +26,6 @@ bool id_contains(const std::string& id, const std::string& needle) {
     return id.find(needle) != std::string::npos;
 }
 
-std::map<std::string, std::string>
-auth_headers(const CloudProviderRegistry::AuthHeader& header, const std::string& api_key) {
-    return {{header.name, header.prefix + api_key}};
-}
-
 // Id-pattern fallback for /v1/models entries that don't publish capability
 // metadata (notably OpenAI). Anything unmatched falls through to LLM.
 ModelType infer_type(const std::string& id) {
@@ -399,6 +394,26 @@ std::string CloudServer::missing_creds_sse() const {
     return "data: " + err.dump() + "\n\n";
 }
 
+bool CloudServer::wire_format_mismatch() const {
+    return registry_ != nullptr && registry_->wire_format_for(provider_) != "openai";
+}
+
+std::string CloudServer::wire_format_message() const {
+    const std::string wire_format = registry_->wire_format_for(provider_);
+    return "Cloud provider '" + provider_ + "' speaks the '" + wire_format +
+           "' wire format, which this endpoint does not serve. Send " + wire_format +
+           "-shaped requests to POST /v1/messages instead.";
+}
+
+json CloudServer::wire_format_error() const {
+    return ErrorResponse::create(
+        wire_format_message(),
+        ErrorType::UNSUPPORTED_OPERATION,
+        {{"provider", provider_},
+         {"wire_format", registry_->wire_format_for(provider_)}}
+    );
+}
+
 json CloudServer::insecure_http_error() const {
     const std::string msg =
         "Cloud provider '" + provider_ + "' uses http:// with an API key. "
@@ -441,8 +456,8 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     if (creds.api_key.empty() || creds.base_url.empty()) {
         return missing_creds_error();
     }
-    std::string url = creds.base_url + path;
-    const auto headers = auth_headers(creds.auth_header, creds.api_key);
+    std::string url = upstream_url(creds.base_url, path);
+    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
 
     try {
         auto response = utils::HttpClient::post(
@@ -477,11 +492,17 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
 }
 
 json CloudServer::chat_completion(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
     json modified = rewrite_model_field(request);
     return post_with_auth("/chat/completions", modified, resolve_creds());
 }
 
 json CloudServer::completion(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
     json modified = rewrite_model_field(request);
     return post_with_auth("/completions", modified, resolve_creds());
 }
@@ -528,8 +549,22 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         return;
     }
 
-    // The router calls this with endpoints like "/v1/chat/completions"; strip
-    // the local /v1 prefix and join with the provider's base URL.
+    if (wire_format_mismatch()) {
+        const std::string message = wire_format_message();
+        std::string error_msg = sse_error(
+            message, ErrorType::UNSUPPORTED_OPERATION,
+            {{"provider", provider_},
+             {"wire_format", registry_->wire_format_for(provider_)}});
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(error_telemetry(message));
+        }
+        return;
+    }
+
+    // Only the completion endpoints carry stream_options, so the usage
+    // injection below has to know which one this is.
     std::string suffix = endpoint;
     const std::string v1_prefix = "/v1";
     if (suffix.rfind(v1_prefix, 0) == 0) {
@@ -578,9 +613,9 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
         return;
     }
 
-    std::string url = creds.base_url + suffix;
+    std::string url = upstream_url(creds.base_url, endpoint);
 
-    const auto headers = auth_headers(creds.auth_header, creds.api_key);
+    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
 
     try {
         if (sse) {
@@ -836,6 +871,34 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
     }
 }
 
+std::map<std::string, std::string> CloudServer::upstream_headers(
+    const CloudProviderRegistry::AuthHeader& auth_header,
+    const std::string& api_key,
+    const std::string& wire_format) {
+    std::map<std::string, std::string> headers = {
+        {auth_header.name, auth_header.prefix + api_key}
+    };
+    if (wire_format == "anthropic") {
+        headers["anthropic-version"] = kAnthropicVersion;
+    }
+    return headers;
+}
+
+std::string CloudServer::upstream_url(const std::string& base_url,
+                                      const std::string& endpoint) {
+    std::string normalized = base_url;
+    while (!normalized.empty() && normalized.back() == '/') {
+        normalized.pop_back();
+    }
+    // Match on the whole segment: "/v1x" is a different endpoint, not "/v1"
+    // followed by a path.
+    const std::string v1_prefix = "/v1";
+    const bool strip = endpoint.rfind(v1_prefix, 0) == 0 &&
+                       (endpoint.size() == v1_prefix.size() ||
+                        endpoint[v1_prefix.size()] == '/');
+    return normalized + (strip ? endpoint.substr(v1_prefix.size()) : endpoint);
+}
+
 utils::HttpSecurityPolicy CloudServer::discovery_policy(const std::string& base_url,
                                                         bool allow_insecure_http) {
     // The AllowInsecureHttp opt-in only applies to plaintext http:// providers.
@@ -851,7 +914,8 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
                                                      const std::string& api_key,
                                                      const std::string& base_url,
                                                      bool allow_insecure_http,
-                                                     const CloudProviderRegistry::AuthHeader& auth_header) {
+                                                     const CloudProviderRegistry::AuthHeader& auth_header,
+                                                     const std::string& wire_format) {
     std::vector<ModelInfo> models;
     if (api_key.empty()) {
         return models;
@@ -862,16 +926,10 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         return models;
     }
 
-    // Mirror the trailing-slash normalization done in load() so a config
-    // entry like "https://.../v1/" doesn't produce "/v1//models".
-    std::string normalized_base = base_url;
-    while (!normalized_base.empty() && normalized_base.back() == '/') {
-        normalized_base.pop_back();
-    }
-    std::string url = normalized_base + "/models";
-    const auto headers = auth_headers(auth_header, api_key);
+    std::string url = upstream_url(base_url, "/models");
+    const auto headers = upstream_headers(auth_header, api_key, wire_format);
 
-    const auto policy = discovery_policy(normalized_base, allow_insecure_http);
+    const auto policy = discovery_policy(base_url, allow_insecure_http);
 
     utils::HttpResponse response;
     try {
@@ -1017,7 +1075,8 @@ public:
             try {
                 for (auto& m : CloudServer::discover_models(
                          rec.name, api_key, rec.base_url, rec.allow_insecure_http,
-                         {rec.auth_header_name, rec.auth_header_prefix})) {
+                         {rec.auth_header_name, rec.auth_header_prefix},
+                         rec.wire_format)) {
                     if (m.recipe == "cloud" && !m.model_name.empty()) {
                         out.push_back(std::move(m));
                     }

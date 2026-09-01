@@ -462,6 +462,34 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
     @unittest.skipUnless(
         sys.platform.startswith("linux"), "System backend only supported on Linux"
     )
+    def test_006a_thinking_false_maps_to_no_think_for_non_streaming_chat(self):
+        """Verify non-streaming chat preserves thinking-control normalization."""
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/chat/completions",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "stream": False,
+                "thinking": False,
+                "max_tokens": 8,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(
+            forwarded_request["messages"][-1]["content"],
+            "/no_think\nSay hello.",
+        )
+        self.assertNotIn("thinking", forwarded_request)
+        self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
     def test_007_enable_thinking_takes_precedence_over_thinking_false(self):
         """Verify enable_thinking:true takes precedence over thinking:false."""
         response = requests.post(

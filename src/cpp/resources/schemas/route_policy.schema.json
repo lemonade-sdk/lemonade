@@ -193,6 +193,16 @@
           "type": "integer",
           "minimum": 0
         },
+        "min_total_chars": {
+          "description": "Inclusive lower bound on the total length of all text content in the request, not just the routing input: for chat `messages` the sum over every message of every role (system/user/assistant/tool), for a legacy `prompt` the prompt itself, and for a Responses `input` array the sum over all items (role-tagged or bare). Non-text content (images, audio) contributes nothing. Frozen v1 unit: UTF-8 bytes (not Unicode code points), the same unit as min_chars; token-based length is a future min_tokens, never a redefinition of this one. Authors sizing a bound against a context window can estimate ~4 bytes per token.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_total_chars": {
+          "description": "Inclusive upper bound on the total length of all text content in the request. Same scope and frozen v1 unit (UTF-8 bytes) as min_total_chars.",
+          "type": "integer",
+          "minimum": 0
+        },
         "has_tools": { "type": "boolean" },
         "has_images": { "type": "boolean" },
         "metadata": { "$ref": "#/$defs/metadata_match" }

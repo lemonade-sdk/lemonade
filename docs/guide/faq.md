@@ -5,10 +5,11 @@
 ### 1. **What is Lemonade and what does it include?**
 
    Lemonade is an open-source local LLM solution that:
-      - Gets you started in minutes with one-click installers.
-      - Auto-configures optimized inference engines for your PC.
-      - Provides a convenient app to get set up and test out LLMs.
-      - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
+   
+   - Gets you started in minutes with one-click installers.
+   - Auto-configures optimized inference engines for your PC.
+   - Provides a convenient app to get set up and test out LLMs.
+   - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
 
 ### 2. **What are the use cases for different audiences?**
 
@@ -228,20 +229,6 @@
    Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
 
    👉 [Custom Backend Binaries](./configuration/README.md)
-
-## TTS
-
-### 1. **What voices are supported?**
-
-Lemonade supports most of the voices listed in [Kokoro-82M VOICES](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). OpenAI voices can be selected from a default list, while other voices must be entered manually via text.
-
-### 2. **Can voices be mixed?**
-
-Yes, two voices can be mixed using the following format: `af_jessica.5+af_kore.4`
-
-### 3. **I entered a voice, but no audio is playing?**
-
-Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.
 
 ## TTS
 

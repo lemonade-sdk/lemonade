@@ -27,7 +27,7 @@ import tempfile
 
 import requests
 
-from utils.server_base import unload_all_models, wait_for_server
+from utils.server_base import _auth_headers, unload_all_models, wait_for_server
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
 TIMEOUT_HEALTH = 60
@@ -61,7 +61,10 @@ def collect_server_logs(output_dir):
 
 def request_json(method, url, timeout, **kwargs):
     """Perform an HTTP request and parse the JSON response when present."""
-    response = requests.request(method, url, timeout=timeout, **kwargs)
+    auth_headers = _auth_headers()
+    headers = {**(kwargs.get("headers") or {}), **auth_headers}
+    request_kwargs = {**kwargs, "headers": headers}
+    response = requests.request(method, url, timeout=timeout, **request_kwargs)
     body = {}
     if response.content:
         try:
@@ -112,11 +115,11 @@ def get_hot_llamacpp_models(base_url):
 
 
 def set_rocm_channel(base_url, channel):
-    """Configure the ROCm channel in lemond via the params API."""
-    print(f"Setting rocm_channel={channel} via /params", flush=True)
+    """Configure the ROCm channel in lemond via the internal config API."""
+    print(f"Setting rocm_channel={channel} via /internal/set", flush=True)
     response, body = request_json(
         "POST",
-        f"{base_url}/params",
+        f"{base_url.rsplit('/api/v1', 1)[0]}/internal/set",
         timeout=TIMEOUT_DEFAULT,
         json={"rocm_channel": channel},
     )
