@@ -153,6 +153,21 @@ int main() {
                 "post_stream: explicit timeout abandons a silent upstream");
     }
 
+    // timeout_seconds=0 bounds silence with the configured default timeout.
+    {
+        const long saved = HttpClient::get_default_timeout();
+        HttpClient::set_default_timeout(2);
+        const bool returned = returns_within_ceiling([&] {
+            HttpClient::post_stream(
+                base + "/silent", "{}",
+                [](const char*, size_t) { return true; },
+                {}, 0, nullptr, policy);
+        });
+        HttpClient::set_default_timeout(saved);
+        r.check(returned,
+                "post_stream: timeout 0 bounds silence with the default timeout");
+    }
+
     // The sentinel is the only way to ask for an unbounded transfer, so it must
     // not be confused with 0.
     r.check(HttpClient::kNoTimeout != 0,
