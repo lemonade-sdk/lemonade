@@ -1,4 +1,5 @@
 #include "lemon/router.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/network_utils.h"
 #include "lemon/utils/origin_utils.h"

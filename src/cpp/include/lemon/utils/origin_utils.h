@@ -1,5 +1,7 @@
 #pragma once
 
+#include "lemon/runtime_config.h"
+
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -362,13 +364,16 @@ inline bool is_same_origin(
 }
 
 inline std::string resolve_allowed_origins() {
+    if (auto* cfg = RuntimeConfig::global()) {
+        return cfg->allowed_origins();
+    }
     const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
     return env_origins ? std::string(env_origins) : "";
 }
 
 inline bool is_origin_allowed(
     const std::string& origin_str,
-    const std::string& allowed_origins_env,
+    const std::string& allowed_origins,
     const std::string& host_header = "",
     const std::string& scheme = "http",
     const std::string& bound_host = "",
@@ -389,12 +394,12 @@ inline bool is_origin_allowed(
     }
 
     // Layer 2: Explicit allowed_origins set (authoritative for non-loopback origins)
-    if (!allowed_origins_env.empty()) {
-        if (allowed_origins_env == "*") {
+    if (!allowed_origins.empty()) {
+        if (allowed_origins == "*") {
             return true;
         }
 
-        std::stringstream ss(allowed_origins_env);
+        std::stringstream ss(allowed_origins);
         std::string item;
         while (std::getline(ss, item, ',')) {
             item.erase(0, item.find_first_not_of(" \t\r\n"));
@@ -425,32 +430,32 @@ inline bool is_origin_allowed(
 
 inline bool is_origin_allowed(
     const std::string& origin_str,
-    const std::string& allowed_origins_env,
+    const std::string& allowed_origins,
     const std::string& host_header,
     const std::string& scheme,
     const std::unordered_set<std::string>& self_set) {
-    return is_origin_allowed(origin_str, allowed_origins_env, host_header, scheme, "", self_set);
+    return is_origin_allowed(origin_str, allowed_origins, host_header, scheme, "", self_set);
 }
 
 inline bool is_websocket_origin_allowed(
     const std::string& origin_str,
-    const std::string& allowed_origins_env,
+    const std::string& allowed_origins,
     const std::string& host_header = "",
     const std::string& scheme = "http",
     const std::string& bound_host = "",
     const std::unordered_set<std::string>& self_set = {}) {
 
-    return is_origin_allowed(origin_str, allowed_origins_env, host_header, scheme, bound_host, self_set);
+    return is_origin_allowed(origin_str, allowed_origins, host_header, scheme, bound_host, self_set);
 }
 
 inline bool is_websocket_origin_allowed(
     const std::string& origin_str,
-    const std::string& allowed_origins_env,
+    const std::string& allowed_origins,
     const std::string& host_header,
     const std::string& scheme,
     const std::unordered_set<std::string>& self_set) {
 
-    return is_origin_allowed(origin_str, allowed_origins_env, host_header, scheme, "", self_set);
+    return is_websocket_origin_allowed(origin_str, allowed_origins, host_header, scheme, "", self_set);
 }
 
 } // namespace lemon::utils
