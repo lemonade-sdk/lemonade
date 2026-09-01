@@ -8,6 +8,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
+#include "lemon/kv_cache_quant.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <cctype>
@@ -334,6 +335,18 @@ void LlamaCppServer::load(const std::string& model_name,
         push_arg(args, reserved_flags, "-m", gguf_path, std::vector<std::string>{"--model"});
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
+
+    // U5 already decided the tier and already raised R11; this just emits
+    // it. No memory reasoning or conflict detection here.
+    const json resolved_tier_json = options.get_option("resolved_kv_cache_tier");
+    const auto resolved_tier = resolved_tier_json.is_string()
+        ? parse_kv_cache_quant_tier(resolved_tier_json.get<std::string>())
+        : std::nullopt;
+    const llamacpp::CacheTypeLaunchArgs cache_type_args = llamacpp::kv_cache_type_launch_args(resolved_tier);
+    args.insert(args.end(), cache_type_args.argv.begin(), cache_type_args.argv.end());
+    for (const auto& [flag, alias] : cache_type_args.reservations) {
+        push_reserved(reserved_flags, flag, std::vector<std::string>{alias});
+    }
 
     if (!llamacpp_device.empty()) {
         BackendUtils::validate_device_backend_match(llamacpp_backend, llamacpp_device);

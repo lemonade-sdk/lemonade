@@ -1,9 +1,14 @@
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/utils/recipe_arg_resolver.h"
 
 #include <cstdio>
+#include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
+using lemon::KvCacheQuantTier;
+using lemon::backends::llamacpp::kv_cache_type_launch_args;
 using lemon::utils::CustomArgsRequestState;
 using lemon::utils::RuntimeArgDefault;
 using lemon::utils::ScopedCustomArgs;
@@ -12,6 +17,7 @@ using lemon::utils::build_custom_args_map;
 using lemon::utils::is_custom_args_option;
 using lemon::utils::parse_custom_args;
 using lemon::utils::resolve_scoped_custom_args;
+using lemon::utils::validate_custom_args;
 
 static bool expect_args(const char* name, const std::string& actual,
                         const std::string& expected) {
@@ -163,6 +169,58 @@ int main() {
         append_runtime_arg_defaults("-np 4", parallel_defaults),
         "-np 4");
 
+
+    // --- U6: cache-type-k/v launch args for a resolved KV cache tier ---
+
+    {
+        auto f16 = kv_cache_type_launch_args(KvCacheQuantTier::F16);
+        failures += !expect_bool("tier f16: no cache-type argv", f16.argv.empty(), true);
+        failures += !expect_bool("tier f16: no cache-type reservations", f16.reservations.empty(), true);
+    }
+    {
+        auto unresolved = kv_cache_type_launch_args(std::nullopt);
+        failures += !expect_bool("unresolved tier: no cache-type argv", unresolved.argv.empty(), true);
+    }
+    {
+        auto q8 = kv_cache_type_launch_args(KvCacheQuantTier::Q8_0);
+        const std::vector<std::string> expected = {"--cache-type-k", "q8_0", "--cache-type-v", "q8_0"};
+        failures += !expect_bool("tier q8_0: both flags emitted with the same value",
+            q8.argv == expected, true);
+        failures += !expect_bool("tier q8_0: both flags reserved",
+            q8.reservations.size() == 2, true);
+    }
+
+    // Mirror LlamaCppServer::load()'s reserved-flag construction to prove the
+    // managed-flag collision fires for the cache-type flags exactly as it
+    // does for every other managed flag.
+    {
+        std::set<std::string> reserved = {"-m", "--model", "--ctx-size", "-c"};
+        auto q8 = kv_cache_type_launch_args(KvCacheQuantTier::Q8_0);
+        for (auto& [flag, alias] : q8.reservations) {
+            reserved.insert(flag);
+            reserved.insert(alias);
+        }
+        failures += !expect_bool("tier q8_0 with --cache-type-k q4_0 passthrough: collision detected",
+            !validate_custom_args("--cache-type-k q4_0", reserved).empty(), true);
+        failures += !expect_bool("tier q8_0 with -ctk q4_0 passthrough: collision detected (K alias)",
+            !validate_custom_args("-ctk q4_0", reserved).empty(), true);
+        failures += !expect_bool("tier q8_0 with -ctv q4_0 passthrough: collision detected (V alias)",
+            !validate_custom_args("-ctv q4_0", reserved).empty(), true);
+        failures += !expect_bool("tier q8_0 with no flash-attention arg: -fa not reserved",
+            reserved.count("-fa") == 0 && reserved.count("--flash-attn") == 0, true);
+    }
+    {
+        // f16: --cache-type-k in the passthrough reaches argv unchanged —
+        // today's behavior, preserved (KTD7).
+        std::set<std::string> reserved = {"-m", "--model", "--ctx-size", "-c"};
+        auto f16 = kv_cache_type_launch_args(KvCacheQuantTier::F16);
+        for (auto& [flag, alias] : f16.reservations) {
+            reserved.insert(flag);
+            reserved.insert(alias);
+        }
+        failures += !expect_bool("tier f16 with --cache-type-k in passthrough: no collision",
+            validate_custom_args("--cache-type-k q8_0", reserved).empty(), true);
+    }
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }

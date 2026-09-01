@@ -127,6 +127,30 @@ inline const KvCacheQuantSafetyTable kv_cache_quant_safety_table = {
     {"system",       {false, false}},
 };
 
+// The --cache-type-k/--cache-type-v launch fragment for a resolved KV cache
+// tier (U5's decision — no memory reasoning or conflict detection here).
+// Empty for f16 or an unresolved tier: KTD7's whole point is that the
+// managed flags are reserved only when actually emitted, so an unconditional
+// `llamacpp_args --cache-type-k ...` workaround keeps working exactly as it
+// does today while the option stays f16.
+struct CacheTypeLaunchArgs {
+    std::vector<std::string> argv;  // tokens to append, e.g. {"--cache-type-k","q8_0","--cache-type-v","q8_0"}
+    // {flag, short alias} pairs to reserve, e.g. {"--cache-type-k","-ctk"}, {"--cache-type-v","-ctv"}.
+    // Each flag reserves its own alias independently, matching --device/-dev.
+    std::vector<std::pair<std::string, std::string>> reservations;
+};
+
+inline CacheTypeLaunchArgs kv_cache_type_launch_args(std::optional<KvCacheQuantTier> resolved_tier) {
+    CacheTypeLaunchArgs out;
+    if (!resolved_tier || *resolved_tier == KvCacheQuantTier::F16) {
+        return out;
+    }
+    const std::string tier_str = kv_cache_quant_tier_to_string(*resolved_tier);
+    out.argv = {"--cache-type-k", tier_str, "--cache-type-v", tier_str};
+    out.reservations = {{"--cache-type-k", "-ctk"}, {"--cache-type-v", "-ctv"}};
+    return out;
+}
+
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

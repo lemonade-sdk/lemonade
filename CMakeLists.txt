@@ -2305,6 +2305,7 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_ARG_RESOLVER_TEST_SRC}")
     target_include_directories(test_recipe_arg_resolution PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
+    target_link_libraries(test_recipe_arg_resolution PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(RecipeArgResolutionTest CI ON COMMAND test_recipe_arg_resolution)
 endif()
 
