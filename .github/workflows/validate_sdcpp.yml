@@ -312,7 +312,17 @@ jobs:
             tar -xzf $tgz -C $dir
             if ($LASTEXITCODE -ne 0) { Write-Host "::warning::extract failed for $ver"; continue }
 
-            $bin = Join-Path $dir "bin"
+            # The tarballs unpack into a versioned subdirectory
+            # (therock-dist-windows-gfx1151-7.14.0rc3), so resolve bin from
+            # whatever the archive actually created.
+            $bin = Get-ChildItem -Path $dir -Recurse -Directory -Filter "bin" -ErrorAction SilentlyContinue |
+                   Where-Object { Test-Path (Join-Path $_.FullName "amdhip64_7.dll") } |
+                   Select-Object -First 1 -ExpandProperty FullName
+            if (-not $bin) {
+              $bin = Get-ChildItem -Path $dir -Recurse -Directory -Filter "bin" -ErrorAction SilentlyContinue |
+                     Select-Object -First 1 -ExpandProperty FullName
+            }
+            Write-Host "resolved bin: $bin"
             Write-Host "--- gfx1151 device code objects present? ---"
             $devlibs = Get-ChildItem -Recurse -Path $dir -Filter "*gfx1151*" -ErrorAction SilentlyContinue |
                        Select-Object -First 8
