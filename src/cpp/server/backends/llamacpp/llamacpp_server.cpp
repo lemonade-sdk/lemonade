@@ -143,8 +143,9 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // Soft-idle downsize is delegated to llama-server's own idle-sleep: unlike
     // slot erase, it actually frees the VRAM backing the model (see
     // LlamaCppServer::downsize()). It does NOT preserve the host-RAM prompt
-    // cache under our forced --parallel 1 (see docs/dev/llamacpp-runtime-defaults.md) —
-    // every wake is a full re-prefill, same as erase, just with VRAM actually released.
+    // cache — llama-server recreates it when reloading on wake (see
+    // docs/dev/llamacpp-runtime-defaults.md) — so every wake is a full
+    // re-prefill, same as erase, just with VRAM actually released.
     // llama-server rejects 0 (valid range is -1=disabled or >=1), so a
     // downsize_idle_timeout of 0 ("downsize as soon as idle") maps to the
     // smallest valid finite value instead of being passed through verbatim.
@@ -619,8 +620,8 @@ bool LlamaCppServer::downsize() {
     // own --sleep-idle-seconds (passed at launch when auto_evict is enabled; see
     // resolve_llamacpp_runtime_args), which frees the whole model and transparently
     // reloads it on the next request. That reload is always a full re-prefill — the
-    // host-RAM prompt cache is NOT preserved under our forced --parallel 1, so this
-    // is strictly better than erase (VRAM is actually freed) but no faster to resume.
+    // host-RAM prompt cache is recreated empty on wake, so this is strictly better
+    // than erase (VRAM is actually freed) but no faster to resume.
     LOG(INFO, "LlamaCpp") << "Downsize delegated to llama-server's --sleep-idle-seconds; "
                              "no explicit action taken." << std::endl;
     return true;

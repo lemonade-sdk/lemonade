@@ -1175,7 +1175,8 @@ class LLMTests(ServerTestBase):
         """A model downsized via --sleep-idle-seconds still serves the next
         request transparently (no error, no manual reload), but does not
         cache-restore the prompt -- see docs/dev/llamacpp-runtime-defaults.md
-        for why --parallel 1 rules out RAM-cache restoration on wake."""
+        for why waking from sleep always starts with an empty RAM prompt
+        cache."""
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         client = self.get_openai_client()
@@ -1222,12 +1223,11 @@ class LLMTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("cache_tokens", data)
-        # Documented limitation, not a bug: under Lemonade's forced
-        # --parallel 1, --sleep-idle-seconds tears the slot down directly
-        # without ever going through --cache-idle-slots' displacement path,
-        # so the RAM prompt cache is never populated and wake always
-        # re-prefills from scratch. If a future change (e.g. a --parallel > 1
-        # default) makes this untrue, update this assertion deliberately
+        # Documented limitation, not a bug: entering sleep destroys the slot's
+        # KV state without saving it, and waking recreates llama-server's RAM
+        # prompt cache empty, so wake always re-prefills from scratch
+        # regardless of --parallel. If a future llama-server change preserves
+        # the prompt cache across sleep, update this assertion deliberately
         # rather than letting it silently start passing.
         self.assertEqual(
             data["cache_tokens"],
