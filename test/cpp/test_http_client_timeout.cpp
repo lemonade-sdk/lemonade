@@ -140,9 +140,6 @@ int main() {
                 "post_multipart: timeout 0 falls back to the default");
     }
 
-    // post_stream bounds silence rather than total duration, so a default-timeout
-    // fallback would wrongly cut off a long healthy generation. An explicit
-    // timeout still applies.
     {
         r.check(returns_within_ceiling([&] {
                     HttpClient::post_stream(
@@ -151,6 +148,20 @@ int main() {
                         {}, 2, nullptr, policy);
                 }),
                 "post_stream: explicit timeout abandons a silent upstream");
+    }
+
+    {
+        const long saved = HttpClient::get_default_timeout();
+        HttpClient::set_default_timeout(2);
+        const bool returned = returns_within_ceiling([&] {
+            HttpClient::post_stream(
+                base + "/silent", "{}",
+                [](const char*, size_t) { return true; },
+                {}, 0, nullptr, policy);
+        });
+        HttpClient::set_default_timeout(saved);
+        r.check(returned,
+                "post_stream: timeout 0 falls back to the default");
     }
 
     // The sentinel is the only way to ask for an unbounded transfer, so it must
