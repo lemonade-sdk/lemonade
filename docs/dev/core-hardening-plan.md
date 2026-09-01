@@ -77,8 +77,8 @@ no manually written `j["key"]` anywhere at call sites:
 
 ```cpp
 struct ChatMessage {
-    std::string role;
-    JsonValue content;                       // string | content-part array (raw passthrough)
+    ChatRole role;                                    // LEMON_ENUM
+    OneOf<std::string, std::vector<ContentPart>> content;
     std::optional<std::string> name;
     std::optional<std::vector<ToolCall>> tool_calls;
 
@@ -95,8 +95,8 @@ generate:
 - `from_json_strict(const json&) -> Expected<T, ParseError>` — type-checked per field,
   `ParseError` carries a JSON-pointer path (`/messages/2/tool_calls/0/id`) and reason;
   policy enum for unknown keys: `Reject` (config, registry) or `Preserve` (API bodies —
-  unknown keys are captured into a `json extras` member and re-emitted, so passthrough
-  to backends keeps fields we don't model).
+  unknown keys are captured into a `JsonTree` extras member and re-emitted, so
+  passthrough to backends keeps fields we don't model).
 - `from_json_lenient` — defaults applied, used only where today's behavior must be
   preserved during migration.
 
@@ -104,10 +104,55 @@ Supported field kinds: scalars, `std::optional<T>`, `JsonOptional<T>` (tri-state
 below), `std::vector<T>`, `std::map`, nested `LEMON_JSON` types, enums declared with
 `LEMON_ENUM` (the X-macro enum + wire-name mechanism defined in
 `core-hardening-standards.md` §2, which also delivers the central vocabulary header
-`include/lemon/core/vocab.h` in this phase), `JsonValue` (escape hatch for genuinely
-dynamic subtrees — content parts, tool arguments), and renamed keys via
-`lemon::json::named<&T::member>("wire_name")` for the few wire names that aren't valid
-identifiers.
+`include/lemon/core/vocab.h` in this phase), `OneOf`/`TaggedOneOf` sum types and
+`JsonTree<MaxDepth>` bounded dynamic trees (see below — there is no raw-`json` escape
+hatch in DTOs), and renamed keys via `lemon::json::named<&T::member>("wire_name")` for
+the few wire names that aren't valid identifiers.
+
+### Static types for "dynamic" shapes: `OneOf` and `JsonTree<MaxDepth>`
+
+DTO fields never hold raw `nlohmann::json`. The two situations that tempt an escape
+hatch get static types instead:
+
+**Closed alternatives → `OneOf<Ts...>` / `TaggedOneOf<"tag", Ts...>`.** Most
+"dynamic" wire shapes are actually a small closed set: chat `content` is
+`string | ContentPart[]`; a content part is text/image/audio discriminated by its
+`"type"` field; `stop` is `string | string[]`. These become codec-integrated
+`std::variant`s:
+
+```cpp
+struct TextPart  { std::string text;  LEMON_JSON(TextPart, text); };
+struct ImagePart { ImageUrl image_url; LEMON_JSON(ImagePart, image_url); };
+using ContentPart = TaggedOneOf<"type",
+    Alt<"text", TextPart>, Alt<"image_url", ImagePart>, Alt<"input_audio", AudioPart>>;
+```
+
+`TaggedOneOf` parses by reading the discriminator once and dispatching to the matching
+alternative's codec (unknown tag → `ParseError` with the path and the list of valid
+tags); untagged `OneOf` discriminates structurally (JSON type, then shape) in declared
+order. Serialization re-emits the tag. Consumers use `std::visit`, so handling is
+exhaustive at compile time — adding an alternative breaks every switch that ignores
+it, the same guarantee the standards doc demands from `LEMON_ENUM` switches.
+
+**Genuinely open data → `JsonTree<MaxDepth>`.** Tool-call `arguments`, `metadata`
+maps, and `Preserve`-policy extras are user-defined and cannot be closed. They use a
+statically-typed value tree whose recursion depth is a compile-time bound:
+
+```cpp
+template <size_t Depth>
+using JsonTree = std::variant<std::nullptr_t, bool, int64_t, double, std::string,
+                              std::vector<JsonTree<Depth - 1>>,
+                              std::map<std::string, JsonTree<Depth - 1>>>;
+// JsonTree<0>: scalars only. Typical: using ToolArgs = JsonTree<8>;
+```
+
+(Spelled here as the concept; the implementation wraps the variant in a class template
+so the recursion terminates cleanly and accessors return `std::optional`.) Every level
+is a real variant — exhaustively visitable, no stringly `type()` checks — and a
+document deeper than the bound is a `ParseError` at the offending path rather than
+unbounded recursion on hostile input, which also gives the parser a hard nesting limit
+for free. Converters to/from `nlohmann::json` exist only at the transport edge and in
+the codec internals; application code above the codec never sees a raw `json` value.
 
 ### Tri-state fields: `JsonOptional<T>`
 
@@ -213,9 +258,59 @@ protected:
 };
 ```
 
-- One `register_quad(server, method, path, thunk)` helper replaces all three
-  registration idioms, the four hand-written 405 bodies, and the four verbatim regex
-  quadruplicates.
+### Descriptors, factories, and contracts
+
+Endpoints are registered the way backends already are — a declarative descriptor bound
+to a factory in a generated registry, not imperative calls in a 429-line function
+(mirroring `BackendDescriptor` / `BackendRegistration` / `all_registrations()`):
+
+```cpp
+struct EndpointDescriptor {          // what the endpoint is — data, no behavior
+    std::string_view path;           // "chat/completions"
+    HttpMethod      method;
+    AuthLevel       auth;            // Public | ApiKey | Admin (replaces the
+                                     // path-prefix classification in authenticate_request)
+    bool            streamable;
+    bool            quad_prefixed;   // false only for the documented exceptions
+};
+
+struct EndpointRegistration {
+    const EndpointDescriptor* descriptor;
+    RegisterFn register_fn;          // type-erased thunk from Endpoint<Derived>
+};
+const std::vector<EndpointRegistration>& all_endpoint_registrations();
+```
+
+`Server::setup_routes` shrinks to iterating that list. Contracts are enforced at both
+compile time and test time:
+
+- **Compile time**, inside `Endpoint<Derived>`: `static_assert`s (detection idiom)
+  that `Derived::Request` / `Response` are `LEMON_JSON` types, that `handle` /
+  `handle_stream` match the descriptor's `streamable` flag, and that the path is
+  declared. A malformed endpoint fails to compile, not to route.
+- **Test time**, an `EndpointContractTest` in the style of `BackendModeContractTest`:
+  sweeps `all_endpoint_registrations()` asserting quad-prefix coverage (invariant #1),
+  auto-405 for wrong methods, auth classification matching the descriptor, and that no
+  two descriptors claim a path/method pair.
+
+The same descriptor/factory/contract pattern applies to the **non-HTTP message
+dispatchers**, which are stringly today: MCP JSON-RPC methods
+(`method == "tools/call"` string chains, `mcp_server.cpp:321`), WebSocket realtime
+event types (raw `"type"` string literals throughout `realtime_session.cpp`), and job
+engine ops — which already have a runtime factory registry
+(`register_op("system_info", lambda)`, `job_ops.cpp:28`) but with untyped `json`
+in/out. Each gets a `MessageHandler<Derived>` base over the same machinery: the
+dispatch key comes from a `LEMON_ENUM` vocabulary, payloads are `LEMON_JSON` DTOs, and
+a registry + contract test replaces the if/else chains. (HTTP endpoints land in this
+phase; the MCP/realtime/job-op ports are Phase 4 items.)
+
+`ProtocolAdapter` route tables (Phase 3) register through the same registry with
+`quad_prefixed = false`, so the documented exceptions are declared data instead of
+special cases.
+
+- One `register_quad(server, method, path, thunk)` helper (driven by the registry)
+  replaces all three registration idioms, the four hand-written 405 bodies, and the
+  four verbatim regex quadruplicates.
 - `SseWriter` in `lemon-net` becomes the only place `"data: ...\n\n"` framing exists;
   `SseReader` the only SSE parser (replacing the copies in `lemonade_client.cpp`,
   `ollama_api.cpp`, `anthropic_api.cpp`, `cloud_server.cpp`).
@@ -288,6 +383,10 @@ class OllamaAdapter    : ProtocolAdapter<OllamaAdapter> { /* NDJSON framing */ }
    typed config, `telemetry.cpp` OTLP chains, `backend_manager.cpp` version chains,
    CLI (`lemonade_client.cpp`, `bench.cpp`, `chat_repl.cpp`) onto lemon-api DTOs —
    which also makes CLI/tray output shapes compile-time-checked against the server.
+4. Port the non-HTTP message dispatchers onto `MessageHandler<Derived>` registries
+   (Phase 2 §Descriptors): MCP JSON-RPC methods and tool calls, WebSocket realtime
+   event types, and the job engine's op registry — enum-keyed dispatch, `LEMON_JSON`
+   payloads, contract tests over each registry.
 
 ## Verification & guardrails (every phase)
 
