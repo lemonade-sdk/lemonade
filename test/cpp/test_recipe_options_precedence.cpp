@@ -253,9 +253,9 @@ int main() {
             !merged.has_option("cfg_scale"), "", "");
     }
 
-    // --- KV cache quantization config surface (U3): four new llamacpp options ---
+    // --- KV cache quantization config surface: four new llamacpp options ---
 
-    // D1: each of the four keys resolves to its documented default when unset
+    // Each of the four keys resolves to its documented default when unset
     {
         RecipeOptions defaults_only("llamacpp", json::object());
         failures += fail("kv-cache: kv_cache_quantization defaults to f16",
@@ -272,7 +272,7 @@ int main() {
             defaults_only.get_option("kv_cache_priority").get<std::string>(), "balanced");
     }
 
-    // D2: "auto" set at the saved-model layer survives merge and is readable —
+    // "auto" set at the saved-model layer survives merge and is readable —
     // the regression the sentinel carve-out exists to prevent.
     {
         json saved_model_ro = {{"kv_cache_quantization", "auto"}};
@@ -283,7 +283,7 @@ int main() {
             merged.get_option("kv_cache_quantization").get<std::string>(), "auto");
     }
 
-    // D3: "auto" at a lower layer is overridden by an explicit q8_0 at a higher layer
+    // "auto" at a lower layer is overridden by an explicit q8_0 at a higher layer
     {
         json lower = {{"kv_cache_quantization", "auto"}};
         json higher = {{"kv_cache_quantization", "q8_0"}};
@@ -294,7 +294,7 @@ int main() {
             merged.get_option("kv_cache_quantization").get<std::string>(), "q8_0");
     }
 
-    // D4: an unset kv_cache_priority at the model layer inherits the global
+    // An unset kv_cache_priority at the model layer inherits the global
     // value rather than snapping back to the default.
     {
         json global_opts = {{"kv_cache_priority", "max_context"}};
@@ -306,7 +306,7 @@ int main() {
             merged.get_option("kv_cache_priority").get<std::string>(), "max_context");
     }
 
-    // D5: min_kv_quantization set to q4_0 is stored, not discarded as a sentinel
+    // min_kv_quantization set to q4_0 is stored, not discarded as a sentinel
     {
         json opts = {{"min_kv_quantization", "q4_0"}};
         RecipeOptions ro("llamacpp", opts);
@@ -316,9 +316,9 @@ int main() {
             ro.get_option("min_kv_quantization").get<std::string>(), "q4_0");
     }
 
-    // D6: an imported/round-tripped model definition carrying all four keys
+    // An imported/round-tripped model definition carrying all four keys
     // retains all four — recipe_options is preserved wholesale by the import
-    // allowlist, and RecipeOptions' descriptor-driven key list (U3 step 1)
+    // allowlist, and RecipeOptions' descriptor-driven key list
     // is what makes each of the four keys survive construction rather than
     // being silently dropped as unrecognized.
     {

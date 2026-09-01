@@ -3500,13 +3500,13 @@ void Server::respond_with_model_options(
             {"effective", effective_json},
             {"defaults", defaults_json},
             {"resolved_ctx_size", resolved_ctx},
-            // Sibling fields, not folded into `effective`/`defaults` (R13):
+            // Sibling fields, not folded into `effective`/`defaults`:
             // those stay replayable /v1/load bodies and must still report
             // "auto" rather than freezing in a point-in-time tier decision.
             {"resolved_kv_cache_tier", kv_cache_quant_tier_to_string(kv_resolution.tier)}
         };
         if (kv_resolution.structurally_ineligible) {
-            // R14: distinguishes "no tier is eligible on this backend" from
+            // Distinguishes "no tier is eligible on this backend" from
             // an ordinary f16 resolution, which would otherwise report an
             // identical tier value with no way to tell the two apart.
             response["resolved_kv_cache_ineligible_reason"] =
@@ -3614,8 +3614,22 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 changes[key] = value;
             }
 
+            // Validate the kv-cache-quant resolver against the options this
+            // write would leave the model with (matching the "validate
+            // everything before writing anything" comment above) so a bad
+            // combination is rejected with 400 rather than persisted and
+            // only discovered on the next GET, which would then 500.
+            const RecipeOptions preview = model_manager_->preview_saved_model_options(info, changes);
+            const auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(preview, info);
+            if (!kv_ctx.resolution.ok()) {
+                r.status = 400;
+                r.set_content(nlohmann::json{{"error", kv_ctx.resolution.failure}}.dump(),
+                             "application/json");
+                return false;
+            }
+
             if (dry_run) {
-                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                info.recipe_options = preview;
                 return true;
             }
             if (!changes.empty()) {

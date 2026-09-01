@@ -2118,11 +2118,13 @@ class EndpointTests(ServerTestBase):
 
     def test_012y_kv_cache_quant_out_of_set_value_fails_gracefully(self):
         """An out-of-set kv_cache_quantization value is rejected at the
-        resolver (U5's validate-before-any-memory-query), naming the
-        accepted set. Saving it does not crash the server or the model
-        entry; DELETE always recovers it (documented follow-up: this
-        endpoint does not pre-validate the string value at write time, so
-        a bad saved value surfaces as a 500 here rather than a 400)."""
+        resolver (validate-before-any-memory-query), naming the accepted
+        set. The write is validated before anything is persisted, so a
+        rejected value never reaches recipe_options.json: a subsequent GET
+        reads the unchanged, still-healthy saved state (this endpoint does
+        not yet give the resolver's validation failures a distinct client-
+        error status, so the POST itself still surfaces as a 500 rather
+        than a 400)."""
         self.addCleanup(self._reset_options)
         self._reset_options()
 
@@ -2134,18 +2136,81 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(bad.status_code, 500, bad.text)
         self.assertIn("f16, auto, q8_0, q4_0", bad.json()["error"]["message"])
 
-        # The bad value round-trips consistently rather than corrupting state.
-        still_bad = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
-        self.assertEqual(still_bad.status_code, 500, still_bad.text)
-
-        recovered = self._reset_options()
-        self.assertEqual(recovered.status_code, 200, recovered.text)
-        healthy = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
-        self.assertEqual(healthy.status_code, 200, healthy.text)
-        self.assertEqual(healthy.json()["resolved_kv_cache_tier"], "f16")
+        # The rejected write was never persisted: the model is not stuck.
+        still_healthy = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(still_healthy.status_code, 200, still_healthy.text)
+        self.assertEqual(
+            still_healthy.json()["resolved_kv_cache_tier"],
+            "f16",
+            "a rejected option value must not have been saved",
+        )
 
         print(
-            "[OK] out-of-set kv_cache_quantization value fails gracefully and recovers"
+            "[OK] out-of-set kv_cache_quantization value is rejected without persisting"
+        )
+
+    def test_012z_kv_cache_quant_unfittable_ctx_size_fails_gracefully(self):
+        """An explicit ctx_size no eligible KV cache quant tier can fit is
+        rejected at the resolver before the write persists, the same fix as
+        test_012y's out-of-set-enum case but for the ctx-size-doesn't-fit
+        failure mode. A rejected write must not leave the model stuck: a
+        subsequent GET must read the unchanged, still-healthy saved state."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        bad = requests.post(
+            self._options_url(),
+            json={
+                "kv_cache_quantization": "auto",
+                "min_kv_quantization": "q4_0",
+                "ctx_size": 50_000_000,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad.status_code, 400, bad.text)
+        self.assertIn("does not fit at any eligible", bad.json()["error"])
+
+        still_healthy = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(still_healthy.status_code, 200, still_healthy.text)
+        self.assertEqual(
+            still_healthy.json()["saved"],
+            {},
+            "a rejected unfittable ctx_size must not have been saved",
+        )
+
+        print(
+            "[OK] unfittable ctx_size via options POST is rejected without persisting"
+        )
+
+    def test_012zab_max_kv_quantization_below_floor_rejected(self):
+        """max_kv_quantization ranked lower-quality than the effective
+        kv_cache_priority/min_kv_quantization floor is a contradictory
+        config (no tier in the ladder's range exists). Must be rejected
+        rather than silently resolving to plain f16 with no signal, and
+        must not persist the rejected combination."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        bad = requests.post(
+            self._options_url(),
+            json={"kv_cache_quantization": "auto", "max_kv_quantization": "q4_0"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(bad.status_code, 500, bad.text)
+        self.assertIn(
+            "lower quality than the effective floor", bad.json()["error"]["message"]
+        )
+
+        still_healthy = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(still_healthy.status_code, 200, still_healthy.text)
+        self.assertEqual(
+            still_healthy.json()["saved"],
+            {},
+            "a rejected max_kv_quantization/floor contradiction must not have been saved",
+        )
+
+        print(
+            "[OK] max_kv_quantization below the effective floor is rejected without persisting"
         )
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):

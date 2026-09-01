@@ -170,7 +170,7 @@ int main() {
         "-np 4");
 
 
-    // --- U6: cache-type-k/v launch args for a resolved KV cache tier ---
+    // --- Cache-type-k/v launch args for a resolved KV cache tier ---
 
     {
         auto f16 = kv_cache_type_launch_args(KvCacheQuantTier::F16);
@@ -211,7 +211,7 @@ int main() {
     }
     {
         // f16: --cache-type-k in the passthrough reaches argv unchanged —
-        // today's behavior, preserved (KTD7).
+        // today's behavior, preserved.
         std::set<std::string> reserved = {"-m", "--model", "--ctx-size", "-c"};
         auto f16 = kv_cache_type_launch_args(KvCacheQuantTier::F16);
         for (auto& [flag, alias] : f16.reservations) {
@@ -220,6 +220,28 @@ int main() {
         }
         failures += !expect_bool("tier f16 with --cache-type-k in passthrough: no collision",
             validate_custom_args("--cache-type-k q8_0", reserved).empty(), true);
+    }
+    {
+        // kv_cache_type_flag_collision is the pure
+        // helper resolve_llamacpp_kv_cache uses to raise this collision at
+        // resolve time (before a backend server is constructed), instead of
+        // letting it surface from inside WrappedServer::load() where it
+        // would hit the router's evict-all-and-retry path.
+        using lemon::backends::llamacpp::kv_cache_type_flag_collision;
+        failures += !expect_bool("collision: q8_0 tier with --cache-type-k passthrough",
+            !kv_cache_type_flag_collision(KvCacheQuantTier::Q8_0, "--cache-type-k q4_0").empty(), true);
+        failures += !expect_bool("collision: q8_0 tier with -ctv alias passthrough",
+            !kv_cache_type_flag_collision(KvCacheQuantTier::Q8_0, "-ctv q4_0").empty(), true);
+        failures += !expect_bool("collision message names the resolved tier",
+            kv_cache_type_flag_collision(KvCacheQuantTier::Q8_0, "-ctv q4_0").find("q8_0") != std::string::npos, true);
+        failures += !expect_bool("no collision: f16 tier reserves nothing",
+            kv_cache_type_flag_collision(KvCacheQuantTier::F16, "--cache-type-k q8_0").empty(), true);
+        failures += !expect_bool("no collision: q8_0 tier with unrelated passthrough",
+            kv_cache_type_flag_collision(KvCacheQuantTier::Q8_0, "--parallel 2").empty(), true);
+        failures += !expect_bool("no collision: q8_0 tier with empty passthrough",
+            kv_cache_type_flag_collision(KvCacheQuantTier::Q8_0, "").empty(), true);
+        failures += !expect_bool("no collision: unresolved tier reserves nothing",
+            kv_cache_type_flag_collision(std::nullopt, "--cache-type-k q8_0").empty(), true);
     }
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

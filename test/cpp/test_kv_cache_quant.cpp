@@ -1,10 +1,10 @@
-// Standalone test for the KV-cache quant tier vocabulary (U1), the GGUF
-// value_length field it depends on, the safety table + eligibility gates
-// (U4), and the ladder resolver (U5).
+// Standalone test for the KV-cache quant tier vocabulary, the GGUF
+// value_length field it depends on, the safety table + eligibility gates,
+// and the ladder resolver.
 //
 // Compile: g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include test/cpp/test_kv_cache_quant.cpp -o test_kv_cache_quant
-// (U5 onward links lemonade-server-core: resolve_kv_cache takes a
-// RecipeOptions, which is not header-only.)
+// (The ladder resolver test cases link lemonade-server-core: resolve_kv_cache
+// takes a RecipeOptions, which is not header-only.)
 
 #include "lemon/auto_tune.h"
 #include "lemon/backends/llamacpp/llamacpp.h"
@@ -39,7 +39,7 @@ static void test_bytes_per_element_exact_values() {
 }
 
 static void test_bytes_per_element_not_round_numbers() {
-    // Direct guard against the round-number regression KTD1 exists to prevent:
+    // Direct guard against a round-number regression:
     // 1.0/0.5 would under-reserve KV memory by 6.25%/12.5%.
     check("bytes_per_element: q8_0 is not 1.0",
           !approx_eq(lemon::kv_cache_quant_bytes_per_element(KvCacheQuantTier::Q8_0), 1.0));
@@ -133,6 +133,36 @@ static void test_gguf_value_length() {
     check("GgufMetadata: value_length defaults to 0 when absent", without_value.value_length == 0);
 }
 
+static void test_weighted_byte_cost_uses_both_key_and_value_length() {
+    // 32 uniform layers, 4 kv heads/layer -> head_count_kv=128 total, matching
+    // the convention make_model() and every other GgufMetadata fixture in
+    // this file already use for the scalar/uniform branch.
+    GgufMetadata gguf;
+    gguf.block_count = 32;
+    gguf.head_count_kv = 128;
+    gguf.key_length = 128;
+    gguf.value_length = 64;  // asymmetric: half of key_length
+    const double bytes_per_token = lemon::compute_weighted_kv_cache_bytes_per_token(gguf);
+    const double expected = 128.0 * (128.0 + 64.0) * 2.0;  // f16: 2 bytes/element
+    check("weighted byte cost sums key_length + value_length for an asymmetric model",
+          approx_eq(bytes_per_token, expected));
+    const double old_symmetric_assumption = 128.0 * 128.0 * 2.0 * 2.0;  // key_length doubled
+    check("weighted byte cost differs from doubling key_length when key/value dims differ",
+          !approx_eq(bytes_per_token, old_symmetric_assumption));
+}
+
+static void test_weighted_byte_cost_falls_back_value_length_to_key_length_when_absent() {
+    GgufMetadata gguf;
+    gguf.block_count = 32;
+    gguf.head_count_kv = 128;
+    gguf.key_length = 128;
+    gguf.value_length = 0;  // absent from this model's GGUF metadata
+    const double bytes_per_token = lemon::compute_weighted_kv_cache_bytes_per_token(gguf);
+    const double expected = 128.0 * (128.0 + 128.0) * 2.0;
+    check("weighted byte cost falls back value_length to key_length when the GGUF field is absent",
+          approx_eq(bytes_per_token, expected));
+}
+
 static void test_safety_table_documented_answers() {
     using lemon::backends::llamacpp::kv_cache_quant_safety_table;
     struct Row { const char* backend; bool q8; bool q4; };
@@ -204,7 +234,7 @@ static void test_model_gate_zero_value_dim_ineligible() {
           !lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q8_0, 128, 0));
 }
 
-// ── U5: ladder resolver ────────────────────────────────────────────────
+// ── Ladder resolver ───────────────────────────────────────────────────
 
 using lemon::KvCacheResolution;
 using lemon::ModelInfo;
@@ -350,6 +380,30 @@ static void test_max_kv_quantization_q8_never_selects_f16() {
     KvCacheResolution res = lemon::resolve_kv_cache(opts, mi, /*mem_gb=*/64.0, "cuda", kSafeTable);
     check("U5: max_kv_quantization: q8_0 never selects f16",
           res.ok() && res.tier == KvCacheQuantTier::Q8_0);
+}
+
+static void test_max_kv_quantization_below_floor_raises_invalid_argument() {
+    // Default balanced priority floors at q8_0 (rank 1) regardless of
+    // min_kv_quantization; max_kv_quantization: q4_0 (rank 2) is a ceiling
+    // ranked *lower* quality than that floor -- lo(2) > hi(1), an empty and
+    // contradictory ladder range. Must reject rather than silently landing
+    // on f16 with no signal (the structural-ineligibility flag only
+    // covers the backend/model-gate case, not a self-contradictory config).
+    ModelInfo mi = make_model(128, 128, /*max_ctx_window=*/8192, /*size_gb=*/1.0);
+    RecipeOptions opts = make_opts({{"ctx_size", -1}, {"kv_cache_quantization", "auto"},
+                                    {"max_kv_quantization", "q4_0"}});
+    bool threw = false;
+    try {
+        lemon::resolve_kv_cache(opts, mi, /*mem_gb=*/64.0, "cuda", kSafeTable);
+    } catch (const std::invalid_argument& e) {
+        threw = true;
+        const std::string what = e.what();
+        check("U5: max_kv_quantization-below-floor error names max_kv_quantization",
+              what.find("max_kv_quantization") != std::string::npos);
+        check("U5: max_kv_quantization-below-floor error names the contradicting tiers",
+              what.find("q4_0") != std::string::npos && what.find("q8_0") != std::string::npos);
+    }
+    check("U5: max_kv_quantization ranked below the priority floor raises std::invalid_argument", threw);
 }
 
 static void test_auto_on_vulkan_selects_f16_structurally_ineligible() {
@@ -506,6 +560,8 @@ int main() {
     test_narrowing_auto_is_not_a_concrete_tier();
     test_ladder_order();
     test_gguf_value_length();
+    test_weighted_byte_cost_uses_both_key_and_value_length();
+    test_weighted_byte_cost_falls_back_value_length_to_key_length_when_absent();
     test_safety_table_documented_answers();
     test_f16_always_safe_on_every_backend();
     test_unrecognized_backend_never_safe();
@@ -521,6 +577,7 @@ int main() {
     test_balanced_with_f16_min_selects_f16_only();
     test_max_speed_selects_f16_regardless();
     test_max_kv_quantization_q8_never_selects_f16();
+    test_max_kv_quantization_below_floor_raises_invalid_argument();
     test_auto_on_vulkan_selects_f16_structurally_ineligible();
     test_auto_indivisible_head_dim_selects_f16_even_under_pressure();
     test_explicit_ctx_unfittable_reports_r8_failure();

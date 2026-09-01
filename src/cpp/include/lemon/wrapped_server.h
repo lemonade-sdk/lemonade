@@ -409,7 +409,7 @@ public:
         return ctx_size_auto_;
     }
 
-    // Same shape as ctx_size_auto_ (KTD12): recipe_options_ holds the concrete
+    // Same shape as ctx_size_auto_: recipe_options_ holds the concrete
     // tier the ladder picked, which no request can spell as "auto" again.
     // Keep the request's intent so a later load spelling kv_cache_quantization:
     // auto can be recognized as the same load rather than an options change.

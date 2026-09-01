@@ -79,14 +79,14 @@ inline const BackendDescriptor descriptor = {
     },
 };
 
-// (Backend, tier) fused-attention-kernel safety table for R5/KTD6. Lemonade
+// (Backend, tier) fused-attention-kernel safety table. Lemonade
 // installs prebuilt llama.cpp binaries rather than compiling them, so this
 // table cannot be derived from this repo's own build flags — each row is
 // hand-verified against the actual asset source for that backend and cites
 // where. A backend absent from this table (or an unrecognized one) defaults
 // to `false, false` via KvCacheQuantSafetyTable's lookup miss, never `true`.
 //
-// Restricted to q8_0 and q4_0 deliberately (KTD6): those are the two tiers
+// Restricted to q8_0 and q4_0 deliberately: those are the two tiers
 // whose symmetric fused-attention kernels compile unconditionally in a stock
 // llama.cpp build, so a `true` entry needs no build-flag knowledge beyond
 // "this build was not stripped of kernel instances." The wider llama.cpp
@@ -119,8 +119,8 @@ inline const KvCacheQuantSafetyTable kv_cache_quant_safety_table = {
     // vulkan: flash attention is gated on per-device GPU feature bits
     // (coopmat2 or subgroupShuffle+subgroupVote), not on the shipped binary,
     // so no static table entry can assert it — a rejected op silently falls
-    // back to CPU attention. Enabling Vulkan is out of scope for this
-    // change (see plan Risks & Dependencies / R14).
+    // back to CPU attention. Enabling Vulkan here would need a per-device
+    // GPU feature-bit query this static table format doesn't carry.
     {"vulkan",       {false, false}},
     // cpu: no fused flash-attention kernels at all.
     {"cpu",          {false, false}},
@@ -128,6 +128,53 @@ inline const KvCacheQuantSafetyTable kv_cache_quant_safety_table = {
     // are unknown, so it ships unsafe rather than guessed.
     {"system",       {false, false}},
 };
+
+
+// The --cache-type-k/--cache-type-v launch fragment for a resolved KV cache
+// tier — no memory reasoning or conflict detection here.
+// Empty for f16 or an unresolved tier: the whole point is that the
+// managed flags are reserved only when actually emitted, so an unconditional
+// `llamacpp_args --cache-type-k ...` workaround keeps working exactly as it
+// does today while the option stays f16.
+struct CacheTypeLaunchArgs {
+    std::vector<std::string> argv;  // tokens to append, e.g. {"--cache-type-k","q8_0","--cache-type-v","q8_0"}
+    // {flag, short alias} pairs to reserve, e.g. {"--cache-type-k","-ctk"}, {"--cache-type-v","-ctv"}.
+    // Each flag reserves its own alias independently, matching --device/-dev.
+    std::vector<std::pair<std::string, std::string>> reservations;
+};
+
+inline CacheTypeLaunchArgs kv_cache_type_launch_args(std::optional<KvCacheQuantTier> resolved_tier) {
+    CacheTypeLaunchArgs out;
+    if (!resolved_tier || *resolved_tier == KvCacheQuantTier::F16) {
+        return out;
+    }
+    const std::string tier_str = kv_cache_quant_tier_to_string(*resolved_tier);
+    out.argv = {"--cache-type-k", tier_str, "--cache-type-v", tier_str};
+    out.reservations = {{"--cache-type-k", "-ctk"}, {"--cache-type-v", "-ctv"}};
+    return out;
+}
+
+// True when a resolved tier's managed --cache-type-k/-v flags (and their
+// -ctk/-ctv aliases) collide with a manual llamacpp_args passthrough of the
+// same flags — the pre-existing workaround for setting them before this
+// feature existed. Pure and testable with a fabricated tier/args pair,
+// independent of the live-memory-dependent resolve_llamacpp_kv_cache below.
+// Returns an empty string when there is no collision.
+inline std::string kv_cache_type_flag_collision(std::optional<KvCacheQuantTier> resolved_tier,
+                                                 const std::string& llamacpp_args) {
+    const CacheTypeLaunchArgs cache_type_args = kv_cache_type_launch_args(resolved_tier);
+    if (cache_type_args.reservations.empty() || llamacpp_args.empty()) return "";
+    std::set<std::string> reserved;
+    for (const auto& [flag, alias] : cache_type_args.reservations) {
+        reserved.insert(flag);
+        reserved.insert(alias);
+    }
+    const std::string collision = utils::validate_custom_args(llamacpp_args, reserved);
+    if (collision.empty()) return "";
+    return "kv_cache_quantization resolved to " + kv_cache_quant_tier_to_string(*resolved_tier) +
+        ", which reserves --cache-type-k/--cache-type-v, but llamacpp_args also sets them: " +
+        collision;
+}
 
 // Both the load path (Router::load_model) and the options-preview path
 // (Server::respond_with_model_options) need the same three steps before
@@ -149,34 +196,33 @@ inline LlamaCppKvCacheContext resolve_llamacpp_kv_cache(const RecipeOptions& eff
     ctx.normalized_backend = backends::normalize_backend_name(
         model_info.recipe,
         backend_choice_json.is_string() ? backend_choice_json.get<std::string>() : "");
-    ctx.available_memory_gb = get_available_memory_gb(model_info.device);
+    // An explicit ctx_size with the default f16 tier never reaches a branch
+    // that consults memory (resolve_kv_cache_f16_only's explicit-ctx_size
+    // path returns before reading it) — mirrors resolve_auto_ctx_size's old
+    // short-circuit, skipping the live device-memory query (an nvidia-smi
+    // subprocess spawn on NVIDIA) for that common, unchanged-behavior case.
+    // Excludes NPU: Router::load_model reuses this same available_memory_gb
+    // for its own low-memory rejection check, which needs the real value
+    // regardless of what the kv-cache resolver itself would consult.
+    const json ctx_size_json = effective_options.get_option("ctx_size");
+    const bool ctx_size_explicit = ctx_size_json.is_number() && ctx_size_json.get<int64_t>() != -1;
+    const json kv_quant_json = effective_options.get_option("kv_cache_quantization");
+    const bool kv_quant_is_f16 = !kv_quant_json.is_string() || kv_quant_json.get<std::string>() == "f16";
+    const bool skip_memory_probe = ctx_size_explicit && kv_quant_is_f16 &&
+        !(model_info.device & DEVICE_NPU);
+    ctx.available_memory_gb = skip_memory_probe ? 0.0 : get_available_memory_gb(model_info.device);
     ctx.resolution = resolve_kv_cache(effective_options, model_info, ctx.available_memory_gb,
                                       ctx.normalized_backend, kv_cache_quant_safety_table);
-    return ctx;
-}
+    if (!ctx.resolution.ok()) return ctx;
 
-// The --cache-type-k/--cache-type-v launch fragment for a resolved KV cache
-// tier (U5's decision — no memory reasoning or conflict detection here).
-// Empty for f16 or an unresolved tier: KTD7's whole point is that the
-// managed flags are reserved only when actually emitted, so an unconditional
-// `llamacpp_args --cache-type-k ...` workaround keeps working exactly as it
-// does today while the option stays f16.
-struct CacheTypeLaunchArgs {
-    std::vector<std::string> argv;  // tokens to append, e.g. {"--cache-type-k","q8_0","--cache-type-v","q8_0"}
-    // {flag, short alias} pairs to reserve, e.g. {"--cache-type-k","-ctk"}, {"--cache-type-v","-ctv"}.
-    // Each flag reserves its own alias independently, matching --device/-dev.
-    std::vector<std::pair<std::string, std::string>> reservations;
-};
-
-inline CacheTypeLaunchArgs kv_cache_type_launch_args(std::optional<KvCacheQuantTier> resolved_tier) {
-    CacheTypeLaunchArgs out;
-    if (!resolved_tier || *resolved_tier == KvCacheQuantTier::F16) {
-        return out;
+    const json llamacpp_args_json = effective_options.get_option("llamacpp_args");
+    const std::string collision = kv_cache_type_flag_collision(
+        ctx.resolution.tier,
+        llamacpp_args_json.is_string() ? llamacpp_args_json.get<std::string>() : "");
+    if (!collision.empty()) {
+        ctx.resolution.failure = collision;
     }
-    const std::string tier_str = kv_cache_quant_tier_to_string(*resolved_tier);
-    out.argv = {"--cache-type-k", tier_str, "--cache-type-v", tier_str};
-    out.reservations = {{"--cache-type-k", "-ctk"}, {"--cache-type-v", "-ctv"}};
-    return out;
+    return ctx;
 }
 
 }  // namespace llamacpp

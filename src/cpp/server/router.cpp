@@ -888,7 +888,7 @@ void Router::load_model(const std::string& model_name,
                 existing_opts.erase("ctx_size");
                 requested_opts.erase("ctx_size");
             }
-            // Same shape, for the KV cache quant tier (KTD12): a quant-auto-
+            // Same shape, for the KV cache quant tier: a quant-auto-
             // resolved process holds the concrete tier the ladder picked, which
             // no request can spell. Asking for auto again asks for what is running.
             if (existing->kv_cache_quant_is_auto() &&
@@ -1013,8 +1013,8 @@ void Router::load_model(const std::string& model_name,
         const std::string& normalized_backend = kv_ctx.normalized_backend;
         KvCacheResolution kv_resolution = kv_ctx.resolution;
         if (!kv_resolution.ok()) {
-            // R8/R11: raised here, before a backend server is constructed, so
-            // neither reaches the evict-all-and-retry branch below (KTD13).
+            // Raised here, before a backend server is constructed, so it
+            // never reaches the evict-all-and-retry branch below.
             throw std::invalid_argument(kv_resolution.failure);
         }
         const int64_t auto_ctx = kv_resolution.ctx_size;
@@ -1022,7 +1022,7 @@ void Router::load_model(const std::string& model_name,
         const json kv_quant_config_json = effective_options.get_option("kv_cache_quantization");
         const bool kv_cache_quant_auto = kv_quant_config_json.is_string() && kv_quant_config_json == "auto";
         effective_options.set_option("ctx_size", auto_ctx);
-        // Internal key, deliberately outside get_keys_for_recipe() (R13): never
+        // Internal key, deliberately outside get_keys_for_recipe(): never
         // appears in to_resolved_json(), so it cannot leak into the replayable
         // `effective`/`defaults` option bodies the options endpoint returns.
         effective_options.set_option("resolved_kv_cache_tier",
@@ -1033,7 +1033,7 @@ void Router::load_model(const std::string& model_name,
                                 << std::endl;
         }
         if (kv_resolution.structurally_ineligible) {
-            // R14: told explicitly rather than left to infer from a tier
+            // Told explicitly rather than left to infer from a tier
             // field that looks identical to the default.
             LOG(WARNING, "Router") << "kv_cache_quantization requested but no KV cache quant "
                                    << "tier is eligible on backend '" << normalized_backend

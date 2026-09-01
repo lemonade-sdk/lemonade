@@ -336,7 +336,8 @@ void LlamaCppServer::load(const std::string& model_name,
     }
     push_arg(args, reserved_flags, "--ctx-size", std::to_string(ctx_size), std::vector<std::string>{"-c"});
 
-    // U5 already decided the tier and already raised R11; this just emits
+    // The resolver already decided the tier and already raised the flash-
+    // attention conflict, if any; this just emits
     // it. No memory reasoning or conflict detection here.
     const json resolved_tier_json = options.get_option("resolved_kv_cache_tier");
     const auto resolved_tier = resolved_tier_json.is_string()

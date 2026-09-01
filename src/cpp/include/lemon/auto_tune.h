@@ -314,9 +314,9 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     return ctx_size;
 }
 
-// ── KV cache quantization ladder resolver (R3-R11, KTD3) ──────────────────
+// ── KV cache quantization ladder resolver ──────────────────────────────
 
-// Bias values for kv_cache_priority (R3): which end of the context-vs-
+// Bias values for kv_cache_priority: which end of the context-vs-
 // throughput axis the ladder favors. Distinct from the tier types because it
 // drives ladder-floor selection, not a quantization amount.
 enum class KvCachePriority {
@@ -335,24 +335,23 @@ inline std::optional<KvCachePriority> parse_kv_cache_priority(const std::string&
 // Result of resolving both context size and KV cache quant tier together.
 // Replaces resolve_auto_ctx_size's bare int64_t / -2-sentinel contract:
 // `ctx_size_is_auto` carries what -2 used to mean, and `failure` carries
-// R8/R11's resolve-time failures, which callers must raise before
-// constructing a backend server rather than let surface from inside load()
-// (KTD13).
+// the two resolve-time failure modes below, which callers must raise before
+// constructing a backend server rather than let surface from inside load().
 struct KvCacheResolution {
     KvCacheQuantTier tier = KvCacheQuantTier::F16;
     int64_t ctx_size = 0;
     bool ctx_size_is_auto = false;
 
-    // R14: true when the ladder was entered (auto or an explicit tier) but
+    // True when the ladder was entered (auto or an explicit tier) but
     // zero candidates survived the backend/model gates — a structural
     // property of the backend or model, not a memory-fit shortfall. The
     // tier still resolves to f16 in this case; this flag is what makes that
     // outcome distinguishable from an ordinary f16 resolution.
     bool structurally_ineligible = false;
 
-    // Non-empty when resolution failed: R8 (an explicit ctx_size that no
-    // eligible tier can fit) or R11 (a quantized tier would be selected but
-    // llamacpp_args explicitly disables flash attention). `tier`/`ctx_size`
+    // Non-empty when resolution failed: an explicit ctx_size that no
+    // eligible tier can fit, or a quantized tier would be selected but
+    // llamacpp_args explicitly disables flash attention. `tier`/`ctx_size`
     // carry no meaning when this is set.
     std::string failure;
 
@@ -387,7 +386,7 @@ inline bool llamacpp_args_disable_flash_attention(const std::string& llamacpp_ar
 }
 
 // The f16 path is exactly today's resolve_auto_ctx_size/compute_auto_context_size
-// behavior: unconstrained by any target, no R7/R8/R11 semantics. Both the
+// behavior: unconstrained by any target, no per-tier ladder semantics. Both the
 // plain `kv_cache_quantization: f16` config and every "no eligible tier"
 // outcome land here.
 inline KvCacheResolution resolve_kv_cache_f16_only(const RecipeOptions& effective_options,
@@ -421,8 +420,8 @@ inline KvCacheResolution resolve_kv_cache_f16_only(const RecipeOptions& effectiv
 
 } // namespace kv_cache_quant_detail
 
-/// Resolve both the effective KV cache quant tier and ctx_size together
-/// (KTD3). Called once per load (after residency-capacity eviction, so freed
+/// Resolve both the effective KV cache quant tier and ctx_size together.
+/// Called once per load (after residency-capacity eviction, so freed
 /// memory is visible) and once per options-endpoint read.
 ///
 /// `available_memory_gb` is queried once by the caller (mirroring
@@ -430,12 +429,12 @@ inline KvCacheResolution resolve_kv_cache_f16_only(const RecipeOptions& effectiv
 /// whole resolver stays a pure computation over its inputs and is directly
 /// unit-testable with fabricated memory figures. `normalized_backend` and
 /// `safety_table` are likewise supplied by the caller, which already links
-/// the server core and has already normalized the backend name (KTD4) —
+/// the server core and has already normalized the backend name —
 /// this function stays free of backend includes and reaches for no global
 /// state, so it links into a standalone test.
 ///
 /// Throws std::invalid_argument if any of the four kv-cache-quant option
-/// values is out of its accepted set (R1/R2/R3), before any memory query —
+/// values is out of its accepted set, before any memory query —
 /// the same exception type RuntimeConfig::validate_backend_choice uses.
 inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options,
                                           const ModelInfo& model_info,
@@ -476,7 +475,7 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, /*structurally_ineligible=*/false);
     }
     if (*kv_quant == KvCacheQuantConfig::Auto && *priority == KvCachePriority::MaxSpeed) {
-        // R3: max_speed disables auto-quantization entirely; context
+        // max_speed disables auto-quantization entirely; context
         // auto-sizing stays at f16 only. Does not consult min_kv_quantization.
         return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, /*structurally_ineligible=*/false);
     }
@@ -495,15 +494,28 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         // max_context floors at min_kv_quantization unconditionally (floor already set above).
         const int lo = kv_cache_quant_tier_rank(*max_kv_tier);
         const int hi = kv_cache_quant_tier_rank(floor);
+        if (lo > hi) {
+            // max_kv_quantization is a higher-quality ceiling than the
+            // priority-selected floor, so no tier in [lo, hi] exists. Reject
+            // rather than silently falling through to an empty ladder and
+            // resolving to plain f16 with no signal (the structural-
+            // ineligibility signal exists for the
+            // backend/model-gate case, not for a contradictory config).
+            throw std::invalid_argument(
+                "max_kv_quantization (" + kv_cache_quant_tier_to_string(*max_kv_tier) +
+                ") is lower quality than the effective floor (" + kv_cache_quant_tier_to_string(floor) +
+                ") set by kv_cache_priority/min_kv_quantization; raise max_kv_quantization or lower "
+                "kv_cache_priority/min_kv_quantization.");
+        }
         for (int r = lo; r <= hi; ++r) {
             ladder.push_back(kv_cache_quant_tier_from_rank(r));
         }
     } else {
-        // Explicit q8_0/q4_0: no ladder-walking, subject to the same gates (R1).
+        // Explicit q8_0/q4_0: no ladder-walking, subject to the same gates.
         ladder.push_back(*kv_cache_quant_tier_from_config(*kv_quant));
     }
 
-    // --- Filter through both eligibility gates (R5, R9) ---
+    // --- Filter through both eligibility gates ---
     const int64_t key_dim = model_info.gguf.key_length;
     const int64_t value_dim = model_info.gguf.value_length;
     std::vector<KvCacheQuantTier> eligible;
@@ -523,10 +535,10 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         if (tier != KvCacheQuantTier::F16) quant_candidate_survived = true;
         eligible.push_back(tier);
     }
-    // R14: the ladder wanted quantization but nothing below f16 survived the
+    // The ladder wanted quantization but nothing below f16 survived the
     // gates — structural, not a fit shortfall. f16 itself always passes both
     // gates, so it surviving (and even being selected) does not make this
-    // false; the point of R14 is that no *quantization* was possible.
+    // false; the point of this flag is that no *quantization* was possible.
     const bool structurally_ineligible = ladder_had_quant_candidate && !quant_candidate_survived;
 
     if (eligible.empty()) {
@@ -552,8 +564,9 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
 
     // Walk highest-quality first; select the first eligible tier that
     // reaches the target. Track the lowest-quality survivor's achieved
-    // context along the way — it is both R7's shrink target and R8's
-    // "best tier tried" on exhaustion.
+    // context along the way — it doubles as the shrink target when nothing
+    // reaches the target, and the "best tier tried" report when an explicit
+    // ctx_size doesn't fit anywhere.
     KvCacheQuantTier chosen = eligible.back();
     int64_t chosen_achieved = 0;
     bool reached_target = false;
@@ -582,8 +595,8 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
                                << " " << skip_trace << "-> " << kv_cache_quant_tier_to_string(chosen)
                                << " ";
     } else if (ctx_explicit) {
-        // R8: an explicit request no eligible tier can fit. Raised at
-        // resolve time, before a backend server is constructed (KTD13).
+        // An explicit request no eligible tier can fit. Raised at
+        // resolve time, before a backend server is constructed.
         result.failure = "Requested ctx_size " + std::to_string(requested_ctx) +
             " does not fit at any eligible KV cache quant tier for this model; the best tier "
             "tried (" + kv_cache_quant_tier_to_string(eligible.back()) + ") supports at most " +
@@ -593,7 +606,7 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
                                << " " << skip_trace << "-> R8 failure" << " ";
         return result;
     } else {
-        // R7: shrink to the lowest-quality surviving tier's maximum — the
+        // Shrink to the lowest-quality surviving tier's maximum — the
         // same memory-constrained behavior ctx_size: -1 has today.
         result.tier = eligible.back();
         result.ctx_size = chosen_achieved;
@@ -609,8 +622,8 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         const std::string llamacpp_args =
             kv_cache_option_string(effective_options, "llamacpp_args", "");
         if (llamacpp_args_disable_flash_attention(llamacpp_args)) {
-            // R11: raised at resolve time, once a tier below f16 is chosen,
-            // before a backend server is constructed (KTD13).
+            // Raised at resolve time, once a tier below f16 is chosen,
+            // before a backend server is constructed.
             KvCacheResolution conflict;
             conflict.failure = "kv_cache_quantization resolved to " +
                 kv_cache_quant_tier_to_string(result.tier) +

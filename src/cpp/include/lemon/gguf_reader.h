@@ -415,6 +415,10 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
     int64_t block_count = gguf.block_count;
     int64_t key_length = gguf.key_length;
     int64_t key_length_swa = gguf.key_length_swa;
+    // Most architectures use equal key/value head dims; value_length is 0
+    // when the GGUF field is absent, so fall back to key_length rather than
+    // silently dropping V's contribution.
+    const int64_t value_length = gguf.value_length > 0 ? gguf.value_length : key_length;
 
     if (block_count <= 0 || key_length <= 0)
         return 0.0;
@@ -432,9 +436,8 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
         if (total_heads <= 0)
             return 0.0;
         return static_cast<double>(total_heads)
-             * static_cast<double>(key_length)
+             * static_cast<double>(key_length + value_length)
              * bytes_per_element
-             * 2.0  // K+V
              * factor;
     }
 
@@ -444,7 +447,7 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
     if (has_swa && !gguf.head_count_kv_per_layer.empty() && !gguf.sliding_window_pattern.empty()
         && gguf.head_count_kv_per_layer.size() == gguf.sliding_window_pattern.size()) {
         // Precise per-layer weighted sum using raw arrays.
-        // Each layer contributes: heads[layer] × key_len[layer] × bytes_per_element × 2[K+V]
+        // Each layer contributes: heads[layer] × key_len[layer] × bytes_per_element,
         // where key_len[layer] = key_length_swa if SWA, key_length otherwise.
         size_t n = gguf.head_count_kv_per_layer.size();
         double weighted_sum = 0.0;
@@ -462,7 +465,8 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
             *scale_out = (unweighted_sum > 0) ? weighted_sum / unweighted_sum : 1.0;
         }
 
-        return weighted_sum * bytes_per_element * 2.0;
+        return weighted_sum * static_cast<double>(key_length + value_length)
+             / static_cast<double>(key_length) * bytes_per_element;
     }
 
     // Scalar/uniform case: use proportional approximation.
@@ -484,9 +488,8 @@ inline double compute_weighted_kv_cache_bytes_per_token(const GgufMetadata& gguf
     if (scale_out) *scale_out = factor;
 
     return static_cast<double>(total_heads)
-         * static_cast<double>(key_length)
+         * static_cast<double>(key_length + value_length)
          * bytes_per_element
-         * 2.0  // K+V
          * factor;
 }
 
