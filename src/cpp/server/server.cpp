@@ -3504,8 +3504,20 @@ void Server::respond_with_model_options(
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", effective_json},
             {"defaults", defaults_json},
-            {"resolved_ctx_size", resolved_ctx}
+            {"resolved_ctx_size", resolved_ctx},
+            // Sibling fields, not folded into `effective`/`defaults` (R13):
+            // those stay replayable /v1/load bodies and must still report
+            // "auto" rather than freezing in a point-in-time tier decision.
+            {"resolved_kv_cache_tier", kv_cache_quant_tier_to_string(kv_resolution.tier)}
         };
+        if (kv_resolution.structurally_ineligible) {
+            // R14: distinguishes "no tier is eligible on this backend" from
+            // an ordinary f16 resolution, which would otherwise report an
+            // identical tier value with no way to tell the two apart.
+            response["resolved_kv_cache_ineligible_reason"] =
+                "No KV cache quant tier below f16 is eligible on backend '" + normalized_backend +
+                "' for this model (backend kernel support or model head dimensions).";
+        }
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to handle options for '" << model_id

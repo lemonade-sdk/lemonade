@@ -1915,6 +1915,111 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
 
+    def test_012v_options_report_resolved_kv_cache_tier(self):
+        """R10/R13/R14: the options endpoint reports the resolved KV cache
+        tier as a sibling field, `effective`/`defaults` keep reporting the
+        config value (never a frozen tier), and structural ineligibility
+        (backend or model head dimensions) is distinguishable from an
+        ordinary f16 resolution."""
+        self.addCleanup(self._reset_options)
+        self._reset_options()
+
+        # Default model reports f16, with no ineligibility reason.
+        default = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
+        self.assertEqual(default["resolved_kv_cache_tier"], "f16")
+        self.assertNotIn("resolved_kv_cache_ineligible_reason", default)
+
+        # Explicit q8_0 on a safe backend resolves to q8_0, and the context
+        # reported is the one computed at that tier.
+        explicit = requests.post(
+            self._options_url(),
+            json={"kv_cache_quantization": "q8_0", "llamacpp_backend": "metal"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(explicit["resolved_kv_cache_tier"], "q8_0")
+        self.assertNotIn("resolved_kv_cache_ineligible_reason", explicit)
+        self.assertGreater(explicit["resolved_ctx_size"], 0)
+        # `effective`/`defaults` still report the config value, not the
+        # resolved tier — replaying `effective` as a load body must
+        # preserve the user's actual request rather than a point-in-time
+        # decision.
+        self.assertEqual(explicit["effective"]["kv_cache_quantization"], "q8_0")
+        self.assertEqual(explicit["defaults"]["kv_cache_quantization"], "f16")
+
+        # `auto` on the same safe backend and model resolves the same way
+        # (this tiny model's f16 context already fits, so auto and f16
+        # agree — the ladder must not quantize when it buys nothing).
+        auto_resolved = requests.post(
+            self._options_url(),
+            json={"kv_cache_quantization": "auto", "llamacpp_backend": "metal"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertIn(auto_resolved["resolved_kv_cache_tier"], ("f16", "q8_0", "q4_0"))
+        self.assertNotIn("resolved_kv_cache_ineligible_reason", auto_resolved)
+
+        # A structurally-ineligible backend (no fused-attention kernel; the
+        # safety table ships every entry false for cpu) reports f16 *and*
+        # the distinct ineligibility reason, rather than a tier field
+        # indistinguishable from the default.
+        structural = requests.post(
+            self._options_url(),
+            json={"kv_cache_quantization": "auto", "llamacpp_backend": "cpu"},
+            timeout=TIMEOUT_DEFAULT,
+        ).json()
+        self.assertEqual(structural["resolved_kv_cache_tier"], "f16")
+        self.assertIn("resolved_kv_cache_ineligible_reason", structural)
+        self.assertIn("cpu", structural["resolved_kv_cache_ineligible_reason"])
+
+        # An out-of-set value is rejected before any memory query, at the
+        # write path (this endpoint validates the value type/shape here;
+        # ill-formed persisted values are a documented follow-up).
+        rejected = requests.post(
+            self._options_url(),
+            json={"kv_cache_quantization": 123},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(rejected.status_code, 400, rejected.text)
+
+        print("[OK] options endpoint reports resolved KV cache tier and ineligibility reason")
+
+    def test_012w_load_emits_cache_type_flags_for_resolved_tier(self):
+        """U5/U6/U7 end-to-end: loading with an explicit quant tier launches
+        llama-server with matching --cache-type-k/-v flags, and /health
+        reports the resolved tier alongside the live recipe options."""
+        self.addCleanup(self._reset_options)
+        self.addCleanup(
+            lambda: requests.post(
+                f"{self.base_url}/unload",
+                json={"model_name": ENDPOINT_TEST_MODEL},
+                timeout=TIMEOUT_DEFAULT,
+            )
+        )
+        self._reset_options()
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "kv_cache_quantization": "q8_0",
+                "llamacpp_backend": "metal",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(model)
+        command = model.get("launch_command", [])
+        self.assertIn("--cache-type-k", command)
+        self.assertIn("--cache-type-v", command)
+        k_idx = command.index("--cache-type-k")
+        v_idx = command.index("--cache-type-v")
+        self.assertEqual(command[k_idx + 1], "q8_0")
+        self.assertEqual(command[v_idx + 1], "q8_0")
+        self.assertEqual(model.get("recipe_options", {}).get("resolved_kv_cache_tier"), "q8_0")
+
+        print("[OK] load launches llama-server with matching cache-type flags")
+
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
         into recipe_options on auto-load.

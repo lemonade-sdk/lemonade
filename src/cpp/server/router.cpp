@@ -1027,6 +1027,14 @@ void Router::load_model(const std::string& model_name,
                                 << ", KV cache tier " << kv_cache_quant_tier_to_string(kv_resolution.tier)
                                 << std::endl;
         }
+        if (kv_resolution.structurally_ineligible) {
+            // R14: told explicitly rather than left to infer from a tier
+            // field that looks identical to the default.
+            LOG(WARNING, "Router") << "kv_cache_quantization requested but no KV cache quant "
+                                   << "tier is eligible on backend '" << normalized_backend
+                                   << "' for model '" << canonical_model_name
+                                   << "'; staying at f16." << std::endl;
+        }
 
         // NPU models on memory-constrained systems: when auto-tune can only
         // reserve the fallback ctx_size, the NPU driver's own runtime overhead

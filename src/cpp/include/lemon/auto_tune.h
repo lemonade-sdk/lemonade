@@ -513,10 +513,17 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
     std::vector<KvCacheQuantTier> eligible;
     bool ladder_had_quant_candidate = false;
     bool quant_candidate_survived = false;
+    std::string skip_trace;
     for (auto tier : ladder) {
         if (tier != KvCacheQuantTier::F16) ladder_had_quant_candidate = true;
-        if (!kv_cache_quant_backend_eligible(tier, normalized_backend, safety_table)) continue;
-        if (!kv_cache_quant_model_eligible(tier, key_dim, value_dim)) continue;
+        if (!kv_cache_quant_backend_eligible(tier, normalized_backend, safety_table)) {
+            skip_trace += kv_cache_quant_tier_to_string(tier) + "=skipped(backend gate) ";
+            continue;
+        }
+        if (!kv_cache_quant_model_eligible(tier, key_dim, value_dim)) {
+            skip_trace += kv_cache_quant_tier_to_string(tier) + "=skipped(model gate) ";
+            continue;
+        }
         if (tier != KvCacheQuantTier::F16) quant_candidate_survived = true;
         eligible.push_back(tier);
     }
@@ -527,6 +534,9 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
     const bool structurally_ineligible = ladder_had_quant_candidate && !quant_candidate_survived;
 
     if (eligible.empty()) {
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " " << skip_trace
+                               << "-> f16 (no eligible tier)" << " ";
         return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, structurally_ineligible);
     }
 
@@ -554,6 +564,8 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
     for (auto tier : eligible) {
         const int64_t achieved = compute_auto_context_size(
             model_info, available_memory_gb, is_embedding, kv_cache_quant_bytes_per_element(tier));
+        skip_trace += kv_cache_quant_tier_to_string(tier) + "=" + std::to_string(achieved) +
+            (achieved >= target ? "(fits) " : "(short of target) ");
         if (tier == eligible.back()) chosen_achieved = achieved;
         if (!reached_target && achieved >= target) {
             chosen = tier;
@@ -569,6 +581,10 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         result.ctx_size = ctx_explicit ? requested_ctx : chosen_achieved;
         result.ctx_size_is_auto = !ctx_explicit;
         result.structurally_ineligible = structurally_ineligible;
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " target=" << target
+                               << " " << skip_trace << "-> " << kv_cache_quant_tier_to_string(chosen)
+                               << " ";
     } else if (ctx_explicit) {
         // R8: an explicit request no eligible tier can fit. Raised at
         // resolve time, before a backend server is constructed (KTD13).
@@ -576,6 +592,9 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
             " does not fit at any eligible KV cache quant tier for this model; the best tier "
             "tried (" + kv_cache_quant_tier_to_string(eligible.back()) + ") supports at most " +
             std::to_string(chosen_achieved) + " tokens.";
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " target=" << target
+                               << " " << skip_trace << "-> R8 failure" << " ";
         return result;
     } else {
         // R7: shrink to the lowest-quality surviving tier's maximum — the
@@ -584,6 +603,10 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         result.ctx_size = chosen_achieved;
         result.ctx_size_is_auto = true;
         result.structurally_ineligible = structurally_ineligible;
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " target=" << target
+                               << " " << skip_trace << "-> " << kv_cache_quant_tier_to_string(result.tier)
+                               << " (shrunk, R7)" << " ";
     }
 
     if (result.tier != KvCacheQuantTier::F16) {
