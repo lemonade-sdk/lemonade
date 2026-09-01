@@ -46,8 +46,13 @@ long effective_timeout(long timeout_seconds) {
     if (timeout_seconds == HttpClient::kNoTimeout) {
         return 0;
     }
-    return timeout_seconds > 0 ? timeout_seconds
-                               : HttpClient::get_default_timeout();
+    if (timeout_seconds > 0) {
+        return timeout_seconds;
+    }
+    // curl rejects a negative CURLOPT_TIMEOUT, so a non-positive default
+    // means no timeout rather than reaching setopt.
+    const long default_timeout = HttpClient::get_default_timeout();
+    return default_timeout > 0 ? default_timeout : 0;
 }
 
 static std::string trim_copy(const std::string& value) {
