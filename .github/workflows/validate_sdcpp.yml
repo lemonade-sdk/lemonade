@@ -388,6 +388,47 @@ jobs:
           & (Join-Path $repro "hipInfo.exe") 2>&1 | Select-Object -First 6 | Out-String | Write-Host
 
 
+      - name: Compare rocblas between the 7.14 tarball and wheel
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $root = Join-Path $env:RUNNER_TEMP "rocm-diag"
+
+          $tarRocblas = Get-ChildItem -Path (Join-Path $root "7.14.0") -Recurse -Filter "rocblas.dll" -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+          if ($tarRocblas) {
+            Write-Host ("tarball rocblas.dll: {0} bytes  ver={1}  sha256={2}" -f `
+              $tarRocblas.Length, $tarRocblas.VersionInfo.FileVersion,
+              (Get-FileHash $tarRocblas.FullName -Algorithm SHA256).Hash)
+          } else { Write-Host "::warning::tarball rocblas.dll not found" }
+
+          # Same version, other delivery channel.
+          $wheelDir = Join-Path $root "wheel"
+          New-Item -ItemType Directory -Force -Path $wheelDir | Out-Null
+          python -m pip download "rocm-sdk-libraries==7.14.0" --no-deps --only-binary :all: `
+            --index-url https://repo.amd.com/rocm/whl-multi-arch/ -d $wheelDir 2>&1 | Select-Object -Last 3 | Out-String | Write-Host
+
+          $whl = Get-ChildItem "$wheelDir\*.whl" | Select-Object -First 1
+          if (-not $whl) { Write-Host "::warning::wheel download failed"; exit 0 }
+          Expand-Archive -Path $whl.FullName -DestinationPath (Join-Path $wheelDir "x") -Force
+          $whlRocblas = Get-ChildItem -Path (Join-Path $wheelDir "x") -Recurse -Filter "rocblas.dll" -ErrorAction SilentlyContinue |
+                        Select-Object -First 1
+          if ($whlRocblas) {
+            Write-Host ("wheel   rocblas.dll: {0} bytes  ver={1}  sha256={2}" -f `
+              $whlRocblas.Length, $whlRocblas.VersionInfo.FileVersion,
+              (Get-FileHash $whlRocblas.FullName -Algorithm SHA256).Hash)
+          } else { Write-Host "::warning::wheel rocblas.dll not found" }
+
+          Write-Host "--- Tensile/kernel data layout ---"
+          foreach ($p in @(@{n="tarball";r=(Join-Path $root "7.14.0")}, @{n="wheel";r=(Join-Path $wheelDir "x")})) {
+            $hits = Get-ChildItem -Path $p.r -Recurse -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -match "gfx1151" -and $_.Name -match "\.(dat|co|hsaco|kpack|zlib)$" } |
+                    Select-Object -First 5
+            Write-Host ("  {0}: {1} matching kernel files" -f $p.n, (@($hits).Count))
+            $hits | ForEach-Object { Write-Host ("    {0}" -f $_.Name) }
+          }
+
+
   build:
     name: Build Lemonade with sd-cpp pins
     needs: discover-release
