@@ -211,19 +211,28 @@ jobs:
           # validation stays disabled until a matching runner exists.
           legs='[
             {"label":"cpu","backend":"cpu","channel":"",
+             "install_method":"auto","expect_rocm_device":false,
              "runner":["self-hosted","Windows","stx-halo","vulkan","lemon-prod"]},
             {"label":"vulkan","backend":"vulkan","channel":"",
+             "install_method":"auto","expect_rocm_device":false,
              "runner":["self-hosted","Windows","stx-halo","vulkan","lemon-prod"]},
             {"label":"rocm-stable","backend":"rocm","channel":"stable",
+             "install_method":"auto","expect_rocm_device":false,
+             "runner":["self-hosted","Windows","stx-halo","rocm","lemon-prod"]},
+            {"label":"rocm-stable-tarball","backend":"rocm","channel":"stable",
+             "install_method":"tarball","expect_rocm_device":true,
              "runner":["self-hosted","Windows","stx-halo","rocm","lemon-prod"]}
           ]'
 
           # cpp_server_build_test_release.yml already exercises sd-cpp on CPU
           # before merge, so the CPU leg only earns its ~17 minutes when it is
           # qualifying an upstream release for the update PR.
+          # rocm-stable-tarball is the A/B control for the wheel-vs-tarball ROCm
+          # runtime, so it rides the same cadence as the cpu baseline it is
+          # compared against rather than every gated PR.
           case "${EVENT_NAME}" in
             schedule|workflow_dispatch) matrix=$(jq -c '.' <<<"$legs") ;;
-            *) matrix=$(jq -c '[.[] | select(.label != "cpu")]' <<<"$legs") ;;
+            *) matrix=$(jq -c '[.[] | select(.label != "cpu" and .label != "rocm-stable-tarball")]' <<<"$legs") ;;
           esac
 
           echo "validate_matrix=${matrix}" >> "$GITHUB_OUTPUT"
@@ -372,6 +381,7 @@ jobs:
           LEMONADE_VALIDATE_SD_PROMPT: ${{ env.SDCPP_TEST_PROMPT }}
           LEMONADE_VALIDATE_SD_STEPS: ${{ env.SDCPP_TEST_STEPS }}
           LEMONADE_VALIDATE_SD_TIMEOUT: ${{ env.LEMONADE_VALIDATE_SD_TIMEOUT }}
+          LEMONADE_ROCM_INSTALL_METHOD: ${{ matrix.install_method }}
         run: |
           $ErrorActionPreference = "Stop"
           $lemondExe = (Resolve-Path "build\Release\lemond.exe").Path
@@ -434,6 +444,42 @@ jobs:
             } catch {
               Write-Host "lemond shutdown not reachable; relying on cleanup step." -ForegroundColor Yellow
             }
+          }
+
+      - name: Report which device the rocm backend actually used
+        if: always() && matrix.backend == 'rocm'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $label  = "${{ matrix.label }}"
+          $method = "${{ matrix.install_method }}"
+          $expect = "${{ matrix.expect_rocm_device }}" -eq "true"
+          $log    = "server-logs-$label\lemond.stderr.log"
+
+          if (Test-Path $log) {
+            $text = Get-Content $log -Raw
+          } else {
+            $text = ""
+          }
+
+          if ($text -match "no ROCm-capable device is detected") {
+            $verdict = "CPU FALLBACK"
+            $detail  = "ggml_cuda_init reported no ROCm-capable device"
+          } elseif ($text -match "ggml_cuda_init: found \d+ ROCm devices") {
+            $verdict = "ROCm GPU"
+            $line    = ($text -split "`n" | Where-Object { $_ -match "^\s*Device \d+:" } | Select-Object -First 1)
+            $detail  = if ($line) { $line.Trim() } else { "device banner present" }
+          } else {
+            $verdict = "UNKNOWN"
+            $detail  = "no ggml_cuda_init banner in $log"
+          }
+
+          Write-Host "$label (install=$method): $verdict - $detail"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- **$label** (install=``$method``): **$verdict** - $detail"
+
+          if ($expect -and $verdict -ne "ROCm GPU") {
+            Write-Host "::error title=ROCm GPU not used::$label requested the rocm backend but got '$verdict'"
+            exit 1
           }
 
       - name: Upload validation evidence
