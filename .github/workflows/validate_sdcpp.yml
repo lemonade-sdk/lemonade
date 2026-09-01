@@ -239,6 +239,105 @@ jobs:
           echo "Validation legs for ${EVENT_NAME}:"
           jq -r '.[].label' <<<"$matrix"
 
+  rocm-device-diagnostic:
+    name: ROCm device diagnostic
+    # Dispatch-only probe: does HIP see the GPU on this rig at all, and does the
+    # answer depend on the TheRock version? Deliberately has no `needs` so it
+    # starts immediately and does not involve lemonade at all.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, Windows, stx-halo, rocm, lemon-prod]
+    timeout-minutes: 60
+    steps:
+      - name: Host and driver facts
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          Write-Host "runner=$env:RUNNER_NAME  host=$(hostname)"
+
+          $proc = Get-Process -Id $PID
+          Write-Host "this process SessionId=$($proc.SessionId)  (0 = Windows service session, no desktop)"
+          Write-Host "--- interactive sessions ---"
+          query session 2>&1 | Out-String | Write-Host
+          Write-Host "--- runner service ---"
+          Get-CimInstance Win32_Service | Where-Object { $_.Name -like "*actions.runner*" } |
+            Select-Object Name, StartName, State | Format-List | Out-String | Write-Host
+
+          Write-Host "--- video controllers ---"
+          Get-CimInstance Win32_VideoController |
+            Select-Object Name, DriverVersion, DriverDate, Status, ConfigManagerErrorCode |
+            Format-List | Out-String | Write-Host
+
+          Write-Host "--- Radeon Software (Adrenalin) ---"
+          Get-ChildItem "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}" -ErrorAction SilentlyContinue | ForEach-Object {
+            $pr = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+            if ($pr.DriverDesc -match 'AMD|Radeon') {
+              Write-Host ("  {0}: RadeonSoftwareVersion={1}  Edition={2}  ReleaseVersion={3}" -f `
+                $pr.DriverDesc, $pr.RadeonSoftwareVersion, $pr.RadeonSoftwareEdition, $pr.ReleaseVersion)
+            }
+          }
+
+          Write-Host "--- driver-supplied HIP runtimes in System32 ---"
+          Get-ChildItem "$env:WINDIR\System32\amdhip64*.dll", "$env:WINDIR\System32\amd_comgr*.dll" -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Host ("  {0}  {1}" -f $_.Name, $_.VersionInfo.FileVersion) }
+
+          Write-Host "--- relevant env ---"
+          Get-ChildItem env: | Where-Object { $_.Name -match 'HIP|ROCR|ROCM|GPU_|HSA' } |
+            ForEach-Object { Write-Host ("  {0}={1}" -f $_.Name, $_.Value) }
+
+      - name: Enumerate HIP devices under TheRock 7.13.0 and 7.14.0
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $root = Join-Path $env:RUNNER_TEMP "rocm-diag"
+          Remove-Item -Recurse -Force $root -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          # 7.13.0 is the last per-arch build and is known to have worked on this
+          # rig; 7.14.0 is the multi-arch repackaging that CI has been failing on.
+          $builds = @(
+            @{ ver = "7.13.0"; url = "https://repo.amd.com/rocm/tarball/therock-dist-windows-gfx1151-7.13.0.tar.gz" },
+            @{ ver = "7.14.0"; url = "https://repo.amd.com/rocm/tarball-multi-arch/therock-dist-windows-gfx1151-7.14.0.tar.gz" }
+          )
+
+          foreach ($b in $builds) {
+            $ver = $b.ver
+            Write-Host "===================== TheRock $ver ====================="
+            $dir = Join-Path $root $ver
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            $tgz = Join-Path $root "therock-$ver.tar.gz"
+
+            Write-Host "downloading $($b.url)"
+            curl.exe -sSL --retry 3 -o $tgz $b.url
+            if ($LASTEXITCODE -ne 0) { Write-Host "::warning::download failed for $ver"; continue }
+            tar -xzf $tgz -C $dir
+            if ($LASTEXITCODE -ne 0) { Write-Host "::warning::extract failed for $ver"; continue }
+
+            $bin = Join-Path $dir "bin"
+            Write-Host "--- gfx1151 device code objects present? ---"
+            $devlibs = Get-ChildItem -Recurse -Path $dir -Filter "*gfx1151*" -ErrorAction SilentlyContinue |
+                       Select-Object -First 8
+            if ($devlibs) { $devlibs | ForEach-Object { Write-Host ("  {0}" -f $_.FullName.Substring($dir.Length)) } }
+            else { Write-Host "  (none found)" }
+
+            Write-Host "--- HIP runtime shipped ---"
+            Get-ChildItem "$bin\amdhip64*.dll", "$bin\amd_comgr*.dll" -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host ("  {0}  {1}" -f $_.Name, $_.VersionInfo.FileVersion) }
+
+            # Run TheRock's own enumeration tools with its bin dir first on PATH,
+            # so this measures HIP directly rather than anything lemonade does.
+            $saved = $env:PATH
+            $env:PATH = "$bin;$saved"
+            foreach ($tool in @("hipInfo.exe","rocminfo.exe","amdsmi_cli.exe","hipconfig.exe")) {
+              $exe = Join-Path $bin $tool
+              if (Test-Path $exe) {
+                Write-Host "--- $tool ---"
+                & $exe 2>&1 | Select-Object -First 25 | Out-String | Write-Host
+                Write-Host "  exit=$LASTEXITCODE"
+              }
+            }
+            $env:PATH = $saved
+          }
+
   build:
     name: Build Lemonade with sd-cpp pins
     needs: discover-release
