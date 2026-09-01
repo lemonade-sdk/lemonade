@@ -153,6 +153,12 @@ namespace lemon::backends {
         /** Directory holding the lemonade-managed ROCm wheel venv for arch/version. */
         static std::string get_therock_wheel_dir(const std::string& arch, const std::string& version);
 
+        /** True when a wheel install would place rocBLAS's files past the depth
+         *  it can load from (measured: 174 chars works, 175 faults). Always
+         *  false off Windows. */
+        static bool therock_wheel_path_too_long(const std::string& arch,
+                                                const std::string& version);
+
         /** True when the pip-wheel runtime for arch/version is still usable. See impl for liveness check vs tarball fallback. */
         static bool therock_wheel_runtime_alive(const std::string& arch,
                                                 const std::string& version);
