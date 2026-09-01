@@ -1,6 +1,8 @@
 #pragma once
 
+#include "lemon/auto_tune.h"
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/kv_cache_quant.h"
 
 namespace lemon {
@@ -126,6 +128,32 @@ inline const KvCacheQuantSafetyTable kv_cache_quant_safety_table = {
     // are unknown, so it ships unsafe rather than guessed.
     {"system",       {false, false}},
 };
+
+// Both the load path (Router::load_model) and the options-preview path
+// (Server::respond_with_model_options) need the same three steps before
+// they can act on a KV cache resolution: normalize this model's backend
+// choice, query live available memory, and resolve the tier/ctx_size
+// against llamacpp's safety table. Bundled here (rather than in auto_tune.h)
+// because it names `kv_cache_quant_safety_table`, keeping the pure resolver
+// free of any specific backend's table (see resolve_kv_cache's doc comment).
+struct LlamaCppKvCacheContext {
+    std::string normalized_backend;
+    double available_memory_gb = 0.0;
+    KvCacheResolution resolution;
+};
+
+inline LlamaCppKvCacheContext resolve_llamacpp_kv_cache(const RecipeOptions& effective_options,
+                                                         const ModelInfo& model_info) {
+    LlamaCppKvCacheContext ctx;
+    const json backend_choice_json = effective_options.get_option(model_info.recipe + "_backend");
+    ctx.normalized_backend = backends::normalize_backend_name(
+        model_info.recipe,
+        backend_choice_json.is_string() ? backend_choice_json.get<std::string>() : "");
+    ctx.available_memory_gb = get_available_memory_gb(model_info.device);
+    ctx.resolution = resolve_kv_cache(effective_options, model_info, ctx.available_memory_gb,
+                                      ctx.normalized_backend, kv_cache_quant_safety_table);
+    return ctx;
+}
 
 // The --cache-type-k/--cache-type-v launch fragment for a resolved KV cache
 // tier (U5's decision — no memory reasoning or conflict detection here).

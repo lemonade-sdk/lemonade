@@ -377,9 +377,7 @@ inline bool llamacpp_args_disable_flash_attention(const std::string& llamacpp_ar
         if (it == args_map.end()) continue;
         for (const auto& occurrence : it->second) {
             if (occurrence.empty()) continue;  // bare flag: not a disable
-            std::string value = occurrence[0];
-            std::transform(value.begin(), value.end(), value.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            const std::string value = gguf_reader_detail::to_lower(occurrence[0]);
             if (value == "off" || value == "0" || value == "false" || value == "no") {
                 return true;
             }
@@ -498,9 +496,7 @@ inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options
         const int lo = kv_cache_quant_tier_rank(*max_kv_tier);
         const int hi = kv_cache_quant_tier_rank(floor);
         for (int r = lo; r <= hi; ++r) {
-            if (r == kv_cache_quant_tier_rank(KvCacheQuantTier::F16)) ladder.push_back(KvCacheQuantTier::F16);
-            else if (r == kv_cache_quant_tier_rank(KvCacheQuantTier::Q8_0)) ladder.push_back(KvCacheQuantTier::Q8_0);
-            else ladder.push_back(KvCacheQuantTier::Q4_0);
+            ladder.push_back(kv_cache_quant_tier_from_rank(r));
         }
     } else {
         // Explicit q8_0/q4_0: no ladder-walking, subject to the same gates (R1).

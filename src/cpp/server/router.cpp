@@ -1009,14 +1009,9 @@ void Router::load_model(const std::string& model_name,
 
         // Auto-tune: resolve ctx_size = -1 and the KV cache quant tier together.
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        json backend_choice_json = effective_options.get_option(model_info.recipe + "_backend");
-        std::string normalized_backend = backends::normalize_backend_name(
-            model_info.recipe,
-            backend_choice_json.is_string() ? backend_choice_json.get<std::string>() : "");
-        const double kv_available_memory_gb = get_available_memory_gb(model_info.device);
-        KvCacheResolution kv_resolution = resolve_kv_cache(
-            effective_options, model_info, kv_available_memory_gb, normalized_backend,
-            backends::llamacpp::kv_cache_quant_safety_table);
+        auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(effective_options, model_info);
+        const std::string& normalized_backend = kv_ctx.normalized_backend;
+        KvCacheResolution kv_resolution = kv_ctx.resolution;
         if (!kv_resolution.ok()) {
             // R8/R11: raised here, before a backend server is constructed, so
             // neither reaches the evict-all-and-retry branch below (KTD13).
@@ -1058,7 +1053,7 @@ void Router::load_model(const std::string& model_name,
         if (auto_ctx == AUTO_CTX_FALLBACK
             && (model_info.device & DEVICE_NPU)
             && model_info.size > 10.0
-            && get_available_memory_gb(model_info.device) > 0) {
+            && kv_ctx.available_memory_gb > 0) {
             throw std::runtime_error(
                 "Not enough memory to load " + canonical_model_name
                 + " (" + std::to_string(static_cast<int>(model_info.size))

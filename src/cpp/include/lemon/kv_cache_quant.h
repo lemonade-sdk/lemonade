@@ -119,6 +119,17 @@ inline int kv_cache_quant_tier_rank(KvCacheQuantTier tier) {
     return 0;
 }
 
+// Inverse of kv_cache_quant_tier_rank. Kept beside it so the ladder-walk
+// range [lo, hi] can be turned back into concrete tiers without a second,
+// independently-written rank<->tier mapping to drift out of sync.
+inline KvCacheQuantTier kv_cache_quant_tier_from_rank(int rank) {
+    switch (rank) {
+        case 0: return KvCacheQuantTier::F16;
+        case 1: return KvCacheQuantTier::Q8_0;
+        default: return KvCacheQuantTier::Q4_0;
+    }
+}
+
 // True when `a` is strictly higher quality (less quantized) than `b`.
 inline bool kv_cache_quant_tier_higher_quality(KvCacheQuantTier a, KvCacheQuantTier b) {
     return kv_cache_quant_tier_rank(a) < kv_cache_quant_tier_rank(b);

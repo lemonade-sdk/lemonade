@@ -3485,14 +3485,9 @@ void Server::respond_with_model_options(
         effective_json["model_name"] = model_id;
         defaults_json["model_name"] = model_id;
 
-        const nlohmann::json backend_choice_json = effective.get_option(info.recipe + "_backend");
-        const std::string normalized_backend = backends::normalize_backend_name(
-            info.recipe,
-            backend_choice_json.is_string() ? backend_choice_json.get<std::string>() : "");
-        const double kv_available_memory_gb = get_available_memory_gb(info.device);
-        const KvCacheResolution kv_resolution = resolve_kv_cache(
-            effective, info, kv_available_memory_gb, normalized_backend,
-            backends::llamacpp::kv_cache_quant_safety_table);
+        auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(effective, info);
+        const std::string& normalized_backend = kv_ctx.normalized_backend;
+        const KvCacheResolution kv_resolution = kv_ctx.resolution;
         if (!kv_resolution.ok()) {
             throw std::runtime_error(kv_resolution.failure);
         }
