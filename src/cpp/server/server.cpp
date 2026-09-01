@@ -7389,6 +7389,30 @@ namespace {
 
 constexpr auto DOWNLOAD_TERMINAL_VISIBILITY = std::chrono::seconds(30);
 
+// Sets both the ROCm and CUDA per-thread arch overrides for the lifetime of
+// this guard, so `--force --arch <target>` installs resolve asset URLs for a
+// specific target even when no matching GPU is present. Clears both
+// overrides on destruction (including on exception) so they cannot leak into
+// later work on this thread.
+struct ScopedArchOverride {
+    explicit ScopedArchOverride(const std::string& arch) : active(!arch.empty()) {
+        if (active) {
+            SystemInfo::set_rocm_arch_override(arch);
+            SystemInfo::set_cuda_arch_override(arch);
+        }
+    }
+    ~ScopedArchOverride() {
+        if (active) {
+            SystemInfo::set_rocm_arch_override("");
+            SystemInfo::set_cuda_arch_override("");
+        }
+    }
+    ScopedArchOverride(const ScopedArchOverride&) = delete;
+    ScopedArchOverride& operator=(const ScopedArchOverride&) = delete;
+
+    bool active;
+};
+
 } // namespace
 
 nlohmann::json Server::download_progress_to_json(const DownloadProgress& p) {
@@ -7994,6 +8018,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         bool stream = request_json.value("stream", false);
         bool subscribe = request_json.value("subscribe", true);
         bool force = request_json.value("force", false);
+        std::string arch = request_json.value("arch", "");
 
         if (recipe.empty() || backend.empty()) {
             res.status = 400;
@@ -8045,7 +8070,8 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         }
 
         if (stream) {
-            auto operation = [this, recipe, backend, force](DownloadProgressCallback progress_cb) {
+            auto operation = [this, recipe, backend, force, arch](DownloadProgressCallback progress_cb) {
+                ScopedArchOverride arch_override(arch);
                 backend_manager_->install_backend(recipe, backend, force, progress_cb);
                 SystemInfoCache::invalidate_recipes();
                 model_manager_->invalidate_models_cache();
@@ -8067,6 +8093,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
 
             stream_download_operation(res, operation);
         } else {
+            ScopedArchOverride arch_override(arch);
             backend_manager_->install_backend(recipe, backend, force);
             SystemInfoCache::invalidate_recipes();
             model_manager_->invalidate_models_cache();

@@ -134,6 +134,12 @@ public:
     // affect concurrent requests.
     static void set_rocm_arch_override(const std::string& arch);
 
+    // Same as set_rocm_arch_override(), but for get_cuda_arch(). Lets
+    // `--force --arch sm_XX` installs pick a specific CUDA target when no
+    // NVIDIA GPU is present (e.g. building a backend image on a GPU-less host
+    // for later deployment on a different machine).
+    static void set_cuda_arch_override(const std::string& arch);
+
     // True if (recipe, backend) is published for the given ROCm family/ISA, per
     // the backend support matrix. Lets callers tell "this arch should have an
     // asset" from "this arch is intentionally not built" without duplicating the
