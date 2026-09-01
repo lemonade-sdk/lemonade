@@ -19,6 +19,7 @@ Usage:
 
 import json as _json
 import threading
+import time
 import platform
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1400,6 +1401,87 @@ class RouterTests(ServerTestBase):
             print("[OK] candidate_floor unions overlapping policies instead of summing")
         finally:
             self._delete_collection(collection)
+
+    def test_632_full_convergence_survives_in_flight_load_race(self):
+        """A capacity drop landing while a new model is still loading must
+        fully converge the pool once that load finishes, not just evict one
+        model to make room for it.
+
+        Loads two models under a raised max_loaded_models, then starts loading
+        a third in the background while immediately dropping the limit to 1.
+        The pool must end up with exactly one resident model — not two, which
+        is what evicting only one (to make room for the third) would leave.
+        """
+        third_model = "Llama-3.2-1B-Instruct-GGUF"
+        print(f"\n[SETUP] Ensuring {third_model} is pulled...")
+        pull_model_with_retry(third_model)
+
+        # autosize off: the shared POLICY fixture keeps a floor of 2 active
+        # for the whole class, which would otherwise put a second, higher
+        # ceiling under max_loaded_models here (max(1, 2) = 2, not 1).
+        set_server_config({"max_loaded_models": 3, "llm_pool_autosize": False})
+        try:
+            for model in (DEFAULT_MODEL, CAPABLE_MODEL):
+                resp = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": model, "pinned": False, "save_options": False},
+                    timeout=120,
+                )
+                self.assertEqual(
+                    resp.status_code, 200, f"failed to load {model}: {resp.text}"
+                )
+
+            load_result = {}
+
+            def _load_third_model():
+                load_result["response"] = requests.post(
+                    f"{self.base_url}/load",
+                    json={
+                        "model_name": third_model,
+                        "pinned": False,
+                        "save_options": False,
+                    },
+                    timeout=120,
+                )
+
+            loader = threading.Thread(target=_load_third_model)
+            loader.start()
+            # Give the request time to reach the server and start the real
+            # subprocess spawn before the limit drops out from under it.
+            time.sleep(0.3)
+            set_server_config({"max_loaded_models": 1})
+            loader.join(timeout=120)
+
+            self.assertIn(
+                "response", load_result, f"{third_model} load never completed"
+            )
+            self.assertEqual(
+                load_result["response"].status_code,
+                200,
+                f"failed to load {third_model}: {load_result['response'].text}",
+            )
+
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            llm_names = {DEFAULT_MODEL, CAPABLE_MODEL, third_model}
+            resident = [
+                m
+                for m in resp.json().get("all_models_loaded", [])
+                if m.get("model_name") in llm_names
+            ]
+            self.assertEqual(
+                len(resident),
+                1,
+                "pool must fully converge to the new limit once the in-flight "
+                f"load completes, not just evict one: resident={resident}",
+            )
+            print(
+                "[OK] full convergence after a limit drop mid-load, "
+                "not just a single eviction"
+            )
+        finally:
+            set_server_config({"max_loaded_models": 1, "llm_pool_autosize": True})
+            unload_all_models()
 
 
 if __name__ == "__main__":
