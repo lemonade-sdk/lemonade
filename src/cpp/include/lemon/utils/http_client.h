@@ -156,8 +156,8 @@ public:
     //
     // timeout_seconds=0 uses default_timeout_seconds_. A total timeout would
     // cut off a long but healthy generation, so this bounds upstream silence
-    // instead: the transfer is aborted only after kStreamStallSeconds with no
-    // progress, which a streaming response cannot legitimately exceed.
+    // instead: the transfer is aborted only after that many seconds with no
+    // progress.
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,
