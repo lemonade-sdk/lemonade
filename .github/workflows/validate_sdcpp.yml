@@ -410,7 +410,10 @@ jobs:
 
           $whl = Get-ChildItem "$wheelDir\*.whl" | Select-Object -First 1
           if (-not $whl) { Write-Host "::warning::wheel download failed"; exit 0 }
-          Expand-Archive -Path $whl.FullName -DestinationPath (Join-Path $wheelDir "x") -Force
+          # Expand-Archive only accepts .zip; a wheel is a zip with another name.
+          $asZip = [System.IO.Path]::ChangeExtension($whl.FullName, ".zip")
+          Copy-Item $whl.FullName $asZip -Force
+          Expand-Archive -Path $asZip -DestinationPath (Join-Path $wheelDir "x") -Force
           $whlRocblas = Get-ChildItem -Path (Join-Path $wheelDir "x") -Recurse -Filter "rocblas.dll" -ErrorAction SilentlyContinue |
                         Select-Object -First 1
           if ($whlRocblas) {
