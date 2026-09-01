@@ -1,6 +1,7 @@
 #pragma once
 
 #include "lemon/backends/backend_descriptor.h"
+#include "lemon/kv_cache_quant.h"
 
 namespace lemon {
 namespace backends {
@@ -74,6 +75,56 @@ inline const BackendDescriptor descriptor = {
         {"min_kv_quantization", "q8_0"},
         {"kv_cache_priority", "balanced"},
     },
+};
+
+// (Backend, tier) fused-attention-kernel safety table for R5/KTD6. Lemonade
+// installs prebuilt llama.cpp binaries rather than compiling them, so this
+// table cannot be derived from this repo's own build flags — each row is
+// hand-verified against the actual asset source for that backend and cites
+// where. A backend absent from this table (or an unrecognized one) defaults
+// to `false, false` via KvCacheQuantSafetyTable's lookup miss, never `true`.
+//
+// Restricted to q8_0 and q4_0 deliberately (KTD6): those are the two tiers
+// whose symmetric fused-attention kernels compile unconditionally in a stock
+// llama.cpp build, so a `true` entry needs no build-flag knowledge beyond
+// "this build was not stripped of kernel instances." The wider llama.cpp
+// quant set (q4_1, q5_0, q5_1) needs a non-default build flag
+// (GGML_CUDA_FA_ALL_QUANTS) and is deferred rather than admitted.
+inline const KvCacheQuantSafetyTable kv_cache_quant_safety_table = {
+    // cuda / rocm-stable: lemonade-sdk/llama.cpp (a thin release wrapper with
+    // no vendored source — its .github/workflows/release.yml clones
+    // ggml-org/llama.cpp fresh per run). Verified against that workflow's
+    // CMAKE_ARGS for both the CUDA and ROCm jobs: neither passes
+    // GGML_CUDA_FA_ALL_QUANTS (or a HIP equivalent), so the build stays at
+    // upstream's default instance set, which compiles the symmetric q8_0 and
+    // q4_0 vec-FA kernels unconditionally
+    // (ggml/src/ggml-cuda/CMakeLists.txt, ggml/src/ggml-hip/CMakeLists.txt).
+    {"cuda",         {true, true}},
+    {"rocm-stable",  {true, true}},
+    // rocm-nightly: lemonade-sdk/llamacpp-rocm. Also source-less — its
+    // .github/workflows/build-llamacpp-rocm.yml clones
+    // https://github.com/ggerganov/llama.cpp.git at a pinned tag or master.
+    // Its CMake invocation passes GGML_HIP_ROCWMMA_FATTN=OFF (rocWMMA kernel
+    // selection, unrelated to quant-type instantiation) and no FA-all-quants
+    // equivalent, so the same unconditional symmetric q8_0/q4_0 instances
+    // apply.
+    {"rocm-nightly", {true, true}},
+    // metal: ggml-org/llama.cpp, upstream default build. Verified directly:
+    // ggml/src/ggml-metal/ggml-metal.metal instantiates
+    // kernel_flash_attn_ext_q8_0_* and kernel_flash_attn_ext_q4_0_* (and the
+    // _vec_ variants) unconditionally, with no build flag gating them.
+    {"metal",        {true, true}},
+    // vulkan: flash attention is gated on per-device GPU feature bits
+    // (coopmat2 or subgroupShuffle+subgroupVote), not on the shipped binary,
+    // so no static table entry can assert it — a rejected op silently falls
+    // back to CPU attention. Enabling Vulkan is out of scope for this
+    // change (see plan Risks & Dependencies / R14).
+    {"vulkan",       {false, false}},
+    // cpu: no fused flash-attention kernels at all.
+    {"cpu",          {false, false}},
+    // system: a pre-installed binary from PATH. Build provenance and flags
+    // are unknown, so it ships unsafe rather than guessed.
+    {"system",       {false, false}},
 };
 
 }  // namespace llamacpp

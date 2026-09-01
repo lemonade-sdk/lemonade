@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 namespace lemon {
 
@@ -120,6 +122,50 @@ inline int kv_cache_quant_tier_rank(KvCacheQuantTier tier) {
 // True when `a` is strictly higher quality (less quantized) than `b`.
 inline bool kv_cache_quant_tier_higher_quality(KvCacheQuantTier a, KvCacheQuantTier b) {
     return kv_cache_quant_tier_rank(a) < kv_cache_quant_tier_rank(b);
+}
+
+// A backend's known fused-attention-kernel safety for each quant tier below
+// f16. Both fields default to false: an unrecognized backend, or a backend
+// with no table row at all, is never assumed safe (KTD6) — R5 skips a tier
+// without a `true` entry for the resolved backend even if it would otherwise
+// fit.
+struct KvCacheQuantBackendSafety {
+    bool q8_0_safe = false;
+    bool q4_0_safe = false;
+};
+
+// Keyed by an already-normalized backend string ("cuda", "rocm-stable",
+// "rocm-nightly", "metal", "vulkan", "cpu", "system", ...). The concrete
+// table is llama.cpp build-provenance knowledge and lives beside the
+// llamacpp descriptor (KTD4), not here — this header stays backend-agnostic.
+using KvCacheQuantSafetyTable = std::unordered_map<std::string, KvCacheQuantBackendSafety>;
+
+// Backend kernel-safety gate (R5). f16 never consults the table — the gate
+// must never block the default path. Pure function: no I/O, no globals, no
+// backend includes. The caller supplies an already-normalized backend
+// string; normalization reads global runtime config and stays out of this
+// header on purpose (KTD4).
+inline bool kv_cache_quant_backend_eligible(KvCacheQuantTier tier,
+                                            const std::string& normalized_backend,
+                                            const KvCacheQuantSafetyTable& table) {
+    if (tier == KvCacheQuantTier::F16) return true;
+    auto it = table.find(normalized_backend);
+    if (it == table.end()) return false;
+    return tier == KvCacheQuantTier::Q8_0 ? it->second.q8_0_safe : it->second.q4_0_safe;
+}
+
+// Model head-dimension gate (R9). llama.cpp refuses the load when a layer's
+// key or value head dimension is not a multiple of the tier's ggml block
+// size, so a model failing that divisibility — or missing either dimension
+// in its GGUF metadata — is eligible for no tier below f16. f16 has block
+// size 1, so it is always eligible regardless of head dimensions.
+inline bool kv_cache_quant_model_eligible(KvCacheQuantTier tier,
+                                          int64_t key_head_dim,
+                                          int64_t value_head_dim) {
+    if (tier == KvCacheQuantTier::F16) return true;
+    if (key_head_dim <= 0 || value_head_dim <= 0) return false;
+    const int block = kv_cache_quant_block_size(tier);
+    return (key_head_dim % block == 0) && (value_head_dim % block == 0);
 }
 
 } // namespace lemon

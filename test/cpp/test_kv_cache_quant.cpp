@@ -1,12 +1,15 @@
-// Standalone test for the KV-cache quant tier vocabulary (U1) and the GGUF
-// value_length field it depends on.
+// Standalone test for the KV-cache quant tier vocabulary (U1), the GGUF
+// value_length field it depends on, and the safety table + eligibility gates
+// (U4).
 //
-// Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_kv_cache_quant.cpp -o test_kv_cache_quant
+// Compile: g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include test/cpp/test_kv_cache_quant.cpp -o test_kv_cache_quant
 
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/kv_cache_quant.h"
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 using lemon::GgufMetadata;
 using lemon::KvCacheQuantConfig;
@@ -127,6 +130,77 @@ static void test_gguf_value_length() {
     check("GgufMetadata: value_length defaults to 0 when absent", without_value.value_length == 0);
 }
 
+static void test_safety_table_documented_answers() {
+    using lemon::backends::llamacpp::kv_cache_quant_safety_table;
+    struct Row { const char* backend; bool q8; bool q4; };
+    const Row rows[] = {
+        {"cuda", true, true},
+        {"rocm-stable", true, true},
+        {"rocm-nightly", true, true},
+        {"metal", true, true},
+        {"vulkan", false, false},
+        {"cpu", false, false},
+        {"system", false, false},
+    };
+    for (const auto& row : rows) {
+        bool q8 = lemon::kv_cache_quant_backend_eligible(
+            KvCacheQuantTier::Q8_0, row.backend, kv_cache_quant_safety_table);
+        bool q4 = lemon::kv_cache_quant_backend_eligible(
+            KvCacheQuantTier::Q4_0, row.backend, kv_cache_quant_safety_table);
+        check((std::string("safety table: ") + row.backend + " q8_0 matches documented answer").c_str(),
+              q8 == row.q8);
+        check((std::string("safety table: ") + row.backend + " q4_0 matches documented answer").c_str(),
+              q4 == row.q4);
+    }
+}
+
+static void test_f16_always_safe_on_every_backend() {
+    using lemon::backends::llamacpp::kv_cache_quant_safety_table;
+    for (const char* backend : {"cuda", "rocm-stable", "rocm-nightly", "metal",
+                                "vulkan", "cpu", "system", "totally-unknown-backend"}) {
+        check((std::string("safety table: f16 safe on ") + backend).c_str(),
+              lemon::kv_cache_quant_backend_eligible(
+                  KvCacheQuantTier::F16, backend, kv_cache_quant_safety_table));
+    }
+}
+
+static void test_unrecognized_backend_never_safe() {
+    using lemon::backends::llamacpp::kv_cache_quant_safety_table;
+    check("safety table: unrecognized backend q8_0 is false",
+          !lemon::kv_cache_quant_backend_eligible(
+              KvCacheQuantTier::Q8_0, "totally-unknown-backend", kv_cache_quant_safety_table));
+    check("safety table: unrecognized backend q4_0 is false",
+          !lemon::kv_cache_quant_backend_eligible(
+              KvCacheQuantTier::Q4_0, "totally-unknown-backend", kv_cache_quant_safety_table));
+}
+
+static void test_model_gate_divisible_head_dims() {
+    check("model gate: 128-wide K/V eligible for q8_0",
+          lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q8_0, 128, 128));
+    check("model gate: 128-wide K/V eligible for q4_0",
+          lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q4_0, 128, 128));
+}
+
+static void test_model_gate_indivisible_key_dim() {
+    check("model gate: 100-wide K ineligible for q8_0",
+          !lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q8_0, 100, 128));
+    check("model gate: 100-wide K ineligible for q4_0",
+          !lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q4_0, 100, 128));
+    check("model gate: 100-wide K still eligible for f16",
+          lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::F16, 100, 128));
+}
+
+static void test_model_gate_checks_key_and_value_independently() {
+    // Key divides, value does not.
+    check("model gate: divisible K but indivisible V is ineligible",
+          !lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q8_0, 128, 100));
+}
+
+static void test_model_gate_zero_value_dim_ineligible() {
+    check("model gate: key present, value dim zero (absent) is ineligible",
+          !lemon::kv_cache_quant_model_eligible(KvCacheQuantTier::Q8_0, 128, 0));
+}
+
 int main() {
     test_bytes_per_element_exact_values();
     test_bytes_per_element_not_round_numbers();
@@ -137,6 +211,13 @@ int main() {
     test_narrowing_auto_is_not_a_concrete_tier();
     test_ladder_order();
     test_gguf_value_length();
+    test_safety_table_documented_answers();
+    test_f16_always_safe_on_every_backend();
+    test_unrecognized_backend_never_safe();
+    test_model_gate_divisible_head_dims();
+    test_model_gate_indivisible_key_dim();
+    test_model_gate_checks_key_and_value_independently();
+    test_model_gate_zero_value_dim_ineligible();
 
     if (g_failures == 0) {
         std::printf("\nAll kv_cache_quant tests passed\n");
