@@ -1,0 +1,71 @@
+# Close pull requests that have gone idle.
+#
+# Idle means no pushes and no comments (issue comments, review submissions,
+# or inline review comments) for 30 days. Each closed PR gets a comment from
+# github-actions[bot] pointing the author at Discord and the contribution
+# guide.
+#
+# Deliberately NOT actions/stale: that action measures staleness from a PR's
+# updated_at, which is bumped by milestones, labels, review requests, and
+# draft toggles. Those are neither pushes nor comments, so a PR that was
+# merely re-milestoned would never age out.
+name: Close idle PRs
+
+on:
+  schedule:
+    # 05:00 UTC = midnight EST. GitHub cron is UTC-only and does not shift
+    # for daylight saving, so this lands at 01:00 local during EDT.
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Idle threshold in days"
+        required: false
+        type: string
+        default: "30"
+      dry_run:
+        description: "Log what would close without closing anything (recommended for spot-testing)"
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: close-idle-prs
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # Covers both closing the PR and leaving the closing comment; comments on a
+  # PR route through the issues API but the permission check resolves to the
+  # underlying pull_request resource.
+  pull-requests: write
+
+jobs:
+  close-idle-prs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Close idle PRs
+        env:
+          DAYS_INPUT: ${{ inputs.days }}
+        run: |
+          set -euo pipefail
+          DAYS="${DAYS_INPUT:-30}"
+          if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
+            echo "::error::days must be a positive integer (got: $DAYS)"
+            exit 1
+          fi
+          python .github/scripts/close_idle_prs.py \
+            --repo "${{ github.repository }}" \
+            --days "$DAYS" \
+            ${{ inputs.dry_run == true && '--dry-run' || '' }}
