@@ -25,6 +25,7 @@ RACE_STRESS_SECONDS = 4
 RACE_CHURN_PAUSE_SECONDS = 0.01
 RACE_EVALUATION_PAUSE_SECONDS = 0.005
 RACE_REQUEST_TIMEOUT = 15
+DOWNSIZE_WAIT_TIMEOUT = 10
 
 
 class EvictionTests(ServerTestBase):
@@ -173,6 +174,24 @@ class EvictionTests(ServerTestBase):
         """Synchronously execute one idle-only eviction-engine evaluation."""
         self._simulate_vram_pressure(IDLE_EVALUATION_PCT, timeout=timeout)
 
+    def _wait_for_downsized(self, model_name, timeout=DOWNSIZE_WAIT_TIMEOUT):
+        """Poll the idle evaluation until the backend actually confirms sleep.
+
+        downsize() ground-truths against the backend's own /props before
+        reporting success, so a model only flips to "downsized" once
+        llama-server's independent --sleep-idle-seconds timer has actually
+        fired - not the instant Lemonade's own idle clock elapses.
+        """
+        deadline = time.time() + timeout
+        info = None
+        while time.time() < deadline:
+            self._evaluate_idle_now()
+            info = self._get_loaded_model_info(model_name)
+            if info and info.get("status") == "downsized":
+                return info
+            time.sleep(0.25)
+        return info
+
     def test_eviction_vram_pressure(self):
         """VRAM pressure evicts the least-recently-used model."""
         self._set_eviction_config(
@@ -217,11 +236,11 @@ class EvictionTests(ServerTestBase):
         self.assertIsNotNone(info)
         self.assertEqual(info.get("status"), "ready")
 
-        # Do not wait for the 5-second background cadence. The internal test hook
-        # runs the same idle evaluation synchronously.
-        self._evaluate_idle_now()
-
-        info_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        # downsize() ground-truths against the backend's own /props, so this
+        # polls rather than asserting after a single evaluation: llama-server's
+        # own --sleep-idle-seconds timer (clamped to a minimum of 1s) must
+        # actually fire before the model is confirmed asleep.
+        info_after = self._wait_for_downsized(ENDPOINT_TEST_MODEL)
         self.assertIsNotNone(info_after)
         self.assertEqual(info_after.get("status"), "downsized")
 
@@ -238,8 +257,7 @@ class EvictionTests(ServerTestBase):
             evict_idle_timeout=300,
         )
 
-        self._evaluate_idle_now()
-        info = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        info = self._wait_for_downsized(ENDPOINT_TEST_MODEL)
         self.assertIsNotNone(info)
         self.assertEqual(info.get("status"), "downsized")
 
