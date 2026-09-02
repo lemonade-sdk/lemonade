@@ -37,9 +37,8 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      # Pinned: pull_request_review and merge_group both default to a ref that
-      # carries the PR's own changes, so an unpinned checkout would grade the PR
-      # with the policy the PR proposes.
+      # The default ref on pull_request_review and merge_group carries the PR's
+      # own changes; the policy has to come from the base branch.
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.repository.default_branch }}
