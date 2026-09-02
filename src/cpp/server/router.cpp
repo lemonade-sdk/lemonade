@@ -492,23 +492,39 @@ void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
 
     // Same wait apply_routing_helper_reconcile uses before its own eviction
     // pass — evicting is not safe to interleave with an in-flight load or an
-    // exclusive job session.
+    // exclusive job session. reclaim_shutdown_ breaks it early too (see
+    // reclaim_stale_helper_if_idle) so a background_sync_threads_ join in
+    // ~Server doesn't stall behind a load that's still running.
     load_cv_.wait(lock, [&] {
-        return !is_loading_ &&
-               (!exclusive_active_ ||
-                exclusive_owner_ == std::this_thread::get_id());
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
     });
+    if (reclaim_shutdown_) {
+        return;
+    }
     enforce_llm_pool_capacity_locked();
 }
 
 void Router::enforce_llm_pool_capacity() {
     std::unique_lock<std::mutex> lock(load_mutex_);
     load_cv_.wait(lock, [&] {
-        return !is_loading_ &&
-               (!exclusive_active_ ||
-                exclusive_owner_ == std::this_thread::get_id());
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
     });
+    if (reclaim_shutdown_) {
+        return;
+    }
     enforce_llm_pool_capacity_locked();
+}
+
+void Router::begin_shutdown() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    reclaim_shutdown_ = true;
+    load_cv_.notify_all();
 }
 
 void Router::enforce_llm_pool_capacity_locked() {

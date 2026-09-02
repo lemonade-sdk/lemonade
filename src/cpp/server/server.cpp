@@ -2319,6 +2319,12 @@ void Server::stop() {
         }
 
         if (router_) {
+            // Wakes anything in Router waiting on load quiescence (including
+            // the LLM-pool-enforcement worker below) so it bails out instead
+            // of stalling ~Server's later thread-join loop behind a load
+            // that's still in flight. Well before Router's own destructor —
+            // router_ is still alive here — which is the point.
+            router_->begin_shutdown();
             LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
             try {
                 router_->unload_model();
@@ -7473,12 +7479,19 @@ void Server::apply_config_side_effects(const json& applied_changes) {
 }
 
 void Server::request_llm_pool_enforcement() {
-    std::lock_guard<std::mutex> lock(llm_pool_enforce_mutex_);
-    if (llm_pool_enforce_running_) {
-        llm_pool_enforce_pending_ = true;
-        return;
+    // Scoped so llm_pool_enforce_mutex_ is released before background_sync_
+    // mutex_ below is taken: the worker needs the former to finish its loop,
+    // and ~Server holds the latter while joining that same worker — holding
+    // both here at once would let those two locks deadlock against each
+    // other via a third, concurrent call to this function.
+    {
+        std::lock_guard<std::mutex> lock(llm_pool_enforce_mutex_);
+        if (llm_pool_enforce_running_) {
+            llm_pool_enforce_pending_ = true;
+            return;
+        }
+        llm_pool_enforce_running_ = true;
     }
-    llm_pool_enforce_running_ = true;
 
     auto finished_flag = std::make_shared<std::atomic<bool>>(false);
     std::thread worker([this, finished_flag]() {

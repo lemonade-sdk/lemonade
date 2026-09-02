@@ -199,6 +199,13 @@ public:
     // edit, or a live config change (see Server::apply_config_side_effects).
     void enforce_llm_pool_capacity();
 
+    // Same reclaim_shutdown_ signal ~Router() sets, exposed so Server::stop()
+    // can raise it before ~Server()'s own thread-join loop runs — router_ is
+    // still a live Server member at that point, well before ~Router() itself
+    // would otherwise fire, so waiting on that later signal would defeat the
+    // point of an early wake.
+    void begin_shutdown();
+
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
     std::string get_loaded_model() const;
