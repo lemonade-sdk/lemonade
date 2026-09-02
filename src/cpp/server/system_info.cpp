@@ -1,31 +1,33 @@
-#include "lemon/system_info.h"
-#include "system_info_utils.h"
-#include "lemon/runtime_config.h"
-#include "lemon/version.h"
 #include "lemon/backend_manager.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/version_utils.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/process_manager.h"
-#include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/backend_utils.h"
 #include "lemon/recipe_backend_def.h"
-#include <filesystem>
-#include <fstream>
-#include <sstream>
-#include <cstdio>
-#include <cstdlib>
-#include <iostream>
-#include <regex>
-#include <lemon/utils/aixlog.hpp>
+#include "lemon/runtime_config.h"
+#include "lemon/system_info.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
+#include "lemon/utils/version_utils.h"
+#include "lemon/version.h"
+#include "platform/nvidia_metrics.h"
+#include "system_info_utils.h"
+
 #include <algorithm>
 #include <cctype>
-#include <set>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <lemon/utils/aixlog.hpp>
 #include <map>
 #include <mutex>
+#include <regex>
+#include <set>
+#include <sstream>
 #include <vector>
-#include <cmath>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -2480,100 +2482,22 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
 // fails due to AppArmor restrictions in snap strict confinement.
 static std::vector<NvidiaSmiGpuInfo> query_nvidia_nvml() {
     std::vector<NvidiaSmiGpuInfo> result;
-
-    void* handle = dlopen("libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-        handle = dlopen("/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1", RTLD_NOW | RTLD_LOCAL);
-    if (!handle)
-        return result;
-
-    // Minimal NVML ABI surface — only what we actually call.
-    using nvmlDevice_t = void*;
-    using nvmlReturn_t = int;
-    constexpr nvmlReturn_t NVML_SUCCESS = 0;
-    constexpr unsigned int NVML_DEVICE_NAME_BUFFER_SIZE = 96;
-    struct NvmlMemory { unsigned long long total, free, used; };
-
-    using fn_Init       = nvmlReturn_t (*)(void);
-    using fn_Shutdown   = nvmlReturn_t (*)(void);
-    using fn_GetCount   = nvmlReturn_t (*)(unsigned int*);
-    using fn_GetHandle  = nvmlReturn_t (*)(unsigned int, nvmlDevice_t*);
-    using fn_GetName    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
-    using fn_GetUUID    = nvmlReturn_t (*)(nvmlDevice_t, char*, unsigned int);
-    using fn_GetCC      = nvmlReturn_t (*)(nvmlDevice_t, int*, int*);
-    using fn_GetMem     = nvmlReturn_t (*)(nvmlDevice_t, NvmlMemory*);
-    using fn_GetDriver  = nvmlReturn_t (*)(char*, unsigned int);
-
-    auto load = [&](const char* sym) { return dlsym(handle, sym); };
-
-    auto nvmlInit    = (fn_Init)load("nvmlInit_v2");
-    if (!nvmlInit)
-        nvmlInit = (fn_Init)load("nvmlInit");
-    auto nvmlShutdown = (fn_Shutdown)load("nvmlShutdown");
-    auto nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount_v2");
-    if (!nvmlGetCount)
-        nvmlGetCount = (fn_GetCount)load("nvmlDeviceGetCount");
-    auto nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex_v2");
-    if (!nvmlGetHandle)
-        nvmlGetHandle = (fn_GetHandle)load("nvmlDeviceGetHandleByIndex");
-    auto nvmlGetName   = (fn_GetName)load("nvmlDeviceGetName");
-    auto nvmlGetUUID   = (fn_GetUUID)load("nvmlDeviceGetUUID");
-    auto nvmlGetCC     = (fn_GetCC)load("nvmlDeviceGetCudaComputeCapability");
-    auto nvmlGetMem    = (fn_GetMem)load("nvmlDeviceGetMemoryInfo");
-    auto nvmlGetDriver = (fn_GetDriver)load("nvmlSystemGetDriverVersion");
-
-    if (!nvmlInit || !nvmlShutdown || !nvmlGetCount || !nvmlGetHandle ||
-        !nvmlGetName) {
-        dlclose(handle);
-        return result;
-    }
-
-    if (nvmlInit() != NVML_SUCCESS) {
-        dlclose(handle);
-        return result;
-    }
-
-    char driver_buf[64] = {};
-    std::string driver_version;
-    if (nvmlGetDriver && nvmlGetDriver(driver_buf, sizeof(driver_buf)) == NVML_SUCCESS)
-        driver_version = driver_buf;
-
-    unsigned int count = 0;
-    if (nvmlGetCount(&count) == NVML_SUCCESS) {
-        for (unsigned int i = 0; i < count; i++) {
-            nvmlDevice_t dev = nullptr;
-            if (nvmlGetHandle(i, &dev) != NVML_SUCCESS) continue;
-
-            char name_buf[NVML_DEVICE_NAME_BUFFER_SIZE] = {};
-            if (nvmlGetName(dev, name_buf, sizeof(name_buf)) != NVML_SUCCESS) continue;
-
-            NvidiaSmiGpuInfo info;
-            info.index          = static_cast<int>(i);
-            info.name           = name_buf;
-            info.driver_version = driver_version;
-
-            if (nvmlGetUUID) {
-                char uuid_buf[96] = {};
-                if (nvmlGetUUID(dev, uuid_buf, sizeof(uuid_buf)) == NVML_SUCCESS)
-                    info.uuid = uuid_buf;
-            }
-
-            int major = 0, minor = 0;
-            if (nvmlGetCC && nvmlGetCC(dev, &major, &minor) == NVML_SUCCESS)
-                info.compute_cap = std::to_string(major) + "." + std::to_string(minor);
-
-            if (nvmlGetMem) {
-                NvmlMemory mem{};
-                if (nvmlGetMem(dev, &mem) == NVML_SUCCESS)
-                    info.vram_gb = static_cast<double>(mem.total) / (1024.0 * 1024.0 * 1024.0);
-            }
-
-            result.push_back(info);
+    for (const auto& device : query_nvidia_nvml_devices(false)) {
+        if (device.name.empty()) {
+            continue;
         }
-    }
 
-    nvmlShutdown();
-    dlclose(handle);
+        NvidiaSmiGpuInfo info;
+        info.index = device.index;
+        info.uuid = device.uuid;
+        info.name = device.name;
+        info.compute_cap = device.compute_cap;
+        info.driver_version = device.driver_version;
+        if (device.vram_total_gb >= 0.0) {
+            info.vram_gb = device.vram_total_gb;
+        }
+        result.push_back(info);
+    }
     return result;
 }
 #endif
