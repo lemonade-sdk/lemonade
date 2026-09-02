@@ -164,6 +164,23 @@ def test_horizontal_keywords_match_case_insensitively_and_in_paths():
     )
 
 
+def test_keywords_must_stand_as_their_own_token():
+    """readsecurity and -iTCP:13305 are not networking; tcp_port and cors_config are."""
+    for noise in (
+        "ACE=readextattr,readsecurity",
+        "lsof -t -nP -iTCP:13305",
+        "ws2tcpip.h",
+    ):
+        assert reviewer_sets(reviews_for(["docs/README.md"], diff=noise)) == {
+            EVERYTHING_ELSE
+        }
+
+    for real in ("tcp_port", "cors_config", "check CORS headers", "curl -fsSL"):
+        assert NETWORKING in reviewer_sets(
+            reviews_for(["docs/README.md"], diff=real)
+        ), real
+
+
 def test_http_is_not_a_keyword():
     """`http` matched httplib boilerplate in every route handler, not networking."""
     assert reviewer_sets(

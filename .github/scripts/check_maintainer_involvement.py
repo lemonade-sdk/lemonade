@@ -54,9 +54,15 @@ HORIZONTALS = (
     },
 )
 
+# A keyword only counts as its own token. Bare \b would reject tcp_port and
+# cors_config, which are the names worth catching; letters and digits alone are
+# what turn readsecurity and -iTCP:13305 into false triggers.
 for _horizontal in HORIZONTALS:
     _horizontal["pattern"] = re.compile(
-        "|".join(re.escape(k) for k in _horizontal["keywords"]), re.IGNORECASE
+        "(?<![A-Za-z0-9])(?:"
+        + "|".join(re.escape(k) for k in _horizontal["keywords"])
+        + ")(?![A-Za-z0-9])",
+        re.IGNORECASE,
     )
 
 # Reviews in these states say nothing about whether the reviewer approves,
