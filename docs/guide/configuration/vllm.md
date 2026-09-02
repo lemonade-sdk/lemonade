@@ -5,13 +5,13 @@ Lemonade integrates [vLLM](https://github.com/vllm-project/vllm) as an experimen
 1. **Day-0 model support.** vLLM typically supports new transformer architectures within hours of their release on Hugging Face — checkpoints load directly, with no per-architecture porting.
 2. **Concurrency and multi-GPU.** Paged-attention KV cache, continuous batching, and chunked prefill scale aggregate throughput with in-flight request count; tensor and pipeline parallelism are supported across multiple GPUs.
 
-> **Status: experimental.** The backend has been validated on **gfx1151 (Strix Halo)** and **gfx1150 (Strix Point)**. Prebuilt wheels also exist for `gfx110X` (RDNA3) and `gfx120X` (RDNA4) but those targets have not been exercised end-to-end yet. **gfx942 (AMD Instinct MI300X, CDNA3)** is **staged, not auto-installable yet** — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official `-gfx942` release asset is published (see [Deploying on MI300X](#deploying-on-mi300x-gfx942--quickstart)).
+> **Status: experimental.** The backend has been validated on **gfx1151 (Strix Halo)**, **gfx1150 (Strix Point)**, **gfx110X (RDNA3)**, and **gfx120X (RDNA4, including RX 9070 XT)**. **gfx942 (AMD Instinct MI300X, CDNA3)** is **staged, not auto-installable yet** — the resolver, per-architecture pinning, launch policy, and recipes are all in place and have been manually validated on real MI300X hardware, but gfx942 is held out of the installable support matrix until the official `-gfx942` release asset is published (see [Deploying on MI300X](#deploying-on-mi300x-gfx942--quickstart)).
 
 ## Available Backend
 
 ### ROCm
 - **Platform**: Linux only
-- **Hardware**: validated on gfx1151 (Strix Halo) and gfx1150 (Strix Point); prebuilt wheels also exist for gfx110X (RDNA3) and gfx120X (RDNA4); gfx942 (MI300X, CDNA3) is **staged / manually validated, not auto-installable** until the official per-arch release asset ships
+- **Hardware**: validated on gfx1151 (Strix Halo), gfx1150 (Strix Point), gfx110X (RDNA3), and gfx120X (RDNA4, including RX 9070 XT); gfx942 (MI300X, CDNA3) is **staged / manually validated, not auto-installable** until the official per-arch release asset ships
 - **Bundle**: a self-contained tarball from [lemonade-sdk/vllm-rocm](https://github.com/lemonade-sdk/vllm-rocm) with a relocatable Python interpreter, PyTorch (ROCm), the ROCm user-space libs, Triton, and vLLM. No system Python / PyTorch / ROCm install is required on the host.
 
 ## Prerequisites
