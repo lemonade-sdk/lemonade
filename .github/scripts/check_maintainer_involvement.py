@@ -55,8 +55,7 @@ HORIZONTALS = (
     },
 )
 
-# Underscores and punctuation bound a keyword; adjacent letters and digits do
-# not, so tcp_port counts and readsecurity does not.
+# Keywords match as whole tokens: tcp_port counts, readsecurity does not.
 for _horizontal in HORIZONTALS:
     _horizontal["pattern"] = re.compile(
         "(?<![A-Za-z0-9])(?:"
@@ -70,7 +69,6 @@ for _horizontal in HORIZONTALS:
 NON_VERDICT_REVIEW_STATES = ("COMMENTED", "PENDING")
 
 
-# Identifies this workflow's own comment across runs.
 COMMENT_MARKER = "<!-- required-reviewers-check -->"
 
 

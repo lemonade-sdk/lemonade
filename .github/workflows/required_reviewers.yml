@@ -1,10 +1,5 @@
-# Fail a PR that is missing an approval it requires.
-#
 # The policy, the reviewer lists, and what counts as an approval are all
 # defined in .github/scripts/check_maintainer_involvement.py.
-#
-# To enforce, add "required-reviewers" to the branch protection required status
-# checks. Without that this workflow only reports.
 name: Required Reviewers
 
 on:
@@ -12,12 +7,9 @@ on:
   # repo's token; no PR code is checked out or executed.
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  # Re-run when an approval lands, is dismissed, or changes, so the check
-  # reflects the current review state.
   pull_request_review:
     types: [submitted, dismissed, edited]
-  # Required checks are evaluated against the merge group, and the group ref
-  # names the PR, so the queue re-runs the same check against it.
+  # Required checks are evaluated against the merge group, not the PR.
   merge_group:
   workflow_dispatch:
     inputs:
@@ -68,8 +60,7 @@ jobs:
             echo "::error::Could not resolve a PR number (event: ${{ github.event_name }})"
             exit 1
           fi
-          # A merge_group run re-verifies the PR the queue named; the comment
-          # belongs to the PR event.
+          # The comment belongs to the PR event, not to the queue re-run.
           if [ "${{ github.event_name }}" = "merge_group" ]; then
             python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER"
           else
