@@ -872,6 +872,10 @@ void Router::load_model(const std::string& model_name,
             evict_server(existing);
             existing = nullptr;
         }
+        RecipeOptions rollback_options;
+        bool have_rollback = false;
+        bool rollback_was_pinned = false;
+        ResidencyClass rollback_residency_class = ResidencyClass::Standard;
         if (existing) {
             // Compare resolved rather than stored sets: a request that spells
             // out an option the running process left to its default (e.g. a
@@ -898,6 +902,16 @@ void Router::load_model(const std::string& model_name,
             }
             if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
+                // Capture the running configuration before eviction: if the
+                // resolve step below fails for the new options, this lets us
+                // restore the previously-working process instead of leaving
+                // the model unloaded. Eviction still has to happen before
+                // resolve (comment further down) so the freed memory is
+                // visible to that check.
+                rollback_options = existing->get_recipe_options();
+                rollback_was_pinned = existing->is_pinned();
+                rollback_residency_class = existing->get_residency_class();
+                have_rollback = true;
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
@@ -1009,12 +1023,51 @@ void Router::load_model(const std::string& model_name,
 
         // Auto-tune: resolve ctx_size = -1 and the KV cache quant tier together.
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(effective_options, model_info);
-        const std::string& normalized_backend = kv_ctx.normalized_backend;
-        KvCacheResolution kv_resolution = kv_ctx.resolution;
+        //
+        // If this was a same-model reload that evicted a healthy running
+        // process to free memory for the check below, that process is gone
+        // now. Resolve can fail two ways -- a returned KvCacheResolution with
+        // ok()==false (memory/flash-attention conflicts), or a direct throw
+        // (malformed option values, ladder-bounds contradictions) -- and both
+        // must restore the evicted process before surfacing the failure, so
+        // neither leaves a previously-working model unloaded.
+        auto restore_previous_config_on_resolve_failure = [&](const std::string& reason) {
+            if (!have_rollback) return;
+            LOG(WARNING, "Router") << "KV cache resolve failed for reload of "
+                                   << canonical_model_name << " (" << reason
+                                   << "); restoring previous configuration" << std::endl;
+            is_loading_ = false;
+            load_cv_.notify_all();
+            lock.unlock();
+            try {
+                load_model(canonical_model_name, model_info, rollback_options, do_not_upgrade,
+                          /*allow_reload_on_option_change=*/false, rollback_was_pinned,
+                          load_purpose_for_residency_class(rollback_residency_class));
+                LOG(INFO, "Router") << "Restored previous configuration for "
+                                    << canonical_model_name << " after failed reload" << std::endl;
+            } catch (const std::exception& rollback_error) {
+                LOG(ERROR, "Router") << "Failed to restore previous configuration for "
+                                     << canonical_model_name << " after failed reload: "
+                                     << rollback_error.what() << std::endl;
+            }
+        };
+
+        KvCacheResolution kv_resolution;
+        std::string normalized_backend;
+        double kv_available_memory_gb = 0.0;
+        try {
+            auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(effective_options, model_info);
+            normalized_backend = kv_ctx.normalized_backend;
+            kv_resolution = kv_ctx.resolution;
+            kv_available_memory_gb = kv_ctx.available_memory_gb;
+        } catch (const std::exception& resolve_error) {
+            restore_previous_config_on_resolve_failure(resolve_error.what());
+            throw;
+        }
         if (!kv_resolution.ok()) {
             // Raised here, before a backend server is constructed, so it
             // never reaches the evict-all-and-retry branch below.
+            restore_previous_config_on_resolve_failure(kv_resolution.failure);
             throw std::invalid_argument(kv_resolution.failure);
         }
         const int64_t auto_ctx = kv_resolution.ctx_size;
@@ -1053,7 +1106,7 @@ void Router::load_model(const std::string& model_name,
         if (auto_ctx == AUTO_CTX_FALLBACK
             && (model_info.device & DEVICE_NPU)
             && model_info.size > 10.0
-            && kv_ctx.available_memory_gb > 0) {
+            && kv_available_memory_gb > 0) {
             throw std::runtime_error(
                 "Not enough memory to load " + canonical_model_name
                 + " (" + std::to_string(static_cast<int>(model_info.size))
