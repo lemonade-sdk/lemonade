@@ -381,15 +381,47 @@ json TheNoiseServer::image_generations(const json& request) {
     return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};
 }
 
-json TheNoiseServer::image_edits(const json& /* request */) {
-    return ErrorResponse::from_exception(
-        UnsupportedOperationException("Image editing", "thenoise (text-to-image only)")
-    );
+json TheNoiseServer::image_edits(const json& request) {
+    int n = request.value("n", 1);
+    if (n < 1) n = 1;
+
+    json data = json::array();
+    for (int i = 0; i < n; ++i) {
+        json body = build_request(request);
+        body["out"] = "json";
+
+        // thenoise /edit expects the reference image(s) under `image` (OpenAI
+        // style: a base64 string or an array). build_request forwards unknown keys
+        // untouched, so the official `image` field passes through as-is. The
+        // OpenAI-style alias `image_data` (a single base64 image) is not a
+        // thenoise key, so fold it into `image` and never re-forward the alias.
+        if (request.contains("image") && !request["image"].is_null()) {
+            body["image"] = request["image"];
+        } else if (request.contains("image_data") && !request["image_data"].is_null()) {
+            body["image"] = request["image_data"];
+        }
+        body.erase("image_data");
+
+        LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
+
+        json resp = forward_request("/edit", body);
+
+        if (!resp.contains("b64_json")) {
+            LOG(ERROR, "TheNoise") << "thenoise image edit failed: " << resp.dump() << std::endl;
+            return ErrorResponse::from_exception(
+                BackendException("thenoise", "image edit returned no b64_json: " + resp.dump())
+            );
+        }
+
+        data.push_back(resp);
+    }
+
+    return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};
 }
 
 json TheNoiseServer::image_variations(const json& /* request */) {
     return ErrorResponse::from_exception(
-        UnsupportedOperationException("Image variations", "thenoise (text-to-image only)")
+        UnsupportedOperationException("Image variations", "thenoise")
     );
 }
 

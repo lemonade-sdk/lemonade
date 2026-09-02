@@ -289,8 +289,13 @@ class TheNoiseTests(ServerTestBase):
             assert_valid_png(self, entry["b64_json"], "multi-image")
         print(f"[OK] Image generation with n=2 successful")
 
-    def test_013_image_edits_unsupported(self):
-        """Test that /images/edits returns an error (TheNoise is text2image only)."""
+    def test_013_image_edits_non_editing_model(self):
+        """Test that /images/edits is forwarded to thenoise /edit.
+
+        The adapter now supports editing. The default THENOISE_MODEL (Anima-Turbo)
+        is not an editing-capable model, so thenoise rejects the request; we just
+        verify the endpoint is no longer reported as "text-to-image only".
+        """
         response = requests.post(
             f"{self.base_url}/images/edits",
             files={"image": ("test.png", b"\x89PNG\r\n\x1a\n", "image/png")},
@@ -303,18 +308,20 @@ class TheNoiseTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
 
-        self.assertEqual(
-            response.status_code,
-            500,
-            f"Expected 500 for unsupported image edit, got {response.status_code}: {response.text}",
-        )
-        self.assertIn(
-            "not supported",
+        self.assertNotIn(
+            "text-to-image only",
             response.text.lower(),
-            f"Error should mention edits are not supported: {response.text}",
+            f"Editing should no longer be reported as text-to-image only: {response.text}",
+        )
+        # The default test model is not editing-capable, so the request is expected to
+        # fail at the model level rather than succeed.
+        self.assertIn(
+            "does not support",
+            response.text.lower(),
+            f"Expected an error mentioning the model cannot edit: {response.text}",
         )
         print(
-            f"[OK] Correctly rejected image edit as unsupported: {response.status_code}"
+            f"[OK] Image edit forwarded to thenoise; non-editing model rejected: {response.status_code}"
         )
 
     def test_014_image_variations_unsupported(self):
