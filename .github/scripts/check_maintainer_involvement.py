@@ -3,10 +3,14 @@
 
 A PR needs a *primary* review from the maintainer of each vertical it touches,
 plus an *expert* review from the maintainer of each horizontal its diff or PR
-body invokes. Expert reviews are additive, and never stand in for a primary
-one.
+body invokes. Expert reviews are additive, and never stand in for a primary one.
 A reviewer counts as satisfied when they authored the PR or have an approving
 review on its current head commit. Any push after an approval invalidates it.
+
+This policy is temporary. It enforces the partial code freeze ahead of the
+v11.9.1 release, and is expected to loosen as more primary and expert reviewers
+are named. See discussion #3421.
+
 Used by .github/workflows/required_reviewers.yml; safe to run locally against
 any open PR for spot-testing.
 

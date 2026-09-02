@@ -1,28 +1,7 @@
-# Assert that a PR has the reviewers it requires before it can be queued.
+# Fail a PR that is missing an approval it requires.
 #
-# A *primary* review comes from the maintainer of a vertical, a function of
-# the repo that lives in known folders. A PR needs one for every vertical it
-# touches:
-#
-#   CLI              src/cpp/cli/**  -> @bitgamma
-#   GUI              src/app/**      -> @kpoineal
-#   Everything else  anything else   -> @jeremyfowers or @ramkrishna2910
-#
-# An *expert* review comes from the maintainer of a horizontal, a function
-# that cuts across folders, recognized by the words the diff and the PR body
-# use. These are additive; an expert review never stands in for a primary one:
-#
-#   Networking & security  curl / tcp / udp / cors / security -> @Geramy
-#   ROCm                   rocm                                      -> @superm1
-#
-# A reviewer counts as satisfied when they authored the PR or approved its
-# current head commit. A push after an approval invalidates that approval.
-# The reviewer lists and the analysis live in
-# .github/scripts/check_maintainer_involvement.py.
-#
-# This policy is temporary. It enforces the partial code freeze ahead of the
-# v11.9.1 release, and is expected to loosen as more primary and expert
-# reviewers are named. See discussion #3421.
+# The policy, the reviewer lists, and what counts as an approval are all
+# defined in .github/scripts/check_maintainer_involvement.py.
 #
 # To enforce, add "required-reviewers" to the branch protection required status
 # checks. Without that this workflow only reports.
@@ -53,23 +32,10 @@ permissions:
   pull-requests: write
 
 jobs:
-  logic-tests:
+  required-reviewers:
     runs-on: ubuntu-latest
     # The field is absent on merge_group and workflow_dispatch, where the
     # comparison is still true and the job runs.
-    if: github.event.pull_request.draft != true
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 1
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: python .github/scripts/test_maintainer_involvement.py
-
-  required-reviewers:
-    runs-on: ubuntu-latest
-    needs: logic-tests
     if: github.event.pull_request.draft != true
     concurrency:
       group: >-
