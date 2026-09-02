@@ -1,12 +1,8 @@
-#include <iostream>
-#include <csignal>
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include <lemon/server.h>
+
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
-#include <lemon/server.h>
 #include <lemon/system_info.h>
 #include <lemon/utils/aixlog.hpp>
 #include <lemon/utils/http_client.h>
@@ -14,6 +10,12 @@
 #include <lemon/utils/path_utils.h>
 #include <lemon/version.h>
 #include "telemetry.h"
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <iostream>
+#include <thread>
 
 #if defined(__GLIBC__)
 #include <cstdlib>
@@ -164,9 +166,22 @@ int main(int argc, char** argv) {
         if (cli_config.broadcast.has_value()) {
             config->set_broadcast_override(cli_config.broadcast);
         }
+        if (!cli_config.log_file.empty()) {
+            config->set_log_file_override(cli_config.log_file);
+        }
+        if (cli_config.log_max_file_size_mb != -1) {
+            config->set_log_max_file_size_mb_override(cli_config.log_max_file_size_mb);
+        }
+        if (cli_config.log_max_files != -1) {
+            config->set_log_max_files_override(cli_config.log_max_files);
+        }
 
-        // Initialize logging with the configured level — console + file + log hub
-        configure_application_logging(config->log_level(), LoggingMode::direct_server);
+        // Initialize logging with configured level and rotation limits
+        LogRotationConfig rot_cfg;
+        rot_cfg.file_mode = config->log_file();
+        rot_cfg.max_file_size_mb = static_cast<size_t>(config->log_max_file_size_mb());
+        rot_cfg.max_files = static_cast<size_t>(config->log_max_files());
+        configure_application_logging(config->log_level(), LoggingMode::direct_server, rot_cfg);
 
         utils::set_models_dir(config->models_dir());
 
@@ -177,6 +192,9 @@ int main(int argc, char** argv) {
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        LOG(INFO) << "  Log file mode: " << config->log_file() << std::endl;
+        LOG(INFO) << "  Log max file size: " << config->log_max_file_size_mb() << " MB" << std::endl;
+        LOG(INFO) << "  Log max files: " << config->log_max_files() << std::endl;
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }

@@ -31,6 +31,17 @@ CLIParser::CLIParser()
         ->type_name("HOST");
 
     app_.add_flag("--broadcast,!--no-broadcast", config_.broadcast, "Enable or disable UDP broadcasting for server discovery");
+
+    app_.add_option("--log-file", config_.log_file, "File logging mode: auto (default), disabled, enabled, or custom file path (overrides config.json)")
+        ->type_name("MODE");
+
+    app_.add_option("--log-max-size-mb", config_.log_max_file_size_mb, "Max active log file size in MB before rotation (1..2048, overrides config.json)")
+        ->type_name("MB")
+        ->check(CLI::Range(1, 2048));
+
+    app_.add_option("--log-max-files", config_.log_max_files, "Max number of rotated log backup files to retain (0..100, overrides config.json)")
+        ->type_name("N")
+        ->check(CLI::Range(0, 100));
 }
 
 int CLIParser::parse(int argc, char** argv) {

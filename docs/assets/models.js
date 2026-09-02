@@ -7,6 +7,7 @@ const RECIPE_PRIORITY = [
   'acestep',
   'ds4',
   'flm',
+  'llamacpp-hrx',
   'kokoro',
   'llamacpp',
   'moonshine',
@@ -23,6 +24,7 @@ const RECIPE_PRIORITY = [
 
 const RECIPE_DISPLAY_NAMES = {
   llamacpp: 'llama.cpp GPU',
+  'llamacpp-hrx': 'HRX GPU (experimental)',
   whispercpp: 'whisper.cpp',
   'sd-cpp': 'stable-diffusion.cpp',
   flm: 'FastFlowLM NPU',

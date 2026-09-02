@@ -44,6 +44,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": "",
   "auto_check_model_updates": true,
   "auto_update_models": false,
   "broadcast": true,
@@ -64,6 +65,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "global_timeout": 600,
   "host": "localhost",
+  "hrx": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
@@ -80,7 +85,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "log_file": "auto",
   "log_level": "info",
+  "log_max_file_size_mb": 10,
+  "log_max_files": 5,
   "max_loaded_models": 1,
   "models_dir": "auto",
   "moonshine": {
@@ -193,10 +201,13 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `port` | int | 13305 | Port number for the HTTP server |
 | `host` | string | "localhost" | Address to bind for connections |
 | `log_level` | string | "info" | Logging level (trace, debug, info, warning, error, fatal, none) |
+| `log_file` | string | "auto" | File logging mode: "auto" (console-only for direct server runs, lemonade-server.log for embedded tray app), "disabled", "enabled", or custom target file path |
+| `log_max_file_size_mb` | int | 10 | Max active log file size in MB before triggering rotation (steady-state footprint bounded to ~`log_max_file_size_mb * (log_max_files + 1)`) |
+| `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
-| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond` |
+| `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. Top-level `chat`, `embeddings`, and `reranking` directories select how models run, see [Model Management](../../embeddable/models.md) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
 | `ctx_size` | int | -1 | Default context size for LLM models. Use `-1` for auto-resolution: the server computes the largest context that fits in available device memory using GGUF architecture metadata. Use a positive integer to set an explicit size. |
 | `default_model_source` | string | "huggingface" | Remote registry used to pull checkpoints when a request does not name one (`huggingface` or `modelscope`). Explicit `--source`, a `source`/`registry_source` field, or a provider URL always overrides it. |
@@ -476,19 +487,37 @@ The `LEMONADE_ADMIN_API_KEY` environment variable provides elevated access to bo
 
 ### Allowed Origins
 
-The `LEMONADE_ALLOWED_ORIGINS` environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+The `allowed_origins` setting (in `config.json` or configured via `lemonade config set allowed_origins="..."`) controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).
+
+> [!WARNING]
+> The `LEMONADE_ALLOWED_ORIGINS` environment variable is **deprecated** and will be removed in a future release.
+> - **Automatic Migration**: If `LEMONADE_ALLOWED_ORIGINS` is set at startup and `allowed_origins` is unset or empty in `config.json`, Lemonade automatically migrates the value into `config.json`.
+> - **Precedence & Conflict Handling**: At startup, `LEMONADE_ALLOWED_ORIGINS` takes interim precedence over `config.json`. If both exist and differ, a warning is logged advising you to unset or remove `LEMONADE_ALLOWED_ORIGINS` to avoid shadowing your configuration file.
+> - **Runtime Updates**: Running `lemonade config set allowed_origins="..."` dynamically applies changes to the active session immediately, overriding any initial environment variable value without restarting the server.
 
 > [!NOTE]
-> `LEMONADE_ALLOWED_ORIGINS` specifies the **client application/web page's origin** (where the request originates), **not** the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an `Origin` header and are not restricted by origin validation.
+> `allowed_origins` specifies the **client application/web page's origin** (where the request originates), **not** the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an `Origin` header and are not restricted by origin validation.
 
+- **Configuration**:
+  - In `config.json`: `"allowed_origins": "https://app.lemonade.dev,http://localhost:3000"`
+  - Via CLI: `lemonade config set allowed_origins="https://app.lemonade.dev,http://localhost:3000"`
 - **Format**: A comma-separated list of complete origins including the scheme and optional port (e.g., `https://app.lemonade.dev,http://localhost:3000`).
   > [!WARNING]
   > Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
-- **Wildcard (`*`)**: Setting the variable to `*` allows any origin to connect.
+- **Wildcard (`*`)**: Setting `allowed_origins` to `*` allows any origin to connect.
 - **Security Implications of `*`**:
   > [!WARNING]
-  > Using `LEMONADE_ALLOWED_ORIGINS=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
-- **Local/Loopback & Desktop Access**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) and custom desktop application schemes (`file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for local client connections. Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `LEMONADE_ALLOWED_ORIGINS` to prevent CSWSH attacks.
+  > Using `allowed_origins=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
+- **Local/Loopback, Desktop & Same-Origin Access (Zero-Configuration)**:
+  - **Loopback & Subdomains**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) are permitted automatically.
+  - **Native Desktop Apps**: Native desktop application schemes (`lemonade://`, `file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for client connections.
+  - **Same-Origin LAN & mDNS Web App Access**: Direct browser requests to Lemonade's built-in web interface over active network interfaces (e.g. `http://192.168.1.50:13305/app`, `http://100.100.x.x:13305/app`) and local mDNS hostnames (`http://<hostname>.local:13305/app`) are dynamically permitted without manual configuration because they are same-origin to the server's own interfaces.
+- **When Allowed Origins Must Be Configured**:
+  - **Cross-Origin Web Applications**: Any external or third-party web application hosted on a different domain or port connecting to Lemonade in the browser (e.g. a web UI hosted at `https://app.lemonade.dev` or `http://localhost:3000` calling Lemonade on `http://192.168.1.50:13305`).
+  - **Reverse Proxies & TLS Frontends**: Reverse proxies, tunnels, or frontends terminating TLS (e.g., `https://lemonade.example.com` or Tailscale Serve at `https://mybox.tailnet.ts.net`). Because proxies forward HTTPS requests to an HTTP server and present external hostnames not belonging to local network interfaces, their external origins must be explicitly allowlisted. (By contrast, direct access via a local Tailscale interface IP `http://100.x.y.z:13305` is zero-config).
+  - **Sandboxed Frames**: Opaque `null` origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in `allowed_origins` to prevent CSWSH attacks.
+  > [!NOTE]
+  > When an explicit `allowed_origins` list is configured, it is authoritative: zero-configuration fallback for unlisted non-loopback LAN origins is disabled. If you access the server through both a reverse proxy and direct LAN IP in a browser, include both in `allowed_origins`.
 
 ## Model Synchronization & Auto-Updates
 

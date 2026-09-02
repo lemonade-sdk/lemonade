@@ -32,12 +32,19 @@ public:
     void set_host_override(std::optional<std::string> override_val);
     int websocket_port() const;
     std::string log_level() const;
+    std::string log_file() const;
+    void set_log_file_override(std::optional<std::string> override_val);
+    int log_max_file_size_mb() const;
+    void set_log_max_file_size_mb_override(std::optional<int> override_val);
+    int log_max_files() const;
+    void set_log_max_files_override(std::optional<int> override_val);
     std::string extra_models_dir() const;
     bool broadcast() const;
     void set_broadcast_override(std::optional<bool> override_val);
     long global_timeout() const;
     int max_loaded_models() const;
     int64_t download_rate_limit_bytes_per_second() const;
+    std::string allowed_origins() const;
 
     std::string models_dir() const;
     int ctx_size() const;
@@ -151,6 +158,7 @@ private:
     int get_int_opt(const char* env_name, const std::vector<std::string>& path, int default_val) const;
     double get_double_opt(const char* env_name, const std::vector<std::string>& path, double default_val) const;
     std::string get_string_opt(const char* env_name, const std::vector<std::string>& path, const std::string& default_val) const;
+    std::string allowed_origins_unlocked() const;
 
     mutable std::shared_mutex mutex_;
 
@@ -161,6 +169,10 @@ private:
     std::optional<int> port_override_;
     std::optional<std::string> host_override_;
     std::optional<bool> broadcast_override_;
+    std::optional<std::string> log_file_override_;
+    std::optional<int> log_max_file_size_mb_override_;
+    std::optional<int> log_max_files_override_;
+    std::optional<std::string> allowed_origins_override_;
 
     // Valid log levels
     static const std::vector<std::string> valid_log_levels_;
