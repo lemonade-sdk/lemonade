@@ -1,0 +1,52 @@
+name: Retry apt-get
+description: >
+  Runs `apt-get update` followed by an apt-get subcommand, retrying with
+  exponential backoff. Mirrors (esp. the arm64 ports.ubuntu.com mirror) can
+  briefly serve a package index that is out of sync with its pool, causing
+  404s on individual .deb files that a plain apt-get won't recover from.
+
+inputs:
+  command:
+    description: >
+      The apt-get subcommand and args to run after `update`, e.g.
+      "install -y cmake ninja-build" or "build-dep . -y".
+    required: true
+  use-sudo:
+    description: >
+      Prefix apt-get invocations with sudo. Needed on GitHub-hosted runners;
+      leave at the default when already running as root inside a container.
+    required: false
+    default: 'false'
+  attempts:
+    description: 'Number of attempts before giving up.'
+    required: false
+    default: '3'
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -e
+        SUDO=""
+        if [ "${{ inputs.use-sudo }}" = "true" ]; then
+          SUDO="sudo"
+        fi
+        attempts=${{ inputs.attempts }}
+        delay=5
+        for i in $(seq 1 "$attempts"); do
+          # Discard the cached index before retrying so we don't just get the
+          # same stale, out-of-sync listing served back from local cache.
+          $SUDO rm -rf /var/lib/apt/lists/*
+          if $SUDO apt-get -o Acquire::Retries=3 update && \
+              $SUDO apt-get -o Acquire::Retries=3 ${{ inputs.command }}; then
+            exit 0
+          fi
+          if [ "$i" -lt "$attempts" ]; then
+            echo "apt-get failed (attempt $i/$attempts); retrying in ${delay}s..."
+            sleep "$delay"
+            delay=$((delay * 2))
+          fi
+        done
+        echo "apt-get failed after $attempts attempts"
+        exit 1
