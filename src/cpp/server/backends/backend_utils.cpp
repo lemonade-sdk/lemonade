@@ -43,6 +43,17 @@ namespace lemon::backends {
         return spec_for(recipe);
     }
 
+    std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
+        if (recipe_has_rocm_channels(recipe) && backend == "rocm") {
+            std::string channel = "stable";
+            if (auto* cfg = RuntimeConfig::global()) {
+                channel = cfg->rocm_channel_for_recipe(recipe);
+            }
+            return "rocm-" + channel;
+        }
+        return backend;
+    }
+
     static std::string hash_string_from_json(const json& node) {
         if (node.is_string()) {
             return node.get<std::string>();

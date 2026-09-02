@@ -2,6 +2,7 @@
 //
 // Compile: g++ -std=c++17 -I src/cpp/include test/cpp/test_auto_tune.cpp -o test_auto_tune
 
+#include "lemon/auto_tune.h"
 #include "lemon/gguf_reader.h"
 #include <cmath>
 #include <cstdio>
@@ -264,6 +265,126 @@ static void test_missing_metadata() {
     check("missing: no key_length returns 0", bytes == 0.0);
 }
 
+static void test_factor_default_matches_f16_branches() {
+    // Standard MHA/GQA scalar branch.
+    {
+        GgufMetadata m;
+        m.block_count = 32;
+        m.key_length = 128;
+        m.head_count_kv_per_layer.assign(32, 4);
+        derive_scalars(m);
+        double default_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+        double explicit_f16_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, 2.0);
+        check("factor: standard branch default arg == explicit f16 factor",
+              approx_eq(default_bytes, explicit_f16_bytes));
+    }
+    // Precise per-layer SWA branch.
+    {
+        GgufMetadata m;
+        m.block_count = 4;
+        m.key_length = 256;
+        m.key_length_swa = 128;
+        m.head_count_kv_per_layer = {8, 4, 8, 4};
+        m.sliding_window_pattern = {false, true, false, true};
+        derive_scalars(m);
+        double default_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+        double explicit_f16_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, 2.0);
+        check("factor: swa-precise branch default arg == explicit f16 factor",
+              approx_eq(default_bytes, explicit_f16_bytes));
+    }
+    // Hybrid SSM full-attention-interval branch.
+    {
+        GgufMetadata m;
+        m.block_count = 37;
+        m.key_length = 128;
+        m.full_attention_interval = 12;
+        m.head_count_kv_per_layer.assign(37, 4);
+        derive_scalars(m);
+        double default_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+        double explicit_f16_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, 2.0);
+        check("factor: hybrid-SSM branch default arg == explicit f16 factor",
+              approx_eq(default_bytes, explicit_f16_bytes));
+    }
+}
+
+static void test_factor_q8_and_q4_scaling() {
+    const double q8_factor = 1.0625;
+    const double q4_factor = 0.5625;
+
+    // Standard MHA/GQA scalar branch.
+    {
+        GgufMetadata m;
+        m.block_count = 32;
+        m.key_length = 128;
+        m.head_count_kv_per_layer.assign(32, 4);
+        derive_scalars(m);
+        double f16_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+        double q8_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, q8_factor);
+        double q4_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, q4_factor);
+        check("factor: standard branch q8_0 == f16 * 1.0625/2.0",
+              approx_eq(q8_bytes, f16_bytes * (q8_factor / 2.0)));
+        check("factor: standard branch q4_0 == f16 * 0.5625/2.0",
+              approx_eq(q4_bytes, f16_bytes * (q4_factor / 2.0)));
+    }
+    // Precise per-layer SWA branch — also asserts the scale out-parameter is
+    // unaffected by the quant factor (architecture weighting is independent).
+    {
+        GgufMetadata m;
+        m.block_count = 4;
+        m.key_length = 256;
+        m.key_length_swa = 128;
+        m.head_count_kv_per_layer = {8, 4, 8, 4};
+        m.sliding_window_pattern = {false, true, false, true};
+        derive_scalars(m);
+        double f16_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+        double scale_f16 = 0, scale_q4 = 0;
+        lemon::compute_weighted_kv_cache_bytes_per_token(m, &scale_f16, 2.0);
+        double q8_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, q8_factor);
+        double q4_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, &scale_q4, q4_factor);
+        check("factor: swa-precise branch q8_0 == f16 * 1.0625/2.0",
+              approx_eq(q8_bytes, f16_bytes * (q8_factor / 2.0)));
+        check("factor: swa-precise branch q4_0 == f16 * 0.5625/2.0",
+              approx_eq(q4_bytes, f16_bytes * (q4_factor / 2.0)));
+        check("factor: swa scale out-parameter unchanged by quant factor",
+              approx_eq(scale_f16, scale_q4));
+    }
+    // Hybrid SSM full-attention-interval branch.
+    {
+        GgufMetadata m;
+        m.block_count = 37;
+        m.key_length = 128;
+        m.full_attention_interval = 12;
+        m.head_count_kv_per_layer.assign(37, 4);
+        derive_scalars(m);
+        double f16_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m);
+        double q8_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, q8_factor);
+        double q4_bytes = lemon::compute_weighted_kv_cache_bytes_per_token(m, nullptr, q4_factor);
+        check("factor: hybrid-SSM branch q8_0 == f16 * 1.0625/2.0",
+              approx_eq(q8_bytes, f16_bytes * (q8_factor / 2.0)));
+        check("factor: hybrid-SSM branch q4_0 == f16 * 0.5625/2.0",
+              approx_eq(q4_bytes, f16_bytes * (q4_factor / 2.0)));
+    }
+}
+
+static void test_estimate_from_model_size_scales_with_factor() {
+    const double q4_factor = 0.5625;
+    double f16_estimate = lemon::estimate_kv_bytes_per_token_from_model_size(7.0);
+    double q4_estimate = lemon::estimate_kv_bytes_per_token_from_model_size(7.0, q4_factor);
+    check("estimate: 7B bucket at q4_0 factor == f16 * 0.28125",
+          approx_eq(q4_estimate, f16_estimate * 0.28125));
+    check("estimate: default factor matches explicit f16 factor",
+          approx_eq(f16_estimate,
+                    lemon::estimate_kv_bytes_per_token_from_model_size(7.0, 2.0)));
+}
+
+static void test_missing_metadata_regardless_of_factor() {
+    GgufMetadata m_empty;
+    check("missing+factor: no metadata returns 0 at q8_0 factor",
+          lemon::compute_weighted_kv_cache_bytes_per_token(m_empty, nullptr, 1.0625) == 0.0);
+    check("missing+factor: no metadata returns 0 at q4_0 factor",
+          lemon::compute_weighted_kv_cache_bytes_per_token(m_empty, nullptr, 0.5625) == 0.0);
+}
+
 static void test_varying_heads_swa() {
     // Model where SWA layers have FEWER heads than full layers.
     GgufMetadata m;
@@ -306,7 +427,10 @@ int main() {
     test_fai_improvement();
     test_missing_metadata();
     test_varying_heads_swa();
-
+    test_factor_default_matches_f16_branches();
+    test_factor_q8_and_q4_scaling();
+    test_estimate_from_model_size_scales_with_factor();
+    test_missing_metadata_regardless_of_factor();
     if (g_failures == 0) {
         std::printf("\nAll auto_tune tests passed\n");
         return 0;

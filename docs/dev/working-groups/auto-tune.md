@@ -18,6 +18,29 @@ Please see the general [contribution guidelines](../contribute.md), then contact
 
 This working group focuses on **performance parameters** (batch size, GPU layers, threads, context size, backend selection) that are determined by hardware characteristics. Quality parameters such as temperature, top_p, and chat template are model- or use-case-dependent and are explicitly **out of scope**.
 
+## Maintenance obligations
+
+**KV cache quantization safety table.** `kv_cache_quant_safety_table` in
+`src/cpp/include/lemon/backends/llamacpp/llamacpp.h` marks which
+`(backend, tier)` combinations have a known-safe fused-attention kernel for
+a quantized KV cache. Lemonade installs prebuilt llama.cpp binaries rather
+than compiling them, so this table cannot be derived from this repo's own
+build flags — each row was hand-verified against the actual asset source
+for that backend (the `cuda`/`rocm-stable` release workflow in
+`lemonade-sdk/llama.cpp`, the `rocm-nightly` build workflow in
+`lemonade-sdk/llamacpp-rocm`, and upstream `ggml-org/llama.cpp` directly
+for `metal`) and is not re-verified automatically.
+
+**Whenever a pin in `src/cpp/resources/backend_versions.json` for `cuda`,
+`rocm-stable`, or `rocm-nightly` moves, re-verify that fork's build
+workflow still doesn't set `GGML_CUDA_FA_ALL_QUANTS` (or a HIP equivalent)
+before trusting the table unchanged.** If the pin's `q8_0`/`q4_0` symmetric
+fused-attention kernel instances stop compiling unconditionally, flip the
+corresponding row(s) to `false` in the same PR that bumps the pin. This is
+currently a review-time obligation, not a mechanically enforced one; see
+the plan's OQ2 for whether a test asserting every pinned backend has a
+table row should be added.
+
 ## Roadmap
 
 > Roadmap items are high-level objectives that may span multiple issues and PRs. Details can also be re-defined.

@@ -16,6 +16,7 @@
 #include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/thenoise/thenoise_server.h"
@@ -3484,10 +3485,13 @@ void Server::respond_with_model_options(
         effective_json["model_name"] = model_id;
         defaults_json["model_name"] = model_id;
 
-        const int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
-        const nlohmann::json effective_ctx = effective.get_option("ctx_size");
-        const int64_t resolved_ctx = auto_ctx != -2 ? auto_ctx
-            : (effective_ctx.is_number() ? effective_ctx.get<int64_t>() : -1);
+        auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(effective, info);
+        const std::string& normalized_backend = kv_ctx.normalized_backend;
+        const KvCacheResolution kv_resolution = kv_ctx.resolution;
+        if (!kv_resolution.ok()) {
+            throw std::runtime_error(kv_resolution.failure);
+        }
+        const int64_t resolved_ctx = kv_resolution.ctx_size;
 
         nlohmann::json response = {
             {"model_name", model_id},
@@ -3495,8 +3499,20 @@ void Server::respond_with_model_options(
             {"saved", model_manager_->get_saved_model_options(model_key)},
             {"effective", effective_json},
             {"defaults", defaults_json},
-            {"resolved_ctx_size", resolved_ctx}
+            {"resolved_ctx_size", resolved_ctx},
+            // Sibling fields, not folded into `effective`/`defaults`:
+            // those stay replayable /v1/load bodies and must still report
+            // "auto" rather than freezing in a point-in-time tier decision.
+            {"resolved_kv_cache_tier", kv_cache_quant_tier_to_string(kv_resolution.tier)}
         };
+        if (kv_resolution.structurally_ineligible) {
+            // Distinguishes "no tier is eligible on this backend" from
+            // an ordinary f16 resolution, which would otherwise report an
+            // identical tier value with no way to tell the two apart.
+            response["resolved_kv_cache_ineligible_reason"] =
+                "No KV cache quant tier below f16 is eligible on backend '" + normalized_backend +
+                "' for this model (backend kernel support or model head dimensions).";
+        }
         res.set_content(response.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Failed to handle options for '" << model_id
@@ -3598,8 +3614,22 @@ void Server::handle_model_options_post(const httplib::Request& req, httplib::Res
                 changes[key] = value;
             }
 
+            // Validate the kv-cache-quant resolver against the options this
+            // write would leave the model with (matching the "validate
+            // everything before writing anything" comment above) so a bad
+            // combination is rejected with 400 rather than persisted and
+            // only discovered on the next GET, which would then 500.
+            const RecipeOptions preview = model_manager_->preview_saved_model_options(info, changes);
+            const auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(preview, info);
+            if (!kv_ctx.resolution.ok()) {
+                r.status = 400;
+                r.set_content(nlohmann::json{{"error", kv_ctx.resolution.failure}}.dump(),
+                             "application/json");
+                return false;
+            }
+
             if (dry_run) {
-                info.recipe_options = model_manager_->preview_saved_model_options(info, changes);
+                info.recipe_options = preview;
                 return true;
             }
             if (!changes.empty()) {

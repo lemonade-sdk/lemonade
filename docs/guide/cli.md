@@ -381,6 +381,10 @@ The following options are available depending on the recipe being used:
 | `--llamacpp BACKEND` | LlamaCpp backend to use | Auto-detected |
 | `--llamacpp-device DEVICES` | Comma-separated list of accelerator devices to use (e.g. Vulkan0) | `""` |
 | `--llamacpp-args ARGS` | Custom arguments to pass to llama-server | `""` |
+| `--kv-cache-quantization ARGS` | KV cache quantization: f16 (default), auto, q8_0, or q4_0 | `f16` |
+| `--max-kv-quantization ARGS` | Highest-quality KV cache tier the auto ladder may select | `f16` |
+| `--min-kv-quantization ARGS` | Lowest-quality KV cache tier the auto ladder may select | `q8_0` |
+| `--kv-cache-priority ARGS` | KV cache ladder bias: max_context, balanced (default), or max_speed | `balanced` |
 
 #### HRX GPU (experimental) (`llamacpp-hrx` recipe)
 
