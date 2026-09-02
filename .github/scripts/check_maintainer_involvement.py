@@ -134,25 +134,52 @@ def diff_text(pr_number, repo, files):
     return "\n".join(changed)
 
 
+def review_states(reviews, head_sha):
+    """Each reviewer's latest verdict, as (state, commit_id).
+
+    COMMENTED and PENDING carry no verdict, so they never displace an earlier one.
+    """
+    verdicts = {}
+    for review in reviews:
+        state = (review.get("state") or "").upper()
+        user = (review.get("user") or {}).get("login")
+        if not user:
+            continue
+        if state in NON_VERDICT_REVIEW_STATES:
+            verdicts.setdefault(user.lower(), ("COMMENTED", None))
+            continue
+        verdicts[user.lower()] = (state, review.get("commit_id"))
+    return verdicts
+
+
 def active_approvers(reviews, head_sha):
     """Logins whose most recent verdict is an approval of the current head commit.
 
     An approval is bound to the commit it was submitted against, so a later push
     leaves it behind and it stops counting.
     """
-    verdicts = {}
-    for review in reviews:
-        state = (review.get("state") or "").upper()
-        if state in NON_VERDICT_REVIEW_STATES:
-            continue
-        user = (review.get("user") or {}).get("login")
-        if user:
-            verdicts[user.lower()] = (state, review.get("commit_id"))
     return {
         user
-        for user, (state, commit) in verdicts.items()
+        for user, (state, commit) in review_states(reviews, head_sha).items()
         if state == "APPROVED" and commit == head_sha
     }
+
+
+def reviewer_status(login, states, head_sha):
+    """Plain-language account of where one reviewer stands."""
+    state, commit = states.get(login.lower(), (None, None))
+    if state == "APPROVED" and commit == head_sha:
+        return "approved"
+    if state == "APPROVED":
+        short = (commit or "")[:7]
+        return f"approved an older commit ({short}); needs to approve again"
+    if state == "CHANGES_REQUESTED":
+        return "requested changes"
+    if state == "DISMISSED":
+        return "their approval was dismissed"
+    if state == "COMMENTED":
+        return "commented, but has not clicked Approve"
+    return "has not reviewed yet"
 
 
 def keyword_hits(pattern, text):
@@ -161,8 +188,8 @@ def keyword_hits(pattern, text):
 
 def describe_source(in_diff, in_body):
     if in_diff and in_body:
-        return "diff and PR body mention"
-    return "PR body mentions" if in_body else "diff mentions"
+        return "diff and description"
+    return "description" if in_body else "diff"
 
 
 def matches_prefix(path, prefixes):
@@ -182,7 +209,8 @@ def required_reviews(paths, changed_diff, body=""):
                 {
                     "role": "primary",
                     "area": vertical["name"],
-                    "trigger": f"changes under {', '.join(vertical['prefixes'])}",
+                    "trigger": "changes files under "
+                    + " and ".join(f"`{p}`" for p in vertical["prefixes"]),
                     "evidence": touched,
                     "reviewers": vertical["reviewers"],
                 }
@@ -190,12 +218,12 @@ def required_reviews(paths, changed_diff, body=""):
 
     unclaimed = [p for p in paths if p not in claimed]
     if unclaimed:
-        owned = ", ".join(pre for v in VERTICALS for pre in v["prefixes"])
+        owned = " and ".join(f"`{pre}`" for v in VERTICALS for pre in v["prefixes"])
         required.append(
             {
                 "role": "primary",
                 "area": FALLBACK_VERTICAL["name"],
-                "trigger": f"changes outside {owned}",
+                "trigger": f"changes files outside {owned}",
                 "evidence": unclaimed,
                 "reviewers": FALLBACK_VERTICAL["reviewers"],
             }
@@ -211,7 +239,8 @@ def required_reviews(paths, changed_diff, body=""):
                 {
                     "role": "expert",
                     "area": horizontal["name"],
-                    "trigger": f"{describe_source(in_diff, in_body)} {', '.join(hits)}",
+                    "trigger": f"mentions {', '.join(hits)} in its "
+                    + describe_source(in_diff, in_body),
                     "evidence": [],
                     "reviewers": horizontal["reviewers"],
                 }
@@ -230,50 +259,107 @@ def evaluate(required, author, approvers):
     return required
 
 
-def render(pr_number, author, approvers, required):
-    lines = [f"# Required reviewers for PR #{pr_number}", ""]
-    lines.append(f"- **Author:** @{author}")
-    approver_list = (
-        ", ".join(f"@{a}" for a in sorted(approvers)) if approvers else "_none_"
-    )
-    lines.append(f"- **Approving reviewers (current head):** {approver_list}")
-    lines.append("")
+POLICY_URL = "https://github.com/lemonade-sdk/lemonade/discussions/3421"
 
-    if not required:
-        lines.append("This change requires no reviewers.")
-        return "\n".join(lines) + "\n"
 
-    lines.append("| | Area | Review | Trigger | Required (any one) | Satisfied by |")
-    lines.append("|---|---|---|---|---|---|")
-    for review in required:
-        icon = "✅" if review["satisfied"] else "❌"
-        reviewers = ", ".join(f"@{r}" for r in review["reviewers"])
-        got = (
-            ", ".join(f"@{r}" for r in review["satisfied_by"])
-            if review["satisfied"]
-            else "none"
+def action_line(review, states, head_sha):
+    """One instruction a reader can act on without knowing the policy."""
+    names = " or ".join(f"@{r}" for r in review["reviewers"])
+    stale = [
+        r
+        for r in review["reviewers"]
+        if states.get(r.lower(), (None, None))[0] == "APPROVED"
+    ]
+    if stale:
+        who = " or ".join(f"@{r}" for r in stale)
+        commit = (states[stale[0].lower()][1] or "")[:7]
+        return (
+            f"Ask {who} to approve again. They already approved this PR at commit "
+            f"{commit}, but it has since been updated to {head_sha[:7]}, and an "
+            f"approval only counts on the newest commit."
+        )
+    wait = "wait for one of them" if len(review["reviewers"]) > 1 else "wait for them"
+    return f"Request a review from {names}, and {wait} to approve."
+
+
+def render(pr_number, author, head_sha, states, required):
+    unmet = [r for r in required if not r["satisfied"]]
+
+    if not unmet:
+        lines = [
+            "# Required reviewers: all set",
+            "",
+            "This PR has every approval this repository requires of it.",
+            "",
+        ]
+    else:
+        count = len(unmet)
+        lines = [
+            f"# Required reviewers: {count} still needed",
+            "",
+            "Some parts of this repository can only be changed with approval from a",
+            "specific maintainer. This PR touches "
+            f"{'one such part' if count == 1 else f'{count} such parts'}, "
+            "so it cannot merge yet.",
+            "",
+            "## What to do",
+            "",
+        ]
+        for i, review in enumerate(unmet, 1):
+            lines.append(f"{i}. {action_line(review, states, head_sha)}")
+            lines.append(f"   Required because this PR {review['trigger']}.")
+            lines.append("")
+        lines.append(
+            "Only a review submitted as **Approve** counts. A comment does not,"
         )
         lines.append(
-            f"| {icon} | {review['area']} | {review['role']} | "
-            f"{review['trigger']} | {reviewers} | {got} |"
+            "and pushing a new commit clears approvals given before it, so ask"
         )
+        lines.append(
+            "for approvals once the branch has settled. Authoring the PR counts"
+        )
+        lines.append("as approving your own area.")
+        lines.append("")
+
+    lines.append("## Every rule that applies to this PR")
+    lines.append("")
+    lines.append("| | Who must approve | Why it applies | Where they stand |")
+    lines.append("|---|---|---|---|")
+    for review in required:
+        icon = "✅" if review["satisfied"] else "❌"
+        who = " or ".join(f"@{r}" for r in review["reviewers"])
+        if review["satisfied"]:
+            by = review["satisfied_by"]
+            where = (
+                "you are the author"
+                if author.lower() in {b.lower() for b in by}
+                else "approved by @" + ", @".join(by)
+            )
+        else:
+            where = "; ".join(
+                f"@{r} {reviewer_status(r, states, head_sha)}"
+                for r in review["reviewers"]
+            )
+        lines.append(f"| {icon} | {who} | this PR {review['trigger']} | {where} |")
     lines.append("")
 
-    for review in required:
-        if review["satisfied"] or not review["evidence"]:
+    for review in unmet:
+        if not review["evidence"]:
             continue
         shown = review["evidence"][:10]
         lines.append(
-            f"<details><summary>Files in the {review['area']} vertical</summary>"
+            f"<details><summary>Files that triggered the {review['area']} rule"
+            f" ({len(review['evidence'])})</summary>"
         )
         lines.append("")
         lines += [f"- `{path}`" for path in shown]
         if len(review["evidence"]) > len(shown):
-            lines.append(f"- …and {len(review['evidence']) - len(shown)} more")
+            lines.append(f"- ...and {len(review['evidence']) - len(shown)} more")
         lines.append("")
         lines.append("</details>")
         lines.append("")
 
+    lines.append(f"Why this check exists: {POLICY_URL}")
     return "\n".join(lines) + "\n"
 
 
@@ -303,7 +389,8 @@ def main():
         return 2
 
     author = (pull.get("user") or {}).get("login") or ""
-    approvers = active_approvers(reviews, (pull.get("head") or {}).get("sha"))
+    head_sha = (pull.get("head") or {}).get("sha") or ""
+    approvers = active_approvers(reviews, head_sha)
     paths = changed_paths(files)
     required = evaluate(
         required_reviews(
@@ -313,7 +400,8 @@ def main():
         approvers,
     )
 
-    report = render(args.pr, author, approvers, required)
+    states = review_states(reviews, head_sha)
+    report = render(args.pr, author, head_sha, states, required)
     print(report)
 
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -323,11 +411,9 @@ def main():
 
     unmet = [r for r in required if not r["satisfied"]]
     for review in unmet:
-        reviewers = ", ".join(f"@{r}" for r in review["reviewers"])
-        article = "an" if review["role"] == "expert" else "a"
         print(
-            f"::error::{review['area']} needs {article} {review['role']} review "
-            f"({review['trigger']}) from one of: {reviewers}",
+            f"::error::{action_line(review, states, head_sha)} "
+            f"Required because this PR {review['trigger']}.",
             file=sys.stderr,
         )
     return 1 if unmet else 0
