@@ -50,7 +50,9 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  # write so the check can keep one comment on the PR up to date; the failure
+  # is only actionable where the developer already is.
+  pull-requests: write
 
 jobs:
   logic-tests:
@@ -98,4 +100,10 @@ jobs:
             echo "::error::Could not resolve a PR number (event: ${{ github.event_name }})"
             exit 1
           fi
-          python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER"
+          # Comment only from the PR itself. A merge_group run re-verifies the
+          # same PR, and a second comment there would say nothing new.
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER"
+          else
+            python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER" --comment
+          fi

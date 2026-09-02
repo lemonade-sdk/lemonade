@@ -70,6 +70,11 @@ for _horizontal in HORIZONTALS:
 NON_VERDICT_REVIEW_STATES = ("COMMENTED", "PENDING")
 
 
+# Identifies this workflow's own comment so each run edits it in place instead
+# of stacking a new one onto the PR.
+COMMENT_MARKER = "<!-- required-reviewers-check -->"
+
+
 class CheckError(Exception):
     """Fatal error fetching or interpreting PR data."""
 
@@ -85,6 +90,26 @@ def gh_api(path, repo, accept=None, paginate=False):
     if result.returncode != 0:
         raise CheckError(f"gh api {path} failed: {result.stderr.strip()}")
     return result.stdout
+
+
+def gh_api_write(path, repo, method, payload):
+    cmd = [
+        "gh",
+        "api",
+        "--method",
+        method,
+        "-H",
+        "X-GitHub-Api-Version: 2022-11-28",
+        f"/repos/{repo}/{path}",
+        "--input",
+        "-",
+    ]
+    result = subprocess.run(
+        cmd, input=json.dumps(payload), capture_output=True, text=True, check=False
+    )
+    if result.returncode != 0:
+        raise CheckError(f"gh api {method} {path} failed: {result.stderr.strip()}")
+    return json.loads(result.stdout) if result.stdout.strip() else {}
 
 
 def gh_api_json(path, repo, paginate=False):
@@ -259,31 +284,53 @@ def evaluate(required, author, approvers):
     return required
 
 
-POLICY_URL = "https://github.com/lemonade-sdk/lemonade/discussions/3421"
-
-
 def action_line(review, states, head_sha):
-    """One instruction a reader can act on without knowing the policy."""
+    """One instruction a reader can act on without knowing the policy.
+
+    Whatever the required reviewers have already done shapes the ask, so the
+    reader never has to reconcile the instruction against a separate status.
+    """
     names = " or ".join(f"@{r}" for r in review["reviewers"])
-    stale = [
-        r
-        for r in review["reviewers"]
-        if states.get(r.lower(), (None, None))[0] == "APPROVED"
-    ]
+    verdict = lambda r: states.get(r.lower(), (None, None))
+
+    stale = [r for r in review["reviewers"] if verdict(r)[0] == "APPROVED"]
     if stale:
         who = " or ".join(f"@{r}" for r in stale)
-        commit = (states[stale[0].lower()][1] or "")[:7]
+        commit = (verdict(stale[0])[1] or "")[:7]
         return (
             f"Ask {who} to approve again. They already approved this PR at commit "
             f"{commit}, but it has since been updated to {head_sha[:7]}, and an "
             f"approval only counts on the newest commit."
         )
+
+    blocked = [r for r in review["reviewers"] if verdict(r)[0] == "CHANGES_REQUESTED"]
+    if blocked:
+        who = " and ".join(f"@{r}" for r in blocked)
+        return (
+            f"{who} requested changes on this PR. Address the feedback, then ask "
+            f"for a fresh review."
+        )
+
+    dismissed = [r for r in review["reviewers"] if verdict(r)[0] == "DISMISSED"]
+    if dismissed:
+        who = " or ".join(f"@{r}" for r in dismissed)
+        return f"{who} had an approval dismissed on this PR. Ask them to approve again."
+
+    talked = [r for r in review["reviewers"] if verdict(r)[0] == "COMMENTED"]
+    if talked:
+        who = " or ".join(f"@{r}" for r in talked)
+        return (
+            f"{who} has commented but not approved. Ask them to submit a review with "
+            f"Approve selected."
+        )
+
     wait = "wait for one of them" if len(review["reviewers"]) > 1 else "wait for them"
     return f"Request a review from {names}, and {wait} to approve."
 
 
 def render(pr_number, author, head_sha, states, required):
     unmet = [r for r in required if not r["satisfied"]]
+    met = [r for r in required if r["satisfied"]]
 
     if not unmet:
         lines = [
@@ -299,15 +346,23 @@ def render(pr_number, author, head_sha, states, required):
             "",
             "Some parts of this repository can only be changed with approval from a",
             "specific maintainer. This PR touches "
-            f"{'one such part' if count == 1 else f'{count} such parts'}, "
-            "so it cannot merge yet.",
+            + ("one such part" if count == 1 else f"{count} such parts")
+            + ", so it cannot merge yet.",
             "",
             "## What to do",
             "",
         ]
         for i, review in enumerate(unmet, 1):
             lines.append(f"{i}. {action_line(review, states, head_sha)}")
+            lines.append("")
             lines.append(f"   Required because this PR {review['trigger']}.")
+            if review["evidence"]:
+                shown = review["evidence"][:5]
+                rest = len(review["evidence"]) - len(shown)
+                files = ", ".join(f"`{path}`" for path in shown)
+                if rest:
+                    files += f", and {rest} more"
+                lines.append(f"   Files: {files}")
             lines.append("")
         lines.append(
             "Only a review submitted as **Approve** counts. A comment does not,"
@@ -315,57 +370,48 @@ def render(pr_number, author, head_sha, states, required):
         lines.append(
             "and pushing a new commit clears approvals given before it, so ask"
         )
-        lines.append(
-            "for approvals once the branch has settled. Authoring the PR counts"
-        )
-        lines.append("as approving your own area.")
+        lines.append("for approvals once the branch has settled.")
         lines.append("")
 
-    lines.append("## Every rule that applies to this PR")
-    lines.append("")
-    lines.append("| | Who must approve | Why it applies | Where they stand |")
-    lines.append("|---|---|---|---|")
-    for review in required:
-        icon = "✅" if review["satisfied"] else "❌"
-        who = " or ".join(f"@{r}" for r in review["reviewers"])
-        if review["satisfied"]:
+    if met:
+        lines.append("## Already covered")
+        lines.append("")
+        for review in met:
             by = review["satisfied_by"]
-            where = (
-                "you are the author"
+            who = (
+                "you wrote this PR"
                 if author.lower() in {b.lower() for b in by}
                 else "approved by @" + ", @".join(by)
             )
-        else:
-            where = "; ".join(
-                f"@{r} {reviewer_status(r, states, head_sha)}"
-                for r in review["reviewers"]
-            )
-        lines.append(f"| {icon} | {who} | this PR {review['trigger']} | {where} |")
-    lines.append("")
-
-    for review in unmet:
-        if not review["evidence"]:
-            continue
-        shown = review["evidence"][:10]
-        lines.append(
-            f"<details><summary>Files that triggered the {review['area']} rule"
-            f" ({len(review['evidence'])})</summary>"
-        )
-        lines.append("")
-        lines += [f"- `{path}`" for path in shown]
-        if len(review["evidence"]) > len(shown):
-            lines.append(f"- ...and {len(review['evidence']) - len(shown)} more")
-        lines.append("")
-        lines.append("</details>")
+            trigger = review["trigger"][0].upper() + review["trigger"][1:]
+            lines.append(f"- {trigger}: {who}.")
         lines.append("")
 
-    lines.append(f"Why this check exists: {POLICY_URL}")
     return "\n".join(lines) + "\n"
+
+
+def upsert_comment(pr_number, repo, body):
+    """Post the report to the PR, replacing this check's previous comment."""
+    payload = {"body": f"{COMMENT_MARKER}\n{body}"}
+    existing = gh_api_json(
+        f"issues/{pr_number}/comments?per_page=100", repo, paginate=True
+    )
+    for comment in existing:
+        if (comment.get("body") or "").startswith(COMMENT_MARKER):
+            gh_api_write(f"issues/comments/{comment['id']}", repo, "PATCH", payload)
+            return "updated"
+    gh_api_write(f"issues/{pr_number}/comments", repo, "POST", payload)
+    return "created"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("pr", type=int, help="pull request number")
+    parser.add_argument(
+        "--comment",
+        action="store_true",
+        help="post the report to the PR, replacing this check's previous comment",
+    )
     parser.add_argument(
         "--repo",
         default=os.environ.get("GITHUB_REPOSITORY"),
@@ -410,10 +456,23 @@ def main():
             handle.write(report)
 
     unmet = [r for r in required if not r["satisfied"]]
-    for review in unmet:
+
+    if args.comment:
+        try:
+            print(f"Comment {upsert_comment(args.pr, args.repo, report)} on the PR.")
+        except CheckError as error:
+            print(f"::warning::Could not post the PR comment: {error}", file=sys.stderr)
+
+    if unmet:
+        count = len(unmet)
+        noun = "approval" if count == 1 else "approvals"
+        where = (
+            "See the Required reviewers comment on the pull request for what to do."
+            if args.comment
+            else "See the job summary below for what to do."
+        )
         print(
-            f"::error::{action_line(review, states, head_sha)} "
-            f"Required because this PR {review['trigger']}.",
+            f"::error::{count} {noun} still needed before this PR can merge. {where}",
             file=sys.stderr,
         )
     return 1 if unmet else 0
