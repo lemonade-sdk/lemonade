@@ -217,6 +217,13 @@ def describe_source(in_diff, in_body):
     return "the PR description" if in_body else "the diff"
 
 
+def file_list(paths, limit=3):
+    shown = paths[:limit]
+    rest = len(paths) - len(shown)
+    listed = ", ".join(f"`{path}`" for path in shown)
+    return listed + (f", +{rest} more" if rest else "")
+
+
 def matches_prefix(path, prefixes):
     return any(path.startswith(prefix) for prefix in prefixes)
 
@@ -234,8 +241,7 @@ def required_reviews(paths, changed_diff, body=""):
                 {
                     "role": "primary",
                     "area": vertical["name"],
-                    "trigger": "changes to files under "
-                    + " and ".join(f"`{p}`" for p in vertical["prefixes"]),
+                    "trigger": "changes to " + file_list(touched),
                     "evidence": touched,
                     "reviewers": vertical["reviewers"],
                 }
@@ -243,12 +249,11 @@ def required_reviews(paths, changed_diff, body=""):
 
     unclaimed = [p for p in paths if p not in claimed]
     if unclaimed:
-        owned = " and ".join(f"`{pre}`" for v in VERTICALS for pre in v["prefixes"])
         required.append(
             {
                 "role": "primary",
                 "area": FALLBACK_VERTICAL["name"],
-                "trigger": f"changes to files outside {owned}",
+                "trigger": "changes to " + file_list(unclaimed),
                 "evidence": unclaimed,
                 "reviewers": FALLBACK_VERTICAL["reviewers"],
             }
@@ -352,15 +357,7 @@ def render(pr_number, author, head_sha, states, required):
         ]
         for i, review in enumerate(unmet, 1):
             lines.append(f"{i}. {action_line(review, states, head_sha)}")
-            trigger = review["trigger"]
-            if review["evidence"]:
-                shown = review["evidence"][:3]
-                rest = len(review["evidence"]) - len(shown)
-                files = ", ".join(f"`{path}`" for path in shown)
-                if rest:
-                    files += f", +{rest} more"
-                trigger += f" ({files})"
-            lines.append(f"   Trigger: {trigger}")
+            lines.append(f"   Trigger: {review['trigger']}")
         lines.append("")
         lines.append(
             "_Only a review submitted with Approve counts, and pushing a new commit"
