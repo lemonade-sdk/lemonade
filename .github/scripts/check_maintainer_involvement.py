@@ -329,6 +329,11 @@ def action_line(review, states, head_sha):
 
 
 def render(pr_number, author, head_sha, states, required):
+    """The report body.
+
+    GitHub renders a single newline inside a comment as a line break, so every
+    paragraph is emitted as one line and left to wrap on the reader's screen.
+    """
     unmet = [r for r in required if not r["satisfied"]]
     met = [r for r in required if r["satisfied"]]
 
@@ -341,13 +346,12 @@ def render(pr_number, author, head_sha, states, required):
         ]
     else:
         count = len(unmet)
+        touches = "one such part" if count == 1 else f"{count} such parts"
         lines = [
             f"# Required reviewers: {count} still needed",
             "",
-            "Some parts of this repository can only be changed with approval from a",
-            "specific maintainer. This PR touches "
-            + ("one such part" if count == 1 else f"{count} such parts")
-            + ", so it cannot merge yet.",
+            "Some parts of this repository can only be changed with approval from a"
+            f" specific maintainer. This PR touches {touches}, so it cannot merge yet.",
             "",
             "## What to do",
             "",
@@ -355,22 +359,21 @@ def render(pr_number, author, head_sha, states, required):
         for i, review in enumerate(unmet, 1):
             lines.append(f"{i}. {action_line(review, states, head_sha)}")
             lines.append("")
-            lines.append(f"   Required because this PR {review['trigger']}.")
+            detail = f"   Required because this PR {review['trigger']}."
             if review["evidence"]:
                 shown = review["evidence"][:5]
                 rest = len(review["evidence"]) - len(shown)
                 files = ", ".join(f"`{path}`" for path in shown)
                 if rest:
                     files += f", and {rest} more"
-                lines.append(f"   Files: {files}")
+                detail += f" Files: {files}"
+            lines.append(detail)
             lines.append("")
         lines.append(
-            "Only a review submitted as **Approve** counts. A comment does not,"
+            "Only a review submitted as **Approve** counts, not a comment. Pushing a"
+            " new commit clears approvals given before it, so ask for approvals once"
+            " the branch has settled."
         )
-        lines.append(
-            "and pushing a new commit clears approvals given before it, so ask"
-        )
-        lines.append("for approvals once the branch has settled.")
         lines.append("")
 
     if met:
