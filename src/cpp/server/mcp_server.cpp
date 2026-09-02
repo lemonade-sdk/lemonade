@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <fstream>
@@ -17,7 +18,10 @@
 #include <lemon/utils/aixlog.hpp>
 
 #include "lemon/collection_orchestrator.h"
+#include "lemon/hf_variants.h"
+#include "lemon/model_registry.h"
 #include "lemon/model_types.h"
+#include "lemon/runtime_config.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -58,6 +62,43 @@ std::string extract_string_arg(const json& args, const char* key) {
         throw std::runtime_error(std::string("Missing or non-string argument: ") + key);
     }
     return args[key].get<std::string>();
+}
+
+std::string trim_ascii_whitespace(std::string value) {
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+std::string extract_registry_source(const json& arguments) {
+    if (!arguments.contains("source")) return "huggingface";
+    if (!arguments["source"].is_string()) {
+        throw std::runtime_error("`source` must be a string");
+    }
+    const std::string source = arguments["source"].get<std::string>();
+    if (source != "huggingface" && source != "modelscope") {
+        throw std::runtime_error(
+            "`source` must be either 'huggingface' or 'modelscope'");
+    }
+    return source;
+}
+
+json tool_error_result(const std::string& message,
+                       json structured = json::object()) {
+    json result = {
+        {"content", json::array({json{{"type", "text"}, {"text", message}}})},
+        {"isError", true},
+    };
+    if (!structured.empty()) {
+        result["structuredContent"] = std::move(structured);
+    }
+    return result;
+}
+
+bool lemond_is_offline() {
+    const RuntimeConfig* config = RuntimeConfig::global();
+    return config != nullptr && config->offline();
 }
 
 // Some MCP clients (notably Claude Desktop) emit chat messages in Anthropic's
@@ -390,6 +431,10 @@ json McpServer::handle_tools_call(const json& params, const json& id) {
             result = tool_omni(arguments);
         } else if (tool_name == "lemonade_list_models") {
             result = tool_list_models(arguments);
+        } else if (tool_name == "lemonade_search_models") {
+            result = tool_search_models(arguments);
+        } else if (tool_name == "lemonade_get_pull_variants") {
+            result = tool_get_pull_variants(arguments);
         } else {
             // Per MCP spec, unknown-tool errors are isError=true results, not JSON-RPC errors.
             result = {
@@ -1144,6 +1189,127 @@ json McpServer::tool_list_models(const json& arguments) {
     };
 }
 
+json McpServer::tool_search_models(const json& arguments) {
+    const std::string query = trim_ascii_whitespace(
+        extract_string_arg(arguments, "query"));
+    if (query.size() < 3) {
+        return tool_error_result(
+            "`query` must contain at least 3 non-whitespace characters.");
+    }
+
+    const std::string source_name = extract_registry_source(arguments);
+    const auto source = parse_remote_registry_source(source_name);
+
+    std::size_t limit = 12;
+    if (arguments.contains("limit")) {
+        if (!arguments["limit"].is_number_integer() &&
+            !arguments["limit"].is_number_unsigned()) {
+            return tool_error_result("`limit` must be an integer from 1 to 50.");
+        }
+        if (arguments["limit"].is_number_unsigned()) {
+            const auto requested = arguments["limit"].get<std::uint64_t>();
+            if (requested < 1 || requested > 50) {
+                return tool_error_result("`limit` must be an integer from 1 to 50.");
+            }
+            limit = static_cast<std::size_t>(requested);
+        } else {
+            const auto requested = arguments["limit"].get<std::int64_t>();
+            if (requested < 1 || requested > 50) {
+                return tool_error_result("`limit` must be an integer from 1 to 50.");
+            }
+            limit = static_cast<std::size_t>(requested);
+        }
+    }
+
+    if (lemond_is_offline()) {
+        return tool_error_result(
+            "Remote model search is unavailable while Lemond is in offline mode.",
+            {{"code", "lemond_offline"}});
+    }
+
+    RegistrySearchResponse search;
+    try {
+        search = search_registry_models(source, query, limit, false);
+    } catch (const RegistrySearchError& e) {
+        return tool_error_result(
+            std::string("Registry search failed: ") + e.what(),
+            {{"source", source_name},
+             {"upstream_status_code", e.status_code()}});
+    }
+
+    json candidates = json::array();
+    for (const auto& model : search.results) {
+        candidates.push_back({
+            {"checkpoint", model.repo_id},
+            {"display_name", model.display_name},
+            {"source", remote_registry_source_name(model.source)},
+            {"repository_type", model.repository_type},
+            {"description", model.description},
+            {"tags", model.tags},
+            {"task", model.task},
+            {"downloads", model.downloads},
+            {"likes", model.likes},
+            {"has_gguf", model.has_gguf},
+        });
+    }
+
+    const std::size_t found = candidates.size();
+    json payload = {
+        {"query", query},
+        {"source", remote_registry_source_name(source)},
+        {"total", search.total},
+        {"candidates", std::move(candidates)},
+    };
+    return json{
+        {"content", json::array({text_content_block(
+            "Found " + std::to_string(found) + " remote repositories.")})},
+        {"structuredContent", std::move(payload)},
+        {"isError", false},
+    };
+}
+
+json McpServer::tool_get_pull_variants(const json& arguments) {
+    const std::string checkpoint = trim_ascii_whitespace(
+        extract_string_arg(arguments, "checkpoint"));
+    if (checkpoint.empty()) {
+        return tool_error_result("`checkpoint` must not be empty.");
+    }
+
+    const std::string source_name = extract_registry_source(arguments);
+    const auto source = parse_remote_registry_source(source_name);
+
+    if (lemond_is_offline()) {
+        return tool_error_result(
+            "Pull-variant discovery is unavailable while Lemond is in offline mode.",
+            {{"code", "lemond_offline"}});
+    }
+
+    bool not_found = false;
+    json payload = fetch_pull_variants(checkpoint, source_name, not_found);
+    if (not_found) {
+        return tool_error_result(
+            "Checkpoint '" + checkpoint + "' was not found on " +
+                remote_registry_display_name(source) + ".",
+            {{"checkpoint", checkpoint}, {"source", source_name}});
+    }
+    if (!payload.is_object() || !payload.contains("variants") ||
+        !payload["variants"].is_array()) {
+        return tool_error_result(
+            "Pull-variant discovery returned a malformed server response.",
+            {{"checkpoint", checkpoint}, {"source", source_name}});
+    }
+
+    const std::size_t found = payload["variants"].size();
+    const bool gguf = payload.value("repo_kind", std::string()) == "gguf";
+    const std::string noun = gguf ? " GGUF variants." : " pull variants.";
+    return json{
+        {"content", json::array({text_content_block(
+            "Found " + std::to_string(found) + noun)})},
+        {"structuredContent", std::move(payload)},
+        {"isError", false},
+    };
+}
+
 json McpServer::tools_descriptor() {
     return json::array({
         {
@@ -1160,6 +1326,47 @@ json McpServer::tools_descriptor() {
                 {"properties", {
                     {"include_available", {{"type", "boolean"}}},
                     {"include_suggested", {{"type", "boolean"}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_search_models"},
+            {"description",
+             "Search remote registries for candidate repositories. Use this "
+             "when the requested model is not already registered in Lemonade "
+             "and an external repository must be discovered. Returned "
+             "repositories are candidates, not registered Lemonade models; "
+             "inspect pull variants before choosing what to install."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"query"})},
+                {"properties", {
+                    {"query", {{"type", "string"}, {"minLength", 3}}},
+                    {"source", {{"type", "string"},
+                                {"enum", json::array({"huggingface", "modelscope"})},
+                                {"default", "huggingface"}}},
+                    {"limit", {{"type", "integer"},
+                               {"minimum", 1}, {"maximum", 50}, {"default", 12}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_get_pull_variants"},
+            {"description",
+             "Inspect the installable variants of a chosen remote repository "
+             "using Lemonade's existing pull-variant discovery. Use this after "
+             "choosing a remote repository and before pulling when multiple "
+             "quantizations/files may exist. Variant groups, shards, files, "
+             "and sizes are preserved exactly as the server reports them; no "
+             "variant is selected automatically."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"checkpoint"})},
+                {"properties", {
+                    {"checkpoint", {{"type", "string"}, {"minLength", 1}}},
+                    {"source", {{"type", "string"},
+                                {"enum", json::array({"huggingface", "modelscope"})},
+                                {"default", "huggingface"}}},
                 }},
             }},
         },

@@ -34,7 +34,7 @@ curl -s http://localhost:13305/mcp \
 
 ## Tools
 
-All tools auto-load (and download, if missing) the requested model on first call, exactly like `POST /v1/chat/completions`. Errors are returned as MCP results with `"isError": true` rather than JSON-RPC errors, matching the spec's guidance for tool failures.
+Inference tools keep their existing registered-model load/download semantics. Remote discovery tools only inspect external registries and never pull, register, or load a model. Tool failures are returned as MCP results with `"isError": true` rather than JSON-RPC errors, matching the spec's guidance for tool failures.
 
 ### `lemonade_list_models`
 
@@ -50,7 +50,40 @@ Discover what's loaded, what's downloaded, and what's recommended. Call this fir
 }
 ```
 
-Returns a summary text block plus a JSON-stringified text block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
+Returns a summary text block plus a JSON-stringified text block with `{loaded, available, suggested_to_pull, recommended_chat_model}`. These are models already known to Lemonade; remote registry search is intentionally separate.
+
+### `lemonade_search_models`
+
+Search Hugging Face or ModelScope for remote repository candidates when the requested model is not already registered in Lemonade. A candidate is only a repository reference; searching does not register, download, or load it.
+
+```json
+{
+  "name": "lemonade_search_models",
+  "arguments": {
+    "query": "qwen coder",
+    "source": "huggingface",
+    "limit": 20
+  }
+}
+```
+
+The human-readable `content` stays short. Machine-readable repository metadata is returned in `structuredContent` as `{query, source, total, candidates}`. Candidate fields come from Lemonade's existing registry normalization; MCP does not perform its own Hugging Face or ModelScope parsing.
+
+### `lemonade_get_pull_variants`
+
+After choosing a remote repository, inspect the exact variants Lemonade can pull. This calls the same server-side variant discovery as `GET /v1/pull/variants`, so split GGUFs, folder groups, companion files, sizes, and other supported repository kinds keep the REST endpoint's semantics.
+
+```json
+{
+  "name": "lemonade_get_pull_variants",
+  "arguments": {
+    "checkpoint": "owner/repo",
+    "source": "huggingface"
+  }
+}
+```
+
+The complete pull-variant response is returned unchanged in `structuredContent`. The tool never chooses a quantization and never starts a pull.
 
 ### `lemonade_chat`
 
