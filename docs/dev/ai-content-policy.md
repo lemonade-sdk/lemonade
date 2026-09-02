@@ -11,7 +11,7 @@ Use of AI tools is encouraged in all aspects of Lemonade development, however th
 
 ## Rule 1
 
-AI prose is not permitted in any Issue, Discussion, PR body, PR comment, or Discord message. Anyone, at any time, for any reason may cite Rule 1 to request that a human replace any AI prose with human-authored prose. The person who posted the AI prose should not expect any further replies until the replacement is done.
+AI prose is not permitted in any Issue, Discussion, PR body, PR comment, or Discord message. Anyone, at any time, for any reason, may cite Rule 1 to request that a human replace any AI prose with human-authored prose. The person who posted the AI prose should not expect any further replies until the replacement is done.
 
 ## Additional Policies
 
