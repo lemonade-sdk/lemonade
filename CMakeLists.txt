@@ -2465,6 +2465,26 @@ if(BUILD_TESTING AND EXISTS "${_LATEST_FALLBACK_TEST_SRC}")
     add_cpp_ci_test(LatestVersionFallbackTest CI ON COMMAND test_latest_version_fallback)
 endif()
 
+# sd.cpp ROCm release-asset naming policy (lemon::backends::sdcpp::
+# sdcpp_rocm_asset_pattern). Header-only pure logic, so the test links nothing
+# beyond the standard library — coverage for #2988 (wildcard the runtime only
+# for an explicit "latest" bin pin; pinned installs name the TheRock runtime
+# exactly).
+set(_SDCPP_ROCM_ASSET_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_sdcpp_rocm_asset.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_SDCPP_ROCM_ASSET_TEST_SRC}")
+    add_executable(test_sdcpp_rocm_asset
+        test/cpp/test_sdcpp_rocm_asset.cpp
+    )
+    target_include_directories(test_sdcpp_rocm_asset PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+
+    include(CTest)
+    add_cpp_ci_test(SdcppRocmAssetTest CI ON COMMAND test_sdcpp_rocm_asset)
+endif()
+
 # Label-to-deployment-mode mapping (lemon::get_model_type_from_labels). Header-only,
 # so the test links nothing beyond the standard library.
 set(_MODEL_TYPE_CLASSIFIER_TEST_SRC
