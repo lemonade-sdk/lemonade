@@ -3356,3 +3356,21 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
     include(CTest)
     add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
 endif()
+
+set(_MODEL_DISCOVERY_CAPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_discovery_capabilities.cpp")
+if(BUILD_TESTING AND EXISTS "${_MODEL_DISCOVERY_CAPS_TEST_SRC}")
+    add_executable(
+        test_model_discovery_capabilities
+        test/cpp/test_model_discovery_capabilities.cpp
+    )
+    target_link_libraries(
+        test_model_discovery_capabilities
+        PRIVATE lemonade-server-core
+    )
+    add_cpp_ci_test(
+        ModelDiscoveryCapabilitiesTest
+        CI ON
+        COMMAND test_model_discovery_capabilities
+    )
+endif()

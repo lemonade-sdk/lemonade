@@ -170,6 +170,25 @@ struct ModelFileInfo {
     bool exists = false;
 };
 
+// Canonical query contract for models registered by this server.
+// `downloaded` is an independent predicate, not a lifecycle enum. `limit` being
+// unset means unbounded (used by backward-compatible REST paths); MCP and other
+// bounded clients can choose their own page default without duplicating query
+// semantics. `cursor` is opaque to callers.
+struct ModelQueryOptions {
+    std::string query;
+    std::string capability;
+    std::optional<bool> downloaded;
+    std::optional<size_t> limit;
+    std::string cursor;
+};
+
+struct ModelQueryResult {
+    std::vector<std::pair<std::string, ModelInfo>> models;
+    size_t matching_total = 0;
+    std::string next_cursor;
+};
+
 class CloudProviderRegistry;
 
 class ModelManager {
@@ -230,6 +249,17 @@ public:
 
     // Get downloaded models
     std::map<std::string, ModelInfo> get_downloaded_models();
+
+    // Canonical registered-model discovery shared by REST today and MCP later.
+    // Query text is case-insensitive AND-over-whitespace tokens and searches the
+    // public model id, checkpoint(s), recipe, and labels.
+    ModelQueryResult query_models(const ModelQueryOptions& options);
+
+    // Stable server-owned capability names. The singular form is the primary
+    // deployment capability; the plural form also includes recognized orthogonal
+    // capability labels such as image-edit.
+    static std::string model_capability(const ModelInfo& info);
+    static std::vector<std::string> model_capabilities(const ModelInfo& info);
 
     // Filter models by available backends. Set track_recipe_availability only on
     // the full-cache build: the single-model temp maps used by incremental
