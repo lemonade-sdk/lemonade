@@ -99,10 +99,10 @@ Malformed requests (invalid JSON, missing `input`/`text`, non-string fields, non
 <sub>![Status](https://img.shields.io/badge/status-experimental-orange)</sub>
 
 Naming a registered `collection.router` model in the `model` field of a
-`chat/completions` or `completions` request triggers the routing engine: the
-server picks a candidate by the policy's first-matching rule (fail-open to
-`default_model`) and forwards the request to it. No dedicated endpoint or `"auto"`
-model is involved.
+`chat/completions`, `completions`, or `responses` request triggers the routing
+engine: the server picks a candidate by the policy's first-matching rule
+(fail-open to `default_model`) and forwards the request to it. No dedicated
+endpoint or `"auto"` model is involved.
 
 The decision is reported on the response:
 
@@ -111,6 +111,13 @@ The decision is reported on the response:
   response body: `{ route_to, matched_rule, default_used, outputs, trace[] }`
   (`route_to` is the candidate that answered). For streaming responses it is
   attached to the first SSE event.
+- Request field **`route_only: true`** (dry-route) returns the decision instead
+  of running a completion: `{ requested_model, selected_model, routed,
+  decision }`. The selected candidate is not loaded, `stream` is ignored, and
+  `route_trace` composes as above. A registered non-router model answers
+  `routed: false`; an unknown model or a dispatch failure returns the same
+  error a real request would. A non-boolean `route_only` value is rejected
+  with `400`.
 
 See [Router Policies](../dev/router-policy.md) for authoring the policy.
 

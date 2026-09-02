@@ -159,6 +159,12 @@ private:
     // If request_json addresses a collection.router model, rewrite its "model"
     // field in place to the engine-selected candidate and return the Decision.
     // No-op otherwise.
+    // Fully handles a route_only request: flag validation (fails closed on
+    // non-boolean values), a single model resolution reused for dispatch, and
+    // the decision or error response. Returns true when a response was written
+    // (the caller must return); false when the request is not route_only (a
+    // literal `false` is erased and normal forwarding proceeds).
+    bool try_respond_route_only(nlohmann::json& request_json, httplib::Response& res);
     std::optional<RouterDispatchResult> apply_router_collection_dispatch(
         nlohmann::json& request_json);
     // Union of routing-helper models across every active router collection's
