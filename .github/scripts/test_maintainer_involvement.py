@@ -161,29 +161,51 @@ def test_diff_text_reads_only_added_and_removed_lines():
 
 def test_latest_review_verdict_wins():
     reviews = [
-        {"user": {"login": "bitgamma"}, "state": "APPROVED"},
-        {"user": {"login": "bitgamma"}, "state": "CHANGES_REQUESTED"},
+        {"user": {"login": "bitgamma"}, "state": "APPROVED", "commit_id": "head"},
+        {
+            "user": {"login": "bitgamma"},
+            "state": "CHANGES_REQUESTED",
+            "commit_id": "head",
+        },
     ]
-    assert check.active_approvers(reviews) == set()
+    assert check.active_approvers(reviews, "head") == set()
 
-    reviews.append({"user": {"login": "bitgamma"}, "state": "APPROVED"})
-    assert check.active_approvers(reviews) == {"bitgamma"}
+    reviews.append(
+        {"user": {"login": "bitgamma"}, "state": "APPROVED", "commit_id": "head"}
+    )
+    assert check.active_approvers(reviews, "head") == {"bitgamma"}
+
+
+def test_a_push_after_an_approval_invalidates_it():
+    reviews = [{"user": {"login": "bitgamma"}, "state": "APPROVED", "commit_id": "old"}]
+    assert check.active_approvers(reviews, "old") == {"bitgamma"}
+    assert check.active_approvers(reviews, "new") == set()
+
+    reviews.append(
+        {"user": {"login": "bitgamma"}, "state": "APPROVED", "commit_id": "new"}
+    )
+    assert check.active_approvers(reviews, "new") == {"bitgamma"}
 
 
 def test_comments_do_not_displace_an_approval():
     reviews = [
-        {"user": {"login": "Geramy"}, "state": "APPROVED"},
-        {"user": {"login": "Geramy"}, "state": "COMMENTED"},
+        {"user": {"login": "Geramy"}, "state": "APPROVED", "commit_id": "head"},
+        {"user": {"login": "Geramy"}, "state": "COMMENTED", "commit_id": "head"},
     ]
-    assert check.active_approvers(reviews) == {"geramy"}
+    assert check.active_approvers(reviews, "head") == {"geramy"}
+
+
+def test_a_comment_alone_is_not_an_approval():
+    reviews = [{"user": {"login": "Geramy"}, "state": "COMMENTED", "commit_id": "head"}]
+    assert check.active_approvers(reviews, "head") == set()
 
 
 def test_dismissed_approval_does_not_count():
     reviews = [
-        {"user": {"login": "kpoineal"}, "state": "APPROVED"},
-        {"user": {"login": "kpoineal"}, "state": "DISMISSED"},
+        {"user": {"login": "kpoineal"}, "state": "APPROVED", "commit_id": "head"},
+        {"user": {"login": "kpoineal"}, "state": "DISMISSED", "commit_id": "head"},
     ]
-    assert check.active_approvers(reviews) == set()
+    assert check.active_approvers(reviews, "head") == set()
 
 
 def test_involvement_is_case_insensitive():

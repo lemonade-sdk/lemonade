@@ -4,9 +4,10 @@
 A PR needs a *primary* review from the maintainer of each vertical it touches,
 plus an *expert* review from the maintainer of each horizontal its diff
 impacts. Expert reviews are additive — they never stand in for a primary one.
-A reviewer counts as satisfied when they authored the PR or have an active
-approving review on it. Used by .github/workflows/required_reviewers.yml; safe
-to run locally against any open PR for spot-testing.
+A reviewer counts as satisfied when they authored the PR or have an approving
+review on its current head commit — any push after an approval invalidates it.
+Used by .github/workflows/required_reviewers.yml; safe to run locally against
+any open PR for spot-testing.
 
 Usage:
     python .github/scripts/check_maintainer_involvement.py <pr> [--repo OWNER/REPO]
@@ -126,8 +127,12 @@ def diff_text(pr_number, repo, files):
     return "\n".join(changed)
 
 
-def active_approvers(reviews):
-    """Logins whose most recent verdict on the PR is an approval."""
+def active_approvers(reviews, head_sha):
+    """Logins whose most recent verdict is an approval of the current head commit.
+
+    An approval is bound to the commit it was submitted against, so a later push
+    leaves it behind and it stops counting.
+    """
     verdicts = {}
     for review in reviews:
         state = (review.get("state") or "").upper()
@@ -135,8 +140,12 @@ def active_approvers(reviews):
             continue
         user = (review.get("user") or {}).get("login")
         if user:
-            verdicts[user.lower()] = state
-    return {user for user, state in verdicts.items() if state == "APPROVED"}
+            verdicts[user.lower()] = (state, review.get("commit_id"))
+    return {
+        user
+        for user, (state, commit) in verdicts.items()
+        if state == "APPROVED" and commit == head_sha
+    }
 
 
 def matches_prefix(path, prefixes):
@@ -210,7 +219,7 @@ def render(pr_number, author, approvers, required):
     approver_list = (
         ", ".join(f"@{a}" for a in sorted(approvers)) if approvers else "_none_"
     )
-    lines.append(f"- **Approving reviewers:** {approver_list}")
+    lines.append(f"- **Approving reviewers (current head):** {approver_list}")
     lines.append("")
 
     if not required:
@@ -277,7 +286,7 @@ def main():
         return 2
 
     author = (pull.get("user") or {}).get("login") or ""
-    approvers = active_approvers(reviews)
+    approvers = active_approvers(reviews, (pull.get("head") or {}).get("sha"))
     paths = changed_paths(files)
     required = evaluate(
         required_reviews(paths, diff_text(args.pr, args.repo, files)),

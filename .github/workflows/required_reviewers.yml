@@ -15,7 +15,8 @@
 #   Networking  diff mentions http / curl / tcp / udp / cors -> @Geramy
 #   ROCm        diff mentions rocm                           -> @superm1
 #
-# A reviewer counts as satisfied when they authored the PR or approved it.
+# A reviewer counts as satisfied when they authored the PR or approved its
+# current head commit — a push after an approval invalidates that approval.
 # The reviewer lists and the analysis live in
 # .github/scripts/check_maintainer_involvement.py.
 #
@@ -36,6 +37,10 @@ on:
   # the current review state rather than the state at push time.
   pull_request_review:
     types: [submitted, dismissed, edited]
+  # Required checks are evaluated against the merge group, so this has to
+  # report there too or queued PRs wait on a check that never runs. The group
+  # ref names the PR, so the queue re-runs the same check against it.
+  merge_group:
   workflow_dispatch:
     inputs:
       pr:
@@ -63,8 +68,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: logic-tests
     concurrency:
-      group: required-reviewers-${{ github.event.pull_request.number || inputs.pr }}
-      cancel-in-progress: true
+      group: >-
+        required-reviewers-${{ github.event.pull_request.number
+        || github.event.merge_group.head_ref || inputs.pr }}
+      cancel-in-progress: ${{ github.event_name != 'merge_group' }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -79,10 +86,16 @@ jobs:
       - name: Check required reviewers
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+          MERGE_GROUP_REF: ${{ github.event.merge_group.head_ref }}
         run: |
           set -euo pipefail
+          if [ -z "$PR_NUMBER" ] && [ -n "$MERGE_GROUP_REF" ]; then
+            # refs/heads/gh-readonly-queue/<base>/pr-<number>-<sha>
+            PR_NUMBER=$(printf '%s' "$MERGE_GROUP_REF" \
+              | sed -n 's|.*/pr-\([0-9][0-9]*\)-[0-9a-f]*$|\1|p')
+          fi
           if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
-            echo "::error::Could not resolve a PR number (got: $PR_NUMBER)"
+            echo "::error::Could not resolve a PR number (event: ${{ github.event_name }})"
             exit 1
           fi
           python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER"
