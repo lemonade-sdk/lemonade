@@ -1,0 +1,77 @@
+# Assert that every reviewer this PR requires has approved it. A reviewer also
+# counts as satisfied when they authored the PR themselves.
+#
+#   src/cpp/cli/**   -> @bitgamma
+#   src/app/**       -> @kpoineal
+#   anything else    -> @jeremyfowers or @ramkrishna2910
+#   diff mentioning http / curl / tcp / udp / cors -> @Geramy, in addition
+#   diff mentioning rocm                            -> @superm1, in addition
+#
+# Rules stack: a PR touching src/app and the server needs @kpoineal AND one of
+# the core maintainers, and the keyword rules add reviewers on top of that.
+# The maintainer lists and the involvement analysis live in
+# .github/scripts/check_maintainer_involvement.py.
+#
+# To enforce, add "required-reviewers" to the branch protection required status
+# checks. Without that this workflow only reports.
+name: Required Reviewers
+
+on:
+  # pull_request_target so the job reads the PR through the API with the base
+  # repo's token; no PR code is checked out or executed.
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+  # Re-run when an approval lands, dismissed, or changes, so the check reflects
+  # the current review state rather than the state at push time.
+  pull_request_review:
+    types: [submitted, dismissed, edited]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "PR number to evaluate"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  logic-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python .github/scripts/test_maintainer_involvement.py
+
+  required-reviewers:
+    runs-on: ubuntu-latest
+    needs: logic-tests
+    concurrency:
+      group: required-reviewers-${{ github.event.pull_request.number || inputs.pr }}
+      cancel-in-progress: true
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check required reviewers
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not resolve a PR number (got: $PR_NUMBER)"
+            exit 1
+          fi
+          python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER"
