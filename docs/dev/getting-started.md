@@ -730,7 +730,9 @@ All dependencies are automatically fetched by CMake via FetchContent:
 - **libcurl** (8.5.0) - HTTP client for model downloads [curl license]
 - **zstd** (v1.5.7) - Compression library for HTTP [BSD License]
 
-Platform-specific SSL backends are used (Schannel on Windows, SecureTransport on macOS, OpenSSL on Linux).
+Platform-specific SSL backends are used (Schannel on Windows, SecureTransport on macOS, OpenSSL on Linux), so certificate validation follows the OS trust store: the Windows certificate store, the macOS Keychain, and the distribution's CA bundle respectively.
+
+On macOS this requires building curl with `CURL_CA_BUNDLE=none` and `CURL_CA_PATH=none`. Left on `auto`, curl detects Apple's static `/etc/ssl/cert.pem` snapshot and compiles it in, which makes SecureTransport pin trust to that file and ignore Keychain roots — breaking downloads behind TLS-inspecting corporate proxies. The root `CMakeLists.txt` sets both to `none` and then fails the configure step if the resulting `curl_config.h` is not Keychain-backed.
 
 ## Usage
 

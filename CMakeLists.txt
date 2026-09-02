@@ -381,10 +381,40 @@ if(NOT USE_SYSTEM_CURL)
         set(CMAKE_USE_SCHANNEL ON CACHE INTERNAL "")
     elseif(APPLE)
         set(CURL_USE_SECTRANSP ON CACHE INTERNAL "")
+        # SecureTransport consults the Keychain only when no CA bundle is compiled
+        # in. Autodetection would find Apple's static /etc/ssl/cert.pem snapshot,
+        # and any compiled-in bundle makes sectransp pin trust via
+        # SecTrustSetAnchorCertificatesOnly(), ignoring Keychain roots and admin
+        # trust settings. libcurl never reads CURL_CA_BUNDLE from the environment,
+        # so this cannot be corrected at runtime.
+        set(CURL_CA_BUNDLE "none" CACHE INTERNAL "")
+        set(CURL_CA_PATH "none" CACHE INTERNAL "")
     else()
         set(CURL_USE_OPENSSL ON CACHE INTERNAL "")
     endif()
     FetchContent_MakeAvailable(curl)
+
+    if(APPLE)
+        set(_curl_config_h "${curl_BINARY_DIR}/lib/curl_config.h")
+        if(NOT EXISTS "${_curl_config_h}")
+            message(FATAL_ERROR
+                    "Cannot verify the macOS TLS trust store: ${_curl_config_h} is missing.")
+        endif()
+        file(READ "${_curl_config_h}" _curl_config_contents)
+        if(NOT _curl_config_contents MATCHES "#[ \t]*define[ \t]+USE_SECTRANSP[ \t]+1")
+            message(FATAL_ERROR
+                    "curl was not built with SecureTransport, so model downloads would not "
+                    "validate against the macOS Keychain.")
+        endif()
+        if(_curl_config_contents MATCHES "#[ \t]*define[ \t]+CURL_CA_BUNDLE[ \t]"
+           OR _curl_config_contents MATCHES "#[ \t]*define[ \t]+CURL_CA_PATH[ \t]")
+            message(FATAL_ERROR
+                    "curl compiled in a CA bundle/path, which makes SecureTransport bypass the "
+                    "macOS Keychain. Keep CURL_CA_BUNDLE and CURL_CA_PATH set to 'none'.")
+        endif()
+        unset(_curl_config_contents)
+        unset(_curl_config_h)
+    endif()
 endif()
 
 # === zstd ===
