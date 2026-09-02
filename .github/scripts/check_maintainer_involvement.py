@@ -3,10 +3,10 @@
 
 A PR needs a *primary* review from the maintainer of each vertical it touches,
 plus an *expert* review from the maintainer of each horizontal its diff or PR
-body invokes. Expert reviews are additive — they never stand in for a primary
+body invokes. Expert reviews are additive, and never stand in for a primary
 one.
 A reviewer counts as satisfied when they authored the PR or have an approving
-review on its current head commit — any push after an approval invalidates it.
+review on its current head commit. Any push after an approval invalidates it.
 Used by .github/workflows/required_reviewers.yml; safe to run locally against
 any open PR for spot-testing.
 
@@ -15,7 +15,7 @@ Usage:
 
 Requirements:
     - gh CLI authenticated (GH_TOKEN env var works in CI)
-    - Python 3.9+ (stdlib only — no external deps)
+    - Python 3.9+ (stdlib only, no external deps)
 """
 
 import argparse
@@ -225,7 +225,7 @@ def evaluate(required, author, approvers):
 
 
 def render(pr_number, author, approvers, required):
-    lines = [f"# Required reviewers — PR #{pr_number}", ""]
+    lines = [f"# Required reviewers for PR #{pr_number}", ""]
     lines.append(f"- **Author:** @{author}")
     approver_list = (
         ", ".join(f"@{a}" for a in sorted(approvers)) if approvers else "_none_"
@@ -245,7 +245,7 @@ def render(pr_number, author, approvers, required):
         got = (
             ", ".join(f"@{r}" for r in review["satisfied_by"])
             if review["satisfied"]
-            else "—"
+            else "none"
         )
         lines.append(
             f"| {icon} | {review['area']} | {review['role']} | "

@@ -1,6 +1,6 @@
 # Assert that a PR has the reviewers it requires before it can be queued.
 #
-# A *primary* review comes from the maintainer of a vertical — a function of
+# A *primary* review comes from the maintainer of a vertical, a function of
 # the repo that lives in known folders. A PR needs one for every vertical it
 # touches:
 #
@@ -8,7 +8,7 @@
 #   GUI              src/app/**      -> @kpoineal
 #   Everything else  anything else   -> @jeremyfowers or @ramkrishna2910
 #
-# An *expert* review comes from the maintainer of a horizontal — a function
+# An *expert* review comes from the maintainer of a horizontal, a function
 # that cuts across folders, recognized by the words the diff and the PR body
 # use. These are additive; an expert review never stands in for a primary one:
 #
@@ -16,11 +16,11 @@
 #   ROCm                   rocm                                      -> @superm1
 #
 # A reviewer counts as satisfied when they authored the PR or approved its
-# current head commit — a push after an approval invalidates that approval.
+# current head commit. A push after an approval invalidates that approval.
 # The reviewer lists and the analysis live in
 # .github/scripts/check_maintainer_involvement.py.
 #
-# This policy is temporary — it enforces the partial code freeze ahead of the
+# This policy is temporary. It enforces the partial code freeze ahead of the
 # v11.9.1 release, and is expected to loosen as more primary and expert
 # reviewers are named. See discussion #3421.
 #
