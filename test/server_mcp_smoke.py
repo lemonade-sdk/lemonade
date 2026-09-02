@@ -1,14 +1,15 @@
 """
-MCP gateway smoke tests — exercises each of the 5 MCP tools end-to-end.
+MCP gateway smoke tests — validates the canonical tool catalog and core inference paths.
 
 Two modes:
 
-* **Fast mode (default, used in CI)** — exercises each tool's dispatcher and
-  validation path. Only downloads a ~180 MB GGUF for the chat tool. Whisper,
+* **Fast mode (default, used in CI)** — validates the canonical `tools/list`
+  catalog, then exercises the core inference/discovery paths. Only downloads
+  a ~180 MB GGUF for the chat tool. Whisper,
   Stable Diffusion, and Omni are checked via their structured-error paths so
   the workflow stays runnable on a vanilla ubuntu-latest runner.
 
-* **Live mode (local opt-in)** — per-tool flags trigger real inference using
+* **Live mode (local opt-in)** — per-inference flags trigger real inference using
   the models recommended in `docs/api/mcp.md`. Use these when you want
   end-to-end confidence on your own machine without burning GitHub minutes.
 
@@ -16,10 +17,10 @@ Usage:
     # Fast mode (CI default)
     python test/server_mcp_smoke.py
 
-    # Run every tool live with the doc-recommended models (multi-GB download)
+    # Run every inference smoke live with the doc-recommended models (multi-GB download)
     python test/server_mcp_smoke.py --full
 
-    # Opt into individual tools
+    # Opt into individual inference smokes
     python test/server_mcp_smoke.py --live-transcribe --live-image
     python test/server_mcp_smoke.py --live-omni --omni-model LMX-Omni-5.5B-Lite
 
@@ -47,6 +48,28 @@ DEFAULT_CHAT_MODEL = "Qwen3-1.7B-GGUF"
 DEFAULT_TRANSCRIBE_MODEL = "Whisper-Large-v3-Turbo"
 DEFAULT_IMAGE_MODEL = "SDXL-Turbo"
 DEFAULT_OMNI_MODEL = "LMX-Omni-5.5B-Lite"
+
+MCP_HUB_REQUIRED_TOOLS = {
+    "lemonade_list_models",
+    "lemonade_get_model_info",
+    "lemonade_load_model",
+    "lemonade_unload_model",
+    "lemonade_get_loaded_models",
+    "lemonade_get_server_health",
+    "lemonade_pull_model",
+    "lemonade_delete_model",
+    "lemonade_get_system_info",
+    "lemonade_list_backends",
+    "lemonade_install_backend",
+    "lemonade_generate_image",
+    "lemonade_edit_image",
+    "lemonade_generate_audio",
+    "lemonade_text_to_speech",
+    "lemonade_transcribe_audio",
+    "lemonade_generate_3d",
+    "lemonade_chat",
+    "lemonade_omni",
+}
 
 # Live tools can pull multi-GB models and run real inference; give them room.
 LIVE_PULL_TIMEOUT = 1800  # 30 min
@@ -186,6 +209,26 @@ def make_silent_wav(duration_s=1, sample_rate=16000):
 # ---------------------------------------------------------------------------
 # Fast-mode smokes (default; what CI runs).
 # ---------------------------------------------------------------------------
+
+
+def smoke_catalog(mcp_url, _cfg):
+    """tools/list must expose the canonical hub; future additional tools are allowed."""
+    payload = {"jsonrpc": "2.0", "id": 0, "method": "tools/list"}
+    response = _post(mcp_url, payload, timeout=60)
+    assert (
+        response.status_code == 200
+    ), f"HTTP {response.status_code}: {response.text[:300]}"
+    body = response.json()
+    tools = body.get("result", {}).get("tools")
+    assert isinstance(tools, list), f"tools/list returned no tool array: {body}"
+    names = [tool.get("name") for tool in tools]
+    assert all(
+        isinstance(name, str) and name for name in names
+    ), f"invalid tool name: {names}"
+    assert len(names) == len(set(names)), f"duplicate tool names: {names}"
+    missing = MCP_HUB_REQUIRED_TOOLS - set(names)
+    assert not missing, f"missing canonical MCP tools: {sorted(missing)}"
+    detail(f"{len(names)} tools advertised; canonical hub present")
 
 
 def smoke_list_models(mcp_url, _cfg):
@@ -366,7 +409,10 @@ def build_plan(args):
     live_image = args.full or args.live_image
     live_omni = args.full or args.live_omni
 
-    smokes = [("lemonade_list_models", smoke_list_models)]
+    smokes = [
+        ("tools/list catalog", smoke_catalog),
+        ("lemonade_list_models", smoke_list_models),
+    ]
 
     # Chat: live mode uses the doc-recommended model; fast mode uses tiny.
     if live_chat:
@@ -439,7 +485,7 @@ def main():
     live.add_argument(
         "--full",
         action="store_true",
-        help="Enable live mode for every tool (equivalent to all --live-* flags).",
+        help="Enable live mode for every inference smoke (equivalent to all --live-* flags).",
     )
     live.add_argument(
         "--live-chat",

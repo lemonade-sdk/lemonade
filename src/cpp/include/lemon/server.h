@@ -185,6 +185,8 @@ private:
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_pin(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
+    nlohmann::json handle_mcp_server_tool(
+        const std::string& tool_name, const nlohmann::json& arguments);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
     void handle_aliases_get(const httplib::Request& req, httplib::Response& res);
     void handle_aliases_add(const httplib::Request& req, httplib::Response& res);
@@ -290,6 +292,8 @@ private:
     // Image endpoint handlers (OpenAI /v1/images/* compatible)
     void handle_image_generations(const httplib::Request& req, httplib::Response& res);
     void handle_image_edits(const httplib::Request& req, httplib::Response& res);
+    void handle_image_edit_json(const nlohmann::json& request_json,
+                                httplib::Response& res);
     void handle_image_variations(const httplib::Request& req, httplib::Response& res);
     void handle_image_upscale(const httplib::Request& req, httplib::Response& res);
 
