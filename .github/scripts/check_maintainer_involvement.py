@@ -44,7 +44,7 @@ FALLBACK_VERTICAL = {
 HORIZONTALS = (
     {
         "name": "Networking & security",
-        "keywords": ("http", "curl", "tcp", "udp", "cors", "security"),
+        "keywords": ("curl", "tcp", "udp", "cors", "security"),
         "reviewers": ("Geramy",),
     },
     {

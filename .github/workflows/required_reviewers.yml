@@ -12,7 +12,7 @@
 # that cuts across folders, recognized by the words the diff and the PR body
 # use. These are additive; an expert review never stands in for a primary one:
 #
-#   Networking & security  http / curl / tcp / udp / cors / security -> @Geramy
+#   Networking & security  curl / tcp / udp / cors / security -> @Geramy
 #   ROCm                   rocm                                      -> @superm1
 #
 # A reviewer counts as satisfied when they authored the PR or approved its

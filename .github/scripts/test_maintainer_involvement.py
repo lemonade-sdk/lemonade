@@ -118,12 +118,12 @@ def test_horizontals_also_read_the_pr_body():
 
 
 def test_trigger_names_where_the_keyword_was_found():
-    required = reviews_for(["docs/README.md"], diff="http", body="unrelated")
-    assert trigger_for(required, NETWORKING_AREA) == "diff mentions http"
+    required = reviews_for(["docs/README.md"], diff="tcp", body="unrelated")
+    assert trigger_for(required, NETWORKING_AREA) == "diff mentions tcp"
 
-    required = reviews_for(["docs/README.md"], diff="http", body="cors matters")
+    required = reviews_for(["docs/README.md"], diff="tcp", body="cors matters")
     assert (
-        trigger_for(required, NETWORKING_AREA) == "diff and PR body mention cors, http"
+        trigger_for(required, NETWORKING_AREA) == "diff and PR body mention cors, tcp"
     )
 
 
@@ -147,21 +147,28 @@ def test_an_expert_review_never_replaces_the_primary_one():
 
 
 def test_horizontals_stack_with_each_other():
-    required = reviews_for(["docs/README.md"], diff="rocm over http")
+    required = reviews_for(["docs/README.md"], diff="rocm over tcp")
     assert reviewer_sets(required) == {EVERYTHING_ELSE, NETWORKING, ROCM}
 
     required = reviews_for(
-        ["docs/README.md"], diff="rocm over http", approvers={"superm1", "jeremyfowers"}
+        ["docs/README.md"], diff="rocm over tcp", approvers={"superm1", "jeremyfowers"}
     )
     assert [r["reviewers"] for r in unmet(required)] == [NETWORKING]
 
 
 def test_horizontal_keywords_match_case_insensitively_and_in_paths():
-    assert NETWORKING in reviewer_sets(reviews_for(["src/cpp/server/http_client.cpp"]))
+    assert NETWORKING in reviewer_sets(reviews_for(["src/cpp/server/tcp_listener.cpp"]))
     assert ROCM in reviewer_sets(reviews_for(["src/cpp/rocm_device.cpp"]))
     assert NETWORKING in reviewer_sets(
         reviews_for(["docs/README.md"], diff="UDP beacon")
     )
+
+
+def test_http_is_not_a_keyword():
+    """`http` matched httplib boilerplate in every route handler, not networking."""
+    assert reviewer_sets(
+        reviews_for(["src/cpp/server/server.cpp"], diff="httplib::Request& req")
+    ) == {EVERYTHING_ELSE}
 
 
 def test_horizontals_ignore_unchanged_context():
