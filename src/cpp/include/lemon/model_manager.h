@@ -17,6 +17,7 @@
 #include "canonical_id.h"
 #include "directory_watcher.h"
 #include "gguf_reader.h"
+#include "model_registry.h"
 #include "model_types.h"
 #include "recipe_options.h"
 
@@ -99,7 +100,7 @@ struct ModelInfo {
     std::vector<std::string> input_aliases;  // Names accepted in requests but hidden from /models
     bool suggested = false;
     std::string source;  // Local origin: local_upload/local_path/extra_models_dir
-    std::string registry_source = "huggingface";  // Remote registry: huggingface/modelscope
+    std::string registry_source;  // Remote registry: huggingface/modelscope; empty when unpinned
     bool downloaded = false;     // Whether model is downloaded and available
     bool update_available = false; // Whether a newer remote-registry version exists
     std::optional<bool> auto_update = std::nullopt; // Optional per-model auto-update override
@@ -199,9 +200,7 @@ public:
     // from apply_default_pull_source, so they consult this to honor the default.
     void set_default_model_source_provider(std::function<std::string()> provider);
 
-    // Effective remote registry for a model: an explicit per-model ModelScope
-    // provenance wins, otherwise the server-wide default_model_source applies.
-    std::string effective_model_source(const ModelInfo& info) const;
+    RemoteRegistrySource download_source_for(const ModelInfo& info) const;
 
     // Refresh discovered models for one provider. Looks up creds via the
     // registry, calls CloudServer::discover_models, and re-seeds the

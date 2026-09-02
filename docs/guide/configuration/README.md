@@ -221,6 +221,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
 
+FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
+
 Both `models_dir` and `extra_models_dir` can be changed at runtime through `POST /internal/set`. Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
 ### Backend Configuration

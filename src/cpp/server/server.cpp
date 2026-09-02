@@ -1568,8 +1568,12 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"source", info.source.empty() ? info.registry_source : info.source},
-                {"registry_source", info.registry_source},
+                {"source", info.source.empty()
+                    ? remote_registry_source_name(
+                        parse_remote_registry_source(info.registry_source))
+                    : info.source},
+                {"registry_source", remote_registry_source_name(
+                    parse_remote_registry_source(info.registry_source))},
                 {"components", public_components},
                 {"mmproj", info.mmproj()}
             };
@@ -3210,8 +3214,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
-        {"source", info.source.empty() ? info.registry_source : info.source},
-        {"registry_source", info.registry_source},
+        {"source", info.source.empty()
+            ? remote_registry_source_name(
+                parse_remote_registry_source(info.registry_source))
+            : info.source},
+        {"registry_source", remote_registry_source_name(
+            parse_remote_registry_source(info.registry_source))},
         {"labels", info.labels},
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},

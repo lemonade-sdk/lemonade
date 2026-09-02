@@ -335,8 +335,23 @@ std::vector<ModelInfo> flm_discover_models() {
 }
 
 
+std::vector<std::string> flm_pull_arguments(const std::string& checkpoint,
+                                            bool do_not_upgrade,
+                                            RemoteRegistrySource source) {
+    std::vector<std::string> args = {"pull", checkpoint};
+    if (!do_not_upgrade) {
+        args.push_back("--force");
+    }
+    if (source == RemoteRegistrySource::ModelScope) {
+        args.push_back("--modelscope");
+        args.push_back("1");
+    }
+    return args;
+}
+
 void flm_download(const std::string& checkpoint, bool do_not_upgrade,
-                  DownloadProgressCallback progress_callback, bool modelscope) {
+                  DownloadProgressCallback progress_callback,
+                  RemoteRegistrySource source) {
     LOG(INFO, "ModelManager") << "Pulling FLM model: " << checkpoint << std::endl;
 
     auto status = SystemInfoCache::get_flm_status();
@@ -349,14 +364,7 @@ void flm_download(const std::string& checkpoint, bool do_not_upgrade,
         throw std::runtime_error("FLM executable not found");
     }
 
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
-    if (modelscope) {
-        args.push_back("--modelscope");
-        args.push_back("1");
-    }
+    std::vector<std::string> args = flm_pull_arguments(checkpoint, do_not_upgrade, source);
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {

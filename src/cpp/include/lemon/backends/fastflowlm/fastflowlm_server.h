@@ -21,7 +21,7 @@ public:
 
     std::string download_model(const std::string& checkpoint,
                               bool do_not_upgrade = false,
-                              bool modelscope = false);
+                              RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
