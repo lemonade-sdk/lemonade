@@ -13,7 +13,6 @@ Verifies:
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -21,28 +20,10 @@ import time
 import unittest
 import requests
 
-from utils.test_models import get_default_cli_binary
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-
-def get_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
-def find_lemond_binary():
-    cli_bin = get_default_cli_binary()
-    if cli_bin:
-        build_dir = os.path.dirname(cli_bin)
-        exe = "lemond.exe" if sys.platform == "win32" else "lemond"
-        lemond_bin = os.path.join(build_dir, exe)
-        if os.path.exists(lemond_bin):
-            return lemond_bin
-    exe = "lemond.exe" if sys.platform == "win32" else "lemond"
-    for path in [f"build/{exe}", f"build/src/cpp/server/{exe}"]:
-        if os.path.exists(path):
-            return os.path.abspath(path)
-    return exe
+from utils.server_fixture import allocate_free_port, lemond_server, make_clean_env
+from utils.test_models import get_default_lemond_binary
 
 
 class TestLogRotation(unittest.TestCase):
@@ -50,20 +31,12 @@ class TestLogRotation(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp(prefix="lemonade_log_test_")
         self.runtime_dir = os.path.join(self.test_dir, "runtime")
         os.makedirs(self.runtime_dir, exist_ok=True)
-        self.lemond_bin = find_lemond_binary()
-        self.server_proc = None
+        self.lemond_bin = get_default_lemond_binary()
+        if not self.lemond_bin or not os.path.exists(self.lemond_bin):
+            if not shutil.which("lemond"):
+                raise unittest.SkipTest("lemond binary not found")
 
     def tearDown(self):
-        if self.server_proc:
-            if self.server_proc.stdout:
-                self.server_proc.stdout.close()
-            if self.server_proc.stderr:
-                self.server_proc.stderr.close()
-            try:
-                self.server_proc.terminate()
-                self.server_proc.wait(timeout=5)
-            except Exception:
-                self.server_proc.kill()
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir, ignore_errors=True)
 
@@ -82,14 +55,11 @@ class TestLogRotation(unittest.TestCase):
         with open(active_log, "wb") as f:
             f.write(b"FIRST_LOG_BLOCK\n" + b"A" * (1024 * 1024 + 200))
 
-        env = os.environ.copy()
+        env = make_clean_env(self.test_dir)
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
-        env["LEMONADE_CACHE_DIR"] = self.test_dir
         env["LEMONADE_DISABLE_SYSTEMD_JOURNAL"] = "1"
 
-        base_cmd = [
-            self.lemond_bin,
-            self.test_dir,
+        cli_args = [
             "--log-file",
             "enabled",
             "--log-max-size-mb",
@@ -99,7 +69,7 @@ class TestLogRotation(unittest.TestCase):
         ]
 
         self.assertTrue(
-            self.run_server_instance(base_cmd, env), "Instance 1 failed to start"
+            self.run_server_instance(cli_args, env), "Instance 1 failed to start"
         )
         backup_1 = os.path.join(log_dir, "lemonade-server.log.1")
         self.assertTrue(os.path.exists(backup_1), "Rotation 1 failed to create .1")
@@ -114,7 +84,7 @@ class TestLogRotation(unittest.TestCase):
         with open(active_log, "wb") as f:
             f.write(b"SECOND_LOG_BLOCK\n" + b"B" * (1024 * 1024 + 200))
         self.assertTrue(
-            self.run_server_instance(base_cmd, env), "Instance 2 failed to start"
+            self.run_server_instance(cli_args, env), "Instance 2 failed to start"
         )
         backup_2 = os.path.join(log_dir, "lemonade-server.log.2")
         self.assertTrue(os.path.exists(backup_2), "Rotation 2 failed to create .2")
@@ -123,7 +93,7 @@ class TestLogRotation(unittest.TestCase):
         with open(active_log, "wb") as f:
             f.write(b"THIRD_LOG_BLOCK\n" + b"C" * (1024 * 1024 + 200))
         self.assertTrue(
-            self.run_server_instance(base_cmd, env), "Instance 3 failed to start"
+            self.run_server_instance(cli_args, env), "Instance 3 failed to start"
         )
 
         backup_3 = os.path.join(log_dir, "lemonade-server.log.3")
@@ -132,31 +102,21 @@ class TestLogRotation(unittest.TestCase):
             f"Backup {backup_3} exists but should have been pruned (max_files=2)",
         )
 
-    def run_server_instance(self, base_cmd, env):
-        port = get_free_port()
-        cmd = base_cmd + ["--port", str(port)]
-        with subprocess.Popen(
-            cmd,
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        ) as proc:
-            ready = False
-            for _ in range(30):
-                try:
-                    conn = socket.create_connection(("127.0.0.1", port))
-                    conn.close()
-                    ready = True
-                    break
-                except Exception:
-                    time.sleep(0.2)
-            try:
-                proc.terminate()
-                proc.wait(timeout=3)
-            except Exception:
-                proc.kill()
-                proc.wait(timeout=3)
-            return ready
+    def run_server_instance(self, cli_args, env):
+        port = allocate_free_port()
+        try:
+            with lemond_server(
+                port=port,
+                cache_dir=self.test_dir,
+                args=cli_args,
+                env=env,
+                binary_path=self.lemond_bin,
+                wait_health=True,
+                health_timeout=10.0,
+            ):
+                return True
+        except Exception:
+            return False
 
     def test_max_files_zero(self):
         """Verify max_files=0 truncates active file upon rotation without creating backup files."""
@@ -167,14 +127,11 @@ class TestLogRotation(unittest.TestCase):
         with open(active_log, "wb") as f:
             f.write(b"INITIAL_OVERSIZE\n" + b"Z" * (1024 * 1024 + 500))
 
-        env = os.environ.copy()
+        env = make_clean_env(self.test_dir)
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
-        env["LEMONADE_CACHE_DIR"] = self.test_dir
         env["LEMONADE_DISABLE_SYSTEMD_JOURNAL"] = "1"
 
-        base_cmd = [
-            self.lemond_bin,
-            self.test_dir,
+        cli_args = [
             "--log-file",
             "enabled",
             "--log-max-size-mb",
@@ -184,7 +141,7 @@ class TestLogRotation(unittest.TestCase):
         ]
 
         self.assertTrue(
-            self.run_server_instance(base_cmd, env),
+            self.run_server_instance(cli_args, env),
             "Server failed to start in max_files=0 mode",
         )
         backup_1 = os.path.join(log_dir, "lemonade-server.log.1")
@@ -201,17 +158,12 @@ class TestLogRotation(unittest.TestCase):
         with open(active_log, "wb") as f:
             f.write(b"PRE_SEED_LOG_LINE\n" + b"X" * (1020 * 1024))
 
-        env = os.environ.copy()
+        env = make_clean_env(self.test_dir)
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
-        env["LEMONADE_CACHE_DIR"] = self.test_dir
         env["LEMONADE_DISABLE_SYSTEMD_JOURNAL"] = "1"
 
-        port = get_free_port()
-        cmd = [
-            self.lemond_bin,
-            self.test_dir,
-            "--port",
-            str(port),
+        port = allocate_free_port()
+        cli_args = [
             "--log-file",
             "enabled",
             "--log-max-size-mb",
@@ -220,25 +172,15 @@ class TestLogRotation(unittest.TestCase):
             "2",
         ]
 
-        proc = subprocess.Popen(
-            cmd,
+        with lemond_server(
+            port=port,
+            cache_dir=self.test_dir,
+            args=cli_args,
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        ready = False
-        try:
-            for _ in range(30):
-                try:
-                    conn = socket.create_connection(("127.0.0.1", port))
-                    conn.close()
-                    ready = True
-                    break
-                except Exception:
-                    time.sleep(0.2)
-
-            self.assertTrue(ready, "Server failed to start for runtime rotation test")
+            binary_path=self.lemond_bin,
+            wait_health=True,
+            health_timeout=10.0,
+        ):
             self.assertFalse(
                 os.path.exists(backup_1),
                 "Backup .1 must NOT exist immediately after startup (proves startup did not rotate)",
@@ -258,14 +200,6 @@ class TestLogRotation(unittest.TestCase):
                     )
                 except Exception:
                     pass
-
-        finally:
-            try:
-                proc.terminate()
-                proc.wait(timeout=3)
-            except Exception:
-                proc.kill()
-                proc.wait(timeout=3)
 
         self.assertTrue(os.path.exists(active_log), "Active log file should exist")
         self.assertTrue(
