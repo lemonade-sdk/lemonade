@@ -33,11 +33,6 @@ on:
   # repo's token; no PR code is checked out or executed.
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  # TEMPORARY: self-test this workflow from the PR branch. pull_request_target
-  # loads the workflow from the base branch, so this file cannot run until it
-  # is on main. Remove before merge.
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
   # Re-run when an approval lands, dismissed, or changes, so the check reflects
   # the current review state rather than the state at push time.
   pull_request_review:
