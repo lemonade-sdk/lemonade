@@ -91,14 +91,18 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
             if (!auto_evict) continue;
 
             long evict_timeout_sec = 300;
-            long downsize_timeout_sec = 60;
+            long downsize_timeout_sec = kDefaultDownsizeIdleTimeoutSec;
             double weight_factor = 1.0;
 
-            if (recipe_opts.contains("evict_idle_timeout") && recipe_opts["evict_idle_timeout"].is_number_integer()) {
-                evict_timeout_sec = recipe_opts["evict_idle_timeout"].get<long>();
+            // is_number_integer() is false for a JSON value that arrived as a float
+            // even when it holds a whole number (e.g. 3.0 from a JS/Python client),
+            // which would silently fall back to the default above. is_number() plus
+            // truncation covers both representations.
+            if (recipe_opts.contains("evict_idle_timeout") && recipe_opts["evict_idle_timeout"].is_number()) {
+                evict_timeout_sec = static_cast<long>(recipe_opts["evict_idle_timeout"].get<double>());
             }
-            if (recipe_opts.contains("downsize_idle_timeout") && recipe_opts["downsize_idle_timeout"].is_number_integer()) {
-                downsize_timeout_sec = recipe_opts["downsize_idle_timeout"].get<long>();
+            if (recipe_opts.contains("downsize_idle_timeout") && recipe_opts["downsize_idle_timeout"].is_number()) {
+                downsize_timeout_sec = static_cast<long>(recipe_opts["downsize_idle_timeout"].get<double>());
             }
             if (recipe_opts.contains("evict_weight_factor") && recipe_opts["evict_weight_factor"].is_number()) {
                 weight_factor = recipe_opts["evict_weight_factor"].get<double>();

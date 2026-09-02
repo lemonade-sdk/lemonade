@@ -1170,13 +1170,18 @@ class LLMTests(ServerTestBase):
             f"cache_tokens_total={data['cache_tokens_total']}"
         )
 
-    @skip_if_unsupported("slots")
+    @skip_if_unsupported("sleep_idle_downsize")
     def test_023c_downsize_sleep_wakes_transparently(self):
         """A model downsized via --sleep-idle-seconds still serves the next
         request transparently (no error, no manual reload), but does not
         cache-restore the prompt -- see docs/dev/llamacpp-runtime-defaults.md
         for why waking from sleep always starts with an empty RAM prompt
-        cache."""
+        cache.
+
+        This does NOT verify VRAM is actually released -- there is no in-band
+        signal for GPU memory in these APIs (see "Verifying VRAM is actually
+        released" in docs/dev/llamacpp-runtime-defaults.md, which documents
+        that check as a manual, out-of-band measurement instead)."""
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         client = self.get_openai_client()
@@ -1204,9 +1209,35 @@ class LLMTests(ServerTestBase):
             stream=False,
         )
 
-        # Wait past downsize_idle_timeout so llama-server's own
-        # --sleep-idle-seconds timer puts the backend to sleep.
-        time.sleep(downsize_idle_timeout + 5)
+        # Poll Lemonade's own idle-timer-driven status instead of blindly
+        # sleeping a fixed duration. This reflects Lemonade's belief that
+        # downsize happened, not a live readback of llama-server's actual sleep
+        # state -- see "ModelState::DOWNSIZED is best-effort, not a live
+        # readback" in docs/dev/llamacpp-runtime-defaults.md -- but it is still
+        # an observable signal rather than a hardcoded wait that can flake if
+        # the idle timer takes longer to fire under CI load.
+        poll_deadline = time.time() + downsize_idle_timeout + 15
+        status = None
+        while time.time() < poll_deadline:
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200)
+            matches = [
+                m
+                for m in health_response.json().get("all_models_loaded", [])
+                if m.get("model_name") == model
+            ]
+            if matches and matches[0].get("status") == "downsized":
+                status = matches[0]["status"]
+                break
+            time.sleep(0.5)
+        self.assertEqual(
+            status,
+            "downsized",
+            "model never reported status='downsized' via /health within "
+            f"{downsize_idle_timeout + 15}s of going idle",
+        )
 
         # The wake must be transparent: this must succeed, not error or hang,
         # even though llama-server fully released the model and has to

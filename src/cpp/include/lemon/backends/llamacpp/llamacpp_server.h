@@ -60,6 +60,12 @@ private:
     // in the OpenAI `model` field. Rewrite it to the client-facing model id so
     // responses don't leak absolute filesystem paths (and usernames).
     json normalize_response_model(json response, const json& request) const;
+
+    // Set in load() from whether the resolved launch args actually included
+    // --sleep-idle-seconds (auto_evict off, or a pre-b7492 system backend under
+    // the version gate, both mean it wasn't passed). downsize() uses this to
+    // decide whether there's anything to verify via /props.
+    bool sleep_idle_enabled_ = false;
 };
 
 namespace llamacpp {

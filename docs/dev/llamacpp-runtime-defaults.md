@@ -69,6 +69,38 @@ does not defeat sleep. Note that `GET /slots` is *not* on that bypass list
 and wakes a sleeping server; Lemonade only forwards it on demand, never on a
 timer.
 
+## `ModelState::DOWNSIZED` is verified
+
+Lemonade's `EvictionEngine` runs its own idle timer and, once it elapses, calls
+`LlamaCppServer::downsize()` to decide whether to flip a model to
+`ModelState::DOWNSIZED`. Rather than trusting that llama-server's independent
+`--sleep-idle-seconds` timer fired just because Lemonade's own timer did,
+`downsize()` checks the subprocess's own `GET /props` (`is_sleeping` field) and
+only reports success once the backend confirms it's actually asleep:
+
+- If `/props` says `is_sleeping: false` yet, `downsize()` returns `false`;
+  `EvictionEngine::finish_downsize(false)` reverts the model to `READY`, and
+  since a failed downsize doesn't touch the idle clock, the model remains a
+  candidate and is retried on `EvictionEngine`'s next tick (every 5s by
+  default) until llama-server's timer actually fires. `ModelState::DOWNSIZED`
+  for llama.cpp is therefore ground truth, converging within one tick of the
+  real sleep, not a guess.
+- If the model was launched without `--sleep-idle-seconds` in the first place
+  (`auto_evict` was off, or a pre-b7492 `system` backend hit the version gate
+  in `resolve_llamacpp_runtime_args`), `downsize()` skips the `/props` check
+  entirely and returns `true`, there's no backend-side sleep timer to verify,
+  and retrying forever against a backend that can never sleep would just waste
+  a `/props` round trip on every tick for no benefit.
+
+The **wake** direction (`DOWNSIZED` → `READY`, in `WrappedServer::acquire_for_inference()`
+calling `restore()`) is still optimistic for every backend, including
+llama.cpp: `restore()` is a no-op, and Lemonade flips to `READY` before
+forwarding the request that actually triggers llama-server's self-wake. This
+residual gap is low-risk and intentionally left alone, it's a brief window
+that self-corrects on the very next request/response, and the forwarded
+request itself already blocks correctly until llama-server finishes waking
+regardless of what `ModelState` claims in the meantime.
+
 ## Verifying VRAM is actually released
 
 There is no in-band signal for VRAM usage in the OpenAI-compatible response.
