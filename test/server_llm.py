@@ -1232,8 +1232,8 @@ class LLMTests(ServerTestBase):
         self.assertEqual(
             data["cache_tokens"],
             0,
-            "expected a cold re-prefill on wake (no --parallel 1 slot "
-            f"displacement to populate the RAM cache), got stats: {data}",
+            "expected a cold re-prefill on wake (llama-server recreates its "
+            f"RAM prompt cache empty on reload), got stats: {data}",
         )
 
     @skip_if_unsupported("tokenize")
