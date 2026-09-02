@@ -2967,6 +2967,19 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
     add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
 endif()
 
+set(_GPU_ADAPTER_MEMORY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_adapter_memory.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GPU_ADAPTER_MEMORY_TEST_SRC}")
+    add_executable(test_gpu_adapter_memory test/cpp/test_gpu_adapter_memory.cpp)
+    target_include_directories(test_gpu_adapter_memory PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+
+    include(CTest)
+    add_cpp_ci_test(GpuAdapterMemoryTest CI ON COMMAND test_gpu_adapter_memory)
+endif()
+
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")
 if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     add_executable(test_telemetry_helpers test/cpp/test_telemetry_helpers.cpp)

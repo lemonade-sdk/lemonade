@@ -2,6 +2,8 @@
 
 #ifdef _WIN32
 
+#include <lemon/gpu_adapter_memory.h>
+
 #include <string>
 #include <vector>
 #include <functional>
@@ -56,6 +58,9 @@ std::string acp_to_utf8(const std::string& acp_str);
 std::string get_property_string(IWbemClassObject* pObj, const std::wstring& prop_name);
 int get_property_int(IWbemClassObject* pObj, const std::wstring& prop_name);
 uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_name);
+
+size_t get_physical_gpu_count(WMIConnection& conn);
+std::vector<GpuAdapterMemory> get_gpu_adapter_memory(WMIConnection& conn);
 
 // SetupAPI-based driver version lookup.
 // Enumerates all present devices via SetupAPI and returns the driver version
