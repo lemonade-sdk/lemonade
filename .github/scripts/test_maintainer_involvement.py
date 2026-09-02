@@ -22,10 +22,16 @@ NETWORKING = check.HORIZONTALS[0]["reviewers"]
 ROCM = check.HORIZONTALS[1]["reviewers"]
 
 
-def reviews_for(paths, diff="", author="someone", approvers=()):
+def reviews_for(paths, diff="", body="", author="someone", approvers=()):
     return check.evaluate(
-        check.required_reviews(paths, diff), author, {a.lower() for a in approvers}
+        check.required_reviews(paths, diff, body),
+        author,
+        {a.lower() for a in approvers},
     )
+
+
+def trigger_for(required, area):
+    return next(r["trigger"] for r in required if r["area"] == area)
 
 
 def unmet(required):
@@ -87,10 +93,38 @@ def test_prefixes_must_match_a_directory_boundary():
     assert reviewer_sets(reviews_for(["src/appearance/theme.css"])) == {EVERYTHING_ELSE}
 
 
+NETWORKING_AREA = check.HORIZONTALS[0]["name"]
+
+
 def test_networking_horizontal_adds_an_expert_review():
     required = reviews_for(["docs/README.md"], diff="the CURL invocation")
     assert reviewer_sets(required) == {EVERYTHING_ELSE, NETWORKING}
-    assert roles(required)["Networking"] == "expert"
+    assert roles(required)[NETWORKING_AREA] == "expert"
+
+
+def test_security_is_a_networking_horizontal_keyword():
+    assert NETWORKING in reviewer_sets(
+        reviews_for(["docs/README.md"], diff="tighten the Security check")
+    )
+
+
+def test_horizontals_also_read_the_pr_body():
+    required = reviews_for(["docs/README.md"], body="This is a security fix.")
+    assert reviewer_sets(required) == {EVERYTHING_ELSE, NETWORKING}
+    assert trigger_for(required, NETWORKING_AREA) == "PR body mentions security"
+
+    required = reviews_for(["docs/README.md"], body="Rebuild against ROCm.")
+    assert reviewer_sets(required) == {EVERYTHING_ELSE, ROCM}
+
+
+def test_trigger_names_where_the_keyword_was_found():
+    required = reviews_for(["docs/README.md"], diff="http", body="unrelated")
+    assert trigger_for(required, NETWORKING_AREA) == "diff mentions http"
+
+    required = reviews_for(["docs/README.md"], diff="http", body="cors matters")
+    assert (
+        trigger_for(required, NETWORKING_AREA) == "diff and PR body mention cors, http"
+    )
 
 
 def test_rocm_horizontal_adds_an_expert_review():

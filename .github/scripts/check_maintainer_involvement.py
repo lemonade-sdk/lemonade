@@ -2,8 +2,9 @@
 """Work out which reviewers a pull request requires, and whether it has them.
 
 A PR needs a *primary* review from the maintainer of each vertical it touches,
-plus an *expert* review from the maintainer of each horizontal its diff
-impacts. Expert reviews are additive — they never stand in for a primary one.
+plus an *expert* review from the maintainer of each horizontal its diff or PR
+body invokes. Expert reviews are additive — they never stand in for a primary
+one.
 A reviewer counts as satisfied when they authored the PR or have an approving
 review on its current head commit — any push after an approval invalidates it.
 Used by .github/workflows/required_reviewers.yml; safe to run locally against
@@ -37,13 +38,13 @@ FALLBACK_VERTICAL = {
     "reviewers": ("jeremyfowers", "ramkrishna2910"),
 }
 
-# Horizontals: a function that cuts across folders, recognized by the words its
-# diff uses rather than the paths it touches. Adds an expert review on top of
+# Horizontals: a function that cuts across folders, recognized by the words the
+# PR uses rather than the paths it touches. Adds an expert review on top of
 # whatever primary review the paths already require.
 HORIZONTALS = (
     {
-        "name": "Networking",
-        "keywords": ("http", "curl", "tcp", "udp", "cors"),
+        "name": "Networking & security",
+        "keywords": ("http", "curl", "tcp", "udp", "cors", "security"),
         "reviewers": ("Geramy",),
     },
     {
@@ -148,11 +149,21 @@ def active_approvers(reviews, head_sha):
     }
 
 
+def keyword_hits(pattern, text):
+    return {m.group(0).lower() for m in pattern.finditer(text or "")}
+
+
+def describe_source(in_diff, in_body):
+    if in_diff and in_body:
+        return "diff and PR body mention"
+    return "PR body mentions" if in_body else "diff mentions"
+
+
 def matches_prefix(path, prefixes):
     return any(path.startswith(prefix) for prefix in prefixes)
 
 
-def required_reviews(paths, changed_diff):
+def required_reviews(paths, changed_diff, body=""):
     """The primary and expert reviews this PR requires, and what triggered them."""
     required = []
 
@@ -186,15 +197,15 @@ def required_reviews(paths, changed_diff):
 
     haystack = changed_diff + "\n" + "\n".join(paths)
     for horizontal in HORIZONTALS:
-        hits = sorted(
-            {m.group(0).lower() for m in horizontal["pattern"].finditer(haystack)}
-        )
+        in_diff = keyword_hits(horizontal["pattern"], haystack)
+        in_body = keyword_hits(horizontal["pattern"], body)
+        hits = sorted(in_diff | in_body)
         if hits:
             required.append(
                 {
                     "role": "expert",
                     "area": horizontal["name"],
-                    "trigger": f"diff mentions {', '.join(hits)}",
+                    "trigger": f"{describe_source(in_diff, in_body)} {', '.join(hits)}",
                     "evidence": [],
                     "reviewers": horizontal["reviewers"],
                 }
@@ -289,7 +300,9 @@ def main():
     approvers = active_approvers(reviews, (pull.get("head") or {}).get("sha"))
     paths = changed_paths(files)
     required = evaluate(
-        required_reviews(paths, diff_text(args.pr, args.repo, files)),
+        required_reviews(
+            paths, diff_text(args.pr, args.repo, files), pull.get("body") or ""
+        ),
         author,
         approvers,
     )
