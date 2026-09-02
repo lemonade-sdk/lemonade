@@ -1370,6 +1370,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#llamacpp-hrx-hrx-gpu-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>llamacpp-hrx</code> — HRX GPU (experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moonshine-moonshine" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2671,6 +2682,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#llamacpp-hrx-hrx-gpu-experimental" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>llamacpp-hrx</code> — HRX GPU (experimental)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#moonshine-moonshine" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2907,6 +2929,13 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>cpu, cuda, metal, rocm, system, vulkan</td>
 </tr>
 <tr>
+<td><code>llamacpp-hrx</code></td>
+<td>HRX GPU (experimental)</td>
+<td>no</td>
+<td>yes</td>
+<td>hrx</td>
+</tr>
+<tr>
 <td><code>moonshine</code></td>
 <td>Moonshine</td>
 <td>no</td>
@@ -3069,6 +3098,12 @@ the generator instead. Prose outside the markers is preserved. -->
 <td>cpu</td>
 <td>linux, windows</td>
 <td>cpu (arm64, x86_64)</td>
+</tr>
+<tr>
+<td><code>llamacpp-hrx</code></td>
+<td>hrx</td>
+<td>linux</td>
+<td>amd_gpu (gfx1100, gfx1151)</td>
 </tr>
 <tr>
 <td><code>moonshine</code></td>
@@ -3368,6 +3403,34 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <td>ARGS</td>
 <td>""</td>
 <td>Custom arguments to pass to llama-server</td>
+</tr>
+</tbody>
+</table>
+<h4 id="llamacpp-hrx-hrx-gpu-experimental"><code>llamacpp-hrx</code> — HRX GPU (experimental)</h4>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>CLI flag</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ctx_size</code></td>
+<td><code>--ctx-size</code></td>
+<td>SIZE</td>
+<td>-1</td>
+<td>Context size for the model</td>
+</tr>
+<tr>
+<td><code>hrx_args</code></td>
+<td><code>--hrx-args</code></td>
+<td>ARGS</td>
+<td>""</td>
+<td>Custom arguments to pass to the HRX llama-server</td>
 </tr>
 </tbody>
 </table>

@@ -2640,7 +2640,7 @@ on top via each rule's <code>outputs</code> pass-through bag and the request <co
 </tr>
 <tr>
 <td><code>has_tools</code> / <code>has_images</code></td>
-<td>Boolean - request carries tools / images.</td>
+<td>Boolean - request carries a non-empty <code>tools</code> array / image content parts.</td>
 </tr>
 <tr>
 <td><code>metadata</code></td>
@@ -2745,6 +2745,15 @@ and every entry's <code>model</code> must be one of <code>components</code>:</p>
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to <code>default_model</code>.</li>
 </ul>
+<p>A <code>type: "llm"</code> classifier's judge never sees <code>has_tools</code>/<code>has_images</code>
+  (#2789) — not even when a sibling condition composes the deterministic leaf
+  in the <em>same</em> rule, as <code>risky-tool-calls-stay-local</code> does above; exposing
+  them there would feed the judge the very signal the rule already checks
+  deterministically, biasing the label from their mere presence. Write
+  <code>prompt</code> with an explicit criterion instead (as <code>risk</code> does above: "risk
+  for tool execution", not just "risk"), and compose the <code>has_tools</code>/
+  <code>has_images</code> leaf alongside the classifier when a request feature should
+  affect routing, exactly as shown above.</p>
 <blockquote>
 <p>A <code>type: "llm"</code> classifier and the <a href="#llm-as-router-routingrouter"><code>routing.router</code></a>
 block are the two LLM forms. <code>routing.router</code> picks the final candidate itself
@@ -2831,6 +2840,10 @@ that capability is checked when the collection is registered.</p>
 to pick a candidate, and that desugars into the same first-match engine and
 <code>Decision</code>/trace as the rule form. <code>routing.router.type</code> must be <code>"llm"</code>, and the
 block is <strong>mutually exclusive</strong> with <code>routing.rules</code> and <code>routing.classifiers</code>.</p>
+<p>Unlike a <code>type: "llm"</code> classifier (which never receives <code>has_tools</code>/
+<code>has_images</code>, see above), the router always does: it's the sole decision
+mechanism here, so <code>prompt</code> can rely on them directly — e.g. "use Vision-GGUF
+when the request includes images."</p>
 
 
 

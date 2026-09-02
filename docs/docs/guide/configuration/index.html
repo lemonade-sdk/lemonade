@@ -3053,6 +3053,7 @@
 <span class="w">    </span><span class="nt">"rocm_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"vulkan_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span>
 <span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"allowed_origins"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"auto_check_model_updates"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"auto_update_models"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"broadcast"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
@@ -3073,6 +3074,10 @@
 <span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"global_timeout"</span><span class="p">:</span><span class="w"> </span><span class="mi">600</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"host"</span><span class="p">:</span><span class="w"> </span><span class="s2">"localhost"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"hrx"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"args"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"hrx_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span>
+<span class="w">  </span><span class="p">},</span>
 <span class="w">  </span><span class="nt">"inhibit_suspend"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"kokoro"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
 <span class="w">    </span><span class="nt">"cpu_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span>
@@ -3089,7 +3094,10 @@
 <span class="w">    </span><span class="nt">"vulkan_args"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="p">,</span>
 <span class="w">    </span><span class="nt">"vulkan_bin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"builtin"</span>
 <span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"log_file"</span><span class="p">:</span><span class="w"> </span><span class="s2">"auto"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"log_level"</span><span class="p">:</span><span class="w"> </span><span class="s2">"info"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"log_max_file_size_mb"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"log_max_files"</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"max_loaded_models"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"models_dir"</span><span class="p">:</span><span class="w"> </span><span class="s2">"auto"</span><span class="p">,</span>
 <span class="w">  </span><span class="nt">"moonshine"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
@@ -3225,6 +3233,24 @@
 <td>Logging level (trace, debug, info, warning, error, fatal, none)</td>
 </tr>
 <tr>
+<td><code>log_file</code></td>
+<td>string</td>
+<td>"auto"</td>
+<td>File logging mode: "auto" (console-only for direct server runs, lemonade-server.log for embedded tray app), "disabled", "enabled", or custom target file path</td>
+</tr>
+<tr>
+<td><code>log_max_file_size_mb</code></td>
+<td>int</td>
+<td>10</td>
+<td>Max active log file size in MB before triggering rotation (steady-state footprint bounded to ~<code>log_max_file_size_mb * (log_max_files + 1)</code>)</td>
+</tr>
+<tr>
+<td><code>log_max_files</code></td>
+<td>int</td>
+<td>5</td>
+<td>Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles</td>
+</tr>
+<tr>
 <td><code>global_timeout</code></td>
 <td>int</td>
 <td>600</td>
@@ -3246,7 +3272,7 @@
 <td><code>extra_models_dir</code></td>
 <td>string</td>
 <td>""</td>
-<td>Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by <code>lemond</code></td>
+<td>Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by <code>lemond</code>. Top-level <code>chat</code>, <code>embeddings</code>, and <code>reranking</code> directories select how models run, see <a href="../../embeddable/models/">Model Management</a></td>
 </tr>
 <tr>
 <td><code>models_dir</code></td>
@@ -3713,24 +3739,43 @@ sudo<span class="w"> </span>systemctl<span class="w"> </span>restart<span class=
 </table>
 <p><strong>Client Behavior:</strong> Clients (CLI, tray app) automatically prefer <code>LEMONADE_ADMIN_API_KEY</code> if set, otherwise fall back to <code>LEMONADE_API_KEY</code>.</p>
 <h3 id="allowed-origins">Allowed Origins</h3>
-<p>The <code>LEMONADE_ALLOWED_ORIGINS</code> environment variable controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).</p>
+<p>The <code>allowed_origins</code> setting (in <code>config.json</code> or configured via <code>lemonade config set allowed_origins="..."</code>) controls which remote web origins are authorized to connect to the server (specifically for CORS headers on HTTP endpoints and origin validation on WebSocket connections).</p>
 <blockquote>
+<p>[!WARNING]
+The <code>LEMONADE_ALLOWED_ORIGINS</code> environment variable is <strong>deprecated</strong> and will be removed in a future release.
+- <strong>Automatic Migration</strong>: If <code>LEMONADE_ALLOWED_ORIGINS</code> is set at startup and <code>allowed_origins</code> is unset or empty in <code>config.json</code>, Lemonade automatically migrates the value into <code>config.json</code>.
+- <strong>Precedence &amp; Conflict Handling</strong>: At startup, <code>LEMONADE_ALLOWED_ORIGINS</code> takes interim precedence over <code>config.json</code>. If both exist and differ, a warning is logged advising you to unset or remove <code>LEMONADE_ALLOWED_ORIGINS</code> to avoid shadowing your configuration file.
+- <strong>Runtime Updates</strong>: Running <code>lemonade config set allowed_origins="..."</code> dynamically applies changes to the active session immediately, overriding any initial environment variable value without restarting the server.</p>
 <p>[!NOTE]
-<code>LEMONADE_ALLOWED_ORIGINS</code> specifies the <strong>client application/web page's origin</strong> (where the request originates), <strong>not</strong> the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an <code>Origin</code> header and are not restricted by origin validation.</p>
+<code>allowed_origins</code> specifies the <strong>client application/web page's origin</strong> (where the request originates), <strong>not</strong> the target Lemonade server URL. Non-browser HTTP clients (such as CLI tools, cURL, or server-side SDKs) do not send an <code>Origin</code> header and are not restricted by origin validation.</p>
 </blockquote>
 <ul>
+<li><strong>Configuration</strong>:</li>
+<li>In <code>config.json</code>: <code>"allowed_origins": "https://app.lemonade.dev,http://localhost:3000"</code></li>
+<li>Via CLI: <code>lemonade config set allowed_origins="https://app.lemonade.dev,http://localhost:3000"</code></li>
 <li><strong>Format</strong>: A comma-separated list of complete origins including the scheme and optional port (e.g., <code>https://app.lemonade.dev,http://localhost:3000</code>).<blockquote>
 <p>[!WARNING]
 Allowing a non-local plain-HTTP origin (e.g., <code>http://app.example.com</code>) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (<code>https://</code>) for all remote/non-local allowed origins.</p>
 </blockquote>
 </li>
-<li><strong>Wildcard (<code>*</code>)</strong>: Setting the variable to <code>*</code> allows any origin to connect.</li>
+<li><strong>Wildcard (<code>*</code>)</strong>: Setting <code>allowed_origins</code> to <code>*</code> allows any origin to connect.</li>
 <li><strong>Security Implications of <code>*</code></strong>:<blockquote>
 <p>[!WARNING]
-Using <code>LEMONADE_ALLOWED_ORIGINS=*</code> permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if <code>LEMONADE_API_KEY</code> is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.</p>
+Using <code>allowed_origins=*</code> permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if <code>LEMONADE_API_KEY</code> is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.</p>
 </blockquote>
 </li>
-<li><strong>Local/Loopback &amp; Desktop Access</strong>: Loopback addresses (<code>localhost</code>, <code>127.0.0.1</code>, <code>[::1]</code>, <code>*.localhost</code>) and custom desktop application schemes (<code>file://</code>, <code>app://.</code>, <code>vscode-webview://</code>, <code>jan://</code>, etc.) are permitted for local client connections. Opaque <code>null</code> origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in <code>LEMONADE_ALLOWED_ORIGINS</code> to prevent CSWSH attacks.</li>
+<li><strong>Local/Loopback, Desktop &amp; Same-Origin Access (Zero-Configuration)</strong>:</li>
+<li><strong>Loopback &amp; Subdomains</strong>: Loopback addresses (<code>localhost</code>, <code>127.0.0.1</code>, <code>[::1]</code>, <code>*.localhost</code>) are permitted automatically.</li>
+<li><strong>Native Desktop Apps</strong>: Native desktop application schemes (<code>lemonade://</code>, <code>file://</code>, <code>app://.</code>, <code>vscode-webview://</code>, <code>jan://</code>, etc.) are permitted for client connections.</li>
+<li><strong>Same-Origin LAN &amp; mDNS Web App Access</strong>: Direct browser requests to Lemonade's built-in web interface over active network interfaces (e.g. <code>http://192.168.1.50:13305/app</code>, <code>http://100.100.x.x:13305/app</code>) and local mDNS hostnames (<code>http://&lt;hostname&gt;.local:13305/app</code>) are dynamically permitted without manual configuration because they are same-origin to the server's own interfaces.</li>
+<li><strong>When Allowed Origins Must Be Configured</strong>:</li>
+<li><strong>Cross-Origin Web Applications</strong>: Any external or third-party web application hosted on a different domain or port connecting to Lemonade in the browser (e.g. a web UI hosted at <code>https://app.lemonade.dev</code> or <code>http://localhost:3000</code> calling Lemonade on <code>http://192.168.1.50:13305</code>).</li>
+<li><strong>Reverse Proxies &amp; TLS Frontends</strong>: Reverse proxies, tunnels, or frontends terminating TLS (e.g., <code>https://lemonade.example.com</code> or Tailscale Serve at <code>https://mybox.tailnet.ts.net</code>). Because proxies forward HTTPS requests to an HTTP server and present external hostnames not belonging to local network interfaces, their external origins must be explicitly allowlisted. (By contrast, direct access via a local Tailscale interface IP <code>http://100.x.y.z:13305</code> is zero-config).</li>
+<li><strong>Sandboxed Frames</strong>: Opaque <code>null</code> origins (e.g. from sandboxed browser iframes) are rejected unless explicitly listed in <code>allowed_origins</code> to prevent CSWSH attacks.<blockquote>
+<p>[!NOTE]
+When an explicit <code>allowed_origins</code> list is configured, it is authoritative: zero-configuration fallback for unlisted non-loopback LAN origins is disabled. If you access the server through both a reverse proxy and direct LAN IP in a browser, include both in <code>allowed_origins</code>.</p>
+</blockquote>
+</li>
 </ul>
 <h2 id="model-synchronization-auto-updates">Model Synchronization &amp; Auto-Updates</h2>
 <p>Lemonade supports manual model synchronization via <code>lemonade update-models</code> as well as automatic background updates.</p>

@@ -2588,7 +2588,7 @@
 <p><code>lemond</code>'s configuration has two properties, <code>models_dir</code> and <code>extra_models_dir</code>, that determine where <code>lemond</code> will look when listing, pulling, and loading models.</p>
 <ul>
 <li><code>models_dir</code> is the primary model store, where <code>lemond</code> will <code>pull</code> models to.</li>
-<li><code>extra_models_dir</code> is a search path for GGUF LLMs that can be imported into <code>lemond</code>.</li>
+<li><code>extra_models_dir</code> is a search path for GGUF models (chat, embedding, or reranking) that can be imported into <code>lemond</code>.</li>
 </ul>
 <h3 id="sharing-models-with-other-apps">Sharing Models With Other Apps</h3>
 <p>The default value for <code>models_dir</code> is <code>"auto"</code>, which means "respect my user's <code>HF_HOME</code> and <code>HF_HUB_CACHE</code> environment variables, in accordance with the Hugging Face Hub standard." If those environment variables are not set, it defaults to <code>~/.cache/huggingface/hub</code>. This directory is Lemonade's shared model-hub cache for both Hugging Face and ModelScope.</p>
@@ -2704,6 +2704,13 @@ lemonade.exe config set extra_models_dir="./example_extra_models_dir"
 <blockquote>
 <p>Note: models imported via <code>extra_models_dir</code> will have the <code>extra.</code> prefix in the <code>list</code> command and <code>/v1/models</code> endpoint.</p>
 <p>Tip: <code>extra_models_dir</code> can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.</p>
+</blockquote>
+<p><strong>Folder convention:</strong> the folder a model sits in tells the server how to run it. Filenames are never used to guess.</p>
+<p>Use the reserved top-level directories <code>chat</code>, <code>embeddings</code>, and <code>reranking</code> to select how imported models run. Files directly inside a reserved directory, and models in its nested folders, inherit that mode. Models at the root or under any other directory default to chat.</p>
+<p>Direct numbered shards are grouped when their filenames declare the same shard set. A direct <code>mmproj</code> is attached only when the reserved directory contains one main model. Convention: if a reserved directory contains multiple vision models, place each model and its <code>mmproj</code> together in their own subdirectory. This makes it clear which files belong together.</p>
+<p>Reserved directory names must match exactly: <code>embeddings</code> is reserved, while <code>Embedding</code>, <code>embedding</code>, and <code>embeddings 2</code> are ordinary directories. The server does not try to infer near-matches because doing so could accidentally select the wrong runtime behavior.</p>
+<blockquote>
+<p>Upgrading: if you already have a top-level folder named <code>chat</code>, <code>embeddings</code>, or <code>reranking</code>, its contents were previously listed as a single model called <code>extra.chat</code>, <code>extra.embeddings</code>, or <code>extra.reranking</code>. Those files are now listed individually by filename. The old name is still accepted in requests, so existing configs and scripts keep working.</p>
 <p>Note: When an existing <code>extra_models_dir</code> is set at runtime, the path must be a readable directory for the <code>lemond</code> process. Permission or I/O failures are rejected instead of replacing the current model view. A path that does not exist yet is allowed and can be picked up later by the directory watcher.</p>
 </blockquote>
 <h2 id="customization">Customization</h2>

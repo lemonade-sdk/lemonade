@@ -4350,7 +4350,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>.<span class="w"> </
 - Single-instance protection prevents multiple tray apps</p>
 <h3 id="logging-and-console-output">Logging and Console Output</h3>
 <p>When running <code>LemonadeServer.exe</code> or <code>lemond</code>:
-- <strong>Log File:</strong> Direct runs write logs to a persistent log file (default: <code>%TEMP%\lemonade-server.log</code> on Windows). When <code>lemond</code> runs as the systemd service, logs go to the journal instead.
+- <strong>Log File:</strong> Direct CLI server runs (<code>lemond</code>) default to standard console output (<code>stdout</code>/<code>stderr</code>) with file logging disabled (<code>"auto"</code> mode), allowing systemd, launchd, container runtimes, and CI runners to capture and rotate logs natively. When running via <code>LemonadeServer.exe</code> (embedded tray app) or when file logging is explicitly enabled (<code>--log-file enabled</code> or a custom file path), logs are written to <code>lemonade-server.log</code> (under <code>%TEMP%</code> on Windows, <code>$XDG_RUNTIME_DIR/lemonade/</code> on Linux) with automatic log rotation (10 MB file cap, 5 rotated backups <code>.1</code> through <code>.5</code>, bounding steady-state log disk usage to ~60 MB under normal record sizes). Pre-existing legacy logs at startup are rotated into <code>.1</code> to preserve diagnostic history and pruned across subsequent rotation cycles.
 - <strong>Logs UI:</strong> Click "Show Logs" in the tray or use <code>lemonade logs</code> to open the desktop app's logs view
   - Connects to the server's WebSocket log stream
   - Shows retained recent log history plus live entries
