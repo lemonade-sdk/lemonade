@@ -213,8 +213,8 @@ def keyword_hits(pattern, text):
 
 def describe_source(in_diff, in_body):
     if in_diff and in_body:
-        return "diff and description"
-    return "description" if in_body else "diff"
+        return "the diff and description"
+    return "the PR description" if in_body else "the diff"
 
 
 def matches_prefix(path, prefixes):
@@ -234,7 +234,7 @@ def required_reviews(paths, changed_diff, body=""):
                 {
                     "role": "primary",
                     "area": vertical["name"],
-                    "trigger": "changes files under "
+                    "trigger": "changes to files under "
                     + " and ".join(f"`{p}`" for p in vertical["prefixes"]),
                     "evidence": touched,
                     "reviewers": vertical["reviewers"],
@@ -248,7 +248,7 @@ def required_reviews(paths, changed_diff, body=""):
             {
                 "role": "primary",
                 "area": FALLBACK_VERTICAL["name"],
-                "trigger": f"changes files outside {owned}",
+                "trigger": f"changes to files outside {owned}",
                 "evidence": unclaimed,
                 "reviewers": FALLBACK_VERTICAL["reviewers"],
             }
@@ -264,7 +264,8 @@ def required_reviews(paths, changed_diff, body=""):
                 {
                     "role": "expert",
                     "area": horizontal["name"],
-                    "trigger": f"mentions {', '.join(hits)} in its "
+                    "trigger": ", ".join(f"`{h}`" for h in hits)
+                    + " in "
                     + describe_source(in_diff, in_body),
                     "evidence": [],
                     "reviewers": horizontal["reviewers"],
@@ -298,9 +299,9 @@ def action_line(review, states, head_sha):
         who = " or ".join(f"@{r}" for r in stale)
         commit = (verdict(stale[0])[1] or "")[:7]
         return (
-            f"Ask {who} to approve again. They already approved this PR at commit "
-            f"{commit}, but it has since been updated to {head_sha[:7]}, and an "
-            f"approval only counts on the newest commit."
+            f"Ask {who} to approve again. Their approval was on commit `{commit}`, "
+            f"but the PR is now at `{head_sha[:7]}`, and only an approval on the "
+            f"newest commit counts."
         )
 
     blocked = [r for r in review["reviewers"] if verdict(r)[0] == "CHANGES_REQUESTED"]
@@ -339,56 +340,45 @@ def render(pr_number, author, head_sha, states, required):
 
     if not unmet:
         lines = [
-            "# Required reviewers: all set",
-            "",
-            "This PR has every approval this repository requires of it.",
-            "",
+            "**Required reviewers: all set.** This PR has every approval it needs."
         ]
     else:
         count = len(unmet)
-        touches = "one such part" if count == 1 else f"{count} such parts"
         lines = [
-            f"# Required reviewers: {count} still needed",
-            "",
-            "Some parts of this repository can only be changed with approval from a"
-            f" specific maintainer. This PR touches {touches}, so it cannot merge yet.",
-            "",
-            "## What to do",
+            f"**Required reviewers: {count} still needed.** Parts of this repository"
+            " can only change with a specific maintainer's approval, so this PR"
+            " cannot merge yet.",
             "",
         ]
         for i, review in enumerate(unmet, 1):
             lines.append(f"{i}. {action_line(review, states, head_sha)}")
-            lines.append("")
-            detail = f"   Required because this PR {review['trigger']}."
+            trigger = review["trigger"]
             if review["evidence"]:
-                shown = review["evidence"][:5]
+                shown = review["evidence"][:3]
                 rest = len(review["evidence"]) - len(shown)
                 files = ", ".join(f"`{path}`" for path in shown)
                 if rest:
-                    files += f", and {rest} more"
-                detail += f" Files: {files}"
-            lines.append(detail)
-            lines.append("")
-        lines.append(
-            "Only a review submitted as **Approve** counts, not a comment. Pushing a"
-            " new commit clears approvals given before it, so ask for approvals once"
-            " the branch has settled."
-        )
+                    files += f", +{rest} more"
+                trigger += f" ({files})"
+            lines.append(f"   Trigger: {trigger}")
         lines.append("")
+        lines.append(
+            "_Only a review submitted with Approve counts, and pushing a new commit"
+            " clears approvals given before it._"
+        )
 
     if met:
-        lines.append("## Already covered")
-        lines.append("")
+        covered = []
         for review in met:
             by = review["satisfied_by"]
             who = (
-                "you wrote this PR"
+                "you wrote it"
                 if author.lower() in {b.lower() for b in by}
-                else "approved by @" + ", @".join(by)
+                else "@" + ", @".join(by)
             )
-            trigger = review["trigger"][0].upper() + review["trigger"][1:]
-            lines.append(f"- {trigger}: {who}.")
+            covered.append(f"{review['trigger']} ({who})")
         lines.append("")
+        lines.append("_Already covered: " + "; ".join(covered) + "._")
 
     return "\n".join(lines) + "\n"
 

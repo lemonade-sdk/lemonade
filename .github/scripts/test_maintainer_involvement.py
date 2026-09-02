@@ -111,9 +111,7 @@ def test_security_is_a_networking_horizontal_keyword():
 def test_horizontals_also_read_the_pr_body():
     required = reviews_for(["docs/README.md"], body="This is a security fix.")
     assert reviewer_sets(required) == {EVERYTHING_ELSE, NETWORKING}
-    assert (
-        trigger_for(required, NETWORKING_AREA) == "mentions security in its description"
-    )
+    assert trigger_for(required, NETWORKING_AREA) == "`security` in the PR description"
 
     required = reviews_for(["docs/README.md"], body="Rebuild against ROCm.")
     assert reviewer_sets(required) == {EVERYTHING_ELSE, ROCM}
@@ -121,12 +119,12 @@ def test_horizontals_also_read_the_pr_body():
 
 def test_trigger_names_where_the_keyword_was_found():
     required = reviews_for(["docs/README.md"], diff="tcp", body="unrelated")
-    assert trigger_for(required, NETWORKING_AREA) == "mentions tcp in its diff"
+    assert trigger_for(required, NETWORKING_AREA) == "`tcp` in the diff"
 
     required = reviews_for(["docs/README.md"], diff="tcp", body="cors matters")
     assert (
         trigger_for(required, NETWORKING_AREA)
-        == "mentions cors, tcp in its diff and description"
+        == "`cors`, `tcp` in the diff and description"
     )
 
 
