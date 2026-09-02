@@ -3374,3 +3374,21 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_DISCOVERY_CAPS_TEST_SRC}")
         COMMAND test_model_discovery_capabilities
     )
 endif()
+
+set(_MCP_MEDIA_MODEL_SELECTION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_media_model_selection.cpp")
+if(BUILD_TESTING AND EXISTS "${_MCP_MEDIA_MODEL_SELECTION_TEST_SRC}")
+    add_executable(
+        test_mcp_media_model_selection
+        test/cpp/test_mcp_media_model_selection.cpp
+    )
+    target_link_libraries(
+        test_mcp_media_model_selection
+        PRIVATE lemonade-server-core
+    )
+    add_cpp_ci_test(
+        McpMediaModelSelectionTest
+        CI ON
+        COMMAND test_mcp_media_model_selection
+    )
+endif()

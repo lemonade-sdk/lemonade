@@ -42,6 +42,7 @@ private:
     json tool_chat(const json& arguments);
     json tool_transcribe_audio(const json& arguments);
     json tool_generate_image(const json& arguments);
+    json tool_edit_image(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
 
@@ -51,15 +52,16 @@ private:
     //   3. a model of the right type that's already DOWNLOADED (no network);
     //   4. the tool's hard-coded default, but only when the caller passed
     //      `allow_download: true` (the default may be a multi-GB download).
-    // Returns the resolved model name, or — when nothing local exists and the
-    // caller did not opt into a download — a tool-result JSON (isError=true)
-    // asking the agent to supply a `model` or pass `allow_download: true`.
+    // When `required_capability` is non-empty, both explicit and automatic
+    // candidates must advertise that capability in model metadata. Capability-
+    // constrained resolution never falls back to a default download.
     std::variant<std::string, json> resolve_model_for_tool(
         const json& arguments,
         ModelType want_type,
         const char* type_str,
         const char* default_model,
-        bool allow_download);
+        bool allow_download,
+        std::string required_capability = {});
 
     static json text_content_block(const std::string& text);
     static json make_error_response(const json& id, int code, const std::string& message);

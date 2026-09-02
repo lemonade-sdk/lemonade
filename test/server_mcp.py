@@ -3,11 +3,13 @@ Integration tests for the MCP gateway endpoint (POST /mcp).
 
 Requires a Lemonade server to already be running on port 13305.
 
-Covers the JSON-RPC 2.0 envelope plus the four tools exposed by the gateway:
+Covers the JSON-RPC 2.0 envelope plus the gateway tools, including:
 - lemonade_list_models
 - lemonade_chat
 - lemonade_transcribe_audio   (smoke-tested via schema only; needs Whisper)
 - lemonade_generate_image     (smoke-tested via schema only; needs SD)
+- lemonade_edit_image         (selection/error path only; no GPU required)
+- lemonade_omni
 
 The "live" chat tool uses a small model so the suite stays fast.
 
@@ -220,7 +222,7 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(body["result"], {})
 
     def test_012_tools_list(self):
-        """tools/list must include the five gateway tools, each with a schema."""
+        """tools/list must include the six gateway tools, each with a schema."""
         response = _post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         body = response.json()
         tools = body["result"]["tools"]
@@ -230,6 +232,7 @@ class McpGatewayTests(ServerTestBase):
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
+            "lemonade_edit_image",
             "lemonade_omni",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
@@ -245,6 +248,15 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(required, {"messages"})
         self.assertIn("model", omni["inputSchema"]["properties"])
         self.assertIn("output_dir", omni["inputSchema"]["properties"])
+
+        edit = next(t for t in tools if t["name"] == "lemonade_edit_image")
+        edit_required = set(edit["inputSchema"].get("required", []))
+        self.assertEqual(edit_required, {"prompt", "image"})
+        edit_properties = edit["inputSchema"]["properties"]
+        self.assertIn("model", edit_properties)
+        self.assertIn("image", edit_properties)
+        self.assertNotIn("image_base64", edit_properties)
+        self.assertNotIn("allow_download", edit_properties)
 
     # ---------------------------------------------------------------------
     # tools/call error paths
@@ -387,6 +399,30 @@ class McpGatewayTests(ServerTestBase):
         body = response.json()
         self.assertTrue(body["result"]["isError"], msg=str(body))
         self.assertIn("Unknown model", body["result"]["content"][0]["text"])
+
+    def test_024_edit_image_rejects_image_without_edit_capability(self):
+        """An ordinary IMAGE model must fail capability validation before loading."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_edit_image",
+                    "arguments": {
+                        "model": "SD-Turbo",
+                        "prompt": "make it blue",
+                        # Empty on purpose: capability validation must happen
+                        # before image decoding or any model load/download.
+                        "image": "",
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        text = body["result"]["content"][0]["text"]
+        self.assertIn("does not advertise image-edit support", text)
 
     # ---------------------------------------------------------------------
     # Live tool invocations
