@@ -33,13 +33,12 @@ on:
   # repo's token; no PR code is checked out or executed.
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
-  # Re-run when an approval lands, dismissed, or changes, so the check reflects
-  # the current review state rather than the state at push time.
+  # Re-run when an approval lands, is dismissed, or changes, so the check
+  # reflects the current review state.
   pull_request_review:
     types: [submitted, dismissed, edited]
-  # Required checks are evaluated against the merge group, so this has to
-  # report there too or queued PRs wait on a check that never runs. The group
-  # ref names the PR, so the queue re-runs the same check against it.
+  # Required checks are evaluated against the merge group, and the group ref
+  # names the PR, so the queue re-runs the same check against it.
   merge_group:
   workflow_dispatch:
     inputs:
@@ -50,16 +49,14 @@ on:
 
 permissions:
   contents: read
-  # write so the check can keep one comment on the PR up to date; the failure
-  # is only actionable where the developer already is.
+  # write so the check can keep one comment on the PR up to date.
   pull-requests: write
 
 jobs:
   logic-tests:
     runs-on: ubuntu-latest
-    # A draft is not asking for review yet, so neither is this check. The field
-    # is absent on merge_group and workflow_dispatch, where the comparison is
-    # still true and the job runs.
+    # The field is absent on merge_group and workflow_dispatch, where the
+    # comparison is still true and the job runs.
     if: github.event.pull_request.draft != true
     steps:
       - uses: actions/checkout@v5
@@ -105,8 +102,8 @@ jobs:
             echo "::error::Could not resolve a PR number (event: ${{ github.event_name }})"
             exit 1
           fi
-          # Comment only from the PR itself. A merge_group run re-verifies the
-          # same PR, and a second comment there would say nothing new.
+          # A merge_group run re-verifies the PR the queue named; the comment
+          # belongs to the PR event.
           if [ "${{ github.event_name }}" = "merge_group" ]; then
             python .github/scripts/check_maintainer_involvement.py "$PR_NUMBER"
           else

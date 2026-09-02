@@ -25,22 +25,19 @@ import re
 import subprocess
 import sys
 
-# Verticals: a function of the repo that lives in known folders. Every PR needs
-# a primary review from the maintainer of each vertical it touches.
+# A vertical is a function of the repo living in known folders.
 VERTICALS = (
     {"name": "CLI", "prefixes": ("src/cpp/cli/",), "reviewers": ("bitgamma",)},
     {"name": "GUI", "prefixes": ("src/app/",), "reviewers": ("kpoineal",)},
 )
 
-# Anything not claimed by a vertical above falls to the project maintainers.
 FALLBACK_VERTICAL = {
     "name": "Everything else",
     "reviewers": ("jeremyfowers", "ramkrishna2910"),
 }
 
-# Horizontals: a function that cuts across folders, recognized by the words the
-# PR uses rather than the paths it touches. Adds an expert review on top of
-# whatever primary review the paths already require.
+# A horizontal cuts across folders and is recognized by the words the PR uses.
+# Its review is additive to whatever the paths already require.
 HORIZONTALS = (
     {
         "name": "Networking & security",
@@ -54,9 +51,8 @@ HORIZONTALS = (
     },
 )
 
-# A keyword only counts as its own token. Bare \b would reject tcp_port and
-# cors_config, which are the names worth catching; letters and digits alone are
-# what turn readsecurity and -iTCP:13305 into false triggers.
+# Underscores and punctuation bound a keyword; adjacent letters and digits do
+# not, so tcp_port counts and readsecurity does not.
 for _horizontal in HORIZONTALS:
     _horizontal["pattern"] = re.compile(
         "(?<![A-Za-z0-9])(?:"
@@ -70,8 +66,7 @@ for _horizontal in HORIZONTALS:
 NON_VERDICT_REVIEW_STATES = ("COMMENTED", "PENDING")
 
 
-# Identifies this workflow's own comment so each run edits it in place instead
-# of stacking a new one onto the PR.
+# Identifies this workflow's own comment across runs.
 COMMENT_MARKER = "<!-- required-reviewers-check -->"
 
 
@@ -115,7 +110,7 @@ def gh_api_write(path, repo, method, payload):
 def gh_api_json(path, repo, paginate=False):
     raw = gh_api(path, repo, paginate=paginate)
     if paginate:
-        # --paginate concatenates one JSON array per page; merge them.
+        # --paginate concatenates one JSON array per page.
         decoder = json.JSONDecoder()
         merged, index = [], 0
         while index < len(raw):
@@ -293,8 +288,7 @@ def evaluate(required, author, approvers):
 def action_line(review, states, head_sha):
     """One instruction a reader can act on without knowing the policy.
 
-    Whatever the required reviewers have already done shapes the ask, so the
-    reader never has to reconcile the instruction against a separate status.
+    The ask reflects what the required reviewers have already done.
     """
     names = " or ".join(f"@{r}" for r in review["reviewers"])
     verdict = lambda r: states.get(r.lower(), (None, None))
