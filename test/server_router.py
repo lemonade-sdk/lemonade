@@ -1585,11 +1585,14 @@ class RouterTests(ServerTestBase):
         self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
         print(f"[OK] default knobs -> {CAPABLE_MODEL} (fits {ctx_size})")
 
-        # A large safety_margin inflates the same estimate past the window.
-        decision = route("user.Test-Router-KnobMargin", {"safety_margin": 500.0}, 8)
+        # A safety_margin inflates the same estimate past the candidate's
+        # window. The prompt estimates at 11 tokens, so 200x lands the
+        # requirement at 2208 (+8 headroom): past this candidate's 2048, still
+        # inside the default's window, which has to stay reachable.
+        decision = route("user.Test-Router-KnobMargin", {"safety_margin": 200.0}, 8)
         self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
         self.assertIn(f"capacity:{CAPABLE_MODEL}", self._trace_map(decision))
-        print(f"[OK] safety_margin=500 skips {CAPABLE_MODEL}")
+        print(f"[OK] safety_margin=200 skips {CAPABLE_MODEL}")
 
         # generation_headroom is the fallback for a request that names no
         # max_tokens: reserving more than the whole window makes it unfit.

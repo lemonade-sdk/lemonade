@@ -22,24 +22,16 @@ inline std::size_t sse_event_end(const std::string& buffer) {
 }
 
 // Withholds a streaming attempt's bytes until its first SSE *data* event is
-// known (#2959). A backend length rejection is delivered as a data event with
-// no data event before it, so it can be swallowed and the request re-routed
-// while the client has still seen nothing that matters.
+// known (#2959). A backend length rejection is delivered as that first data
+// event, so it can be swallowed and the request re-routed while the client has
+// seen nothing that matters. One arriving after real content was released
+// cannot be undone, so it passes through unchanged.
 //
-// Three things this must get right:
-//  - SSE comments (`: ping` keep-alives, which StreamingProxy can emit before
-//    the backend's HTTP status is even known, since it assumes 200 until told
-//    otherwise) carry no payload. They are forwarded immediately to preserve
-//    liveness but do NOT settle the decision — buffering them instead would let
-//    a client or proxy time out during a long prefill.
-//  - Once a rejection has been withheld, every later byte is swallowed too. The
-//    relays do honor a false write return and stop, but a source that ignored
-//    it must not be able to push the withheld rejection through afterwards.
-//  - A withheld attempt must not call done() on the inner sink: the caller is
-//    about to stream a different candidate into that same sink.
-//
-// A rejection that arrives *after* real content was released cannot be undone,
-// so it is passed through unchanged — the pre-existing behavior.
+// Keep-alive SSE comments (`: ping`, emitted before the backend's status is
+// known) go out immediately or a client times out during a long prefill, but
+// they do not settle the decision. Once a rejection is withheld every later
+// byte is swallowed, in case a source ignored the false write return, and
+// done() is never called: the caller reuses the sink for the next candidate.
 class ContextOverflowProbeSink {
 public:
     explicit ContextOverflowProbeSink(httplib::DataSink& inner) : inner_(inner) {}

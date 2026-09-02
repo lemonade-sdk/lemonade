@@ -153,20 +153,18 @@ private:
     // Run a collection.router model's routing engine and return the selected
     // candidate plus the full Decision. Returns std::nullopt when routing did
     // not engage (no parsed policy), so callers leave the request untouched.
-    // Candidates whose context window cannot fit the estimated request are
-    // skipped (capacity filtering, #2959); `excluded_candidates` seeds that
-    // exclusion set so the inference-time backstop can retry past candidates
-    // that already failed live. Throws ContextWindowExceededException when no
-    // candidate (nor the default) fits.
+    // Candidates that cannot fit the request are skipped (see
+    // routing_capacity.h); `excluded_candidates` seeds that exclusion set so
+    // the inference-time backstop can retry past candidates that already failed
+    // live. Throws ContextWindowExceededException when nothing fits.
     std::optional<RouterDispatchResult> route_collection_request(
         const nlohmann::json& request_json,
         const ModelInfo& collection_info,
         const std::set<std::string>& excluded_candidates = {});
 
-    // Per-dispatch memoization for capacity filtering. Resolving an unloaded
-    // candidate's window probes system memory and runs the auto-tune
-    // computation, so a collection with several unloaded local candidates
-    // would otherwise repeat both once per candidate, per request.
+    // Resolving an unloaded model's window probes system memory and runs the
+    // auto-tune computation, so a collection listing several of them would
+    // otherwise repeat both once per entry, per request.
     struct CandidateWindowCache {
         std::map<std::string, int64_t> windows;
         std::map<DeviceType, double> available_memory_gb;
@@ -224,14 +222,12 @@ private:
         std::optional<RouterDispatchResult>& route_dispatch,
         const std::function<nlohmann::json(const nlohmann::json&)>& forward);
 
-    // The streaming counterpart. A backend length rejection arrives as the
-    // first SSE event with nothing written before it, so it is withheld from
-    // the client while the same bounded re-route runs; only the surviving
-    // attempt's bytes are released. The response is already committed as
-    // 200/text/event-stream, which every outcome here also produces, so no
-    // status or header ever needs revising — except `x-lemonade-route`, which
-    // was set from the initial decision; the first SSE event's
-    // `x_lemonade_route` carries the candidate that actually answered.
+    // The streaming counterpart; see ContextOverflowProbeSink for how a
+    // rejection is withheld while the re-route runs. The response is already
+    // committed as 200/text/event-stream, which every outcome here also
+    // produces, so no status or header ever needs revising — except
+    // `x-lemonade-route`, which was set from the initial decision; the first
+    // SSE event's `x_lemonade_route` carries the candidate that answered.
     void stream_with_context_overflow_backstop(
         httplib::DataSink& sink,
         nlohmann::json& request_json,

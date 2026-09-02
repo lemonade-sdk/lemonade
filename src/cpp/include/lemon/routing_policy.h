@@ -425,12 +425,10 @@ NamedLeafFactories make_deterministic_leaf_factories();
 // Policy + engine (constructor signature only here)
 // ---------------------------------------------------------------------------
 
-// Capacity-filtering knobs (`routing.capacity`, #2959). Dispatch estimates a
-// request's token footprint and skips candidates whose context window cannot
-// fit it; these control how conservative that estimate is. Operators mixing a
-// small local candidate with an expensive cloud default need to control that
-// boundary, because over-skipping silently shifts traffic (and cost) to the
-// larger candidate.
+// Knobs for the skip rule in routing_capacity.h (`routing.capacity`, #2959):
+// how conservative the estimate behind it is. Operators mixing a small local
+// model with an expensive cloud default need that boundary, because
+// over-skipping silently shifts traffic (and cost) to the larger one.
 struct CapacitySettings {
     // Multiplier applied to the estimated prompt size before comparing against
     // a window. The estimate is a chars/4 approximation, so it undercounts for

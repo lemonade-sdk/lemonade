@@ -3939,10 +3939,8 @@ void Server::stream_with_context_overflow_backstop(
         return;
     }
 
-    // A replacement may itself be a no-window candidate that is also too small,
-    // so stopping after the first re-route would hand the client exactly the
-    // hard failure this is here to avoid. The budget bounds both how many
-    // re-routes and how many model loads one request may spend recovering.
+    // Same bounded walk as retry_dispatch_on_context_overflow; see there for
+    // why one re-route is not enough.
     RerouteBudget budget = make_reroute_budget(route_dispatch->requested_model);
     std::set<std::string> failed;
     std::string withheld;
@@ -4362,8 +4360,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
             auto response = router_->chat_completion(request_json);
 
-            // The preflight estimate can undercount; if the routed candidate
-            // still rejected the prompt for length, re-route once past it.
             response = retry_dispatch_on_context_overflow(
                 std::move(response), request_json, route_dispatch,
                 [this](const nlohmann::json& body) {
@@ -6083,8 +6079,6 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
 
             auto response = router_->responses(request_json);
 
-            // The preflight estimate can undercount; if the routed candidate
-            // still rejected the prompt for length, re-route once past it.
             response = retry_dispatch_on_context_overflow(
                 std::move(response), request_json, route_dispatch,
                 [this](const nlohmann::json& body) {

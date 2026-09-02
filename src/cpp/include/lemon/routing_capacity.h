@@ -61,8 +61,7 @@ bool fits(int64_t prompt_tokens, int64_t headroom, int64_t window,
 // user input cannot trigger a re-route.
 bool is_context_overflow_error(const json& response);
 
-// True when one SSE event body ("data: {...}") is such a rejection. Used to
-// intercept a streaming overflow before any bytes reach the client.
+// True when one SSE event body ("data: {...}") is such a rejection.
 bool sse_event_is_context_overflow(const std::string& event);
 
 } // namespace routing_capacity

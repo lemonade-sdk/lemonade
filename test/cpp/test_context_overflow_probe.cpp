@@ -1,17 +1,13 @@
 // Unit tests for ContextOverflowProbeSink (#2959).
 //
-// The streaming backstop rests on this sink withholding a backend length
-// rejection before any meaningful byte reaches the client. These tests pin the
-// three properties that guarantee is built on: a rejection as the first data
-// event is withheld and never forwarded (even if the producer ignores the false
-// write return), SSE keep-alive comments stay live without settling the
-// decision, and a rejection arriving after real content is passed through
-// rather than silently dropped.
+// Pins the three properties the streaming backstop rests on: a rejection as the
+// first data event is withheld and never forwarded (even when the producer
+// ignores the false write return), keep-alive comments stay live without
+// settling the decision, and a rejection after real content passes through.
 //
 // Compile (standalone):
 //   g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
-//       -I build/_deps/httplib-src \
-//       test/cpp/test_context_overflow_probe.cpp \
+//       -I build/_deps/httplib-src test/cpp/test_context_overflow_probe.cpp \
 //       src/cpp/server/routing_capacity.cpp -o test_context_overflow_probe
 
 #include "lemon/context_overflow_probe_sink.h"
