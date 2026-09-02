@@ -92,6 +92,36 @@ only reports success once the backend confirms it's actually asleep:
   and retrying forever against a backend that can never sleep would just waste
   a `/props` round trip on every tick for no benefit.
 
+### Downsize eligibility tracks what's baked in, not the live `auto_evict` value
+
+`--sleep-idle-seconds` is fixed for the life of the `llama-server` subprocess:
+it was baked in (or not) once, when `auto_evict` was resolved at `load()`
+time. A later `/internal/set` or recipe update changes the live `auto_evict`
+config, but can't add or remove a flag from an already-running process.
+
+`EvictionEngine::evaluate_servers()` accounts for this by asking each server
+`WrappedServer::downsize_effective_for_this_instance(bool auto_evict_config)`
+whether downsize is actually eligible for *this instance*, and uses that
+result, not the live `auto_evict` value, to decide whether to collect the
+model for downsize. The default implementation just mirrors the passed-in
+live config (`return auto_evict_config;`), so every non-llamacpp backend,
+which has no launch-time state to diverge from, behaves exactly as if the
+live value were used directly. `LlamaCppServer` overrides it to return
+`sleep_idle_enabled_` instead, which reflects what was actually baked into
+`--sleep-idle-seconds` at load time:
+
+- If the model was loaded with `auto_evict=false` and later toggled on,
+  `downsize_eligible` stays `false` (the flag was never baked in), so the
+  model is never collected for downsize.
+- If the model was loaded with `auto_evict=true` and later toggled off,
+  `downsize_eligible` stays `true` (the flag is baked in and llama-server's
+  timer is still running), so the model is still collected and verified via
+  the `/props` check above, keeping `ModelState` in sync with the backend.
+
+Hard-idle-eviction and VRAM-pressure eviction are gated purely on the live
+`auto_evict` value instead, since unloading the process outright is a
+genuinely config-driven action with no launch-time state to track.
+
 The **wake** direction (`DOWNSIZED` → `READY`, in `WrappedServer::acquire_for_inference()`
 calling `restore()`) is still optimistic for every backend, including
 llama.cpp: `restore()` is a no-op, and Lemonade flips to `READY` before

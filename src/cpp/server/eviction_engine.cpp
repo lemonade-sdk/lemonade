@@ -88,7 +88,14 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
                 auto_evict = recipe_opts["auto_evict"].get<bool>();
             }
 
-            if (!auto_evict) continue;
+            // Whether downsize() will do something real for this already-running
+            // instance, decoupled from the live auto_evict value above: a runtime
+            // auto_evict toggle (/internal/set, or a recipe update) can't add or
+            // remove a launch-time flag from an already-running backend
+            // subprocess (see WrappedServer::downsize_effective_for_this_instance).
+            bool downsize_eligible = server->downsize_effective_for_this_instance(auto_evict);
+
+            if (!auto_evict && !downsize_eligible) continue;
 
             long evict_timeout_sec = 300;
             long downsize_timeout_sec = kDefaultDownsizeIdleTimeoutSec;
@@ -123,8 +130,10 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
 
             ModelState state = server->get_state();
 
-            // 1. Time-based hard idle eviction
-            if (idle_ms >= evict_timeout_sec * 1000 && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
+            // 1. Time-based hard idle eviction. Stays purely live-auto_evict-driven:
+            // turning auto_evict off must still stop Lemonade from unloading the
+            // process outright, regardless of downsize_eligible.
+            if (auto_evict && idle_ms >= evict_timeout_sec * 1000 && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
                 LOG(INFO) << "Model " << server->get_model_name() << " reached evict idle timeout (" << evict_timeout_sec << "s). Evicting." << std::endl;
                 server->set_state(ModelState::EVICTING);
                 best_candidate_for_eviction = server;
@@ -135,13 +144,16 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
             // 2. Time-based soft idle (downsize) - collect the candidate only. The
             // model is not claimed here; try_begin_downsize() below atomically
             // re-checks that it is still idle and transitions it to DOWNSIZING.
-            if (idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {
+            // Gated on downsize_eligible (not auto_evict) so this tracks what's
+            // actually baked into the running instance, not the live config.
+            if (downsize_eligible && idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {
                 LOG(INFO) << "Model " << server->get_model_name() << " reached downsize idle timeout (" << downsize_timeout_sec << "s). Marking for downsize." << std::endl;
                 models_to_downsize.push_back(server->get_model_name());
             }
 
-            // 3. VRAM Pressure tracking
-            if (pressure_evict && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
+            // 3. VRAM Pressure tracking. Stays purely live-auto_evict-driven, same
+            // reasoning as step 1.
+            if (auto_evict && pressure_evict && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
                 if (eviction_score > highest_eviction_score) {
                     highest_eviction_score = eviction_score;
                     best_candidate_for_eviction = server;

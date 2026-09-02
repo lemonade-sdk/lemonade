@@ -33,6 +33,7 @@ from utils.server_base import (
     OpenAI,
     AsyncOpenAI,
     httpx,
+    set_server_config,
 )
 from utils.capabilities import (
     skip_if_unsupported,
@@ -1170,6 +1171,31 @@ class LLMTests(ServerTestBase):
             f"cache_tokens_total={data['cache_tokens_total']}"
         )
 
+    def _wait_for_model_status(self, model, timeout_seconds, target_status="downsized"):
+        """Poll /health until `model` reports `target_status`, or until
+        `timeout_seconds` elapses. Returns the last observed status (None if
+        the model never appeared in all_models_loaded). Avoids a hardcoded
+        sleep so this doesn't flake if Lemonade's idle timer fires late under
+        CI load."""
+        poll_deadline = time.time() + timeout_seconds
+        status = None
+        while time.time() < poll_deadline:
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200)
+            matches = [
+                m
+                for m in health_response.json().get("all_models_loaded", [])
+                if m.get("model_name") == model
+            ]
+            if matches:
+                status = matches[0].get("status")
+                if status == target_status:
+                    return status
+            time.sleep(0.5)
+        return status
+
     @skip_if_unsupported("sleep_idle_downsize")
     def test_023c_downsize_sleep_wakes_transparently(self):
         """A model downsized via --sleep-idle-seconds still serves the next
@@ -1209,29 +1235,9 @@ class LLMTests(ServerTestBase):
             stream=False,
         )
 
-        # Poll Lemonade's own idle-timer-driven status instead of blindly
-        # sleeping a fixed duration. This reflects Lemonade's belief that
-        # downsize happened, not a live readback of llama-server's actual sleep
-        # state -- see "ModelState::DOWNSIZED is best-effort, not a live
-        # readback" in docs/dev/llamacpp-runtime-defaults.md -- but it is still
-        # an observable signal rather than a hardcoded wait that can flake if
-        # the idle timer takes longer to fire under CI load.
-        poll_deadline = time.time() + downsize_idle_timeout + 15
-        status = None
-        while time.time() < poll_deadline:
-            health_response = requests.get(
-                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(health_response.status_code, 200)
-            matches = [
-                m
-                for m in health_response.json().get("all_models_loaded", [])
-                if m.get("model_name") == model
-            ]
-            if matches and matches[0].get("status") == "downsized":
-                status = matches[0]["status"]
-                break
-            time.sleep(0.5)
+        status = self._wait_for_model_status(
+            model, downsize_idle_timeout + 15, target_status="downsized"
+        )
         self.assertEqual(
             status,
             "downsized",
@@ -1266,6 +1272,152 @@ class LLMTests(ServerTestBase):
             "expected a cold re-prefill on wake (llama-server recreates its "
             f"RAM prompt cache empty on reload), got stats: {data}",
         )
+
+    @skip_if_unsupported("sleep_idle_downsize")
+    def test_023d_downsize_with_merge_args_false(self):
+        """merge_args=False must not drop --sleep-idle-seconds: it's applied
+        to the resolved args before merge_args' early-return in
+        resolve_llamacpp_runtime_args(), not merged in as one of the
+        defaults that early-return skips."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+        downsize_idle_timeout = 3
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": model,
+                "auto_evict": True,
+                "downsize_idle_timeout": downsize_idle_timeout,
+                "merge_args": False,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Reply with the single word: ready."}
+            ],
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        status = self._wait_for_model_status(
+            model, downsize_idle_timeout + 15, target_status="downsized"
+        )
+        self.assertEqual(
+            status,
+            "downsized",
+            "model never reported status='downsized' via /health within "
+            f"{downsize_idle_timeout + 15}s of going idle with merge_args=False "
+            "-- --sleep-idle-seconds may have been dropped by the merge_args "
+            "early-return",
+        )
+
+    @skip_if_unsupported("sleep_idle_downsize")
+    def test_023e_downsize_toggle_off_after_load_still_tracks(self):
+        """Toggling the global auto_evict config off after a model was loaded
+        with --sleep-idle-seconds baked in must not desync ModelState: the
+        backend still sleeps on its own timer regardless of the live config,
+        so EvictionEngine must keep tracking it via
+        WrappedServer::downsize_effective_for_this_instance() rather than
+        skipping it because the live auto_evict now reads false."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        try:
+            set_server_config({"auto_evict": True})
+
+            client = self.get_openai_client()
+            model = self.get_test_model("llm")
+            downsize_idle_timeout = 3
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": model,
+                    "downsize_idle_timeout": downsize_idle_timeout,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200)
+
+            client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "user", "content": "Reply with the single word: ready."}
+                ],
+                max_completion_tokens=10,
+                stream=False,
+            )
+
+            set_server_config({"auto_evict": False})
+
+            status = self._wait_for_model_status(
+                model, downsize_idle_timeout + 15, target_status="downsized"
+            )
+            self.assertEqual(
+                status,
+                "downsized",
+                "model never reported status='downsized' after auto_evict was "
+                "toggled off post-load -- ModelState desynced from the "
+                "backend's still-running --sleep-idle-seconds timer",
+            )
+        finally:
+            set_server_config({"auto_evict": False})
+
+    @skip_if_unsupported("sleep_idle_downsize")
+    def test_023f_downsize_toggle_on_after_load_no_false_positive(self):
+        """Toggling the global auto_evict config on after a model was loaded
+        WITHOUT --sleep-idle-seconds must not produce a false-positive
+        'downsized' status: the backend has no sleep timer to ever fire, so
+        EvictionEngine must not collect it for downsize just because the live
+        auto_evict now reads true."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        try:
+            set_server_config({"auto_evict": False})
+
+            client = self.get_openai_client()
+            model = self.get_test_model("llm")
+            downsize_idle_timeout = 3
+
+            load_response = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": model,
+                    "downsize_idle_timeout": downsize_idle_timeout,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_response.status_code, 200)
+
+            client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "user", "content": "Reply with the single word: ready."}
+                ],
+                max_completion_tokens=10,
+                stream=False,
+            )
+
+            set_server_config({"auto_evict": True})
+
+            status = self._wait_for_model_status(
+                model, downsize_idle_timeout + 15, target_status="downsized"
+            )
+            self.assertNotEqual(
+                status,
+                "downsized",
+                "model falsely reported status='downsized' after auto_evict was "
+                "toggled on post-load -- the backend was never launched with "
+                "--sleep-idle-seconds and has no sleep timer to fire",
+            )
+        finally:
+            set_server_config({"auto_evict": False})
 
     @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):

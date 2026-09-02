@@ -30,6 +30,12 @@ public:
     // Downsize the model on soft idle
     bool downsize() override;
 
+    // Ignores the live auto_evict config on purpose: sleep_idle_enabled_
+    // reflects what was actually baked into --sleep-idle-seconds at load()
+    // time, which a runtime auto_evict toggle cannot change for an
+    // already-running process. See EvictionEngine::evaluate_servers().
+    bool downsize_effective_for_this_instance(bool auto_evict_config) const override;
+
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;

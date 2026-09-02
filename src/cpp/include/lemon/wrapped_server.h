@@ -460,6 +460,18 @@ public:
         // No-op by default
     }
 
+    // Whether downsize() will do something real for *this already-running*
+    // instance, independent of whatever the live auto_evict config says right
+    // now. Most backends implement downsize() as fully config-driven -- no
+    // state is fixed at process launch -- so the default just mirrors the
+    // live config value passed in. llama.cpp overrides this because
+    // --sleep-idle-seconds is baked into launch args and toggling auto_evict
+    // at runtime (/internal/set, or a recipe update) cannot add or remove a
+    // flag from an already-running subprocess.
+    virtual bool downsize_effective_for_this_instance(bool auto_evict_config) const {
+        return auto_evict_config;
+    }
+
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
     virtual json chat_completion(const json& request) override {

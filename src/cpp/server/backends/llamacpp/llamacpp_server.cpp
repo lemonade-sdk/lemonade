@@ -649,6 +649,10 @@ bool LlamaCppServer::downsize() {
     return is_sleeping;
 }
 
+bool LlamaCppServer::downsize_effective_for_this_instance(bool /*auto_evict_config*/) const {
+    return sleep_idle_enabled_;
+}
+
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
     if (response.is_object() && response.contains("model")) {
         response["model"] = request.value("model", get_model_name());
