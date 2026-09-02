@@ -2,7 +2,7 @@
 
 We're excited that you are interested in contributing!
 
-Please carefully review Lemonade's [philosophy](./philosophy.md) before making a pull request. As a contributor, you can anticipate the vast majority of reviewer feedback by aligning your design to the philosophy.
+Please carefully review Lemonade's [AI content policy](./ai-content-policy.md) and [philosophy](./philosophy.md) before making a pull request. As a contributor, you can anticipate the vast majority of reviewer feedback by aligning your design to the philosophy.
 
 ## Development Process
 
@@ -45,21 +45,6 @@ Each contribution needs to:
 6. Sustain the overall code quality and standards of the rest of the repo.
 
 The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.
-
-### AI Contribution Policy
-
-Contributors are welcome to use AI tools while working on Lemonade. However, contributors remain fully responsible for the code they submit.
-
-If you use AI-assisted coding, please make sure that you:
-
-1. Understand the generated code before submitting it.
-2. Review the full diff yourself.
-3. Remove unrelated or unnecessary changes.
-4. Test the result locally where possible.
-
-AI can make it easy to generate large changes, but large or unfocused changes are harder for maintainers to review and are less likely to be accepted quickly.
-
-__Please do not use AI to write issues__. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.
 
 ## Review Process
 
