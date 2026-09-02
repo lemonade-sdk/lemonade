@@ -226,6 +226,163 @@ jobs:
           path: ${{ steps.build_binary.outputs.output-dir }}/*.deb
           retention-days: 30
 
+  upgrade-test:
+    name: Upgrade test (${{ matrix.codename }})
+    needs: [prepare-matrix, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Needs the binary .deb, which only builds in the merge queue or on a
+    # ci:distros-labelled PR (see the `package` job's build steps).
+    if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - release: "26.04"
+            codename: resolute
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu${{ matrix.release }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Download new build (.deb)
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-${{ matrix.codename }}-deb
+          path: new-deb
+
+      - name: Install prerequisites
+        shell: bash
+        run: |
+          set -e
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl procps software-properties-common util-linux
+
+      - name: Install last stable from PPA
+        id: stable
+        shell: bash
+        run: |
+          set -e
+          add-apt-repository -y ppa:lemonade-team/stable
+          apt-get update
+          # Skip gracefully on releases the stable PPA does not build for yet
+          # (e.g. a brand-new Ubuntu). Nothing to upgrade from → nothing to test.
+          cand=$(apt-cache policy lemonade-server | awk '/Candidate:/ {print $2}')
+          if [ -z "$cand" ] || [ "$cand" = "(none)" ]; then
+            echo "No stable lemonade-server candidate for ${{ matrix.codename }}; skipping."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          apt-get install -y lemonade-server
+          echo "Installed stable version: $(dpkg-query -W -f='${Version}' lemonade-server)"
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+
+      - name: Start stable lemond
+        if: steps.stable.outputs.skipped != 'true'
+        uses: ./.github/actions/start-lemond-service
+        with:
+          port: '13305'
+          log-name: 'lemonade-server-stable.log'
+
+      - name: Seed config and download a model
+        if: steps.stable.outputs.skipped != 'true'
+        shell: bash
+        run: |
+          set -e
+          # Persist a benign, non-default config value (does not affect binding).
+          lemonade config set log_level=debug
+
+          # Download the purpose-built tiny CI model, retrying transient HF errors.
+          ok=false
+          for a in 1 2 3; do
+            if lemonade pull Tiny-Test-Model-GGUF; then ok=true; break; fi
+            echo "pull attempt $a failed; retrying..."; sleep 10
+          done
+          $ok
+
+          echo "=== baseline downloaded models ==="
+          lemonade list --downloaded
+          lemonade list --downloaded | grep 'Tiny-Test-Model-GGUF' | grep -q 'Yes'
+          echo "Baseline model present."
+
+      - name: Stop stable lemond
+        if: steps.stable.outputs.skipped != 'true'
+        shell: bash
+        run: |
+          pkill -u lemonade -f '/usr/bin/lemond' || true
+          for i in $(seq 1 15); do
+            curl -sf http://127.0.0.1:13305/live >/dev/null 2>&1 || break
+            sleep 1
+          done
+
+      - name: Upgrade to the new build
+        if: steps.stable.outputs.skipped != 'true'
+        shell: bash
+        run: |
+          set -e
+          DEB=$(ls new-deb/lemonade-server_*_amd64.deb 2>/dev/null | head -n1)
+          if [ -z "$DEB" ]; then
+            echo "ERROR: new lemonade-server .deb not found"; ls -la new-deb; exit 1
+          fi
+          echo "Upgrading to $DEB"
+          # git-describe versions can sort below the stable tag, so allow downgrades.
+          apt-get install -y --allow-downgrades "./$DEB" \
+            || { apt-get -f install -y; apt-get install -y --allow-downgrades "./$DEB"; }
+          echo "Upgraded version: $(dpkg-query -W -f='${Version}' lemonade-server)"
+
+      - name: Start upgraded lemond
+        if: steps.stable.outputs.skipped != 'true'
+        uses: ./.github/actions/start-lemond-service
+        with:
+          port: '13305'
+          log-name: 'lemonade-server.log'
+
+      - name: Assert config and model survived the upgrade
+        if: steps.stable.outputs.skipped != 'true'
+        shell: bash
+        run: |
+          set -e
+          echo "=== health ==="
+          curl -sf "http://127.0.0.1:${LEMONADE_PORT:-13305}/api/v1/health"; echo
+
+          echo "=== config after upgrade ==="
+          lemonade config
+          if ! lemonade config | grep -qiE 'log_level.*debug'; then
+            echo "FAIL: log_level=debug did not survive the upgrade"; exit 1
+          fi
+
+          echo "=== downloaded models after upgrade ==="
+          lemonade list --downloaded
+          if ! lemonade list --downloaded | grep 'Tiny-Test-Model-GGUF' | grep -q 'Yes'; then
+            echo "FAIL: Tiny-Test-Model-GGUF was lost during the upgrade"; exit 1
+          fi
+          echo "PASS: config and model survived the upgrade."
+
+      - name: Capture server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: upgrade-test-logs-${{ matrix.codename }}
+
+      - name: Print stable-run log
+        if: always()
+        shell: bash
+        run: |
+          echo "=== stable run log ==="
+          cat "$RUNNER_TEMP/lemonade-server-stable.log" 2>/dev/null || echo "(none)"
+
   upload-stable:
     name: Upload (Stable)
     strategy:
@@ -259,7 +416,7 @@ jobs:
   # to run on ordinary pull request pushes.
   gate:
     name: Launchpad PPA builds
-    needs: [prepare-matrix, package, package-arm64]
+    needs: [prepare-matrix, package, package-arm64, upgrade-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
