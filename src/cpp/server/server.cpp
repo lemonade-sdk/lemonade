@@ -392,6 +392,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
+    model_manager_->set_default_model_source_provider(
+        [this]() { return config_->default_model_source(); });
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -1566,8 +1568,12 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"source", info.source.empty() ? info.registry_source : info.source},
-                {"registry_source", info.registry_source},
+                {"source", info.source.empty()
+                    ? remote_registry_source_name(
+                        parse_remote_registry_source(info.registry_source))
+                    : info.source},
+                {"registry_source", remote_registry_source_name(
+                    parse_remote_registry_source(info.registry_source))},
                 {"components", public_components},
                 {"mmproj", info.mmproj()}
             };
@@ -3208,8 +3214,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
-        {"source", info.source.empty() ? info.registry_source : info.source},
-        {"registry_source", info.registry_source},
+        {"source", info.source.empty()
+            ? remote_registry_source_name(
+                parse_remote_registry_source(info.registry_source))
+            : info.source},
+        {"registry_source", remote_registry_source_name(
+            parse_remote_registry_source(info.registry_source))},
         {"labels", info.labels},
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
@@ -5824,6 +5834,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json download_request = collection_file_import
             ? request_json
             : nlohmann::json::object();
+        for (const char* field : {"source", "registry_source"}) {
+            if (request_json.contains(field)) {
+                download_request[field] = request_json[field];
+            }
+        }
 
         if (stream) {
             auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {

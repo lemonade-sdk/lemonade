@@ -217,6 +217,20 @@ static std::string effective_registry_source(const ModelInfo& info) {
     return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
 }
 
+void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
+    default_model_source_provider_ = std::move(provider);
+}
+
+RemoteRegistrySource ModelManager::download_source_for(const ModelInfo& info) const {
+    if (!info.registry_source.empty()) {
+        return parse_remote_registry_source(info.registry_source);
+    }
+    if (default_model_source_provider_) {
+        return parse_remote_registry_source(default_model_source_provider_());
+    }
+    return RemoteRegistrySource::HuggingFace;
+}
+
 static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
     const std::string raw_source = JsonUtils::get_or_default<std::string>(model_json, "source", "");
     const std::string explicit_registry = JsonUtils::get_or_default<std::string>(
@@ -4824,6 +4838,11 @@ void ModelManager::download_model(const std::string& model_name,
     }
 
     auto model_info = get_model_info(model_name);
+
+    const std::string download_source = requested_registry_source(model_data);
+    if (!download_source.empty() && backend_self_manages_downloads(model_info.recipe)) {
+        model_info.registry_source = download_source;
+    }
 
     if (model_data.contains("recipe_options")) {
         // Merge import recipe_options on top of the already-merged options
