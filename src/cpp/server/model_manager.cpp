@@ -3643,6 +3643,29 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         if (largest_mem_pool_gb > 0.0) {
             LOG(INFO, "ModelManager") << "  - Largest memory pool: " << std::fixed << std::setprecision(1) << largest_mem_pool_gb << std::endl;
         }
+        if (hardware.contains("amd_gpu") && hardware["amd_gpu"].is_array()) {
+            for (const auto& gpu : hardware["amd_gpu"]) {
+                if (!gpu.value("available", false)) continue;
+                std::string suffix = gpu.value("integrated", false) ? "integrated" : "discrete";
+                std::string software = gpu.value("software_version", "");
+                if (!software.empty()) {
+                    std::string edition = gpu.value("software_edition", "");
+                    const std::string edition_prefix = "AMD Software: ";
+                    if (edition.rfind(edition_prefix, 0) == 0) {
+                        edition.erase(0, edition_prefix.size());
+                    }
+                    suffix += ", " + (edition.empty() ? software : edition + " " + software);
+                }
+                std::string driver = gpu.value("driver_version", "");
+                if (!driver.empty()) suffix += ", driver " + driver;
+                LOG(INFO, "ModelManager") << "  - AMD GPU: " << gpu.value("name", "unknown")
+                          << " (" << suffix << ")" << std::endl;
+            }
+        }
+        if (hardware.contains("amd_gpu_error")) {
+            LOG(INFO, "ModelManager") << "  - AMD GPU: detection error: "
+                      << hardware["amd_gpu_error"].get<std::string>() << std::endl;
+        }
         if (system_info.contains("devices") && system_info["devices"].contains("nvidia_gpu")) {
             const auto& nvidia_gpus = system_info["devices"]["nvidia_gpu"];
             if (nvidia_gpus.is_array()) {

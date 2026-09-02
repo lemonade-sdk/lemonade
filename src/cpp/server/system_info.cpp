@@ -907,6 +907,15 @@ json SystemInfo::get_device_dict() {
             if (amd_igpu.virtual_gb > 0) {
                 gpu_json["virtual_mem_gb"] = amd_igpu.virtual_gb;
             }
+            if (!amd_igpu.driver_version.empty()) {
+                gpu_json["driver_version"] = amd_igpu.driver_version;
+            }
+            if (!amd_igpu.software_version.empty()) {
+                gpu_json["software_version"] = amd_igpu.software_version;
+            }
+            if (!amd_igpu.software_edition.empty()) {
+                gpu_json["software_edition"] = amd_igpu.software_edition;
+            }
             gpu_json["family"] = identify_rocm_arch_from_name(amd_igpu.name);
             if (!amd_igpu.error.empty()) {
                 gpu_json["error"] = amd_igpu.error;
@@ -930,6 +939,12 @@ json SystemInfo::get_device_dict() {
                 }
                 if (!gpu.driver_version.empty()) {
                     gpu_json["driver_version"] = gpu.driver_version;
+                }
+                if (!gpu.software_version.empty()) {
+                    gpu_json["software_version"] = gpu.software_version;
+                }
+                if (!gpu.software_edition.empty()) {
+                    gpu_json["software_edition"] = gpu.software_edition;
                 }
                 gpu_json["family"] = identify_rocm_arch_from_name(gpu.name);
                 if (!gpu.error.empty()) {
@@ -2799,7 +2814,15 @@ std::vector<GPUInfo> WindowsSystemInfo::detect_amd_gpus(const std::string& gpu_t
                 // Get driver version
                 gpu.driver_version = get_driver_version("AMD-OpenCL User Mode Driver");
                 if (gpu.driver_version.empty()) {
+                    gpu.driver_version = wmi::get_property_string(pObj, L"DriverVersion");
+                }
+                if (gpu.driver_version.empty()) {
                     gpu.driver_version = "Unknown";
+                }
+
+                gpu.software_version = wmi::get_driver_key_value_setupapi(name, L"RadeonSoftwareVersion");
+                if (!gpu.software_version.empty()) {
+                    gpu.software_edition = wmi::get_driver_key_value_setupapi(name, L"RadeonSoftwareEdition");
                 }
 
                 // Get VRAM for discrete GPUs
