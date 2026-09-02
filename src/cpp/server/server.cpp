@@ -5826,6 +5826,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json download_request = collection_file_import
             ? request_json
             : nlohmann::json::object();
+        for (const char* field : {"source", "registry_source"}) {
+            if (request_json.contains(field)) {
+                download_request[field] = request_json[field];
+            }
+        }
 
         if (stream) {
             auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {

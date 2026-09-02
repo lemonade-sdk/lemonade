@@ -4842,6 +4842,11 @@ void ModelManager::download_model(const std::string& model_name,
 
     auto model_info = get_model_info(model_name);
 
+    const std::string download_source = requested_registry_source(model_data);
+    if (!download_source.empty() && backend_self_manages_downloads(model_info.recipe)) {
+        model_info.registry_source = download_source;
+    }
+
     if (model_data.contains("recipe_options")) {
         // Merge import recipe_options on top of the already-merged options
         // (which include image_defaults + JSON recipe_options + user-saved).

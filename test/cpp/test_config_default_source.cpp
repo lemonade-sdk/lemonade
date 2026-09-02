@@ -185,6 +185,15 @@ int main() {
               "checkpoint-less refresh gets no injected source");
     }
 
+    // An explicit source on a bare refresh is preserved for self-managed
+    // backend download selection.
+    {
+        json req = {{"model_name", "qwen3-0.6b-FLM"}, {"source", "modelscope"}};
+        apply_default_pull_source(req, "huggingface");
+        check(req.value("source", "") == "modelscope",
+              "checkpoint-less refresh preserves explicit source");
+    }
+
     // When both fields are present, `checkpoints` is authoritative and its
     // `main` entry drives resolution — matching the ModelManager precedence.
     {
