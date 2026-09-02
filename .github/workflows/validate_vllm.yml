@@ -30,35 +30,138 @@ env:
 
 jobs:
   # ========================================================================
-  # Discover the latest vllm-rocm release
+  # Resolve the vllm-rocm pins per channel and decide what to validate.
   # ========================================================================
-  get-latest-releases:
-    name: Get latest releases
-    # Only the auto-update runs resolve upstream releases. Everywhere else the
-    # build validates the pins committed in backend_versions.json, so a bad
-    # upstream release can't fail a merge or hide a broken pin.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  resolve:
+    name: Resolve channels
     runs-on: ubuntu-latest
     outputs:
-      vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
+      # RDNA channels (stable/nightly) to build + validate on gfx1151.
+      rdna_channels: ${{ steps.pick.outputs.rdna_channels }}
+      # CDNA targets ([{channel, base}, ...]) to bump without HW validation.
+      cdna_targets: ${{ steps.pick.outputs.cdna_targets }}
+      rdna_stable_base: ${{ steps.pick.outputs.rdna_stable_base }}
+      rdna_nightly_base: ${{ steps.pick.outputs.rdna_nightly_base }}
+      cdna_stable_base: ${{ steps.pick.outputs.cdna_stable_base }}
+      cdna_nightly_base: ${{ steps.pick.outputs.cdna_nightly_base }}
+      any: ${{ steps.pick.outputs.any }}
     steps:
-      - name: Get latest vllm-rocm release
-        id: vllm_rocm
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
+      - name: Resolve channels and bases
+        id: pick
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IS_AUTOUPDATE: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
         run: |
-          RELEASE=$(gh api repos/lemonade-sdk/vllm-rocm/releases/latest --jq '.tag_name')
-          echo "Latest vllm-rocm release: $RELEASE"
-          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          set -e
+          python3 - << 'PY'
+          import json, os, re, subprocess
+          from collections import OrderedDict
+
+          out = open(os.environ["GITHUB_OUTPUT"], "a")
+          def emit(k, v):
+              out.write(f"{k}={v}\n")
+
+          # Committed pins: RDNA lives at the top level, CDNA under the channel-keyed
+          # per-arch overrides (gfx942/gfx950 share a base, so read gfx942).
+          path = "src/cpp/resources/backend_versions.json"
+          with open(path) as f:
+              vllm = json.load(f)["vllm"]
+          ov942 = vllm.get("rocm_arch_overrides", {}).get("gfx942", {})
+          committed = {
+              ("rdna", "stable"):  vllm.get("rocm-stable", ""),
+              ("rdna", "nightly"): vllm.get("rocm-nightly", ""),
+              ("cdna", "stable"):  ov942.get("rocm-stable", ""),
+              ("cdna", "nightly"): ov942.get("rocm-nightly", ""),
+          }
+
+          if os.environ.get("IS_AUTOUPDATE") != "true":
+              # PR / merge_group: no upstream resolution.
+              # Validate the committed default-channel (stable) RDNA pin so a bad committed pin can't merge.
+              emit("rdna_channels", json.dumps(["stable"]))
+              emit("cdna_targets", json.dumps([]))
+              for line in ("rdna", "cdna"):
+                  for ch in ("stable", "nightly"):
+                      emit(f"{line}_{ch}_base", "")
+              emit("any", "true")
+              out.close()
+              raise SystemExit(0)
+
+          repo = "lemonade-sdk/vllm-rocm"
+          # A base pin is shared by every target on its line, so it will only advance
+          # to a base that has a release for ALL of that line's targets (completeness
+          # gate). A partial release (some targets built, others failed) is skipped so
+          # the shared pin never points at a base a sibling arch cannot install.
+          RDNA = {"gfx1151", "gfx1150", "gfx110X", "gfx120X"}
+          CDNA = {"gfx942", "gfx950"}
+
+          raw = subprocess.check_output(
+              ["gh", "api", "--paginate", f"repos/{repo}/releases",
+               "--jq", ".[] | {tag: .tag_name, pre: .prerelease, draft: .draft}"],
+              text=True)
+          releases = [json.loads(l) for l in raw.splitlines() if l.strip()]
+
+          def suffix_of(tag):
+              m = re.search(r"-(gfx[0-9a-fA-FxX]+)$", tag)
+              return m.group(1) if m else None
+
+          # base -> {suffix: is_prerelease}, first-seen (newest) order preserved.
+          bases = OrderedDict()
+          for r in releases:
+              if r.get("draft"):
+                  continue
+              tag = r["tag"]
+              if tag.startswith("vllm-omni"):  # omni is a separate artifact, never a channel pin
+                  continue
+              suf = suffix_of(tag)
+              if not suf:
+                  continue
+              base = re.sub(r"-gfx[0-9a-fA-FxX]+$", "", tag)
+              bases.setdefault(base, {}).setdefault(suf, bool(r["pre"]))
+
+          def pick(required, want_prerelease):
+              # Newest base whose targets are ALL present with the right channel flag
+              # (full release => stable, prerelease => nightly).
+              for base, sufmap in bases.items():
+                  if required.issubset(sufmap) and all(sufmap[s] == want_prerelease for s in required):
+                      return base
+              return ""
+
+          picked = {
+              ("rdna", "stable"):  pick(RDNA, False),
+              ("rdna", "nightly"): pick(RDNA, True),
+              ("cdna", "stable"):  pick(CDNA, False),
+              ("cdna", "nightly"): pick(CDNA, True),
+          }
+          for (line, ch), base in picked.items():
+              print(f"{line}/{ch}: {base or '(incomplete or none) -> keeping committed pin'}")
+
+          rdna_channels = [ch for ch in ("stable", "nightly")
+                           if picked[("rdna", ch)] and picked[("rdna", ch)] != committed[("rdna", ch)]]
+          cdna_targets = [{"channel": ch, "base": picked[("cdna", ch)]}
+                          for ch in ("stable", "nightly")
+                          if picked[("cdna", ch)] and picked[("cdna", ch)] != committed[("cdna", ch)]]
+
+          emit("rdna_channels", json.dumps(rdna_channels))
+          emit("cdna_targets", json.dumps(cdna_targets))
+          for (line, ch), base in picked.items():
+              emit(f"{line}_{ch}_base", base)
+          emit("any", "true" if (rdna_channels or cdna_targets) else "false")
+          out.close()
+          PY
 
   # ========================================================================
-  # Build binaries with updated backend version
+  # Build binaries once (backend_versions.json holds both channel pins; the
+  # channel is selected at runtime via config.json's rocm_channel).
   # ========================================================================
   build:
     name: Build (Linux)
-    needs: get-latest-releases
+    needs: resolve
     # Label a PR `ci:upgrades` to opt it back in.
-    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && needs.resolve.outputs.any == 'true' && always() && !failure() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -67,9 +170,12 @@ jobs:
           fetch-depth: 0
 
       - name: Update backend_versions.json
-        if: needs.get-latest-releases.result == 'success'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          RDNA_CHANNELS: ${{ needs.resolve.outputs.rdna_channels }}
+          CDNA_TARGETS: ${{ needs.resolve.outputs.cdna_targets }}
+          RDNA_STABLE_BASE: ${{ needs.resolve.outputs.rdna_stable_base }}
+          RDNA_NIGHTLY_BASE: ${{ needs.resolve.outputs.rdna_nightly_base }}
         run: |
           set -e
           python3 - << 'PY'
@@ -77,13 +183,24 @@ jobs:
           path = "src/cpp/resources/backend_versions.json"
           with open(path) as f:
               data = json.load(f)
-          release = os.environ["VLLM_ROCM_RELEASE"]
-          old = data["vllm"].get("rocm", "")
-          data["vllm"]["rocm"] = release
+          vllm = data["vllm"]
+          rdna_bases = {"stable": os.environ["RDNA_STABLE_BASE"], "nightly": os.environ["RDNA_NIGHTLY_BASE"]}
+          for ch in json.loads(os.environ["RDNA_CHANNELS"]):
+              key = f"rocm-{ch}"
+              old = vllm.get(key, "")
+              vllm[key] = rdna_bases[ch]
+              print(f"vllm.{key}: {old} -> {vllm[key]}")
+          overrides = vllm.setdefault("rocm_arch_overrides", {})
+          for target in json.loads(os.environ["CDNA_TARGETS"]):
+              key = f"rocm-{target['channel']}"
+              for arch in ("gfx942", "gfx950"):
+                  arch_map = overrides.setdefault(arch, {})
+                  old = arch_map.get(key, "")
+                  arch_map[key] = target["base"]
+                  print(f"vllm.rocm_arch_overrides.{arch}.{key}: {old} -> {target['base']}")
           with open(path, "w") as f:
               json.dump(data, f, indent=2)
               f.write("\n")
-          print(f"vllm.rocm: {old} -> {release}")
           PY
 
       - name: Build lemond and the CLI
@@ -108,13 +225,19 @@ jobs:
           retention-days: 7
 
   # ========================================================================
-  # Validate backend on self-hosted runner
+  # Validate each changed channel on the self-hosted gfx1151 runner.
   # ========================================================================
   validate:
-    name: Validate vllm (rocm)
-    needs: [get-latest-releases, build]
-    if: always() && needs.build.result == 'success'
+    name: Validate vllm (rocm, ${{ matrix.channel }})
+    needs: [resolve, build]
+    # Only the RDNA channels validate here — gfx1151 is RDNA hardware.
+    # CDNA pins have no hardware in CI and bump on release completeness alone (see create-pr-cdna).
+    if: always() && needs.build.result == 'success' && needs.resolve.outputs.rdna_channels != '[]'
     runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJSON(needs.resolve.outputs.rdna_channels) }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -143,18 +266,24 @@ jobs:
       - name: Run validation with lemond
         env:
           HOME: ${{ github.workspace }}/.home
+          ROCM_CHANNEL: ${{ matrix.channel }}
         run: |
           set -e
           mkdir -p "$HOME"
           echo "HOME=$HOME" >> "$GITHUB_ENV"
 
           CACHE_DIR="$(pwd)/ci-cache-vllm"
-          LOGS_DIR="$(pwd)/server-logs-rocm"
+          LOGS_DIR="$(pwd)/server-logs-rocm-${ROCM_CHANNEL}"
           mkdir -p "$CACHE_DIR" "$LOGS_DIR"
           mkdir -p "$RUNNER_TEMP/xdg-runtime"
           chmod 700 "$RUNNER_TEMP/xdg-runtime"
           echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
           export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+          # Select the channel under test. config.json is deep-merged over
+          # defaults.json on load, so a single-key file is sufficient.
+          echo "{\"rocm_channel\": \"$ROCM_CHANNEL\"}" > "$CACHE_DIR/config.json"
+          echo "Validating rocm_channel=$ROCM_CHANNEL"
 
           # This validate job runs on a shared self-hosted runner, so the default
           # port 13305 may already be held by another job. lemond now refuses to
@@ -207,7 +336,7 @@ jobs:
             test/validate_vllm.py
             --backend rocm
             --port "$PORT"
-            --output vllm_validation_rocm.json
+            --output vllm_validation_rocm_${ROCM_CHANNEL}.json
             --logs-dir "$LOGS_DIR"
           )
           if [ "${LITE_MODE}" = "true" ]; then
@@ -227,16 +356,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: validation-results-rocm
-          path: vllm_validation_rocm.json
+          name: validation-results-rocm-${{ matrix.channel }}
+          path: vllm_validation_rocm_${{ matrix.channel }}.json
           retention-days: 30
 
       - name: Upload server logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: server-logs-rocm
-          path: server-logs-rocm/
+          name: server-logs-rocm-${{ matrix.channel }}
+          path: server-logs-rocm-${{ matrix.channel }}/
           retention-days: 30
           if-no-files-found: ignore
 
@@ -248,63 +377,80 @@ jobs:
           pkill -9 -f "resource_tracker" 2>/dev/null || true
 
   # ========================================================================
-  # Create PR if validation passed (schedule or workflow_dispatch only)
+  # RDNA: one PR per changed RDNA channel, gated on gfx1151 validation.
+  # Touches only that channel's top-level key.
   # ========================================================================
-  create-pr:
-    name: Create update PR
-    needs: [get-latest-releases, validate]
+  create-pr-rdna:
+    name: Create RDNA update PR (${{ matrix.channel }})
+    needs: [resolve, validate]
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.validate.result == 'success'
+      needs.validate.result == 'success' &&
+      needs.resolve.outputs.rdna_channels != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: ${{ fromJSON(needs.resolve.outputs.rdna_channels) }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Download validation results
         uses: actions/download-artifact@v7
         with:
-          pattern: validation-results-*
-          merge-multiple: true
+          name: validation-results-rocm-${{ matrix.channel }}
 
       - name: Update backend_versions.json
         env:
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          CHANNEL: ${{ matrix.channel }}
+          STABLE_BASE: ${{ needs.resolve.outputs.rdna_stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.rdna_nightly_base }}
         run: |
           python3 - << 'PY'
           import json, os
           path = 'src/cpp/resources/backend_versions.json'
           with open(path) as f:
               data = json.load(f)
-          rocm = os.environ['VLLM_ROCM_RELEASE']
-          data['vllm']['rocm'] = rocm
+          ch = os.environ['CHANNEL']
+          base = {"stable": os.environ["STABLE_BASE"], "nightly": os.environ["NIGHTLY_BASE"]}[ch]
+          key = f"rocm-{ch}"
+          old = data['vllm'].get(key, "")
+          data['vllm'][key] = base
           with open(path, 'w') as f:
               json.dump(data, f, indent=2)
               f.write('\n')
-          print(f"Updated: vllm.rocm = {rocm}")
+          print(f"Updated: vllm.{key} = {old} -> {base}")
           PY
 
       - name: Generate PR body
         env:
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          CHANNEL: ${{ matrix.channel }}
+          STABLE_BASE: ${{ needs.resolve.outputs.rdna_stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.rdna_nightly_base }}
         run: |
           python3 << 'PYEOF'
           import json, os
 
-          lines = []
-          rocm = os.environ.get("VLLM_ROCM_RELEASE", "unknown")
+          ch = os.environ["CHANNEL"]
+          base = {"stable": os.environ["STABLE_BASE"], "nightly": os.environ["NIGHTLY_BASE"]}[ch]
 
-          lines.append("## Auto-update vLLM backend")
+          lines = []
+          lines.append(f"## Auto-update vLLM backend (RDNA {ch})")
           lines.append("")
-          lines.append(f"- **vllm-rocm**: `{rocm}`")
+          lines.append(f"- **vllm-rocm `rocm-{ch}`** (RDNA): `{base}`")
+          lines.append("")
+          lines.append("Validated on gfx1151 (Strix Halo). The shared base was bumped only")
+          lines.append("because every RDNA target (gfx1151/gfx1150/gfx110X/gfx120X) has a")
+          lines.append("release for it.")
           lines.append("")
           lines.append("## Validation Results")
           lines.append("")
           lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
           lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          results_file = "vllm_validation_rocm.json"
+          results_file = f"vllm_validation_rocm_{ch}.json"
           if not os.path.isfile(results_file):
-              lines.append("| _rocm: no results_ | | | | | | |")
+              lines.append(f"| _rocm/{ch}: no results_ | | | | | | |")
           else:
               with open(results_file) as f:
                   results = json.load(f)
@@ -318,7 +464,7 @@ jobs:
                   if isinstance(tps, float):
                       tps = f"{tps:.1f}"
                   lines.append(
-                      f"| {r['model']} (rocm) | {status} | {resp} | "
+                      f"| {r['model']} (rocm/{ch}) | {status} | {resp} | "
                       f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
                       f"{ttft} | {tps} |"
                   )
@@ -334,9 +480,12 @@ jobs:
       - name: Create Pull Request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VLLM_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.vllm_rocm_release }}
+          CHANNEL: ${{ matrix.channel }}
+          STABLE_BASE: ${{ needs.resolve.outputs.rdna_stable_base }}
+          NIGHTLY_BASE: ${{ needs.resolve.outputs.rdna_nightly_base }}
         run: |
-          BRANCH="auto/vllm-update-${VLLM_ROCM_RELEASE}"
+          if [ "$CHANNEL" = "stable" ]; then BASE="$STABLE_BASE"; else BASE="$NIGHTLY_BASE"; fi
+          BRANCH="auto/vllm-update-rdna-${CHANNEL}-${BASE}"
 
           EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$EXISTING_PR" ]; then
@@ -354,11 +503,117 @@ jobs:
 
           git checkout -b "$BRANCH"
           git add src/cpp/resources/backend_versions.json
-          git commit -m "Update vllm-rocm to ${VLLM_ROCM_RELEASE}"
+          git commit -m "Update vllm-rocm RDNA ${CHANNEL} to ${BASE}"
           git push origin "$BRANCH"
 
           gh pr create \
-            --title "Update vllm-rocm to ${VLLM_ROCM_RELEASE}" \
+            --title "Update vllm-rocm RDNA ${CHANNEL} to ${BASE}" \
+            --body-file pr_body.md \
+            --base main \
+            --head "$BRANCH"
+
+  # ========================================================================
+  # CDNA: one PR per changed CDNA channel. No CDNA hardware exists in CI, so
+  # these bump on release completeness (both gfx942 and gfx950 present) plus
+  # upstream qualification only — NOT hardware validated.
+  #  Gated on `build` so a malformed pin cannot land.
+  # ========================================================================
+  create-pr-cdna:
+    name: Create CDNA update PR (${{ matrix.target.channel }})
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      needs.build.result == 'success' &&
+      needs.resolve.outputs.cdna_targets != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.resolve.outputs.cdna_targets) }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Update backend_versions.json
+        env:
+          CHANNEL: ${{ matrix.target.channel }}
+          BASE: ${{ matrix.target.base }}
+        run: |
+          python3 - << 'PY'
+          import json, os
+          path = 'src/cpp/resources/backend_versions.json'
+          with open(path) as f:
+              data = json.load(f)
+          ch = os.environ['CHANNEL']
+          base = os.environ['BASE']
+          key = f"rocm-{ch}"
+          overrides = data['vllm'].setdefault('rocm_arch_overrides', {})
+          for arch in ("gfx942", "gfx950"):
+              arch_map = overrides.setdefault(arch, {})
+              old = arch_map.get(key, "")
+              arch_map[key] = base
+              print(f"Updated: vllm.rocm_arch_overrides.{arch}.{key} = {old} -> {base}")
+          with open(path, 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          PY
+
+      - name: Generate PR body
+        env:
+          CHANNEL: ${{ matrix.target.channel }}
+          BASE: ${{ matrix.target.base }}
+        run: |
+          python3 << 'PYEOF'
+          import os
+
+          ch = os.environ["CHANNEL"]
+          base = os.environ["BASE"]
+
+          lines = []
+          lines.append(f"## Auto-update vLLM backend (CDNA {ch})")
+          lines.append("")
+          lines.append(f"- **vllm-rocm `rocm_arch_overrides.gfx942/gfx950.rocm-{ch}`** (CDNA): `{base}`")
+          lines.append("")
+          lines.append("> **Not hardware-validated.** There is no CDNA (gfx942/gfx950)")
+          lines.append("> hardware in CI, so this pin is bumped on release completeness")
+          lines.append("> (both gfx942 and gfx950 have a release for this base) plus upstream")
+          lines.append("> qualification only — it is NOT exercised on a live GPU here.")
+          lines.append("")
+          lines.append("---")
+          lines.append("*Auto-generated by validate_vllm workflow*")
+
+          with open("pr_body.md", "w") as f:
+              f.write("\n".join(lines))
+          PYEOF
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ matrix.target.channel }}
+          BASE: ${{ matrix.target.base }}
+        run: |
+          BRANCH="auto/vllm-update-cdna-${CHANNEL}-${BASE}"
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet src/cpp/resources/backend_versions.json; then
+            echo "backend_versions.json is unchanged — nothing to update."
+            exit 0
+          fi
+
+          git checkout -b "$BRANCH"
+          git add src/cpp/resources/backend_versions.json
+          git commit -m "Update vllm-rocm CDNA ${CHANNEL} to ${BASE}"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update vllm-rocm CDNA ${CHANNEL} to ${BASE}" \
             --body-file pr_body.md \
             --base main \
             --head "$BRANCH"

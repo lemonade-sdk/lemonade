@@ -122,11 +122,14 @@ public:
     // (and values already in family form) are returned unchanged.
     static std::string rocm_asset_family(const std::string& arch);
 
-    // AMD ships CDNA-dcgpu (gfx942) vLLM wheels on a different cadence than RDNA, so no
-    // single tag covers both; returns vllm.rocm_arch_overrides[family], or empty for the
-    // default pin. Beware: vLLM release tags use the raw ISA (gfx942), unlike
-    // therock.url_mapping, which maps it to gfx94X-dcgpu.
-    static std::string vllm_rocm_version_override(const std::string& asset_family);
+    // AMD ships CDNA (gfx942/gfx950) vLLM wheels on a different line than RDNA, so no
+    // single tag covers both; CDNA publishes its own stable and nightly channels.
+    // Returns vllm.rocm_arch_overrides[family][resolved_backend], or empty for the
+    // default (RDNA) pin. resolved_backend is "rocm-stable"/"rocm-nightly".
+    // Beware: vLLM release tags use the raw ISA (gfx942),
+    // unlike therock.url_mapping, which maps it to gfx94X-dcgpu.
+    static std::string vllm_rocm_version_override(const std::string& asset_family,
+                                                  const std::string& resolved_backend);
 
     // When set non-empty on the calling thread, get_rocm_arch() returns this
     // value instead of probing hardware, so backend asset URLs can be resolved

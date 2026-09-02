@@ -34,7 +34,7 @@ inline const BackendDescriptor descriptor = {
     /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "",
-    /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
+    /*rocm_channels*/   {"stable", "nightly"},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ true,
     /*version_policy*/  VersionPolicy::Exact,
@@ -43,6 +43,7 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
+    /*rocm_bundles_runtime*/ true,  // self-contained portable archive; does not need TheRock
 };
 
 }  // namespace vllm

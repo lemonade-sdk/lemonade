@@ -60,15 +60,23 @@ int main() {
     expect(SystemInfo::rocm_asset_family("gfx1100") == "gfx110X",
            "rocm_asset_family collapses gfx1100 to gfx110X");
 
-    // Per-arch version override: gfx942 (CDNA-dcgpu) pins a distinct vLLM/ROCm
-    // release line from the RDNA default, since no single tag carries both.
-    expect(SystemInfo::vllm_rocm_version_override("gfx942") == "vllm0.19.1-rocm7.13.0",
-           "vllm gfx942 overrides to its own dcgpu release line");
-    expect(SystemInfo::vllm_rocm_version_override("gfx950") == "vllm0.19.1-rocm7.13.0",
-           "vllm gfx950 (CDNA4) rides the same CDNA release line as gfx942");
-    expect(SystemInfo::vllm_rocm_version_override("gfx110X").empty(),
-           "vllm RDNA families use the default pin (no override)");
-    expect(SystemInfo::vllm_rocm_version_override("gfx1151").empty(),
+    // Per-arch version override: gfx942/gfx950 (CDNA) pin a distinct vLLM/ROCm
+    // release line from the RDNA default per channel, since no single tag carries both.
+    const std::string cdna_nightly =
+        "vllm0.23.1.dev0+rocm7.15.0a20260721.g0fc695fc6.d20260723-rocm7.15.0";
+    expect(SystemInfo::vllm_rocm_version_override("gfx942", "rocm-stable") == "vllm0.19.1-rocm7.13.0",
+           "vllm gfx942 stable overrides to its own CDNA stable line");
+    expect(SystemInfo::vllm_rocm_version_override("gfx942", "rocm-nightly") == cdna_nightly,
+           "vllm gfx942 nightly overrides to its own CDNA nightly line");
+    expect(SystemInfo::vllm_rocm_version_override("gfx950", "rocm-stable") == "vllm0.19.1-rocm7.13.0",
+           "vllm gfx950 (CDNA4) rides the same CDNA stable line as gfx942");
+    expect(SystemInfo::vllm_rocm_version_override("gfx950", "rocm-nightly") == cdna_nightly,
+           "vllm gfx950 nightly rides the same CDNA nightly line as gfx942");
+    expect(SystemInfo::vllm_rocm_version_override("gfx110X", "rocm-stable").empty(),
+           "vllm RDNA families use the default stable pin (no override)");
+    expect(SystemInfo::vllm_rocm_version_override("gfx110X", "rocm-nightly").empty(),
+           "vllm RDNA families use the default nightly pin (no override)");
+    expect(SystemInfo::vllm_rocm_version_override("gfx1151", "rocm-nightly").empty(),
            "vllm gfx1151 uses the default pin (no override)");
 
     // The discrete-HBM vs conservative-default wiring that VLLMServer::load() applies.
@@ -211,7 +219,7 @@ int main() {
     // update_required forever (the RDNA pin cannot prefix-match the dcgpu base).
     {
         std::string family = SystemInfo::rocm_asset_family("gfx942");
-        std::string override_base = SystemInfo::vllm_rocm_version_override(family);
+        std::string override_base = SystemInfo::vllm_rocm_version_override(family, "rocm-stable");
         std::string installed = override_base + "-" + family;  // what get_install_params writes
         auto prefix_match = [](const std::string& inst, const std::string& exp) {
             return inst == exp || (exp.size() < inst.size() &&
