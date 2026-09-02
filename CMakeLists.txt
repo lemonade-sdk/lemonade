@@ -219,18 +219,31 @@ set(DOWNLOAD_ZSTD_VERSION "1.5.7")
 set(MIN_HTTPLIB_VERSION "0.26.0")
 set(MIN_LWS_VERSION "4.3.3")
 
+option(
+    LEMONADE_PORTABLE_BUILD
+    "Prefer bundled runtime dependencies for artifacts that run outside the build host"
+    OFF
+)
+
+# Windows and macOS release artifacts must not inherit developer-machine
+# package-manager libraries. Linux distro/package builds stay system-linked
+# by default and portable Linux artifacts opt in explicitly.
+if(WIN32 OR APPLE)
+    set(LEMONADE_PORTABLE_BUILD ON)
+endif()
+
 find_package(PkgConfig QUIET)
 
 # Try to find system packages with version requirements
 find_package(nlohmann_json ${MIN_NLOHMANN_JSON_VERSION} QUIET)
-if(PkgConfig_FOUND)
+if(PkgConfig_FOUND AND NOT LEMONADE_PORTABLE_BUILD)
     pkg_check_modules(CURL QUIET libcurl>=${MIN_CURL_VERSION})
     pkg_check_modules(ZSTD QUIET libzstd>=${MIN_ZSTD_VERSION})
     pkg_check_modules(LWS QUIET libwebsockets>=${MIN_LWS_VERSION})
 endif()
 
 include(${CMAKE_SOURCE_DIR}/cmake/DetectSystemHttplib.cmake)
-if(NOT APPLE)
+if(NOT APPLE AND NOT LEMONADE_PORTABLE_BUILD)
     detect_system_httplib(${MIN_HTTPLIB_VERSION})
 else()
     set(HTTPLIB_FOUND FALSE)
@@ -258,8 +271,10 @@ set(USE_SYSTEM_CLI11 ${CLI11_INCLUDE_DIRS})
 set(USE_SYSTEM_HTTPLIB ${HTTPLIB_FOUND})
 set(USE_SYSTEM_LWS ${LWS_FOUND})
 
-# On macOS, always statically link dependencies to avoid Homebrew dylib issues
-if(APPLE)
+# Portable mode applies one policy to runtime dependencies that Lemonade
+# can provide itself. Header-only JSON/CLI11 remain safe to use from the
+# system because they do not create runtime shared-library dependencies.
+if(LEMONADE_PORTABLE_BUILD)
     set(USE_SYSTEM_ZSTD OFF)
     set(USE_SYSTEM_CURL OFF)
     set(USE_SYSTEM_HTTPLIB OFF)
@@ -445,7 +460,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
+        GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -467,14 +482,16 @@ endif()
 # Download digest verification dependency (mbedTLS)
 # ============================================================
 if(NOT TARGET lemonade-digest-crypto)
-    find_package(PkgConfig QUIET)
-    if(PkgConfig_FOUND)
-        pkg_check_modules(MBEDTLS QUIET mbedtls mbedx509 mbedcrypto)
+    if(NOT LEMONADE_PORTABLE_BUILD)
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(MBEDTLS QUIET mbedtls mbedx509 mbedcrypto)
+        endif()
     endif()
 
     add_library(lemonade-digest-crypto INTERFACE)
 
-    if(MBEDTLS_FOUND)
+    if(MBEDTLS_FOUND AND NOT LEMONADE_PORTABLE_BUILD)
         message(STATUS "Using system mbedtls for CLI HTTPS and digest verification")
         if(MBEDTLS_INCLUDE_DIRS)
             target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIRS})
@@ -487,12 +504,14 @@ if(NOT TARGET lemonade-digest-crypto)
             target_compile_options(lemonade-digest-crypto INTERFACE ${MBEDTLS_CFLAGS_OTHER})
         endif()
     else()
-        find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/ssl.h)
-        find_library(MBEDTLS_LIBRARY NAMES mbedtls)
-        find_library(MBEDX509_LIBRARY NAMES mbedx509)
-        find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
+        if(NOT LEMONADE_PORTABLE_BUILD)
+            find_path(MBEDTLS_INCLUDE_DIR NAMES mbedtls/ssl.h)
+            find_library(MBEDTLS_LIBRARY NAMES mbedtls)
+            find_library(MBEDX509_LIBRARY NAMES mbedx509)
+            find_library(MBEDCRYPTO_LIBRARY NAMES mbedcrypto)
+        endif()
 
-        if(MBEDTLS_INCLUDE_DIR AND MBEDTLS_LIBRARY AND MBEDX509_LIBRARY AND MBEDCRYPTO_LIBRARY)
+        if(NOT LEMONADE_PORTABLE_BUILD AND MBEDTLS_INCLUDE_DIR AND MBEDTLS_LIBRARY AND MBEDX509_LIBRARY AND MBEDCRYPTO_LIBRARY)
             message(STATUS "Using system mbedtls libraries for CLI HTTPS and digest verification")
             target_include_directories(lemonade-digest-crypto INTERFACE ${MBEDTLS_INCLUDE_DIR})
             target_link_libraries(lemonade-digest-crypto INTERFACE ${MBEDTLS_LIBRARY} ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
@@ -504,7 +523,11 @@ if(NOT TARGET lemonade-digest-crypto)
                     "or provide FETCHCONTENT_SOURCE_DIR_MBEDTLS.")
             endif()
 
-            message(STATUS "System mbedtls not found; fetching mbedTLS for CLI HTTPS and digest verification")
+            if(LEMONADE_PORTABLE_BUILD)
+                message(STATUS "Using bundled static mbedTLS for a portable build")
+            else()
+                message(STATUS "System mbedtls not found; fetching mbedTLS for CLI HTTPS and digest verification")
+            endif()
             include(FetchContent)
             FetchContent_Declare(mbedtls
                 GIT_REPOSITORY https://github.com/Mbed-TLS/mbedtls.git

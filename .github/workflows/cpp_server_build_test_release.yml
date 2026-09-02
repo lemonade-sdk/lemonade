@@ -839,11 +839,21 @@ jobs:
         run: |
           set -e
 
-          # Do not use setup.sh — we intentionally avoid installing system
-          # libraries so that FetchContent statically links all deps, making
-          # the embeddable binary portable across Ubuntu versions.
-          cmake --preset default -DBUILD_WEB_APP=OFF
+          # Do not use setup.sh. Release archives must make their dependency
+          # policy explicit instead of depending on what happens to be installed
+          # on the runner image.
+          cmake --preset default -DBUILD_WEB_APP=OFF -DLEMONADE_PORTABLE_BUILD=ON
           cmake --build --preset default --target embeddable
+
+          # Verify the portable-build contract for dependencies that Lemonade
+          # can provide itself. Base OS/runtime libraries are intentionally
+          # outside this check; portable mode is not a fully-static build.
+          MANAGED_RUNTIME_SO_RE='lib(curl|zstd|websockets|cpp-httplib|httplib|mbedtls|mbedx509|mbedcrypto|tfpsacrypto)\.so'
+          if readelf -d build/lemond build/lemonade | grep -Eq "$MANAGED_RUNTIME_SO_RE"; then
+            echo "ERROR: portable binaries directly depend on a system-managed Lemonade runtime dependency"
+            readelf -d build/lemond build/lemonade | grep -E "$MANAGED_RUNTIME_SO_RE" || true
+            exit 1
+          fi
 
           ARCHIVE="build/lemonade-embeddable-${LEMONADE_VERSION}-${{ matrix.platform }}.tar.gz"
           test -f "$ARCHIVE"
@@ -894,8 +904,20 @@ jobs:
       - name: Build
         run: |
           set -e
-          cmake --preset default -DBUILD_WEB_APP=OFF
+          # The binaries are uploaded and executed in another job/host.
+          # Use the same portable dependency policy as the embeddable archive.
+          cmake --preset default -DBUILD_WEB_APP=OFF -DLEMONADE_PORTABLE_BUILD=ON
           cmake --build --preset default --target lemond lemonade
+
+          # Verify the portable-build contract for dependencies that Lemonade
+          # can provide itself. Base OS/runtime libraries are intentionally
+          # outside this check; portable mode is not a fully-static build.
+          MANAGED_RUNTIME_SO_RE='lib(curl|zstd|websockets|cpp-httplib|httplib|mbedtls|mbedx509|mbedcrypto|tfpsacrypto)\.so'
+          if readelf -d build/lemond build/lemonade | grep -Eq "$MANAGED_RUNTIME_SO_RE"; then
+            echo "ERROR: portable binaries directly depend on a system-managed Lemonade runtime dependency"
+            readelf -d build/lemond build/lemonade | grep -E "$MANAGED_RUNTIME_SO_RE" || true
+            exit 1
+          fi
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
