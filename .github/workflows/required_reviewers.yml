@@ -57,6 +57,10 @@ permissions:
 jobs:
   logic-tests:
     runs-on: ubuntu-latest
+    # A draft is not asking for review yet, so neither is this check. The field
+    # is absent on merge_group and workflow_dispatch, where the comparison is
+    # still true and the job runs.
+    if: github.event.pull_request.draft != true
     steps:
       - uses: actions/checkout@v5
         with:
@@ -69,6 +73,7 @@ jobs:
   required-reviewers:
     runs-on: ubuntu-latest
     needs: logic-tests
+    if: github.event.pull_request.draft != true
     concurrency:
       group: >-
         required-reviewers-${{ github.event.pull_request.number
