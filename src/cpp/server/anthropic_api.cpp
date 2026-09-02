@@ -1143,6 +1143,7 @@ void OllamaApi::handle_anthropic_messages(const httplib::Request& req, httplib::
         auto request_json = json::parse(req.body);
         std::vector<std::string> warnings;
 
+        resolve_request_model(request_json);
         std::string model = normalize_model_name(request_json.value("model", ""));
         if (model.empty()) {
             res.status = 400;
