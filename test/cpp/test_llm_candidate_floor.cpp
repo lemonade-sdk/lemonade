@@ -257,6 +257,37 @@ static void test_convergence_defers_when_nothing_is_idle() {
               elapsed < std::chrono::seconds(2));
 }
 
+static void test_eviction_engine_retries_deferred_convergence() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);  // real EvictionEngine ticks every 5s by default
+    StubLlmServer* busy_a =
+        LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("retry.a"));
+    StubLlmServer* busy_b =
+        LlmPoolFloorTestHook::add_server(router, std::make_unique<StubLlmServer>("retry.b"));
+    LlmPoolFloorTestHook::reconcile_floor(router, 2);
+    busy_a->acquire_for_inference();
+    busy_b->acquire_for_inference();
+
+    // Nothing idle, so this defers (see test_convergence_defers_when_nothing_is_idle).
+    LlmPoolFloorTestHook::reconcile_floor(router, 1);
+    busy_a->release_inference();  // idle now, but nothing explicitly re-reconciles
+
+    // Only EvictionEngine's own periodic tick can pick this up from here.
+    bool converged = false;
+    for (int i = 0; i < 80; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (LlmPoolFloorTestHook::resident_count(router, {"retry.a", "retry.b"}) == 1) {
+            converged = true;
+            break;
+        }
+    }
+
+    busy_b->release_inference();
+
+    check("EvictionEngine's periodic pass retries a convergence deferred while everything was busy",
+          converged);
+}
+
 static void test_reconcile_waits_for_exclusive_session_before_evicting() {
     RuntimeConfig config(make_config_json(1, true));
     Router router(&config, nullptr, nullptr);
@@ -342,6 +373,7 @@ int main() {
     test_enforce_llm_pool_capacity_reclaims_after_live_config_change();
     test_convergence_prefers_idle_over_busy_lru();
     test_convergence_defers_when_nothing_is_idle();
+    test_eviction_engine_retries_deferred_convergence();
     test_reconcile_waits_for_exclusive_session_before_evicting();
 
     RuntimeConfig::set_global(nullptr);

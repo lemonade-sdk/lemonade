@@ -7432,11 +7432,10 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             // See Router::enforce_llm_pool_capacity. Neither key routes
             // through a policy change, so nothing else would call it here —
             // without this, an over-limit pool wouldn't shrink until enough
-            // future admissions evicted it one at a time. Dispatched off this
-            // thread: enforcement can wait behind an in-flight load or
-            // exclusive session, and every other /internal/set key returns
-            // immediately.
-            std::thread([this]() { router_->enforce_llm_pool_capacity(); }).detach();
+            // future admissions evicted it one at a time. See
+            // request_llm_pool_enforcement for why this isn't just a bare
+            // detached thread.
+            request_llm_pool_enforcement();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
@@ -7471,6 +7470,40 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             }
         }
     }
+}
+
+void Server::request_llm_pool_enforcement() {
+    std::lock_guard<std::mutex> lock(llm_pool_enforce_mutex_);
+    if (llm_pool_enforce_running_) {
+        llm_pool_enforce_pending_ = true;
+        return;
+    }
+    llm_pool_enforce_running_ = true;
+
+    auto finished_flag = std::make_shared<std::atomic<bool>>(false);
+    std::thread worker([this, finished_flag]() {
+        for (;;) {
+            router_->enforce_llm_pool_capacity();
+            std::lock_guard<std::mutex> inner_lock(llm_pool_enforce_mutex_);
+            if (!llm_pool_enforce_pending_) {
+                llm_pool_enforce_running_ = false;
+                break;
+            }
+            llm_pool_enforce_pending_ = false;
+        }
+        finished_flag->store(true);
+    });
+
+    std::lock_guard<std::mutex> sync_lock(background_sync_mutex_);
+    for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end();) {
+        if (it->finished->load() && it->thread.joinable()) {
+            it->thread.join();
+            it = background_sync_threads_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    background_sync_threads_.push_back({std::move(worker), finished_flag});
 }
 
 

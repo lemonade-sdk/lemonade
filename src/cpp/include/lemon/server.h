@@ -97,6 +97,15 @@ private:
     // mirroring the input shape, containing only entries that actually changed.
     void apply_config_side_effects(const json& applied_changes);
 
+    // Runs Router::enforce_llm_pool_capacity() on a tracked background_sync_
+    // threads_ worker (joined in ~Server, unlike a bare detached thread) so a
+    // shutdown can't race a still-running enforcement call against router_
+    // being destroyed. A second call while one is already running sets
+    // llm_pool_enforce_pending_ instead of spawning another thread, so a
+    // burst of rapid /internal/set calls collapses into at most one more
+    // pass rather than one thread per call.
+    void request_llm_pool_enforcement();
+
     // Hot-swap a backend binary when its *_bin config value changes. Unloads
     // affected loaded models, runs install_backend (which downloads/replaces
     // when version.txt mismatches), then best-effort reloads them. Errors are
@@ -379,6 +388,10 @@ private:
     };
     std::vector<SyncTaskThread> background_sync_threads_;
     std::mutex background_sync_mutex_;
+    // Guards the two flags below; see request_llm_pool_enforcement().
+    std::mutex llm_pool_enforce_mutex_;
+    bool llm_pool_enforce_running_ = false;
+    bool llm_pool_enforce_pending_ = false;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port
