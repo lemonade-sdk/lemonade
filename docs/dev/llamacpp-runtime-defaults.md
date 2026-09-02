@@ -60,8 +60,11 @@ rejects `--sleep-idle-seconds 0` at startup (`common/arg.cpp` throws
 `invalid_argument`; valid values are `-1` = disabled or `>= 1`).
 
 `GET /health` against a sleeping backend still returns `200` without waking
-it (llama-server serves `/health`, `/props`, `/models`, and `/metrics` from
-cached responses during sleep) — Lemonade's backend-watchdog health polling
+it - its handler never checks sleep state or touches `ctx_server` at all,
+it unconditionally returns `{"status": "ok"}`. `/props`, `/models`, and
+`/metrics` take a different path to the same result: they explicitly check
+`is_sleeping` and, if true, serve from cached responses populated when the
+server entered sleep. Either way, Lemonade's backend-watchdog health polling
 does not defeat sleep. Note that `GET /slots` is *not* on that bypass list
 and wakes a sleeping server; Lemonade only forwards it on demand, never on a
 timer.
@@ -76,5 +79,5 @@ with the sleep/wake code paths re-verified in source at the pinned build: a
 downsized `LFM2-1.2B-GGUF` process held ~0.6 MB dedicated / ~18 MB total
 committed GPU memory; after a wake request it rose to ~6.5 MB dedicated /
 ~1.07 GB total committed, then dropped back to the same ~18 MB baseline
-after re-idling — confirming the fix actually frees VRAM, unlike the old
+after re-idling - confirming the fix actually frees VRAM, unlike the old
 `erase`-loop (which left GPU memory flat despite reporting success).
