@@ -79,6 +79,7 @@ nav:
     - FAQ: guide/faq.md
   - Development:
     - Overview: dev/README.md
+    - AI Content Policy: dev/ai-content-policy.md
     - Philosophy: dev/philosophy.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
