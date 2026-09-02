@@ -15,123 +15,125 @@ _SPEC = importlib.util.spec_from_file_location(
 check = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(check)
 
+CLI = check.VERTICALS[0]["reviewers"]
+GUI = check.VERTICALS[1]["reviewers"]
+EVERYTHING_ELSE = check.FALLBACK_VERTICAL["reviewers"]
+NETWORKING = check.HORIZONTALS[0]["reviewers"]
+ROCM = check.HORIZONTALS[1]["reviewers"]
 
-def requirements_for(paths, diff="", author="someone", approvers=()):
+
+def reviews_for(paths, diff="", author="someone", approvers=()):
     return check.evaluate(
-        check.build_requirements(paths, diff), author, {a.lower() for a in approvers}
+        check.required_reviews(paths, diff), author, {a.lower() for a in approvers}
     )
 
 
-def unmet(requirements):
-    return [r for r in requirements if not r["satisfied"]]
+def unmet(required):
+    return [r for r in required if not r["satisfied"]]
 
 
-def required_sets(requirements):
-    return {tuple(r["maintainers"]) for r in requirements}
+def reviewer_sets(required):
+    return {tuple(r["reviewers"]) for r in required}
 
 
-def test_cli_change_requires_cli_maintainer():
-    reqs = requirements_for(["src/cpp/cli/main.cpp"])
-    assert required_sets(reqs) == {check.CLI_MAINTAINERS}
-    assert unmet(reqs)
-
-    assert not unmet(requirements_for(["src/cpp/cli/main.cpp"], approvers={"bitgamma"}))
-    assert not unmet(requirements_for(["src/cpp/cli/main.cpp"], author="bitgamma"))
+def roles(required):
+    return {r["area"]: r["role"] for r in required}
 
 
-def test_app_change_requires_app_maintainer():
-    reqs = requirements_for(["src/app/src/renderer/ChatWindow.tsx"])
-    assert required_sets(reqs) == {check.APP_MAINTAINERS}
+def test_cli_vertical_needs_its_primary_reviewer():
+    required = reviews_for(["src/cpp/cli/main.cpp"])
+    assert reviewer_sets(required) == {CLI}
+    assert roles(required) == {"CLI": "primary"}
+    assert unmet(required)
+
+    assert not unmet(reviews_for(["src/cpp/cli/main.cpp"], approvers={"bitgamma"}))
+    assert not unmet(reviews_for(["src/cpp/cli/main.cpp"], author="bitgamma"))
+
+
+def test_gui_vertical_needs_its_primary_reviewer():
+    required = reviews_for(["src/app/src/renderer/ChatWindow.tsx"])
+    assert reviewer_sets(required) == {GUI}
     assert not unmet(
-        requirements_for(
-            ["src/app/src/renderer/ChatWindow.tsx"], approvers={"kpoineal"}
-        )
+        reviews_for(["src/app/src/renderer/ChatWindow.tsx"], approvers={"kpoineal"})
     )
 
 
-def test_anything_else_requires_a_core_maintainer():
-    reqs = requirements_for(["docs/README.md"])
-    assert required_sets(reqs) == {check.CORE_MAINTAINERS}
-    assert not unmet(requirements_for(["docs/README.md"], approvers={"ramkrishna2910"}))
-    assert not unmet(requirements_for(["docs/README.md"], approvers={"jeremyfowers"}))
+def test_everything_else_falls_to_the_project_maintainers():
+    required = reviews_for(["docs/README.md"])
+    assert reviewer_sets(required) == {EVERYTHING_ELSE}
+    assert roles(required) == {"Everything else": "primary"}
+    assert not unmet(reviews_for(["docs/README.md"], approvers={"ramkrishna2910"}))
+    assert not unmet(reviews_for(["docs/README.md"], approvers={"jeremyfowers"}))
 
 
-def test_scoped_paths_alone_do_not_pull_in_core_maintainers():
-    reqs = requirements_for(["src/cpp/cli/main.cpp", "src/app/package.json"])
-    assert required_sets(reqs) == {check.CLI_MAINTAINERS, check.APP_MAINTAINERS}
+def test_owned_verticals_do_not_leak_into_everything_else():
+    required = reviews_for(["src/cpp/cli/main.cpp", "src/app/package.json"])
+    assert reviewer_sets(required) == {CLI, GUI}
 
 
-def test_mixed_change_stacks_every_rule():
-    reqs = requirements_for(["src/cpp/cli/main.cpp", "src/cpp/server/router.cpp"])
-    assert required_sets(reqs) == {check.CLI_MAINTAINERS, check.CORE_MAINTAINERS}
+def test_every_vertical_a_pr_touches_needs_its_own_primary_review():
+    required = reviews_for(["src/cpp/cli/main.cpp", "src/cpp/server/router.cpp"])
+    assert reviewer_sets(required) == {CLI, EVERYTHING_ELSE}
 
-    # One maintainer's approval satisfies only their own rule.
-    reqs = requirements_for(
+    # One primary reviewer's approval satisfies only their own vertical.
+    required = reviews_for(
         ["src/cpp/cli/main.cpp", "src/cpp/server/router.cpp"], approvers={"bitgamma"}
     )
-    assert [r["maintainers"] for r in unmet(reqs)] == [check.CORE_MAINTAINERS]
+    assert [r["reviewers"] for r in unmet(required)] == [EVERYTHING_ELSE]
 
 
 def test_prefixes_must_match_a_directory_boundary():
-    # src/appearance/ is not the desktop app.
-    reqs = requirements_for(["src/appearance/theme.css"])
-    assert required_sets(reqs) == {check.CORE_MAINTAINERS}
+    # src/appearance/ is not the GUI.
+    assert reviewer_sets(reviews_for(["src/appearance/theme.css"])) == {EVERYTHING_ELSE}
 
 
-def test_network_keywords_add_a_second_reviewer():
-    reqs = requirements_for(["docs/README.md"], diff="the CURL invocation")
-    assert required_sets(reqs) == {check.CORE_MAINTAINERS, check.NETWORK_MAINTAINERS}
-
-    # The extra reviewer stacks on top of, and never replaces, the area rule.
-    reqs = requirements_for(["docs/README.md"], diff="tcp socket", approvers={"Geramy"})
-    assert [r["maintainers"] for r in unmet(reqs)] == [check.CORE_MAINTAINERS]
-
-    reqs = requirements_for(
-        ["docs/README.md"], diff="tcp socket", approvers={"Geramy", "jeremyfowers"}
-    )
-    assert not unmet(reqs)
+def test_networking_horizontal_adds_an_expert_review():
+    required = reviews_for(["docs/README.md"], diff="the CURL invocation")
+    assert reviewer_sets(required) == {EVERYTHING_ELSE, NETWORKING}
+    assert roles(required)["Networking"] == "expert"
 
 
-def test_rocm_keyword_adds_a_second_reviewer():
-    reqs = requirements_for(["docs/README.md"], diff="build with ROCm 6.4")
-    assert required_sets(reqs) == {check.CORE_MAINTAINERS, check.ROCM_MAINTAINERS}
+def test_rocm_horizontal_adds_an_expert_review():
+    required = reviews_for(["docs/README.md"], diff="build with ROCm 6.4")
+    assert reviewer_sets(required) == {EVERYTHING_ELSE, ROCM}
+    assert roles(required)["ROCm"] == "expert"
 
-    # Additive, like the networking rule — it never replaces the area rule.
-    reqs = requirements_for(["docs/README.md"], diff="rocm", approvers={"superm1"})
-    assert [r["maintainers"] for r in unmet(reqs)] == [check.CORE_MAINTAINERS]
 
-    reqs = requirements_for(
+def test_an_expert_review_never_replaces_the_primary_one():
+    required = reviews_for(["docs/README.md"], diff="tcp socket", approvers={"Geramy"})
+    assert [r["reviewers"] for r in unmet(required)] == [EVERYTHING_ELSE]
+
+    required = reviews_for(["docs/README.md"], diff="rocm", approvers={"superm1"})
+    assert [r["reviewers"] for r in unmet(required)] == [EVERYTHING_ELSE]
+
+    required = reviews_for(
         ["src/cpp/cli/main.cpp"], diff="rocm", approvers={"bitgamma", "superm1"}
     )
-    assert not unmet(reqs)
+    assert not unmet(required)
 
 
-def test_keyword_rules_stack_with_each_other():
-    reqs = requirements_for(["docs/README.md"], diff="rocm over http")
-    assert required_sets(reqs) == {
-        check.CORE_MAINTAINERS,
-        check.NETWORK_MAINTAINERS,
-        check.ROCM_MAINTAINERS,
-    }
+def test_horizontals_stack_with_each_other():
+    required = reviews_for(["docs/README.md"], diff="rocm over http")
+    assert reviewer_sets(required) == {EVERYTHING_ELSE, NETWORKING, ROCM}
 
-    reqs = requirements_for(
+    required = reviews_for(
         ["docs/README.md"], diff="rocm over http", approvers={"superm1", "jeremyfowers"}
     )
-    assert [r["maintainers"] for r in unmet(reqs)] == [check.NETWORK_MAINTAINERS]
+    assert [r["reviewers"] for r in unmet(required)] == [NETWORKING]
 
 
-def test_network_keywords_match_case_insensitively_and_in_paths():
-    assert check.NETWORK_MAINTAINERS in required_sets(
-        requirements_for(["src/cpp/server/http_client.cpp"])
+def test_horizontal_keywords_match_case_insensitively_and_in_paths():
+    assert NETWORKING in reviewer_sets(reviews_for(["src/cpp/server/http_client.cpp"]))
+    assert ROCM in reviewer_sets(reviews_for(["src/cpp/rocm_device.cpp"]))
+    assert NETWORKING in reviewer_sets(
+        reviews_for(["docs/README.md"], diff="UDP beacon")
     )
-    assert check.NETWORK_MAINTAINERS in required_sets(
-        requirements_for(["docs/README.md"], diff="UDP beacon")
-    )
 
 
-def test_network_keywords_ignore_unchanged_context():
-    reqs = requirements_for(["docs/README.md"], diff="no networking here")
-    assert required_sets(reqs) == {check.CORE_MAINTAINERS}
+def test_horizontals_ignore_unchanged_context():
+    assert reviewer_sets(reviews_for(["docs/README.md"], diff="nothing relevant")) == {
+        EVERYTHING_ELSE
+    }
 
 
 def test_diff_text_reads_only_added_and_removed_lines():
@@ -146,7 +148,6 @@ def test_diff_text_reads_only_added_and_removed_lines():
             "+new line",
         ]
     )
-
     original = check.gh_api
     check.gh_api = lambda *a, **k: diff
     try:
@@ -186,8 +187,8 @@ def test_dismissed_approval_does_not_count():
 
 
 def test_involvement_is_case_insensitive():
-    assert not unmet(requirements_for(["docs/README.md"], author="JeremyFowers"))
-    assert not unmet(requirements_for(["docs/README.md"], approvers={"RamKrishna2910"}))
+    assert not unmet(reviews_for(["docs/README.md"], author="JeremyFowers"))
+    assert not unmet(reviews_for(["docs/README.md"], approvers={"RamKrishna2910"}))
 
 
 def test_renames_count_both_sides():
@@ -195,8 +196,15 @@ def test_renames_count_both_sides():
     assert check.changed_paths(files) == ["src/app/b.ts", "src/cpp/cli/a.cpp"]
 
 
-def test_empty_pr_requires_nobody():
-    assert check.build_requirements([], "") == []
+def test_every_non_empty_pr_requires_a_primary_review():
+    """The verticals are exhaustive: no set of paths escapes a primary review."""
+    for paths in (
+        ["src/cpp/cli/a.cpp"],
+        ["src/app/a.ts"],
+        ["README.md"],
+        ["src/app/a.ts", "src/cpp/cli/a.cpp", "README.md"],
+    ):
+        assert any(r["role"] == "primary" for r in reviews_for(paths))
 
 
 if __name__ == "__main__":

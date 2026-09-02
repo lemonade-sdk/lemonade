@@ -1,16 +1,27 @@
-# Assert that every reviewer this PR requires has approved it. A reviewer also
-# counts as satisfied when they authored the PR themselves.
+# Assert that a PR has the reviewers it requires before it can be queued.
 #
-#   src/cpp/cli/**   -> @bitgamma
-#   src/app/**       -> @kpoineal
-#   anything else    -> @jeremyfowers or @ramkrishna2910
-#   diff mentioning http / curl / tcp / udp / cors -> @Geramy, in addition
-#   diff mentioning rocm                            -> @superm1, in addition
+# A *primary* review comes from the maintainer of a vertical — a function of
+# the repo that lives in known folders. A PR needs one for every vertical it
+# touches:
 #
-# Rules stack: a PR touching src/app and the server needs @kpoineal AND one of
-# the core maintainers, and the keyword rules add reviewers on top of that.
-# The maintainer lists and the involvement analysis live in
+#   CLI              src/cpp/cli/**  -> @bitgamma
+#   GUI              src/app/**      -> @kpoineal
+#   Everything else  anything else   -> @jeremyfowers or @ramkrishna2910
+#
+# An *expert* review comes from the maintainer of a horizontal — a function
+# that cuts across folders, recognized by the words the diff uses. These are
+# additive; an expert review never stands in for a primary one:
+#
+#   Networking  diff mentions http / curl / tcp / udp / cors -> @Geramy
+#   ROCm        diff mentions rocm                           -> @superm1
+#
+# A reviewer counts as satisfied when they authored the PR or approved it.
+# The reviewer lists and the analysis live in
 # .github/scripts/check_maintainer_involvement.py.
+#
+# This policy is temporary — it enforces the partial code freeze ahead of the
+# v11.9.1 release, and is expected to loosen as more primary and expert
+# reviewers are named. See discussion #3421.
 #
 # To enforce, add "required-reviewers" to the branch protection required status
 # checks. Without that this workflow only reports.

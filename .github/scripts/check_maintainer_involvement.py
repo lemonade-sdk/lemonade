@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Verify that the required maintainers were involved in a pull request.
+"""Work out which reviewers a pull request requires, and whether it has them.
 
-"Involved" means the maintainer either authored the PR or has an active
-approving review on it. Used by .github/workflows/required_reviewers.yml;
-safe to run locally against any open PR for spot-testing.
+A PR needs a *primary* review from the maintainer of each vertical it touches,
+plus an *expert* review from the maintainer of each horizontal its diff
+impacts. Expert reviews are additive — they never stand in for a primary one.
+A reviewer counts as satisfied when they authored the PR or have an active
+approving review on it. Used by .github/workflows/required_reviewers.yml; safe
+to run locally against any open PR for spot-testing.
 
 Usage:
     python .github/scripts/check_maintainer_involvement.py <pr> [--repo OWNER/REPO]
@@ -20,34 +23,39 @@ import re
 import subprocess
 import sys
 
-CLI_PREFIXES = ("src/cpp/cli/",)
-APP_PREFIXES = ("src/app/",)
+# Verticals: a function of the repo that lives in known folders. Every PR needs
+# a primary review from the maintainer of each vertical it touches.
+VERTICALS = (
+    {"name": "CLI", "prefixes": ("src/cpp/cli/",), "reviewers": ("bitgamma",)},
+    {"name": "GUI", "prefixes": ("src/app/",), "reviewers": ("kpoineal",)},
+)
 
-CLI_MAINTAINERS = ("bitgamma",)
-APP_MAINTAINERS = ("kpoineal",)
-CORE_MAINTAINERS = ("jeremyfowers", "ramkrishna2910")
-NETWORK_MAINTAINERS = ("Geramy",)
-ROCM_MAINTAINERS = ("superm1",)
+# Anything not claimed by a vertical above falls to the project maintainers.
+FALLBACK_VERTICAL = {
+    "name": "Everything else",
+    "reviewers": ("jeremyfowers", "ramkrishna2910"),
+}
 
-NETWORK_KEYWORDS = ("http", "curl", "tcp", "udp", "cors")
-ROCM_KEYWORDS = ("rocm",)
-
-# Additive rules: each matching group adds a required reviewer on top of
-# whatever the changed paths already require.
-KEYWORD_RULES = (
+# Horizontals: a function that cuts across folders, recognized by the words its
+# diff uses rather than the paths it touches. Adds an expert review on top of
+# whatever primary review the paths already require.
+HORIZONTALS = (
     {
-        "pattern": re.compile(
-            "|".join(re.escape(k) for k in NETWORK_KEYWORDS), re.IGNORECASE
-        ),
-        "maintainers": NETWORK_MAINTAINERS,
+        "name": "Networking",
+        "keywords": ("http", "curl", "tcp", "udp", "cors"),
+        "reviewers": ("Geramy",),
     },
     {
-        "pattern": re.compile(
-            "|".join(re.escape(k) for k in ROCM_KEYWORDS), re.IGNORECASE
-        ),
-        "maintainers": ROCM_MAINTAINERS,
+        "name": "ROCm",
+        "keywords": ("rocm",),
+        "reviewers": ("superm1",),
     },
 )
+
+for _horizontal in HORIZONTALS:
+    _horizontal["pattern"] = re.compile(
+        "|".join(re.escape(k) for k in _horizontal["keywords"]), re.IGNORECASE
+    )
 
 # Reviews in these states say nothing about whether the reviewer approves,
 # so they never displace an earlier verdict from the same person.
@@ -135,70 +143,69 @@ def matches_prefix(path, prefixes):
     return any(path.startswith(prefix) for prefix in prefixes)
 
 
-def build_requirements(paths, changed_diff):
-    """Which maintainer groups this PR needs, and why."""
-    requirements = []
+def required_reviews(paths, changed_diff):
+    """The primary and expert reviews this PR requires, and what triggered them."""
+    required = []
 
-    cli_paths = [p for p in paths if matches_prefix(p, CLI_PREFIXES)]
-    if cli_paths:
-        requirements.append(
-            {
-                "reason": f"changes under {', '.join(CLI_PREFIXES)}",
-                "evidence": cli_paths,
-                "maintainers": CLI_MAINTAINERS,
-            }
-        )
+    claimed = set()
+    for vertical in VERTICALS:
+        touched = [p for p in paths if matches_prefix(p, vertical["prefixes"])]
+        claimed.update(touched)
+        if touched:
+            required.append(
+                {
+                    "role": "primary",
+                    "area": vertical["name"],
+                    "trigger": f"changes under {', '.join(vertical['prefixes'])}",
+                    "evidence": touched,
+                    "reviewers": vertical["reviewers"],
+                }
+            )
 
-    app_paths = [p for p in paths if matches_prefix(p, APP_PREFIXES)]
-    if app_paths:
-        requirements.append(
+    unclaimed = [p for p in paths if p not in claimed]
+    if unclaimed:
+        owned = ", ".join(pre for v in VERTICALS for pre in v["prefixes"])
+        required.append(
             {
-                "reason": f"changes under {', '.join(APP_PREFIXES)}",
-                "evidence": app_paths,
-                "maintainers": APP_MAINTAINERS,
-            }
-        )
-
-    scoped = CLI_PREFIXES + APP_PREFIXES
-    other_paths = [p for p in paths if not matches_prefix(p, scoped)]
-    if other_paths:
-        requirements.append(
-            {
-                "reason": f"changes outside {', '.join(scoped)}",
-                "evidence": other_paths,
-                "maintainers": CORE_MAINTAINERS,
+                "role": "primary",
+                "area": FALLBACK_VERTICAL["name"],
+                "trigger": f"changes outside {owned}",
+                "evidence": unclaimed,
+                "reviewers": FALLBACK_VERTICAL["reviewers"],
             }
         )
 
     haystack = changed_diff + "\n" + "\n".join(paths)
-    for rule in KEYWORD_RULES:
-        keywords = sorted(
-            {m.group(0).lower() for m in rule["pattern"].finditer(haystack)}
+    for horizontal in HORIZONTALS:
+        hits = sorted(
+            {m.group(0).lower() for m in horizontal["pattern"].finditer(haystack)}
         )
-        if keywords:
-            requirements.append(
+        if hits:
+            required.append(
                 {
-                    "reason": f"diff mentions {', '.join(keywords)}",
+                    "role": "expert",
+                    "area": horizontal["name"],
+                    "trigger": f"diff mentions {', '.join(hits)}",
                     "evidence": [],
-                    "maintainers": rule["maintainers"],
+                    "reviewers": horizontal["reviewers"],
                 }
             )
 
-    return requirements
+    return required
 
 
-def evaluate(requirements, author, approvers):
-    """Attach the involvement verdict to each requirement."""
+def evaluate(required, author, approvers):
+    """Attach the involvement verdict to each required review."""
     involved = {author.lower()} | approvers
-    for requirement in requirements:
-        satisfied = [m for m in requirement["maintainers"] if m.lower() in involved]
-        requirement["satisfied_by"] = satisfied
-        requirement["satisfied"] = bool(satisfied)
-    return requirements
+    for review in required:
+        satisfied = [r for r in review["reviewers"] if r.lower() in involved]
+        review["satisfied_by"] = satisfied
+        review["satisfied"] = bool(satisfied)
+    return required
 
 
-def render(pr_number, author, approvers, requirements):
-    lines = [f"# Maintainer involvement — PR #{pr_number}", ""]
+def render(pr_number, author, approvers, required):
+    lines = [f"# Required reviewers — PR #{pr_number}", ""]
     lines.append(f"- **Author:** @{author}")
     approver_list = (
         ", ".join(f"@{a}" for a in sorted(approvers)) if approvers else "_none_"
@@ -206,34 +213,37 @@ def render(pr_number, author, approvers, requirements):
     lines.append(f"- **Approving reviewers:** {approver_list}")
     lines.append("")
 
-    if not requirements:
-        lines.append("No maintainer involvement is required for this change.")
+    if not required:
+        lines.append("This change requires no reviewers.")
         return "\n".join(lines) + "\n"
 
-    lines.append("| | Trigger | Required (any one) | Involved |")
-    lines.append("|---|---|---|---|")
-    for requirement in requirements:
-        icon = "✅" if requirement["satisfied"] else "❌"
-        required = ", ".join(f"@{m}" for m in requirement["maintainers"])
+    lines.append("| | Area | Review | Trigger | Required (any one) | Satisfied by |")
+    lines.append("|---|---|---|---|---|---|")
+    for review in required:
+        icon = "✅" if review["satisfied"] else "❌"
+        reviewers = ", ".join(f"@{r}" for r in review["reviewers"])
         got = (
-            ", ".join(f"@{m}" for m in requirement["satisfied_by"])
-            if requirement["satisfied"]
+            ", ".join(f"@{r}" for r in review["satisfied_by"])
+            if review["satisfied"]
             else "—"
         )
-        lines.append(f"| {icon} | {requirement['reason']} | {required} | {got} |")
+        lines.append(
+            f"| {icon} | {review['area']} | {review['role']} | "
+            f"{review['trigger']} | {reviewers} | {got} |"
+        )
     lines.append("")
 
-    for requirement in requirements:
-        if requirement["satisfied"] or not requirement["evidence"]:
+    for review in required:
+        if review["satisfied"] or not review["evidence"]:
             continue
-        shown = requirement["evidence"][:10]
+        shown = review["evidence"][:10]
         lines.append(
-            f"<details><summary>Files triggering: {requirement['reason']}</summary>"
+            f"<details><summary>Files in the {review['area']} vertical</summary>"
         )
         lines.append("")
         lines += [f"- `{path}`" for path in shown]
-        if len(requirement["evidence"]) > len(shown):
-            lines.append(f"- …and {len(requirement['evidence']) - len(shown)} more")
+        if len(review["evidence"]) > len(shown):
+            lines.append(f"- …and {len(review['evidence']) - len(shown)} more")
         lines.append("")
         lines.append("</details>")
         lines.append("")
@@ -269,13 +279,13 @@ def main():
     author = (pull.get("user") or {}).get("login") or ""
     approvers = active_approvers(reviews)
     paths = changed_paths(files)
-    requirements = evaluate(
-        build_requirements(paths, diff_text(args.pr, args.repo, files)),
+    required = evaluate(
+        required_reviews(paths, diff_text(args.pr, args.repo, files)),
         author,
         approvers,
     )
 
-    report = render(args.pr, author, approvers, requirements)
+    report = render(args.pr, author, approvers, required)
     print(report)
 
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -283,12 +293,13 @@ def main():
         with open(summary_path, "a", encoding="utf-8") as handle:
             handle.write(report)
 
-    unmet = [r for r in requirements if not r["satisfied"]]
-    for requirement in unmet:
-        required = ", ".join(f"@{m}" for m in requirement["maintainers"])
+    unmet = [r for r in required if not r["satisfied"]]
+    for review in unmet:
+        reviewers = ", ".join(f"@{r}" for r in review["reviewers"])
+        article = "an" if review["role"] == "expert" else "a"
         print(
-            f"::error::{requirement['reason']} — needs an approving review from "
-            f"one of: {required}",
+            f"::error::{review['area']} needs {article} {review['role']} review "
+            f"({review['trigger']}) from one of: {reviewers}",
             file=sys.stderr,
         )
     return 1 if unmet else 0
