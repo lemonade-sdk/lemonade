@@ -3901,10 +3901,12 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
     LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
                                << provider << "': " << added << " model(s)"
                                << std::endl;
-    // Registry-generation consumers (e.g. the routing-policy cost cache, the
-    // routing-helper reconciler) need to see freshly-discovered pricing and
-    // catalog changes without waiting for an on-disk edit or a restart.
-    notify_models_changed();
+    // Bump the generation so the routing-policy price cache drops freshly
+    // stale prices, but do not fire notify_models_changed(): its callback
+    // reconciles routing helpers over the whole registry, and a cloud catalog
+    // refresh adds or removes no router collection. Same rule the register and
+    // delete paths below already follow -- only a router collection reconciles.
+    next_notify_generation();
     return added;
 }
 
@@ -3929,7 +3931,7 @@ size_t ModelManager::evict_cloud_models(const std::string& provider) {
         LOG(DEBUG, "ModelManager") << "Evicted " << removed
                                     << " cloud model(s) for provider '"
                                     << provider << "'" << std::endl;
-        notify_models_changed();
+        next_notify_generation();
     }
     return removed;
 }
