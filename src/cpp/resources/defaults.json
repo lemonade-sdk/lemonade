@@ -6,6 +6,7 @@
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": "",
   "auto_check_model_updates": true,
   "auto_update_models": false,
   "broadcast": true,
@@ -26,6 +27,10 @@
   },
   "global_timeout": 600,
   "host": "localhost",
+  "hrx": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
