@@ -12,6 +12,7 @@
 namespace lemon {
 
 class Router;
+class ModelManager;
 
 using EnsureClassifierModelLoaded = std::function<void(const std::string& model)>;
 using RouterJsonCall = std::function<json(const json& request)>;
@@ -46,7 +47,9 @@ CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
                            std::optional<double> cost_output_per_million,
                            const std::map<std::string, json>& extras);
 
-CostServices make_router_cost_services(Router& router);
+// See routing_classifier_services_router.cpp for how `model_manager`'s
+// registry generation keeps the price cache below from going stale.
+CostServices make_router_cost_services(Router& router, ModelManager& model_manager);
 
 std::vector<float> parse_embedding_vector(const json& response);
 std::map<std::string, double> parse_classifier_scores(const json& response);

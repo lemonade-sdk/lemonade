@@ -2673,6 +2673,28 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_LLM_ROUTER_TEST_SRC}")
     add_cpp_ci_test(RoutingPolicyLlmRouterTest CI ON COMMAND test_routing_policy_llm_router)
 endif()
 
+# Cost classifier + routing.router "cost_select" desugaring (Phase B): the
+# L0b on-ramp. Unit + parser + end-to-end tests against a fake CostServices.
+set(_ROUTING_COST_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_policy_cost_router.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_COST_ROUTER_TEST_SRC}")
+    add_executable(test_routing_policy_cost_router
+        test/cpp/test_routing_policy_cost_router.cpp
+        src/cpp/server/routing_policy.cpp
+        src/cpp/server/routing_policy_parser.cpp
+    )
+    target_include_directories(test_routing_policy_cost_router PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_routing_policy_cost_router PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingPolicyCostRouterTest CI ON COMMAND test_routing_policy_cost_router)
+endif()
+
 # Routing deterministic leaf conditions (issue #2380): keywords/regex/min_chars/
 # max_chars/has_*/metadata conditions and their leaf-factory map.
 set(_ROUTING_DETERMINISTIC_TEST_SRC
@@ -2946,6 +2968,24 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_CLASSIFIER_SERVICES_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RoutingClassifierServicesTest CI ON COMMAND test_routing_classifier_services)
+endif()
+
+# make_router_cost_services: the price cache's registry-generation invalidation
+# and entry-count bound (a caller-supplied candidate name, e.g. via
+# /v1/routing/validate, has no registered-model count bounding it otherwise).
+# Needs a real Router/ModelManager, unlike the classifier-services test above.
+set(_ROUTING_CLASSIFIER_SERVICES_ROUTER_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_routing_classifier_services_router.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CLASSIFIER_SERVICES_ROUTER_TEST_SRC}")
+    add_executable(test_routing_classifier_services_router
+        test/cpp/test_routing_classifier_services_router.cpp
+    )
+    target_link_libraries(test_routing_classifier_services_router PRIVATE lemonade-server-core)
+    add_dependencies(test_routing_classifier_services_router copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(RoutingClassifierServicesRouterTest CI ON COMMAND test_routing_classifier_services_router)
 endif()
 
 # Auto-tune: GGUF array storage, scalar derivation, weighted KV cache computation.

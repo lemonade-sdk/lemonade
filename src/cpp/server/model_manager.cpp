@@ -1061,6 +1061,10 @@ uint64_t ModelManager::next_notify_generation() {
     return ++notify_generation_;
 }
 
+uint64_t ModelManager::current_notify_generation() const {
+    return notify_generation_.load();
+}
+
 void ModelManager::notify_models_changed() {
     // A callback that reads the registry can trigger a cache rebuild; block any
     // same-thread re-entry so that can never recursively re-fire this.
@@ -1068,6 +1072,17 @@ void ModelManager::notify_models_changed() {
     if (in_notify) {
         return;
     }
+
+    // Bump unconditionally, before checking whether a callback is registered:
+    // a generation-based consumer (e.g. the routing-policy price cache) must
+    // see this registry change even on a build with nothing subscribed via
+    // set_models_changed_callback. Two concurrent registry updates may run
+    // their callbacks in parallel and publish out of order; the consumer
+    // keeps only the highest generation instead of us serializing the whole
+    // (potentially blocking) callback here, which would stall a newer update
+    // behind an older one.
+    const uint64_t generation = ++notify_generation_;
+
     std::function<void(uint64_t)> cb;
     {
         std::lock_guard<std::mutex> lock(models_changed_callback_mutex_);
@@ -1080,12 +1095,6 @@ void ModelManager::notify_models_changed() {
     struct ResetGuard {
         ~ResetGuard() { in_notify = false; }
     } reset_guard;
-    // Tag this notification with a monotonic generation. Two concurrent registry
-    // updates may run their callbacks in parallel and publish out of order; the
-    // consumer keeps only the highest generation instead of us serializing the
-    // whole (potentially blocking) callback here, which would stall a newer
-    // update behind an older one.
-    const uint64_t generation = ++notify_generation_;
     // Best-effort: a notification must never abort the registry mutation that
     // triggered it. delete_model fires this from a scope-guard destructor, where
     // a propagating exception would call std::terminate.
@@ -3847,69 +3856,82 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         return 0;
     }
 
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
-
-    // Reseed: drop this provider's previously-registered entries before
-    // inserting the fresh list, so a model the provider stopped exposing
-    // disappears. Other providers' entries are untouched.
-    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
-        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = models_cache_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
     size_t added = 0;
-    for (const auto& m : models) {
-        if (m.recipe != "cloud" || m.model_name.empty()) continue;
-        // Match build_cache()'s precedence exactly: emplace, don't overwrite.
-        // Any pre-existing entry under the same bare cache key wins - whether
-        // it's an FLM model, another cloud provider that discovered first, or
-        // a builtin/extra/user record. This provider's previously-registered
-        // entries are already cleared above, so emplace here is symmetric
-        // with build_cache and immune to a fast /cloud/auth racing past an
-        // already-populated cache.
-        ModelInfo info = m;
-        // discover_models() populates name/checkpoint/labels/context/cost but
-        // not recipe_options; Router needs it to construct CloudServer.
-        info.recipe_options = RecipeOptions("cloud", json::object());
-        auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
-        if (!inserted) {
-            LOG(INFO, "ModelManager")
-                << "Cloud discovery for '" << provider << "' skipping '"
-                << it->first << "': name already held (recipe="
-                << it->second.recipe << ")" << std::endl;
-            continue;
-        }
-        ++added;
-    }
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
-    rebuild_public_model_aliases_locked();
+        // Reseed: drop this provider's previously-registered entries before
+        // inserting the fresh list, so a model the provider stopped exposing
+        // disappears. Other providers' entries are untouched.
+        for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+            if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+                it = models_cache_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        for (const auto& m : models) {
+            if (m.recipe != "cloud" || m.model_name.empty()) continue;
+            // Match build_cache()'s precedence exactly: emplace, don't overwrite.
+            // Any pre-existing entry under the same bare cache key wins - whether
+            // it's an FLM model, another cloud provider that discovered first, or
+            // a builtin/extra/user record. This provider's previously-registered
+            // entries are already cleared above, so emplace here is symmetric
+            // with build_cache and immune to a fast /cloud/auth racing past an
+            // already-populated cache.
+            ModelInfo info = m;
+            // discover_models() populates name/checkpoint/labels/context/cost but
+            // not recipe_options; Router needs it to construct CloudServer.
+            info.recipe_options = RecipeOptions("cloud", json::object());
+            auto [it, inserted] = models_cache_.emplace(info.model_name, std::move(info));
+            if (!inserted) {
+                LOG(INFO, "ModelManager")
+                    << "Cloud discovery for '" << provider << "' skipping '"
+                    << it->first << "': name already held (recipe="
+                    << it->second.recipe << ")" << std::endl;
+                continue;
+            }
+            ++added;
+        }
+
+        rebuild_public_model_aliases_locked();
+    }
 
     LOG(INFO, "ModelManager") << "Refreshed cloud models for provider '"
                                << provider << "': " << added << " model(s)"
                                << std::endl;
+    // Bump the generation so the routing-policy price cache drops freshly
+    // stale prices, but do not fire notify_models_changed(): its callback
+    // reconciles routing helpers over the whole registry, and a cloud catalog
+    // refresh adds or removes no router collection. Same rule the register and
+    // delete paths below already follow -- only a router collection reconciles.
+    next_notify_generation();
     return added;
 }
 
 size_t ModelManager::evict_cloud_models(const std::string& provider) {
     if (provider.empty()) return 0;
-    std::lock_guard<std::mutex> lock(models_cache_mutex_);
     size_t removed = 0;
-    for (auto it = models_cache_.begin(); it != models_cache_.end();) {
-        if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
-            it = models_cache_.erase(it);
-            ++removed;
-        } else {
-            ++it;
+    {
+        std::lock_guard<std::mutex> lock(models_cache_mutex_);
+        for (auto it = models_cache_.begin(); it != models_cache_.end();) {
+            if (it->second.recipe == "cloud" && it->second.cloud_provider == provider) {
+                it = models_cache_.erase(it);
+                ++removed;
+            } else {
+                ++it;
+            }
+        }
+        if (removed > 0) {
+            rebuild_public_model_aliases_locked();
         }
     }
     if (removed > 0) {
-        rebuild_public_model_aliases_locked();
         LOG(DEBUG, "ModelManager") << "Evicted " << removed
                                     << " cloud model(s) for provider '"
                                     << provider << "'" << std::endl;
+        next_notify_generation();
     }
     return removed;
 }

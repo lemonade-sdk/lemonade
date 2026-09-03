@@ -3700,7 +3700,7 @@ std::optional<RouterDispatchResult> Server::route_collection_request(
             auto_load_model_if_needed(m, json::object(),
                                       LoadPurpose::RoutingDependency);
         });
-    CostServices cost_services = make_router_cost_services(*router_);
+    CostServices cost_services = make_router_cost_services(*router_, *model_manager_);
     RoutingPolicyEngine engine(std::move(policy), std::move(services),
                                std::move(cost_services));
 
@@ -3793,7 +3793,9 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
                 auto_load_model_if_needed(m, json::object(),
                                           LoadPurpose::RoutingDependency);
             });
-        RoutingPolicyEngine engine(std::move(policy), std::move(services));
+        CostServices cost_services = make_router_cost_services(*router_, *model_manager_);
+        RoutingPolicyEngine engine(std::move(policy), std::move(services),
+                                   std::move(cost_services));
 
         RouteContext ctx;
         ctx.input = prompt;

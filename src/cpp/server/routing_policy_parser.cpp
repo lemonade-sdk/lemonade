@@ -160,12 +160,24 @@ void require_declared(const std::string& resolved,
     }
 }
 
+// Cap on routing.candidates. Enforced here rather than only in the schema
+// (schema, maxItems) because /v1/routing/validate calls this parser directly
+// with an identity component resolver — no registered-model count bounds it
+// there — and each candidate costs one cost_of()/registry lookup per
+// evaluate() for a cost_select policy, so an unbounded list is a cheap way
+// to drive many registry misses per request. Far above any real policy.
+constexpr std::size_t kMaxCandidates = 64;
+
 std::vector<std::string> parse_candidates(const json& routing,
                                           const std::set<std::string>& declared,
                                           const RoutingPolicyParseOptions& options) {
     const json& value = required_field(routing, "candidates", "routing");
     if (!value.is_array() || value.empty()) {
         throw std::invalid_argument("routing.candidates must be a non-empty array");
+    }
+    if (value.size() > kMaxCandidates) {
+        throw std::invalid_argument("routing.candidates must not exceed " +
+                                    std::to_string(kMaxCandidates) + " entries");
     }
     std::vector<std::string> candidates;
     std::set<std::string> seen;
@@ -560,35 +572,42 @@ const std::set<std::string>& routing_metadata_match_keys() {
     return keys;
 }
 
-// Desugar the `routing.router` (L0a) sugar into the explicit core form: one
-// `llm` classifier whose labels are the candidates, plus one identity rule per
+// Desugar the `routing.router` sugar into the explicit core form: one
+// classifier whose labels are the candidates, plus one identity rule per
 // candidate (label X -> route_to X), evaluated first-match-wins. The engine
 // stays single-path; `routing.router` is pure load-time sugar. Returns a new
 // `routing` object with `router` removed and `classifiers`/`rules` synthesized.
 //
+// Two variants share this shape:
+//   - "llm" (L0(a)): the classifier is an `llm` classifier that runs the
+//     author's model + prompt and must pick one candidate by name.
+//   - "cost_select" (L0(b)): the classifier is a deterministic `cost`
+//     classifier with no model/prompt — it ranks candidates via CostServices
+//     and picks the cheapest, falling open to `default_model` when no
+//     candidate has cost data.
+//
 // Names: the synthesized classifier labels and rule match.labels use the
 // AUTHORED candidate names (read from routing.candidates verbatim), because
-// that is the vocabulary the author's prompt exposes to the router LLM and
-// therefore what the model replies with. Only route_to is canonicalized — and
-// that happens downstream in parse_rules via the component resolver, exactly as
-// for hand-written rules. Feeding pre-resolved canonical IDs in here would
-// break label matching (the LLM never sees canonical IDs) and would
-// double-resolve route_to.
+// for "llm" that is the vocabulary the author's prompt exposes to the router
+// LLM and therefore what the model replies with (and for "cost_select" it's
+// simply the candidate identity the cost classifier ranks over). Only
+// route_to is canonicalized — and that happens downstream in parse_rules via
+// the component resolver, exactly as for hand-written rules. Feeding
+// pre-resolved canonical IDs in here would break label matching (the LLM
+// never sees canonical IDs) and would double-resolve route_to.
 json desugar_routing_router(const json& routing) {
     const json& router = routing.at("router");
     reject_unknown_keys(router, routing_router_keys(), "routing.router");
 
     const std::string type = required_string(router, "type", "routing.router");
-    if (type != "llm") {
-        throw std::invalid_argument("routing.router.type must be 'llm'");
+    if (type != "llm" && type != "cost_select") {
+        throw std::invalid_argument("routing.router.type must be 'llm' or 'cost_select'");
     }
     // The sugar owns classifiers + rules; authoring both forms is ambiguous.
     if (routing.contains("classifiers") || routing.contains("rules")) {
         throw std::invalid_argument(
             "routing.router cannot be combined with routing.classifiers or routing.rules");
     }
-    required_string(router, "model", "routing.router");
-    required_string(router, "prompt", "routing.router");
 
     // Authored names, validated already by parse_candidates (shape, non-empty,
     // declared, no duplicates after resolution) before this runs.
@@ -600,15 +619,29 @@ json desugar_routing_router(const json& routing) {
     json out = routing;
     out.erase("router");
 
-    // The single llm classifier. `model` is resolved later by
-    // parse_classifier_configs; labels are the candidates it must choose among.
-    out["classifiers"] = json::array({json{
-        {"id", "__router"},
-        {"type", "llm"},
-        {"model", router.at("model")},
-        {"prompt", router.at("prompt")},
-        {"labels", authored},
-    }});
+    if (type == "llm") {
+        required_string(router, "model", "routing.router");
+        required_string(router, "prompt", "routing.router");
+        // `model` is resolved later by parse_classifier_configs; labels are
+        // the candidates the llm classifier must choose among.
+        out["classifiers"] = json::array({json{
+            {"id", "__router"},
+            {"type", "llm"},
+            {"model", router.at("model")},
+            {"prompt", router.at("prompt")},
+            {"labels", authored},
+        }});
+    } else {  // cost_select
+        if (router.contains("model") || router.contains("prompt")) {
+            throw std::invalid_argument(
+                "routing.router.type 'cost_select' does not accept 'model' or 'prompt'");
+        }
+        out["classifiers"] = json::array({json{
+            {"id", "__router"},
+            {"type", "cost"},
+            {"labels", authored},
+        }});
+    }
 
     // Identity rules. Index-based ids avoid any charset assumptions about
     // candidate names (which may contain '.' or '-').
