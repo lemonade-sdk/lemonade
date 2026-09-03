@@ -7300,11 +7300,39 @@ class EndpointTests(ServerTestBase):
             )
             self.assertIsInstance(v["sharded"], bool)
             self.assertIsInstance(v["size_bytes"], int)
+            self.assertGreater(
+                v["size_bytes"],
+                0,
+                f"Variant '{v.get('name')}' has no file size metadata",
+            )
 
         print(
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_incompatible_gguf(self):
+        """A GGUF repository without a model architecture is not a llama.cpp model."""
+        checkpoint = "stduhpf/Krea-2-Turbo-GGUF"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for incompatible checkpoint, got "
+            f"{response.status_code}: {response.text}",
+        )
+        error = response.json().get("error", "")
+        self.assertIn("not compatible with llama.cpp", error)
+        self.assertIn("does not declare a model architecture", error)
+        print("[OK] Incompatible GGUF checkpoint was rejected before download")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.

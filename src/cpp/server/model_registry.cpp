@@ -377,10 +377,10 @@ public:
         std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
         if (endpoint.empty()) endpoint = "https://huggingface.co";
 
-        std::string url = endpoint + "/api/models/" + percent_encode(repo_id, true);
-        if (!requested_revision.empty() && revision != "main") {
-            url += "/revision/" + percent_encode(revision, true);
-        }
+        std::string url = huggingface_repository_api_url(
+            endpoint,
+            repo_id,
+            !requested_revision.empty() && revision != "main" ? revision : "");
         url += "?blobs=true";
 
         const auto response = HttpClient::get(url, auth_headers());
@@ -621,7 +621,7 @@ RegistrySearchResponse normalize_registry_search_response(
     result.results.reserve(std::min<std::size_t>(items->size(), limit));
     for (const auto& item : *items) {
         RegistrySearchResult normalized = normalize_registry_search_result(source, item);
-        if (normalized.repo_id.empty() || excluded_generation_task(normalized.task)) continue;
+        if (normalized.repo_id.empty() || registry_task_is_excluded(normalized.task)) continue;
         // Provider list metadata is only a hint here. The request-specific
         // format filter is applied by search_registry_models below, while
         // /pull/variants remains the authoritative file compatibility check.
@@ -629,6 +629,73 @@ RegistrySearchResponse normalize_registry_search_response(
         if (result.results.size() >= limit) break;
     }
     return result;
+}
+
+bool registry_task_is_excluded(const std::string& task) {
+    return excluded_generation_task(task);
+}
+
+bool is_official_huggingface_endpoint(const std::string& endpoint) {
+    return trim_trailing_slash(endpoint) == "https://huggingface.co";
+}
+
+std::string huggingface_repository_api_url(
+    const std::string& endpoint,
+    const std::string& repo_id,
+    const std::string& revision) {
+    std::string url = trim_trailing_slash(endpoint) +
+                      "/api/models/" + percent_encode(repo_id, true);
+    if (!revision.empty()) {
+        url += "/revision/" + percent_encode(revision, true);
+    }
+    return url;
+}
+
+std::optional<json> parse_huggingface_compatibility_response(
+    int status_code,
+    const std::string& body,
+    bool metadata_required) {
+    if (status_code != 200) {
+        const bool mirror_does_not_support_metadata =
+            !metadata_required &&
+            (status_code == 400 || status_code == 404 ||
+             status_code == 405 || status_code == 422);
+        if (mirror_does_not_support_metadata) {
+            return std::nullopt;
+        }
+        throw std::runtime_error(
+            "Hugging Face compatibility metadata returned status " +
+            std::to_string(status_code));
+    }
+    try {
+        json metadata = JsonUtils::parse(body);
+        if (metadata_required &&
+            (!metadata.is_object() || !metadata.contains("gguf") ||
+             !metadata["gguf"].is_object())) {
+            throw std::runtime_error(
+                "Hugging Face compatibility response is missing GGUF metadata");
+        }
+        return metadata;
+    } catch (const std::exception&) {
+        if (metadata_required) throw;
+        return std::nullopt;
+    }
+}
+
+std::optional<json> fetch_huggingface_compatibility_metadata(
+    const std::string& repo_id,
+    const std::string& revision) {
+    std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
+    if (endpoint.empty()) endpoint = "https://huggingface.co";
+    const std::string url = huggingface_repository_api_url(
+        endpoint, repo_id, revision) +
+        "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag";
+    const auto response = HttpClient::get(
+        url, model_registry(RemoteRegistrySource::HuggingFace).auth_headers());
+    return parse_huggingface_compatibility_response(
+        response.status_code,
+        response.body,
+        is_official_huggingface_endpoint(endpoint));
 }
 
 RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
