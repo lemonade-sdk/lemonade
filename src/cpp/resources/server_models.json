@@ -966,6 +966,16 @@
         ],
         "size": 17.4
     },
+    "Qwen3-30B-A3B-Instruct-2507-HRX": {
+        "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "tool-calling"
+        ],
+        "size": 18.6
+    },
     "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",

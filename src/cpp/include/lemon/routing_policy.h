@@ -432,8 +432,15 @@ ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_f
 // Classifier / condition registry helpers (#2379). These instantiate the
 // behavior-free contract objects from policy JSON while keeping live backend
 // access behind ClassifierServices.
-ClassifierPtr make_classifier(const json& config);
-std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json);
+//
+// expose_request_features gates an `llm` classifier's has_tools/has_images
+// visibility (#2789) — see LlmClassifier::effective_prompt in
+// routing_policy.cpp for which classifiers the parser passes true for. The
+// default preserves prior always-expose behavior for direct callers (tests,
+// standalone tooling).
+ClassifierPtr make_classifier(const json& config, bool expose_request_features = true);
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json,
+                                                       bool expose_request_features = true);
 
 // Builds the leaf factory used by compile_match_expr. Classifier leaves are
 // resolved here; deterministic leaf types are supplied by later issues.

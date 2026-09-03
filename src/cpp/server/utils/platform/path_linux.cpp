@@ -82,6 +82,14 @@ public:
         throw std::runtime_error("HOME is not set; cannot resolve Lemonade config directory");
     }
 
+    std::string get_legacy_cache_dir() override {
+        std::string home = get_environment_variable_utf8("HOME");
+        if (!home.empty()) {
+            return home + "/.cache/lemonade";
+        }
+        return "";
+    }
+
     std::string get_runtime_dir() override {
         const char* xdg = std::getenv("XDG_RUNTIME_DIR");
         if (xdg && xdg[0] != '\0') {
