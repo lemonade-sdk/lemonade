@@ -3024,6 +3024,37 @@ static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, Model
     return result;
 }
 
+// Both routing-policy parse sites resolve a component the same way: alias
+// first, falling back to the name as authored; then a primary type lookup
+// with one fallback tier behind it. #2748 was that shape drifting between
+// them, so they are built from here rather than hand-written twice. Only the
+// tiers differ -- which model set each consults, and what the fallback is.
+struct RoutingResolutionTiers {
+    std::function<std::optional<std::string>(const std::string&)> alias;
+    std::function<std::optional<ModelType>(const std::string&)> type;
+    std::function<std::optional<ModelType>(const std::string&)> type_fallback;
+};
+
+static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTiers tiers) {
+    RoutingPolicyParseOptions options;
+    options.resolve_component =
+        [tiers](const std::string& name) -> std::optional<std::string> {
+        if (tiers.alias) {
+            if (auto resolved = tiers.alias(name)) return *resolved;
+        }
+        // An unresolvable name stays as authored so component-role validation
+        // can still report it by the name the author actually wrote.
+        return name;
+    };
+    options.get_model_type = [tiers](const std::string& name) -> std::optional<ModelType> {
+        if (tiers.type) {
+            if (auto type = tiers.type(name)) return type;
+        }
+        return tiers.type_fallback ? tiers.type_fallback(name) : std::nullopt;
+    };
+    return options;
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -3276,13 +3307,23 @@ void ModelManager::build_cache() {
 
     // Pre-filter snapshots for the routing-policy resolver below (#2748); see
     // compute_model_alias_maps() for why the alias needs the full algorithm
-    // rather than a plain bare-name map.
+    // rather than a plain bare-name map. Only router collections read them and
+    // the alias rebuild is O(n log n) over the whole registry, so a host with
+    // no router collection -- the common case, across ~15 build_cache() call
+    // sites -- pays nothing.
+    const bool needs_routing_snapshots =
+        std::any_of(all_models.begin(), all_models.end(), [](const auto& entry) {
+            return is_router_collection_recipe(entry.second.recipe);
+        });
+
     std::map<std::string, ModelType> pre_filter_types;
-    for (const auto& [name, info] : all_models) {
-        pre_filter_types[name] = info.type;
+    std::map<std::string, std::string> pre_filter_aliases;
+    if (needs_routing_snapshots) {
+        for (const auto& [name, info] : all_models) {
+            pre_filter_types[name] = info.type;
+        }
+        pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
     }
-    const std::map<std::string, std::string> pre_filter_aliases =
-        compute_model_alias_maps(all_models).public_model_aliases;
 
     // Step 2: Filter by backend availability. This is the full-registry pass, so
     // it also refreshes the recipe availability side table used to hide backends
@@ -3338,22 +3379,32 @@ void ModelManager::build_cache() {
     // resolve_model_name()/get_model_info()). pre_filter_aliases is computed
     // over all_models, a strict superset of models_cache_, so it alone
     // covers everything public_model_aliases_ would (#2748).
-    RoutingPolicyParseOptions policy_options;
-    policy_options.resolve_component =
+    //
+    // Components only the pre-filter tier can resolve are unavailable on this
+    // host: a classifier bound to one takes its on_error path on every
+    // request. Recorded here, where that is known, and reported per collection
+    // below so the operator sees degraded routing instead of silence (#2748).
+    std::set<std::string> unavailable_components;
+
+    RoutingPolicyParseOptions policy_options = make_routing_parse_options({
         [&pre_filter_aliases](const std::string& name) -> std::optional<std::string> {
-        auto it = pre_filter_aliases.find(name);
-        return it != pre_filter_aliases.end() ? it->second : name;
-    };
-    policy_options.get_model_type = [this, &pre_filter_types](
-                                         const std::string& name) -> std::optional<ModelType> {
-        auto it = models_cache_.find(name);
-        if (it != models_cache_.end()) {
+            auto it = pre_filter_aliases.find(name);
+            if (it == pre_filter_aliases.end()) return std::nullopt;
+            return it->second;
+        },
+        [this](const std::string& name) -> std::optional<ModelType> {
+            auto it = models_cache_.find(name);
+            if (it == models_cache_.end()) return std::nullopt;
             return it->second.type;
-        }
-        auto pre_it = pre_filter_types.find(name);
-        return pre_it != pre_filter_types.end() ? std::optional<ModelType>(pre_it->second)
-                                                : std::nullopt;
-    };
+        },
+        [&pre_filter_types, &unavailable_components](
+            const std::string& name) -> std::optional<ModelType> {
+            auto it = pre_filter_types.find(name);
+            if (it == pre_filter_types.end()) return std::nullopt;
+            unavailable_components.insert(name);
+            return it->second;
+        },
+    });
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
             continue;
@@ -3369,12 +3420,27 @@ void ModelManager::build_cache() {
         if (routing_it != info.extras.end()) {
             doc["routing"] = routing_it->second;
         }
+        unavailable_components.clear();
         try {
             info.route_policy = std::make_shared<const RoutePolicy>(
                 parse_route_policy_collection(doc, policy_options));
         } catch (const std::exception& e) {
             LOG(WARNING, "ModelManager") << "Failed to parse routing policy for '"
                                          << name << "': " << e.what() << std::endl;
+        }
+        if (!unavailable_components.empty()) {
+            std::ostringstream joined;
+            bool first = true;
+            for (const auto& component : unavailable_components) {
+                if (!first) joined << ", ";
+                joined << component;
+                first = false;
+            }
+            LOG(WARNING, "ModelManager")
+                << "Routing policy for '" << name << "' references component(s) "
+                << "unavailable on this host: " << joined.str()
+                << ". Any classifier bound to them will fall back to its on_error "
+                << "result on every request." << std::endl;
         }
     }
 
@@ -6377,39 +6443,44 @@ std::optional<std::string> ModelManager::validate_collection_request(
         }
     }
     if (is_router_collection_recipe(model_data.value("recipe", std::string()))) {
-        RoutingPolicyParseOptions options;
-        options.resolve_component = [this](const std::string& name) -> std::optional<std::string> {
-            try {
-                return resolve_model_name(name);
-            } catch (...) {
-                // Inline collection imports may reference components that are
-                // defined in the same JSON but not registered yet. Keep those
-                // names stable so parser component-role validation can still
-                // compare them against the authored components array.
-                return name;
-            }
-        };
-        options.get_model_type = [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
-            try {
-                return get_model_info(name).type;
-            } catch (...) {
-                // Not registered yet - the name may match an inline `models[]`
-                // definition in this same request; derive its type from that
-                // definition's declared labels (absent labels default to LLM,
-                // same as everywhere else). Only nullopt if no definition
-                // exists at all - that's the "truly unknown" case.
+        // Same resolution shape as build_cache()'s, differing only in its
+        // tiers: this one resolves live and falls back to the request's own
+        // inline `models[]`, because an import validates names that are not
+        // registered yet. Unresolvable names are kept as authored by
+        // make_routing_parse_options, so component-role validation can still
+        // compare them against the authored components array.
+        RoutingPolicyParseOptions options = make_routing_parse_options({
+            [this](const std::string& name) -> std::optional<std::string> {
+                try {
+                    return resolve_model_name(name);
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this](const std::string& name) -> std::optional<ModelType> {
+                try {
+                    return get_model_info(name).type;
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+                // Not registered - the name may match an inline `models[]`
+                // definition in this same request. Derive the type exactly as
+                // register_user_model() would once that definition is
+                // registered, so validation and runtime cannot disagree
+                // (absent labels default to LLM, same as everywhere else).
+                // nullopt only when no definition exists at all - the
+                // "truly unknown" case.
                 const json* def = find_inline_def(bare_component_name(name));
                 if (!def) {
                     return std::nullopt;
                 }
-                // Derive the type exactly as register_user_model() would once
-                // this inline definition is registered, so validation and
-                // runtime cannot disagree.
                 std::set<std::string> label_set = normalized_definition_labels(*def);
                 return get_model_type_from_labels(
                     std::vector<std::string>(label_set.begin(), label_set.end()));
-            }
-        };
+            },
+        });
         try {
             // Strip pull-protocol keys (stream, subscribe, do_not_upgrade, …)
             // that the client merges into the body but the policy parser does

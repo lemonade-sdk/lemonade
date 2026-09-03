@@ -2,6 +2,7 @@
 // collection.router policy loading (#2383).
 
 #include "lemon/model_manager.h"
+#include "lemon/routing_policy.h"
 #include "lemon/utils/path_utils.h"
 
 #include <chrono>
@@ -286,6 +287,37 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
 }
 
+// What #2748 actually promises is that the REST of the policy keeps working,
+// not merely that parsing did not abort. Evaluate the parsed policy with no
+// classifier backend wired up -- the runtime situation on a host missing the
+// hardware -- and assert the unrelated keyword rule still routes while the
+// classifier rule falls back through its on_error (match_false by default).
+static void check_unrelated_rules_survive(const char* label,
+                                          const lemon::ModelInfo& info) {
+    if (info.route_policy == nullptr) {
+        check(label, false);
+        return;
+    }
+    lemon::RoutingPolicyEngine engine(*info.route_policy, lemon::ClassifierServices{});
+
+    lemon::RouteContext code;
+    code.input = "def foo(): pass";
+    code.params.chars = code.input.size();
+    const lemon::Decision code_decision = engine.route(code, /*want_trace=*/false);
+
+    lemon::RouteContext plain;
+    plain.input = "hello there";
+    plain.params.chars = plain.input.size();
+    const lemon::Decision plain_decision = engine.route(plain, /*want_trace=*/false);
+
+    check(label,
+          code_decision.route_to == "remote" &&
+          code_decision.matched_rule == "code-remote" &&
+          !code_decision.default_used &&
+          plain_decision.route_to == "local" &&
+          plain_decision.default_used);
+}
+
 // #2748: a classifier needing unavailable hardware (ryzenai-llm) must not
 // drop the whole policy -- only that classifier fails, at evaluate() time,
 // via its own on_error. Registered standalone since register_user_model
@@ -331,6 +363,10 @@ static void test_filtered_classifier_component_does_not_drop_policy(ModelManager
     check("router policy still parses when a classifier component is "
           "hardware-filtered (#2748)",
           info.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, with the component named canonically (#2748)",
+        info);
 }
 
 // #2748 follow-up: `components` lists the canonical id, classifier
@@ -376,6 +412,10 @@ static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManag
     check("router policy still parses when the classifier references the "
           "filtered component by its bare name (#2748)",
           info.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, via the bare-name alias (#2748)",
+        info);
 }
 
 // #2748 follow-up: builtin.<X> is a distinct alias form from the bare name,
@@ -420,6 +460,10 @@ static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManage
     check("router policy still parses when the classifier references a "
           "filtered builtin via its builtin.<X> alias (#2748)",
           info2.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, via the builtin.<X> alias (#2748)",
+        info2);
 }
 
 static void test_register_preserves_routing(ModelManager& manager) {
