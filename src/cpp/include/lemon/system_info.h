@@ -26,12 +26,14 @@ struct CPUInfo : DeviceInfo {
 };
 
 struct GPUInfo : DeviceInfo {
-    int index = -1;  // NVIDIA only: physical device index from nvidia-smi, when available
+    int index = -1;  // Physical device index, when available
     std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
+    double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;
+    double virtual_used_gb = -1.0;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -240,7 +242,8 @@ private:
     bool get_amd_is_igpu(const std::string& drm_render_minor);
 
 private:
-    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
+    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname,
+                              bool* success = nullptr);
 };
 
 // macOS implementation
