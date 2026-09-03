@@ -120,12 +120,35 @@ void StreamingProxy::forward_sse_stream(
     std::string error_body;
     static constexpr size_t max_error_body = 64 * 1024;
 
-    auto process_line = [&telemetry](const std::string& line) {
+    // Chunk boundaries are arbitrary, so whether the stream carried any event
+    // at all is decided per reassembled line rather than per received chunk. An
+    // event only counts once its blank-line terminator arrives: a data field cut
+    // off before that is discarded by the client, so it delivered nothing.
+    bool has_data_event = false;
+    bool has_pending_data_field = false;
+
+    auto process_line = [&telemetry, &has_data_event, &has_pending_data_field](const std::string& line) {
+        if (line.empty()) {
+            has_data_event = has_data_event || has_pending_data_field;
+            has_pending_data_field = false;
+            return;
+        }
+
         std::string json_str;
-        if (line.find("data: ") == 0) {
-            json_str = line.substr(6);
+        if (line == "data") {
+            // A field name with no colon carries an empty value in SSE.
+            has_pending_data_field = true;
+        } else if (line.find("data:") == 0) {
+            json_str = line.substr(5);
+            // The single space after the colon is optional in SSE.
+            if (!json_str.empty() && json_str.front() == ' ') {
+                json_str.erase(0, 1);
+            }
+            has_pending_data_field = true;
         } else if (line.find("ChatCompletionChunk: ") == 0) {
             json_str = line.substr(21);
+            // Not SSE, so there is no blank-line terminator to wait for.
+            has_data_event = true;
         }
         if (!json_str.empty() && json_str != "[DONE]") {
             try {
@@ -199,6 +222,10 @@ void StreamingProxy::forward_sse_stream(
         }
     );
 
+    // A CR held back as a possible split CRLF terminates its line once no more
+    // bytes can arrive, so the last event of a CR-terminated stream still counts.
+    process_sse_lines(line_buffer, process_line, true);
+
     const bool client_disconnected =
         result.curl_code == CURLE_WRITE_ERROR ||
         result.curl_code == CURLE_ABORTED_BY_CALLBACK;
@@ -261,6 +288,23 @@ void StreamingProxy::forward_sse_stream(
             // adapters downstream would have to guess one.
             payload["error"]["status_code"] = status;
         }
+        const std::string event = "data: " + payload.dump() + "\n\n";
+        sink.write(event.data(), event.size());
+    }
+
+    // A backend that closed a 200 event-stream without ever emitting a data
+    // event produced no response at all. Synthesizing [DONE] below would report
+    // that failure to the client as an empty but successful completion.
+    if (!stream_error && !has_data_event) {
+        static constexpr const char* empty_stream_message =
+            "Backend closed the stream without producing a response";
+        LOG(ERROR, "StreamingProxy") << empty_stream_message << std::endl;
+        telemetry.error_message = empty_stream_message;
+        stream_error = true;
+
+        const json payload{{"error", {{"message", empty_stream_message},
+                                      {"type", "backend_error"},
+                                      {"status_code", 502}}}};
         const std::string event = "data: " + payload.dump() + "\n\n";
         sink.write(event.data(), event.size());
     }
@@ -455,14 +499,25 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     return telemetry;
 }
 
-void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback) {
+void StreamingProxy::process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback,
+                                       bool end_of_stream) {
     size_t pos;
-    while ((pos = line_buffer.find('\n')) != std::string::npos) {
-        std::string line = line_buffer.substr(0, pos);
-        line_buffer.erase(0, pos + 1);
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
+    while ((pos = line_buffer.find_first_of("\r\n")) != std::string::npos) {
+        size_t terminator_length = 1;
+        if (line_buffer[pos] == '\r') {
+            if (pos + 1 == line_buffer.size()) {
+                // The LF of a CRLF split across chunks may still be in flight,
+                // and consuming the CR now would invent a blank line that
+                // terminates the event early.
+                if (!end_of_stream) {
+                    return;
+                }
+            } else if (line_buffer[pos + 1] == '\n') {
+                terminator_length = 2;
+            }
         }
+        std::string line = line_buffer.substr(0, pos);
+        line_buffer.erase(0, pos + terminator_length);
         line_callback(line);
     }
 }
