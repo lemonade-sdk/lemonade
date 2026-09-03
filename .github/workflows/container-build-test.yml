@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - Dockerfile
+      - docker-entrypoint.sh
       - CMakeLists.txt
       - CMakePresets.json
       - cmake/**

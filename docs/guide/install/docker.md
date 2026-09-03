@@ -12,6 +12,16 @@
 > on every host interface. To limit exposure:
 > - Publish to host loopback only: `-p 127.0.0.1:13305:13305`.
 > - Require authentication by setting `-e LEMONADE_API_KEY=<key>`.
+>
+> **Runtime user model**
+>
+> The image no longer sets a `USER`; it starts as root so the entrypoint can
+> map host accelerator device groups (see the ROCm section below) before
+> dropping privileges. The `lemond` server process itself runs as the
+> unprivileged UID 10001. However, `docker exec`, the healthcheck, and any
+> command run with an overridden entrypoint default to **root**. To get an
+> unprivileged shell, pass the user explicitly:
+> `docker exec -u lemonade lemonade-server sh`.
 
 ### Docker Run with Default Configuration
 
@@ -114,6 +124,10 @@ docker run -d \
 ```
 
 > This will run the server using the ROCm backend as the default for llama.cpp.
+>
+> The container entrypoint automatically maps host accelerator device groups
+> (for example `/dev/dri`, `/dev/kfd`, and `/dev/accel/*`) to the unprivileged
+> `lemonade` user, so `--group-add` is not required for standard setups.
 
 > **GPU device permissions on Linux**
 >
@@ -362,9 +376,10 @@ ENV XDG_RUNTIME_DIR=/run/lemonade
 COPY --from=builder /app/build/lemond ./lemond
 COPY --from=builder /app/build/lemonade ./lemonade
 COPY --from=builder /app/build/resources ./resources
+COPY lemonade/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Make executables executable
-RUN chmod +x ./lemond ./lemonade
+RUN chmod +x ./lemond ./lemonade /usr/local/bin/docker-entrypoint.sh
 
 # Expose the lemond/lemonade binaries on PATH so `docker exec` users can run
 # them (e.g. `lemonade list`, `lemonade pull`) without needing the full path.
@@ -378,8 +393,6 @@ RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/.config/lemonade && \
     chown -R lemonade:lemonade /opt/lemonade /run/lemonade
 
-USER lemonade
-
 # Expose default port
 EXPOSE 13305
 
@@ -391,6 +404,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Binds 0.0.0.0 because Docker port publishing (-p) reaches the container via
 # its external interface, not loopback. Restrict exposure by publishing to
 # host loopback (-p 127.0.0.1:13305:13305) and/or setting LEMONADE_API_KEY.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["./lemond", "--host", "0.0.0.0"]
 ```
 
