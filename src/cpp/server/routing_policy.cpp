@@ -1416,7 +1416,8 @@ RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices 
     }
 }
 
-Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) const {
+Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace,
+                                    const std::set<std::string>* excluded_candidates) const {
     EvalContext eval{ctx, services_, want_trace, {}, {}, {}};
 
     // First-match-wins over the compiled rules. A classifier-level failure is
@@ -1426,6 +1427,12 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
     // escaping route().
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
+            // Skipped before evaluation: an excluded rule must not run
+            // classifiers or emit trace entries it can never act on.
+            if (excluded_candidates != nullptr &&
+                excluded_candidates->count(policy_.rules[i].route_to) > 0) {
+                continue;
+            }
             if (compiled_rules_[i]->evaluate(eval)) {
                 Decision decision(policy_.rules[i], want_trace, std::move(eval.trace));
                 attach_estimated_cost(decision, cost_services_);

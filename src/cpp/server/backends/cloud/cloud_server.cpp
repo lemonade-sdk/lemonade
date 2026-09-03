@@ -4,6 +4,7 @@
 #include "lemon/cloud_provider_registry.h"
 #include "lemon/error_types.h"
 #include "lemon/runtime_config.h"
+#include "lemon/routing_capacity.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
@@ -773,6 +774,21 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
                 LOG(ERROR, "Cloud") << "Provider returned status " << result.status_code
                                     << ", body: " << body_buffer.substr(0, 200) << std::endl;
                 json extra = {{"status_code", result.status_code}};
+                // Only a length rejection carries the provider's body: the
+                // router's context-overflow backstop reads it to decide whether
+                // to re-route. Any other failure keeps the bare error shape, so
+                // provider text (quota, account hints) is not relayed to a
+                // client that has no use for it.
+                json provider_body;
+                try {
+                    provider_body = json::parse(body_buffer);
+                } catch (...) {
+                    provider_body = json();
+                }
+                if (routing_capacity::is_context_overflow_error(provider_body)) {
+                    extra["details"] = {{"status_code", result.status_code},
+                                        {"response", provider_body}};
+                }
                 std::string error_msg = sse_error(
                     "cloud (" + provider_ + ") request failed", "backend_error", extra);
                 sink.write(error_msg.c_str(), error_msg.size());

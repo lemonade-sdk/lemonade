@@ -53,6 +53,7 @@ on top via each rule's `outputs` pass-through bag and the request `metadata`.
 | `routing.default_model` | yes | Fallback when no rule matches. Must be one of `candidates`. |
 | `routing.rules` | yes* | Ordered; first match wins. (*a policy provides **either** `routing.rules` **or** a `routing.router` block — see [LLM-as-router](#llm-as-router-routingrouter).) |
 | `routing.classifiers` | no | Model-backed classifier definitions referenced by `classifier` / `semantic_similarity` conditions. |
+| `routing.capacity` | no | Tunes context-window fitting — see [Context-window fitting](#context-window-fitting). |
 
 A **rule** is `{ id, match, route_to, outputs? }`. `route_to` must be one of
 `candidates`. `outputs` is an arbitrary object copied verbatim into the decision
@@ -236,6 +237,104 @@ also carries an **`x_lemonade_route`** object:
 
 `route_to` is the candidate that actually answered. For streaming responses the
 same object is attached to the first SSE event as `x_lemonade_route`.
+
+## Context-window fitting
+
+Rules match on the last user message, so they cannot see how large the whole
+conversation has grown. Before dispatching, the router therefore estimates the
+request's token footprint and compares it against the selected candidate's
+context window — its live resolved `ctx_size` when the candidate is loaded, or
+the window a load would produce when it isn't. A candidate that cannot fit the
+request is skipped and resolution re-runs without it, so first-match-wins lands
+on the next matching rule, then the policy default.
+
+The estimate counts message **content** (roughly four bytes per token) plus a
+small per-message allowance for the chat template's role markers; tool schemas
+are counted from their serialized JSON, because that is how they reach the
+model. Image parts are not counted as prompt text.
+
+A candidate with no known window (a cloud provider that reports none) counts as
+unconstrained and is never skipped. Each skip appears in `trace` when
+`route_trace` is set:
+
+```json
+{ "condition": "capacity:Small-GGUF", "result": false,
+  "rationale": "estimated 5200 tokens (+1024 headroom) > window 4096" }
+```
+
+When no candidate fits, the request fails with **400** and
+`error.code = "context_length_exceeded"`, carrying the same trace.
+
+### Tuning the boundary
+
+Both fudge factors are policy-level knobs under `routing.capacity`. They matter
+when a collection mixes a small local candidate with an expensive cloud
+default: skipping too eagerly silently shifts traffic — and cost — to the
+larger candidate.
+
+```json
+"routing": {
+  "candidates": ["Small-GGUF", "openrouter.big-model"],
+  "default_model": "openrouter.big-model",
+  "capacity": {
+    "safety_margin": 1.25,
+    "generation_headroom": 1024
+  },
+  "rules": [ ... ]
+}
+```
+
+- **`safety_margin`** (default `1.25`, minimum `1.0`) multiplies the estimate
+  before it is compared against a window. The four-bytes-per-token
+  approximation undercounts code and non-Latin scripts, so >1 errs toward
+  skipping a candidate that would have rejected the request anyway. Lower it to
+  keep more traffic on a local candidate; raise it to avoid backend rejections.
+- **`generation_headroom`** (default `1024`) reserves room for the completion.
+  It is only a fallback: a request that sets `max_tokens` or
+  `max_completion_tokens` uses its own value instead.
+
+### When the estimate is wrong
+
+The estimate can undercount, and a candidate that reports no window is never
+skipped — so a routed candidate may still reject the prompt for length at
+inference. The router then re-routes past it and retries.
+
+The retry walk is bounded, because recovery is not free: each re-route costs an
+upstream call, and a replacement that is not already resident also costs an
+evict-and-load cycle while the client waits with no output. So one request may
+re-route at most 3 times, at most **one** of which may require loading local
+weights; a replacement that is already resident, or an unmetered one such as a
+cloud model, is cheap and only counts against the first limit. A policy listing
+many candidates therefore cannot turn one request into many model loads.
+
+This applies to streaming too. A backend length rejection arrives as the first
+SSE event with no data event before it, so it is withheld from the client while
+the re-route runs; only the surviving attempt's events are released, and the
+client never sees the intermediate failure. Keep-alive comments (`: ping`) are
+passed through immediately so a long prefill cannot time the client out, and
+they do not spend the re-route opportunity.
+
+How far that "first event" property is actually established differs by backend.
+It is verified empirically against llama-server, which answers HTTP 200 and
+makes the rejection its first and only SSE event. For the OpenAI-wire cloud
+path it is established from the code path plus a mock provider: a provider that
+rejects with a 4xx has its error envelope written first, before anything else
+reaches the sink. A provider that instead answers 200 and reports the overflow
+in-band, after content, falls under the mid-stream case below.
+
+Two limits worth knowing:
+
+- The `x-lemonade-route` **header** is committed with the response, so on a
+  re-routed stream it still names the initially matched rule. The first SSE
+  event's `x_lemonade_route` object is authoritative for which candidate
+  answered.
+- A rejection that arrives *after* real content has already been streamed
+  cannot be undone, so it is passed through to the client as an in-stream
+  error, exactly as before.
+
+If every candidate rejects the request for length — or the retry budget runs
+out — the last rejection is surfaced unchanged (a 400 for a normal request, an
+in-stream error event for a streaming one).
 
 ## Cloud candidates
 
