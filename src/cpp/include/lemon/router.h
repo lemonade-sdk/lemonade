@@ -191,6 +191,17 @@ public:
     // (re)evaluates the no-backstop warning — see that function for both.
     void reconcile_llm_candidate_floor(int floor, uint64_t generation);
 
+    // Combined entry point a policy change actually drives: publishes the new
+    // floor and helper set together under one load_mutex_ hold, then waits
+    // once. Calling reconcile_llm_candidate_floor and reconcile_routing_helpers
+    // back to back would release and re-take the lock between them, leaving a
+    // gap where a load completing in between validates the new floor against
+    // the old helper set (or vice versa) — the exact race publishing early was
+    // meant to close.
+    void reconcile_policy_state(int floor,
+                                const std::set<std::string>& needed_helper_models,
+                                uint64_t generation);
+
     // Proactive counterpart to ensure_residency_capacity, which only ever
     // evicts one resident to make room for a new one: this converges an
     // already-populated pool down to its current limit (see
@@ -349,6 +360,11 @@ private:
     // condition isn't currently active. Re-warns only when the floor changes
     // while still unguarded, not on every unrelated policy reconcile.
     int last_llm_floor_warned_ = 0;
+    // Generation last applied by reconcile_policy_state. Its own counter,
+    // distinct from last_reconcile_generation_/last_llm_floor_generation_
+    // above, since it is the only one of the three ever stamped from a policy
+    // change in production.
+    uint64_t last_policy_reconcile_generation_ = 0;
     // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
     // residency slot to clear wakes and returns instead of blocking teardown.
     bool reclaim_shutdown_ = false;

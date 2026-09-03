@@ -469,12 +469,18 @@ void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64
 
     // Only the eviction pass must wait for a quiet slot: evict_server mutates
     // loaded_servers_ and blocks on request drain, neither of which is safe to
-    // interleave with an in-flight load.
+    // interleave with an in-flight load. reclaim_shutdown_ breaks it early too
+    // (see reclaim_stale_helper_if_idle) so a background_sync_threads_ join in
+    // ~Server doesn't stall behind a load that's still running.
     load_cv_.wait(lock, [&] {
-        return !is_loading_ &&
-               (!exclusive_active_ ||
-                exclusive_owner_ == std::this_thread::get_id());
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
     });
+    if (reclaim_shutdown_) {
+        return;
+    }
     prune_stale_routing_helpers_locked();
 }
 
@@ -525,6 +531,39 @@ void Router::begin_shutdown() {
     std::lock_guard<std::mutex> lock(load_mutex_);
     reclaim_shutdown_ = true;
     load_cv_.notify_all();
+}
+
+void Router::reconcile_policy_state(int floor,
+                                    const std::set<std::string>& needed_helper_models,
+                                    uint64_t generation) {
+    std::set<std::string> needed;
+    for (const auto& model : needed_helper_models) {
+        needed.insert(resolve_model_name(model));
+    }
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    if (generation <= last_policy_reconcile_generation_) {
+        return;
+    }
+    last_policy_reconcile_generation_ = generation;
+
+    // Both published under the one lock hold below, so a load that completes
+    // mid-wait re-validates against a floor and a helper set that are always
+    // from the same generation — never one fresh and the other stale.
+    llm_candidate_floor_ = floor;
+    needed_helper_models_ = std::move(needed);
+
+    load_cv_.wait(lock, [&] {
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
+    });
+    if (reclaim_shutdown_) {
+        return;
+    }
+    enforce_llm_pool_capacity_locked();
+    prune_stale_routing_helpers_locked();
 }
 
 void Router::enforce_llm_pool_capacity_locked() {

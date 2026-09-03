@@ -404,13 +404,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
     model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        // Both reconciles below wait for the same load-quiescence condition
-        // (see Router::reconcile_llm_candidate_floor); order between them no
-        // longer matters for blocking, only for which lands its generation
-        // check first.
         auto floor_info = active_policy_llm_candidate_floor();
-        router_->reconcile_llm_candidate_floor(
-            static_cast<int>(floor_info.models.size()), generation);
+        router_->reconcile_policy_state(static_cast<int>(floor_info.models.size()),
+                                        active_policy_helper_models(), generation);
         {
             std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
             if (generation > last_llm_floor_info_generation_) {
@@ -418,7 +414,6 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
                 llm_candidate_floor_info_ = std::move(floor_info);
             }
         }
-        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
     });
 
     // Seed the router's needed-helper set from policies already present at
@@ -432,8 +427,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     const uint64_t seed_generation = model_manager_->next_notify_generation();
     const std::set<std::string> seed_needed = active_policy_helper_models();
     auto seed_floor_info = active_policy_llm_candidate_floor();
-    router_->reconcile_llm_candidate_floor(
-        static_cast<int>(seed_floor_info.models.size()), seed_generation);
+    router_->reconcile_policy_state(static_cast<int>(seed_floor_info.models.size()),
+                                    seed_needed, seed_generation);
     {
         std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
         if (seed_generation > last_llm_floor_info_generation_) {
@@ -441,7 +436,6 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
             llm_candidate_floor_info_ = std::move(seed_floor_info);
         }
     }
-    router_->reconcile_routing_helpers(seed_needed, seed_generation);
 
     model_manager_->set_model_updated_callback([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
@@ -7496,7 +7490,13 @@ void Server::request_llm_pool_enforcement() {
     auto finished_flag = std::make_shared<std::atomic<bool>>(false);
     std::thread worker([this, finished_flag]() {
         for (;;) {
-            router_->enforce_llm_pool_capacity();
+            // A thread that lets an exception escape its top-level function
+            // calls std::terminate, taking the whole process down with it.
+            try {
+                router_->enforce_llm_pool_capacity();
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "LLM pool enforcement failed: " << e.what() << std::endl;
+            }
             std::lock_guard<std::mutex> inner_lock(llm_pool_enforce_mutex_);
             if (!llm_pool_enforce_pending_) {
                 llm_pool_enforce_running_ = false;

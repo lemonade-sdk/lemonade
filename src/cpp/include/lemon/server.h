@@ -171,7 +171,7 @@ private:
     std::optional<RouterDispatchResult> apply_router_collection_dispatch(
         nlohmann::json& request_json);
     // Union of routing-helper models across every active router collection's
-    // policy. Passed to Router::reconcile_routing_helpers after a policy is
+    // policy. Passed to Router::reconcile_policy_state after a policy is
     // removed so helpers no remaining policy needs are reclaimed.
     std::set<std::string> active_policy_helper_models();
     // Computes the LLM pool floor — see residency_limit() in
