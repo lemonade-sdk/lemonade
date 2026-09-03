@@ -5913,6 +5913,9 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
             limit = parsed;
         }
 
+        const std::string recipe = req.has_param("recipe")
+            ? req.get_param_value("recipe") : "";
+
         bool gguf_only = false;
         if (req.has_param("format")) {
             const std::string format = req.get_param_value("format");
@@ -5933,7 +5936,7 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
             return;
         }
 
-        const auto search = search_registry_models(source, query, limit, gguf_only);
+        const auto search = search_registry_models(source, query, limit, gguf_only, recipe);
         nlohmann::json results = nlohmann::json::array();
         for (const auto& model : search.results) {
             results.push_back({
@@ -5946,7 +5949,8 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
                 {"task", model.task},
                 {"downloads", model.downloads},
                 {"likes", model.likes},
-                {"has_gguf", model.has_gguf}
+                {"has_gguf", model.has_gguf},
+                {"architecture", model.architecture}
             });
         }
         nlohmann::json response = {
@@ -5956,6 +5960,11 @@ void Server::handle_registry_search(const httplib::Request& req, httplib::Respon
             {"results", std::move(results)}
         };
         if (gguf_only) response["format"] = "gguf";
+        if (!recipe.empty()) {
+            response["scoped_to"] = recipe;
+            const std::string constraint = backends::model_constraint_summary(recipe);
+            if (!constraint.empty()) response["constraint"] = constraint;
+        }
         res.set_content(response.dump(), "application/json");
     } catch (const RegistrySearchError& e) {
         res.status = e.status_code() == 429 ? 429 : 502;
@@ -6048,8 +6057,10 @@ void Server::handle_pull_variants(const httplib::Request& req, httplib::Response
         }
         bool not_found = false;
         const std::string resolved_source = remote_registry_source_name(parsed_source);
+        const std::string variants_recipe = req.has_param("recipe")
+            ? req.get_param_value("recipe") : "";
         nlohmann::json body = lemon::fetch_pull_variants(
-            checkpoint, resolved_source, not_found);
+            checkpoint, resolved_source, not_found, variants_recipe);
         if (not_found) {
             res.status = 404;
             nlohmann::json error = {{"error", "Checkpoint '" + checkpoint + "' not found on " +

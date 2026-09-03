@@ -1,6 +1,9 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 
+#include <cctype>
+#include <string>
 #include <utility>
+#include "lemon/utils/origin_utils.h"
 
 // Generated from LEMON_BACKENDS at configure time. Defines
 // lemon::backends::all_generated_descriptors() (descriptor data only).
@@ -30,6 +33,99 @@ bool has_backend(const std::string& recipe) {
 bool recipe_has_rocm_channels(const std::string& recipe) {
     const BackendDescriptor* d = descriptor_for(recipe);
     return d != nullptr && !d->rocm_channels.empty();
+}
+
+ModelCompatibility model_compatibility(const std::vector<ModelConstraint>& constraints,
+                                       const std::string& architecture,
+                                       const std::string& quant) {
+    if (constraints.empty()) {
+        return ModelCompatibility::Supported;
+    }
+    if (architecture.empty()) {
+        return ModelCompatibility::Unknown;
+    }
+
+    const auto fold = [](const std::string& value) {
+        std::string out;
+        out.reserve(value.size());
+        for (unsigned char ch : value) {
+            if (ch == '_' || ch == '-' || ch == ' ') continue;
+            out.push_back(static_cast<char>(std::tolower(ch)));
+        }
+        return out;
+    };
+
+    const std::string arch = fold(architecture);
+    const std::string token = utils::to_lower(quant);
+    for (const ModelConstraint& c : constraints) {
+        if (fold(c.architecture) != arch) continue;
+        if (c.quants.empty()) return ModelCompatibility::Supported;
+        if (token.empty()) return ModelCompatibility::Unknown;
+        for (const std::string& allowed : c.quants) {
+            if (utils::to_lower(allowed) == token) return ModelCompatibility::Supported;
+        }
+    }
+    return ModelCompatibility::Unsupported;
+}
+
+bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
+                             const std::string& architecture,
+                             const std::string& quant) {
+    return model_compatibility(constraints, architecture, quant) != ModelCompatibility::Unsupported;
+}
+
+std::string model_load_refusal(const std::string& recipe,
+                               const std::string& architecture,
+                               const std::string& quant) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr || d->supported_models.empty()) return "";
+
+    const ModelCompatibility verdict =
+        model_compatibility(d->supported_models, architecture, quant);
+    if (verdict == ModelCompatibility::Supported) return "";
+
+    const std::string serves = model_constraint_summary(recipe);
+    if (verdict == ModelCompatibility::Unknown) {
+        return "cannot confirm this model is compatible with the '" + recipe +
+               "' backend, which serves: " + serves +
+               " (architecture or quantization could not be determined)";
+    }
+    return "architecture " + (architecture.empty() ? std::string("unknown") : architecture) +
+           (quant.empty() ? std::string() : " / " + quant) +
+           " is not supported by the '" + recipe + "' backend, which serves: " + serves;
+}
+
+bool backend_supports_model(const std::string& recipe,
+                            const std::string& architecture,
+                            const std::string& quant) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr) {
+        return true;
+    }
+    return model_constraints_allow(d->supported_models, architecture, quant);
+}
+
+std::string model_constraint_summary(const std::string& recipe) {
+    const BackendDescriptor* d = descriptor_for(recipe);
+    if (d == nullptr || d->supported_models.empty()) {
+        return "";
+    }
+    std::string out;
+    for (const ModelConstraint& c : d->supported_models) {
+        if (!out.empty()) out += ", ";
+        out += c.architecture;
+        if (!c.quants.empty()) {
+            out += " (";
+            bool first = true;
+            for (const std::string& q : c.quants) {
+                if (!first) out += "/";
+                out += q;
+                first = false;
+            }
+            out += ")";
+        }
+    }
+    return out;
 }
 
 const std::vector<std::string>& supported_modes_for(const std::string& recipe) {

@@ -257,6 +257,67 @@ int main() {
                       "got " + join_names(set));
     }
 
+    // extract_gguf_quant is the tokenizer variant grouping already used; it is
+    // exported so compatibility checks classify a quant the same way the
+    // variant list does.
+    {
+        result.expect("Quant token read from a plain filename",
+                      lemon::extract_gguf_quant("Qwen3-30B-A3B-Q4_K_M.gguf") == "Q4_K_M",
+                      "got '" + lemon::extract_gguf_quant("Qwen3-30B-A3B-Q4_K_M.gguf") + "'");
+        result.expect("Unsloth Dynamic prefix is preserved",
+                      lemon::extract_gguf_quant("Model-UD-Q4_K_XL.gguf") == "UD-Q4_K_XL",
+                      "got '" + lemon::extract_gguf_quant("Model-UD-Q4_K_XL.gguf") + "'");
+        result.expect("Quant token read from a sharded filename",
+                      lemon::extract_gguf_quant("Model-Q8_0-00001-of-00003.gguf") == "Q8_0",
+                      "got '" + lemon::extract_gguf_quant("Model-Q8_0-00001-of-00003.gguf") + "'");
+        result.expect("Lowercase input normalizes to the canonical token",
+                      lemon::extract_gguf_quant("model-q4_k_m.gguf") == "Q4_K_M",
+                      "got '" + lemon::extract_gguf_quant("model-q4_k_m.gguf") + "'");
+        result.expect("A name with no quant yields an empty token",
+                      lemon::extract_gguf_quant("Qwen3-30B-A3B.gguf").empty(),
+                      "got '" + lemon::extract_gguf_quant("Qwen3-30B-A3B.gguf") + "'");
+    }
+
+    // filter_variants is the tier that actually narrows what a user can pick.
+    // No shipping backend declares constraints yet, so exercise it against
+    // constraints supplied directly — otherwise only the no-op path is covered
+    // and an inverted predicate here would pass every other test.
+    {
+        std::vector<lemon::GgufVariant> variants(3);
+        variants[0].name = "Q4_K_M";  variants[0].quant = "Q4_K_M";
+        variants[1].name = "Q8_0";    variants[1].quant = "Q8_0";
+        variants[2].name = "BF16";    variants[2].quant = "BF16";
+
+        const std::vector<lemon::ModelConstraint> q4_moe{{"qwen3_moe", {"Q4_K_M"}}};
+        const std::vector<lemon::ModelConstraint> any_moe{{"qwen3_moe", {}}};
+        const std::vector<lemon::ModelConstraint> none;
+
+        const auto kept = lemon::filter_variants(variants, q4_moe, "qwen3moe");
+        result.expect("Only the qualified quant survives filtering",
+                      kept.size() == 1 && kept[0].quant == "Q4_K_M",
+                      "kept " + std::to_string(kept.size()) + " variant(s)");
+
+        const auto all_quants = lemon::filter_variants(variants, any_moe, "qwen3moe");
+        result.expect("A constraint naming no quant keeps every quant",
+                      all_quants.size() == 3,
+                      "kept " + std::to_string(all_quants.size()));
+
+        const auto wrong_arch = lemon::filter_variants(variants, q4_moe, "llama");
+        result.expect("A mismatched architecture drops every variant",
+                      wrong_arch.empty(),
+                      "kept " + std::to_string(wrong_arch.size()));
+
+        const auto unknown_arch = lemon::filter_variants(variants, q4_moe, "");
+        result.expect("An unreported architecture keeps every variant",
+                      unknown_arch.size() == 3,
+                      "kept " + std::to_string(unknown_arch.size()));
+
+        const auto unconstrained = lemon::filter_variants(variants, none, "llama");
+        result.expect("A backend declaring no constraints keeps every variant",
+                      unconstrained.size() == 3,
+                      "kept " + std::to_string(unconstrained.size()));
+    }
+
     printf("\n%d passed, %d failed\n", result.passed, result.failed);
     return result.failed == 0 ? 0 : 1;
 }

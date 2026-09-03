@@ -1,5 +1,7 @@
 #include "lemon/model_registry.h"
 
+#include "lemon/backends/backend_descriptor_registry.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -536,6 +538,23 @@ private:
 
 }  // namespace
 
+std::string registry_architecture_hint(const nlohmann::json& metadata) {
+    if (!metadata.is_object()) return "";
+    if (metadata.contains("gguf") && metadata["gguf"].is_object()) {
+        const auto& gguf = metadata["gguf"];
+        if (gguf.contains("architecture") && gguf["architecture"].is_string()) {
+            return gguf["architecture"].get<std::string>();
+        }
+    }
+    if (metadata.contains("config") && metadata["config"].is_object()) {
+        const auto& config = metadata["config"];
+        if (config.contains("model_type") && config["model_type"].is_string()) {
+            return config["model_type"].get<std::string>();
+        }
+    }
+    return "";
+}
+
 RegistrySearchResult normalize_registry_search_result(
     RemoteRegistrySource source,
     const nlohmann::json& metadata) {
@@ -579,6 +598,7 @@ RegistrySearchResult normalize_registry_search_result(
         const auto tasks = first_string_array(metadata, {"tasks", "Tasks"});
         if (!tasks.empty()) result.task = tasks.front();
     }
+    result.architecture = registry_architecture_hint(metadata);
     result.tags = first_string_array(metadata, {
         "tags", "Tags", "custom_tags", "customTags"
     });
@@ -604,7 +624,20 @@ RegistrySearchResult normalize_registry_search_result(
 RegistrySearchResponse normalize_registry_search_response(
     RemoteRegistrySource source,
     const nlohmann::json& body,
-    std::size_t limit) {
+    std::size_t limit,
+    const std::string& recipe) {
+    static const std::vector<ModelConstraint> kNone;
+    const BackendDescriptor* descriptor =
+        recipe.empty() ? nullptr : backends::descriptor_for(recipe);
+    return normalize_registry_search_response(
+        source, body, limit, descriptor ? descriptor->supported_models : kNone);
+}
+
+RegistrySearchResponse normalize_registry_search_response(
+    RemoteRegistrySource source,
+    const nlohmann::json& body,
+    std::size_t limit,
+    const std::vector<ModelConstraint>& constraints) {
     limit = std::clamp<std::size_t>(limit, 1, 50);
     if (source == RemoteRegistrySource::ModelScope) {
         ensure_modelscope_success(body, "model search");
@@ -622,6 +655,11 @@ RegistrySearchResponse normalize_registry_search_response(
     for (const auto& item : *items) {
         RegistrySearchResult normalized = normalize_registry_search_result(source, item);
         if (normalized.repo_id.empty() || excluded_generation_task(normalized.task)) continue;
+        // A hint only; /pull/variants is the authoritative compatibility check.
+        if (!constraints.empty() && !normalized.architecture.empty() &&
+            !backends::model_constraints_allow(constraints, normalized.architecture, "")) {
+            continue;
+        }
         // Provider list metadata is only a hint here. The request-specific
         // format filter is applied by search_registry_models below, while
         // /pull/variants remains the authoritative file compatibility check.
@@ -634,7 +672,8 @@ RegistrySearchResponse normalize_registry_search_response(
 RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
                                               const std::string& query,
                                               std::size_t limit,
-                                              bool gguf_only) {
+                                              bool gguf_only,
+                                              const std::string& recipe) {
     if (query.empty()) throw std::invalid_argument("Search query must not be empty");
     limit = std::clamp<std::size_t>(limit, 1, 50);
 
@@ -708,7 +747,7 @@ RegistrySearchResponse search_registry_models(RemoteRegistrySource source,
         RegistrySearchResponse page;
         try {
             page = normalize_registry_search_response(
-                source, JsonUtils::parse(response.body), 50);
+                source, JsonUtils::parse(response.body), 50, recipe);
         } catch (...) {
             if (request.optional && !merged.results.empty()) continue;
             throw;

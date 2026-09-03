@@ -258,6 +258,12 @@ interface ValidatedModelScopeResult extends ModelScopeVariantCacheEntry {
   order: number;
 }
 
+// Unset until the UI exposes a backend selector; unset returns every result.
+const targetRecipe: string | undefined = undefined;
+
+const recipeQuery = (recipe?: string): string =>
+  recipe ? `&recipe=${encodeURIComponent(recipe)}` : '';
+
 const MODELSCOPE_SEARCH_LIMIT = 14;
 const MODELSCOPE_MAX_RESULTS = 10;
 const MODELSCOPE_VALIDATION_CONCURRENCY = 4;
@@ -931,7 +937,7 @@ const [searchQuery, setSearchQuery] = useState('');
 
     try {
       const response = await serverFetch(
-        `/registry/search?source=modelscope&query=${encodeURIComponent(normalizedQuery)}&limit=${MODELSCOPE_SEARCH_LIMIT}&format=gguf`,
+        `/registry/search?source=modelscope&query=${encodeURIComponent(normalizedQuery)}&limit=${MODELSCOPE_SEARCH_LIMIT}&format=gguf${recipeQuery(targetRecipe)}`,
         { signal },
       );
 
@@ -1014,7 +1020,7 @@ const [searchQuery, setSearchQuery] = useState('');
         if (cached) return { model, order, ...cached };
 
         const variantsRes = await serverFetch(
-          `/pull/variants?source=modelscope&checkpoint=${encodeURIComponent(model.id)}`,
+          `/pull/variants?source=modelscope&checkpoint=${encodeURIComponent(model.id)}${recipeQuery(targetRecipe)}`,
           { signal },
         );
         if (!variantsRes.ok) return null;
@@ -1150,7 +1156,7 @@ const [searchQuery, setSearchQuery] = useState('');
       const hasGguf = data.siblings.some(s => s.rfilename.toLowerCase().endsWith('.gguf'));
       if (hasGguf) {
         try {
-          const variantsRes = await serverFetch(`/pull/variants?checkpoint=${encodeURIComponent(modelId)}`);
+          const variantsRes = await serverFetch(`/pull/variants?checkpoint=${encodeURIComponent(modelId)}${recipeQuery(targetRecipe)}`);
           if (variantsRes.ok) {
             const payload: {
               variants: { name: string; primary_file: string; files: string[]; sharded: boolean; size_bytes: number }[];

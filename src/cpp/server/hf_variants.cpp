@@ -188,6 +188,26 @@ std::string preferred_draft_companion(
 
 }  // namespace
 
+std::vector<GgufVariant> filter_variants(
+    const std::vector<GgufVariant>& variants,
+    const std::vector<ModelConstraint>& constraints,
+    const std::string& architecture) {
+    if (constraints.empty()) return variants;
+    std::vector<GgufVariant> kept;
+    kept.reserve(variants.size());
+    for (const auto& v : variants) {
+        if (backends::model_constraints_allow(constraints, architecture, v.quant)) {
+            kept.push_back(v);
+        }
+    }
+    return kept;
+}
+
+std::string extract_gguf_quant(const std::string& text) {
+    std::string token;
+    return extract_quant(text, token) ? token : std::string();
+}
+
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes) {
@@ -334,7 +354,8 @@ GgufVariantSet enumerate_gguf_variants(
 
 nlohmann::json fetch_pull_variants(const std::string& checkpoint,
                                    const std::string& registry_source,
-                                   bool& not_found) {
+                                   bool& not_found,
+                                   const std::string& recipe) {
     not_found = false;
 
     if (checkpoint.empty() || checkpoint.find('/') == std::string::npos) {
@@ -525,8 +546,21 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     out["mmproj_files"] = vset.mmproj_files;
     out["draft_files"] = vset.draft_files;
 
+    static const std::vector<ModelConstraint> kNone;
+    const BackendDescriptor* descriptor =
+        recipe.empty() ? nullptr : backends::descriptor_for(recipe);
+    const std::vector<ModelConstraint>& constraints =
+        descriptor ? descriptor->supported_models : kNone;
+    const std::string constraint = recipe.empty()
+        ? std::string() : backends::model_constraint_summary(recipe);
+    const std::string arch_hint = constraints.empty()
+        ? std::string() : registry_architecture_hint(repository.raw_metadata);
+
+    const auto kept = filter_variants(vset.variants, constraints, arch_hint);
+    const std::size_t filtered_out = vset.variants.size() - kept.size();
+
     nlohmann::json variants_json = nlohmann::json::array();
-    for (const auto& v : vset.variants) {
+    for (const auto& v : kept) {
         nlohmann::json vj;
         vj["name"] = v.name;
         vj["primary_file"] = v.primary_file;
@@ -537,6 +571,11 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         variants_json.push_back(std::move(vj));
     }
     out["variants"] = std::move(variants_json);
+    if (!constraint.empty()) {
+        out["scoped_to"] = recipe;
+        out["constraint"] = constraint;
+        out["filtered_out"] = filtered_out;
+    }
     return out;
 }
 

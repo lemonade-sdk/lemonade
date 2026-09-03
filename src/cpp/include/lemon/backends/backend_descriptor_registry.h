@@ -40,6 +40,34 @@ const std::string& default_mode_for(const std::string& recipe);
 // by a backend that could reject the request.
 bool backend_serves_mode(const std::string& recipe, ModelType mode);
 
+// Unknown means the metadata needed to decide was absent. Discovery tiers treat
+// it as passable; the load path must not. Architecture folds out `_`/`-`/space,
+// since llama.cpp spells it "qwen3moe" where Transformers says "qwen3_moe".
+enum class ModelCompatibility { Supported, Unsupported, Unknown };
+
+ModelCompatibility model_compatibility(const std::vector<ModelConstraint>& constraints,
+                                       const std::string& architecture,
+                                       const std::string& quant);
+
+// Discovery-tier predicate: Unknown passes, so absent metadata never hides a
+// model that may well be serveable. Not sufficient for the load gate.
+bool model_constraints_allow(const std::vector<ModelConstraint>& constraints,
+                             const std::string& architecture,
+                             const std::string& quant);
+
+// Why `recipe` must not load this model, or empty if it may. Requires
+// Supported: Unknown is refused here, unlike at the discovery tiers.
+std::string model_load_refusal(const std::string& recipe,
+                               const std::string& architecture,
+                               const std::string& quant);
+
+bool backend_supports_model(const std::string& recipe,
+                            const std::string& architecture,
+                            const std::string& quant);
+
+// Renders as `qwen3_moe (Q4_K_M)`; empty when the recipe gates nothing.
+std::string model_constraint_summary(const std::string& recipe);
+
 // The display string the generated docs and /system-info render for a backend
 // (e.g. chat -> "Text generation"), derived from its default mode.
 std::string modality_display_for(const BackendDescriptor& descriptor);

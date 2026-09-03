@@ -3,11 +3,13 @@
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "llamacpp_system_utils.h"
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
+#include "lemon/hf_variants.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <cctype>

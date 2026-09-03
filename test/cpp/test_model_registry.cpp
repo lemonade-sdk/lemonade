@@ -1,3 +1,4 @@
+#include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
 #include "lemon/utils/path_utils.h"
@@ -188,12 +189,158 @@ static void test_registration_persists_remote_provenance() {
     fs::remove_all(temp);
 }
 
+static void test_search_response_recipe_scoping() {
+    const json body = json::array({
+        json{{"id", "org/moe-GGUF"}, {"pipeline_tag", "text-generation"},
+             {"tags", json::array({"gguf"})},
+             {"gguf", {{"architecture", "qwen3moe"}}}},
+        json{{"id", "org/plain-GGUF"}, {"pipeline_tag", "text-generation"},
+             {"tags", json::array({"gguf"})}},
+    });
+
+    const auto unscoped = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::HuggingFace, body, 12);
+    check("architecture is surfaced when the registry reports it",
+          unscoped.results.size() == 2 && unscoped.results[0].architecture == "qwen3moe");
+    check("architecture is empty when the registry reports none",
+          unscoped.results.size() == 2 && unscoped.results[1].architecture.empty());
+
+    // llamacpp declares no constraints, so naming it must change nothing. This
+    // is the property that lets the parameter ship ahead of any backend opting
+    // in: an unconstrained recipe is indistinguishable from omitting it.
+    const auto scoped = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::HuggingFace, body, 12, "llamacpp");
+    check("scoping to an unconstrained recipe drops nothing",
+          scoped.results.size() == unscoped.results.size());
+
+    const auto unknown = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::HuggingFace, body, 12, "no-such-recipe");
+    check("scoping to an unknown recipe drops nothing",
+          unknown.results.size() == unscoped.results.size());
+
+    // Real constraints, supplied directly: proves the search tier drops on a
+    // reported mismatch and keeps a result whose architecture went unreported.
+    const std::vector<lemon::ModelConstraint> moe_only{{"qwen3_moe", {"Q4_K_M"}}};
+    const auto filtered = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::HuggingFace, body, 12, moe_only);
+    check("a reported matching architecture is kept",
+          filtered.results.size() == 2 && filtered.results[0].repo_id == "org/moe-GGUF");
+    check("a result with no reported architecture is kept",
+          filtered.results.size() == 2 && filtered.results[1].repo_id == "org/plain-GGUF");
+
+    const json mismatched = json::array({
+        json{{"id", "org/llama-GGUF"}, {"pipeline_tag", "text-generation"},
+             {"tags", json::array({"gguf"})},
+             {"gguf", {{"architecture", "llama"}}}},
+    });
+    const auto dropped = lemon::normalize_registry_search_response(
+        RemoteRegistrySource::HuggingFace, mismatched, 12, moe_only);
+    check("a reported mismatching architecture is dropped", dropped.results.empty());
+}
+
+static void test_architecture_hint_and_model_constraints() {
+    // Registry metadata is advisory: report what the provider states, and say
+    // nothing when it states nothing.
+    check("gguf.architecture is read from provider metadata",
+          lemon::registry_architecture_hint(
+              json{{"gguf", {{"architecture", "qwen3_moe"}}}}) == "qwen3_moe");
+    check("config.model_type is the fallback",
+          lemon::registry_architecture_hint(
+              json{{"config", {{"model_type", "qwen3_moe"}}}}) == "qwen3_moe");
+    check("gguf.architecture wins over config.model_type",
+          lemon::registry_architecture_hint(
+              json{{"gguf", {{"architecture", "qwen3_moe"}}},
+                   {"config", {{"model_type", "llama"}}}}) == "qwen3_moe");
+    check("metadata stating no architecture yields an empty hint",
+          lemon::registry_architecture_hint(json{{"id", "owner/repo"}}).empty());
+    check("a non-object metadata blob yields an empty hint",
+          lemon::registry_architecture_hint(json("not-an-object")).empty());
+
+    using lemon::ModelConstraint;
+    const std::vector<ModelConstraint> none;
+    const std::vector<ModelConstraint> arch_only{{"qwen3_moe", {}}};
+    const std::vector<ModelConstraint> arch_and_quant{{"qwen3_moe", {"Q4_K_M"}}};
+
+    check("a backend declaring no constraints accepts anything",
+          lemon::backends::model_constraints_allow(none, "llama", "Q8_0"));
+    check("a matching architecture is accepted when no quant is named",
+          lemon::backends::model_constraints_allow(arch_only, "qwen3_moe", "Q8_0"));
+    check("a non-matching architecture is refused",
+          !lemon::backends::model_constraints_allow(arch_only, "llama", "Q4_K_M"));
+    check("architecture matching is case-insensitive",
+          lemon::backends::model_constraints_allow(arch_only, "Qwen3_MoE", ""));
+    check("a listed quant of a listed architecture is accepted",
+          lemon::backends::model_constraints_allow(arch_and_quant, "qwen3_moe", "Q4_K_M"));
+    check("an unlisted quant of a listed architecture is refused",
+          !lemon::backends::model_constraints_allow(arch_and_quant, "qwen3_moe", "Q8_0"));
+    check("quant matching is case-insensitive",
+          lemon::backends::model_constraints_allow(arch_and_quant, "qwen3_moe", "q4_k_m"));
+
+    // The same model is spelled two ways depending on where the string came
+    // from: llama.cpp's GGUF header says "qwen3moe", Transformers' model_type
+    // says "qwen3_moe". Both must satisfy the same declaration.
+    const std::vector<ModelConstraint> underscored{{"qwen3_moe", {"Q4_K_M"}}};
+    const std::vector<ModelConstraint> bare{{"qwen3moe", {"Q4_K_M"}}};
+    check("GGUF spelling matches an underscored declaration",
+          lemon::backends::model_constraints_allow(underscored, "qwen3moe", "Q4_K_M"));
+    check("Transformers spelling matches a bare declaration",
+          lemon::backends::model_constraints_allow(bare, "qwen3_moe", "Q4_K_M"));
+    check("separator folding does not collapse distinct architectures",
+          !lemon::backends::model_constraints_allow(underscored, "qwen3", "Q4_K_M"));
+
+    // Absent metadata is "unknown", never "mismatch" — refusing on it would
+    // hide models that are in fact serveable.
+    check("an unknown architecture is not treated as a mismatch",
+          lemon::backends::model_constraints_allow(arch_and_quant, "", "Q8_0"));
+    check("an unknown quant is not treated as a mismatch",
+          lemon::backends::model_constraints_allow(arch_and_quant, "qwen3_moe", ""));
+
+    // Tri-state: discovery tolerates Unknown, the load gate must not.
+    using lemon::backends::ModelCompatibility;
+    using lemon::backends::model_compatibility;
+    check("a listed quant is Supported",
+          model_compatibility(arch_and_quant, "qwen3moe", "Q4_K_M") == ModelCompatibility::Supported);
+    check("an unlisted quant is Unsupported",
+          model_compatibility(arch_and_quant, "qwen3moe", "Q8_0") == ModelCompatibility::Unsupported);
+    check("a non-matching architecture is Unsupported",
+          model_compatibility(arch_and_quant, "llama", "Q4_K_M") == ModelCompatibility::Unsupported);
+    check("an undetermined architecture is Unknown, not Supported",
+          model_compatibility(arch_and_quant, "", "Q4_K_M") == ModelCompatibility::Unknown);
+    check("an undetermined quant against a quant constraint is Unknown",
+          model_compatibility(arch_and_quant, "qwen3moe", "") == ModelCompatibility::Unknown);
+    check("an undetermined quant against an arch-only constraint is Supported",
+          model_compatibility(arch_only, "qwen3moe", "") == ModelCompatibility::Supported);
+    check("no constraints is Supported",
+          model_compatibility(none, "llama", "") == ModelCompatibility::Supported);
+
+    // The discovery predicate still passes Unknown; that is the difference.
+    check("discovery lets an undetermined quant through",
+          lemon::backends::model_constraints_allow(arch_and_quant, "qwen3moe", ""));
+
+    // A renamed GGUF yields no quant token, which the load gate must refuse
+    // rather than wave through.
+    check("an unconstrained recipe never refuses a load",
+          lemon::backends::model_load_refusal("llamacpp", "", "").empty());
+    check("an unknown recipe never refuses a load",
+          lemon::backends::model_load_refusal("no-such-recipe", "llama", "").empty());
+
+    // Recipes with no registered descriptor gate nothing.
+    check("an unknown recipe gates nothing",
+          lemon::backends::backend_supports_model("no-such-recipe", "llama", "Q8_0"));
+    check("a recipe declaring no supported_models gates nothing",
+          lemon::backends::backend_supports_model("llamacpp", "llama", "Q8_0"));
+    check("a recipe declaring no supported_models has an empty summary",
+          lemon::backends::model_constraint_summary("llamacpp").empty());
+}
+
 int main() {
     test_source_parsing_and_cache_names();
     test_search_result_normalization();
     test_search_response_normalization();
     test_tree_snapshot_fingerprint();
     test_registration_persists_remote_provenance();
+    test_architecture_hint_and_model_constraints();
+    test_search_response_recipe_scoping();
 
     if (g_failures == 0) {
         std::printf("All model registry tests passed.\n");
