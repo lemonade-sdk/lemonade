@@ -15,6 +15,7 @@ struct ServerConfig {
     std::string log_file;                 // Empty = not specified on CLI, use config.json value
     int log_max_file_size_mb = -1;        // -1 = not specified on CLI, use config.json value
     int log_max_files = -1;               // -1 = not specified on CLI, use config.json value
+    int watchdog_fd = -1;                 // -1 = not specified on CLI, supervisor pipe descriptor (POSIX only)
 };
 
 class CLIParser {
