@@ -1,0 +1,24 @@
+name: Flatpak Nightly 📦
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Daily at 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: flatpak-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly-flatpak:
+    uses: aetherpak/actions/.github/workflows/publish.yml@v3
+    with:
+      config: packaging/flatpak/aetherpak.yaml
+      branch: nightly
+      submodules: "true"

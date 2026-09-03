@@ -1,0 +1,82 @@
+name: Reusable Flatpak Build & Publish 📦
+
+on:
+  workflow_call:
+    inputs:
+      channel:
+        description: 'Target Flatpak channel (e.g. nightly, stable)'
+        required: true
+        type: string
+      upload-bundle:
+        description: 'Whether to produce standalone .flatpak bundle'
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-publish-oci:
+    name: Build & Publish OCI (${{ matrix.flatpak-arch }})
+    runs-on: ${{ matrix.runs-on }}
+    container:
+      image: ghcr.io/aetherpak/cli:latest-builder
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch-name: X86_64
+            runs-on: ubuntu-latest
+            flatpak-arch: x86_64
+          - arch-name: ARM64
+            runs-on: ubuntu-24.04-arm
+            flatpak-arch: aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Build Flatpak with AetherPak
+        uses: aetherpak/actions/build@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          app-id: ai.lemonadeserver.app
+          branch: ${{ inputs.channel }}
+          arch: ${{ matrix.flatpak-arch }}
+          repo-path: _repo
+          upload-bundle: ${{ inputs.upload-bundle }}
+
+      - name: Push OCI Layers with AetherPak
+        uses: aetherpak/actions/publish-oci@v3
+        with:
+          repo-path: _repo
+          branch: ${{ inputs.channel }}
+          arch: ${{ matrix.flatpak-arch }}
+          registry: ghcr.io
+          oci-repository: lemonade-sdk/flatpak
+          signing: off
+
+  reconcile-pages:
+    name: Reconcile & Publish Pages
+    needs: build-and-publish-oci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Reconcile Repository Index on GitHub Pages
+        uses: aetherpak/actions/publish-site@v3
+        with:
+          pages-url: https://lemonade-server.ai
+          site-subpath: flatpak
+          oci-repository: lemonade-sdk/flatpak
+          signing: off

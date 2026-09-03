@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
   actions: read  # Required for SignPath to read workflow/job details
 
 concurrency:
@@ -2688,6 +2689,18 @@ jobs:
         uses: ./.github/actions/teardown-windows-ci-env
 
   # ========================================================================
+  # FLATPAK BUILD & PUBLISH (Stable Channel)
+  # ========================================================================
+
+  build-lemonade-flatpak:
+    name: Build & Publish Release Flatpak
+    uses: ./.github/workflows/flatpak-build-publish.yml
+    if: startsWith(github.ref, 'refs/tags/v')
+    with:
+      channel: stable
+      upload-bundle: true
+
+  # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
 
@@ -2698,6 +2711,7 @@ jobs:
       - sign-msi-installers
       - build-lemonade-rpm
       - build-lemonade-debian13
+      - build-lemonade-flatpak
       - test-lemonade-debian13-smoke
       - build-lemonade-macos-dmg
       - build-lemonade-embeddable-linux
@@ -2780,6 +2794,13 @@ jobs:
           name: lemonade-embeddable-macos
           path: .
 
+      - name: Download Lemonade Flatpak Packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: flatpak-bundle-*
+          path: .
+          merge-multiple: true
+
       - name: Verify release artifacts
         run: |
           echo "Release artifacts:"
@@ -2790,6 +2811,7 @@ jobs:
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_amd64.deb
           ls -lh lemonade-server_${LEMONADE_VERSION}-debian13_arm64.deb
           ls -lh *.pkg
+          ls -lh Lemonade-*.flatpak
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
@@ -2816,6 +2838,7 @@ jobs:
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_amd64.deb
             lemonade-server_${{ env.LEMONADE_VERSION }}-debian13_arm64.deb
             *.pkg
+            Lemonade-*.flatpak
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-x64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
