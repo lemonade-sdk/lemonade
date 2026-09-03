@@ -71,14 +71,48 @@ def gh_api(path: str, token: str | None = None) -> dict:
         return json.loads(r.read())
 
 
-def resolve_latest_version(repo: str, token: str | None, tag_prefix: str = "") -> str:
+def resolve_latest_version(
+    repo: str,
+    token: str | None,
+    tag_prefix: str = "",
+    pinned: str = "",
+    fallback: str = "",
+) -> str:
+    if pinned:
+        return pinned
     if tag_prefix:
         releases = gh_api(f"repos/{repo}/releases?per_page=10", token)
         for r in releases:
             if r["tag_name"].startswith(tag_prefix):
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
-    return gh_api(f"repos/{repo}/releases/latest", token)["tag_name"]
+    try:
+        # /releases/latest on ggml-org/llama.cpp now returns a semver tag (v0.3.0+)
+        # with no binaries — actual bNNNN nightlies are pre-releases. Scan the list
+        # for the newest non-draft non-prerelease tag first, then bNNNN pre-releases.
+        releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
+        # Prefer a non-prerelease "latest" tag
+        for r in releases:
+            if not r.get("draft") and not r.get("prerelease"):
+                return r["tag_name"]
+        # Fall back to newest bNNNN pre-release (ggml-org nightly pattern)
+        for r in releases:
+            tag = r.get("tag_name", "")
+            if not r.get("draft") and tag.startswith("b") and tag[1:].isdigit():
+                return tag
+    except Exception as e:
+        if fallback:
+            print(
+                f"  [WARN] Could not resolve latest release for {repo} ({e}); using fallback {fallback}"
+            )
+            return fallback
+        raise
+    if fallback:
+        print(
+            f"  [WARN] No suitable release found for {repo}; using fallback {fallback}"
+        )
+        return fallback
+    raise RuntimeError(f"No suitable release found for {repo}")
 
 
 def download_file(url: str, dest: Path, token: str | None = None) -> None:
@@ -332,7 +366,11 @@ def run_bench(
     env = os.environ.copy()
 
     print(f"    cmd: {' '.join(cmd)}")
-    print(f"    backend key: {bench_as}  (binary routed via llamacpp.{bench_as}_bin)")
+    recipe = fork.get("recipe", "llamacpp")
+    cfg_section = fork.get("config_section", recipe)
+    print(
+        f"    backend key: {bench_as}  (binary routed via {cfg_section}.{bench_as}_bin)"
+    )
 
     if dry_run:
         print("    [dry-run] skipping execution")
@@ -369,6 +407,7 @@ def run_bench(
             "fork_repo": fork["repo"],
             "fork_version": version,
             "fork_backend": backend,
+            "experimental": fork.get("experimental", False),
         }
     )
     # CI provenance so the dashboard can link each number back to its run.
@@ -592,7 +631,15 @@ def main() -> int:
             print(f"Downloading binary for {fork_id}...")
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
-                version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+                pinned = (
+                    fork.get("version", "")
+                    if fork.get("version_source") == "pinned"
+                    else ""
+                )
+                fallback = fork.get("version_fallback", "")
+                version = resolve_latest_version(
+                    fork["repo"], args.token, tag_prefix, pinned, fallback
+                )
                 install_fork_binary(
                     fork, version, binaries_dir, args.token, args.dry_run
                 )
@@ -616,7 +663,14 @@ def main() -> int:
 
         try:
             tag_prefix = fork.get("version_tag_prefix", "")
-            version = resolve_latest_version(fork["repo"], args.token, tag_prefix)
+            pinned = (
+                fork.get("version", "")
+                if fork.get("version_source") == "pinned"
+                else ""
+            )
+            version = resolve_latest_version(
+                fork["repo"], args.token, tag_prefix, pinned
+            )
             print(f"Version: {version}")
         except Exception as e:
             print(f"  [ERROR] Could not resolve version: {e}")
@@ -656,8 +710,14 @@ def main() -> int:
                     f"  Skipping POST /install — fork provides its own prebuilt binary"
                 )
 
-        # Fetch model list from registry now that lemond is confirmed running
+        # Fetch model list: global --model-filter wins, then per-fork model_filter
+        # from benchmark_forks.json (used by experimental backends whose models are
+        # not in the hot llamacpp list), then fall back to the live registry.
         run_models = models
+        if not run_models:
+            run_models = fork.get("model_filter", [])
+            if run_models:
+                print(f"  Models (from fork model_filter): {run_models}")
         if not run_models and not args.dry_run:
             run_models = get_models_from_registry(base_url)
             if run_models:

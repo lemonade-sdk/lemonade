@@ -70,6 +70,27 @@
       "arch": "gfx1151",
       "tracked": true,
       "notes": "Upstream ggml-org baseline. Used as performance reference for fork comparisons."
+    },
+    {
+      "fork_id": "llamacpp-hrx",
+      "label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+      "recipe": "llamacpp-hrx",
+      "config_section": "hrx",
+      "backend": "hrx",
+      "install_as": "hrx",
+      "repo": "ROCm/ggml-staging-automation",
+      "version_source": "github_latest",
+      "version_fallback": "hrx-b59",
+      "binary_url_windows": "",
+      "binary_url_linux": "https://github.com/ROCm/ggml-staging-automation/releases/download/{version}/llama-{version}-bin-manylinux-hrx-x64.tar.gz",
+      "binary_exe_windows": "",
+      "binary_exe_linux": "llama-server",
+      "runner_os": "linux",
+      "arch": "gfx1151",
+      "experimental": true,
+      "model_filter": ["Qwen3-30B-A3B-Instruct-2507-HRX"],
+      "tracked": true,
+      "notes": "Experimental HRX backend. Linux gfx1151 only. Scoped to qualified models via model_filter. Relates to #3374, #3382."
     }
   ]
 }
