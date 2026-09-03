@@ -188,7 +188,9 @@ inline std::string negate_flag(const std::string& flag) {
 // in resolve_runtime_options() for why that distinction matters.
 inline std::string remove_custom_arg(const std::string& args, const std::string& flag) {
     if (args.empty()) return args;
-    auto map = build_custom_args_map(parse_custom_args(args, true));
+    auto tokens = parse_custom_args(args, true);
+    if (!custom_args_has_flag(tokens, flag)) return args;
+    auto map = build_custom_args_map(tokens);
     map.erase(flag);
     return map_to_args_string(map);
 }
