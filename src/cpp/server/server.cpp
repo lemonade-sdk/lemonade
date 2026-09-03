@@ -6852,7 +6852,21 @@ void Server::handle_metrics(const httplib::Request& req, httplib::Response& res)
         system_metrics.vram_gb = get_vram_usage();
         system_metrics.npu_percent = get_npu_utilization();
 
-        res.set_content(build_prometheus_metrics(*router_, system_metrics),
+        MetricsAliasMap aliases;
+        if (alias_manager_) {
+            aliases = build_metrics_alias_map(
+                alias_manager_->get_all_aliases(),
+                [this](const std::string& alias) -> std::string {
+                    auto target = alias_manager_->resolve_alias(alias);
+                    if (!target.has_value()) return "";
+                    return model_manager_
+                        ? model_manager_->get_public_model_name(
+                              model_manager_->resolve_model_name(*target))
+                        : *target;
+                });
+        }
+
+        res.set_content(build_prometheus_metrics(*router_, system_metrics, aliases),
                         "text/plain; version=0.0.4; charset=utf-8");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_metrics: " << e.what() << std::endl;
