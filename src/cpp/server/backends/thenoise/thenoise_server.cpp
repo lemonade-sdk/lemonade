@@ -390,17 +390,11 @@ json TheNoiseServer::image_edits(const json& request) {
         json body = build_request(request);
         body["out"] = "json";
 
-        // thenoise /edit expects the reference image(s) under `image` (OpenAI
-        // style: a base64 string or an array). build_request forwards unknown keys
-        // untouched, so the official `image` field passes through as-is. The
-        // OpenAI-style alias `image_data` (a single base64 image) is not a
-        // thenoise key, so fold it into `image` and never re-forward the alias.
-        if (request.contains("image") && !request["image"].is_null()) {
-            body["image"] = request["image"];
-        } else if (request.contains("image_data") && !request["image_data"].is_null()) {
+        if (request.contains("image_data") && !request["image_data"].is_null()) {
             body["image"] = request["image_data"];
         }
         body.erase("image_data");
+        body.erase("image_filename");
 
         LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
 
