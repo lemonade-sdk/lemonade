@@ -37,12 +37,44 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+  classify-small-docs-pr:
+    name: Classify small docs PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/classify-small-docs-pr
+      - name: Classify changed files
+        id: classify
+        uses: ./.github/actions/classify-small-docs-pr
+        with:
+          max-files: "5"
+
+  full-ci-gate:
+    name: Full CI gate
+    needs: classify-small-docs-pr
+    if: >-
+      !cancelled() &&
+      (needs.classify-small-docs-pr.result != 'success' ||
+       needs.classify-small-docs-pr.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ needs.classify-small-docs-pr.outputs.reason }}"
+
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
 
   build-lemonade-server-installer:
     name: Build Lemonade Server Installer
+    needs: full-ci-gate
     runs-on: windows-latest
     outputs:
       unsigned-artifact-id: ${{ steps.upload-unsigned-msi.outputs.artifact-id }}
@@ -331,6 +363,7 @@ jobs:
 
   build-lemonade-deb:
     name: Build Lemonade .deb Package
+    needs: full-ci-gate
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -457,6 +490,7 @@ jobs:
 
   build-lemonade-debian13:
     name: Build Lemonade .deb Package (Debian 13)${{ matrix.job-suffix }}
+    needs: full-ci-gate
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Debian 13 build break still blocks at merge-queue time.
     # Label a PR `ci:distros` to opt it back in.
@@ -618,6 +652,7 @@ jobs:
 
   build-lemonade-rpm:
     name: Build Lemonade .rpm - Fedora ${{ matrix.fedora-version }}${{ matrix.job-suffix }}
+    needs: full-ci-gate
     # Packaging-only variant: the merge queue gates every merge, so PR pushes
     # skip it. Any Fedora build break still blocks at merge-queue time.
     # Label a PR `ci:distros` to opt it back in.
@@ -707,6 +742,7 @@ jobs:
 
   build-lemonade-macos-dmg:
     name: Build Lemonade macOS .dmg (with Tauri App)
+    needs: full-ci-gate
     # macOS runners are the scarcest GitHub-hosted resource (org-wide cap: 5
     # concurrent) and observed queue waits reach 40+ minutes. Build Embeddable
     # Lemonade (macOS) stays on PR pushes as the AppleClang compile canary; the
@@ -789,6 +825,7 @@ jobs:
 
   build-lemonade-embeddable-linux:
     name: Build Embeddable Lemonade (Linux${{ matrix.job-suffix }})
+    needs: full-ci-gate
     runs-on: ${{ matrix.runs-on }}
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -860,6 +897,7 @@ jobs:
 
   build-lemonade-linux-arm64:
     name: Build Lemonade (Linux ARM64)
+    needs: full-ci-gate
     runs-on: ubuntu-24.04-arm
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -909,6 +947,7 @@ jobs:
 
   build-lemonade-embeddable-windows:
     name: Build Embeddable Lemonade (Windows)
+    needs: full-ci-gate
     runs-on: windows-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -959,6 +998,7 @@ jobs:
 
   build-lemonade-embeddable-macos:
     name: Build Embeddable Lemonade (macOS)
+    needs: full-ci-gate
     runs-on: macos-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
