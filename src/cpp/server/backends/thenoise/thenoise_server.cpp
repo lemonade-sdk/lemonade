@@ -76,8 +76,6 @@ void TheNoiseServer::load(const std::string& model_name,
     LOG(INFO, "TheNoise") << "Loading model: " << model_name << std::endl;
     LOG(DEBUG, "TheNoise") << "Per-model settings: " << options.to_log_string() << std::endl;
 
-    image_defaults_ = model_info.image_defaults;
-
     std::string backend = options.get_option("thenoise_backend");
     if (backend.empty()) {
         backend = "rocm";
@@ -181,7 +179,6 @@ void TheNoiseServer::unload() {
         LOG(INFO, "TheNoise") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
         utils::ProcessManager::stop_process(handle);
     }
-    image_defaults_ = ImageDefaults{};
 }
 
 // ICompletionServer implementation - not supported for image generation
@@ -212,17 +209,21 @@ std::string TheNoiseServer::resolve_size(const json& request) const {
         return std::to_string(request["width"].get<int>()) + "x"
              + std::to_string(request["height"].get<int>());
     }
-    if (image_defaults_.has_defaults) {
-        return std::to_string(image_defaults_.width) + "x"
-             + std::to_string(image_defaults_.height);
-    }
-    return "";
+    // Fall back to the effective recipe options (ladder in build_request()).
+    // Return "" when unset so thenoise picks its own native defaults.
+    if (!recipe_options_.has_option("width") || !recipe_options_.has_option("height")) return "";
+    int w = static_cast<int>(recipe_options_.get_option("width"));
+    int h = static_cast<int>(recipe_options_.get_option("height"));
+    if (w <= 0 || h <= 0) return "";
+    return std::to_string(w) + "x" + std::to_string(h);
 }
-
 json TheNoiseServer::build_request(const json& request) const {
     // thenoise /text2image accepts the shared model-agnostic params directly.
-    // Precedence for each value: request override -> model image_defaults
-    // -> recipe_options.
+    // Per-value precedence, highest → lowest: per-request body fields, then the
+    // effective recipe options, which already fold user-saved > model
+    // recipe_options > image_defaults > architecture > global config (via
+    // RecipeOptions::merge_precedence_layers / inherit); a value absent from
+    // every layer is omitted, letting thenoise apply its own defaults.
     json body;
 
     body["prompt"] = request.value("prompt", "");
@@ -230,12 +231,6 @@ json TheNoiseServer::build_request(const json& request) const {
     auto resolve_int = [&](const std::string& key, int fallback) -> int {
         if (request.contains(key) && request[key].is_number_integer()) {
             return request[key].get<int>();
-        }
-        return fallback;
-    };
-    auto resolve_float = [&](const std::string& key, float fallback) -> float {
-        if (request.contains(key) && request[key].is_number()) {
-            return request[key].get<float>();
         }
         return fallback;
     };
@@ -251,6 +246,15 @@ json TheNoiseServer::build_request(const json& request) const {
         }
         return fallback;
     };
+    auto option_int = [&](const std::string& key) -> int {
+        return recipe_options_.has_option(key) ? static_cast<int>(recipe_options_.get_option(key)) : 0;
+    };
+    auto option_float = [&](const std::string& key) -> float {
+        return recipe_options_.has_option(key) ? static_cast<float>(recipe_options_.get_option(key)) : 0.0f;
+    };
+    auto option_string = [&](const std::string& key) -> std::string {
+        return recipe_options_.has_option(key) ? recipe_options_.get_option(key).get<std::string>() : "";
+    };
 
     // size -> width / height
     std::string size = resolve_size(request);
@@ -263,28 +267,24 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // negative_prompt
-    std::string negative_prompt = resolve_string("negative_prompt",
-        recipe_options_.get_option("negative_prompt"));
+    std::string negative_prompt = resolve_string("negative_prompt", option_string("negative_prompt"));
     if (!negative_prompt.empty()) {
         body["negative_prompt"] = negative_prompt;
     }
 
     // steps
-    int steps = image_defaults_.has_defaults
-                  ? image_defaults_.steps
-                  : static_cast<int>(recipe_options_.get_option("steps"));
-    steps = resolve_int("steps", steps);
+    int steps = resolve_int("steps", option_int("steps"));
     if (steps > 0) {
         body["steps"] = steps;
     }
 
     // cfg_scale -> guidance_scale
-    float cfg_scale = image_defaults_.has_defaults
-                              ? image_defaults_.cfg_scale
-                              : static_cast<float>(recipe_options_.get_option("cfg_scale"));
-    cfg_scale = resolve_float("cfg_scale", cfg_scale);
-    if (cfg_scale > 0.0f) {
-        body["guidance_scale"] = cfg_scale;
+    // 0.0 is a valid explicit value (disables CFG guidance); only omit the key
+    // when it is absent from every layer so thenoise applies its own default.
+    if (request.contains("cfg_scale") && request["cfg_scale"].is_number()) {
+        body["guidance_scale"] = request["cfg_scale"].get<float>();
+    } else if (recipe_options_.has_option("cfg_scale")) {
+        body["guidance_scale"] = option_float("cfg_scale");
     }
 
     // seed stays as-is; negative means "random" for thenoise. We still emit a
@@ -295,7 +295,7 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // sampler
-    std::string sampler = resolve_string("sampler", recipe_options_.get_option("sampler"));
+    std::string sampler = resolve_string("sampler", option_string("sampler"));
     if (!sampler.empty()) {
         body["sampler"] = sampler;
     }
@@ -308,15 +308,19 @@ json TheNoiseServer::build_request(const json& request) const {
     }
 
     // film_grain
-    float film_grain = static_cast<float>(recipe_options_.get_option("film_grain"));
-    film_grain = resolve_float("film_grain", film_grain);
+    float film_grain = option_float("film_grain");
+    film_grain = request.contains("film_grain") && request["film_grain"].is_number()
+                     ? request["film_grain"].get<float>()
+                     : film_grain;
     if (film_grain > 0.0f) {
         body["film_grain"] = film_grain;
     }
 
     // sharpening
-    float sharpening = static_cast<float>(recipe_options_.get_option("sharpening"));
-    sharpening = resolve_float("sharpening", sharpening);
+    float sharpening = option_float("sharpening");
+    sharpening = request.contains("sharpening") && request["sharpening"].is_number()
+                     ? request["sharpening"].get<float>()
+                     : sharpening;
     if (sharpening > 0.0f) {
         body["sharpening"] = sharpening;
     }
