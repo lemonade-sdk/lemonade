@@ -2975,6 +2975,7 @@ if(BUILD_TESTING AND EXISTS "${_GPU_MEMORY_SELECTION_TEST_SRC}")
     target_include_directories(test_gpu_memory_selection PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
     )
+    target_link_libraries(test_gpu_memory_selection PRIVATE nlohmann_json::nlohmann_json)
     include(CTest)
     add_cpp_ci_test(GpuMemorySelectionTest CI ON COMMAND test_gpu_memory_selection)
 endif()
