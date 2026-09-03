@@ -206,9 +206,8 @@ public:
     void set_model_pinned(const std::string& model_name, bool pinned);
 
     // Forward the backend's own /props endpoint verbatim (empty object if the
-    // backend doesn't expose one). Ground truth for e.g. is_sleeping, since
-    // Lemonade's own model state (pinned, "ready") is orthogonal to whether
-    // the backend subprocess has put itself to sleep on its own idle timer.
+    // backend doesn't expose one). See docs/dev/llamacpp-runtime-defaults.md
+    // for why this is needed as ground truth.
     json get_backend_props(const std::string& model_name);
 
     bool is_model_loaded() const;
