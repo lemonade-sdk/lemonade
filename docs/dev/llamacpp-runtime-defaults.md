@@ -59,6 +59,24 @@ the `--sleep-idle-seconds` value, with one quirk: a `downsize_idle_timeout` of
 rejects `--sleep-idle-seconds 0` at startup (`common/arg.cpp` throws
 `invalid_argument`; valid values are `-1` = disabled or `>= 1`).
 
+`--sleep-idle-seconds` is an overridable runtime default like `--parallel`
+above: a user-supplied `llamacpp_args` value wins over the one Lemonade would
+compute from `downsize_idle_timeout` (`append_runtime_arg_defaults` skips its
+own default whenever the flag is already present). `LlamaCppServer::load()`
+parses whatever value actually ended up in the resolved args - not just
+whether the flag string is present - and stores it as
+`sleep_idle_seconds_effective_`; `sleep_idle_enabled_` is `true` only when
+that value is `>= 1`, matching llama-server's own definition of "enabled"
+(an explicit `--sleep-idle-seconds -1` in a custom `llamacpp_args` is treated
+as disabled, not as "the flag is present so downsize applies"). `EvictionEngine`
+schedules its own idle check against this same effective value
+(`WrappedServer::effective_downsize_idle_timeout_sec()`) instead of the
+requested `downsize_idle_timeout`, so a custom `llamacpp_args` value that
+overrides `--sleep-idle-seconds` to something other than what
+`downsize_idle_timeout` requested doesn't leave `ModelState` reporting
+`READY` long after (or attempting downsize long before) llama-server's own
+timer actually fires.
+
 `GET /health` against a sleeping backend still returns `200` without waking
 it - its handler never checks sleep state or touches `ctx_server` at all,
 it unconditionally returns `{"status": "ok"}`. `/props`, `/models`, and

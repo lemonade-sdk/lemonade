@@ -472,6 +472,15 @@ public:
         return auto_evict_config;
     }
 
+    // The downsize idle timeout actually in effect for this instance, in
+    // seconds, or -1 if the caller should keep using the recipe/global
+    // downsize_idle_timeout value instead. Only consulted when
+    // downsize_effective_for_this_instance() is true. Default: no launch-time
+    // override. See LlamaCppServer::load() for a backend that needs one.
+    virtual long effective_downsize_idle_timeout_sec() const {
+        return -1;
+    }
+
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
     virtual json chat_completion(const json& request) override {

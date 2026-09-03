@@ -118,6 +118,13 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
                 weight_factor = 1.0;  // guard against divide-by-zero / non-positive config
             }
 
+            // A backend-reported override takes precedence over the requested
+            // downsize_idle_timeout -- see WrappedServer::effective_downsize_idle_timeout_sec().
+            long downsize_override_sec = server->effective_downsize_idle_timeout_sec();
+            if (downsize_override_sec >= 0) {
+                downsize_timeout_sec = downsize_override_sec;
+            }
+
             auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - server->get_last_access_time()).count();
             long load_duration_ms = server->get_load_duration_ms() > 0 ? server->get_load_duration_ms() : 1000;
 

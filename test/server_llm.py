@@ -1419,6 +1419,101 @@ class LLMTests(ServerTestBase):
         finally:
             set_server_config({"auto_evict": False})
 
+    @skip_if_unsupported("sleep_idle_downsize")
+    def test_023g_downsize_custom_sleep_idle_seconds_overrides_timeout(self):
+        """A custom llamacpp_args --sleep-idle-seconds value overrides the one
+        Lemonade would otherwise compute from downsize_idle_timeout.
+        EvictionEngine must schedule its own idle check against the value
+        actually baked into this instance's launch args (via
+        WrappedServer::effective_downsize_idle_timeout_sec()), not the stale
+        requested downsize_idle_timeout -- otherwise ModelState would keep
+        reporting 'ready' long after llama-server already went to sleep on
+        its own shorter timer."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+        custom_sleep_idle_seconds = 3
+        requested_downsize_idle_timeout = 60
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": model,
+                "auto_evict": True,
+                "downsize_idle_timeout": requested_downsize_idle_timeout,
+                "llamacpp_args": f"--sleep-idle-seconds {custom_sleep_idle_seconds}",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Reply with the single word: ready."}
+            ],
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        status = self._wait_for_model_status(
+            model, custom_sleep_idle_seconds + 15, target_status="downsized"
+        )
+        self.assertEqual(
+            status,
+            "downsized",
+            "model never reported status='downsized' within "
+            f"{custom_sleep_idle_seconds + 15}s of going idle -- EvictionEngine "
+            "may still be scheduling against the requested "
+            f"downsize_idle_timeout ({requested_downsize_idle_timeout}s) instead "
+            f"of the custom --sleep-idle-seconds {custom_sleep_idle_seconds} "
+            "actually baked into this instance's launch args",
+        )
+
+    @skip_if_unsupported("sleep_idle_downsize")
+    def test_023h_downsize_disabled_via_custom_sleep_idle_seconds_negative_one(self):
+        """A custom llamacpp_args --sleep-idle-seconds -1 explicitly disables
+        sleep even with auto_evict on -- only the flag's value (>= 1) means
+        'enabled', not merely its presence in the launch args."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+        downsize_idle_timeout = 2
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": model,
+                "auto_evict": True,
+                "downsize_idle_timeout": downsize_idle_timeout,
+                "llamacpp_args": "--sleep-idle-seconds -1",
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_response.status_code, 200)
+
+        client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "user", "content": "Reply with the single word: ready."}
+            ],
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        status = self._wait_for_model_status(
+            model, downsize_idle_timeout + 15, target_status="downsized"
+        )
+        self.assertNotEqual(
+            status,
+            "downsized",
+            "model falsely reported status='downsized' -- a custom "
+            "--sleep-idle-seconds -1 must be treated as disabled, not as "
+            "'the flag is present so downsize applies'",
+        )
+
     @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):
         """Test the /api/v1/tokenize endpoint for llamacpp backend."""

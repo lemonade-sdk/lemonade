@@ -157,6 +157,26 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     return append_runtime_arg_defaults(args, defaults);
 }
 
+// The resolved llamacpp_args string always contains at most one
+// --sleep-idle-seconds occurrence (see resolve_llamacpp_runtime_args:
+// append_runtime_arg_defaults only appends its computed default when a
+// user-supplied one isn't already present), so the last-seen value is the
+// effective one either way. Returns -1 (llama-server's own "disabled" value)
+// if the flag is absent or its value doesn't parse.
+static long parse_sleep_idle_seconds_arg(const std::string& args) {
+    const auto tokens = parse_custom_args(args);
+    const auto map = build_custom_args_map(tokens);
+    auto it = map.find("--sleep-idle-seconds");
+    if (it == map.end() || it->second.empty() || it->second.back().empty()) {
+        return -1;
+    }
+    try {
+        return std::stol(it->second.back().front());
+    } catch (const std::exception&) {
+        return -1;
+    }
+}
+
 static std::string trim_version_prefix(const std::string& version) {
     if (!version.empty() && version[0] == 'v') {
         return version.substr(1);
@@ -300,7 +320,16 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
-    sleep_idle_enabled_ = llamacpp_args.find("--sleep-idle-seconds") != std::string::npos;
+    // A custom llamacpp_args value can override the --sleep-idle-seconds
+    // Lemonade would otherwise compute from downsize_idle_timeout (see
+    // resolve_llamacpp_runtime_args), including overriding it to -1
+    // (llama-server's own "disabled" value). Parse the value that actually
+    // ended up in the resolved args instead of just checking flag presence,
+    // so both eligibility (sleep_idle_enabled_) and EvictionEngine's own
+    // scheduling (effective_downsize_idle_timeout_sec()) track what's really
+    // baked in, not the possibly-stale downsize_idle_timeout request.
+    sleep_idle_seconds_effective_ = parse_sleep_idle_seconds_arg(llamacpp_args);
+    sleep_idle_enabled_ = sleep_idle_seconds_effective_ >= 1;
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 
@@ -651,6 +680,14 @@ bool LlamaCppServer::downsize() {
 
 bool LlamaCppServer::downsize_effective_for_this_instance(bool /*auto_evict_config*/) const {
     return sleep_idle_enabled_;
+}
+
+long LlamaCppServer::effective_downsize_idle_timeout_sec() const {
+    // Only meaningful once downsize_effective_for_this_instance() is true, at
+    // which point sleep_idle_seconds_effective_ is guaranteed >= 1 -- return
+    // -1 (no override) otherwise so a caller can't mistake "disabled" for a
+    // real 0-or-negative timeout.
+    return sleep_idle_enabled_ ? sleep_idle_seconds_effective_ : -1;
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
