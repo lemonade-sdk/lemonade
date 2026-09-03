@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.7.0)
+project(lemon_cpp VERSION 11.9.0)
 
 include(CTest)
 
@@ -154,6 +154,7 @@ include(GNUInstallDirs)
 set(LEMON_BACKENDS
     # "<recipe>|<stem>"
     "llamacpp|llamacpp"
+    "llamacpp-hrx|hrx"
     "whispercpp|whispercpp"
     "moonshine|moonshine"
     "kokoro|kokoro"
@@ -162,6 +163,7 @@ set(LEMON_BACKENDS
     "ryzenai-llm|ryzenai"
     "vllm|vllm"
     "thenoise|thenoise"
+    "ds4|ds4"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -980,6 +982,7 @@ set(SOURCES_CORE
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
     src/cpp/server/utils/path_utils.cpp
+    src/cpp/server/utils/rate_limit_utils.cpp
     src/cpp/server/utils/url_utils.cpp
     src/cpp/server/utils/version_utils.cpp
     src/cpp/server/utils/wmi_helper.cpp
@@ -1167,7 +1170,7 @@ if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
         src/cpp/server/backends/vllm/vllm_arg_resolver.cpp
     )
     target_link_libraries(test_vllm_arg_resolver PRIVATE nlohmann_json::nlohmann_json)
-    add_cpp_ci_test(vllm_arg_resolver CI OFF COMMAND test_vllm_arg_resolver)
+    add_cpp_ci_test(vllm_arg_resolver CI ON COMMAND test_vllm_arg_resolver)
 endif()
 
 set(LLAMACPP_REQUEST_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_request.cpp")
@@ -2370,6 +2373,24 @@ if(BUILD_TESTING AND EXISTS "${_TRANSCRIPTION_FORMAT_TEST_SRC}")
     add_cpp_ci_test(TranscriptionResponseFormatTest CI ON COMMAND test_transcription_response_format)
 endif()
 
+set(_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_whispercpp_multipart_fields.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_WHISPERCPP_MULTIPART_FIELDS_TEST_SRC}")
+    add_executable(test_whispercpp_multipart_fields
+        test/cpp/test_whispercpp_multipart_fields.cpp
+    )
+    target_include_directories(test_whispercpp_multipart_fields PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/whispercpp
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_whispercpp_multipart_fields PRIVATE nlohmann_json::nlohmann_json)
+
+    include(CTest)
+    add_cpp_ci_test(WhisperCppMultipartFieldsTest CI ON COMMAND test_whispercpp_multipart_fields)
+endif()
+
 set(_GGUF_SHARD_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gguf_shard_utils.cpp"
 )
@@ -2489,6 +2510,12 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
+endif()
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
+    add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
+    target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HrxContractTest CI ON COMMAND test_hrx_contract)
 endif()
 
 # Job engine pure core: the `when`/`branch` expression evaluator + reference
@@ -2870,6 +2897,20 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
+set(_EXTRA_MODEL_DISCOVERY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extra_model_discovery.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_EXTRA_MODEL_DISCOVERY_TEST_SRC}")
+    add_executable(test_extra_model_discovery
+        test/cpp/test_extra_model_discovery.cpp
+    )
+    target_link_libraries(test_extra_model_discovery PRIVATE lemonade-server-core)
+    add_dependencies(test_extra_model_discovery copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ExtraModelDiscoveryTest CI ON COMMAND test_extra_model_discovery)
+endif()
+
 set(_MODEL_DOWNLOAD_STATE_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_download_state.cpp"
 )
@@ -2895,6 +2936,18 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_HIDING_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(RecipeHidingTest CI ON COMMAND test_recipe_hiding)
+endif()
+
+# Streaming memory filter: backends that stream the model from storage are
+# size-filtered on their resident working set vs the device pool, not full size.
+set(_STREAMING_MEM_FILTER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_memory_filter.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_MEM_FILTER_TEST_SRC}")
+    add_executable(test_streaming_memory_filter test/cpp/test_streaming_memory_filter.cpp)
+    target_link_libraries(test_streaming_memory_filter PRIVATE lemonade-server-core)
+    add_dependencies(test_streaming_memory_filter copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(StreamingMemoryFilterTest CI ON COMMAND test_streaming_memory_filter)
 endif()
 
 # Remote model registry source parsing, cache namespaces, snapshot fingerprints,
@@ -3014,6 +3067,33 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_TELEMETRY_TEST_SRC}")
     add_cpp_ci_test(ConfigTelemetryTest CI ON COMMAND test_config_telemetry)
 endif()
 
+set(_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_download_rate_limit.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC}")
+    add_executable(test_config_download_rate_limit
+        test/cpp/test_config_download_rate_limit.cpp
+    )
+    target_link_libraries(test_config_download_rate_limit PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ConfigDownloadRateLimitTest CI ON
+        COMMAND test_config_download_rate_limit
+    )
+endif()
+
+set(_CONFIG_ALLOWED_ORIGINS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_allowed_origins.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIG_ALLOWED_ORIGINS_TEST_SRC}")
+    add_executable(test_config_allowed_origins
+        test/cpp/test_config_allowed_origins.cpp
+    )
+    target_link_libraries(test_config_allowed_origins PRIVATE lemonade-server-core)
+    add_dependencies(test_config_allowed_origins copy_resources)
+    add_cpp_ci_test(ConfigAllowedOriginsTest CI ON
+        COMMAND test_config_allowed_origins
+    )
+endif()
+
 set(_RUNTIME_CONFIG_BACKEND_VALIDATION_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_runtime_config_backend_validation.cpp"
 )
@@ -3052,6 +3132,13 @@ if(BUILD_TESTING AND EXISTS "${_CLI_RUNTIME_OVERRIDE_TEST_SRC}")
     add_executable(test_cli_runtime_override test/cpp/test_cli_runtime_override.cpp)
     target_link_libraries(test_cli_runtime_override PRIVATE lemonade-server-core)
     add_cpp_ci_test(CliRuntimeOverrideTest CI ON COMMAND test_cli_runtime_override)
+endif()
+
+set(_LOG_ROTATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_log_rotation.cpp")
+if(BUILD_TESTING AND EXISTS "${_LOG_ROTATION_TEST_SRC}")
+    add_executable(test_log_rotation test/cpp/test_log_rotation.cpp)
+    target_link_libraries(test_log_rotation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(LogRotationTest CI ON COMMAND test_log_rotation)
 endif()
 
 # ROCm root resolution (ROCM_PATH / rocm-sdk / /opt/rocm priority): covers the
@@ -3144,6 +3231,16 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
 endif()
 
+# ds4 install params: upstream ds4 ships no binaries, so assets come from
+# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
+# plus the detected ISA. Only gfx1151 is validated upstream.
+set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
+if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
+    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
+    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
+    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
+endif()
+
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is
 # published, so the shared Windows/Linux support row must not advertise Windows
 # or nightly installs for gfx950.
@@ -3159,6 +3256,13 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_SECURITY_TEST_SRC}")
     add_executable(test_http_client_security test/cpp/test_http_client_security.cpp)
     target_link_libraries(test_http_client_security PRIVATE lemonade-server-core)
     add_cpp_ci_test(HttpClientSecurityTest CI OFF COMMAND test_http_client_security)
+endif()
+
+set(_HTTP_CLIENT_TIMEOUT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_http_client_timeout.cpp")
+if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
+    add_executable(test_http_client_timeout test/cpp/test_http_client_timeout.cpp)
+    target_link_libraries(test_http_client_timeout PRIVATE lemonade-server-core)
+    add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
 endif()
 
 set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
@@ -3196,6 +3300,13 @@ if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_cpp_ci_test(AnthropicErrorTest CI ON COMMAND test_anthropic_error)
 endif()
 
+set(_ANTHROPIC_RELAY_HEADERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_relay_headers.cpp")
+if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_RELAY_HEADERS_TEST_SRC}")
+    add_executable(test_anthropic_relay_headers test/cpp/test_anthropic_relay_headers.cpp)
+    target_link_libraries(test_anthropic_relay_headers PRIVATE lemonade-server-core)
+    add_cpp_ci_test(AnthropicRelayHeadersTest CI ON COMMAND test_anthropic_relay_headers)
+endif()
+
 set(_ORIGIN_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_origin_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_ORIGIN_UTILS_TEST_SRC}")
     add_executable(test_origin_utils test/cpp/test_origin_utils.cpp)
@@ -3215,6 +3326,40 @@ if(BUILD_TESTING AND EXISTS "${_RECIPE_OPTIONS_PRECEDENCE_TEST_SRC}")
     add_executable(test_recipe_options_precedence test/cpp/test_recipe_options_precedence.cpp)
     target_link_libraries(test_recipe_options_precedence PRIVATE lemonade-server-core)
     add_cpp_ci_test(RecipeOptionsPrecedence CI ON COMMAND test_recipe_options_precedence)
+endif()
+
+set(_GLIBC_MALLOPT_PROBE_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/glibc_mallopt_probe.cpp"
+)
+set(_GLIBC_ALLOCATOR_POLICY_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/test_glibc_allocator_policy.py"
+)
+if(BUILD_TESTING AND
+   CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+   EXISTS "${_GLIBC_MALLOPT_PROBE_SRC}" AND
+   EXISTS "${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}")
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_library(test_glibc_mallopt_probe SHARED
+            ${_GLIBC_MALLOPT_PROBE_SRC}
+        )
+        add_cpp_ci_test(
+            GlibcAllocatorPolicyTest
+            CI ON
+            COMMAND
+                ${Python3_EXECUTABLE}
+                ${_GLIBC_ALLOCATOR_POLICY_TEST_SRC}
+                --lemond $<TARGET_FILE:${EXECUTABLE_NAME}>
+                --probe $<TARGET_FILE:test_glibc_mallopt_probe>
+            DEPENDS
+                ${EXECUTABLE_NAME}
+                test_glibc_mallopt_probe
+        )
+        set_tests_properties(
+            GlibcAllocatorPolicyTest
+            PROPERTIES SKIP_RETURN_CODE 77
+        )
+    endif()
 endif()
 
 if(BUILD_TESTING)

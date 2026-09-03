@@ -10,15 +10,17 @@ the generator instead. Prose outside the markers is preserved. -->
 | Recipe | Name | Selectable backend | Uses ctx_size | Backends |
 |--------|------|--------------------|---------------|----------|
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
+| `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
-| `thenoise` | TheNoise ROCm (experimental) | yes | no | rocm |
+| `thenoise` | TheNoise ROCm | yes | no | rocm |
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
@@ -33,6 +35,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | cuda | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `ds4` | rocm | linux | amd_gpu (gfx1151) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
@@ -42,6 +45,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp-hrx` | hrx | linux | amd_gpu (gfx1100, gfx1151) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
@@ -88,6 +92,13 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `acestep_backend` | `--acestep` | BACKEND | "" | ACE-Step backend to use |
 
+#### `ds4` — DwarfStar4 (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `ds4_args` | `--ds4-args` | ARGS | "" | Custom arguments to pass to ds4-server |
+
 #### `flm` — FastFlowLM NPU
 
 | Option | CLI flag | Type | Default | Description |
@@ -103,6 +114,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+
+#### `llamacpp-hrx` — HRX GPU (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
 
 #### `moonshine` — Moonshine
 
@@ -135,7 +153,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
-#### `thenoise` — TheNoise ROCm (experimental)
+#### `thenoise` — TheNoise ROCm
 
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
@@ -180,6 +198,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `whispercpp_args` | `--whispercpp-args` | ARGS | "" | Custom arguments to pass to whisper-server |
 <!-- END GENERATED: backend-options -->
 
+
 ## Implementation notes
 
 ### ACE-Step (`acestep`)
@@ -193,6 +212,28 @@ Vocals are a two-stage pipeline. `POST /lm` with `lm_mode: "generate"` runs the 
 Errors from `audio_generations` are written into the response sink as a JSON error payload; the endpoint handler turns that into an HTTP error instead of shipping it as audio.
 
 The model download fetches the DiT checkpoint variant plus three companions when present in the repo: the language model (`acestep-5Hz-lm-4B-Q8_0.gguf`, required for vocals and auto-lyrics), the Qwen3 text encoder, and the VAE. The checkpoint path handed to `--models` is the directory of GGUFs; `ace-server` scans it by architecture, and `--keep-loaded` keeps models resident across requests.
+
+### OpenMOSS (`openmoss`)
+
+`moss-tts-server` hosts exactly one `--model` per process, so the voice generator that ships as a component of the speech model cannot be served by the same process. `OpenMossServer` runs the cascade one model at a time: the speech process is stopped, a transient process is spawned on the voice-generator checkpoint to render a single reference sample, and the speech process is brought back. Holding both would require a card that fits the pair, a strictly harder requirement than running the model that was actually asked for. For the same reason, `server_models.json` keeps `size` as the peak resident requirement of the main speech model rather than adding the non-resident VoiceGen download size. Rendered samples are cached per description for the life of the load, so repeating a description costs nothing. The speech process is restarted even when design fails, so an unsuccessful design cannot leave a loaded model with no process behind it.
+
+The legacy `MOSS-VoiceGen` registry entry remains as a compatibility model for existing clients; integrated voice design on `OpenMOSS-TTS` and `MOSS-TTS-Local` does not depend on that standalone entry.
+
+`request_mutex_` serialises a process-changing voice-design request against normal OpenMOSS inference, `load()`, and `unload()`. Speech and SFX hold it shared; voice design and lifecycle changes hold it exclusively. During the intentional speech -> VoiceGenerator -> speech swap, `process_swap_in_progress_` keeps `is_backend_alive()` true so the router does not mistake the temporarily empty speech-process handle for a crash. A request arriving in that window is accepted and then waits on `request_mutex_` until speech is restored. `start_speech_process()` therefore calls `stop_speech_process()` rather than `unload()` on a failed readiness wait, because `unload()` takes the same exclusive lock.
+
+The transient design process is polled for readiness through its own `/health` rather than the shared `wait_for_ready()`, since it does not own `port_`; the poll also checks `ProcessManager::is_running()` each round and reports the child's exit code, so a subprocess that dies during model loading returns that error instead of polling to the timeout. `spawn()` uses `find_free_port()` instead of `choose_port()` for the same reason — `choose_port()` assigns `port_`, and the caller decides which process `port_` addresses.
+
+Reference-conditioned TTS can exceed OpenMOSS's default 8192-token context. Lemonade intentionally keeps the upstream context default instead of forcing a larger allocation, preserving compatibility with memory-constrained GPUs. OpenMOSS v0.3 chunks prefill batches, but a complete prompt still has to fit `n_ctx`; unusually long references may therefore be rejected by upstream with guidance to shorten the reference or raise the context size.
+
+Lemonade does not inject `max_audio_frames` into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.
+
+Voice design is opt-in through the `voice_design_description` extension and is never inferred from `voice`, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending `"voice": "default"` gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries `reference_wav_b64`. Request fields are read with a type-checking accessor rather than `json::value()`, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.
+
+`MOSS-SoundEffect` uses the same recipe but is an audio-generation model: `audio_generations()` forwards to the backend's `/sfx` endpoint, accepting `duration`/`cfg` as aliases for `seconds`/`cfg_scale`.
+
+### Model downloads
+
+A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
 
 ### Backend auto-selection
 
