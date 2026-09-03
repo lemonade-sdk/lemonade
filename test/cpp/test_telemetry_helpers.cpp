@@ -65,11 +65,58 @@ static void check_map_empty(const char* name, const std::map<std::string, nlohma
 }
 
 
+// The routing decision reaches span creation through a thread-local, so the
+// mapping from that payload to span attributes is where the interesting
+// behavior lives: what is emitted, and what is deliberately not.
+static void test_route_span_attributes() {
+    using lemon::telemetry::route_span_attributes;
+
+    check_bool("route attributes: empty payload emits nothing",
+               route_span_attributes("").empty(), true);
+    check_bool("route attributes: malformed JSON emits nothing",
+               route_span_attributes("{not json").empty(), true);
+    check_bool("route attributes: non-object payload emits nothing",
+               route_span_attributes("[1,2,3]").empty(), true);
+
+    auto attrs = route_span_attributes(
+        R"({"collection":"user.RouterKit","to":"Qwen3-8B-GGUF",)"
+        R"("matched_rule":"code-remote","default_used":false,)"
+        R"("cost_tier":"free","cost_input_per_million":0.15})");
+
+    check_eq("route attributes: collection is namespaced under llm.route",
+             attrs.count("llm.route.collection") ? attrs.at("llm.route.collection").get<std::string>() : "<missing>",
+             "user.RouterKit");
+    check_eq("route attributes: selected candidate",
+             attrs.count("llm.route.to") ? attrs.at("llm.route.to").get<std::string>() : "<missing>",
+             "Qwen3-8B-GGUF");
+    check_eq("route attributes: matched rule",
+             attrs.count("llm.route.matched_rule") ? attrs.at("llm.route.matched_rule").get<std::string>() : "<missing>",
+             "code-remote");
+    check_bool("route attributes: default_used survives as a bool",
+               attrs.count("llm.route.default_used") && attrs.at("llm.route.default_used").is_boolean(), true);
+    check_eq("route attributes: flattened cost_tier",
+             attrs.count("llm.route.cost_tier") ? attrs.at("llm.route.cost_tier").get<std::string>() : "<missing>",
+             "free");
+    check_bool("route attributes: flattened per-million price stays numeric",
+               attrs.count("llm.route.cost_input_per_million") &&
+                   attrs.at("llm.route.cost_input_per_million").is_number(), true);
+
+    // A span attribute is a scalar, so a nested member is skipped rather than
+    // stringified into something no backend can filter on.
+    auto nested = route_span_attributes(R"({"to":"m","trace":[{"rule":"r"}],"outputs":{"a":1}})");
+    check_bool("route attributes: nested array is skipped", nested.count("llm.route.trace") == 0, true);
+    check_bool("route attributes: nested object is skipped", nested.count("llm.route.outputs") == 0, true);
+    check_bool("route attributes: scalars alongside nested members still emit",
+               nested.count("llm.route.to") == 1, true);
+}
+
 int main() {
     using lemon::telemetry::hex_to_bytes;
     using lemon::telemetry::standardize_thinking;
 
     std::printf("=== RUNNING TELEMETRY HELPERS C++ TESTS ===\n");
+
+    test_route_span_attributes();
 
     // --- hex_to_bytes tests ---
     check_eq("hex_to_bytes: empty string", hex_to_bytes(""), "");
