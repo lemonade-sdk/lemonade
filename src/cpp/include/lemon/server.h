@@ -156,6 +156,12 @@ private:
     std::optional<RouterDispatchResult> route_collection_request(
         const nlohmann::json& request_json,
         const ModelInfo& collection_info);
+    // The one place that answers "does this request address a router
+    // collection?". Dispatch and the responses-chain guard must agree on that,
+    // so neither derives it independently. Propagates registry exceptions:
+    // a failed lookup means something different at each call site.
+    std::optional<ModelInfo> router_collection_info(const nlohmann::json& request_json);
+
     // If request_json addresses a collection.router model, rewrite its "model"
     // field in place to the engine-selected candidate and return the Decision.
     // No-op otherwise.
