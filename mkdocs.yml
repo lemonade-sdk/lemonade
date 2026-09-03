@@ -58,12 +58,15 @@ nav:
   - User Guide:
     - Getting Started: guide/README.md
     - Install:
-      - Supported Platforms: guide/install/README.md
+      - Overview: guide/install/README.md
+      - Windows: guide/install/windows.md
+      - Linux: guide/install/linux.md
       - Ubuntu: guide/install/ubuntu.md
       - Arch: guide/install/arch.md
       - Fedora: guide/install/fedora.md
       - Debian: guide/install/debian.md
       - Docker: guide/install/docker.md
+      - macOS: guide/install/macos.md
     - Local Server Concepts: guide/concepts.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md
