@@ -160,6 +160,14 @@ static void test_inline_capability_matches_registration(ModelManager& manager) {
     err = manager.validate_collection_request("user.RouterKit", emb_sem);
     check("legacy embedding:true accepted for semantic_similarity", !err.has_value());
 
+    json inferred_emb_sem = router_with_classifier(
+        "semantic_similarity",
+        json{{"model_name", "retriever"}, {"recipe", "llamacpp"},
+             {"checkpoint", "example/some-embed-model:Q4_K_M"}});
+    err = manager.validate_collection_request("user.RouterKit", inferred_emb_sem);
+    check("embedding checkpoint name is inferred for semantic_similarity",
+          !err.has_value());
+
     // Label-less regular llamacpp still defaults to LLM, valid as a classifier.
     json llm_clf = router_with_classifier(
         "classifier",
@@ -167,6 +175,39 @@ static void test_inline_capability_matches_registration(ModelManager& manager) {
              {"checkpoint", "example/reg:Q4_K_M"}});
     err = manager.validate_collection_request("user.RouterKit", llm_clf);
     check("label-less llamacpp still defaults to LLM (valid classifier)", !err.has_value());
+}
+
+static void test_inferred_deployment_labels(ModelManager& manager) {
+    manager.register_user_model(
+        "user.zembed-1-Q4_K_M-GGUF",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/plain-checkpoint:Q4_K_M"}});
+    const auto embedding = manager.get_model_info("user.zembed-1-Q4_K_M-GGUF");
+    check("embedding name is registered in embedding mode",
+          embedding.type == lemon::ModelType::EMBEDDING &&
+          lemon::has_label(embedding.labels, "embeddings") &&
+          !lemon::has_label(embedding.labels, "chat"));
+
+    manager.register_user_model(
+        "user.CheckpointOnly",
+        json{{"recipe", "llamacpp"},
+             {"checkpoints", json{{"main", "example/my-reranker-v2:Q8_0"}}}});
+    const auto reranking = manager.get_model_info("user.CheckpointOnly");
+    check("main checkpoint name is registered in reranking mode",
+          reranking.type == lemon::ModelType::RERANKING &&
+          lemon::has_label(reranking.labels, "reranking") &&
+          !lemon::has_label(reranking.labels, "chat"));
+
+    manager.register_user_model(
+        "user.embed-chat",
+        json{{"recipe", "llamacpp"},
+             {"checkpoint", "example/embed-chat:Q4_K_M"},
+             {"labels", {"chat"}}});
+    const auto explicit_chat = manager.get_model_info("user.embed-chat");
+    check("explicit deployment mode takes precedence over name inference",
+          explicit_chat.type == lemon::ModelType::LLM &&
+          lemon::has_label(explicit_chat.labels, "chat") &&
+          !lemon::has_label(explicit_chat.labels, "embeddings"));
 }
 
 // A chat-indicator label (reasoning/vision/…) must not promote a non-chat
@@ -303,6 +344,7 @@ int main() {
     test_accepts_valid_router_policy(manager);
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
+    test_inferred_deployment_labels(manager);
     test_backend_capability_over_chat_indicator(manager);
     test_register_preserves_routing(manager);
 

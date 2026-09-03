@@ -3931,7 +3931,9 @@ size_t ModelManager::count_cloud_models(const std::string& provider) const {
 // cannot describe a model, so the caller can refuse it in those words. The
 // returned set is meaningless when it is non-empty.
 static std::set<std::string> normalized_definition_labels(
-    const json& model_data, std::string* illegal = nullptr) {
+    const json& model_data,
+    const std::string& model_name,
+    std::string* illegal = nullptr) {
     const std::string recipe = model_data.value("recipe", std::string());
     std::vector<std::string> labels = {"custom"};
     for (const auto& label : model_data.value("labels", std::vector<std::string>{})) {
@@ -3941,6 +3943,27 @@ static std::set<std::string> normalized_definition_labels(
     if (model_data.value("vision", false)) add_label_once(labels, "vision");
     if (model_data.value("embedding", false)) add_label_once(labels, "embeddings");
     if (model_data.value("reranking", false)) add_label_once(labels, "reranking");
+
+    ModelType declared_mode = ModelType::LLM;
+    if (!find_deployment_mode(labels, declared_mode)) {
+        std::string checkpoint = model_data.value("checkpoint", std::string());
+        if (checkpoint.empty() && model_data.contains("checkpoints") &&
+            model_data["checkpoints"].is_object() &&
+            model_data["checkpoints"].contains("main") &&
+            model_data["checkpoints"]["main"].is_string()) {
+            checkpoint = model_data["checkpoints"]["main"].get<std::string>();
+        }
+        const auto inferred = infer_labels_from_name(model_name, checkpoint);
+        const auto& supported_modes = lemon::backends::supported_modes_for(recipe);
+        for (const auto& label : inferred) {
+            ModelType inferred_mode = ModelType::LLM;
+            if (!supported_modes.empty() &&
+                deployment_mode_of(label, inferred_mode) &&
+                lemon::backends::backend_serves_mode(recipe, inferred_mode)) {
+                add_label_once(labels, label);
+            }
+        }
+    }
 
     if (illegal != nullptr) {
         *illegal = lemon::backends::illegal_deployment_labels(labels, recipe);
@@ -3987,7 +4010,8 @@ void ModelManager::register_user_model(const std::string& model_name,
     // load, where an entry written by an older version is skipped rather than
     // blocking startup.
     std::string illegal;
-    std::set<std::string> labels = normalized_definition_labels(model_data, &illegal);
+    std::set<std::string> labels =
+        normalized_definition_labels(model_data, clean_name, &illegal);
     if (!illegal.empty()) {
         throw InvalidModelDefinitionError(describe_illegal_labels(model_name, illegal));
     }
@@ -6256,7 +6280,7 @@ std::optional<std::string> ModelManager::validate_collection_request(
             // it here, where the import can still be refused whole.
             if (!model_exists(bare) && def != nullptr) {
                 std::string illegal;
-                normalized_definition_labels(*def, &illegal);
+                normalized_definition_labels(*def, bare, &illegal);
                 if (!illegal.empty()) {
                     return describe_illegal_labels(component_name, illegal);
                 }
@@ -6295,7 +6319,8 @@ std::optional<std::string> ModelManager::validate_collection_request(
                 // Derive the type exactly as register_user_model() would once
                 // this inline definition is registered, so validation and
                 // runtime cannot disagree.
-                std::set<std::string> label_set = normalized_definition_labels(*def);
+                std::set<std::string> label_set =
+                    normalized_definition_labels(*def, bare_component_name(name));
                 return get_model_type_from_labels(
                     std::vector<std::string>(label_set.begin(), label_set.end()));
             }

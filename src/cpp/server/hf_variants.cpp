@@ -508,10 +508,8 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             case DraftKind::None: break;
         }
     }
-    {
-        std::string id_lower = to_lower(checkpoint);
-        if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
-        if (id_lower.find("rerank") != std::string::npos) add_label_once(labels, "reranking");
+    for (const auto& label : infer_labels_from_name("", checkpoint)) {
+        add_label_once(labels, label);
     }
     backends::ensure_deployment_label(labels, "llamacpp");
 
