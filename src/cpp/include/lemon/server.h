@@ -184,6 +184,7 @@ private:
     void handle_load(const httplib::Request& req, httplib::Response& res);
     void handle_unload(const httplib::Request& req, httplib::Response& res);
     void handle_pin(const httplib::Request& req, httplib::Response& res);
+    void handle_backend_props(const httplib::Request& req, httplib::Response& res);
     void handle_delete(const httplib::Request& req, httplib::Response& res);
     void handle_cleanup_cache(const httplib::Request& req, httplib::Response& res);
     void handle_aliases_get(const httplib::Request& req, httplib::Response& res);

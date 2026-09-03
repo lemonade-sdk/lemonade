@@ -397,6 +397,11 @@ public:
         return recipe_options_;
     }
 
+    // Backend's own /props endpoint, verbatim (an error-shaped response for
+    // backends that don't expose one). Ground truth for state the backend
+    // manages on its own outside of Lemonade's model state, e.g. is_sleeping.
+    json get_backend_props() { return forward_get_request("/props"); }
+
     // recipe_options_ holds the ctx_size the backend was started with, so the
     // -1 that asked for it is gone by the time anyone reads it back. Keep that
     // request so a later load spelling -1 can be recognized as the same load.

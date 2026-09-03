@@ -1451,6 +1451,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_pin(req, res);
     });
 
+    web_server.Post("/internal/backend-props", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_backend_props(req, res);
+    });
+
     // Unified config endpoints (not part of public API)
     web_server.Post("/internal/set", [this](const httplib::Request& req, httplib::Response& res) {
         handle_config_set(req, res);
@@ -6334,6 +6338,50 @@ void Server::handle_pin(const httplib::Request& req, httplib::Response& res) {
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "Pin/unpin failed: " << e.what() << std::endl;
         res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_backend_props(const httplib::Request& req, httplib::Response& res) {
+    try {
+        nlohmann::json request_json;
+        try {
+            request_json = nlohmann::json::parse(req.body);
+        } catch (const std::exception& parse_err) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Invalid JSON body: " + std::string(parse_err.what())},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        if (!request_json.contains("model") && !request_json.contains("model_name")) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Parameter 'model' or 'model_name' is required"},
+                {"type", "invalid_request_error"}
+            }}}.dump(), "application/json");
+            return;
+        }
+
+        std::string model_name = request_json.contains("model") ?
+            request_json["model"].get<std::string>() :
+            request_json["model_name"].get<std::string>();
+
+        std::string canonical_name = model_manager_->resolve_model_name(model_name);
+        nlohmann::json props = router_->get_backend_props(canonical_name);
+
+        res.status = 200;
+        res.set_content(props.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "Backend props lookup failed: " << e.what() << std::endl;
+        std::string error_msg = e.what();
+        res.status = error_msg.find("not loaded") != std::string::npos ? 404 : 400;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
             {"type", "invalid_request_error"}

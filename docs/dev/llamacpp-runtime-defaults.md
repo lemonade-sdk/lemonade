@@ -140,6 +140,44 @@ Hard-idle-eviction and VRAM-pressure eviction are gated purely on the live
 `auto_evict` value instead, since unloading the process outright is a
 genuinely config-driven action with no launch-time state to track.
 
+### Pinned models never get `--sleep-idle-seconds` baked in
+
+`EvictionEngine::evaluate_servers()` skips pinned models entirely, on the
+theory that a pinned model must never be evicted or downsized by Lemonade's
+own state machine. That skip says nothing about whether llama-server's own
+independent `--sleep-idle-seconds` timer is running underneath it, since that
+timer fires regardless of whether `EvictionEngine` ever looks at the model
+again. `LlamaCppOps::resolve_runtime_options()` therefore forces
+`sleep_idle_seconds = -1` whenever `pinned` resolves `true`, unconditionally,
+before even considering `auto_evict` - a pinned model's backend must never
+be able to put itself to sleep on its own.
+
+Because this decision is baked in at launch just like `auto_evict` is, the
+same "fixed for the life of the subprocess" problem applies to pin state
+changes on an already-running model:
+
+- `POST /v1/load` with a `pinned` change on an existing model already reloads
+  the backend whenever the fully-resolved recipe options differ (comparing
+  everything but the `pinned` key itself) - once `pinned` affects the baked
+  `llamacpp_args`, an actual pin/unpin toggle produces a different resolved
+  `llamacpp_args` string and is naturally caught by that existing comparison,
+  with no special-case code needed.
+- `POST /internal/pin` (`Router::set_model_pinned()`) is the fast, load-free
+  path used by e.g. the LRU-eviction-protection flow, and historically just
+  flipped the in-memory pin flag. It now resolves what the backend's launch
+  args *would* look like under the new pin state and, if that differs from
+  what's actually running, transparently reloads the backend through the same
+  `load_model()` path `/v1/load` uses (preserving load purpose/residency
+  class) before returning success. If the resolved args are unchanged (e.g.
+  `auto_evict` was already off, so there's no sleep timer for pinning to
+  affect), it stays a cheap in-memory flip.
+
+`POST /internal/backend-props` (admin-gated like every other `/internal/...`
+route) forwards a running model's own `GET /props` verbatim, so tests and
+operators can check `is_sleeping` as ground truth instead of trusting
+Lemonade's own `pinned`/`status` fields, which only reflect what Lemonade's
+state machine believes, not what the backend subprocess is actually doing.
+
 The **wake** direction (`DOWNSIZED` → `READY`, in `WrappedServer::acquire_for_inference()`
 calling `restore()`) is still optimistic for every backend, including
 llama.cpp: `restore()` is a no-op, and Lemonade flips to `READY` before

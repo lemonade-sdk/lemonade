@@ -895,8 +895,13 @@ public:
         const bool auto_evict = auto_evict_value.is_boolean()
                                      ? auto_evict_value.get<bool>()
                                      : RuntimeConfig::global()->auto_evict();
+        const json pinned_value = options.get_option("pinned");
+        const bool pinned = pinned_value.is_boolean() && pinned_value.get<bool>();
         long sleep_idle_seconds = -1;
-        if (auto_evict) {
+        // A pinned model must never sleep on its own, regardless of auto_evict --
+        // EvictionEngine skips pinned models, so llama-server's own timer would be
+        // the only thing putting it to sleep, invisibly to the rest of Lemonade.
+        if (auto_evict && !pinned) {
             const json downsize_timeout_value = options.get_option("downsize_idle_timeout");
             // is_number_integer() is false for a JSON value that arrived as a float
             // even when it holds a whole number (e.g. 3.0), which would silently
