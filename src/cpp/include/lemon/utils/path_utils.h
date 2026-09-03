@@ -90,6 +90,14 @@ void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,
                                              const std::string& config_dir);
 
 /**
+ * Recover data left behind when an upgrade relocated the cache (issue #3387).
+ * Moves the pre-3028 home-based cache payload and HuggingFace models into the
+ * new cache/config/model directories. No-op when nothing was relocated.
+ */
+void migrate_legacy_paths(const std::string& cache_dir,
+                          const std::string& config_dir);
+
+/**
  * Set the models directory for HuggingFace model cache.
  * Must be called at startup with the value from config.json.
  */

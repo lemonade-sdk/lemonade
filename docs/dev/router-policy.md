@@ -72,7 +72,7 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
 | `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
 | `min_turns` / `max_turns` | Conversation depth (**whole-conversation scope**, like `total_chars` — not just the latest turn like `chars`) — count of `role:"user"` turns in `messages`/`input`. |
-| `has_tools` / `has_images` | Boolean — request carries tools / images. |
+| `has_tools` / `has_images` | Boolean - request carries a non-empty `tools` array / image content parts. |
 | `metadata` | `{ key, equals \| any \| exists \| gte \| lte }` over the request's OpenAI `metadata`. `gte`/`lte` parse the value as a number — useful for a harness-precomputed signal like a tool-error streak (see [trajectory-signal routing](#trajectory-signal-routing) below). |
 
 The text conditions above - `keywords_any` / `keywords_all`, `regex`, and the
@@ -163,6 +163,16 @@ and every entry's `model` must be one of `components`:
   `risky-tool-calls-stay-local` above. The engine wraps your `prompt` with the
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to `default_model`.
+
+  A `type: "llm"` classifier's judge never sees `has_tools`/`has_images`
+  (#2789) — not even when a sibling condition composes the deterministic leaf
+  in the *same* rule, as `risky-tool-calls-stay-local` does above; exposing
+  them there would feed the judge the very signal the rule already checks
+  deterministically, biasing the label from their mere presence. Write
+  `prompt` with an explicit criterion instead (as `risk` does above: "risk
+  for tool execution", not just "risk"), and compose the `has_tools`/
+  `has_images` leaf alongside the classifier when a request feature should
+  affect routing, exactly as shown above.
 
 > A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
 > block are the two LLM forms. `routing.router` picks the final candidate itself
@@ -332,3 +342,8 @@ The router `model` must be one of `components`. At request time the engine asks 
 to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
+
+Unlike a `type: "llm"` classifier (which never receives `has_tools`/
+`has_images`, see above), the router always does: it's the sole decision
+mechanism here, so `prompt` can rely on them directly — e.g. "use Vision-GGUF
+when the request includes images."

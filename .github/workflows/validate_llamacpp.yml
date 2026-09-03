@@ -49,7 +49,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq '.tag_name')
+          set -euo pipefail
+          # Upstream's semver releases (v0.3.0) are what /releases/latest now
+          # returns, and they carry no binaries -- the bNNNN nightlies hold the
+          # assets and are flagged as prereleases.
+          TAGS=$(gh api repos/ggml-org/llama.cpp/releases \
+            --jq '.[] | select(.draft | not) | .tag_name')
+          RELEASE=$(printf '%s\n' "$TAGS" | grep -m1 -E '^b[0-9]+$' || true)
+          if [ -z "$RELEASE" ]; then
+            echo "::error::No bNNNN release found in ggml-org/llama.cpp."
+            exit 1
+          fi
           echo "Latest llama.cpp release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
