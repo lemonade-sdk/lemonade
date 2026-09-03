@@ -148,6 +148,11 @@ considering `auto_evict`. `EvictionEngine` skipping pinned models is not
 enough on its own to guarantee this - that skip only stops *Lemonade* from
 downsizing it, it says nothing about llama-server's own independent timer.
 
+Forcing `sleep_idle_seconds = -1` only prevents new `--sleep-idle-seconds`
+from being added; it does not remove one already present in `custom_args`. This can happen when `resolve_effective_options()` re-resolves already-baked `llamacpp_args` (eg: `/internal/pin` reloads from the running server's resolved options) or when a user explicitly supplies `llamacpp_args="--sleep-idle-seconds N"` on a pinned load.
+
+Therefore when `pinned` is true, `resolve_runtime_options()` must also strip `--sleep-idle-seconds` from custom_args via `lemon::utils::remove_custom_arg()`, ensuring the pinned invariant overrides explicit user values.
+
 Like `auto_evict`, this is baked in at launch and can't change on a running
 process. `/v1/load`'s existing reload-on-option-change check already handles
 a `pinned` toggle for free, since it changes the resolved `llamacpp_args`.

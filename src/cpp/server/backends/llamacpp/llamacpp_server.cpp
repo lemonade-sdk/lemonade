@@ -888,7 +888,7 @@ public:
         const bool merge_args =
             merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
         const json custom_args_value = options.get_option("llamacpp_args");
-        const std::string custom_args =
+        std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
 
         const json auto_evict_value = options.get_option("auto_evict");
@@ -897,10 +897,19 @@ public:
                                      : RuntimeConfig::global()->auto_evict();
         const json pinned_value = options.get_option("pinned");
         const bool pinned = pinned_value.is_boolean() && pinned_value.get<bool>();
-        long sleep_idle_seconds = -1;
         // A pinned model must never sleep on its own, regardless of auto_evict --
         // EvictionEngine skips pinned models, so llama-server's own timer would be
         // the only thing putting it to sleep, invisibly to the rest of Lemonade.
+        // custom_args can already contain a --sleep-idle-seconds baked in from a
+        // previous (unpinned) load being re-resolved for this pin change, or from
+        // an explicit user-supplied llamacpp_args -- either way, avoiding *adding*
+        // a new one isn't enough, an existing occurrence must be actively removed
+        // so the resolved args (and the reload-on-option-change comparison in
+        // Router::set_model_pinned()) actually reflect the disabled sleep timer.
+        if (pinned) {
+            custom_args = utils::remove_custom_arg(custom_args, "--sleep-idle-seconds");
+        }
+        long sleep_idle_seconds = -1;
         if (auto_evict && !pinned) {
             const json downsize_timeout_value = options.get_option("downsize_idle_timeout");
             // is_number_integer() is false for a JSON value that arrived as a float

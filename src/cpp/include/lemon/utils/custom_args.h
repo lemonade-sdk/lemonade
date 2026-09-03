@@ -181,6 +181,19 @@ inline std::string negate_flag(const std::string& flag) {
     return "";
 }
 
+// Remove every occurrence of `flag` (and its value tokens, if any) from a
+// custom args string. Unlike append_runtime_arg_defaults (which only skips
+// adding a default when the flag is already present), this actively deletes
+// an existing occurrence -- needed when a runtime invariant (e.g. a pinned
+// model must never sleep) has to override even an explicit user-supplied
+// value, not just avoid re-adding Lemonade's own computed default.
+inline std::string remove_custom_arg(const std::string& args, const std::string& flag) {
+    if (args.empty()) return args;
+    auto map = build_custom_args_map(parse_custom_args(args, true));
+    map.erase(flag);
+    return map_to_args_string(map);
+}
+
 inline CustomArgsMap merge_args_maps(
     const CustomArgsMap& target,
     const CustomArgsMap& incoming) {
