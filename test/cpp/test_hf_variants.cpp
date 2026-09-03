@@ -47,6 +47,15 @@ int main() {
         result.expect("text GGUF metadata is accepted",
                       lemon::llamacpp_gguf_incompatibility(valid, "huggingface").empty(),
                       "known-good metadata was rejected");
+
+        const nlohmann::json newer_backend_architecture = {
+            {"pipeline_tag", "text-generation"},
+            {"gguf", {{"architecture", "bailingmoe3"}}},
+        };
+        result.expect("architecture supported by all shipped backends is accepted",
+                      lemon::llamacpp_gguf_incompatibility(
+                          newer_backend_architecture, "huggingface").empty(),
+                      "common architecture was rejected");
     }
 
     {

@@ -214,6 +214,25 @@ static void test_huggingface_compatibility_metadata_policy() {
     }
     check("malformed official metadata does not fail open", malformed_official_rejected);
 
+    bool missing_official_gguf_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(
+            200, R"({"pipeline_tag":"text-generation"})", true);
+    } catch (const std::exception&) {
+        missing_official_gguf_rejected = true;
+    }
+    check("official response without GGUF metadata does not fail open",
+          missing_official_gguf_rejected);
+
+    bool wrong_official_shape_rejected = false;
+    try {
+        (void)lemon::parse_huggingface_compatibility_response(200, "[]", true);
+    } catch (const std::exception&) {
+        wrong_official_shape_rejected = true;
+    }
+    check("wrong-shaped official metadata does not fail open",
+          wrong_official_shape_rejected);
+
     const auto malformed_mirror =
         lemon::parse_huggingface_compatibility_response(200, "not json", false);
     check("malformed mirror metadata remains optional", !malformed_mirror.has_value());

@@ -381,7 +381,6 @@ public:
             endpoint,
             repo_id,
             !requested_revision.empty() && revision != "main" ? revision : "");
-        const std::string repository_url = url;
         url += "?blobs=true";
 
         const auto response = HttpClient::get(url, auth_headers());
@@ -400,31 +399,11 @@ public:
                                      " is missing the siblings array");
         }
 
-        const std::string snapshot_id = metadata.value("sha", std::string());
-        std::string compatibility_url = repository_url;
-        if (!snapshot_id.empty()) {
-            compatibility_url = huggingface_repository_api_url(
-                endpoint, repo_id, snapshot_id);
-        }
-        const auto expanded_response = HttpClient::get(
-            compatibility_url + "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag",
-            auth_headers());
-        const auto expanded_metadata = parse_huggingface_compatibility_response(
-            expanded_response.status_code,
-            expanded_response.body,
-            is_official_huggingface_endpoint(endpoint));
-        if (expanded_metadata) {
-            for (const char* field : {"gguf", "pipeline_tag"}) {
-                auto value = expanded_metadata->find(field);
-                if (value != expanded_metadata->end()) metadata[field] = *value;
-            }
-        }
-
         RegistryRepository result;
         result.repo_id = repo_id;
         result.revision = revision;
         result.raw_metadata = metadata;
-        result.snapshot_id = snapshot_id;
+        result.snapshot_id = metadata.value("sha", std::string());
         if (result.snapshot_id.empty()) result.snapshot_id = revision;
         // Resolve downloads against the immutable commit whenever HF provides it.
         result.revision = result.snapshot_id;
@@ -689,11 +668,34 @@ std::optional<json> parse_huggingface_compatibility_response(
             std::to_string(status_code));
     }
     try {
-        return JsonUtils::parse(body);
+        json metadata = JsonUtils::parse(body);
+        if (metadata_required &&
+            (!metadata.is_object() || !metadata.contains("gguf") ||
+             !metadata["gguf"].is_object())) {
+            throw std::runtime_error(
+                "Hugging Face compatibility response is missing GGUF metadata");
+        }
+        return metadata;
     } catch (const std::exception&) {
         if (metadata_required) throw;
         return std::nullopt;
     }
+}
+
+std::optional<json> fetch_huggingface_compatibility_metadata(
+    const std::string& repo_id,
+    const std::string& revision) {
+    std::string endpoint = trim_trailing_slash(env_string("HF_ENDPOINT"));
+    if (endpoint.empty()) endpoint = "https://huggingface.co";
+    const std::string url = huggingface_repository_api_url(
+        endpoint, repo_id, revision) +
+        "?expand%5B%5D=gguf&expand%5B%5D=pipeline_tag";
+    const auto response = HttpClient::get(
+        url, model_registry(RemoteRegistrySource::HuggingFace).auth_headers());
+    return parse_huggingface_compatibility_response(
+        response.status_code,
+        response.body,
+        is_official_huggingface_endpoint(endpoint));
 }
 
 RegistrySearchResponse search_registry_models(RemoteRegistrySource source,

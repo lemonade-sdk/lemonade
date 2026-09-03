@@ -128,6 +128,9 @@ std::optional<nlohmann::json> parse_huggingface_compatibility_response(
     int status_code,
     const std::string& body,
     bool metadata_required);
+std::optional<nlohmann::json> fetch_huggingface_compatibility_metadata(
+    const std::string& repo_id,
+    const std::string& revision);
 
 // Search a remote model registry. Provider-side GGUF filters are candidate
 // hints only; callers must use /pull/variants as the authoritative file-level

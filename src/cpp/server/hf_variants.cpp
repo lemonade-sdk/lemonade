@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <map>
+#include <optional>
 #include <regex>
 #include <stdexcept>
 #include <unordered_map>
@@ -494,8 +495,22 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
             "' manifest exported by 'lemonade export')");
     }
 
+    nlohmann::json compatibility_metadata = repository.raw_metadata;
+    std::optional<nlohmann::json> expanded_metadata;
+    if (source == RemoteRegistrySource::HuggingFace) {
+        expanded_metadata = fetch_huggingface_compatibility_metadata(
+            checkpoint, repository.snapshot_id);
+    }
+    if (expanded_metadata) {
+        for (const char* field : {"gguf", "pipeline_tag"}) {
+            auto value = expanded_metadata->find(field);
+            if (value != expanded_metadata->end()) {
+                compatibility_metadata[field] = *value;
+            }
+        }
+    }
     const std::string incompatibility = llamacpp_gguf_incompatibility(
-        repository.raw_metadata, remote_registry_source_name(source));
+        compatibility_metadata, remote_registry_source_name(source));
     if (!incompatibility.empty()) {
         throw std::invalid_argument(
             "Repository " + checkpoint + " is not compatible with llama.cpp: " +
@@ -581,9 +596,9 @@ std::string llamacpp_gguf_incompatibility(
     }
 
     const std::string architecture = architecture_it->get<std::string>();
-    if (!llamacpp_architecture_is_supported(architecture)) {
+    if (!llamacpp_architecture_is_supported_by_all_backends(architecture)) {
         return "GGUF architecture '" + architecture +
-               "' is not supported by Lemonade's llama.cpp backend";
+               "' is not supported by Lemonade's shipped llama.cpp backends";
     }
 
     return {};
