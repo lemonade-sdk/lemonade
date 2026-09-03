@@ -181,6 +181,20 @@ inline std::string negate_flag(const std::string& flag) {
     return "";
 }
 
+// Remove every occurrence of `flag` (and its value tokens, if any) from a
+// custom args string. Unlike append_runtime_arg_defaults (which only skips
+// adding a default when the flag is already present), this actively deletes
+// an existing occurrence -- see llamacpp_server.cpp's pinned-model handling
+// in resolve_runtime_options() for why that distinction matters.
+inline std::string remove_custom_arg(const std::string& args, const std::string& flag) {
+    if (args.empty()) return args;
+    auto tokens = parse_custom_args(args, true);
+    if (!custom_args_has_flag(tokens, flag)) return args;
+    auto map = build_custom_args_map(tokens);
+    map.erase(flag);
+    return map_to_args_string(map);
+}
+
 inline CustomArgsMap merge_args_maps(
     const CustomArgsMap& target,
     const CustomArgsMap& incoming) {

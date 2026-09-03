@@ -68,6 +68,11 @@ CAPABILITIES = {
                 "slots": True,
                 "tokenize": True,
                 "static_max_context_window": True,
+                # llama-server's --sleep-idle-seconds whole-server sleep, which
+                # Lemonade's auto_evict/downsize_idle_timeout maps onto. Distinct
+                # from "slots" (llama.cpp's per-slot /slots API) even though only
+                # llamacpp supports either today -- don't conflate the two gates.
+                "sleep_idle_downsize": True,
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",

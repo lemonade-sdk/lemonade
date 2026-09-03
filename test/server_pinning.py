@@ -104,6 +104,30 @@ class PinningTests(ServerTestBase):
             f"Timed out waiting for {model_name!r} to be loaded. Last health={last_health}"
         )
 
+    def _get_backend_props(self, model_name):
+        response = requests.post(
+            f"{self.internal_url}/backend-props",
+            json={"model_name": model_name},
+            headers=_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code, 200, f"backend-props failed: {response.text}"
+        )
+        return response.json()
+
+    def _wait_for_backend_sleeping(
+        self, model_name, sleeping, timeout=EVICTION_POLL_TIMEOUT
+    ):
+        deadline = time.monotonic() + timeout
+        props = self._get_backend_props(model_name)
+        while time.monotonic() < deadline:
+            if props.get("is_sleeping", False) == sleeping:
+                return props
+            time.sleep(EVICTION_POLL_INTERVAL)
+            props = self._get_backend_props(model_name)
+        return props
+
     def _simulate_vram_pressure(self, pct):
         response = requests.post(
             f"{self.base_url.replace('/api/v1', '')}/internal/simulate-vram-pressure",
@@ -230,6 +254,86 @@ class PinningTests(ServerTestBase):
         info_after = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
         self.assertIsNotNone(info_after)
         self.assertEqual(info_after.get("status"), "ready")
+
+        # Ground truth: the backend's own /props must also report it never
+        # went to sleep. Lemonade's own model state stays 'ready' simply
+        # because EvictionEngine skips pinned models -- that's orthogonal to
+        # whether llama-server's own --sleep-idle-seconds timer fired.
+        props = self._get_backend_props(ENDPOINT_TEST_MODEL)
+        self.assertFalse(
+            props.get("is_sleeping", False),
+            "Pinned model's backend must never sleep on its own idle timer",
+        )
+
+    def test_pin_disables_baked_sleep_timer(self):
+        """Pinning an already-running downsize-enabled model must disable its
+        backend's own idle sleep timer, restarting the subprocess if needed."""
+        requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "pinned": False,
+                "auto_evict": True,
+                "downsize_idle_timeout": 2,
+                "evict_idle_timeout": 300,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        entry = self._wait_for_loaded_model(ENDPOINT_TEST_MODEL)
+        old_pid = int(entry["pid"])
+
+        response = requests.post(
+            f"{self.internal_url}/pin",
+            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": True},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("pinned"))
+
+        entry_after = self._wait_for_loaded_model(ENDPOINT_TEST_MODEL)
+        new_pid = int(entry_after["pid"])
+        self.assertNotEqual(
+            old_pid,
+            new_pid,
+            "Pinning must reload the backend to drop the baked sleep timer",
+        )
+
+        # Wait past the idle timeout and confirm the backend never sleeps.
+        time.sleep(8)
+        props = self._get_backend_props(ENDPOINT_TEST_MODEL)
+        self.assertFalse(
+            props.get("is_sleeping", False),
+            "Newly pinned model must not sleep even past its old idle timeout",
+        )
+
+    def test_unpin_enables_sleep_timer(self):
+        """Unpinning a model must enable its backend's idle sleep timer."""
+        requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "pinned": True,
+                "auto_evict": True,
+                "downsize_idle_timeout": 2,
+                "evict_idle_timeout": 300,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self._wait_for_loaded_model(ENDPOINT_TEST_MODEL)
+
+        response = requests.post(
+            f"{self.internal_url}/pin",
+            json={"model_name": ENDPOINT_TEST_MODEL, "pinned": False},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json().get("pinned"))
+
+        props = self._wait_for_backend_sleeping(ENDPOINT_TEST_MODEL, True)
+        self.assertTrue(
+            props.get("is_sleeping", False),
+            "Unpinned model must eventually sleep once past its idle timeout",
+        )
 
     @unittest.skipIf(os.name == "nt", "POSIX signal tests skipped on Windows")
     def test_watchdog_reload_preserves_pin_state(self):

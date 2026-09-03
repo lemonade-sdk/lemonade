@@ -810,6 +810,32 @@ void Router::load_model(const std::string& model_name,
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
+
+    // Seed a best-effort "pinned" hint before resolving effective options, so
+    // backends (e.g. llama.cpp's resolve_runtime_options()) can see the real
+    // pin decision when baking launch args such as --sleep-idle-seconds. This
+    // mirrors the authoritative final_pinned computation below, but must run
+    // here since resolve_effective_options() is what drives arg-baking. A
+    // short-lived peek lock is used only to read the existing server's live
+    // pin state; it is released before the real load_mutex_ lock is taken
+    // below, so there is no reentrancy or deadlock risk. (resolve_effective_options()
+    // is also called from server.cpp's resolve_context_length() and the
+    // /v1/models/{id}/options display endpoint, neither of which launches a
+    // subprocess, so they don't need this hint.)
+    bool peeked_pinned;
+    if (pinned.has_value()) {
+        peeked_pinned = pinned.value();
+    } else {
+        std::lock_guard<std::mutex> peek_lock(load_mutex_);
+        WrappedServer* existing_peek = find_server_by_model_name(canonical_model_name);
+        if (existing_peek) {
+            peeked_pinned = existing_peek->is_pinned();
+        } else {
+            const json peeked_pinned_value = options.get_option("pinned");
+            peeked_pinned = peeked_pinned_value.is_boolean() && peeked_pinned_value.get<bool>();
+        }
+    }
+    options.set_option("pinned", peeked_pinned);
     RecipeOptions effective_options = resolve_effective_options(model_info, options);
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
@@ -2960,13 +2986,65 @@ json Router::get_pinned_helper_counts() const {
 }
 
 void Router::set_model_pinned(const std::string& model_name, bool pinned) {
-    std::unique_lock<std::mutex> lock(load_mutex_);
-    wait_for_slot_clearance(lock);
-    WrappedServer* server = find_server_by_model_name(model_name);
-    if (!server) {
-        throw std::runtime_error("Model not loaded: " + model_name);
+    std::string canonical_model_name;
+    ModelInfo model_info;
+    RecipeOptions reload_options;
+    LoadPurpose load_purpose;
+    {
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
+        WrappedServer* server = find_server_by_model_name(model_name);
+        if (!server) {
+            throw std::runtime_error("Model not loaded: " + model_name);
+        }
+        if (server->is_pinned() == pinned) {
+            return;
+        }
+        canonical_model_name = server->get_model_name();
+        model_info = model_manager_->get_model_info(canonical_model_name);
+        reload_options = server->get_recipe_options();
+        reload_options.set_option("pinned", pinned);
+        RecipeOptions new_effective = resolve_effective_options(model_info, reload_options);
+        json old_resolved = server->get_recipe_options().to_resolved_json();
+        json new_resolved = new_effective.to_resolved_json();
+        old_resolved.erase("pinned");
+        new_resolved.erase("pinned");
+        if (old_resolved == new_resolved) {
+            // The pin change doesn't alter any baked launch args (e.g. no
+            // auto_evict downsize timer in play) -- a plain in-memory flip
+            // is sufficient, no subprocess restart needed.
+            server->set_pinned(pinned);
+            return;
+        }
+        load_purpose = load_purpose_for_residency_class(server->get_residency_class());
     }
-    server->set_pinned(pinned);
+    // load_model() acquires load_mutex_ itself -- must not hold it here.
+    load_model(canonical_model_name, model_info, reload_options, /*do_not_upgrade=*/true,
+               /*allow_reload_on_option_change=*/true, pinned, load_purpose);
+}
+
+json Router::get_backend_props(const std::string& model_name) {
+    WrappedServer* server = nullptr;
+    {
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
+        server = find_server_by_model_name(model_name);
+        if (!server) {
+            throw std::runtime_error("Model not loaded: " + model_name);
+        }
+        if (!server->acquire_for_inference()) {
+            throw std::runtime_error("Model not loaded: " + model_name);
+        }
+    } // Lock released here
+
+    try {
+        json props = server->get_backend_props();
+        server->release_inference();
+        return props;
+    } catch (...) {
+        server->release_inference();
+        throw;
+    }
 }
 
 } // namespace lemon

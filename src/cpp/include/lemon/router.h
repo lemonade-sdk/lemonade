@@ -205,6 +205,11 @@ public:
     // Pin or unpin a model
     void set_model_pinned(const std::string& model_name, bool pinned);
 
+    // Forward the backend's own /props endpoint verbatim (empty object if the
+    // backend doesn't expose one). See docs/dev/llamacpp-runtime-defaults.md
+    // for why this is needed as ground truth.
+    json get_backend_props(const std::string& model_name);
+
     bool is_model_loaded() const;
 
     bool is_model_loaded(const std::string& model_name) const;

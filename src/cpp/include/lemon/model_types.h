@@ -24,6 +24,13 @@ inline bool is_model_collection_recipe(const std::string& recipe) {
     return is_omni_collection_recipe(recipe) || is_router_collection_recipe(recipe);
 }
 
+// DOWNSIZED is reached via WrappedServer::downsize(); whether that's a live
+// readback of backend state or just Lemonade's own belief depends on the
+// backend (see docs/dev/llamacpp-runtime-defaults.md for llama.cpp's
+// `--sleep-idle-seconds` verification via /props). The reverse transition
+// (DOWNSIZED -> READY in acquire_for_inference(), via restore()) is optimistic
+// for every backend today: it flips before confirming the backend actually
+// finished waking.
 enum class ModelState {
     LOADING,
     READY,

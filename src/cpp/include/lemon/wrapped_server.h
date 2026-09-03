@@ -397,6 +397,11 @@ public:
         return recipe_options_;
     }
 
+    // Backend's own /props endpoint, verbatim (an error-shaped response for
+    // backends that don't expose one). Ground truth for state the backend
+    // manages on its own outside of Lemonade's model state, e.g. is_sleeping.
+    json get_backend_props() { return forward_get_request("/props"); }
+
     // recipe_options_ holds the ctx_size the backend was started with, so the
     // -1 that asked for it is gone by the time anyone reads it back. Keep that
     // request so a later load spelling -1 can be recognized as the same load.
@@ -458,6 +463,27 @@ public:
     // Restore the model from a downsized state
     virtual void restore() {
         // No-op by default
+    }
+
+    // Whether downsize() will do something real for *this already-running*
+    // instance, independent of whatever the live auto_evict config says right
+    // now. Most backends implement downsize() as fully config-driven -- no
+    // state is fixed at process launch -- so the default just mirrors the
+    // live config value passed in. llama.cpp overrides this because
+    // --sleep-idle-seconds is baked into launch args and toggling auto_evict
+    // at runtime (/internal/set, or a recipe update) cannot add or remove a
+    // flag from an already-running subprocess.
+    virtual bool downsize_effective_for_this_instance(bool auto_evict_config) const {
+        return auto_evict_config;
+    }
+
+    // The downsize idle timeout actually in effect for this instance, in
+    // seconds, or -1 if the caller should keep using the recipe/global
+    // downsize_idle_timeout value instead. Only consulted when
+    // downsize_effective_for_this_instance() is true. Default: no launch-time
+    // override. See LlamaCppServer::load() for a backend that needs one.
+    virtual long effective_downsize_idle_timeout_sec() const {
+        return -1;
     }
 
     // Default to an "unsupported" error so non-chat backends (TTS, image,

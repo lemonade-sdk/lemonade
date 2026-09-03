@@ -30,6 +30,16 @@ public:
     // Downsize the model on soft idle
     bool downsize() override;
 
+    // Ignores the live auto_evict config on purpose: sleep_idle_enabled_
+    // reflects what was actually baked into --sleep-idle-seconds at load()
+    // time, which a runtime auto_evict toggle cannot change for an
+    // already-running process. See EvictionEngine::evaluate_servers().
+    bool downsize_effective_for_this_instance(bool auto_evict_config) const override;
+
+    // See load(), which parses this backend's actual --sleep-idle-seconds
+    // value instead of trusting the requested downsize_idle_timeout.
+    long effective_downsize_idle_timeout_sec() const override;
+
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
@@ -60,6 +70,13 @@ private:
     // in the OpenAI `model` field. Rewrite it to the client-facing model id so
     // responses don't leak absolute filesystem paths (and usernames).
     json normalize_response_model(json response, const json& request) const;
+
+    // Set in load(); see there for why this is parsed from the resolved
+    // args instead of just checking flag presence. downsize() uses
+    // sleep_idle_enabled_ (this value >= 1) to decide whether there's
+    // anything to verify via /props.
+    long sleep_idle_seconds_effective_ = -1;
+    bool sleep_idle_enabled_ = false;
 };
 
 namespace llamacpp {
