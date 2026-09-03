@@ -143,7 +143,8 @@ int get_error_status_code(const json& response, int default_status_code = 500) {
 
         if (type == ErrorType::INVALID_REQUEST ||
             type == "invalid_request_error" ||
-            type == ErrorType::UNSUPPORTED_OPERATION) {
+            type == ErrorType::UNSUPPORTED_OPERATION ||
+            type == ErrorType::ROUTER_RESPONSE_CHAIN_UNSUPPORTED) {
             return 400;
         }
 
@@ -171,6 +172,24 @@ void set_router_residency_conflict_response(
             {"type", ErrorType::ROUTER_RESIDENCY_CONFLICT},
             {"param", "model"},
             {"code", ErrorType::ROUTER_RESIDENCY_CONFLICT},
+        }},
+    };
+    res.set_content(response.dump(), "application/json");
+}
+
+void set_router_response_chain_unsupported_response(const std::string& requested_model,
+                                                    httplib::Response& res) {
+    res.status = 400;
+    const json response = {
+        {"error", {
+            {"message",
+             "'previous_response_id' refers to state held by whichever backend served "
+             "the earlier turn, and router collection '" + requested_model +
+             "' may select a different candidate for this one. Resend the full 'input', "
+             "or address a concrete model instead of the collection."},
+            {"type", ErrorType::ROUTER_RESPONSE_CHAIN_UNSUPPORTED},
+            {"param", "previous_response_id"},
+            {"code", ErrorType::ROUTER_RESPONSE_CHAIN_UNSUPPORTED},
         }},
     };
     res.set_content(response.dump(), "application/json");
@@ -3829,6 +3848,21 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
 }
 
+std::optional<ModelInfo> Server::router_collection_info(const nlohmann::json& request_json) {
+    if (!request_json.contains("model") || !request_json["model"].is_string()) {
+        return std::nullopt;
+    }
+    const std::string requested_model = request_json["model"].get<std::string>();
+    if (!model_manager_->model_exists(requested_model)) {
+        return std::nullopt;
+    }
+    ModelInfo info = model_manager_->get_model_info(requested_model);
+    if (!is_router_collection_recipe(info.recipe)) {
+        return std::nullopt;
+    }
+    return info;
+}
+
 std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     nlohmann::json& request_json) {
     if (!request_json.contains("model") || !request_json["model"].is_string()) {
@@ -3836,14 +3870,11 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     }
     const std::string requested_model = request_json["model"].get<std::string>();
     try {
-        if (!model_manager_->model_exists(requested_model)) {
+        std::optional<ModelInfo> info = router_collection_info(request_json);
+        if (!info) {
             return std::nullopt;
         }
-        ModelInfo info = model_manager_->get_model_info(requested_model);
-        if (!is_router_collection_recipe(info.recipe)) {
-            return std::nullopt;
-        }
-        auto dispatch = route_collection_request(request_json, info);
+        auto dispatch = route_collection_request(request_json, *info);
         if (!dispatch) {
             return std::nullopt;
         }
@@ -5642,6 +5673,32 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         auto request_json = nlohmann::json::parse(req.body);
         normalize_client_model_name(request_json);
         normalize_and_resolve_request_model(request_json);
+
+        // A response chain lives entirely inside the backend that created it, so
+        // it cannot survive this turn routing to a different candidate than the
+        // last one. Reject before dispatch and before any model load: the
+        // alternative is a new candidate silently answering without the chain's
+        // context, which is the upstream behavior this deliberately doesn't copy.
+        if (request_json.contains("previous_response_id") &&
+            request_json["previous_response_id"].is_string() &&
+            !request_json["previous_response_id"].get<std::string>().empty()) {
+            std::optional<ModelInfo> collection;
+            try {
+                collection = router_collection_info(request_json);
+            } catch (const std::exception&) {
+                // Registry lookup failed, so we cannot tell it is a collection.
+                // Fall through and let the normal path report what is actually
+                // wrong with the model rather than blaming previous_response_id.
+            }
+            if (collection) {
+                const std::string requested_model = request_json["model"].get<std::string>();
+                LOG(WARNING, "Server")
+                    << "Rejected /responses with previous_response_id on router collection '"
+                    << requested_model << "'" << std::endl;
+                set_router_response_chain_unsupported_response(requested_model, res);
+                return;
+            }
+        }
 
         // A collection.router model flips this endpoint into engine mode: pick a
         // candidate and rewrite the model before the usual load/forward logic.

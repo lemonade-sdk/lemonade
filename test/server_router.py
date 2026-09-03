@@ -1242,6 +1242,70 @@ class RouterTests(ServerTestBase):
         finally:
             self._delete_collection(collection)
 
+    def test_640_responses_rejects_previous_response_id(self):
+        """A response chain cannot cross routing candidates (#2957).
+
+        Rejected before dispatch and before any model load, so this asserts on
+        the error shape only -- no inference runs.
+        """
+        resp = requests.post(
+            f"{self.base_url}/responses",
+            json={
+                "model": COLLECTION_NAME,
+                "input": "continue where we left off",
+                "previous_response_id": "resp_abc123",
+                "max_output_tokens": 8,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code, 400, f"status {resp.status_code}: {resp.text}"
+        )
+        error = resp.json().get("error", {})
+        self.assertEqual(error.get("code"), "router_response_chain_unsupported")
+        self.assertEqual(error.get("param"), "previous_response_id")
+        self.assertIn(COLLECTION_NAME, error.get("message", ""))
+        print("[OK] previous_response_id on a router collection -> 400")
+
+    def test_641_responses_allows_previous_response_id_on_plain_model(self):
+        """Negative control: the guard is scoped to router collections, so a
+        concrete model still reaches the backend. Whatever the backend makes of
+        an unknown chain id, it must not be our routing rejection."""
+        resp = requests.post(
+            f"{self.base_url}/responses",
+            json={
+                "model": DEFAULT_MODEL,
+                "input": "say hi",
+                "previous_response_id": "resp_abc123",
+                "max_output_tokens": 8,
+            },
+            timeout=600,
+        )
+        body = resp.text
+        self.assertNotIn("router_response_chain_unsupported", body)
+        print(
+            f"[OK] plain model with previous_response_id not rejected by the "
+            f"router guard (status {resp.status_code})"
+        )
+
+    def test_642_responses_ignores_empty_previous_response_id(self):
+        """An empty string is not a chain reference, so it must not trip the
+        guard -- clients that always send the field shouldn't be locked out."""
+        resp = requests.post(
+            f"{self.base_url}/responses",
+            json={
+                "model": COLLECTION_NAME,
+                "input": "say hi",
+                "previous_response_id": "",
+                "max_output_tokens": 8,
+            },
+            timeout=600,
+        )
+        self.assertNotIn("router_response_chain_unsupported", resp.text)
+        print(
+            f"[OK] empty previous_response_id not rejected (status {resp.status_code})"
+        )
+
 
 if __name__ == "__main__":
     run_server_tests(RouterTests, description="ROUTER TESTS")

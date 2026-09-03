@@ -22,6 +22,8 @@ namespace ErrorType {
     constexpr const char* INTERNAL_ERROR = "internal_error";
     constexpr const char* SLOTS_PINNED = "slots_pinned_error";
     constexpr const char* ROUTER_RESIDENCY_CONFLICT = "router_residency_conflict";
+    constexpr const char* ROUTER_RESPONSE_CHAIN_UNSUPPORTED =
+        "router_response_chain_unsupported";
 }
 
 // Base exception class for all Lemon errors
