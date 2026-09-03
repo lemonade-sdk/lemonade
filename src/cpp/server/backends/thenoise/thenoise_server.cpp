@@ -50,9 +50,7 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm");
     }
 
-    // TheNoise publishes one portable bundle per GPU target (gfx1150 / gfx1151)
-    // under the same release tag. Pick the archive matching this host.
-    std::string target_arch = SystemInfo::get_rocm_arch();
+    std::string target_arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
 
     InstallParams params;
     params.repo = "lemonade-sdk/thenoise";
