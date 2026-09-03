@@ -428,6 +428,24 @@ int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
     return parsed;
 }
 
+std::string RuntimeConfig::allowed_origins_unlocked() const {
+    if (allowed_origins_override_.has_value()) {
+        return *allowed_origins_override_;
+    }
+    if (const char* env = std::getenv("LEMONADE_ALLOWED_ORIGINS")) {
+        return std::string(env);
+    }
+    if (config_.contains("allowed_origins") && config_["allowed_origins"].is_string()) {
+        return config_["allowed_origins"].get<std::string>();
+    }
+    return "";
+}
+
+std::string RuntimeConfig::allowed_origins() const {
+    std::shared_lock lock(mutex_);
+    return allowed_origins_unlocked();
+}
+
 std::string RuntimeConfig::models_dir() const {
     std::shared_lock lock(mutex_);
     return config_["models_dir"].get<std::string>();
@@ -843,6 +861,10 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                 "'download_rate_limit' must be a byte rate like \"512\", \"100K\", \"10M\", etc. "
                 "Use \"\" for unlimited download speed");
         }
+    } else if (key == "allowed_origins") {
+        if (!value.is_string()) {
+            throw std::invalid_argument("'allowed_origins' must be a string");
+        }
     } else if (key == "broadcast" || key == "no_broadcast" || key == "offline" ||
                key == "auto_check_model_updates" ||
                key == "auto_update_models" ||
@@ -1231,6 +1253,14 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
             broadcast_override_ = std::nullopt;
             if (prev_effective_bcast != bcast) {
                 applied_diff["broadcast"] = bcast;
+            }
+        } else if (key == "allowed_origins") {
+            std::string prev_effective = allowed_origins_unlocked();
+            std::string new_origins = value.is_string() ? value.get<std::string>() : "";
+            config_["allowed_origins"] = new_origins;
+            allowed_origins_override_ = new_origins;
+            if (prev_effective != new_origins) {
+                applied_diff["allowed_origins"] = new_origins;
             }
         } else {
             if (!config_.contains(key) || config_[key] != value) {

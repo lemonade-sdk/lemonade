@@ -1115,16 +1115,20 @@ void Server::setup_routes(httplib::Server &web_server) {
 
         if (req.has_header("Origin")) {
             std::string origin = req.get_header_value("Origin");
-            const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-            std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+            std::string host = req.get_header_value("Host");
+            std::string scheme = "http";
 
-            if (utils::is_origin_allowed(origin, allowed_origins)) {
+            std::string allowed_origins = utils::resolve_allowed_origins();
+            std::string bound_host = config_ ? config_->host() : "";
+            if (utils::is_origin_allowed(origin, allowed_origins, host, scheme, bound_host)) {
                 res.set_header("Access-Control-Allow-Origin", origin);
                 if (req.has_header("Access-Control-Request-Private-Network") &&
                     req.get_header_value("Access-Control-Request-Private-Network") == "true") {
                     res.set_header("Access-Control-Allow-Private-Network", "true");
                 }
             } else {
+                LOG(WARNING, "Server") << "Rejected request from unauthorized origin: " << origin
+                                       << ". Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin." << std::endl;
                 res.status = 403;
                 res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
                 return httplib::Server::HandlerResponse::Handled;
@@ -7329,6 +7333,8 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                 LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
             }
             utils::HttpClient::set_download_rate_limit(bps);
+        } else if (key == "allowed_origins") {
+            LOG(INFO, "Server") << "Allowed origins updated: " << config_->allowed_origins() << std::endl;
         } else if (key == "broadcast" || key == "no_broadcast") {
             bool bcast = config_->broadcast();
             LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;

@@ -5,7 +5,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.8.1)
+project(lemon_cpp VERSION 11.9.0)
 
 include(CTest)
 
@@ -3027,6 +3027,20 @@ if(BUILD_TESTING AND EXISTS "${_CONFIG_DOWNLOAD_RATE_LIMIT_TEST_SRC}")
     target_link_libraries(test_config_download_rate_limit PRIVATE lemonade-server-core)
     add_cpp_ci_test(ConfigDownloadRateLimitTest CI ON
         COMMAND test_config_download_rate_limit
+    )
+endif()
+
+set(_CONFIG_ALLOWED_ORIGINS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_config_allowed_origins.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_CONFIG_ALLOWED_ORIGINS_TEST_SRC}")
+    add_executable(test_config_allowed_origins
+        test/cpp/test_config_allowed_origins.cpp
+    )
+    target_link_libraries(test_config_allowed_origins PRIVATE lemonade-server-core)
+    add_dependencies(test_config_allowed_origins copy_resources)
+    add_cpp_ci_test(ConfigAllowedOriginsTest CI ON
+        COMMAND test_config_allowed_origins
     )
 endif()
 

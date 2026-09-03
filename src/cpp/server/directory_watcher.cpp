@@ -55,37 +55,27 @@ public:
 
     ~Impl() { stop(); }
 
+    // event_fd_ is created here, before the thread exists, and closed only after
+    // it is joined. run_loop() never reassigns it, so stop() always has a valid
+    // fd to signal and neither thread writes a descriptor the other reads.
     void start() {
+        event_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         thread_ = std::thread([this]() { run_loop(); });
     }
 
     void stop() {
-        bool expected = false;
-        if (stop_flag_.compare_exchange_strong(expected, true)) {
-#ifdef HAS_EVENTFD
-            if (event_fd_ >= 0) {
-                uint64_t one = 1;
-                ssize_t ret;
-                do { ret = write(event_fd_, &one, sizeof(one)); }
-                while (ret < 0 && errno == EINTR);
-            }
-#endif
-            if (epoll_fd_ >= 0) {
-                ::close(epoll_fd_);
-                epoll_fd_ = -1;
-            }
-            if (event_fd_ >= 0) {
-                ::close(event_fd_);
-                event_fd_ = -1;
-            }
-            if (wd_ >= 0) {
-                inotify_rm_watch(inotify_fd_, wd_);
-                wd_ = -1;
-            }
+        stop_flag_.store(true);
+        if (event_fd_ >= 0) {
+            uint64_t one = 1;
+            ssize_t ret;
+            do { ret = write(event_fd_, &one, sizeof(one)); }
+            while (ret < 0 && errno == EINTR);
         }
         if (thread_.joinable()) {
             thread_.join();
         }
+        // Sole owner again: the thread is gone and cannot race this close.
+        if (event_fd_ >= 0) { ::close(event_fd_); event_fd_ = -1; }
     }
 
     void set_callback(std::function<void()> cb) { callback_ = std::move(cb); }
@@ -107,6 +97,7 @@ public:
 
         inotify_fd_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
         if (inotify_fd_ < 0) {
+            inotify_fd_ = -1;
             return;
         }
 
@@ -116,20 +107,24 @@ public:
         wd_ = inotify_add_watch(inotify_fd_, dir_path_.c_str(), mask);
         if (wd_ < 0) {
             ::close(inotify_fd_);
+            inotify_fd_ = -1;
             return;
         }
 
-        event_fd_ = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         if (event_fd_ < 0) {
+            inotify_rm_watch(inotify_fd_, wd_);
+            wd_ = -1;
             ::close(inotify_fd_);
+            inotify_fd_ = -1;
             return;
         }
 
         epoll_fd_ = epoll_create1(EPOLL_CLOEXEC);
         if (epoll_fd_ < 0) {
-            ::close(event_fd_);
-            event_fd_ = -1;
+            inotify_rm_watch(inotify_fd_, wd_);
+            wd_ = -1;
             ::close(inotify_fd_);
+            inotify_fd_ = -1;
             return;
         }
 
@@ -191,7 +186,6 @@ public:
         }
 
         if (epoll_fd_ >= 0) { ::close(epoll_fd_); epoll_fd_ = -1; }
-        if (event_fd_ >= 0) { ::close(event_fd_); event_fd_ = -1; }
         if (wd_ >= 0)       { inotify_rm_watch(inotify_fd_, wd_); wd_ = -1; }
         if (inotify_fd_ >= 0) { ::close(inotify_fd_); inotify_fd_ = -1; }
         has_watch_ = false;
@@ -222,39 +216,38 @@ public:
 
     ~Impl() { stop(); }
 
+    // The stop pipe is created here, before the thread exists, and closed only
+    // after it is joined. run_loop() never reassigns it, so stop() always has a
+    // valid write end and neither thread writes an fd the other may be reading.
     void start() {
+        int fds[2];
+        if (pipe(fds) == 0) {
+            for (int fd : fds) {
+                const int flags = fcntl(fd, F_GETFL);
+                if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+            }
+            const int nosig = 1;
+            fcntl(fds[1], F_SETNOSIGPIPE, nosig);
+            stop_pipe_read_ = fds[0];
+            stop_pipe_write_ = fds[1];
+        }
         thread_ = std::thread([this]() { run_loop(); });
     }
 
     void stop() {
-        bool expected = false;
-        if (stop_flag_.compare_exchange_strong(expected, true)) {
-            if (stop_pipe_write_ >= 0) {
-                char byte = '\0';
-                ssize_t ret;
-                do { ret = ::write(stop_pipe_write_, &byte, 1); }
-                while (ret < 0 && errno == EINTR);
-            }
-            if (kq_ >= 0) {
-                ::close(kq_);
-                kq_ = -1;
-            }
-            if (stop_pipe_read_ >= 0) {
-                ::close(stop_pipe_read_);
-                stop_pipe_read_ = -1;
-            }
-            if (stop_pipe_write_ >= 0) {
-                ::close(stop_pipe_write_);
-                stop_pipe_write_ = -1;
-            }
-            if (dir_fd_ >= 0) {
-                ::close(dir_fd_);
-                dir_fd_ = -1;
-            }
+        stop_flag_.store(true);
+        if (stop_pipe_write_ >= 0) {
+            char byte = '\0';
+            ssize_t ret;
+            do { ret = ::write(stop_pipe_write_, &byte, 1); }
+            while (ret < 0 && errno == EINTR);
         }
         if (thread_.joinable()) {
             thread_.join();
         }
+        // Sole owner again: the thread is gone and cannot race these closes.
+        if (stop_pipe_read_ >= 0)  { ::close(stop_pipe_read_);  stop_pipe_read_ = -1; }
+        if (stop_pipe_write_ >= 0) { ::close(stop_pipe_write_); stop_pipe_write_ = -1; }
     }
 
     void set_callback(std::function<void()> cb) { callback_ = std::move(cb); }
@@ -284,30 +277,13 @@ private:
             return;
         }
 
-        // Use a pipe for signaling instead of eventfd (not available on macOS)
-        int stop_pipe_fds[2];
-        if (pipe(stop_pipe_fds) < 0) {
+        if (stop_pipe_read_ < 0) {
             ::close(dir_fd_);
             dir_fd_ = -1;
             ::close(kq_);
             kq_ = -1;
             return;
         }
-        // Set non-blocking on both ends
-        int flags;
-        flags = fcntl(stop_pipe_fds[0], F_GETFL);
-        fcntl(stop_pipe_fds[0], F_SETFL, flags | O_NONBLOCK);
-        flags = fcntl(stop_pipe_fds[1], F_GETFL);
-        fcntl(stop_pipe_fds[1], F_SETFL, flags | O_NONBLOCK);
-        // Suppress SIGPIPE on the write end: if the read end is closed due to a
-        // race between stop() and run_loop cleanup, write() returns EPIPE instead
-        // of raising SIGPIPE and killing the process.
-        {
-            int nosig = 1;
-            fcntl(stop_pipe_fds[1], F_SETNOSIGPIPE, nosig);
-        }
-        stop_pipe_read_ = stop_pipe_fds[0]; // read end for kqueue/drain
-        stop_pipe_write_ = stop_pipe_fds[1]; // write end for signaling
 
         struct kevent ev_dir;
         EV_SET(&ev_dir, dir_fd_,
@@ -326,13 +302,6 @@ private:
 
         struct kevent change_events[2] = { ev_dir, ev_stop };
         if (kevent(kq_, change_events, 2, nullptr, 0, nullptr) < 0) {
-            // Zero pipe members BEFORE any close so a concurrent stop() sees
-            // -1 and skips the pipe write, preventing SIGPIPE if the read end
-            // is closed while stop_pipe_write_ still looks valid.
-            stop_pipe_read_ = -1;
-            stop_pipe_write_ = -1;
-            ::close(stop_pipe_fds[0]);
-            ::close(stop_pipe_fds[1]);
             ::close(dir_fd_);
             dir_fd_ = -1;
             ::close(kq_);
@@ -384,10 +353,8 @@ private:
             if (callback_) callback_();
         }
 
-        if (stop_pipe_write_ >= 0) { ::close(stop_pipe_write_); stop_pipe_write_ = -1; }
-        if (stop_pipe_read_ >= 0) { ::close(stop_pipe_read_); stop_pipe_read_ = -1; }
-        if (dir_fd_ >= 0)       { ::close(dir_fd_);       dir_fd_ = -1; }
-        if (kq_ >= 0)           { ::close(kq_);           kq_ = -1; }
+        if (dir_fd_ >= 0) { ::close(dir_fd_); dir_fd_ = -1; }
+        if (kq_ >= 0)     { ::close(kq_);     kq_ = -1; }
     }
 
     std::string dir_path_;
