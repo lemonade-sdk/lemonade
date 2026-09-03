@@ -356,6 +356,8 @@ Embeddings API. You provide input text and receive vector representations (embed
 
 Responses API. You provide an input and receive a response. This API will also load the model if it is not already loaded.
 
+> **Limitations:** `previous_response_id` is not implemented. A request that targets a [`collection.router`](../dev/router-policy.md) collection and sets a non-empty `previous_response_id` is rejected with a `400` and `error.code = "router_response_chain_unsupported"`, because the router can select a different candidate than the one that served the previous turn, and that candidate has no record of the id. Resend the full `input`, or address a concrete model instead of the collection.
+
 ### Parameters
 
 | Parameter | Required | Description | Status |
