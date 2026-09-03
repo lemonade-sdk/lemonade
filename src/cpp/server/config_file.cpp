@@ -217,6 +217,11 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
 
     // Deep-merge: user values override defaults, missing fields filled from defaults.
     json merged = utils::JsonUtils::merge(defaults, normalized_loaded);
+    if (normalized_loaded.contains("telemetry") && normalized_loaded["telemetry"].is_object() &&
+        normalized_loaded["telemetry"].contains("otlp") && normalized_loaded["telemetry"]["otlp"].is_object() &&
+        normalized_loaded["telemetry"]["otlp"].contains("headers")) {
+        merged["telemetry"]["otlp"]["headers"] = normalized_loaded["telemetry"]["otlp"]["headers"];
+    }
     return merged;
 }
 

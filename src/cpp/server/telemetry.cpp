@@ -1288,22 +1288,6 @@ void InferenceSpan::cancel() {
     ended_ = true;
 }
 
-static bool is_valid_header_token(const std::string& str) {
-    for (char c : str) {
-        if (c == '\r' || c == '\n' || c == '\0') {
-            return false;
-        }
-    }
-    return true;
-}
-
-static std::string to_lowercase(std::string str) {
-    std::transform(str.begin(), str.end(), str.begin(), [](unsigned char c) {
-        return std::tolower(c);
-    });
-    return str;
-}
-
 void InferenceSpan::submit_span(const nlohmann::json& span_details) {
     emit_span(span_details);
 
@@ -1323,60 +1307,39 @@ void InferenceSpan::submit_span(const nlohmann::json& span_details) {
     }
 
     std::string endpoint = config->telemetry_otlp_endpoint();
-    auto raw_config_headers = config->telemetry_otlp_headers();
     std::string protocol = config->telemetry_otlp_protocol();
 
-    std::map<std::string, std::string> headers;
+    // Config headers are already validated and normalized at configuration time.
+    std::map<std::string, std::string> headers = config->telemetry_otlp_headers();
 
-    auto sanitize_and_insert = [&headers](std::string k, std::string v) {
-        size_t start = 0;
-        while (start < k.size() && std::isspace(static_cast<unsigned char>(k[start]))) {
-            start++;
-        }
-        size_t end = k.size();
-        while (end > start && std::isspace(static_cast<unsigned char>(k[end - 1]))) {
-            end--;
-        }
-        k = k.substr(start, end - start);
-
-        start = 0;
-        while (start < v.size() && std::isspace(static_cast<unsigned char>(v[start]))) {
-            start++;
-        }
-        end = v.size();
-        while (end > start && std::isspace(static_cast<unsigned char>(v[end - 1]))) {
-            end--;
-        }
-        v = v.substr(start, end - start);
-
-        if (!k.empty() && is_valid_header_token(k) && is_valid_header_token(v)) {
-            std::string k_lower = to_lowercase(k);
-            if (k_lower != "content-type" && k_lower != "content-length") {
-                headers[k] = v;
-            } else {
-                LOG(WARNING, "Telemetry") << "Disallowed overriding well-known OTLP header: " << k << std::endl;
-            }
-        } else if (!k.empty()) {
-            LOG(WARNING, "Telemetry") << "Rejected invalid OTLP header key or value containing CR, LF, or NUL." << std::endl;
-        }
-    };
-
-    for (const auto& [k, v] : raw_config_headers) {
-        sanitize_and_insert(k, v);
-    }
-
-    if (const char* env_headers = std::getenv("OTEL_EXPORTER_OTLP_HEADERS")) {
-        std::string env_str(env_headers);
-        std::stringstream ss(env_str);
-        std::string item;
-        while (std::getline(ss, item, ',')) {
-            size_t eq = item.find('=');
-            if (eq != std::string::npos) {
-                std::string k = item.substr(0, eq);
-                std::string v = item.substr(eq + 1);
-                sanitize_and_insert(k, v);
+    // Environment headers are parsed and validated once rather than on every span push.
+    static const auto env_headers_map = []() {
+        std::map<std::string, std::string> env_map;
+        if (const char* env_headers = std::getenv("OTEL_EXPORTER_OTLP_HEADERS")) {
+            std::string env_str(env_headers);
+            std::stringstream ss(env_str);
+            std::string item;
+            while (std::getline(ss, item, ',')) {
+                size_t eq = item.find('=');
+                if (eq != std::string::npos) {
+                    std::string k = item.substr(0, eq);
+                    std::string v = item.substr(eq + 1);
+                    auto res = validate_otlp_header(k, v);
+                    if (res == HeaderValidationResult::Valid) {
+                        env_map[k] = v;
+                    } else if (res == HeaderValidationResult::DisallowedHeader) {
+                        LOG(WARNING, "Telemetry") << "Disallowed overriding well-known OTLP header: " << k << std::endl;
+                    } else if (res == HeaderValidationResult::InvalidCharacters) {
+                        LOG(WARNING, "Telemetry") << "Rejected invalid OTLP header (key: \"" << sanitize_header_for_log(k) << "\") containing CR, LF, or NUL." << std::endl;
+                    }
+                }
             }
         }
+        return env_map;
+    }();
+
+    for (const auto& [k, v] : env_headers_map) {
+        headers[k] = v;
     }
 
     get_queue().push(std::move(scrubbed_span_details), std::move(endpoint), std::move(headers), std::move(protocol));

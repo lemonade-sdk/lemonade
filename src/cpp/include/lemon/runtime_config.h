@@ -19,6 +19,16 @@ using json = nlohmann::json;
 // changed (mirrors the input shape, e.g. {"port": 9000, "llamacpp": {"vulkan_bin": "latest"}}).
 using ConfigSideEffectCallback = std::function<void(const json& applied_changes)>;
 
+enum class HeaderValidationResult {
+    Valid,
+    EmptyKey,
+    InvalidCharacters,
+    DisallowedHeader
+};
+
+HeaderValidationResult validate_otlp_header(std::string& k, std::string& v);
+std::string sanitize_header_for_log(const std::string& str);
+
 class RuntimeConfig {
 public:
     /// Construct from a full nested config JSON (loaded from config.json).

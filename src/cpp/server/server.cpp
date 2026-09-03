@@ -7131,11 +7131,30 @@ void Server::handle_config_set(const httplib::Request& req, httplib::Response& r
         if (!config_dir_.empty()) {
             try {
                 json user_cfg = ConfigFile::load_raw(config_dir_);
+                bool explicit_headers = false;
+                json headers_override;
                 if (result.contains("updated") && result["updated"].is_object()) {
                     user_cfg = utils::JsonUtils::merge(user_cfg, result["updated"]);
+                    if (result["updated"].contains("telemetry") && result["updated"]["telemetry"].is_object() &&
+                        result["updated"]["telemetry"].contains("otlp") && result["updated"]["telemetry"]["otlp"].is_object() &&
+                        result["updated"]["telemetry"]["otlp"].contains("headers")) {
+                        user_cfg["telemetry"]["otlp"]["headers"] = result["updated"]["telemetry"]["otlp"]["headers"];
+                    }
+                }
+                if (user_cfg.contains("telemetry") && user_cfg["telemetry"].is_object() &&
+                    user_cfg["telemetry"].contains("otlp") && user_cfg["telemetry"]["otlp"].is_object() &&
+                    user_cfg["telemetry"]["otlp"].contains("headers")) {
+                    explicit_headers = true;
+                    headers_override = user_cfg["telemetry"]["otlp"]["headers"];
                 }
                 json defaults = ConfigFile::get_defaults();
                 utils::JsonUtils::prune_matching(user_cfg, defaults);
+                if (explicit_headers) {
+                    if (!user_cfg.contains("config_version")) {
+                        user_cfg["config_version"] = defaults.value("config_version", 2);
+                    }
+                    user_cfg["telemetry"]["otlp"]["headers"] = headers_override;
+                }
                 ConfigFile::save(config_dir_, user_cfg);
             } catch (const std::exception& e) {
                 LOG(WARNING, "Server") << "Failed to persist config.json: " << e.what() << std::endl;
