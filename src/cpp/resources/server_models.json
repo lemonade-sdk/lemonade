@@ -1671,7 +1671,7 @@
         "size": 11.6
     },
     "gpt-oss-120b-mxfp-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
+        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
