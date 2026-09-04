@@ -4018,6 +4018,7 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         if (is_streaming) {
             try {
+                router_->validate_chat_request(requested_model, request_json);
                 std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
@@ -4029,6 +4030,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
                     [this](const std::string& body, httplib::DataSink& sink) {
                         router_->chat_completion_stream(body, sink);
                     });
+            } catch (const InvalidRequestException& e) {
+                LOG(ERROR, "Server") << "Validation failed: " << e.what() << std::endl;
+                res.status = 400;
+                nlohmann::json error = {{"error", {{"message", e.what()}, {"type", "invalid_request_error"}}}};
+                res.set_content(error.dump(), "application/json");
             } catch (const std::exception& e) {
                 LOG(ERROR, "Server") << "Streaming failed: " << e.what() << std::endl;
                 res.status = 500;
