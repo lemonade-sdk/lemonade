@@ -34,6 +34,11 @@ inline const BackendDescriptor descriptor = {
         {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
+        // sd-server generates a single frame unless told otherwise, and video
+        // models need a few dozen before they animate rather than drift, so a
+        // video model that leaves video_frames unset returns a still.
+        {"video_frames", "", 33, "SIZE", "Number of video frames", "Stable Diffusion Options"},
+        {"fps", "", 16, "SIZE", "Video frames per second", "Stable Diffusion Options"},
     },
     /*support*/ {
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
@@ -44,7 +49,7 @@ inline const BackendDescriptor descriptor = {
          {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X"}}}, "Supported AMD ROCm iGPU/dGPU families*"},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
-    /*supported_modes*/ {"image"},
+    /*supported_modes*/ {"image", "video"},
     /*required_checkpoints*/ {"main"},  // flux text_encoder+vae validated together in load()
     /*default_capabilities*/ {},
     /*experimental*/    false,

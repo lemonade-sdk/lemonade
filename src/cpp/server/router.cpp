@@ -2288,6 +2288,18 @@ json Router::image_generations(const json& request) {
     });
 }
 
+json Router::video_generations(const json& request) {
+    return execute_inference(request, [&](WrappedServer* server) {
+        auto video_server = dynamic_cast<IVideoServer*>(server);
+        if (!video_server) {
+            return ErrorResponse::from_exception(
+                UnsupportedOperationException("Video generation", device_type_to_string(server->get_device_type()))
+            );
+        }
+        return video_server->video_generations(request);
+    });
+}
+
 json Router::image_edits(const json& request) {
     return execute_inference(request, [&](WrappedServer* server) {
         auto image_server = dynamic_cast<IImageServer*>(server);

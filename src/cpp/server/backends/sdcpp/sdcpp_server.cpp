@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <chrono>
+#include <thread>
 #include <cstring>
 #include <random>
 #include <sstream>
@@ -214,6 +215,11 @@ void SDServer::load(const std::string& model_name,
 
     std::string model_path = model_info.resolved_path("main");
     std::string llm_path = model_info.resolved_path("text_encoder");
+    // sd-cpp routes the text encoder by family: --llm for LLM-style encoders
+    // (Flux2/Qwen-Image use qwen, LTX uses gemma), --t5xxl for T5-family ones
+    // (Wan uses umt5). A model declares which slot it fills by the checkpoint
+    // key it uses, so neither is guessed from the filename.
+    std::string t5xxl_path = model_info.resolved_path("t5xxl");
     std::string vae_path = model_info.resolved_path("vae");
 
     if (model_path.empty()) {
@@ -243,14 +249,18 @@ void SDServer::load(const std::string& model_name,
         "--listen-port", std::to_string(port_)
     };
 
-    if (llm_path.empty() || vae_path.empty()) {
+    // Pick flag and path together: a model that declared both keys must not end
+    // up passing one encoder's path under the other's flag.
+    const char* encoder_flag = llm_path.empty() ? "--t5xxl" : "--llm";
+    const std::string& encoder_path = llm_path.empty() ? t5xxl_path : llm_path;
+    if (encoder_path.empty() || vae_path.empty()) {
         args.push_back("-m");
         args.push_back(model_path);
     } else {
         args.push_back("--diffusion-model");
         args.push_back(model_path);
-        args.push_back("--llm");
-        args.push_back(llm_path);
+        args.push_back(encoder_flag);
+        args.push_back(encoder_path);
         args.push_back("--vae");
         args.push_back(vae_path);
     }
@@ -259,13 +269,6 @@ void SDServer::load(const std::string& model_name,
         args.push_back("-v");
     }
 
-    if (resolved_backend == "vulkan") {
-        LOG(INFO, "SDServer")
-            << "Applying Vulkan SD workaround: --vae-tiling --diffusion-fa"
-            << std::endl;
-        args.push_back("--vae-tiling");
-        args.push_back("--diffusion-fa");
-    }
     std::set<std::string> reserved_flags = {
         "-m",
         "--model",
@@ -276,6 +279,12 @@ void SDServer::load(const std::string& model_name,
         "--listen-port"
     };
 
+    // Parse the user's arguments before adding any of our own, so a flag they
+    // set explicitly is not also appended by us. These are not in
+    // reserved_flags on purpose -- passing them is legitimate, it just must not
+    // produce the same flag twice on the command line.
+    std::vector<std::string> custom_args_vec;
+    std::set<std::string> user_flags;
     if (!sdcpp_args.empty()) {
         std::string validation_error = validate_custom_args(sdcpp_args, reserved_flags);
         if (!validation_error.empty()) {
@@ -285,9 +294,34 @@ void SDServer::load(const std::string& model_name,
         }
 
         LOG(DEBUG, "SDServer") << "Adding custom arguments: " << sdcpp_args << std::endl;
-        std::vector<std::string> custom_args_vec = parse_custom_args(sdcpp_args);
-        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+        custom_args_vec = parse_custom_args(sdcpp_args);
+        for (const std::string& token : custom_args_vec) {
+            if (token.rfind("--", 0) == 0 || (token.size() > 1 && token[0] == '-')) {
+                user_flags.insert(token);
+            }
+        }
     }
+
+    if (resolved_backend == "vulkan") {
+        std::vector<std::string> applied;
+        for (const char* flag : {"--vae-tiling", "--diffusion-fa"}) {
+            if (user_flags.count(flag) == 0) {
+                args.push_back(flag);
+                applied.push_back(flag);
+            }
+        }
+        if (!applied.empty()) {
+            std::ostringstream joined;
+            for (size_t i = 0; i < applied.size(); ++i) {
+                if (i > 0) joined << " ";
+                joined << applied[i];
+            }
+            LOG(INFO, "SDServer")
+                << "Applying Vulkan SD workaround: " << joined.str() << std::endl;
+        }
+    }
+
+    args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
 
     std::vector<std::pair<std::string, std::string>> env_vars;
     fs::path exe_dir = fs::path(exe_path).parent_path();
@@ -563,6 +597,135 @@ json SDServer::image_generations(const json& request) {
 
     // Image generation can take 20+ minutes for large models; avoid timeout.
     return forward_request("/v1/images/generations", sd_request, 0);
+}
+
+json SDServer::video_generations(const json& request) {
+    // /sdcpp/v1/vid_gen is sd-cpp's NATIVE route and takes a real JSON body --
+    // unlike /v1/images/generations, which is OpenAI-shaped and reads its
+    // parameters from a <sd_cpp_extra_args> blob smuggled inside the prompt.
+    // Reusing that convention here silently loses every parameter (the server
+    // falls back to 512x512) and corrupts the prompt with the blob text, so the
+    // body is built from scratch. Field names and nesting come from the
+    // backend's own /sdcpp/v1/capabilities defaults.
+    json body = json::object();
+    body["prompt"] = request.value("prompt", std::string());
+    if (request.contains("negative_prompt") && request["negative_prompt"].is_string()) {
+        body["negative_prompt"] = request["negative_prompt"];
+    }
+
+    // Prefer explicit request dimensions, then the model's recipe options.
+    // Omitted entirely when neither supplies them, so sd-server keeps its own
+    // defaults rather than us inventing a resolution the model wasn't trained on.
+    auto dimension = [&](const char* key) -> std::optional<int> {
+        if (request.contains(key) && request[key].is_number_integer()) {
+            return request[key].get<int>();
+        }
+        if (recipe_options_.has_option(key)) {
+            json value = recipe_options_.get_option(key);
+            if (value.is_number() && value.get<int>() > 0) return value.get<int>();
+        }
+        return std::nullopt;
+    };
+    if (auto width = dimension("width")) body["width"] = *width;
+    if (auto height = dimension("height")) body["height"] = *height;
+
+    // Same request-then-recipe-option ladder as the dimensions above; see the
+    // video_frames option in sdcpp.h for why the fallback carries its weight.
+    if (auto frames = dimension("video_frames")) body["video_frames"] = *frames;
+    if (auto fps = dimension("fps")) body["fps"] = *fps;
+    if (request.contains("seed") && request["seed"].is_number_integer()) {
+        body["seed"] = request["seed"];
+    }
+    if (request.contains("output_format") && request["output_format"].is_string()) {
+        body["output_format"] = request["output_format"];
+    }
+
+    // Sampling knobs live under sample_params, and cfg under its guidance
+    // object -- flat top-level copies are ignored by this route.
+    json sample_params = json::object();
+    auto sampling = [&](const char* request_key, const char* option_key) -> std::optional<double> {
+        if (request.contains(request_key) && request[request_key].is_number()) {
+            return request[request_key].get<double>();
+        }
+        if (recipe_options_.has_option(option_key)) {
+            json value = recipe_options_.get_option(option_key);
+            if (value.is_number()) return value.get<double>();
+        }
+        return std::nullopt;
+    };
+    if (auto steps = sampling("steps", "steps")) {
+        sample_params["sample_steps"] = static_cast<int>(*steps);
+    }
+    if (auto flow_shift = sampling("flow_shift", "flow_shift")) {
+        sample_params["flow_shift"] = *flow_shift;
+    }
+    if (request.contains("sampling_method") && request["sampling_method"].is_string()) {
+        sample_params["sample_method"] = request["sampling_method"];
+    } else if (recipe_options_.has_option("sampling_method")) {
+        json method = recipe_options_.get_option("sampling_method");
+        if (method.is_string()) {
+            sample_params["sample_method"] = method;
+        }
+    }
+    if (auto cfg = sampling("cfg_scale", "cfg_scale")) {
+        sample_params["guidance"] = json{{"txt_cfg", *cfg}};
+    }
+    if (!sample_params.empty()) {
+        body["sample_params"] = sample_params;
+    }
+
+    LOG(DEBUG, "SDServer") << "Forwarding video request to sd-server: "
+                           << body.dump(2) << std::endl;
+
+    // Unlike /v1/images/generations, vid_gen is asynchronous: it answers 202
+    // with a job handle and does the work in the background. forward_request
+    // reports any non-200 as a backend error, so accept the 202 body here and
+    // poll the job to completion, presenting the whole thing to the caller as
+    // one synchronous request.
+    json accepted = forward_request("/sdcpp/v1/vid_gen", body, 0);
+    const json* handle = &accepted;
+    if (accepted.contains("error") && accepted["error"].is_object()) {
+        const json& err = accepted["error"];
+        if (err.value("status_code", 0) == 202 && err.contains("details") &&
+            err["details"].is_object() && err["details"].contains("response")) {
+            handle = &err["details"]["response"];
+        } else {
+            return accepted;
+        }
+    }
+
+    const std::string poll_url = handle->value("poll_url", std::string());
+    if (poll_url.empty()) {
+        // Some builds may answer synchronously; pass that straight through.
+        return *handle;
+    }
+
+    // No wall-clock deadline: a long clip legitimately runs for many minutes,
+    // and the caller's own connection is the real bound. Give up only when the
+    // backend dies, which is_backend_alive() catches via forward_get_request.
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        json status = forward_get_request(poll_url, 0);
+        // A job payload always carries a string "status"; anything else is a
+        // transport/backend error envelope from forward_get_request. Checking
+        // for a "status" field rather than for "error" matters: the job payload
+        // itself always has an "error" key, null while the job is healthy.
+        if (!status.contains("status") || !status["status"].is_string()) {
+            return status;
+        }
+        const std::string state = status.value("status", std::string());
+        if (state == "queued" || state == "generating" || state == "running") {
+            continue;
+        }
+        if (!status.value("error", json()).is_null()) {
+            return ErrorResponse::from_exception(
+                BackendException(server_name_, status["error"].dump(), 500));
+        }
+        if (status.contains("result") && !status["result"].is_null()) {
+            return status["result"];
+        }
+        return status;
+    }
 }
 
 json SDServer::image_edits(const json& request) {

@@ -231,6 +231,17 @@ CAPABILITIES = {
             },
         },
     },
+    "video": {
+        "sdcpp": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            "supports": {
+                "video_generation": True,
+            },
+            "test_models": {
+                "video": "Wan2.1-T2V-1.3B",
+            },
+        },
+    },
     "model3d": {
         "trellis": {
             "backends": ["vulkan", "rocm", "cuda"],
