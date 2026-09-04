@@ -55,7 +55,7 @@
           "type": "string"
         },
         "rationale": {
-          "description": "Optional; the classifier's short reasoning for its score. The `llm` router records the model's pick rationale here.",
+          "description": "Optional; free-text detail on why the leaf matched. The `llm` router records the model's pick rationale here; a momentum-active min_chars/max_chars leaf (see routing.momentum in route_policy.schema.json) records 'effective_chars=... raw_chars=...' here.",
           "type": "string"
         }
       },

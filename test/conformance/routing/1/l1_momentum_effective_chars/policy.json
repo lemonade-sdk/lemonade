@@ -1,0 +1,16 @@
+{
+  "version": "1",
+  "model_name": "user.Momentum-EffectiveChars",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "momentum": { "enabled": true, "attack": 0.5, "release": 0.25 },
+    "rules": [
+      { "id": "min_chars-rule",
+        "match": { "min_chars": 400 },
+        "route_to": "cloud" }
+    ]
+  }
+}
