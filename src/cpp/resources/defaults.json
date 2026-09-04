@@ -6,6 +6,7 @@
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "allowed_origins": "",
   "auto_check_model_updates": true,
   "auto_update_models": false,
   "broadcast": true,
@@ -26,6 +27,10 @@
   },
   "global_timeout": 600,
   "host": "localhost",
+  "hrx": {
+    "args": "",
+    "hrx_bin": "builtin"
+  },
   "inhibit_suspend": true,
   "kokoro": {
     "cpu_bin": "builtin"
@@ -42,7 +47,10 @@
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
+  "log_file": "auto",
   "log_level": "info",
+  "log_max_file_size_mb": 10,
+  "log_max_files": 5,
   "max_loaded_models": 1,
   "models_dir": "auto",
   "moonshine": {

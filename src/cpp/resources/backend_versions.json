@@ -47,16 +47,24 @@
         "b0001": {
           "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz": "sha256:e63b7c9428fd10de75b3f69164eccd564a8e7261c2f9087cd8bec2b4b19a8ad1"
         }
+      },
+      "ROCm/ggml-staging-automation": {
+        "hrx-b59": {
+          "llama-hrx-b59-bin-manylinux-hrx-x64.tar.gz": "sha256:d2fe01432c372ae4382678cb80542a0c5c80a8e3862c52b3d94e77e81062f1b7"
+        }
       }
     }
   },
   "llamacpp": {
-    "vulkan": "b10375",
-    "rocm-stable": "b10470",
-    "rocm-nightly": "b1311",
-    "cuda": "b10397",
-    "metal": "b10375",
-    "cpu": "b10375"
+    "vulkan": "b10723",
+    "rocm-stable": "b10711",
+    "rocm-nightly": "b1319",
+    "cuda": "b10711",
+    "metal": "b10723",
+    "cpu": "b10723"
+  },
+  "llamacpp-hrx": {
+    "hrx": "hrx-b59"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -138,7 +146,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.2"
+    "npu": "v1.0.3"
   },
   "kokoro": {
     "cpu": "b17",

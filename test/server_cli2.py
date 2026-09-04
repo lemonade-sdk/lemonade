@@ -239,6 +239,7 @@ def _is_transient_cli_pull_failure(result):
         or "connection reset" in output
         or "connection aborted" in output
         or "connection refused" in output
+        or "ssl connect error" in output
         or "timed out" in output
         or "timeout" in output
     )
@@ -2044,7 +2045,10 @@ sys.exit(0)
 
         # Pull both models (downloads both quants into the same models-- directory)
         for name in [SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_B_NAME]:
-            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+            result = run_cli_pull_command_with_retry(
+                ["pull", name], timeout=TIMEOUT_MODEL_OPERATION
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
         # Verify both show as downloaded
         result = self.assertCommandSucceeds(["list", "--downloaded"])
@@ -2129,7 +2133,10 @@ sys.exit(0)
 
         # Pull both models
         for name in [MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_B_NAME]:
-            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+            result = run_cli_pull_command_with_retry(
+                ["pull", name], timeout=TIMEOUT_MODEL_OPERATION
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
         # Verify both show as downloaded
         result = self.assertCommandSucceeds(["list", "--downloaded"])
