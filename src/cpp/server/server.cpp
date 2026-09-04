@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/api_docs.h"
 #include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
@@ -1190,6 +1191,18 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_health(req, res);
     });
 
+    // API reference bundled with the server. The index is fetched first; each entry
+    // carries the URL of the document, so clients never build doc paths themselves.
+    register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docs(req, res);
+    });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Get(std::string(prefix) + R"(/docs/(.+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+            handle_doc_page(req, res);
+        });
+    }
+
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
         handle_models(req, res);
@@ -1621,6 +1634,20 @@ void Server::setup_static_files(httplib::Server &web_server) {
 
     // Serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
+
+    // Rendered documentation site, when one was bundled at build time
+    // (-DBUILD_DOCS_SITE=ON). Unversioned so it mirrors the paths used on
+    // lemonade-server.ai; the machine-readable reference stays on /v1/docs.
+    // Mounted with the trailing slash so a bare /docs reaches the redirect:
+    // httplib matches mounts ahead of routes, and serving index.html at /docs
+    // would resolve the page's relative links one level too high.
+    std::string docs_site_dir = utils::get_resource_path("resources/docs-site");
+    if (web_server.set_mount_point("/docs/", docs_site_dir)) {
+        web_server.Get("/docs", [](const httplib::Request&, httplib::Response& res) {
+            res.set_redirect("/docs/", 301);
+        });
+        LOG(INFO, "Server") << "Serving bundled documentation site at /docs/" << std::endl;
+    }
 
     // Mount static files directory for status page assets (CSS, JS, images)
     if (!web_server.set_mount_point("/static", static_dir)) {
@@ -2658,6 +2685,45 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
     static const char* kLiveResponse = R"({"status":"ok"})";
 
     res.set_content(kLiveResponse, "application/json");
+    res.status = 200;
+}
+
+void Server::handle_docs(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    // Echo back the prefix the client used so the URLs stay valid on all four.
+    std::string prefix = req.path.substr(0, req.path.size() - std::string("/docs").size());
+
+    nlohmann::json docs = nlohmann::json::array();
+    for (const ApiDoc& doc : list_api_docs(docs_dir)) {
+        docs.push_back({
+            {"id", doc.id},
+            {"title", doc.title},
+            {"url", prefix + "/docs/" + doc.id},
+            {"bytes", doc.bytes}
+        });
+    }
+
+    nlohmann::json body = {
+        {"version", LEMON_VERSION_STRING},
+        {"format", "text/markdown"},
+        {"docs", docs}
+    };
+    res.set_content(body.dump(2), "application/json");
+    res.status = 200;
+}
+
+void Server::handle_doc_page(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    std::string content;
+    if (!read_api_doc(docs_dir, req.matches[1].str(), content)) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Documentation page not found\"}", "application/json");
+        return;
+    }
+
+    res.set_content(content, "text/markdown");
     res.status = 200;
 }
 

@@ -74,6 +74,16 @@ jobs:
           $ErrorActionPreference = "Stop"
           .\setup.ps1
 
+      - name: Bundle the documentation site
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # zensical is pip-only, so BUILD_DOCS_SITE stays off by default
+          # and is turned on here, where the dependency can be installed.
+          python -m pip install --disable-pip-version-check -r docs/assets/docs_requirements.txt
+          cmake build -DBUILD_DOCS_SITE=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build installers
         shell: PowerShell
         env:
@@ -97,6 +107,7 @@ jobs:
               "build\Release\lemond.exe",
               "build\Release\LemonadeServer.exe",
               "build\resources\web-app\index.html",
+              "build\resources\docs-site\index.html",
               "lemonade-server-minimal.msi"
           )
           if ($full) { $expected += "build\app\lemonade-app.exe", "lemonade.msi" }
@@ -199,6 +210,16 @@ jobs:
           $ErrorActionPreference = "Stop"
           .\setup.ps1
 
+      - name: Bundle the documentation site
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # zensical is pip-only, so BUILD_DOCS_SITE stays off by default
+          # and is turned on here, where the dependency can be installed.
+          python -m pip install --disable-pip-version-check -r docs/assets/docs_requirements.txt
+          cmake build -DBUILD_DOCS_SITE=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build desktop installer
         shell: PowerShell
         run: |
@@ -215,6 +236,7 @@ jobs:
           @(
               "build\app\lemonade-app.exe",
               "build\resources\web-app\index.html",
+              "build\resources\docs-site\index.html",
               "lemonade.msi"
           ) | ForEach-Object {
               if (-not (Test-Path $_)) {

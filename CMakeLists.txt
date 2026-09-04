@@ -205,6 +205,11 @@ set(WEB_APP_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/web-app")
 # instead of installing project-local dependencies with npm for web-app builds.
 option(USE_SYSTEM_NODEJS_MODULES "Use system-installed Node.js modules for building the Web app" OFF)
 
+option(BUILD_DOCS_SITE "Build the documentation site and bundle it for /docs" OFF)
+
+set(DOCS_SITE_BUILD_DIR "${CMAKE_BINARY_DIR}/resources/docs-site")
+
+
 # C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -845,6 +850,43 @@ if(WIN32)
         file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_MINIMAL}" WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE)
         set(WIX_WEBAPP_FRAGMENT_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/WebAppFragment.full.wxs")
         file(TO_NATIVE_PATH "${WIX_WEBAPP_FRAGMENT_FULL}" WIX_WEBAPP_FRAGMENT_FULL_NATIVE)
+        set(DOCS_STAGE_DIR "${CMAKE_BINARY_DIR}/resources/docs")
+        file(TO_NATIVE_PATH "${DOCS_STAGE_DIR}" WIX_DOCS_SOURCE_NATIVE)
+        set(WIX_DOCS_FRAGMENT_MINIMAL "${CMAKE_CURRENT_BINARY_DIR}/installer/DocsFragment.minimal.wxs")
+        file(TO_NATIVE_PATH "${WIX_DOCS_FRAGMENT_MINIMAL}" WIX_DOCS_FRAGMENT_MINIMAL_NATIVE)
+        set(WIX_DOCS_FRAGMENT_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/DocsFragment.full.wxs")
+        file(TO_NATIVE_PATH "${WIX_DOCS_FRAGMENT_FULL}" WIX_DOCS_FRAGMENT_FULL_NATIVE)
+        if(BUILD_DOCS_SITE)
+            set(WIX_INCLUDE_DOCS_SITE 1)
+            file(TO_NATIVE_PATH "${DOCS_SITE_BUILD_DIR}" WIX_DOCS_SITE_SOURCE_NATIVE)
+            set(WIX_DOCS_SITE_FRAGMENT_MINIMAL "${CMAKE_CURRENT_BINARY_DIR}/installer/DocsSiteFragment.minimal.wxs")
+            file(TO_NATIVE_PATH "${WIX_DOCS_SITE_FRAGMENT_MINIMAL}" WIX_DOCS_SITE_FRAGMENT_MINIMAL_NATIVE)
+            set(WIX_DOCS_SITE_FRAGMENT_FULL "${CMAKE_CURRENT_BINARY_DIR}/installer/DocsSiteFragment.full.wxs")
+            file(TO_NATIVE_PATH "${WIX_DOCS_SITE_FRAGMENT_FULL}" WIX_DOCS_SITE_FRAGMENT_FULL_NATIVE)
+            set(WIX_DOCS_SITE_GEN_MINIMAL
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${DOCS_SITE_BUILD_DIR}"
+                    --output "${WIX_DOCS_SITE_FRAGMENT_MINIMAL}"
+                    --component-group "DocsSiteComponents"
+                    --root-id "DocsSiteDir"
+                    --path-variable "DocsSiteSourceDir"
+                    --id-prefix "DocsSite")
+            set(WIX_DOCS_SITE_GEN_FULL
+                COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                    --source "${DOCS_SITE_BUILD_DIR}"
+                    --output "${WIX_DOCS_SITE_FRAGMENT_FULL}"
+                    --component-group "DocsSiteComponents"
+                    --root-id "DocsSiteDir"
+                    --path-variable "DocsSiteSourceDir"
+                    --id-prefix "DocsSite")
+        else()
+            set(WIX_INCLUDE_DOCS_SITE 0)
+            set(WIX_DOCS_SITE_SOURCE_NATIVE "")
+            set(WIX_DOCS_SITE_FRAGMENT_MINIMAL_NATIVE "")
+            set(WIX_DOCS_SITE_FRAGMENT_FULL_NATIVE "")
+            set(WIX_DOCS_SITE_GEN_MINIMAL "")
+            set(WIX_DOCS_SITE_GEN_FULL "")
+        endif()
 
         # Both installers require Python3 for fragment generation and always include the web app
         if(NOT Python3_FOUND)
@@ -861,6 +903,14 @@ if(WIN32)
                 --component-group "WebAppComponents"
                 --root-id "WebAppDir"
                 --path-variable "WebAppSourceDir"
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${DOCS_STAGE_DIR}"
+                --output "${WIX_DOCS_FRAGMENT_MINIMAL}"
+                --component-group "DocsComponents"
+                --root-id "DocsDir"
+                --path-variable "DocsSourceDir"
+                --id-prefix "Docs"
+            ${WIX_DOCS_SITE_GEN_MINIMAL}
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
                 -intermediateFolder "${WIX_INTERMEDIATE_MINIMAL_NATIVE}"
@@ -871,9 +921,14 @@ if(WIN32)
                 -d IncludeTauriApp=0
                 -d IncludeWebApp=1
                 -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                -d DocsSourceDir="${WIX_DOCS_SOURCE_NATIVE}"
+                -d IncludeDocsSite=${WIX_INCLUDE_DOCS_SITE}
+                -d DocsSiteSourceDir="${WIX_DOCS_SITE_SOURCE_NATIVE}"
                 -out "${WIX_MINIMAL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
                 "${WIX_WEBAPP_FRAGMENT_MINIMAL_NATIVE}"
+                "${WIX_DOCS_FRAGMENT_MINIMAL_NATIVE}"
+                ${WIX_DOCS_SITE_FRAGMENT_MINIMAL_NATIVE}
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade-server-minimal.msi"
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -899,6 +954,14 @@ if(WIN32)
                 --component-group "TauriAppComponents"
                 --root-id "TauriAppDir"
                 --path-variable "TauriSourceDir"
+            COMMAND ${Python3_EXECUTABLE} ${WIX_FRAGMENT_SCRIPT}
+                --source "${DOCS_STAGE_DIR}"
+                --output "${WIX_DOCS_FRAGMENT_FULL}"
+                --component-group "DocsComponents"
+                --root-id "DocsDir"
+                --path-variable "DocsSourceDir"
+                --id-prefix "Docs"
+            ${WIX_DOCS_SITE_GEN_FULL}
             COMMAND ${WIX_EXECUTABLE} build
                 -arch x64
                 -intermediateFolder "${WIX_INTERMEDIATE_FULL_NATIVE}"
@@ -910,10 +973,15 @@ if(WIN32)
                 -d IncludeWebApp=1
                 -d TauriSourceDir="${WIX_TAURI_SOURCE_NATIVE}"
                 -d WebAppSourceDir="${WIX_WEBAPP_SOURCE_NATIVE}"
+                -d DocsSourceDir="${WIX_DOCS_SOURCE_NATIVE}"
+                -d IncludeDocsSite=${WIX_INCLUDE_DOCS_SITE}
+                -d DocsSiteSourceDir="${WIX_DOCS_SITE_SOURCE_NATIVE}"
                 -out "${WIX_FULL_OUTPUT_NATIVE}"
                 "${WIX_PRODUCT_WXS_NATIVE}"
                 "${WIX_TAURI_FRAGMENT_NATIVE}"
                 "${WIX_WEBAPP_FRAGMENT_FULL_NATIVE}"
+                "${WIX_DOCS_FRAGMENT_FULL_NATIVE}"
+                ${WIX_DOCS_SITE_FRAGMENT_FULL_NATIVE}
             COMMAND ${CMAKE_COMMAND} -E echo "MSI installer created: lemonade.msi"
             DEPENDS ${EXECUTABLE_NAME}
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -976,6 +1044,7 @@ set(SOURCES_CORE
     src/cpp/server/telemetry.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
+    src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
@@ -1286,6 +1355,7 @@ target_link_libraries(${EXECUTABLE_NAME} PRIVATE lemonade-server-core)
 #   - backend_versions.json (backend version configuration)
 #   - defaults.json (default config values)
 #   - bench_scenarios.json (benchmark scenarios)
+#   - docs/api/ (bundled API reference, served at <prefix>/docs)
 
 # Collect resource files for dependency tracking
 file(GLOB_RECURSE RESOURCE_FILES
@@ -1299,6 +1369,10 @@ file(GLOB_RECURSE RESOURCE_FILES
 set(TOOL_DEFINITIONS_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
 
+# Scoped to docs/api: the rest of docs/ is the published website, not API reference.
+file(GLOB API_DOC_FILES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/docs/api/*.md")
+
 # Create a custom target that depends on resource files
 # This ensures resources are copied when source files change
 add_custom_command(
@@ -1309,8 +1383,13 @@ add_custom_command(
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${TOOL_DEFINITIONS_SRC}
         ${CMAKE_BINARY_DIR}/resources/toolDefinitions.json
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_BINARY_DIR}/resources/docs/api
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${API_DOC_FILES}
+        ${CMAKE_BINARY_DIR}/resources/docs/api/
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/resources.stamp
-    DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC}
+    DEPENDS ${RESOURCE_FILES} ${TOOL_DEFINITIONS_SRC} ${API_DOC_FILES}
     COMMENT "Copying resources to build directory"
 )
 
@@ -1620,6 +1699,49 @@ if(CAN_BUILD_WEB_APP AND NOT BUILD_WEB_APP)
 endif()
 
 # ============================================================
+# Documentation site (/docs)
+# ============================================================
+# Off by default: Zensical is installed with pip and is not packaged by any
+# distro, so requiring it here would break source builds that resolve their
+# dependencies from the system (notably the Debian package, whose Build-Depends
+# are all distro packages). Turn it on to bundle the rendered site; the server
+# serves whatever it finds and simply omits /docs/ when nothing was staged.
+if(BUILD_DOCS_SITE)
+    find_program(ZENSICAL_EXECUTABLE zensical)
+    if(NOT ZENSICAL_EXECUTABLE)
+        message(FATAL_ERROR
+            "BUILD_DOCS_SITE=ON but zensical was not found. Install it with:
+"
+            "  pip install -r docs/assets/docs_requirements.txt")
+    endif()
+
+    file(GLOB_RECURSE DOCS_SITE_SOURCES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/*.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/assets/*"
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/overrides/*")
+
+    set(DOCS_SITE_STAMP "${CMAKE_CURRENT_BINARY_DIR}/docs-site.stamp")
+    add_custom_command(
+        OUTPUT ${DOCS_SITE_STAMP}
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DSTAGING_DIR=${CMAKE_CURRENT_BINARY_DIR}/docs-site-staging
+            -DOUTPUT_DIR=${DOCS_SITE_BUILD_DIR}
+            -DZENSICAL=${ZENSICAL_EXECUTABLE}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/BuildDocsSite.cmake
+        COMMAND ${CMAKE_COMMAND} -E touch ${DOCS_SITE_STAMP}
+        DEPENDS ${DOCS_SITE_SOURCES} "${CMAKE_CURRENT_SOURCE_DIR}/mkdocs.yml"
+        COMMENT "Building documentation site with Zensical"
+        VERBATIM
+    )
+    add_custom_target(docs-site ALL DEPENDS ${DOCS_SITE_STAMP})
+
+    message(STATUS "Documentation site will be bundled and served at /docs/")
+else()
+    message(STATUS "Documentation site not bundled (enable with -DBUILD_DOCS_SITE=ON)")
+endif()
+
+# ============================================================
 # macOS Packaging & Notarization
 # ============================================================
 if(APPLE)
@@ -1696,6 +1818,9 @@ if(WIN32 AND WIX_EXECUTABLE)
         if(TARGET web-app)
             add_dependencies(wix_installer_minimal web-app)
         endif()
+        if(TARGET docs-site)
+            add_dependencies(wix_installer_minimal docs-site)
+        endif()
         if(WIX_PACKAGED_TARGETS)
             add_dependencies(wix_installer_minimal ${WIX_PACKAGED_TARGETS})
         endif()
@@ -1707,6 +1832,9 @@ if(WIN32 AND WIX_EXECUTABLE)
         endif()
         if(TARGET web-app)
             add_dependencies(wix_installer_full web-app)
+        endif()
+        if(TARGET docs-site)
+            add_dependencies(wix_installer_full docs-site)
         endif()
         if(WIX_PACKAGED_TARGETS)
             add_dependencies(wix_installer_full ${WIX_PACKAGED_TARGETS})
@@ -2481,6 +2609,25 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_TYPE_CLASSIFIER_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelTypeClassifierTest CI ON COMMAND test_model_type_classifier)
+endif()
+
+set(_DOCS_ENDPOINT_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_docs_endpoint.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_DOCS_ENDPOINT_TEST_SRC}")
+    add_executable(test_docs_endpoint
+        test/cpp/test_docs_endpoint.cpp
+        src/cpp/server/api_docs.cpp
+    )
+    target_include_directories(test_docs_endpoint PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    find_package(Threads REQUIRED)
+    target_link_libraries(test_docs_endpoint PRIVATE Threads::Threads)
+
+    include(CTest)
+    add_cpp_ci_test(DocsEndpointTest CI ON COMMAND test_docs_endpoint)
 endif()
 
 # Descriptor contract: every mode a backend advertises in `supported_modes` is

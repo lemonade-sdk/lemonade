@@ -27,6 +27,8 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `GET` | [`/v1/models/{id}/options`](#get-v1modelsidoptions) | Read a model's saved, effective, and default recipe options |
 | `POST` | [`/v1/models/{id}/options`](#post-v1modelsidoptions) | Save recipe options for a model without loading it |
 | `DELETE` | [`/v1/models/{id}/options`](#delete-v1modelsidoptions) | Reset a model's recipe options to defaults |
+| `GET` | [`/v1/docs`](#get-v1docs) | List the API reference pages bundled with the running server |
+| `GET` | [`/v1/docs/{page}`](#get-v1docspage) | Read one bundled API reference page |
 | `GET` | [`/v1/health`](#get-v1health) | Check server status, such as models loaded |
 | `GET` | [`/v1/stats`](#get-v1stats) | Performance statistics from the last request |
 | `GET` | [`/v1/system-stats`](#get-v1system-stats) | Current host resource usage |
@@ -1404,6 +1406,80 @@ curl -X POST http://localhost:13305/v1/3d/generations \
       }" \
   --output model.glb
 ```
+
+## `GET /v1/docs`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+List the API reference pages bundled with the server. The documentation ships with the
+server, so it describes the version you are actually running and requires no internet
+access.
+
+Fetch this index first, then read the pages it advertises. New pages can be added in
+future releases without breaking clients, because every entry carries its own URL.
+
+### Parameters
+
+This endpoint does not take any parameters.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/docs
+```
+
+### Example response
+
+```json
+{
+  "version": "11.8.0",
+  "format": "text/markdown",
+  "docs": [
+    {
+      "id": "api/README",
+      "title": "Lemonade Server API Spec",
+      "url": "/v1/docs/api/README",
+      "bytes": 1272
+    },
+    {
+      "id": "api/lemonade",
+      "title": "Lemonade API",
+      "url": "/v1/docs/api/lemonade",
+      "bytes": 96847
+    }
+  ]
+}
+```
+
+`url` is returned with the same prefix used to request the index, so a client that queries
+`/api/v0/docs` receives `/api/v0/docs/...` URLs.
+
+## `GET /v1/docs/{page}`
+<sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
+
+Read one page, served as `Content-Type: text/markdown`. `{page}` is the `id` from the index,
+which mirrors the path used on the documentation website; the `.md` suffix is optional.
+
+### Example request
+
+```bash
+curl http://localhost:13305/v1/docs/api/lemonade
+```
+
+Unknown pages return `404`.
+
+### Reading the files directly
+
+The same files are installed on disk, so they can be read without a running server:
+
+| Platform | Path |
+|----------|------|
+| Windows (per-user) | `%LOCALAPPDATA%\lemonade_serverinesources\docs\` |
+| Windows (all users) | `C:\Program Files\Lemonade Serverinesources\docs\` |
+| macOS | `/Library/Application Support/Lemonade/resources/docs/` |
+| Linux (local) | `/usr/local/share/lemonade-server/resources/docs/` |
+| Linux (system) | `/usr/share/lemonade-server/resources/docs/` |
+| Linux (optional prefix) | `/opt/share/lemonade-server/resources/docs/` |
+| Linux (per-user) | `~/.local/share/lemonade-server/resources/docs/` |
 
 ## `GET /v1/health`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>

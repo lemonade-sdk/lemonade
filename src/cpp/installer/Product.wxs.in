@@ -130,6 +130,10 @@
       <Directory Id="INSTALLDIR" Name="lemonade_server">
         <Directory Id="BinDir" Name="bin">
           <Directory Id="ResourcesDir" Name="resources">
+            <Directory Id="DocsDir" Name="docs" />
+<?if $(var.IncludeDocsSite) = 1 ?>
+            <Directory Id="DocsSiteDir" Name="docs-site" />
+<?endif?>
             <Directory Id="StaticDir" Name="static" />
             <Directory Id="WebAppDir" Name="web-app" />
           </Directory>
@@ -299,6 +303,10 @@
     <Feature Id="Complete" Level="1">
       <ComponentGroupRef Id="ExecutableComponents" />
       <ComponentGroupRef Id="ResourceComponents" />
+      <ComponentGroupRef Id="DocsComponents" />
+<?if $(var.IncludeDocsSite) = 1 ?>
+      <ComponentGroupRef Id="DocsSiteComponents" />
+<?endif?>
 <?if $(var.IncludeWebApp) = 1 ?>
       <ComponentGroupRef Id="WebAppComponents" />
 <?endif?>

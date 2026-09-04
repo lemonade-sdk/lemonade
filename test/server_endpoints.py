@@ -8395,6 +8395,87 @@ class EndpointTests(ServerTestBase):
                 "and persists it"
             )
 
+    def test_060_docs_index(self):
+        """GET /docs returns an index of the bundled documentation (#1700)."""
+        response = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+
+        body = response.json()
+        self.assertIn("version", body)
+        self.assertEqual(body["format"], "text/markdown")
+        self.assertGreater(len(body["docs"]), 0)
+
+        for entry in body["docs"]:
+            for field in ("id", "title", "url", "bytes"):
+                self.assertIn(field, entry)
+
+        ids = [entry["id"] for entry in body["docs"]]
+        self.assertIn("api/lemonade", ids)
+        self.assertEqual(ids, sorted(ids))
+
+    def test_061_docs_index_quad_prefix(self):
+        """The index is served on all four prefixes and echoes the one used."""
+        prefixes = ["/api/v0", "/api/v1", "/v0", "/v1"]
+        id_sets = []
+        for prefix in prefixes:
+            response = requests.get(
+                f"http://localhost:{PORT}{prefix}/docs", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{prefix}/docs did not return 200"
+            )
+            body = response.json()
+            for entry in body["docs"]:
+                self.assertEqual(
+                    entry["url"],
+                    f"{prefix}/docs/{entry['id']}",
+                    f"{prefix}/docs returned a url for another prefix",
+                )
+            id_sets.append(sorted(entry["id"] for entry in body["docs"]))
+
+        for ids in id_sets[1:]:
+            self.assertEqual(ids, id_sets[0], "docs index differs between prefixes")
+
+    def test_062_docs_pages_are_fetchable(self):
+        """Every url the index advertises serves that document as markdown."""
+        index = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT).json()
+
+        for entry in index["docs"]:
+            response = requests.get(
+                f"http://localhost:{PORT}{entry['url']}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{entry['url']} did not return 200"
+            )
+            self.assertIn("text/markdown", response.headers.get("Content-Type", ""))
+            self.assertGreater(len(response.text), 0)
+
+        lemonade = requests.get(
+            f"{self.base_url}/docs/api/lemonade", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(lemonade.status_code, 200)
+        self.assertIn("# Lemonade API", lemonade.text)
+
+    def test_063_docs_page_not_found(self):
+        """Unknown documents and path traversal both 404 rather than leaking files.
+
+        Traversal is percent-encoded because HTTP clients resolve a literal ".."
+        before sending, which would never reach the server's guard.
+        """
+        for path in (
+            "/docs/api/does-not-exist",
+            "/docs/%2e%2e/%2e%2e/CMakeLists.txt",
+            "/docs/api/%2e%2e/%2e%2e/%2e%2e/CMakeLists.txt",
+        ):
+            response = requests.get(f"{self.base_url}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(response.status_code, 404, f"{path} was not rejected")
+
+    def test_064_docs_endpoint_rejects_post(self):
+        """POST /docs is not a defined route, consistent with other GET-only endpoints."""
+        response = requests.post(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")

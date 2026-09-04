@@ -48,7 +48,7 @@ All core endpoints are registered under **4 path prefixes**:
 - `/v0/` — Legacy short
 - `/v1/` — OpenAI SDK / LiteLLM compatibility
 
-**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `health`, `pull`, `pull/variants`, `registry/search`, `load`, `unload`, `delete`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `logs/stream`, `jobs`, `jobs/{id}`, `jobs/{id}/pause`, `jobs/{id}/interrupt`, `jobs/{id}/resume`
+**Core endpoints:** `chat/completions`, `completions`, `embeddings`, `reranking`, `models`, `models/{id}`, `docs`, `docs/{page}`, `health`, `pull`, `pull/variants`, `registry/search`, `load`, `unload`, `delete`, `install`, `uninstall`, `audio/transcriptions`, `audio/speech`, `images/generations`, `images/edits`, `images/variations`, `responses`, `stats`, `system-info`, `system-stats`, `logs/stream`, `jobs`, `jobs/{id}`, `jobs/{id}/pause`, `jobs/{id}/interrupt`, `jobs/{id}/resume`
 
 **Job engine** (`POST jobs`, `GET jobs`, `GET/DELETE jobs/{id}`, `POST jobs/{id}/{pause,interrupt,resume}`): server-side sequences of ops (`system_info`, `system_stats`, `models`, `sleep`, `load`, `unload`, `chat`) with data passing, forward-only branching, and a pause/interrupt/resume lifecycle persisted across restart. Exclusive ops hold a Router slot so normal traffic queues. See `docs/dev/job-system.md` and `docs/dev/job-expression-language.md`.
 
@@ -56,7 +56,7 @@ All core endpoints are registered under **4 path prefixes**:
 
 **Anthropic-compatible endpoint:** `POST /api/messages` — supports message completion, tool use, and SSE streaming.
 
-**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Single JSON-RPC 2.0 endpoint exposing 5 tools (`lemonade_list_models`, `lemonade_chat`, `lemonade_transcribe_audio`, `lemonade_generate_image`, `lemonade_omni`). GET returns 405.
+**MCP gateway endpoint:** `POST /mcp` — Model Context Protocol (Streamable HTTP transport, spec `2025-06-18`). Single JSON-RPC 2.0 endpoint exposing 6 tools (`lemonade_list_models`, `lemonade_chat`, `lemonade_transcribe_audio`, `lemonade_generate_image`, `lemonade_omni`, `lemonade_docs`). GET returns 405.
 
 **WebSocket Realtime API**: OpenAI-compatible Realtime protocol for real-time audio transcription. `/realtime` and `/logs/stream` accept WebSocket upgrades directly on the main HTTP port; a dedicated listener on an OS-assigned port (9000+, exposed via the `websocket_port` field in the `/health` response) also remains for backward compatibility.
 
