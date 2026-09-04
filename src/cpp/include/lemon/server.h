@@ -220,6 +220,8 @@ private:
     void handle_jobs_resume(const httplib::Request& req, httplib::Response& res);
     void handle_jobs_delete(const httplib::Request& req, httplib::Response& res);
 
+    void load_pinned_models_async();
+
     // Backend management endpoint handlers
     void handle_install(const httplib::Request& req, httplib::Response& res);
     void handle_install_dry_run(const httplib::Request& req, httplib::Response& res);
@@ -371,6 +373,11 @@ private:
     };
     std::vector<SyncTaskThread> background_sync_threads_;
     std::mutex background_sync_mutex_;
+
+    std::thread pinned_models_autoload_thread_;
+
+    std::mutex shutdown_mutex_;
+    std::condition_variable shutdown_cv_;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port
