@@ -402,7 +402,10 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     }
 
     json max_models = router.get_max_model_limits();
-    metrics.describe("lemonade_max_loaded_models", "Configured loaded model limit per model type.", "gauge");
+    metrics.describe("lemonade_max_loaded_models",
+                     "Effective loaded-model limit per model type (llm can exceed the "
+                     "configured max_loaded_models when llm_pool_autosize raises it).",
+                     "gauge");
     for (auto it = max_models.begin(); it != max_models.end(); ++it) {
         double metric_value = 0.0;
         if (json_number_as_double(it.value(), metric_value)) {

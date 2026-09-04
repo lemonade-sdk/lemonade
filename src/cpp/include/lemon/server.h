@@ -97,6 +97,15 @@ private:
     // mirroring the input shape, containing only entries that actually changed.
     void apply_config_side_effects(const json& applied_changes);
 
+    // Runs Router::enforce_llm_pool_capacity() on a tracked background_sync_
+    // threads_ worker (joined in ~Server, unlike a bare detached thread) so a
+    // shutdown can't race a still-running enforcement call against router_
+    // being destroyed. A second call while one is already running sets
+    // llm_pool_enforce_pending_ instead of spawning another thread, so a
+    // burst of rapid /internal/set calls collapses into at most one more
+    // pass rather than one thread per call.
+    void request_llm_pool_enforcement();
+
     // Hot-swap a backend binary when its *_bin config value changes. Unloads
     // affected loaded models, runs install_backend (which downloads/replaces
     // when version.txt mismatches), then best-effort reloads them. Errors are
@@ -162,9 +171,17 @@ private:
     std::optional<RouterDispatchResult> apply_router_collection_dispatch(
         nlohmann::json& request_json);
     // Union of routing-helper models across every active router collection's
-    // policy. Passed to Router::reconcile_routing_helpers after a policy is
+    // policy. Passed to Router::reconcile_policy_state after a policy is
     // removed so helpers no remaining policy needs are reclaimed.
     std::set<std::string> active_policy_helper_models();
+    // Computes the LLM pool floor — see residency_limit() in
+    // model_residency.h. Only `models`'s size feeds that floor;
+    // per_policy_counts exists solely for /health diagnostics.
+    struct LlmCandidateFloorInfo {
+        std::set<std::string> models;
+        std::map<std::string, int> per_policy_counts;
+    };
+    LlmCandidateFloorInfo active_policy_llm_candidate_floor();
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
@@ -371,6 +388,10 @@ private:
     };
     std::vector<SyncTaskThread> background_sync_threads_;
     std::mutex background_sync_mutex_;
+    // Guards the two flags below; see request_llm_pool_enforcement().
+    std::mutex llm_pool_enforce_mutex_;
+    bool llm_pool_enforce_running_ = false;
+    bool llm_pool_enforce_pending_ = false;
 
 
     // Routed servers (all routes/handlers; never listen) and the main-port
@@ -381,6 +402,16 @@ private:
     std::unique_ptr<UpgradableFrontServer> http_front_v6_;
 
     std::unique_ptr<Router> router_;
+    // Per-policy candidate-floor breakdown, cached at each reconcile call site
+    // (not recomputed on the /health request path — that used to mean a full
+    // registry walk on every poll). Guarded by its own mutex since /health
+    // reads it from a different thread than the reconcile callers write it.
+    std::mutex llm_candidate_floor_info_mutex_;
+    LlmCandidateFloorInfo llm_candidate_floor_info_;
+    // Nothing serializes concurrent models_changed_callback invocations, so
+    // an older one can finish after a newer one; this rejects it the same
+    // way Router::last_llm_floor_generation_ does for the Router's own copy.
+    uint64_t last_llm_floor_info_generation_ = 0;
     std::unique_ptr<AliasManager> alias_manager_;
     std::unique_ptr<ModelManager> model_manager_;
     std::unique_ptr<BackendManager> backend_manager_;

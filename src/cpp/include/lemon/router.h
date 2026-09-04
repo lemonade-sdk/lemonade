@@ -128,6 +128,7 @@ public:
     // Test-only access to routing-helper reconciliation internals (inject stub
     // servers, seed the needed set, drive prune). Defined in the test binary.
     friend struct RoutingHelperTestHook;
+    friend struct LlmPoolFloorTestHook;
     Router(RuntimeConfig* config,
 
            ModelManager* model_manager,
@@ -181,6 +182,40 @@ public:
     // arriving after a newer one is ignored so it cannot republish a stale set.
     void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models,
                                    uint64_t generation);
+
+    // Raise the Standard/LLM pool's effective capacity to `floor` so active
+    // policies' local candidates can stay resident together. Generation-
+    // guarded the same way as reconcile_routing_helpers, but with its own
+    // counter (see llm_candidate_floor_ above). Ends by calling
+    // enforce_llm_pool_capacity_locked(), which both converges the pool and
+    // (re)evaluates the no-backstop warning — see that function for both.
+    void reconcile_llm_candidate_floor(int floor, uint64_t generation);
+
+    // Combined entry point a policy change actually drives: publishes the new
+    // floor and helper set together under one load_mutex_ hold, then waits
+    // once. Calling reconcile_llm_candidate_floor and reconcile_routing_helpers
+    // back to back would release and re-take the lock between them, leaving a
+    // gap where a load completing in between validates the new floor against
+    // the old helper set (or vice versa) — the exact race publishing early was
+    // meant to close.
+    void reconcile_policy_state(int floor,
+                                const std::set<std::string>& needed_helper_models,
+                                uint64_t generation);
+
+    // Proactive counterpart to ensure_residency_capacity, which only ever
+    // evicts one resident to make room for a new one: this converges an
+    // already-populated pool down to its current limit (see
+    // model_residency.h) and re-checks the no-backstop warning, for
+    // whichever event just shrank that limit out from under it — a policy
+    // edit, or a live config change (see Server::apply_config_side_effects).
+    void enforce_llm_pool_capacity();
+
+    // Same reclaim_shutdown_ signal ~Router() sets, exposed so Server::stop()
+    // can raise it before ~Server()'s own thread-join loop runs — router_ is
+    // still a live Server member at that point, well before ~Router() itself
+    // would otherwise fire, so waiting on that later signal would defeat the
+    // point of an early wake.
+    void begin_shutdown();
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -314,6 +349,22 @@ private:
     // Highest policy-notification generation applied to needed_helper_models_.
     // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
     uint64_t last_reconcile_generation_ = 0;
+    // Feeds residency_limit() — see model_residency.h. Guarded by
+    // load_mutex_. Kept separate from last_reconcile_generation_ even though
+    // both are stamped from the same policy-change generation — reusing one
+    // counter would make the second reconcile call of a pair look like a
+    // stale duplicate of the first.
+    int llm_candidate_floor_ = 0;
+    uint64_t last_llm_floor_generation_ = 0;
+    // The floor value the no-VRAM-backstop warning last fired for; 0 when the
+    // condition isn't currently active. Re-warns only when the floor changes
+    // while still unguarded, not on every unrelated policy reconcile.
+    int last_llm_floor_warned_ = 0;
+    // Generation last applied by reconcile_policy_state. Its own counter,
+    // distinct from last_reconcile_generation_/last_llm_floor_generation_
+    // above, since it is the only one of the three ever stamped from a policy
+    // change in production.
+    uint64_t last_policy_reconcile_generation_ = 0;
     // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
     // residency slot to clear wakes and returns instead of blocking teardown.
     bool reclaim_shutdown_ = false;
@@ -343,8 +394,14 @@ private:
                                       ResidencyClass residency_class) const;
     WrappedServer* find_lru_server_in_pool(ModelType type, ResidencyClass residency_class,
                                                   const std::string& model_name) const;
+    WrappedServer* find_lru_idle_server_in_pool(ModelType type,
+                                                ResidencyClass residency_class) const;
     void ensure_residency_capacity(ModelType type, ResidencyClass residency_class,
                                    const std::string& model_name);
+    // Caller holds load_mutex_. Bounded by the pool's own size so a resident
+    // evict_server() fails to remove (busy past its timeout, or pinned)
+    // can't spin the loop forever.
+    void enforce_llm_pool_capacity_locked();
     void transition_server_residency_locked(
         WrappedServer* server,
         ResidencyClass requested_residency_class);

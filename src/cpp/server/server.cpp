@@ -404,7 +404,16 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
     model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        router_->reconcile_routing_helpers(active_policy_helper_models(), generation);
+        auto floor_info = active_policy_llm_candidate_floor();
+        router_->reconcile_policy_state(static_cast<int>(floor_info.models.size()),
+                                        active_policy_helper_models(), generation);
+        {
+            std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
+            if (generation > last_llm_floor_info_generation_) {
+                last_llm_floor_info_generation_ = generation;
+                llm_candidate_floor_info_ = std::move(floor_info);
+            }
+        }
     });
 
     // Seed the router's needed-helper set from policies already present at
@@ -417,7 +426,16 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // the watcher's authoritative state.
     const uint64_t seed_generation = model_manager_->next_notify_generation();
     const std::set<std::string> seed_needed = active_policy_helper_models();
-    router_->reconcile_routing_helpers(seed_needed, seed_generation);
+    auto seed_floor_info = active_policy_llm_candidate_floor();
+    router_->reconcile_policy_state(static_cast<int>(seed_floor_info.models.size()),
+                                    seed_needed, seed_generation);
+    {
+        std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
+        if (seed_generation > last_llm_floor_info_generation_) {
+            last_llm_floor_info_generation_ = seed_generation;
+            llm_candidate_floor_info_ = std::move(seed_floor_info);
+        }
+    }
 
     model_manager_->set_model_updated_callback([this](const std::string& model_name) {
         if (router_ && router_->is_model_loaded(model_name)) {
@@ -2299,6 +2317,12 @@ void Server::stop() {
         }
 
         if (router_) {
+            // Wakes anything in Router waiting on load quiescence (including
+            // the LLM-pool-enforcement worker below) so it bails out instead
+            // of stalling ~Server's later thread-join loop behind a load
+            // that's still in flight. Well before Router's own destructor —
+            // router_ is still alive here — which is the point.
+            router_->begin_shutdown();
             LOG(INFO, "Server") << "Unloading models and stopping backend servers..." << std::endl;
             try {
                 router_->unload_model();
@@ -2631,6 +2655,31 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
 
     // Add max model limits
     response["max_models"] = router_->get_max_model_limits();
+
+    // Candidate-floor diagnostics: the true local-candidate count regardless
+    // of the off-switch (spec: /health must keep showing this even while
+    // disabled), plus the breakdown that explains it. Both read from one
+    // cached snapshot under one lock, so candidate_floor and policies can
+    // never disagree with EACH OTHER — cached at the last reconcile rather
+    // than recomputed live, so /health doesn't pay for a full registry walk
+    // on every poll. This can still be a reconcile-generation stale relative
+    // to max_models.llm above (which reads the Router's own applied state
+    // independently) during a narrow race with an in-flight policy reload;
+    // that's ordinary eventual consistency between "what's enforced" and
+    // "why", not the same defect as the two fields here disagreeing with
+    // each other.
+    {
+        LlmCandidateFloorInfo floor_snapshot;
+        {
+            std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
+            floor_snapshot = llm_candidate_floor_info_;
+        }
+        response["llm_pool_autosize"] = {
+            {"enabled", config_->llm_pool_autosize()},
+            {"candidate_floor", static_cast<int>(floor_snapshot.models.size())},
+            {"policies", floor_snapshot.per_policy_counts}
+        };
+    }
 
     // Add pinned model counts
     response["pinned_models"] = router_->get_pinned_model_counts();
@@ -3877,6 +3926,45 @@ std::set<std::string> Server::active_policy_helper_models() {
         }
     }
     return needed;
+}
+
+Server::LlmCandidateFloorInfo Server::active_policy_llm_candidate_floor() {
+    LlmCandidateFloorInfo result;
+    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+        if (!info.route_policy) {
+            continue;
+        }
+        std::set<std::string> policy_models;
+        for (const auto& candidate : info.route_policy->candidates) {
+            ModelInfo candidate_info;
+            try {
+                candidate_info = model_manager_->get_model_info(candidate);
+            } catch (const std::exception& e) {
+                // Excluding it shrinks the floor, which can reopen the reload
+                // thrash this feature exists to prevent — worth a WARNING, not
+                // a silent skip.
+                LOG(WARNING, "Server") << "Policy '" << name << "' candidate '"
+                                       << candidate << "' is unresolvable, excluding "
+                                       << "it from the LLM pool floor: " << e.what()
+                                       << std::endl;
+                continue;
+            }
+            if (candidate_info.type != ModelType::LLM) {
+                continue;
+            }
+            const auto* desc = backends::descriptor_for(candidate_info.recipe);
+            if (desc && desc->slot_policy == SlotPolicy::Unmetered) {
+                continue;  // cloud candidate — no local process, no slot to floor
+            }
+            const std::string resolved = model_manager_->resolve_model_name(candidate);
+            result.models.insert(resolved);
+            policy_models.insert(resolved);
+        }
+        if (!policy_models.empty()) {
+            result.per_policy_counts[name] = static_cast<int>(policy_models.size());
+        }
+    }
+    return result;
 }
 
 void Server::record_response_telemetry(const nlohmann::json& response,
@@ -7346,6 +7434,14 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     udp_beacon_.startBroadcasting(13305, port_, 2);
                 }
             }
+        } else if (key == "llm_pool_autosize" || key == "max_loaded_models") {
+            // See Router::enforce_llm_pool_capacity. Neither key routes
+            // through a policy change, so nothing else would call it here —
+            // without this, an over-limit pool wouldn't shrink until enough
+            // future admissions evicted it one at a time. See
+            // request_llm_pool_enforcement for why this isn't just a bare
+            // detached thread.
+            request_llm_pool_enforcement();
         } else if (key == "extra_models_dir") {
             std::string dir = config_->extra_models_dir();
             LOG(INFO, "Server") << "Extra models dir changed to: " << dir << std::endl;
@@ -7380,6 +7476,53 @@ void Server::apply_config_side_effects(const json& applied_changes) {
             }
         }
     }
+}
+
+void Server::request_llm_pool_enforcement() {
+    // Scoped so llm_pool_enforce_mutex_ is released before background_sync_
+    // mutex_ below is taken: the worker needs the former to finish its loop,
+    // and ~Server holds the latter while joining that same worker — holding
+    // both here at once would let those two locks deadlock against each
+    // other via a third, concurrent call to this function.
+    {
+        std::lock_guard<std::mutex> lock(llm_pool_enforce_mutex_);
+        if (llm_pool_enforce_running_) {
+            llm_pool_enforce_pending_ = true;
+            return;
+        }
+        llm_pool_enforce_running_ = true;
+    }
+
+    auto finished_flag = std::make_shared<std::atomic<bool>>(false);
+    std::thread worker([this, finished_flag]() {
+        for (;;) {
+            // A thread that lets an exception escape its top-level function
+            // calls std::terminate, taking the whole process down with it.
+            try {
+                router_->enforce_llm_pool_capacity();
+            } catch (const std::exception& e) {
+                LOG(ERROR, "Server") << "LLM pool enforcement failed: " << e.what() << std::endl;
+            }
+            std::lock_guard<std::mutex> inner_lock(llm_pool_enforce_mutex_);
+            if (!llm_pool_enforce_pending_) {
+                llm_pool_enforce_running_ = false;
+                break;
+            }
+            llm_pool_enforce_pending_ = false;
+        }
+        finished_flag->store(true);
+    });
+
+    std::lock_guard<std::mutex> sync_lock(background_sync_mutex_);
+    for (auto it = background_sync_threads_.begin(); it != background_sync_threads_.end();) {
+        if (it->finished->load() && it->thread.joinable()) {
+            it->thread.join();
+            it = background_sync_threads_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    background_sync_threads_.push_back({std::move(worker), finished_flag});
 }
 
 

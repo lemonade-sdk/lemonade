@@ -305,11 +305,45 @@ WrappedServer* Router::find_lru_server_in_pool(
     return lru;
 }
 
+// Same as find_lru_server_in_pool but also skips busy residents, for a
+// caller that would rather evict a less-recently-used idle server than
+// block waiting on a more-recently-used busy one. No model_name filter —
+// only enforce_llm_pool_capacity_locked's Standard/LLM convergence uses this.
+WrappedServer* Router::find_lru_idle_server_in_pool(
+    ModelType type,
+    ResidencyClass residency_class) const {
+    WrappedServer* lru = nullptr;
+
+    for (const auto& server : loaded_servers_) {
+        if (is_unmetered_recipe(server->get_recipe_options().get_recipe())) {
+            continue;
+        }
+        if (server->is_backend_alive() &&
+            same_residency_pool(server->get_model_type(),
+                                server->get_residency_class(),
+                                server->get_model_name(),
+                                type,
+                                residency_class,
+                                "")) {
+            if (server->is_pinned() || server->is_busy()) {
+                continue;
+            }
+            if (!lru || server->get_last_access_time() < lru->get_last_access_time()) {
+                lru = server.get();
+            }
+        }
+    }
+
+    return lru;
+}
+
 void Router::ensure_residency_capacity(
     ModelType type,
     ResidencyClass residency_class,
     const std::string& model_name) {
-    const int limit = residency_limit(residency_class, config_->max_loaded_models());
+    const int applied_floor = config_->llm_pool_autosize() ? llm_candidate_floor_ : 0;
+    const int limit = residency_limit(residency_class, type, config_->max_loaded_models(),
+                                      applied_floor);
     if (limit == -1 || count_servers_in_pool(type, residency_class, model_name) < limit) {
         return;
     }
@@ -435,13 +469,144 @@ void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64
 
     // Only the eviction pass must wait for a quiet slot: evict_server mutates
     // loaded_servers_ and blocks on request drain, neither of which is safe to
-    // interleave with an in-flight load.
+    // interleave with an in-flight load. reclaim_shutdown_ breaks it early too
+    // (see reclaim_stale_helper_if_idle) so a background_sync_threads_ join in
+    // ~Server doesn't stall behind a load that's still running.
     load_cv_.wait(lock, [&] {
-        return !is_loading_ &&
-               (!exclusive_active_ ||
-                exclusive_owner_ == std::this_thread::get_id());
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
     });
+    if (reclaim_shutdown_) {
+        return;
+    }
     prune_stale_routing_helpers_locked();
+}
+
+void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    if (generation <= last_llm_floor_generation_) {
+        return;
+    }
+    last_llm_floor_generation_ = generation;
+    // Published immediately, same reasoning as needed_helper_models_ in
+    // apply_routing_helper_reconcile: a load re-acquiring the lock after
+    // this validates against the fresh value regardless of whether the
+    // eviction pass below has run yet.
+    llm_candidate_floor_ = floor;
+
+    // Same wait apply_routing_helper_reconcile uses before its own eviction
+    // pass — evicting is not safe to interleave with an in-flight load or an
+    // exclusive job session. reclaim_shutdown_ breaks it early too (see
+    // reclaim_stale_helper_if_idle) so a background_sync_threads_ join in
+    // ~Server doesn't stall behind a load that's still running.
+    load_cv_.wait(lock, [&] {
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
+    });
+    if (reclaim_shutdown_) {
+        return;
+    }
+    enforce_llm_pool_capacity_locked();
+}
+
+void Router::enforce_llm_pool_capacity() {
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    load_cv_.wait(lock, [&] {
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
+    });
+    if (reclaim_shutdown_) {
+        return;
+    }
+    enforce_llm_pool_capacity_locked();
+}
+
+void Router::begin_shutdown() {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    reclaim_shutdown_ = true;
+    load_cv_.notify_all();
+}
+
+void Router::reconcile_policy_state(int floor,
+                                    const std::set<std::string>& needed_helper_models,
+                                    uint64_t generation) {
+    std::set<std::string> needed;
+    for (const auto& model : needed_helper_models) {
+        needed.insert(resolve_model_name(model));
+    }
+
+    std::unique_lock<std::mutex> lock(load_mutex_);
+    if (generation <= last_policy_reconcile_generation_) {
+        return;
+    }
+    last_policy_reconcile_generation_ = generation;
+
+    // Both published under the one lock hold below, so a load that completes
+    // mid-wait re-validates against a floor and a helper set that are always
+    // from the same generation — never one fresh and the other stale.
+    llm_candidate_floor_ = floor;
+    needed_helper_models_ = std::move(needed);
+
+    load_cv_.wait(lock, [&] {
+        return reclaim_shutdown_ ||
+               (!is_loading_ &&
+                (!exclusive_active_ ||
+                 exclusive_owner_ == std::this_thread::get_id()));
+    });
+    if (reclaim_shutdown_) {
+        return;
+    }
+    enforce_llm_pool_capacity_locked();
+    prune_stale_routing_helpers_locked();
+}
+
+void Router::enforce_llm_pool_capacity_locked() {
+    const int max_loaded = config_->max_loaded_models();
+    const bool autosize = config_->llm_pool_autosize();
+
+    // See model_residency.h for the floor itself. The check lives here,
+    // not in reconcile_llm_candidate_floor, so a live /internal/set change
+    // triggers it too, not just a policy-driven reconcile.
+    if (autosize && max_loaded != -1 && llm_candidate_floor_ > max_loaded && !config_->auto_evict()) {
+        if (llm_candidate_floor_ != last_llm_floor_warned_) {
+            LOG(WARNING, "Router") << "LLM pool floor raised to " << llm_candidate_floor_
+                                   << " (above max_loaded_models=" << max_loaded
+                                   << ") with auto_evict disabled — no VRAM-pressure "
+                                   << "backstop will evict a floor-protected LLM"
+                                   << std::endl;
+            last_llm_floor_warned_ = llm_candidate_floor_;
+        }
+    } else {
+        last_llm_floor_warned_ = 0;
+    }
+
+    const int applied_floor = autosize ? llm_candidate_floor_ : 0;
+    const int effective_limit =
+        residency_limit(ResidencyClass::Standard, ModelType::LLM, max_loaded, applied_floor);
+    if (effective_limit == -1) {
+        return;
+    }
+
+    int remaining_attempts = count_servers_in_pool(ModelType::LLM, ResidencyClass::Standard, "");
+    while (remaining_attempts-- > 0 &&
+           count_servers_in_pool(ModelType::LLM, ResidencyClass::Standard, "") > effective_limit) {
+        // Idle candidates only — this already holds load_mutex_, so blocking
+        // on a busy one (evict_server's wait_until_not_busy) would stall
+        // every other router operation for up to EVICTION_TIMEOUT. Give up
+        // for now rather than hold the lock hostage; the next admission or
+        // reconcile picks up where this left off.
+        WrappedServer* lru = find_lru_idle_server_in_pool(ModelType::LLM, ResidencyClass::Standard);
+        if (!lru) {
+            break;  // nothing idle and evictable — defer, don't block the lock
+        }
+        evict_server(lru, EVICTION_TIMEOUT);
+    }
 }
 
 void Router::prune_stale_routing_helpers_locked() {
@@ -1083,6 +1248,22 @@ void Router::load_model(const std::string& model_name,
                 return;
             }
 
+            // The limit (see model_residency.h) can drop while load_mutex_
+            // was released above for the slow backend start; re-validate
+            // now that the lock is held again, same as the routing-helper
+            // check above, so this admission can't land the pool over a
+            // limit that shrank mid-load. Full convergence first for LLM —
+            // a single ensure_residency_capacity eviction only frees one
+            // slot, not enough if the limit dropped by more than that.
+            if (!is_unmetered_load) {
+                if (model_type == ModelType::LLM &&
+                    requested_residency_class == ResidencyClass::Standard) {
+                    enforce_llm_pool_capacity_locked();
+                }
+                ensure_residency_capacity(model_type, requested_residency_class,
+                                          canonical_model_name);
+            }
+
             // Success: Refresh access time so this model is returned by
             // get_most_recent_server() (the pre-load timestamp from line 316
             // may have been overtaken by other models serving requests while
@@ -1380,8 +1561,14 @@ json Router::get_all_loaded_models() const {
 
 json Router::get_max_model_limits() const {
     int max = config_->max_loaded_models();
+    int llm_limit = max;
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        const int applied_floor = config_->llm_pool_autosize() ? llm_candidate_floor_ : 0;
+        llm_limit = residency_limit(ResidencyClass::Standard, ModelType::LLM, max, applied_floor);
+    }
     return {
-        {"llm", max},
+        {"llm", llm_limit},
         {"embedding", max},
         {"reranking", max},
         {"transcription", max},

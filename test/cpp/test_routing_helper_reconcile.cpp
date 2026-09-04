@@ -3,10 +3,13 @@
 // Exercises the durable-reconciliation core the router uses to reclaim routing
 // helpers when a collection's policy changes: the published needed-set, the
 // non-blocking prune that skips busy/pinned helpers, and thread-safety of a
-// policy update racing a helper going busy/idle. Cases drive the production
-// reconcile entry (apply_routing_helper_reconcile) rather than the prune in
+// policy update racing a helper going busy/idle. Cases drive the reconcile
+// primitive (apply_routing_helper_reconcile) rather than the prune in
 // isolation, so a busy helper is reclaimed by a subsequent policy reconcile once
-// idle — the real transition, not a hand-invoked second prune.
+// idle — the real transition, not a hand-invoked second prune. Production now
+// reaches the same prune (prune_stale_routing_helpers_locked) through
+// Router::reconcile_policy_state instead of this function directly, but the
+// convergence behavior being tested is identical either way.
 //
 // The full load_model interleaving (the load-completion validation guard) is an
 // integration concern: it needs a real ModelManager (reads server_models.json),

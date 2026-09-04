@@ -18,7 +18,7 @@ Models are categorized into these types:
 - **Transcription** - Models for audio transcription using Whisper (identified by the `transcription` label)
 - **Image** - Models for image generation (identified by the `image` label)
 
-Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models`.
+Each type has its own independent LRU cache, all sharing the same slot limit set by `max_loaded_models` — with one exception: the **LLM** pool auto-raises its effective limit above `max_loaded_models` when `llm_pool_autosize` is enabled (default `true`) and an active router policy's local candidates need more room. See [Router and Classifier Dependencies](#router-and-classifier-dependencies) below.
 
 ## Router and Classifier Dependencies
 
@@ -27,7 +27,15 @@ residency pool. This is intentionally independent from both `ModelType` and the
 backend's hardware slot policy:
 
 - A router LLM remains an **LLM**; it is not reclassified as a classification model.
-- Standard pools continue to use `max_loaded_models` per `ModelType`.
+- Standard pools continue to use `max_loaded_models` per `ModelType`, except the
+  Standard **LLM** pool: when `llm_pool_autosize` is enabled (default `true`),
+  its effective capacity is auto-raised to fit the number of distinct local
+  (non-cloud) LLM candidates referenced by active router policies, so
+  alternating between them doesn't reload one on every switch. `GET
+  /api/v1/health`'s `llm_pool_autosize` block reports the current floor, why
+  it was raised (per-policy breakdown), and whether it's actually being
+  applied. Disabling `llm_pool_autosize` restores a strict `max_loaded_models`
+  limit for LLMs too.
 - Routing-helper capacity is keyed by the distinct helper model rather than by
   `ModelType`. Multiple classifier or router models of the same type required by
   one or more policies can therefore remain warm together without consuming or
