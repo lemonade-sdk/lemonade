@@ -1008,6 +1008,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     struct ModelBenchResult {
         std::string model;
         std::string timestamp;
+        json model_info;
         std::vector<BenchBackendResult> results;
     };
     std::vector<ModelBenchResult> by_model;
@@ -1111,7 +1112,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             return 1;
         }
 
-        by_model.push_back({model, model_timestamp, std::move(all_results)});
+        by_model.push_back({model, model_timestamp, model_info, std::move(all_results)});
     }
 
     // Output results
@@ -1123,7 +1124,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             output["hardware"] = hardware_profile;
             output["models"] = json::array();
             for (const auto& mr : by_model)
-                output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config));
+                output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config, mr.model_info));
 
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
@@ -1147,7 +1148,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 output["hardware"] = hardware_profile;
                 output["models"] = json::array();
                 for (const auto& mr : by_model)
-                    output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config));
+                    output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config, mr.model_info));
                 std::ofstream out(config.output_file);
                 if (out.is_open()) {
                     out << output.dump(2);
@@ -1177,6 +1178,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         struct ModelComparisonResult {
             std::string model;
             std::string timestamp;
+            json model_info;
             json previous_for_model;
             std::vector<BenchComparisonDelta> deltas;
             const std::vector<BenchBackendResult>* results = nullptr;
@@ -1189,7 +1191,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             auto it = previous_by_model.find(mr.model);
             if (it != previous_by_model.end()) prev_for_model = it->second;
             comparison_results.emplace_back(ModelComparisonResult{
-                mr.model, mr.timestamp, prev_for_model,
+                mr.model, mr.timestamp, mr.model_info, prev_for_model,
                 compute_deltas(mr.results, prev_for_model), &mr.results
             });
         }
@@ -1210,7 +1212,7 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             output["models"] = json::array();
             for (const auto& c : comparison_results)
                 output["models"].push_back(build_comparison_json(*c.results, c.model, c.timestamp,
-                                                                  config, c.previous_for_model, c.deltas));
+                                                                  config, c.model_info, c.previous_for_model, c.deltas));
 
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {

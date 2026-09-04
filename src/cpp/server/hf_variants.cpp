@@ -36,12 +36,24 @@ bool contains_ci(const std::string& s, const std::string& needle) {
     return to_lower(s).find(to_lower(needle)) != std::string::npos;
 }
 
+std::string filename_only(const std::string& path) {
+    size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? path : path.substr(slash + 1);
+}
+
+enum class DraftKind { None, Mtp, Dflash };
+
+DraftKind draft_kind(const std::string& path) {
+    const std::string filename = to_lower(filename_only(path));
+    if (filename.rfind("mtp-", 0) == 0) return DraftKind::Mtp;
+    if (filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf") {
+        return DraftKind::Dflash;
+    }
+    return DraftKind::None;
+}
+
 bool is_draft_companion(const std::string& path) {
-    std::string filename = to_lower(path);
-    size_t slash = filename.find_last_of('/');
-    if (slash != std::string::npos) filename = filename.substr(slash + 1);
-    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf" ||
-           filename.rfind("mtp-", 0) == 0;
+    return draft_kind(path) != DraftKind::None;
 }
 
 // Quant token extractor. Recognizes the variants we actually see in
@@ -88,6 +100,92 @@ int quant_priority(const std::string& q) {
     return it == priority.end() ? 100 : it->second;
 }
 
+int quant_bits(const std::string& value) {
+    std::string quant;
+    if (!extract_quant(filename_only(value), quant)) return 0;
+    size_t pos = quant.find_first_of("0123456789");
+    return pos == std::string::npos ? 0 : std::stoi(quant.substr(pos));
+}
+
+std::vector<std::string> directory_parts(const std::string& path) {
+    size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) return {};
+
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (start < slash) {
+        size_t next = path.find('/', start);
+        if (next == std::string::npos || next > slash) next = slash;
+        parts.push_back(path.substr(start, next - start));
+        start = next + 1;
+    }
+    return parts;
+}
+
+size_t shared_directory_depth(const std::string& model, const std::string& companion) {
+    const auto model_parts = directory_parts(model);
+    const auto companion_parts = directory_parts(companion);
+    const size_t count = std::min(model_parts.size(), companion_parts.size());
+    size_t depth = 0;
+    while (depth < count && model_parts[depth] == companion_parts[depth]) ++depth;
+    return depth;
+}
+
+// Mirrors llama.cpp's generic HF sidecar ranking rather than tuning individual
+// models: prefer a deeper shared directory, then an exact quant tag, then the
+// closest quant bit width. A repo exposing both MTP and DFlash remains
+// intentionally ambiguous because choosing a speculative mechanism is policy.
+std::string preferred_draft_companion(
+    const GgufVariant& variant,
+    const std::vector<std::string>& draft_paths) {
+    DraftKind kind = DraftKind::None;
+    for (const auto& path : draft_paths) {
+        const DraftKind current = draft_kind(path);
+        if (current == DraftKind::None) continue;
+        if (kind == DraftKind::None) {
+            kind = current;
+        } else if (kind != current) {
+            return {};
+        }
+    }
+    if (kind == DraftKind::None) return {};
+
+    std::string target_quant = variant.quant;
+    if (target_quant.empty()) {
+        extract_quant(filename_only(variant.primary_file), target_quant);
+    }
+    const int target_bits = quant_bits(target_quant);
+
+    std::string best;
+    size_t best_depth = 0;
+    bool best_exact = false;
+    int best_diff = 0;
+    for (const auto& path : draft_paths) {
+        if (draft_kind(path) != kind) continue;
+
+        const std::string draft_filename = filename_only(path);
+        std::string draft_quant;
+        const bool has_quant = extract_quant(draft_filename, draft_quant);
+        const bool exact = !target_quant.empty() && has_quant && draft_quant == target_quant;
+        const int draft_bits = has_quant ? quant_bits(draft_filename) : 0;
+        // With an unquantized main there is no meaningful bit-distance target.
+        // Keep selection deterministic through the existing depth/path ordering
+        const int diff = target_bits > 0 ? std::abs(draft_bits - target_bits) : 0;
+        const size_t depth = shared_directory_depth(variant.primary_file, path);
+
+        if (best.empty() || depth > best_depth ||
+            (depth == best_depth && exact && !best_exact) ||
+            (depth == best_depth && exact == best_exact && diff < best_diff) ||
+            (depth == best_depth && exact == best_exact && diff == best_diff && path < best)) {
+            best = path;
+            best_depth = depth;
+            best_exact = exact;
+            best_diff = diff;
+        }
+    }
+    return best;
+}
+
 }  // namespace
 
 GgufVariantSet enumerate_gguf_variants(
@@ -105,7 +203,10 @@ GgufVariantSet enumerate_gguf_variants(
     };
 
     // Companion GGUFs must not become selectable main-model variants.
+    // Keep repository-relative draft paths internally for variant association;
+    // draft_files remains the legacy bare-filename list for API compatibility.
     std::vector<std::string> gguf_files;
+    std::vector<std::string> draft_paths;
     for (const auto& f : repo_files) {
         std::string f_lower = to_lower(f);
         if (!ends_with(f_lower, ".gguf")) continue;
@@ -115,12 +216,14 @@ GgufVariantSet enumerate_gguf_variants(
             result.mmproj_files.push_back(bare);
         } else if (is_draft_companion(f)) {
             result.draft_files.push_back(bare);
+            draft_paths.push_back(f);
         } else {
             gguf_files.push_back(f);
         }
     }
     std::sort(result.mmproj_files.begin(), result.mmproj_files.end());
     std::sort(result.draft_files.begin(), result.draft_files.end());
+    std::sort(draft_paths.begin(), draft_paths.end());
 
     // Group by top-level folder vs root files.
     std::map<std::string, std::vector<std::string>> folder_groups;
@@ -221,6 +324,10 @@ GgufVariantSet enumerate_gguf_variants(
                   if (pa != pb) return pa < pb;
                   return a.name < b.name;
               });
+
+    for (auto& variant : result.variants) {
+        variant.draft_file = preferred_draft_companion(variant, draft_paths);
+    }
 
     return result;
 }
@@ -391,6 +498,16 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
     // registration; otherwise the preview and the registered model disagree.
     std::vector<std::string> labels;
     if (!vset.mmproj_files.empty()) add_label_once(labels, "vision");
+    const auto draft_variant = std::find_if(
+        vset.variants.begin(), vset.variants.end(),
+        [](const GgufVariant& variant) { return !variant.draft_file.empty(); });
+    if (draft_variant != vset.variants.end()) {
+        switch (draft_kind(draft_variant->draft_file)) {
+            case DraftKind::Mtp: add_label_once(labels, "mtp"); break;
+            case DraftKind::Dflash: add_label_once(labels, "dflash"); break;
+            case DraftKind::None: break;
+        }
+    }
     {
         std::string id_lower = to_lower(checkpoint);
         if (id_lower.find("embed") != std::string::npos) add_label_once(labels, "embeddings");
@@ -413,6 +530,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
         nlohmann::json vj;
         vj["name"] = v.name;
         vj["primary_file"] = v.primary_file;
+        if (!v.draft_file.empty()) vj["draft_file"] = v.draft_file;
         vj["files"] = v.files;
         vj["sharded"] = v.sharded;
         vj["size_bytes"] = v.size_bytes;

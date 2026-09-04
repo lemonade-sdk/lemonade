@@ -2008,6 +2008,13 @@ jobs:
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
 
+      - name: Test log rotation
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu log-rotation"
+          .venv/bin/python test/server_log_rotation.py
+
       - name: Test router
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
@@ -2329,12 +2336,55 @@ jobs:
           name: lemonade-macos-pkg
           path: .
 
+      # Must precede the install: the .pkg postflight starts lemond via launchd,
+      # which passes on the launchd domain environment rather than this shell's.
+      # HF_HUB_CACHE rather than HF_HOME because the daemon plist pins HF_HOME,
+      # and plist EnvironmentVariables outrank the domain environment; HF_HUB_CACHE
+      # is unset there and wins over HF_HOME in resolve_hf_cache_dir(). The daemon
+      # runs as root and the suites' own servers as the runner user, so the path is
+      # shared and world-writable.
+      - name: Point every lemond at one HF cache
+        shell: bash
+        run: |
+          set -e
+          sudo mkdir -p /Users/Shared/hf-cache
+          # The daemon writes as root and the suites' own servers as the runner
+          # user, so a mode on the root alone would not reach the model
+          # directories the daemon creates later. An inherited ACL does.
+          sudo chmod 0777 /Users/Shared/hf-cache
+          ACE="list,search,add_file,add_subdirectory,delete,delete_child"
+          ACE="$ACE,read,write,execute,append,readattr,writeattr"
+          ACE="$ACE,readextattr,writeextattr,readsecurity"
+          ACE="$ACE,file_inherit,directory_inherit"
+          sudo chmod +a "everyone allow $ACE" /Users/Shared/hf-cache
+          ls -lde /Users/Shared/hf-cache
+          sudo launchctl setenv HF_HUB_CACHE /Users/Shared/hf-cache
+          echo "HF_HUB_CACHE=/Users/Shared/hf-cache" >> $GITHUB_ENV
+
       - name: Install Lemonade Server (.pkg)
         id: install-pkg
         uses: ./.github/actions/install-lemonade-server-dmg
         with:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
+
+      - name: Verify the server picked up the cache setting
+        # Assert rather than assume: a server that missed it silently downloads
+        # into a second cache, which is the flake this step exists to prevent.
+        shell: bash
+        run: |
+          set -e
+          PID=$(sudo lsof -t -nP -iTCP:13305 -sTCP:LISTEN 2>/dev/null | head -1)
+          if [ -z "$PID" ]; then
+            echo "ERROR: nothing is listening on port 13305"
+            exit 1
+          fi
+          if ! sudo ps eww -p "$PID" | grep -q "HF_HUB_CACHE=/Users/Shared/hf-cache"; then
+            echo "ERROR: lemond (PID $PID) is missing HF_HUB_CACHE"
+            sudo ps eww -p "$PID" || true
+            exit 1
+          fi
+          echo "lemond (PID $PID) has HF_HUB_CACHE"
 
       - name: Set HF_HOME environment variable
         shell: bash
