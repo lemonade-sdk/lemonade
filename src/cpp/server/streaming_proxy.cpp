@@ -99,7 +99,8 @@ void StreamingProxy::forward_sse_stream(
     std::function<void(const TelemetryData&)> on_complete,
     long timeout_seconds,
     std::function<void()> on_chunk,
-    long heartbeat_interval_ms) {
+    long heartbeat_interval_ms,
+    bool normalize_chat_roles) {
 
     TelemetryData telemetry;
     try {
@@ -120,6 +121,9 @@ void StreamingProxy::forward_sse_stream(
     std::string error_body;
     static constexpr size_t max_error_body = 64 * 1024;
 
+    bool first_delta_processed = !normalize_chat_roles;
+    std::string unforwarded_buffer;
+
     auto process_line = [&telemetry](const std::string& line) {
         std::string json_str;
         if (line.find("data: ") == 0) {
@@ -139,7 +143,8 @@ void StreamingProxy::forward_sse_stream(
         backend_url,
         request_body,
         [&sink, &line_buffer, &has_done_marker, &has_first_token, &time_to_first_token,
-         &start_time, &last_activity_time, &on_chunk, &process_line, &backend_status, &error_body](const char* data, size_t length) {
+         &start_time, &last_activity_time, &on_chunk, &process_line, &backend_status, &error_body,
+         normalize_chat_roles, &unforwarded_buffer](const char* data, size_t length) {
             last_activity_time = std::chrono::steady_clock::now();
 
             if (backend_status != 200) {
@@ -167,8 +172,62 @@ void StreamingProxy::forward_sse_stream(
                 has_done_marker = true;
             }
 
-            if (!sink.write(data, length)) {
-                return false;
+            if (normalize_chat_roles) {
+                unforwarded_buffer.append(data, length);
+                size_t pos;
+                while ((pos = unforwarded_buffer.find('\n')) != std::string::npos) {
+                    std::string raw_line = unforwarded_buffer.substr(0, pos);
+                    std::string line = raw_line;
+                    if (!line.empty() && line.back() == '\r') {
+                        line.pop_back();
+                    }
+
+                    std::string json_str;
+                    if (line.find("data: ") == 0) {
+                        json_str = line.substr(6);
+                    } else if (line.find("ChatCompletionChunk: ") == 0) {
+                        json_str = line.substr(21);
+                    }
+
+                    bool transformed = false;
+                    std::string modified_line;
+
+                    if (!json_str.empty() && json_str != "[DONE]") {
+                        try {
+                            auto chunk = json::parse(json_str);
+                            if (chunk.contains("choices") && chunk["choices"].is_array()) {
+                                for (auto& choice : chunk["choices"]) {
+                                    if (choice.is_object() && choice.contains("delta") && choice["delta"].is_object()) {
+                                        if (choice["delta"].contains("role") && choice["delta"]["role"].is_null()) {
+                                            choice["delta"]["role"] = "assistant";
+                                            transformed = true;
+                                        }
+                                    }
+                                }
+                                if (transformed) {
+                                    std::string prefix = (line.find("data: ") == 0) ? "data: " : "ChatCompletionChunk: ";
+                                    modified_line = prefix + chunk.dump();
+                                    if (!raw_line.empty() && raw_line.back() == '\r') {
+                                        modified_line += '\r';
+                                    }
+                                    modified_line += '\n';
+                                }
+                            }
+                        } catch (...) {}
+                    }
+
+                    if (transformed) {
+                        if (!sink.write(modified_line.data(), modified_line.size())) return false;
+                    } else {
+                        std::string out_line = unforwarded_buffer.substr(0, pos + 1);
+                        if (!sink.write(out_line.data(), out_line.size())) return false;
+                    }
+                    unforwarded_buffer.erase(0, pos + 1);
+                }
+            } else {
+                if (!sink.write(data, length)) {
+                    return false;
+                }
             }
 
             return true;
@@ -266,13 +325,26 @@ void StreamingProxy::forward_sse_stream(
     }
 
     if (!stream_error) {
+        if (normalize_chat_roles && !unforwarded_buffer.empty()) {
+            sink.write(unforwarded_buffer.data(), unforwarded_buffer.size());
+            unforwarded_buffer.clear();
+        }
         // Ensure [DONE] marker is sent only for clean transports. If the transport
         // was interrupted before [DONE], the block above throws and recovery is
         // handled by WrappedServer/Router instead of pretending success.
         if (!has_done_marker) {
             LOG(WARNING, "StreamingProxy") << "WARNING: Backend did not send [DONE] marker, adding it" << std::endl;
+            if (!first_delta_processed && !unforwarded_buffer.empty()) {
+                sink.write(unforwarded_buffer.data(), unforwarded_buffer.size());
+                unforwarded_buffer.clear();
+            }
             const char* done_marker = "data: [DONE]\n\n";
             sink.write(done_marker, strlen(done_marker));
+        }
+
+        if (!first_delta_processed && !unforwarded_buffer.empty()) {
+            sink.write(unforwarded_buffer.data(), unforwarded_buffer.size());
+            unforwarded_buffer.clear();
         }
 
         sink.done();
@@ -303,6 +375,10 @@ void StreamingProxy::forward_sse_stream(
             on_complete(telemetry);
         }
     } else {
+        if (!first_delta_processed && !unforwarded_buffer.empty()) {
+            sink.write(unforwarded_buffer.data(), unforwarded_buffer.size());
+            unforwarded_buffer.clear();
+        }
         sink.done();
         if (on_complete) {
             on_complete(telemetry);
