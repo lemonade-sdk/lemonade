@@ -160,15 +160,42 @@ lemonade export Qwen3-0.6B-GGUF --output model-info.json
 
 ## Options for list
 
-The `list` command displays all models. By default, the output is partitioned into **Local** (downloaded) and **Available for Download** sections. You can restrict the output to only local models by passing the `--downloaded` flag:
+The `list` command displays all models. By default, the output is partitioned into **Local** (downloaded) and **Available for Download** sections. You can restrict and filter the output using the following options:
 
 ```bash
-lemonade list [options]
+lemonade list [options] [name_filter]
 ```
 
 | Option                         | Description                         | Default |
 |--------------------------------|-------------------------------------|---------|
+| `name_filter`                  | Optional case-insensitive model-name filter; supports `*` wildcards | |
 | `--downloaded`                 | Show only downloaded models | False |
+| `--json`                       | Format output as JSON | False |
+| `--type <type>`                | Filter by model type (`llm`, `embedding`, `reranking`, `transcription`, `image`, `tts`) | |
+| `--source <source>`            | Filter by model source (`builtin`, `user`, `extra`, `cloud`) | |
+| `--device <device>`            | Filter by model device (`cpu`, `gpu`, `npu`) | |
+| `--suggested`                  | Show only suggested models | False |
+| `--label <label>`              | Filter by one or more labels (repeatable, matches models containing all specified labels) | |
+| `--backend <backend>`          | Filter by backend/recipe | |
+
+**Examples:**
+
+```bash
+# List only downloaded models
+lemonade list --downloaded
+
+# Filter by type and device
+lemonade list --type llm --device gpu
+
+# Filter by multiple labels (AND conjunction)
+lemonade list --label chat --label reasoning
+
+# Filter models by name with wildcard
+lemonade list "Qwen*"
+
+# Output filtered models in JSON format
+lemonade list --type embedding --json
+```
 
 ## Options for pull
 
