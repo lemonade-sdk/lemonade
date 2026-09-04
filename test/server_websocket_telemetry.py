@@ -560,14 +560,14 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         with open(self.procs[0][2], "r") as f:
             default_server_logs = f.read()
         self.assertIn(
-            "Rejected request from unauthorized origin: http://malicious.com. Set LEMONADE_ALLOWED_ORIGINS to allow this origin.",
+            "Rejected request from unauthorized origin: http://malicious.com. Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin.",
             default_server_logs,
         )
 
         with open(self.procs[1][2], "r") as f:
             remote_server_logs = f.read()
         self.assertIn(
-            "Rejected request from unauthorized origin: https://unconfigured.com. Set LEMONADE_ALLOWED_ORIGINS to allow this origin.",
+            "Rejected request from unauthorized origin: https://unconfigured.com. Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin.",
             remote_server_logs,
         )
 
