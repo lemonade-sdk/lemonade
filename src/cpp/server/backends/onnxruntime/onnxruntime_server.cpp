@@ -204,8 +204,10 @@ void OnnxRuntimeServer::load(const std::string& model_name,
     }
 
     bool inherit_output = (log_level_ == "info") || is_debug();
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        executable, model_path, "cpu");
     ProcessHandle started_handle = utils::ProcessManager::start_process(
-        executable, args, "", inherit_output, false, {});
+        executable, args, "", inherit_output, false, {}, sandbox_policy);
     set_process_handle(started_handle, executable, args);
 
     if (!has_process_handle(started_handle)) {

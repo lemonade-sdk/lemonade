@@ -50,6 +50,7 @@ Lemonade consists of these main executables:
 **All Platforms:**
 - CMake 3.28 or higher
 - C++17 compatible compiler
+- Rust toolchain (Cargo & rustc 1.77+, for in-tree kernel sandboxing FFI and the desktop app)
 - Git (for fetching dependencies)
 - Internet connection (first build downloads dependencies)
 

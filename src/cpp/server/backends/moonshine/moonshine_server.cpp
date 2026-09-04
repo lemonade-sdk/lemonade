@@ -161,13 +161,18 @@ void MoonshineServer::load(const std::string& model_name,
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     bool inherit_output = (log_level_ == "info") || is_debug();
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        executable, model_path, "cpu");
+    sandbox_policy.allow_env_var("PYTHONNOUSERSITE");
+
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         executable,
         args,
         "",     // working_dir
         inherit_output,
         false,  // filter_health_logs
-        env_vars
+        env_vars,
+        sandbox_policy
     );
     set_process_handle(started_handle, executable, args);
 

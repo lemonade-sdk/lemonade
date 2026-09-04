@@ -1,4 +1,4 @@
-// Windows header discipline — must precede all other includes.
+// Windows header discipline: must precede all other includes.
 // Mirrors the setup that was previously in process_manager.cpp before
 // the platform files were made self-contained.
 #ifdef _WIN32
@@ -19,17 +19,71 @@
 
 #include <lemon/utils/process_platform.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/sandbox/env_scrubber.h>
+#include <lemon/sandbox/windows_security_utils.h>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <filesystem>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace lemon {
 namespace utils {
 
-// Helper function: escape Windows command-line arguments
+struct WindowsProcessLifetime {
+    std::unique_ptr<lemon::sandbox::AclGrantGuard> acl_guard;
+    HANDLE job_handle{nullptr};
+    PSID loopback_sid{nullptr};
+};
+
+static std::mutex g_process_lifetime_mutex;
+static std::unordered_map<HANDLE, WindowsProcessLifetime> g_process_lifetimes;
+
+static void cleanup_process_lifetime(HANDLE hProcess) {
+    if (!hProcess) return;
+    std::unique_ptr<lemon::sandbox::AclGrantGuard> acl_guard;
+    HANDLE job_handle = nullptr;
+    PSID loopback_sid = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_process_lifetime_mutex);
+        auto it = g_process_lifetimes.find(hProcess);
+        if (it != g_process_lifetimes.end()) {
+            acl_guard = std::move(it->second.acl_guard);
+            job_handle = it->second.job_handle;
+            loopback_sid = it->second.loopback_sid;
+            g_process_lifetimes.erase(it);
+        }
+    }
+    if (loopback_sid) {
+        lemon::sandbox::WindowsSecurityUtils::set_appcontainer_loopback_exemption(loopback_sid, false);
+        lemon::sandbox::WindowsSecurityUtils::free_appcontainer_sid(loopback_sid);
+    }
+    if (job_handle) {
+        CloseHandle(job_handle);
+    }
+    // acl_guard destructor runs here, revoking ACEs on termination
+}
+
+static std::wstring utf8_to_wstring(const std::string& str) {
+    if (str.empty()) return std::wstring();
+    int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, nullptr, 0);
+    if (size <= 0) return std::wstring();
+    std::wstring result(size - 1, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &result[0], size);
+    return result;
+}
+
 static std::string escape_windows_arg(const std::string& arg) {
+    if (arg.empty()) {
+        return "\"\"";
+    }
+    if (arg.find_first_of(" \t\n\v\"") == std::string::npos) {
+        return arg;
+    }
     std::string result = "\"";
     for (size_t i = 0; i < arg.size(); ++i) {
         if (arg[i] == '"') {
@@ -180,7 +234,8 @@ public:
         const std::string& working_dir,
         bool inherit_output,
         bool filter_health_logs,
-        const std::vector<std::pair<std::string, std::string>>& env_vars) override {
+        const std::vector<std::pair<std::string, std::string>>& env_vars,
+        const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy = std::nullopt) override {
 
         ProcessHandle handle;
         handle.handle = nullptr;
@@ -270,6 +325,13 @@ public:
             // Redirect to NUL to suppress output when not in debug mode
             si.dwFlags |= STARTF_USESTDHANDLES;
             si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            if (si.hStdInput == nullptr || si.hStdInput == INVALID_HANDLE_VALUE) {
+                nul_input = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (nul_input != INVALID_HANDLE_VALUE) {
+                    SetHandleInformation(nul_input, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+                    si.hStdInput = nul_input;
+                }
+            }
 
             HANDLE hNul = CreateFileA("NUL", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (hNul != INVALID_HANDLE_VALUE) {
@@ -277,55 +339,178 @@ public:
                 SetHandleInformation(hNul, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
                 si.hStdOutput = hNul;
                 si.hStdError = hNul;
+                stdout_write = hNul;
             }
         }
 
         std::vector<char> environment_block;
-        if (!env_vars.empty()) {
+        const bool should_sanitize = sandbox_policy.has_value() &&
+                                     sandbox_policy->mode != lemon::sandbox::SandboxMode::Disabled;
+        if (should_sanitize) {
+            std::vector<std::pair<std::string, std::string>> combined_env = env_vars;
+            for (const auto& kv : sandbox_policy->explicit_env_vars) {
+                combined_env.push_back(kv);
+            }
+            auto sanitized_env = lemon::sandbox::EnvScrubber::sanitize_environment(
+                combined_env, sandbox_policy->allowed_env_vars, true);
+
+            for (const auto& entry : sanitized_env) {
+                std::string line = entry.first + "=" + entry.second;
+                environment_block.insert(environment_block.end(), line.begin(), line.end());
+                environment_block.push_back('\0');
+            }
+            if (!environment_block.empty()) {
+                environment_block.push_back('\0');
+            }
+        } else {
             environment_block = build_windows_environment_block(env_vars);
         }
 
-        BOOL success = CreateProcessA(
-            nullptr,
-            const_cast<char*>(cmdline.c_str()),
-            nullptr,
-            nullptr,
-            TRUE,  // Inherit handles
-            (inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW,
-            environment_block.empty() ? nullptr : environment_block.data(),
-            working_dir.empty() ? nullptr : working_dir.c_str(),
-            &si,
-            &pi
-        );
+        BOOL success = FALSE;
+        std::unique_ptr<lemon::sandbox::AclGrantGuard> acl_guard;
+        HANDLE hSandboxedJob = nullptr;
+        PSID app_container_sid = nullptr;
 
-        // If we opened a NUL handle, we can close it now (the child process has its own inherited handle)
-        if (!inherit_output && si.hStdOutput != nullptr && si.hStdOutput != INVALID_HANDLE_VALUE) {
-            CloseHandle(si.hStdOutput);
+        if (sandbox_policy.has_value() &&
+            sandbox_policy->mode != lemon::sandbox::SandboxMode::Disabled) {
+
+            std::filesystem::path exec_path(executable);
+            std::wstring backend_ident = exec_path.stem().wstring();
+            std::wstring container_name = L"Lemonade.Backend." + backend_ident;
+            app_container_sid = lemon::sandbox::WindowsSecurityUtils::derive_appcontainer_sid(container_name);
+
+            if (app_container_sid != nullptr) {
+                if (sandbox_policy->network_access != lemon::sandbox::NetworkAccess::DenyAll) {
+                    lemon::sandbox::WindowsSecurityUtils::set_appcontainer_loopback_exemption(app_container_sid, true);
+                }
+
+                acl_guard = std::make_unique<lemon::sandbox::AclGrantGuard>(
+                    app_container_sid, sandbox_policy->path_grants);
+
+                hSandboxedJob = lemon::sandbox::WindowsSecurityUtils::create_sandboxed_job_object(false);
+
+                std::wstring cmdline_w = utf8_to_wstring(cmdline);
+                std::wstring working_dir_w = utf8_to_wstring(working_dir);
+
+                STARTUPINFOEXW siEx = {};
+                siEx.StartupInfo.cb = sizeof(STARTUPINFOEXW);
+                siEx.StartupInfo.dwFlags = si.dwFlags;
+                siEx.StartupInfo.hStdInput = si.hStdInput;
+                siEx.StartupInfo.hStdOutput = si.hStdOutput;
+                siEx.StartupInfo.hStdError = si.hStdError;
+
+                SIZE_T attr_size = 0;
+                InitializeProcThreadAttributeList(nullptr, 4, 0, &attr_size);
+                std::vector<BYTE> attr_buffer(attr_size);
+                siEx.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attr_buffer.data());
+
+                if (InitializeProcThreadAttributeList(siEx.lpAttributeList, 4, 0, &attr_size)) {
+                    SECURITY_CAPABILITIES secCaps = {};
+                    secCaps.AppContainerSid = app_container_sid;
+                    secCaps.Capabilities = nullptr;
+                    secCaps.CapabilityCount = 0;
+
+                    BOOL attr_ok = UpdateProcThreadAttribute(siEx.lpAttributeList, 0,
+                        PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
+                        &secCaps, sizeof(secCaps), nullptr, nullptr);
+
+                    DWORD64 mitigations = lemon::sandbox::WindowsSecurityUtils::get_standard_backend_mitigations();
+                    if (mitigations != 0 && attr_ok) {
+                        attr_ok = UpdateProcThreadAttribute(siEx.lpAttributeList, 0,
+                            PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY,
+                            &mitigations, sizeof(mitigations), nullptr, nullptr);
+                    }
+
+                    if (hSandboxedJob != nullptr && attr_ok) {
+                        attr_ok = UpdateProcThreadAttribute(siEx.lpAttributeList, 0,
+                            PROC_THREAD_ATTRIBUTE_JOB_LIST,
+                            &hSandboxedJob, sizeof(HANDLE), nullptr, nullptr);
+                    }
+
+                    std::vector<HANDLE> inherit_handles;
+                    if (si.hStdInput && si.hStdInput != INVALID_HANDLE_VALUE) inherit_handles.push_back(si.hStdInput);
+                    if (si.hStdOutput && si.hStdOutput != INVALID_HANDLE_VALUE) inherit_handles.push_back(si.hStdOutput);
+                    if (si.hStdError && si.hStdError != INVALID_HANDLE_VALUE) inherit_handles.push_back(si.hStdError);
+
+                    if (!inherit_handles.empty() && attr_ok) {
+                        attr_ok = UpdateProcThreadAttribute(siEx.lpAttributeList, 0,
+                            PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                            inherit_handles.data(), inherit_handles.size() * sizeof(HANDLE), nullptr, nullptr);
+                    }
+
+                    if (attr_ok) {
+                        success = CreateProcessW(
+                            nullptr,
+                            const_cast<LPWSTR>(cmdline_w.c_str()),
+                            nullptr,
+                            nullptr,
+                            TRUE,
+                            EXTENDED_STARTUPINFO_PRESENT | ((inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW),
+                            environment_block.empty() ? nullptr : environment_block.data(),
+                            working_dir_w.empty() ? nullptr : working_dir_w.c_str(),
+                            &siEx.StartupInfo,
+                            &pi
+                        );
+                    }
+
+                    DeleteProcThreadAttributeList(siEx.lpAttributeList);
+                }
+
+                if (!success) {
+                    lemon::sandbox::WindowsSecurityUtils::free_appcontainer_sid(app_container_sid);
+                    app_container_sid = nullptr;
+                }
+            }
+        }
+
+        if (!success) {
+            if (sandbox_policy.has_value() && sandbox_policy->mode == lemon::sandbox::SandboxMode::Enforced) {
+                LOG(ERROR, "ProcessPlatform")
+                    << "Enforced AppContainer sandboxing failed for " << executable
+                    << "; refusing to spawn unconfined." << std::endl;
+                if (hSandboxedJob) CloseHandle(hSandboxedJob);
+                if (stdout_read) CloseHandle(stdout_read);
+                if (stdout_write) CloseHandle(stdout_write);
+                if (stderr_read) CloseHandle(stderr_read);
+                if (stderr_write) CloseHandle(stderr_write);
+                if (nul_input && nul_input != INVALID_HANDLE_VALUE) CloseHandle(nul_input);
+                return handle;
+            }
+
+            // Fallback unconfined spawn
+            LOG(WARNING, "ProcessPlatform")
+                << "AppContainer sandboxing unavailable for " << executable
+                << "; falling back to unconfined execution with environment scrubbing." << std::endl;
+
+            std::string cmdline_a = cmdline;
+            std::string working_dir_a = working_dir;
+
+            success = CreateProcessA(
+                nullptr,
+                const_cast<LPSTR>(cmdline_a.c_str()),
+                nullptr,
+                nullptr,
+                TRUE,
+                ((inherit_output && !use_filtered_output) ? 0 : CREATE_NO_WINDOW),
+                environment_block.empty() ? nullptr : environment_block.data(),
+                working_dir_a.empty() ? nullptr : working_dir_a.c_str(),
+                &si,
+                &pi
+            );
         }
 
         if (!success) {
             DWORD error = GetLastError();
-            char error_msg[256];
-            FormatMessageA(
-                FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                nullptr,
-                error,
-                0,
-                error_msg,
-                sizeof(error_msg),
-                nullptr
-            );
+            LOG(ERROR, "ProcessManager") << "Failed to start process (error " + std::to_string(error) + "): " + executable << std::endl;
 
-            if (stdout_write) CloseHandle(stdout_write);
-            if (stderr_write) CloseHandle(stderr_write);
+            if (hSandboxedJob) CloseHandle(hSandboxedJob);
             if (stdout_read) CloseHandle(stdout_read);
+            if (stdout_write) CloseHandle(stdout_write);
             if (stderr_read) CloseHandle(stderr_read);
+            if (stderr_write) CloseHandle(stderr_write);
             if (nul_input && nul_input != INVALID_HANDLE_VALUE) CloseHandle(nul_input);
 
-            std::string full_error = "Failed to start process '" + executable +
-                                    "': " + error_msg + " (Error code: " + std::to_string(error) + ")";
-            LOG(ERROR, "ProcessManager") << full_error << std::endl;
-            throw std::runtime_error(full_error);
+            return handle;
         }
 
         if (nul_input && nul_input != INVALID_HANDLE_VALUE) {
@@ -346,6 +531,11 @@ public:
             LOG(INFO, "ProcessManager") << "Process started successfully, PID: " << pi.dwProcessId << std::endl;
         }
 
+        if (acl_guard != nullptr || hSandboxedJob != nullptr || app_container_sid != nullptr) {
+            std::lock_guard<std::mutex> lock(g_process_lifetime_mutex);
+            g_process_lifetimes[pi.hProcess] = {std::move(acl_guard), hSandboxedJob, app_container_sid};
+        }
+
         handle.handle = pi.hProcess;
         handle.pid = pi.dwProcessId;
         CloseHandle(pi.hThread);
@@ -357,6 +547,7 @@ public:
         if (handle.handle) {
             TerminateProcess(handle.handle, 0);
             WaitForSingleObject(handle.handle, 5000);  // Wait up to 5 seconds
+            cleanup_process_lifetime(handle.handle);
             CloseHandle(handle.handle);
         }
     }
@@ -428,10 +619,12 @@ public:
 
         DWORD exit_code = STILL_ACTIVE;
         if (!GetExitCodeProcess(handle.handle, &exit_code)) {
+            cleanup_process_lifetime(handle.handle);
             CloseHandle(handle.handle);
             return -1;
         }
 
+        cleanup_process_lifetime(handle.handle);
         CloseHandle(handle.handle);
         return exit_code == STILL_ACTIVE ? -1 : static_cast<int>(exit_code);
     }
@@ -439,6 +632,7 @@ public:
     void kill(ProcessHandle handle) override {
         if (handle.handle) {
             TerminateProcess(handle.handle, 1);
+            cleanup_process_lifetime(handle.handle);
             CloseHandle(handle.handle);
         }
     }

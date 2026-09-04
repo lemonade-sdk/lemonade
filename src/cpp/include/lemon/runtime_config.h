@@ -77,6 +77,7 @@ public:
     bool no_fetch_executables() const;
     bool disable_model_filtering() const;
     bool enable_dgpu_gtt() const;
+    std::string sandbox_mode() const;
     std::string default_model_source() const;
     std::string rocm_channel() const;
     std::string rocm_channel_for_recipe(const std::string& recipe) const;

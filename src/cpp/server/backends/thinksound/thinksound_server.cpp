@@ -123,8 +123,10 @@ void ThinkSoundServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "thinksound-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        exe_path, model_path, backend);
     ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path, args, "", is_debug(), false, env_vars);
+        exe_path, args, "", is_debug(), false, env_vars, sandbox_policy);
     set_process_handle(started_handle, exe_path, args);
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start thinksound-server process");

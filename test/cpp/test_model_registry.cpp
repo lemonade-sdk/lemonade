@@ -164,6 +164,7 @@ static void test_tree_snapshot_fingerprint() {
 static void test_registration_persists_remote_provenance() {
     fs::path temp = make_temp_dir();
     lemon::utils::set_cache_dir(temp.string());
+    lemon::utils::set_config_dir(temp.string());
 
     ModelManager manager;
     manager.register_user_model("user.FromModelScope", json{

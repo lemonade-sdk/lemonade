@@ -180,6 +180,7 @@ void OpenMossServer::load(const std::string& model_name,
 
     std::unique_lock<std::shared_mutex> lock(request_mutex_);
     exe_path_ = exe_path;
+    backend_ = backend;
     env_vars_ = env_vars;
     model_path_ = model_path;
     voicegen_path_ = model_info.resolved_path("voicegen");
@@ -216,8 +217,10 @@ OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) 
     proc.args.push_back("--no-webui");
 
     LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << proc.port << std::endl;
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        exe_path_, model_path, backend_);
     proc.handle = utils::ProcessManager::start_process(
-        exe_path_, proc.args, "", is_debug(), false, env_vars_);
+        exe_path_, proc.args, "", is_debug(), false, env_vars_, sandbox_policy);
     if (!has_process_handle(proc.handle)) {
         throw std::runtime_error("Failed to start openmoss-server process");
     }

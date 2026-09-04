@@ -97,12 +97,16 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << std::endl;
 
     // Start the process (filter health check spam)
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        ryzenai_server_path, model_path_, "npu");
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         ryzenai_server_path,
         args,
         "",
         is_debug(),
-        true
+        true,
+        {},
+        sandbox_policy
     );
     set_process_handle(started_handle, ryzenai_server_path, args);
 
