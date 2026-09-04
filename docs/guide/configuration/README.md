@@ -136,6 +136,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "hide_inputs": false,
     "hide_outputs": false,
     "hide_thinking": false,
+    "max_attribute_length": 0,
+    "max_queue_bytes": 134217728,
     "max_queue_capacity": 1000,
     "otlp": {
       "batch_timeout_s": 1.0,
@@ -297,7 +299,10 @@ API keys for these providers are **not** stored in `config.json` — they live i
 | `hide_thinking` | bool | false | Redact reasoning/thought content from spans. |
 | `trust_incoming_trace_context` | bool | false | Honor a caller-supplied W3C `traceparent` header so inference spans join the caller's distributed trace instead of starting a fresh root. Opt-in because span parentage then depends on client-supplied input. |
 | `max_queue_capacity` | int | 1000 | The maximum capacity of the in-memory telemetry queue buffer. Oldest spans are dropped when full. Must be `> 0`. |
+| `max_queue_bytes` | int64 | 134217728 | Approximate queued-payload memory budget in bytes for spans waiting to be exported via OTLP (default 128MB). Oldest spans are evicted when queued payload bytes exceed this limit. |
+| `max_attribute_length` | int64 | 0 | Maximum allowed length in bytes for span attributes. Set to `0` (default) for unlimited length / no truncation. |
 | `otlp` | object | (nested object) | Sub-block grouping OTLP transport details (see below). |
+| `session` | object | (nested object) | Sub-block grouping custom session header extraction rules. |
 
 **telemetry.otlp** — Nested OTLP settings:
 
