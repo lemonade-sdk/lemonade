@@ -8,6 +8,7 @@
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/system_info.h>
+#include "system_info_utils.h"
 #include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/backends/backend_registry.h>
 #include <lemon/backends/backend_utils.h>
@@ -3650,7 +3651,7 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                     if (gpu.value("available", false)) {
                         std::string name = gpu.value("name", "unknown");
                         std::string family = gpu.value("family", "");
-                        std::string cc = gpu.value("compute_capability", "");
+                        std::string cc = system_info_detail::extract_compute_capability(gpu);
                         std::string suffix;
                         if (!cc.empty()) suffix = " (compute " + cc + ", " + (family.empty() ? "unsupported arch" : family) + ")";
                         else if (!family.empty()) suffix = " (" + family + ")";

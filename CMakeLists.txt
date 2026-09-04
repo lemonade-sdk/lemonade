@@ -2281,6 +2281,9 @@ if(BUILD_TESTING AND EXISTS "${_SYSTEM_INFO_HELPERS_TEST_SRC}")
     target_include_directories(test_system_info_helpers PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
     )
+    target_link_libraries(test_system_info_helpers PRIVATE
+        nlohmann_json::nlohmann_json
+    )
     add_cpp_ci_test(SystemInfoHelpersTest CI ON COMMAND test_system_info_helpers)
 endif()
 
