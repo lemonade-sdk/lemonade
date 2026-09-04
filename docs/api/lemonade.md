@@ -21,6 +21,7 @@ We have designed a set of Lemonade-specific endpoints to enable client applicati
 | `POST` | [`/v1/unload`](#post-v1unload) | Unload a model |
 | `POST` | [`/v1/audio/generations`](#post-v1audiogenerations) | Generate audio (music or sound effects) from a text prompt |
 | `POST` | [`/v1/classify`](#post-v1classify) | Classify input text with an encoder classifier (label scores) |
+| `POST` | [`/v1/routing/validate`](#post-v1routingvalidate) | Test-run an ad-hoc routing policy against a sample prompt or request |
 | `POST` | [`/v1/3d/generations`](#post-v13dgenerations) | Generate a textured 3D mesh (GLB) from an image |
 | `POST` | [`/v1/models/check-updates`](#post-v1modelscheck-updates) | Manually check downloaded models for upstream updates |
 | `GET` | [`/v1/models/{id}/files`](#get-v1modelsidfiles) | List resolved local file metadata for one model |
@@ -151,16 +152,28 @@ The endpoint is available at:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `policy` | object | yes | A `collection.router` policy document. `model_name` is accepted but is not required for validation. See [Router Policies](../dev/router-policy.md). |
-| `prompt` | string | no | The prompt text to route. Defaults to `""`, which still exercises `min_chars` (0 chars) and any prompt-independent rules. |
-| `has_images` | boolean | no | Simulate a request carrying image input. Default `false`. |
-| `has_tools` | boolean | no | Simulate a request carrying tool definitions. Default `false`. |
-| `metadata` | object | no | String-valued metadata pairs matched by `metadata` conditions. |
+| `policy` | object | yes | A `collection.router` policy document (same shape `POST /v1/pull` would register). |
+| `prompt` | string or array | no | The request text. A string is the plain single-turn preview; an array of strings mirrors the legacy completions `prompt` form (segments are concatenated as separate lines). |
+| `has_images` | boolean | no | Simulated `has_images` signal. Cannot be combined with `messages`, `input`, `tools`, or an array `prompt`. |
+| `has_tools` | boolean | no | Simulated `has_tools` signal. Cannot be combined with `messages`, `input`, `tools`, or an array `prompt`. |
+| `metadata` | object of strings | no | Simulated request `metadata`, for `metadata` match conditions. |
+| `messages` | array | no | A real chat-form `messages` array. When this, `input`, or `tools` is present, or `prompt` is an array, the context is derived the same way a live `chat/completions`/`completions`/`responses` request is — `has_images`/`has_tools` computed from actual content parts/the `tools` array, and the latest user turn's text driving length-based conditions — instead of the flattened fields above. |
+| `input` | string or array | no | A real Responses-form `input`, derived the same way. |
+| `tools` | array | no | A real `tools` array; a non-empty array sets `has_tools`. |
+
+Provide either the flattened preview fields (`prompt`/`has_images`/`has_tools`) or
+a real request body (`messages`/`input`/`tools`/array `prompt`) — combining the
+two is rejected with `400`.
 
 ### Example request
 
 ```bash
 curl -X POST http://localhost:13305/api/v1/routing/validate \
+
+### Example request (flattened preview)
+
+```bash
+curl -X POST http://localhost:13305/v1/routing/validate \
      -H "Content-Type: application/json" \
      -d '{
            "policy": {
@@ -171,15 +184,28 @@ curl -X POST http://localhost:13305/api/v1/routing/validate \
                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
                "default_model": "Qwen3-8B-GGUF",
                "rules": [
-                 {
-                   "id": "code-to-big",
-                   "match": {"keywords_any": ["def ", "function", "compile"]},
-                   "route_to": "vllm.qwen3-32b"
-                 }
+                 { "id": "code-to-big", "match": { "keywords_any": ["def ", "function"] }, "route_to": "vllm.qwen3-32b" }
                ]
              }
            },
            "prompt": "please write a def to reverse a list"
+         }'
+```
+
+### Example request (real body)
+
+```bash
+curl -X POST http://localhost:13305/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{
+           "policy": { "...": "same policy document as above" },
+           "messages": [
+             { "role": "user", "content": "earlier turn" },
+             { "role": "user", "content": [
+               { "type": "text", "text": "please write a def to reverse a list" }
+             ] }
+           ],
+           "tools": [{ "type": "function", "function": { "name": "lookup" } }]
          }'
 ```
 
@@ -220,6 +246,10 @@ curl -X POST http://localhost:13305/api/v1/routing/validate \
 completion returns with `route_trace: true`, and the trace is always included
 here. When no rule matches, `matched_rule` is empty, `default_used` is `true`,
 and `route_to` is the policy's `default_model`.
+
+Malformed requests (missing/non-object `policy`, a wrong-typed `prompt`/`has_images`/
+`has_tools`/`metadata`, a real body combined with `has_images`/`has_tools`, or an
+internally-inconsistent policy) return `400` with an `error` object.
 
 `normalized_policy` echoes the policy as it was actually evaluated. The policy
 above uses explicit `routing.rules`, so it comes back unchanged. The field earns

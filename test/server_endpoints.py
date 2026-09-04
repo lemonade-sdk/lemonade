@@ -5061,6 +5061,200 @@ class EndpointTests(ServerTestBase):
             "[OK] /routing/validate rejected malformed prompt/has_images/has_tools types with 400"
         )
 
+    def test_021zw_routing_validate_real_body_messages(self):
+        """A real `messages` array is derived via build_route_context, the
+        same function production uses — has_images/has_tools reflect the
+        actual message content and tools array, not a client-supplied flag."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "vision-and-tools-to-big",
+                        "match": {"all": [{"has_images": True}, {"has_tools": True}]},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        messages = [
+            {"role": "user", "content": "first turn, no image here"},
+            {"role": "assistant", "content": "ok"},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "second turn"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,AAA"},
+                    },
+                ],
+            },
+        ]
+        response_no_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "messages": messages, "tools": []},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_no_tools.status_code, 200, response_no_tools.text)
+        self.assertTrue(response_no_tools.json()["decision"]["default_used"])
+
+        response_with_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={
+                "policy": policy,
+                "messages": messages,
+                "tools": [{"type": "function", "function": {"name": "lookup"}}],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_tools.status_code, 200, response_with_tools.text)
+        decision = response_with_tools.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "vision-and-tools-to-big")
+        self.assertFalse(decision["default_used"])
+        print(
+            "[OK] /routing/validate derived has_images/has_tools from a real messages+tools body"
+        )
+
+    def test_021zx_routing_validate_real_body_input(self):
+        """A real `input` array (Responses API form) is derived via
+        build_route_context: an input_image part sets has_images the same
+        way build_route_context does for production /v1/responses requests."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "vision-to-big",
+                        "match": {"has_images": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        input_without_image = [
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "describe this"}],
+            }
+        ]
+        response_without_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "input": input_without_image},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response_without_image.status_code, 200, response_without_image.text
+        )
+        self.assertTrue(response_without_image.json()["decision"]["default_used"])
+
+        input_with_image = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "describe this"},
+                    {"type": "input_image", "image_url": "data:image/png;base64,AAA"},
+                ],
+            }
+        ]
+        response_with_image = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "input": input_with_image},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_with_image.status_code, 200, response_with_image.text)
+        decision = response_with_image.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "vision-to-big")
+        self.assertFalse(decision["default_used"])
+        print(
+            "[OK] /routing/validate derived has_images from a real Responses-form input body"
+        )
+
+    def test_021zy_routing_validate_real_body_prompt_array_with_tools(self):
+        """An array `prompt` (the legacy completions form's multi-segment
+        prompt) plus a real `tools` array route through build_route_context
+        instead of being rejected as a malformed 'prompt' — this is the
+        'other request forms' case the flattened shape can't represent."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "tools-to-big",
+                        "match": {"has_tools": True},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={
+                "policy": policy,
+                "prompt": ["first segment", "second segment"],
+                "tools": [{"type": "function", "function": {"name": "lookup"}}],
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["matched_rule"], "tools-to-big")
+        self.assertFalse(decision["default_used"])
+        print("[OK] /routing/validate accepted an array prompt with a real tools array")
+
+    def test_021zz_routing_validate_real_body_conflicts_with_flags_returns_400(self):
+        """Combining the flattened has_images/has_tools flags with a real
+        request body (messages/input/tools/array prompt) is rejected with a
+        400 instead of silently picking a winner."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_messages_and_flag = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={
+                "policy": policy,
+                "messages": [{"role": "user", "content": "hi"}],
+                "has_images": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_messages_and_flag.status_code, 400)
+        self.assertIn("error", response_messages_and_flag.json())
+
+        response_tools_and_flag = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={
+                "policy": policy,
+                "tools": [{"type": "function", "function": {"name": "lookup"}}],
+                "prompt": "hi",
+                "has_tools": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_tools_and_flag.status_code, 400)
+        self.assertIn("error", response_tools_and_flag.json())
+        print(
+            "[OK] /routing/validate rejected mixing a real body with the flattened flags"
+        )
+
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
         cloud model (via _start_mock_cloud_provider) that returns a fixed valid

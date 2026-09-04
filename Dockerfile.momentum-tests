@@ -1,0 +1,144 @@
+# Standalone verification image for the routing.momentum change (branch
+# ege_2956). `docker build` installs dependencies and copies the source
+# (fast, cacheable); `docker run` does the actual work — configure, build the
+# CI test target exactly the way `cpp-unit-tests` does in
+# .github/workflows/cpp_server_build_test_release.yml, run the ctest suite,
+# run the schema/lock Python tests, start a real `lemond` and run the
+# `test/server_router.py` e2e suite (which pulls real models and exercises
+# routing.momentum over actual HTTP requests, mirroring the "Start lemond
+# server" + test steps in that same workflow), then print one final PASS/FAIL
+# summary. This is a throwaway testing image, not part of the Lemonade
+# build/release pipeline — build and discard it after use.
+#
+# Build (run from the repo root, so `contrib` and the source tree are in the
+# build context):
+#   docker build -f Dockerfile.momentum-tests -t lemonade-momentum-tests .
+#
+# Run (prints full build/test logs, then the final summary; exits 0 if every
+# check passed, 1 if any failed). The e2e stage downloads real models from
+# Hugging Face and runs real inference on CPU, so this needs outbound network
+# access and takes noticeably longer than the C++/schema-only checks alone:
+#   docker run --rm lemonade-momentum-tests
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# contrib/debian/control's Build-Depends includes packages newer than stock
+# Ubuntu 24.04 ships (e.g. libcpp-httplib-dev > 0.26) or that it doesn't ship
+# at all (node-markdown-it-texmath) — the real CI build-environment image
+# resolves these from the Lemonade team's own PPA (see the ubuntu_ppa matrix
+# entry in .github/workflows/build-container.yml), so this needs the same PPA,
+# not just stock apt sources. Mirrors the "Set up PPA if needed" step in
+# .ubuntu/Dockerfile.
+ARG UBUNTU_PPA="ppa:lemonade-team/bleeding-edge"
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common \
+    && add-apt-repository -y "$UBUNTU_PPA" \
+    && rm -rf /var/lib/apt/lists/*
+
+# Resolve the same build-dependencies CI resolves from contrib/debian/control's
+# Build-Depends (cmake, ninja-build, libssl-dev, node/npm for the web-app
+# target, etc.) — copying `contrib` first keeps this layer cached across
+# rebuilds as long as Build-Depends doesn't change.
+COPY contrib /contrib
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        python3 \
+        python3-pip \
+        python3-venv \
+        dpkg-dev \
+        curl \
+        ca-certificates \
+        unzip \
+    && cd /contrib && apt-get build-dep -y . \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+COPY . .
+
+# The tree was authored outside this container (COPY changes ownership
+# metadata git considers "dubious"); without this, any `git` invocation in the
+# build (e.g. version stamping) refuses to run.
+RUN git config --global --add safe.directory /workspace
+
+# Ubuntu 24.04's system Python is "externally managed" (PEP 668); this is a
+# throwaway container, so --break-system-packages is the pragmatic choice
+# over standing up a venv just for a one-shot test run.
+RUN python3 -m pip install --break-system-packages -q -r test/requirements.txt
+
+# Runs at `docker run` time, not `docker build` time, so the (slower, more
+# failure-prone) build+test step is independent of image layer caching and
+# always prints its full log. Standard Dockerfile shell-form + line
+# continuation — no BuildKit-only features, so this builds with any Docker
+# version.
+CMD echo "=== [1/5] cmake --preset default ===" && \
+    cmake --preset default; \
+    configure_status=$?; \
+    if [ "$configure_status" -ne 0 ]; then \
+        echo "CMake configure FAILED (exit $configure_status) - aborting, cannot build."; \
+        exit 1; \
+    fi; \
+    echo "=== [2/5] cmake --build --preset default --target cpp-ci-tests lemond lemonade ===" && \
+    cmake --build --preset default --target cpp-ci-tests lemond lemonade; \
+    build_status=$?; \
+    if [ "$build_status" -ne 0 ]; then \
+        echo "Build FAILED (exit $build_status) - aborting, cannot run tests."; \
+        exit 1; \
+    fi; \
+    echo "=== [3/5] ctest -L ^cpp-ci\$ (every add_cpp_ci_test binary, incl. the new momentum tests) ===" && \
+    ctest --test-dir build --output-on-failure --no-tests=error -L "^cpp-ci$"; \
+    ctest_status=$?; \
+    echo "=== [4/5] Python schema / conformance-adjacent tests ===" && \
+    python3 test/test_schema_lock.py; \
+    schema_lock_status=$?; \
+    python3 -m unittest test.test_routing_fixtures -v; \
+    fixtures_status=$?; \
+    echo "=== [5/5] e2e router suite (test/server_router.py) - starts a real lemond, pulls real models, exercises routing.momentum over real HTTP requests ===" && \
+    chmod +x build/lemond build/lemonade; \
+    mkdir -p /tmp/xdg-runtime && chmod 700 /tmp/xdg-runtime; \
+    export XDG_RUNTIME_DIR=/tmp/xdg-runtime; \
+    export HF_HOME=/tmp/hf-cache; \
+    mkdir -p "$HF_HOME"; \
+    ./build/lemond > /tmp/lemond.log 2>&1 & \
+    lemond_pid=$!; \
+    server_up=0; \
+    for i in $(seq 1 30); do \
+        if curl -sf http://localhost:13305/live > /dev/null 2>&1; then \
+            server_up=1; \
+            echo "lemond is up (PID $lemond_pid)"; \
+            break; \
+        fi; \
+        echo "Waiting for lemond to become healthy... ($i/30)"; \
+        sleep 2; \
+    done; \
+    if [ "$server_up" -ne 1 ]; then \
+        echo "lemond did not become healthy within 60s - dumping its log:"; \
+        cat /tmp/lemond.log; \
+        router_e2e_status=1; \
+    else \
+        python3 test/server_router.py; \
+        router_e2e_status=$?; \
+        kill "$lemond_pid" 2>/dev/null || true; \
+        wait "$lemond_pid" 2>/dev/null || true; \
+    fi; \
+    echo; \
+    echo "=============================================="; \
+    echo " FINAL VERIFICATION RESULT - routing.momentum"; \
+    echo "=============================================="; \
+    if [ "$ctest_status" -eq 0 ]; then ctest_label="PASS"; else ctest_label="FAIL"; fi; \
+    if [ "$schema_lock_status" -eq 0 ]; then lock_label="PASS"; else lock_label="FAIL"; fi; \
+    if [ "$fixtures_status" -eq 0 ]; then fixtures_label="PASS"; else fixtures_label="FAIL"; fi; \
+    if [ "$router_e2e_status" -eq 0 ]; then e2e_label="PASS"; else e2e_label="FAIL"; fi; \
+    printf "  %-42s %s\n" "C++ cpp-ci test suite (ctest):" "$ctest_label"; \
+    printf "  %-42s %s\n" "Schema lock (test_schema_lock.py):" "$lock_label"; \
+    printf "  %-42s %s\n" "Routing fixtures schema validation:" "$fixtures_label"; \
+    printf "  %-42s %s\n" "E2E router suite (server_router.py):" "$e2e_label"; \
+    echo "=============================================="; \
+    if [ "$ctest_status" -eq 0 ] && [ "$schema_lock_status" -eq 0 ] && [ "$fixtures_status" -eq 0 ] && [ "$router_e2e_status" -eq 0 ]; then \
+        echo "RESULT: ALL CHECKS PASSED"; \
+        exit 0; \
+    else \
+        echo "RESULT: ONE OR MORE CHECKS FAILED (see logs above)"; \
+        exit 1; \
+    fi
