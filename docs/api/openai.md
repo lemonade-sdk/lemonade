@@ -15,6 +15,7 @@ This spec defines Lemonade's implementation of the [OpenAI API](https://develope
 | `POST` | [`/v1/images/edits`](#post-v1imagesedits) | Image Editing | image + prompt -> edited image |
 | `POST` | [`/v1/images/variations`](#post-v1imagesvariations) | Image Variations | image -> varied image |
 | `POST` | [`/v1/images/upscale`](#post-v1imagesupscale) | Image Upscaling | image + ESRGAN model -> upscaled image |
+| `POST` | [`/v1/videos/generations`](#post-v1videosgenerations) | Video Generation | prompt -> video |
 | `GET` | [`/v1/models`](#get-v1models) | List models available locally | n/a |
 | `GET` | [`/v1/models/{model_id}`](#get-v1modelsmodel_id) | Retrieve a specific model by ID | n/a |
 
@@ -660,6 +661,49 @@ Image Generation API. You provide a text prompt and receive a generated image. T
             "size": "512x512",
             "steps": 4,
             "response_format": "b64_json"
+          }'
+    ```
+
+## `POST /v1/videos/generations`
+<sub>![Status](https://img.shields.io/badge/status-partially_available-green)</sub>
+
+Video Generation API. You provide a text prompt and receive a generated video. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend, and is not part of the OpenAI API.
+
+> **Note:** Frame count matters more than it looks. The backend defaults to a single frame, and video models need a few dozen frames before they animate rather than drift, so a model's registry entry should set `video_frames`. `Wan2.1-T2V-1.3B` ships with 33.
+>
+> **Performance:** GPU only, in practice. A 33-frame 832x480 clip takes ~5 minutes on a discrete GPU; CPU inference is impractically slow.
+
+### Parameters
+
+| Parameter | Required | Description | Status |
+|-----------|----------|-------------|--------|
+| `prompt` | Yes | The text description of the video to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The video model to use (e.g., `Wan2.1-T2V-1.3B`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `negative_prompt` | No | Text describing what to avoid. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `video_frames` | No | Number of frames to generate. Falls back to the model's recipe option, then the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `fps` | No | Frames per second of the returned clip. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `width` / `height` | No | Output dimensions. Models are sensitive to resolutions they were not trained on. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `steps` | No | Number of diffusion steps per frame. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `cfg_scale` | No | Classifier-free guidance scale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `sampling_method` | No | Sampler name (e.g. `euler`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `flow_shift` | No | Flow shift, used by flow-matching models such as Wan. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `output_format` | No | Container format. `webm`, `webp` or `avi`. Default: `webm`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+
+The response carries the clip as base64 in `b64_json`, alongside `mime_type`, `output_format`, `frame_count` and `fps`.
+
+### Example request
+
+=== "Bash"
+
+    ```bash
+    curl -X POST http://localhost:13305/v1/videos/generations \
+      -H "Content-Type: application/json" \
+      -d '{
+            "model": "Wan2.1-T2V-1.3B",
+            "prompt": "a lovely cat walking through tall grass",
+            "video_frames": 33,
+            "fps": 16
           }'
     ```
 

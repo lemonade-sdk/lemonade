@@ -81,6 +81,7 @@ std::string modality_display_for(const BackendDescriptor& descriptor) {
         {ModelType::AUDIO_GENERATION, "Audio generation"},
         {ModelType::CLASSIFICATION, "Text classification"},
         {ModelType::MESH, "3D generation"},
+        {ModelType::VIDEO, "Video generation"},
     };
     if (descriptor.supported_modes.empty()) return "";
     ModelType mode = ModelType::LLM;

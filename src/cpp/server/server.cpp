@@ -1320,6 +1320,12 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_post("images/upscale", [this](const httplib::Request& req, httplib::Response& res) {
         handle_image_upscale(req, res);
     });
+    // Video endpoint: text/image -> video. Not an OpenAI-standard route (there
+    // is no /v1/videos in the OpenAI API), but registered under the same four
+    // prefixes as every other endpoint.
+    register_post("videos/generations", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_video_generations(req, res);
+    });
     // Generative-audio endpoint: text -> audio clip (music, sound effects)
     register_post("audio/generations", [this](const httplib::Request& req, httplib::Response& res) {
         handle_audio_generations(req, res);
@@ -5251,6 +5257,65 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         res.set_content(error.dump(), "application/json");
     } catch (const std::exception& e) {
         LOG(ERROR, "Server") << "ERROR in handle_image_generations: " << e.what() << std::endl;
+        res.status = 500;
+        nlohmann::json error = {{"error", {
+            {"message", e.what()},
+            {"type", "internal_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::handle_video_generations(const httplib::Request& req, httplib::Response& res) {
+    try {
+        LOG(INFO, "Server") << "POST /api/v1/videos/generations" << std::endl;
+
+        auto request_json = nlohmann::json::parse(req.body);
+        normalize_client_model_name(request_json);
+        normalize_and_resolve_request_model(request_json);
+
+        for (const char* field : {"prompt", "model"}) {
+            if (!request_json.contains(field)) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", std::string("Missing '") + field + "' field in request"},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+
+        std::string requested_model = request_json["model"];
+
+        try {
+            auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
+        } catch (const std::exception& e) {
+            LOG(ERROR, "Server") << "Failed to load video model: " << e.what() << std::endl;
+            auto error_response = create_model_error(requested_model, e.what());
+            std::string error_code = error_response["error"]["code"].get<std::string>();
+            res.status = get_http_status_from_error(error_code);
+            res.set_content(error_response.dump(), "application/json");
+            return;
+        }
+
+        auto response = router_->video_generations(request_json);
+        if (response.contains("error")) {
+            LOG(ERROR, "Server") << "Video generation backend error: " << response.dump() << std::endl;
+            res.status = 500;
+        }
+        res.set_content(response.dump(), "application/json");
+
+    } catch (const nlohmann::json::exception& e) {
+        LOG(ERROR, "Server") << "JSON parse error in handle_video_generations: " << e.what() << std::endl;
+        res.status = 400;
+        nlohmann::json error = {{"error", {
+            {"message", "Invalid JSON: " + std::string(e.what())},
+            {"type", "invalid_request_error"}
+        }}};
+        res.set_content(error.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_video_generations: " << e.what() << std::endl;
         res.status = 500;
         nlohmann::json error = {{"error", {
             {"message", e.what()},
