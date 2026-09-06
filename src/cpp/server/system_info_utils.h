@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -343,17 +345,28 @@ inline double xe_vram_usage_ratio_from_mm(const std::string& vram0_mm_text) {
         };
         key = trim(key);
         val = trim(val);
-        if (key == "size") {
+        auto parse_u64 = [](const std::string& s, uint64_t& out) -> bool {
+            if (s.empty() || s[0] == '-') {
+                return false;
+            }
             char* end = nullptr;
-            const unsigned long long parsed = std::strtoull(val.c_str(), &end, 10);
-            if (end != val.c_str() && *end == '\0' && parsed > 0) {
+            errno = 0;
+            const unsigned long long parsed = std::strtoull(s.c_str(), &end, 10);
+            if (end == s.c_str() || *end != '\0' || errno == ERANGE) {
+                return false;
+            }
+            out = parsed;
+            return true;
+        };
+        if (key == "size") {
+            uint64_t parsed = 0;
+            if (parse_u64(val, parsed) && parsed > 0) {
                 size = parsed;
                 have_size = true;
             }
         } else if (key == "usage") {
-            char* end = nullptr;
-            const unsigned long long parsed = std::strtoull(val.c_str(), &end, 10);
-            if (end != val.c_str() && *end == '\0') {
+            uint64_t parsed = 0;
+            if (parse_u64(val, parsed)) {
                 usage = parsed;
                 have_usage = true;
             }
@@ -385,7 +398,7 @@ inline double xpu_smi_vram_usage_ratio(const std::string& stats_text) {
             }
             char* end = nullptr;
             const double v = std::strtod(last.c_str(), &end);
-            if (end == last.c_str() || *end != '\0') {
+            if (end == last.c_str() || *end != '\0' || !std::isfinite(v)) {
                 return -1.0;
             }
             return v;
@@ -396,7 +409,7 @@ inline double xpu_smi_vram_usage_ratio(const std::string& stats_text) {
             total = last_num(line);
         }
     }
-    if (used < 0.0 || total <= 0.0) {
+    if (!std::isfinite(used) || !std::isfinite(total) || used < 0.0 || total <= 0.0) {
         return -1.0;
     }
     return std::min(1.0, used / total);

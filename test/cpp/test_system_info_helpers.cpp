@@ -208,6 +208,24 @@ static bool test_intel_pci_and_vram() {
         "mm without usage is -1",
         lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_no_usage) < 0.0,
         true);
+    const char* mm_negative_usage =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n"
+        "                usage: -1\n";
+    pass &= expect_bool(
+        "mm negative usage is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_negative_usage) < 0.0,
+        true);
+    const char* mm_nonnumeric_usage =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n"
+        "                usage: n/a\n";
+    pass &= expect_bool(
+        "mm nonnumeric usage is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_nonnumeric_usage) < 0.0,
+        true);
 
     const char* smi =
         "GPU Utilization (%)    12\n"
@@ -223,6 +241,20 @@ static bool test_intel_pci_and_vram() {
     pass &= expect_bool(
         "xpu-smi nonnumeric memory is -1",
         lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_nonnumeric) < 0.0,
+        true);
+    const char* smi_nan =
+        "GPU Memory Used (MiB)  nan\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi nan memory used is -1",
+        lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_nan) < 0.0,
+        true);
+    const char* smi_inf =
+        "GPU Memory Used (MiB)  inf\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi inf memory used is -1",
+        lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_inf) < 0.0,
         true);
     return pass;
 }
