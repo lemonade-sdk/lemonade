@@ -101,6 +101,10 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
+static bool is_llamacpp_sycl_backend(const std::string& backend) {
+    return backend == "sycl";
+}
+
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -531,6 +535,30 @@ void LlamaCppServer::load(const std::string& model_name,
             skip_visible_devices = true;
         }
         BackendUtils::apply_cuda_env_vars(env_vars, "LlamaCpp", skip_visible_devices);
+    }
+
+    if (is_llamacpp_sycl_backend(llamacpp_backend)) {
+        auto inherit_or_set = [&](const char* key, const char* value) {
+            const char* existing = std::getenv(key);
+            if (!existing || existing[0] == '\0') {
+                env_vars.push_back({key, value});
+            }
+        };
+        inherit_or_set("ONEAPI_DEVICE_SELECTOR", "level_zero:0");
+        inherit_or_set("ZES_ENABLE_SYSMAN", "1");
+        inherit_or_set("GGML_SYCL_F16", "1");
+#ifndef _WIN32
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string lib_path = exe_dir.string();
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && existing_ld_path[0] != '\0') {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#endif
+        if (llamacpp_device.empty()) {
+            push_arg(args, reserved_flags, "--device", "SYCL0");
+        }
     }
 
 #ifdef __APPLE__
