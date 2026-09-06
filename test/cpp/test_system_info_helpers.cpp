@@ -235,6 +235,15 @@ static bool test_intel_pci_and_vram() {
         "xpu-smi ratio 0.25",
         std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi) - 0.25) < 1e-9,
         true);
+    const char* smi_b70 =
+        "+-----------------------------+--------------------------------------------------------------------+\n"
+        "| GPU Memory Used (MiB)       | 0                                                                  |\n"
+        "| GPU Memory Util (%)         | 0                                                                  |\n"
+        "+-----------------------------+--------------------------------------------------------------------+\n";
+    pass &= expect_bool(
+        "xpu-smi B70 utilization ratio 0",
+        std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_b70)) < 1e-9,
+        true);
     const char* smi_nonnumeric =
         "GPU Memory Used (MiB)  n/a\n"
         "GPU Memory Total (MiB) unknown\n";

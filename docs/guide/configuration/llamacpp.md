@@ -233,7 +233,7 @@ lemonade config set llamacpp.rocm_bin=b1260
 ## Platform Specifics
 
 ### Linux
-- All backends supported (CPU, Vulkan, ROCm, CUDA, System)
+- All backends supported (CPU, Vulkan, ROCm, CUDA, SYCL, System)
 - CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default
 - ROCm requires compatible AMD GPU (see above)
 - CUDA requires compatible NVIDIA GPU (see above)

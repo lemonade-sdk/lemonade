@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <utility>
@@ -185,6 +186,41 @@ int main() {
         check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable").empty(),
               "builtin remains reserved after clearing the environment");
         lemon::RuntimeConfig::set_global(nullptr);
+    }
+
+    {
+        const std::filesystem::path bin_dir =
+            std::filesystem::temp_directory_path() /
+            ("lemonade_sycl_bin_" + std::to_string(
+#ifdef _WIN32
+                _getpid()
+#else
+                getpid()
+#endif
+            ));
+        std::filesystem::create_directories(bin_dir);
+#ifdef _WIN32
+        const std::filesystem::path executable = bin_dir / "llama-server.exe";
+#else
+        const std::filesystem::path executable = bin_dir / "llama-server";
+#endif
+        std::ofstream(executable) << "stub";
+        std::filesystem::permissions(
+            executable,
+            std::filesystem::perms::owner_exec |
+                std::filesystem::perms::group_exec |
+                std::filesystem::perms::others_exec,
+            std::filesystem::perm_options::add);
+
+        lemon::RuntimeConfig config(
+            lemon::json{{"llamacpp", {{"sycl_bin", bin_dir.string()}}}});
+        lemon::RuntimeConfig::set_global(&config);
+        const lemon::backends::BackendSpec spec("llamacpp", "llama-server");
+        check(BackendUtils::get_backend_binary_path(spec, "sycl") ==
+                  executable.string(),
+              "SYCL directory override resolves its llama-server executable");
+        lemon::RuntimeConfig::set_global(nullptr);
+        std::filesystem::remove_all(bin_dir);
     }
 
     if (g_failures > 0) {

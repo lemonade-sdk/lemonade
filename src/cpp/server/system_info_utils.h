@@ -381,33 +381,39 @@ inline double xe_vram_usage_ratio_from_mm(const std::string& vram0_mm_text) {
 inline double xpu_smi_vram_usage_ratio(const std::string& stats_text) {
     double used = -1.0;
     double total = -1.0;
+    double utilization_pct = -1.0;
+    auto metric_value = [](const std::string& line,
+                           const std::string& metric) {
+        const size_t metric_pos = line.find(metric);
+        if (metric_pos == std::string::npos) {
+            return -1.0;
+        }
+        std::string remainder = line.substr(metric_pos + metric.size());
+        std::replace(remainder.begin(), remainder.end(), '|', ' ');
+        std::istringstream values(remainder);
+        std::string token;
+        while (values >> token) {
+            char* end = nullptr;
+            const double value = std::strtod(token.c_str(), &end);
+            if (end != token.c_str() && *end == '\0' && std::isfinite(value)) {
+                return value;
+            }
+        }
+        return -1.0;
+    };
     std::istringstream iss(stats_text);
     std::string line;
     while (std::getline(iss, line)) {
-        auto used_pos = line.find("GPU Memory Used (MiB)");
-        auto total_pos = line.find("GPU Memory Total (MiB)");
-        auto last_num = [&](const std::string& s) {
-            std::istringstream ls(s);
-            std::string tok;
-            std::string last;
-            while (ls >> tok) {
-                last = tok;
-            }
-            if (last.empty()) {
-                return -1.0;
-            }
-            char* end = nullptr;
-            const double v = std::strtod(last.c_str(), &end);
-            if (end == last.c_str() || *end != '\0' || !std::isfinite(v)) {
-                return -1.0;
-            }
-            return v;
-        };
-        if (used_pos != std::string::npos) {
-            used = last_num(line);
-        } else if (total_pos != std::string::npos) {
-            total = last_num(line);
+        if (line.find("GPU Memory Util (%)") != std::string::npos) {
+            utilization_pct = metric_value(line, "GPU Memory Util (%)");
+        } else if (line.find("GPU Memory Used (MiB)") != std::string::npos) {
+            used = metric_value(line, "GPU Memory Used (MiB)");
+        } else if (line.find("GPU Memory Total (MiB)") != std::string::npos) {
+            total = metric_value(line, "GPU Memory Total (MiB)");
         }
+    }
+    if (utilization_pct >= 0.0 && utilization_pct <= 100.0) {
+        return utilization_pct / 100.0;
     }
     if (!std::isfinite(used) || !std::isfinite(total) || used < 0.0 || total <= 0.0) {
         return -1.0;

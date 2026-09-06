@@ -384,6 +384,16 @@ namespace lemon::backends {
         std::string exe_path = find_external_backend_binary(spec.recipe, resolved_backend);
 
         if (!exe_path.empty()) {
+            std::error_code ec;
+            if (fs::is_directory(fs::path(exe_path), ec)) {
+                const std::string external_executable =
+                    find_executable_in_install_dir(exe_path, spec.binary);
+                if (!external_executable.empty()) {
+                    return external_executable;
+                }
+                throw std::runtime_error(
+                    spec.binary + " not found in configured directory: " + exe_path);
+            }
             return exe_path;
         }
 
