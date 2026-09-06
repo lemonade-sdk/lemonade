@@ -68,7 +68,7 @@ static void test_price_cache_survives_flooding_past_its_bound() {
     RuntimeConfig::set_global(&config);
     Router router(&config, &model_manager, nullptr);
 
-    CostServices services = lemon::make_router_cost_services(router, model_manager);
+    CostServices services = lemon::make_router_cost_services(router);
 
     CostInfo before = services.cost_of("kept-candidate");
 
@@ -100,7 +100,7 @@ static void test_unregistered_candidate_is_consistently_no_data() {
     RuntimeConfig::set_global(&config);
     Router router(&config, &model_manager, nullptr);
 
-    CostServices services = lemon::make_router_cost_services(router, model_manager);
+    CostServices services = lemon::make_router_cost_services(router);
 
     CostInfo first = services.cost_of("nonexistent-model");
     CostInfo second = services.cost_of("nonexistent-model");

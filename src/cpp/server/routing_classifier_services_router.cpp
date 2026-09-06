@@ -1,6 +1,5 @@
 #include "lemon/routing_classifier_services.h"
 
-#include "lemon/model_manager.h"
 #include "lemon/router.h"
 
 #include <map>
@@ -30,7 +29,7 @@ ClassifierServices make_router_classifier_services(
         [&router](const std::string& model) { return router.get_model_type(model); });
 }
 
-CostServices make_router_cost_services(Router& router, ModelManager& model_manager) {
+CostServices make_router_cost_services(Router& router) {
     // Memo keyed by candidate name, valid for one registry-change generation:
     // avoids a registry/build_cache hit on every routed request while still
     // picking up a price the moment it changes (model add/edit/remove, cloud
@@ -43,8 +42,8 @@ CostServices make_router_cost_services(Router& router, ModelManager& model_manag
     static uint64_t cached_generation = 0;
 
     CostServices services;
-    services.cost_of = [&router, &model_manager](const std::string& candidate) -> CostInfo {
-        const uint64_t generation = model_manager.current_notify_generation();
+    services.cost_of = [&router](const std::string& candidate) -> CostInfo {
+        const uint64_t generation = router.registry_generation();
         {
             std::lock_guard<std::mutex> lock(cache_mu);
             if (generation != cached_generation) {
