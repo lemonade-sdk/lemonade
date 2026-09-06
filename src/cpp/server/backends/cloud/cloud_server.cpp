@@ -23,22 +23,6 @@ namespace backends {
 
 namespace {
 
-// [session-diag] Temporary diagnostic (issue #3504): reports, per relayed
-// request, whether the inbound request carried a session header that we forward
-// upstream. Revert this function and its two call sites to remove.
-void log_session_diag(const std::string& provider) {
-    const auto& sess = session::g_request_session;
-    if (!sess.session_header.empty()) {
-        LOG(INFO, "Cloud") << "[session-diag] relaying inbound session header '"
-                           << sess.session_header << "' upstream to provider '"
-                           << provider << "'" << std::endl;
-    } else {
-        LOG(INFO, "Cloud") << "[session-diag] no session header on inbound request; "
-                              "nothing to relay to provider '"
-                           << provider << "'" << std::endl;
-    }
-}
-
 bool id_contains(const std::string& id, const std::string& needle) {
     return id.find(needle) != std::string::npos;
 }
@@ -476,7 +460,6 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     std::string url = upstream_url(creds.base_url, path);
     auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
     session::apply_forwardable_session(headers);
-    log_session_diag(provider_);  // [session-diag] issue #3504
 
     try {
         auto response = utils::HttpClient::post(
@@ -636,7 +619,6 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
     session::apply_forwardable_session(headers);
-    log_session_diag(provider_);  // [session-diag] issue #3504
 
     try {
         if (sse) {
