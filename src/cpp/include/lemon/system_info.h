@@ -32,6 +32,9 @@ struct GPUInfo : DeviceInfo {
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
     double virtual_gb = 0.0;
+    std::string pci_addr;
+    std::string pci_device_id;
+    bool integrated = false;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -68,6 +71,7 @@ public:
     virtual GPUInfo get_amd_igpu_device() = 0;
     virtual std::vector<GPUInfo> get_amd_dgpu_devices() = 0;
     virtual std::vector<GPUInfo> get_nvidia_gpu_devices() = 0;
+    virtual std::vector<GPUInfo> get_intel_gpu_devices() { return {}; }
     virtual NPUInfo get_npu_device() = 0;
 
     // Apple Silicon unified-memory GPU. Only meaningful on macOS; the base
@@ -220,6 +224,7 @@ public:
     GPUInfo get_amd_igpu_device() override;
     std::vector<GPUInfo> get_amd_dgpu_devices() override;
     std::vector<GPUInfo> get_nvidia_gpu_devices() override;
+    std::vector<GPUInfo> get_intel_gpu_devices() override;
     NPUInfo get_npu_device() override;
 
     // Override to add Linux-specific fields

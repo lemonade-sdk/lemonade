@@ -522,6 +522,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"amd_gpu", "AMD GPU"},
     {"amd_npu", "AMD NPU"},
     {"nvidia_gpu", "NVIDIA GPU"},
+    {"intel_gpu", "Intel GPU"},
     {"metal", "MacOS Metal GPU"}
 };
 
@@ -990,6 +991,34 @@ json SystemInfo::get_device_dict() {
         devices["nvidia_gpu_error"] = std::string("Detection exception: ") + e.what();
     }
 
+    try {
+        devices["intel_gpu"] = json::array();
+        for (const auto& gpu : get_intel_gpu_devices()) {
+            json gpu_json = {
+                {"name", gpu.name},
+                {"available", gpu.available},
+                {"integrated", gpu.integrated},
+                {"family", gpu.integrated ? "i915" : "xe"}
+            };
+            if (!gpu.pci_addr.empty()) {
+                gpu_json["pci"] = gpu.pci_addr;
+            }
+            if (!gpu.pci_device_id.empty()) {
+                gpu_json["device_id"] = gpu.pci_device_id;
+            }
+            if (gpu.vram_gb > 0) {
+                gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (!gpu.error.empty()) {
+                gpu_json["error"] = gpu.error;
+            }
+            devices["intel_gpu"].push_back(gpu_json);
+        }
+    } catch (const std::exception& e) {
+        devices["intel_gpu"] = json::array();
+        devices["intel_gpu_error"] = std::string("Detection exception: ") + e.what();
+    }
+
     // Get NPU info - with fault tolerance
     // Use CPU processor name as the NPU device name (e.g., "AMD Ryzen AI 9 HX 375")
     try {
@@ -1138,6 +1167,23 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 if (!name.empty()) {
                     detected_devices.push_back({
                         "nvidia_gpu",
+                        name,
+                        family,
+                        true
+                    });
+                }
+            }
+        }
+    }
+
+    if (devices.contains("intel_gpu") && devices["intel_gpu"].is_array()) {
+        for (const auto& gpu : devices["intel_gpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
+                if (!name.empty()) {
+                    detected_devices.push_back({
+                        "intel_gpu",
                         name,
                         family,
                         true
@@ -3135,6 +3181,34 @@ GPUInfo LinuxSystemInfo::get_amd_igpu_device() {
 
 std::vector<GPUInfo> LinuxSystemInfo::get_amd_dgpu_devices() {
     return detect_amd_gpus("discrete");
+}
+
+std::vector<GPUInfo> LinuxSystemInfo::get_intel_gpu_devices() {
+    std::vector<GPUInfo> gpus;
+    auto devices = system_info_detail::intel_pci_devices_from_sysfs(
+        "/sys/bus/pci/devices");
+    int index = 0;
+    for (const auto& device : devices) {
+        GPUInfo gpu;
+        gpu.index = index++;
+        gpu.pci_addr = device.pci_addr;
+        gpu.pci_device_id = device.device_id;
+        gpu.available = device.driver == "xe" || device.driver == "i915";
+        gpu.integrated = device.driver == "i915";
+        gpu.name = gpu.integrated ? "Intel integrated GPU" : "Intel discrete GPU";
+        if (device.device_id == "0xe223") {
+            gpu.name = "Intel Arc Pro B70";
+        }
+        gpu.driver_version = device.driver;
+        gpu.uuid = device.pci_addr;
+        gpus.push_back(gpu);
+    }
+    std::stable_sort(gpus.begin(), gpus.end(),
+                     [](const GPUInfo& a, const GPUInfo& b) {
+                         return static_cast<int>(a.integrated) <
+                                static_cast<int>(b.integrated);
+                     });
+    return gpus;
 }
 
 std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
