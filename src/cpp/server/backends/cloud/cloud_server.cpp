@@ -7,6 +7,7 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/session_utils.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -18,14 +19,6 @@
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
-
-// Populated per request in Server::handle from the caller's session/client
-// headers (see telemetry.h). Forward-declared here to avoid pulling the
-// server-private telemetry.h into a backend translation unit.
-namespace telemetry {
-extern thread_local std::string g_incoming_session_id;
-}  // namespace telemetry
-
 namespace backends {
 
 namespace {
@@ -889,12 +882,13 @@ std::map<std::string, std::string> CloudServer::upstream_headers(
     if (wire_format == "anthropic") {
         headers["anthropic-version"] = kAnthropicVersion;
     }
-    // Forward the caller's session id so providers that key their prompt cache
-    // on it (OpenCode Zen via x-opencode-session) keep cache continuity across
-    // the Lemonade hop. Empty during discovery and for callers that send no
-    // session header, so this adds nothing to those requests.
-    if (!telemetry::g_incoming_session_id.empty()) {
-        headers["x-opencode-session"] = telemetry::g_incoming_session_id;
+    // Relay the caller's session header verbatim so providers that key their
+    // prompt cache on it (OpenCode Zen's x-opencode-session) keep cache
+    // continuity across the Lemonade hop. The name is whatever the client sent;
+    // empty during discovery and for callers that send no session header.
+    const auto& sess = session::g_request_session;
+    if (!sess.session_header.empty() && !sess.session_id.empty()) {
+        headers[sess.session_header] = sess.session_id;
     }
     return headers;
 }

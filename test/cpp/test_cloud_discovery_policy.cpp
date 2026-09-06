@@ -15,12 +15,7 @@
 
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/utils/http_client.h>
-
-namespace lemon {
-namespace telemetry {
-extern thread_local std::string g_incoming_session_id;
-}  // namespace telemetry
-}  // namespace lemon
+#include <lemon/utils/session_utils.h>
 
 using lemon::CloudProviderRegistry;
 using lemon::backends::CloudServer;
@@ -139,19 +134,30 @@ int main() {
     }
 
     {
-        // A caller session id (e.g. from x-opencode-session) is relayed to the
-        // provider so it can key its prompt cache across the Lemonade hop.
-        lemon::telemetry::g_incoming_session_id = "sess-abc123";
+        // A caller session header is relayed verbatim so the provider can key
+        // its prompt cache on it across the Lemonade hop.
+        lemon::session::g_request_session = {"sess-abc123", "x-opencode-session", "", ""};
         const auto headers = CloudServer::upstream_headers(
             {"Authorization", "Bearer "}, "sk-test", "openai");
         r.check(TestResult::header(headers, "x-opencode-session") == "sess-abc123",
-                "incoming session id -> forwarded as x-opencode-session");
-        lemon::telemetry::g_incoming_session_id.clear();
+                "opencode session header -> relayed verbatim upstream");
+        lemon::session::g_request_session = {};
+
+        // A non-OpenCode client's header is preserved, never rebranded to
+        // x-opencode-session.
+        lemon::session::g_request_session = {"sess-xyz", "x-session-id", "", ""};
+        const auto headers_generic = CloudServer::upstream_headers(
+            {"Authorization", "Bearer "}, "sk-test", "openai");
+        r.check(TestResult::header(headers_generic, "x-session-id") == "sess-xyz" &&
+                    headers_generic.count("x-opencode-session") == 0,
+                "non-opencode session header preserved, not rebranded");
+        lemon::session::g_request_session = {};
 
         const auto headers_no_session = CloudServer::upstream_headers(
             {"Authorization", "Bearer "}, "sk-test", "openai");
-        r.check(headers_no_session.count("x-opencode-session") == 0,
-                "no incoming session id -> no x-opencode-session header");
+        r.check(headers_no_session.count("x-opencode-session") == 0 &&
+                    headers_no_session.count("x-session-id") == 0,
+                "no session -> no session header forwarded");
     }
 
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);
