@@ -82,6 +82,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "prefer_system": true,
     "rocm_args": "",
     "rocm_bin": "builtin",
+    "sycl_args": "",
+    "sycl_bin": "builtin",
     "vulkan_args": "",
     "vulkan_bin": "builtin"
   },
