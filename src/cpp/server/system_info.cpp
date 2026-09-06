@@ -4317,6 +4317,7 @@ double SystemInfo::get_global_vram_usage_pct() {
     } catch (...) {}
 
     try {
+        double intel_ratio = -1.0;
         auto intel = lemon::system_info_detail::intel_pci_devices_from_sysfs(
             "/sys/bus/pci/devices");
         for (const auto& d : intel) {
@@ -4329,11 +4330,11 @@ double SystemInfo::get_global_vram_usage_pct() {
                 const double r =
                     lemon::system_info_detail::xe_vram_usage_ratio_from_mm(oss.str());
                 if (r >= 0.0) {
-                    highest_ratio = std::max(highest_ratio, r);
+                    intel_ratio = std::max(intel_ratio, r);
                 }
             }
         }
-        if (highest_ratio < 0.0 &&
+        if (intel_ratio < 0.0 &&
             !find_executable_in_path("xpu-smi").empty()) {
             std::string output;
             const int rc = lemon::utils::ProcessManager::run_command(
@@ -4342,9 +4343,12 @@ double SystemInfo::get_global_vram_usage_pct() {
                 const double r =
                     lemon::system_info_detail::xpu_smi_vram_usage_ratio(output);
                 if (r >= 0.0) {
-                    highest_ratio = std::max(highest_ratio, r);
+                    intel_ratio = std::max(intel_ratio, r);
                 }
             }
+        }
+        if (intel_ratio >= 0.0) {
+            highest_ratio = std::max(highest_ratio, intel_ratio);
         }
     } catch (...) {
     }
