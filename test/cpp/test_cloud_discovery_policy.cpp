@@ -16,6 +16,12 @@
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/utils/http_client.h>
 
+namespace lemon {
+namespace telemetry {
+extern thread_local std::string g_incoming_session_id;
+}  // namespace telemetry
+}  // namespace lemon
+
 using lemon::CloudProviderRegistry;
 using lemon::backends::CloudServer;
 using lemon::utils::HttpSecurityPolicy;
@@ -130,6 +136,22 @@ int main() {
         r.check(CloudServer::upstream_url("https://api.example.com", "/v1x/foo") ==
                     "https://api.example.com/v1x/foo",
                 "/v1 is matched as a whole segment, not a byte prefix");
+    }
+
+    {
+        // A caller session id (e.g. from x-opencode-session) is relayed to the
+        // provider so it can key its prompt cache across the Lemonade hop.
+        lemon::telemetry::g_incoming_session_id = "sess-abc123";
+        const auto headers = CloudServer::upstream_headers(
+            {"Authorization", "Bearer "}, "sk-test", "openai");
+        r.check(TestResult::header(headers, "x-opencode-session") == "sess-abc123",
+                "incoming session id -> forwarded as x-opencode-session");
+        lemon::telemetry::g_incoming_session_id.clear();
+
+        const auto headers_no_session = CloudServer::upstream_headers(
+            {"Authorization", "Bearer "}, "sk-test", "openai");
+        r.check(headers_no_session.count("x-opencode-session") == 0,
+                "no incoming session id -> no x-opencode-session header");
     }
 
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);

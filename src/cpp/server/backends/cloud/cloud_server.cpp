@@ -18,6 +18,14 @@
 #include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
+
+// Populated per request in Server::handle from the caller's session/client
+// headers (see telemetry.h). Forward-declared here to avoid pulling the
+// server-private telemetry.h into a backend translation unit.
+namespace telemetry {
+extern thread_local std::string g_incoming_session_id;
+}  // namespace telemetry
+
 namespace backends {
 
 namespace {
@@ -880,6 +888,13 @@ std::map<std::string, std::string> CloudServer::upstream_headers(
     };
     if (wire_format == "anthropic") {
         headers["anthropic-version"] = kAnthropicVersion;
+    }
+    // Forward the caller's session id so providers that key their prompt cache
+    // on it (OpenCode Zen via x-opencode-session) keep cache continuity across
+    // the Lemonade hop. Empty during discovery and for callers that send no
+    // session header, so this adds nothing to those requests.
+    if (!telemetry::g_incoming_session_id.empty()) {
+        headers["x-opencode-session"] = telemetry::g_incoming_session_id;
     }
     return headers;
 }
