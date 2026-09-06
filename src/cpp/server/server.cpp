@@ -941,21 +941,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
-    // Single source of truth for the session/client header allowlist, shared
-    // with the cloud relay via session::g_request_session (transport-scoped, not
-    // telemetry state). Reset every request so a reused worker thread can't leak
-    // a prior caller's identity.
-    session::g_request_session = config_
+    session::SessionContext telemetry_session = config_
         ? session::resolve_session_context(
               req,
               config_->telemetry_session_headers_id(),
               config_->telemetry_session_headers_client())
         : session::resolve_session_context(req, {}, {});
-
-    if (!session::g_request_session.session_id.empty()) {
-        telemetry::g_incoming_client_id = session::g_request_session.client_id;
-        telemetry::g_incoming_session_id = session::g_request_session.session_id;
+    if (!telemetry_session.session_id.empty()) {
+        telemetry::g_incoming_client_id = telemetry_session.client_id;
+        telemetry::g_incoming_session_id = telemetry_session.session_id;
     }
+
+    // Reset every request so a reused worker thread can't leak the prior
+    // caller's session to a cloud provider.
+    session::g_request_session = session::resolve_forwardable_session(req);
 
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP

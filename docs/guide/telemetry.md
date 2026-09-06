@@ -298,10 +298,6 @@ Lemonade automatically captures session identifiers to group multi-turn conversa
 
 If an incoming request includes a configured custom client header (`telemetry.session.headers.client`) or a well-known client header (such as `x-opencode-client`, `x-client-id`, or `x-client-name`), Lemonade automatically prefixes the session ID as `<client>/<session>` (for example, `vscode/sess-abc123`). This avoids session collisions when multiple IDE extensions or agent tools share a single Lemonade server.
 
-### Forwarding to Cloud Providers
-
-When a request is routed to a [cloud provider](./configuration/cloud.md), Lemonade relays the caller's session header upstream **verbatim** — the same header name that arrived is re-sent with the resolved value. If OpenCode sends `x-opencode-session`, the provider receives `x-opencode-session`; if another tool sends `x-session-id`, the provider receives `x-session-id`. This lets providers that key their prompt cache on the session (such as OpenCode Zen) keep cache continuity across the Lemonade hop, without attaching a tool-specific header to a foreign client. Requests with no detected session header are forwarded unchanged.
-
 
 ### Configuring Custom Headers
 

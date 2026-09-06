@@ -474,7 +474,8 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
         return missing_creds_error();
     }
     std::string url = upstream_url(creds.base_url, path);
-    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
     log_session_diag(provider_);  // [session-diag] issue #3504
 
     try {
@@ -633,7 +634,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     std::string url = upstream_url(creds.base_url, endpoint);
 
-    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
     log_session_diag(provider_);  // [session-diag] issue #3504
 
     try {
@@ -899,14 +901,6 @@ std::map<std::string, std::string> CloudServer::upstream_headers(
     };
     if (wire_format == "anthropic") {
         headers["anthropic-version"] = kAnthropicVersion;
-    }
-    // Relay the caller's session header verbatim so providers that key their
-    // prompt cache on it (OpenCode Zen's x-opencode-session) keep cache
-    // continuity across the Lemonade hop. The name is whatever the client sent;
-    // empty during discovery and for callers that send no session header.
-    const auto& sess = session::g_request_session;
-    if (!sess.session_header.empty() && !sess.session_id.empty()) {
-        headers[sess.session_header] = sess.session_id;
     }
     return headers;
 }

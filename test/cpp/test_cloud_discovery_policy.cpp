@@ -15,7 +15,6 @@
 
 #include <lemon/backends/cloud/cloud_server.h>
 #include <lemon/utils/http_client.h>
-#include <lemon/utils/session_utils.h>
 
 using lemon::CloudProviderRegistry;
 using lemon::backends::CloudServer;
@@ -131,33 +130,6 @@ int main() {
         r.check(CloudServer::upstream_url("https://api.example.com", "/v1x/foo") ==
                     "https://api.example.com/v1x/foo",
                 "/v1 is matched as a whole segment, not a byte prefix");
-    }
-
-    {
-        // A caller session header is relayed verbatim so the provider can key
-        // its prompt cache on it across the Lemonade hop.
-        lemon::session::g_request_session = {"sess-abc123", "x-opencode-session", "", ""};
-        const auto headers = CloudServer::upstream_headers(
-            {"Authorization", "Bearer "}, "sk-test", "openai");
-        r.check(TestResult::header(headers, "x-opencode-session") == "sess-abc123",
-                "opencode session header -> relayed verbatim upstream");
-        lemon::session::g_request_session = {};
-
-        // A non-OpenCode client's header is preserved, never rebranded to
-        // x-opencode-session.
-        lemon::session::g_request_session = {"sess-xyz", "x-session-id", "", ""};
-        const auto headers_generic = CloudServer::upstream_headers(
-            {"Authorization", "Bearer "}, "sk-test", "openai");
-        r.check(TestResult::header(headers_generic, "x-session-id") == "sess-xyz" &&
-                    headers_generic.count("x-opencode-session") == 0,
-                "non-opencode session header preserved, not rebranded");
-        lemon::session::g_request_session = {};
-
-        const auto headers_no_session = CloudServer::upstream_headers(
-            {"Authorization", "Bearer "}, "sk-test", "openai");
-        r.check(headers_no_session.count("x-opencode-session") == 0 &&
-                    headers_no_session.count("x-session-id") == 0,
-                "no session -> no session header forwarded");
     }
 
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);
