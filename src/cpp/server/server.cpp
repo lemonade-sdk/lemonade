@@ -1,3 +1,5 @@
+#include "image_multipart.h"
+
 #include "lemon/server.h"
 #include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
@@ -5293,15 +5295,10 @@ bool Server::parse_n_from_form(const httplib::Request& req, httplib::Response& r
 }
 
 bool Server::extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out) {
-    for (const auto& file_pair : req.form.files) {
-        if (file_pair.first == "image" || file_pair.first == "image[]") {
-            const auto& file = file_pair.second;
-            out["image_data"] = utils::JsonUtils::base64_encode(file.content);
-            out["image_filename"] = file.filename;
-            LOG(INFO, "Server") << "Image file: " << file.filename
-                      << " (" << file.content.size() << " bytes)" << std::endl;
-            return true;
-        }
+    if (populate_image_request(req.form.files, out)) {
+        LOG(INFO, "Server") << "Image file: " << out["image_filename"].get<std::string>()
+                            << std::endl;
+        return true;
     }
     res.status = 400;
     nlohmann::json error = {{"error", {
