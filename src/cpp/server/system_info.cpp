@@ -4315,6 +4315,39 @@ double SystemInfo::get_global_vram_usage_pct() {
             }
         }
     } catch (...) {}
+
+    try {
+        auto intel = lemon::system_info_detail::intel_pci_devices_from_sysfs(
+            "/sys/bus/pci/devices");
+        for (const auto& d : intel) {
+            const fs::path mm =
+                fs::path("/sys/kernel/debug/dri") / d.pci_addr / "vram0_mm";
+            std::ifstream in(mm);
+            if (in) {
+                std::ostringstream oss;
+                oss << in.rdbuf();
+                const double r =
+                    lemon::system_info_detail::xe_vram_usage_ratio_from_mm(oss.str());
+                if (r >= 0.0) {
+                    highest_ratio = std::max(highest_ratio, r);
+                }
+            }
+        }
+        if (highest_ratio < 0.0 &&
+            !find_executable_in_path("xpu-smi").empty()) {
+            std::string output;
+            const int rc = lemon::utils::ProcessManager::run_command(
+                "xpu-smi stats -d 0", output, 5);
+            if (rc == 0) {
+                const double r =
+                    lemon::system_info_detail::xpu_smi_vram_usage_ratio(output);
+                if (r >= 0.0) {
+                    highest_ratio = std::max(highest_ratio, r);
+                }
+            }
+        }
+    } catch (...) {
+    }
 #endif
 
 #ifdef _WIN32
