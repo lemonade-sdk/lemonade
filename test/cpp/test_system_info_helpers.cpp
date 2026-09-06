@@ -138,6 +138,18 @@ static bool test_intel_pci_and_vram() {
         lemon::system_info_detail::backend_state_can_be_default("not_installed"),
         false);
     pass &= expect_bool(
+        "unsupported backend is excluded from automatic defaults",
+        lemon::system_info_detail::backend_state_can_be_default("unsupported"),
+        false);
+    pass &= expect_bool(
+        "not-installed backend is excluded from supported backends",
+        lemon::system_info_detail::backend_state_is_supported("not_installed"),
+        false);
+    pass &= expect_bool(
+        "installable backend is supported for selection",
+        lemon::system_info_detail::backend_state_is_supported("installable"),
+        true);
+    pass &= expect_bool(
         "installable backend remains eligible for automatic defaults",
         lemon::system_info_detail::backend_state_can_be_default("installable"),
         true);

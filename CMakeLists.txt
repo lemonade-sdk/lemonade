@@ -3122,6 +3122,18 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
 endif()
 
+set(_LLAMACPP_SYCL_DEFAULT_BACKEND_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_sycl_default_backend.cpp"
+)
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_SYCL_DEFAULT_BACKEND_TEST_SRC}")
+    add_executable(test_llamacpp_sycl_default_backend
+        test/cpp/test_llamacpp_sycl_default_backend.cpp
+    )
+    target_link_libraries(test_llamacpp_sycl_default_backend PRIVATE lemonade-server-core)
+    add_dependencies(test_llamacpp_sycl_default_backend copy_resources)
+    add_cpp_ci_test(LlamaCppSyclDefaultBackendTest CI ON COMMAND test_llamacpp_sycl_default_backend)
+endif()
+
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")
 if(BUILD_TESTING AND EXISTS "${_DLL_VERSION_TEST_SRC}")
     add_executable(test_backend_utils_dll_version test/cpp/test_backend_utils_dll_version.cpp)

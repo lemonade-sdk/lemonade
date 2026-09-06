@@ -1288,6 +1288,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     std::map<std::pair<std::string, std::string>, int> backend_status_priority;
     std::set<std::string> default_backend_installed;
+    std::map<std::string, bool> configured_default_resolved;
+    std::map<std::string, bool> configured_default_applied;
 
     auto set_backend_status = [&recipes, &backend_status_priority](
                                 const std::string& recipe,
@@ -1631,10 +1633,23 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
-            if (def.backend == configured_default->second) {
-                recipes[def.recipe]["default_backend"] = def.backend;
+            const std::string& configured_backend = configured_default->second;
+            if (def.backend == configured_backend) {
+                configured_default_resolved[def.recipe] = true;
+                const std::string effective_state =
+                    recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
+                if (system_info_detail::backend_state_can_be_default(effective_state)) {
+                    recipes[def.recipe]["default_backend"] = def.backend;
+                    configured_default_applied[def.recipe] = true;
+                }
+                continue;
             }
-            continue;
+            if (!configured_default_resolved.count(def.recipe)) {
+                continue;
+            }
+            if (configured_default_applied.count(def.recipe)) {
+                continue;
+            }
         }
 
         bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
@@ -1734,7 +1749,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
         if (recipe_info["backends"].contains(default_backend)) {
             const auto& backend = recipe_info["backends"][default_backend];
             std::string state = backend.value("state", "unsupported");
-            if (state != "unsupported") {
+            if (system_info_detail::backend_state_is_supported(state)) {
                 result.backends.push_back(default_backend);
             }
         }
@@ -1751,7 +1766,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
             if (recipe_info["backends"].contains(def.backend)) {
                 const auto& backend = recipe_info["backends"][def.backend];
                 std::string state = backend.value("state", "unsupported");
-                if (state != "unsupported") {
+                if (system_info_detail::backend_state_is_supported(state)) {
                     result.backends.push_back(def.backend);
                 } else if (result.not_supported_error.empty() && backend.contains("message")) {
                     // Capture first error encountered (in preference order)

@@ -19,8 +19,12 @@
 
 namespace lemon::system_info_detail {
 
+inline bool backend_state_is_supported(const std::string& state) {
+    return state != "unsupported" && state != "not_installed";
+}
+
 inline bool backend_state_can_be_default(const std::string& state) {
-    return state != "not_installed";
+    return backend_state_is_supported(state);
 }
 
 inline const std::set<std::string>& cuda_supported_archs() {
