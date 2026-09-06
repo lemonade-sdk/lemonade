@@ -2091,16 +2091,20 @@ namespace lemon::backends {
         const bool is_rocm_device = (lower_device.rfind("rocm", 0) == 0);
         const bool is_cuda_device = (lower_device.rfind("cuda", 0) == 0);
         const bool is_vulkan_device = (lower_device.rfind("vulkan", 0) == 0);
+        const bool is_sycl_device = (lower_device.rfind("sycl", 0) == 0);
 
         const bool is_rocm_backend = (lower_backend.rfind("rocm", 0) == 0);
         const bool is_cuda_backend = (lower_backend.rfind("cuda", 0) == 0);
         const bool is_vulkan_backend = (lower_backend.rfind("vulkan", 0) == 0);
+        const bool is_sycl_backend = (lower_backend == "sycl");
 
         if (is_rocm_device && !is_rocm_backend) {
             throw std::invalid_argument(
                 "Device selection '" + target_device + "' contradicts backend choice '" + backend +
                 "'. Expected a " + backend + " device identifier (e.g. " +
-                (is_vulkan_backend ? "Vulkan0" : is_cuda_backend ? "CUDA0" : "a matching device") + ").");
+                (is_vulkan_backend ? "Vulkan0" :
+                 is_cuda_backend ? "CUDA0" :
+                 is_sycl_backend ? "SYCL0" : "a matching device") + ").");
         }
         if (is_cuda_device && !is_cuda_backend) {
             throw std::invalid_argument(
@@ -2108,6 +2112,11 @@ namespace lemon::backends {
                 "'. Expected a " + backend + " device identifier.");
         }
         if (is_vulkan_device && !is_vulkan_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier.");
+        }
+        if (is_sycl_device && !is_sycl_backend) {
             throw std::invalid_argument(
                 "Device selection '" + target_device + "' contradicts backend choice '" + backend +
                 "'. Expected a " + backend + " device identifier.");

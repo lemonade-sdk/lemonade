@@ -57,6 +57,7 @@
   },
   "llamacpp": {
     "vulkan": "b10723",
+    "sycl": "b10723",
     "rocm-stable": "b10711",
     "rocm-nightly": "b1319",
     "cuda": "b10711",

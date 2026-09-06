@@ -113,6 +113,33 @@ int main() {
         }
         check(no_throw_matching,
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
+
+        bool threw_sycl_vulkan = false;
+        try {
+            BackendUtils::validate_device_backend_match("sycl", "Vulkan0");
+        } catch (const std::invalid_argument&) {
+            threw_sycl_vulkan = true;
+        }
+        check(threw_sycl_vulkan,
+              "validate_device_backend_match throws for Vulkan device on sycl backend");
+
+        bool threw_vulkan_sycl = false;
+        try {
+            BackendUtils::validate_device_backend_match("vulkan", "SYCL0");
+        } catch (const std::invalid_argument&) {
+            threw_vulkan_sycl = true;
+        }
+        check(threw_vulkan_sycl,
+              "validate_device_backend_match throws for SYCL device on vulkan backend");
+
+        bool sycl_ok = true;
+        try {
+            BackendUtils::validate_device_backend_match("sycl", "SYCL0");
+            BackendUtils::validate_device_backend_match("sycl", "SYCL1");
+        } catch (...) {
+            sycl_ok = false;
+        }
+        check(sycl_ok, "validate_device_backend_match accepts SYCL0 on sycl backend");
     }
 
     // Test 3: a custom backend binary environment variable takes precedence

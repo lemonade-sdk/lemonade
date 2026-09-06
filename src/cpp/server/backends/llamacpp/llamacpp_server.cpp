@@ -245,6 +245,10 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
+    } else if (resolved_backend == "sycl") {
+        // Linux SYCL builds need the oneAPI runtime. Do not download a Vulkan
+        // zip. Users set llamacpp.sycl_bin (or LEMONADE_LLAMACPP_SYCL_BIN).
+        return params;
     } else {  // vulkan
         params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
