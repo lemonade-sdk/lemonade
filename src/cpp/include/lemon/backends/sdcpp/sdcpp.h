@@ -35,8 +35,8 @@ inline const BackendDescriptor descriptor = {
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
         // sd-server generates a single frame unless told otherwise, and video
-        // models need a few dozen before they animate rather than drift, so a
-        // video model that leaves video_frames unset returns a still.
+        // models need a few dozen before they animate rather than drift, so
+        // this default is applied even when the model itself sets nothing.
         {"video_frames", "", 33, "SIZE", "Number of video frames", "Stable Diffusion Options"},
         {"fps", "", 16, "SIZE", "Video frames per second", "Stable Diffusion Options"},
     },

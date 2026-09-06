@@ -217,8 +217,9 @@ void SDServer::load(const std::string& model_name,
     std::string llm_path = model_info.resolved_path("text_encoder");
     // sd-cpp routes the text encoder by family: --llm for LLM-style encoders
     // (Flux2/Qwen-Image use qwen, LTX uses gemma), --t5xxl for T5-family ones
-    // (Wan uses umt5). A model declares which slot it fills by the checkpoint
-    // key it uses, so neither is guessed from the filename.
+    // (Wan uses umt5). The slots are independent -- HunyuanVideo 1.5 fills both
+    // -- and a model declares which it fills by the checkpoint keys it
+    // provides, so neither is guessed from the filename.
     std::string t5xxl_path = model_info.resolved_path("t5xxl");
     std::string vae_path = model_info.resolved_path("vae");
 
@@ -249,18 +250,20 @@ void SDServer::load(const std::string& model_name,
         "--listen-port", std::to_string(port_)
     };
 
-    // Pick flag and path together: a model that declared both keys must not end
-    // up passing one encoder's path under the other's flag.
-    const char* encoder_flag = llm_path.empty() ? "--t5xxl" : "--llm";
-    const std::string& encoder_path = llm_path.empty() ? t5xxl_path : llm_path;
-    if (encoder_path.empty() || vae_path.empty()) {
+    if ((llm_path.empty() && t5xxl_path.empty()) || vae_path.empty()) {
         args.push_back("-m");
         args.push_back(model_path);
     } else {
         args.push_back("--diffusion-model");
         args.push_back(model_path);
-        args.push_back(encoder_flag);
-        args.push_back(encoder_path);
+        if (!llm_path.empty()) {
+            args.push_back("--llm");
+            args.push_back(llm_path);
+        }
+        if (!t5xxl_path.empty()) {
+            args.push_back("--t5xxl");
+            args.push_back(t5xxl_path);
+        }
         args.push_back("--vae");
         args.push_back(vae_path);
     }
@@ -274,6 +277,7 @@ void SDServer::load(const std::string& model_name,
         "--model",
         "--diffusion-model",
         "--llm",
+        "--t5xxl",
         "--vae",
         "-v",
         "--listen-port"
@@ -629,10 +633,19 @@ json SDServer::video_generations(const json& request) {
     if (auto width = dimension("width")) body["width"] = *width;
     if (auto height = dimension("height")) body["height"] = *height;
 
-    // Same request-then-recipe-option ladder as the dimensions above; see the
-    // video_frames option in sdcpp.h for why the fallback carries its weight.
-    if (auto frames = dimension("video_frames")) body["video_frames"] = *frames;
-    if (auto fps = dimension("fps")) body["fps"] = *fps;
+    // Same ladder, but with the descriptor's default as a last rung rather
+    // than stopping at what this model happens to set -- see the video_frames
+    // option in sdcpp.h for why leaving it unset is not a viable outcome.
+    auto video_param = [&](const char* key) -> std::optional<int> {
+        if (request.contains(key) && request[key].is_number_integer()) {
+            return request[key].get<int>();
+        }
+        json value = recipe_options_.get_option(key);
+        if (value.is_number() && value.get<int>() > 0) return value.get<int>();
+        return std::nullopt;
+    };
+    if (auto frames = video_param("video_frames")) body["video_frames"] = *frames;
+    if (auto fps = video_param("fps")) body["fps"] = *fps;
     if (request.contains("seed") && request["seed"].is_number_integer()) {
         body["seed"] = request["seed"];
     }

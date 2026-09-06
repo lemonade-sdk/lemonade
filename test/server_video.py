@@ -24,7 +24,7 @@ from utils.server_base import (
     unload_model,
 )
 from utils.capabilities import get_test_model
-from utils.test_models import TIMEOUT_DEFAULT
+from utils.test_models import TIMEOUT_DEFAULT, TIMEOUT_MODEL_OPERATION
 
 # A short clip still runs a full diffusion loop per frame.
 TIMEOUT_VIDEO_GENERATION = 3600
@@ -151,6 +151,76 @@ class VideoGenerationTests(ServerTestBase):
             f"[OK] {len(video)} bytes, {payload['frame_count']} frames "
             f"@ {payload['fps']} fps"
         )
+
+    def test_011_frame_default_applies_without_recipe_options(self):
+        """A video model carrying no recipe options still returns a clip.
+
+        The backend generates a single frame when video_frames is absent, so
+        a model registered with nothing but its checkpoints has to pick the
+        count up from the recipe descriptor rather than from the entry.
+        """
+        self._ensure_model_pulled()
+        source = get_test_model("video")
+
+        info = requests.get(
+            f"{self.base_url}/models/{source}",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            info.status_code,
+            200,
+            f"could not read {source}: {info.text[:200]}",
+        )
+        checkpoints = info.json().get("checkpoints")
+        self.assertTrue(checkpoints, f"{source} declares no checkpoints to reuse")
+
+        bare = "user.video-no-recipe-options"
+        registration = requests.post(
+            f"{self.base_url}/pull",
+            json={
+                "model_name": bare,
+                "recipe": "sd-cpp",
+                "labels": ["video"],
+                "checkpoints": checkpoints,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(
+            registration.status_code,
+            200,
+            f"could not register {bare}: {registration.text[:200]}",
+        )
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/delete",
+            json={"model_name": bare},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        response = requests.post(
+            f"{self.base_url}/videos/generations",
+            json={
+                "model": bare,
+                "prompt": "a lovely cat walking through tall grass",
+                "steps": 2,
+                "width": 480,
+                "height": 320,
+            },
+            timeout=TIMEOUT_VIDEO_GENERATION,
+        )
+        self.assertEqual(
+            response.status_code,
+            200,
+            f"generation failed: {response.status_code} {response.text[:300]}",
+        )
+
+        payload = response.json()
+        self.assertGreater(
+            payload["frame_count"],
+            1,
+            "a model without recipe options fell through to a single frame",
+        )
+        print(f"[OK] default frame count reached the backend: {payload['frame_count']}")
 
 
 if __name__ == "__main__":

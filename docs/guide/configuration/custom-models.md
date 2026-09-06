@@ -423,7 +423,7 @@ Supported checkpoint keys:
 | `main` | All | Primary model file |
 | `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `text_encoder` | sd-cpp | LLM-style text encoder (e.g. Qwen for Flux/Qwen-Image), passed as `--llm` |
-| `t5xxl` | sd-cpp | T5-family text encoder (e.g. umt5 for Wan), passed as `--t5xxl`. Use this key instead of `text_encoder` when the model expects a T5 encoder; sd-server rejects the wrong slot |
+| `t5xxl` | sd-cpp | T5-family text encoder (e.g. umt5 for Wan), passed as `--t5xxl`. Independent of `text_encoder` -- set whichever slots the model expects, or both; sd-server rejects an encoder in the wrong slot |
 | `vae` | sd-cpp | VAE for image and video generation models |
 
 ### Collections

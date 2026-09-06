@@ -669,7 +669,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 
 Video Generation API. You provide a text prompt and receive a generated video. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend, and is not part of the OpenAI API.
 
-> **Note:** Frame count matters more than it looks. The backend defaults to a single frame, and video models need a few dozen frames before they animate rather than drift, so a model's registry entry should set `video_frames`. `Wan2.1-T2V-1.3B` ships with 33.
+> **Note:** Frame count matters more than it looks. stable-diffusion.cpp generates a single frame when the field is absent, and video models need a few dozen frames before they animate rather than drift, so Lemonade sends 33 by default. A registry entry can override that with a `video_frames` recipe option.
 >
 > **Performance:** GPU only, in practice. A 33-frame 832x480 clip takes ~5 minutes on a discrete GPU; CPU inference is impractically slow.
 
@@ -680,7 +680,7 @@ Video Generation API. You provide a text prompt and receive a generated video. T
 | `prompt` | Yes | The text description of the video to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `model` | Yes | The video model to use (e.g., `Wan2.1-T2V-1.3B`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `negative_prompt` | No | Text describing what to avoid. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `video_frames` | No | Number of frames to generate. Falls back to the model's recipe option, then the backend default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `video_frames` | No | Number of frames to generate. Falls back to the model's recipe option, then to 33. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `fps` | No | Frames per second of the returned clip. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `width` / `height` | No | Output dimensions. Models are sensitive to resolutions they were not trained on. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `steps` | No | Number of diffusion steps per frame. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
