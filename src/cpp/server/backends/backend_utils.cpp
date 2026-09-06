@@ -2081,6 +2081,23 @@ namespace lemon::backends {
 #endif
     }
 
+    void BackendUtils::apply_sycl_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            bool has_explicit_device) {
+        auto inherit_or_set = [&env_vars](const char* key, const char* value) {
+            const char* existing = std::getenv(key);
+            if (!existing || existing[0] == '\0') {
+                env_vars.push_back({key, value});
+            }
+        };
+
+        if (!has_explicit_device) {
+            inherit_or_set("ONEAPI_DEVICE_SELECTOR", "level_zero:0");
+        }
+        inherit_or_set("ZES_ENABLE_SYSMAN", "1");
+        inherit_or_set("GGML_SYCL_F16", "1");
+    }
+
     void BackendUtils::validate_device_backend_match(
             const std::string& backend,
             const std::string& target_device) {

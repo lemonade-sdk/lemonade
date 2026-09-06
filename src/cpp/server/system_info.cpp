@@ -1641,6 +1641,9 @@ json SystemInfo::build_recipes_info(const json& devices) {
         if (supported && !skip_as_default) {
             const std::string effective_state =
                 recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
+            if (!system_info_detail::backend_state_can_be_default(effective_state)) {
+                continue;
+            }
             const bool locally_installed = effective_state == "installed"
                 || effective_state == "update_available"
                 || effective_state == "update_required";
@@ -4318,24 +4321,7 @@ double SystemInfo::get_global_vram_usage_pct() {
 
     try {
         double intel_ratio = -1.0;
-        auto intel = lemon::system_info_detail::intel_pci_devices_from_sysfs(
-            "/sys/bus/pci/devices");
-        for (const auto& d : intel) {
-            const fs::path mm =
-                fs::path("/sys/kernel/debug/dri") / d.pci_addr / "vram0_mm";
-            std::ifstream in(mm);
-            if (in) {
-                std::ostringstream oss;
-                oss << in.rdbuf();
-                const double r =
-                    lemon::system_info_detail::xe_vram_usage_ratio_from_mm(oss.str());
-                if (r >= 0.0) {
-                    intel_ratio = std::max(intel_ratio, r);
-                }
-            }
-        }
-        if (intel_ratio < 0.0 &&
-            !find_executable_in_path("xpu-smi").empty()) {
+        if (!find_executable_in_path("xpu-smi").empty()) {
             std::string output;
             const int rc = lemon::utils::ProcessManager::run_command(
                 "xpu-smi stats -d 0", output, 5);
@@ -4344,6 +4330,26 @@ double SystemInfo::get_global_vram_usage_pct() {
                     lemon::system_info_detail::xpu_smi_vram_usage_ratio(output);
                 if (r >= 0.0) {
                     intel_ratio = std::max(intel_ratio, r);
+                }
+            }
+        }
+
+        if (intel_ratio < 0.0) {
+            auto intel = lemon::system_info_detail::intel_pci_devices_from_sysfs(
+                "/sys/bus/pci/devices");
+            for (const auto& d : intel) {
+                const fs::path mm =
+                    fs::path("/sys/kernel/debug/dri") / d.pci_addr / "vram0_mm";
+                std::ifstream in(mm);
+                if (in) {
+                    std::ostringstream oss;
+                    oss << in.rdbuf();
+                    const double r =
+                        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(
+                            oss.str());
+                    if (r >= 0.0) {
+                        intel_ratio = std::max(intel_ratio, r);
+                    }
                 }
             }
         }

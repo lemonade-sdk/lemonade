@@ -12,7 +12,10 @@
 #include <utility>
 #include <vector>
 
+#include <lemon/backend_manager.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/backends/backend_utils.h>
+#include <lemon/backends/llamacpp/llamacpp_server.h>
 #include <lemon/runtime_config.h>
 
 #ifdef _WIN32
@@ -69,6 +72,9 @@ int main() {
     clear_env_var("HIP_VISIBLE_DEVICES");
     clear_env_var("ROCR_VISIBLE_DEVICES");
     clear_env_var("CUDA_VISIBLE_DEVICES");
+    clear_env_var("GGML_SYCL_F16");
+    clear_env_var("ONEAPI_DEVICE_SELECTOR");
+    clear_env_var("ZES_ENABLE_SYSMAN");
 
     // Test 1: apply_cuda_env_vars respects pre-existing CUDA_VISIBLE_DEVICES in host environment
     {
@@ -221,6 +227,49 @@ int main() {
               "SYCL directory override resolves its llama-server executable");
         lemon::RuntimeConfig::set_global(nullptr);
         std::filesystem::remove_all(bin_dir);
+    }
+
+    {
+        const auto params =
+            lemon::backends::LlamaCppServer::get_install_params("sycl", "test");
+        check(params.repo.empty() && params.filename.empty(),
+              "SYCL remains a user-managed backend without GitHub install parameters");
+
+        const auto unavailable = lemon::backends::ops_for("llamacpp")
+                                     ->classify_unavailable(
+                                         "sycl", "", "lemonade backends install llamacpp:sycl");
+        check(unavailable.has_value() && unavailable->state == "not_installed",
+              "missing SYCL binary is not marked installable");
+        check(unavailable.has_value() &&
+                  unavailable->message.find("llamacpp.sycl_bin") != std::string::npos &&
+                  unavailable->action.empty(),
+              "missing SYCL binary reports configuration guidance without install action");
+
+        bool rejected_empty_install = false;
+        try {
+            lemon::BackendManager manager;
+            (void)manager.get_install_params("llamacpp", "sycl");
+        } catch (const std::runtime_error& error) {
+            rejected_empty_install =
+                std::string(error.what()).find("llamacpp.sycl_bin") != std::string::npos;
+        }
+        check(rejected_empty_install,
+              "backend manager rejects SYCL before attempting an empty GitHub install");
+    }
+
+    {
+        std::vector<std::pair<std::string, std::string>> env_vars;
+        BackendUtils::apply_sycl_env_vars(env_vars, /*has_explicit_device=*/true);
+        check(!has_key(env_vars, "ONEAPI_DEVICE_SELECTOR"),
+              "explicit SYCL device suppresses the default oneAPI selector");
+        check(has_key(env_vars, "ZES_ENABLE_SYSMAN") &&
+                  has_key(env_vars, "GGML_SYCL_F16"),
+              "explicit SYCL device retains non-selection runtime defaults");
+
+        env_vars.clear();
+        BackendUtils::apply_sycl_env_vars(env_vars, /*has_explicit_device=*/false);
+        check(has_key(env_vars, "ONEAPI_DEVICE_SELECTOR"),
+              "automatic SYCL device selection adds the default oneAPI selector");
     }
 
     if (g_failures > 0) {

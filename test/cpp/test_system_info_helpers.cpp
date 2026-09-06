@@ -133,6 +133,14 @@ static bool expect_device_memory(const char* name,
 
 static bool test_intel_pci_and_vram() {
     bool pass = true;
+    pass &= expect_bool(
+        "not-installed backend is excluded from automatic defaults",
+        lemon::system_info_detail::backend_state_can_be_default("not_installed"),
+        false);
+    pass &= expect_bool(
+        "installable backend remains eligible for automatic defaults",
+        lemon::system_info_detail::backend_state_can_be_default("installable"),
+        true);
     pass &= expect_bool("display class 0x030000",
         lemon::system_info_detail::intel_pci_is_display("0x030000"), true);
     pass &= expect_bool("3d class 0x038000",
@@ -234,6 +242,17 @@ static bool test_intel_pci_and_vram() {
     pass &= expect_bool(
         "xpu-smi ratio 0.25",
         std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi) - 0.25) < 1e-9,
+        true);
+    const char* smi_with_rounded_utilization =
+        "GPU Memory Util (%)   33\n"
+        "GPU Memory Used (MiB) 8192\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi used and total override rounded utilization",
+        std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(
+                     smi_with_rounded_utilization) -
+                 0.25) <
+            1e-9,
         true);
     const char* smi_b70 =
         "+-----------------------------+--------------------------------------------------------------------+\n"

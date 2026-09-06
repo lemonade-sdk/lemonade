@@ -538,15 +538,8 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 
     if (is_llamacpp_sycl_backend(llamacpp_backend)) {
-        auto inherit_or_set = [&](const char* key, const char* value) {
-            const char* existing = std::getenv(key);
-            if (!existing || existing[0] == '\0') {
-                env_vars.push_back({key, value});
-            }
-        };
-        inherit_or_set("ONEAPI_DEVICE_SELECTOR", "level_zero:0");
-        inherit_or_set("ZES_ENABLE_SYSMAN", "1");
-        inherit_or_set("GGML_SYCL_F16", "1");
+        BackendUtils::apply_sycl_env_vars(
+            env_vars, /*has_explicit_device=*/!llamacpp_device.empty());
 #ifndef _WIN32
         fs::path exe_dir = fs::path(executable).parent_path();
         std::string lib_path = exe_dir.string();
@@ -916,6 +909,13 @@ public:
     }
 
     InstallCheck check_install(const std::string& backend, bool binary_found) const override {
+        if (backend == "sycl" && !binary_found) {
+            return {
+                false,
+                "Set llamacpp.sycl_bin to a llama-server directory or install oneAPI"
+            };
+        }
+
         // The system llama-server also needs the ggml HIP plugin for ROCm GPU
         // acceleration when an AMD GPU (KFD) is present.
         if (binary_found && backend == "system") {
@@ -926,6 +926,24 @@ public:
 #endif
         }
         return {binary_found, ""};
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend,
+        const std::string& install_error,
+        const std::string& default_install_command) const override {
+        (void)default_install_command;
+        if (backend != "sycl") {
+            return std::nullopt;
+        }
+        return UnavailableState{
+            "not_installed",
+            install_error.empty()
+                ? "Set llamacpp.sycl_bin to a llama-server directory or install oneAPI"
+                : install_error,
+            "",
+            false
+        };
     }
 };
 }  // namespace

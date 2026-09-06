@@ -19,6 +19,10 @@
 
 namespace lemon::system_info_detail {
 
+inline bool backend_state_can_be_default(const std::string& state) {
+    return state != "not_installed";
+}
+
 inline const std::set<std::string>& cuda_supported_archs() {
     static const std::set<std::string> archs = {
         "sm_75",   // Turing       (RTX 20, GTX 16, T4, Quadro RTX)
@@ -412,13 +416,13 @@ inline double xpu_smi_vram_usage_ratio(const std::string& stats_text) {
             total = metric_value(line, "GPU Memory Total (MiB)");
         }
     }
+    if (std::isfinite(used) && std::isfinite(total) && used >= 0.0 && total > 0.0) {
+        return std::min(1.0, used / total);
+    }
     if (utilization_pct >= 0.0 && utilization_pct <= 100.0) {
         return utilization_pct / 100.0;
     }
-    if (!std::isfinite(used) || !std::isfinite(total) || used < 0.0 || total <= 0.0) {
-        return -1.0;
-    }
-    return std::min(1.0, used / total);
+    return -1.0;
 }
 
 }  // namespace lemon::system_info_detail
