@@ -344,17 +344,24 @@ inline double xe_vram_usage_ratio_from_mm(const std::string& vram0_mm_text) {
         key = trim(key);
         val = trim(val);
         if (key == "size") {
-            size = std::strtoull(val.c_str(), nullptr, 10);
-            have_size = size > 0;
+            char* end = nullptr;
+            const unsigned long long parsed = std::strtoull(val.c_str(), &end, 10);
+            if (end != val.c_str() && *end == '\0' && parsed > 0) {
+                size = parsed;
+                have_size = true;
+            }
         } else if (key == "usage") {
-            usage = std::strtoull(val.c_str(), nullptr, 10);
-            have_usage = true;
+            char* end = nullptr;
+            const unsigned long long parsed = std::strtoull(val.c_str(), &end, 10);
+            if (end != val.c_str() && *end == '\0') {
+                usage = parsed;
+                have_usage = true;
+            }
         }
     }
-    if (!have_size) {
+    if (!have_size || !have_usage) {
         return -1.0;
     }
-    (void)have_usage;
     return std::min(1.0, static_cast<double>(usage) / static_cast<double>(size));
 }
 
@@ -373,7 +380,15 @@ inline double xpu_smi_vram_usage_ratio(const std::string& stats_text) {
             while (ls >> tok) {
                 last = tok;
             }
-            return last.empty() ? -1.0 : std::stod(last);
+            if (last.empty()) {
+                return -1.0;
+            }
+            char* end = nullptr;
+            const double v = std::strtod(last.c_str(), &end);
+            if (end == last.c_str() || *end != '\0') {
+                return -1.0;
+            }
+            return v;
         };
         if (used_pos != std::string::npos) {
             used = last_num(line);

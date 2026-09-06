@@ -200,6 +200,14 @@ static bool test_intel_pci_and_vram() {
         "empty mm is -1",
         lemon::system_info_detail::xe_vram_usage_ratio_from_mm("") < 0.0,
         true);
+    const char* mm_no_usage =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n";
+    pass &= expect_bool(
+        "mm without usage is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_no_usage) < 0.0,
+        true);
 
     const char* smi =
         "GPU Utilization (%)    12\n"
@@ -208,6 +216,13 @@ static bool test_intel_pci_and_vram() {
     pass &= expect_bool(
         "xpu-smi ratio 0.25",
         std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi) - 0.25) < 1e-9,
+        true);
+    const char* smi_nonnumeric =
+        "GPU Memory Used (MiB)  n/a\n"
+        "GPU Memory Total (MiB) unknown\n";
+    pass &= expect_bool(
+        "xpu-smi nonnumeric memory is -1",
+        lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_nonnumeric) < 0.0,
         true);
     return pass;
 }
