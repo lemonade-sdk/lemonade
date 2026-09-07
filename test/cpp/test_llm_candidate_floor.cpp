@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstdio>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -57,6 +58,28 @@ struct LlmPoolFloorTestHook {
     static void reconcile_floor(Router& r, int floor) {
         static std::atomic<uint64_t> generation{0};
         r.reconcile_llm_candidate_floor(floor, ++generation);
+    }
+
+    // Drives Router::reconcile_policy_state's combined core directly, with
+    // already-canonical names (this test's Router has no ModelManager, same
+    // reason RoutingHelperTestHook::reconcile bypasses resolve_model_name).
+    static void reconcile_policy(Router& r, int floor, std::set<std::string> needed) {
+        static std::atomic<uint64_t> generation{0};
+        r.apply_policy_state_reconcile(floor, std::move(needed), ++generation);
+    }
+
+    // Same core, but with an explicit generation — lets a test drive an
+    // out-of-order (older) call to exercise the guard directly, the way
+    // reconcile_floor's auto-incrementing counter can't.
+    static void reconcile_policy_at_generation(Router& r, int floor,
+                                               std::set<std::string> needed,
+                                               uint64_t generation) {
+        r.apply_policy_state_reconcile(floor, std::move(needed), generation);
+    }
+
+    static std::set<std::string> needed_helper_models(Router& r) {
+        std::lock_guard<std::mutex> lock(r.load_mutex_);
+        return r.needed_helper_models_;
     }
 
     // Same call load_model makes when admitting a new LLM: check capacity for
@@ -185,6 +208,39 @@ static void test_stale_generation_ignored() {
 
     check("an out-of-order (older) reconcile is ignored",
           LlmPoolFloorTestHook::applied_floor(router) == 2);
+}
+
+static void test_policy_state_reconcile_co_publishes_floor_and_helpers() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+
+    LlmPoolFloorTestHook::reconcile_policy(router, 3, {"policy.helper.a"});
+
+    check("reconcile_policy_state's floor lands from the same call",
+          LlmPoolFloorTestHook::applied_floor(router) == 3);
+    check("reconcile_policy_state's helper set lands from the same call",
+          LlmPoolFloorTestHook::needed_helper_models(router).count("policy.helper.a") == 1);
+}
+
+static void test_policy_state_reconcile_stale_generation_touches_neither() {
+    RuntimeConfig config(make_config_json(1, true));
+    Router router(&config, nullptr, nullptr);
+
+    // Seed at generation 100, then race an older generation carrying a
+    // different floor AND a different helper set. Both are guarded by the
+    // one last_policy_reconcile_generation_ counter, so an out-of-order call
+    // must leave both untouched together — not let one win independently of
+    // the other, which is exactly the split-generation race 137a23968c fixed
+    // (reconcile_llm_candidate_floor and reconcile_routing_helpers used to be
+    // called back to back, each under its own counter).
+    LlmPoolFloorTestHook::reconcile_policy_at_generation(router, 3, {"policy.helper.a"}, 100);
+    LlmPoolFloorTestHook::reconcile_policy_at_generation(router, 9, {"policy.helper.stale"}, 50);
+
+    const auto helpers = LlmPoolFloorTestHook::needed_helper_models(router);
+    check("a stale generation leaves the floor untouched",
+          LlmPoolFloorTestHook::applied_floor(router) == 3);
+    check("a stale generation leaves the helper set untouched",
+          helpers.count("policy.helper.a") == 1 && helpers.count("policy.helper.stale") == 0);
 }
 
 static void test_unlimited_pool_ignores_floor() {
@@ -397,6 +453,8 @@ int main() {
     test_floor_raises_llm_capacity();
     test_floor_still_evicts_past_capacity();
     test_stale_generation_ignored();
+    test_policy_state_reconcile_co_publishes_floor_and_helpers();
+    test_policy_state_reconcile_stale_generation_touches_neither();
     test_autosize_off_clamps_applied_floor();
     test_reconcile_converges_pool_down_when_floor_drops();
     test_enforce_llm_pool_capacity_reclaims_after_live_config_change();

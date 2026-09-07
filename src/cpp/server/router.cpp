@@ -435,17 +435,6 @@ bool Router::ensure_loaded_model_residency_canonical(
     return true;
 }
 
-void Router::reconcile_routing_helpers(const std::set<std::string>& needed_helper_models,
-                                       uint64_t generation) {
-    // Canonicalize the policy-authored names outside the lock so they match the
-    // (already-canonical) live WrappedServer::get_model_name() during eviction.
-    std::set<std::string> needed;
-    for (const auto& model : needed_helper_models) {
-        needed.insert(resolve_model_name(model));
-    }
-    apply_routing_helper_reconcile(std::move(needed), generation);
-}
-
 void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation) {
     std::unique_lock<std::mutex> lock(load_mutex_);
 
@@ -536,11 +525,19 @@ void Router::begin_shutdown() {
 void Router::reconcile_policy_state(int floor,
                                     const std::set<std::string>& needed_helper_models,
                                     uint64_t generation) {
+    // Canonicalize the policy-authored names outside the lock so they match
+    // the (already-canonical) live WrappedServer::get_model_name() during
+    // eviction — same contract apply_routing_helper_reconcile's own `needed`
+    // parameter relies on.
     std::set<std::string> needed;
     for (const auto& model : needed_helper_models) {
         needed.insert(resolve_model_name(model));
     }
+    apply_policy_state_reconcile(floor, std::move(needed), generation);
+}
 
+void Router::apply_policy_state_reconcile(int floor, std::set<std::string> needed,
+                                          uint64_t generation) {
     std::unique_lock<std::mutex> lock(load_mutex_);
     if (generation <= last_policy_reconcile_generation_) {
         return;
