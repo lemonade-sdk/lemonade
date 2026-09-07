@@ -32,6 +32,8 @@ inline const BackendDescriptor descriptor = {
         {"film_grain", "", 0.0, "SIZE", "Film grain strength (0.0-10.0)", "TheNoise Options"},
         {"sharpening", "", 0.0, "SIZE", "RCAS sharpening strength (0.0-1.0)", "TheNoise Options"},
         {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
+        {"refine", "", false, "BOOL", "Run native latent-space 2x refine during generation (forwarded as upscale=true)", "TheNoise Options"},
+        {"pixel_upscaler", "", "", "MODEL", "Pixel upscaler model for upscaling during generation (Native if upscaler is on theNoise)", "TheNoise Options"},
     },
     /*support*/ {
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm iGPU families"},

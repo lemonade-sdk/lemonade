@@ -646,6 +646,9 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 | `steps` | No | Number of inference steps. SD-Turbo works well with 4 steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. SD-Turbo uses low values (~1.0). Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. If not specified, a random seed is used. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `skip_implicit_upscaling` | No | Boolean. If `true`, skip any auto-upscale (skip any auto-upscale configured via `pixel_upscaler`). Defaults to `false`. Replaces the legacy `skip_upscale` field. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `pixel_upscaler` recipe option. Works with both `sd-cpp` and `thenoise` upscalers. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -662,6 +665,32 @@ Image Generation API. You provide a text prompt and receive a generated image. T
             "response_format": "b64_json"
           }'
     ```
+
+### Response format
+
+```json
+{
+  "created": 1742927481,
+  "data": [
+    {
+      "b64_json": "<base64-encoded PNG>",
+      "upscaled": true,
+      "width": 2048,
+      "height": 2048
+    }
+  ]
+}
+```
+
+**Field Descriptions:**
+
+- `created` - Unix timestamp of when the image was generated
+- `data` - Array containing the generated image
+  - `b64_json` - Base64-encoded PNG of the image
+  - `upscaled` - Boolean. Present and `true` if a model-level `pixel_upscaler` recipe option caused the image to be auto-upscaled after generation. Omitted when no upscale occurred. Callers should check this field to determine actual image dimensions, as the returned resolution may differ from the requested `size` when auto-upscale is active.
+  - `width` / `height` - Actual dimensions of the returned image in pixels. Present when `upscaled` is `true`.
+
+---
 
 ## `POST /v1/images/edits`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
@@ -686,6 +715,10 @@ Image Editing API. You provide a source image and a text prompt describing the d
 | `steps` | No | Number of inference steps. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `cfg_scale` | No | Classifier-free guidance scale. Default varies by model. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `seed` | No | Random seed for reproducibility. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `skip_implicit_upscaling` | No | Boolean. If `true`, skip any auto-upscale (skip any auto-upscale configured via `pixel_upscaler`). Defaults to `false`. Replaces the legacy `skip_upscale` field. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `pixel_upscaler`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `pixel_upscaler` recipe option. Works with both `sd-cpp` and `thenoise` upscalers. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `background` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 | `quality` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
@@ -743,6 +776,10 @@ Image Variations API. You provide a source image and receive a variation of it. 
 | `size` | No | The size of the output image. Format: `WIDTHxHEIGHT` (e.g., `512x512`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of variations to generate. Integer between 1 and 10 inclusive. Default: `1`. Values outside this range result in a 400 Bad Request error. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `skip_implicit_upscaling` | No | Boolean. If `true`, skip any auto-upscale (skip any auto-upscale configured via `pixel_upscaler`). Defaults to `false`. Replaces the legacy `skip_upscale` field. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upscale` | No | Boolean. Accepted for backward compatibility but not forwarded to the backend. The post-generation upscaling step is controlled by `pixel_upscaler`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `refine` | No | Boolean, `thenoise` models only. Runs the backend's native latent-space 2× refine during generation (forwarded as `upscale=true`). Ignored for other recipes. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | Name of any registered upscaling model (carrying the `upscaling` label) for the post-generation upscaling step; overrides the model-level `pixel_upscaler` recipe option. Works with both `sd-cpp` and `thenoise` upscalers. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `user` | No | OpenAI API compatibility field. Accepted but not forwarded to the backend. | <sub>![Status](https://img.shields.io/badge/not_available-red)</sub> |
 
 ### Example request
@@ -791,7 +828,8 @@ Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `RealESRGAN-x4plus-anime`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes (or `pixel_upscaler`) | The upscaling model to use, as a registry model name with the `upscaling` label (e.g., `RealESRGAN-x4plus`). Both `sd-cpp` and `thenoise` upscalers are supported; the correct backend CLI is selected from the model's recipe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `pixel_upscaler` | No | Alias for `model`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
