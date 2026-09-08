@@ -55,9 +55,12 @@ struct LlmPoolFloorTestHook {
         return raw;
     }
 
+    // Floor-only convenience over apply_policy_state_reconcile (below) — the
+    // production path (reconcile_policy_state) drives, with an empty helper
+    // set, so these tests exercise the same core production actually calls.
     static void reconcile_floor(Router& r, int floor) {
         static std::atomic<uint64_t> generation{0};
-        r.reconcile_llm_candidate_floor(floor, ++generation);
+        r.apply_policy_state_reconcile(floor, {}, ++generation);
     }
 
     // Drives Router::reconcile_policy_state's combined core directly, with
@@ -199,12 +202,12 @@ static void test_floor_still_evicts_past_capacity() {
 static void test_stale_generation_ignored() {
     RuntimeConfig config(make_config_json(1, true));
     Router router(&config, nullptr, nullptr);
-    router.reconcile_llm_candidate_floor(2, 100);
+    LlmPoolFloorTestHook::reconcile_policy_at_generation(router, 2, {}, 100);
     // An older generation arriving after a newer one must not undo it. Check
     // the stored value directly rather than through eviction side effects —
     // at floor=2 with 2 residents, adding a 3rd evicts one either way (floor
     // reverted to 0 or not), so that path can't distinguish the two cases.
-    router.reconcile_llm_candidate_floor(0, 50);
+    LlmPoolFloorTestHook::reconcile_policy_at_generation(router, 0, {}, 50);
 
     check("an out-of-order (older) reconcile is ignored",
           LlmPoolFloorTestHook::applied_floor(router) == 2);
@@ -231,8 +234,8 @@ static void test_policy_state_reconcile_stale_generation_touches_neither() {
     // one last_policy_reconcile_generation_ counter, so an out-of-order call
     // must leave both untouched together — not let one win independently of
     // the other, which is exactly the split-generation race 137a23968c fixed
-    // (reconcile_llm_candidate_floor and reconcile_routing_helpers used to be
-    // called back to back, each under its own counter).
+    // (floor and helper set used to be published by two separate calls,
+    // each guarded by its own counter).
     LlmPoolFloorTestHook::reconcile_policy_at_generation(router, 3, {"policy.helper.a"}, 100);
     LlmPoolFloorTestHook::reconcile_policy_at_generation(router, 9, {"policy.helper.stale"}, 50);
 
@@ -356,8 +359,7 @@ static void test_reconcile_waits_for_exclusive_session_before_evicting() {
     std::thread worker([&] { LlmPoolFloorTestHook::reconcile_floor(router, 1); });
 
     // The eviction pass must block while the exclusive session holds the
-    // router, same as apply_routing_helper_reconcile's does — not race
-    // ahead and evict out from under it.
+    // router — not race ahead and evict out from under it.
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     const bool survived_during_session =
         LlmPoolFloorTestHook::resident_count(router, {"excl.a", "excl.b"}) == 2;

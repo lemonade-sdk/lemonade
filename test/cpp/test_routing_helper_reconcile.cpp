@@ -3,13 +3,11 @@
 // Exercises the durable-reconciliation core the router uses to reclaim routing
 // helpers when a collection's policy changes: the published needed-set, the
 // non-blocking prune that skips busy/pinned helpers, and thread-safety of a
-// policy update racing a helper going busy/idle. Cases drive the reconcile
-// primitive (apply_routing_helper_reconcile) rather than the prune in
-// isolation, so a busy helper is reclaimed by a subsequent policy reconcile once
-// idle — the real transition, not a hand-invoked second prune. Production now
-// reaches the same prune (prune_stale_routing_helpers_locked) through
-// Router::reconcile_policy_state instead of this function directly, but the
-// convergence behavior being tested is identical either way.
+// policy update racing a helper going busy/idle. Cases drive the same
+// production entry point (apply_policy_state_reconcile, via
+// Router::reconcile_policy_state) rather than the prune in isolation, so a
+// busy helper is reclaimed by a subsequent policy reconcile once idle — the
+// real transition, not a hand-invoked second prune.
 //
 // The full load_model interleaving (the load-completion validation guard) is an
 // integration concern: it needs a real ModelManager (reads server_models.json),
@@ -84,14 +82,17 @@ struct RoutingHelperTestHook {
         return raw;
     }
 
-    // Drive the production reconcile core directly. Names are pre-canonicalized
-    // (the test never touches ModelManager::resolve_model_name, which reads the
-    // cache dir), so this exercises the real publish-then-prune transition a
-    // policy change triggers — not the prune in isolation. Each call carries a
-    // strictly increasing generation, matching the production ordering guard.
+    // Drive the production reconcile core directly, with a floor of 0 — these
+    // tests only ever construct RoutingHelper/CLASSIFICATION stubs, never an
+    // LLM one, so apply_policy_state_reconcile's LLM-pool enforcement pass has
+    // nothing to act on. Names are pre-canonicalized (the test never touches
+    // ModelManager::resolve_model_name, which reads the cache dir), so this
+    // exercises the real publish-then-prune transition a policy change
+    // triggers — not the prune in isolation. Each call carries a strictly
+    // increasing generation, matching the production ordering guard.
     static void reconcile(Router& r, std::set<std::string> needed) {
         static std::atomic<uint64_t> generation{0};
-        r.apply_routing_helper_reconcile(std::move(needed), ++generation);
+        r.apply_policy_state_reconcile(0, std::move(needed), ++generation);
     }
 
     static bool has_helper(Router& r, const std::string& model_name) {

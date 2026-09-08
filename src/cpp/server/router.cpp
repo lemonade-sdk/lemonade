@@ -435,73 +435,6 @@ bool Router::ensure_loaded_model_residency_canonical(
     return true;
 }
 
-void Router::apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation) {
-    std::unique_lock<std::mutex> lock(load_mutex_);
-
-    // Discard a notification that lost a race to a newer one. Policy callbacks can
-    // run concurrently and finish out of order; republishing an older set would
-    // resurrect helpers a newer policy already dropped (or drop ones it re-added).
-    // The newest generation always carries the final registry state, so keeping
-    // only the highest generation converges on the authoritative set.
-    if (generation <= last_reconcile_generation_) {
-        return;
-    }
-    last_reconcile_generation_ = generation;
-
-    // Publish the authoritative set immediately, even while a load is in flight.
-    // A helper's backend loads with load_mutex_ released, so a concurrent load
-    // re-acquires the lock at completion and validates against this fresh set
-    // (see load_model) — closing the load-versus-policy-change race without a
-    // timer. Deferring the publish behind the wait below would let that load
-    // commit an already-obsolete helper.
-    needed_helper_models_ = std::move(needed);
-
-    // Only the eviction pass must wait for a quiet slot: evict_server mutates
-    // loaded_servers_ and blocks on request drain, neither of which is safe to
-    // interleave with an in-flight load. reclaim_shutdown_ breaks it early too
-    // (see reclaim_stale_helper_if_idle) so a background_sync_threads_ join in
-    // ~Server doesn't stall behind a load that's still running.
-    load_cv_.wait(lock, [&] {
-        return reclaim_shutdown_ ||
-               (!is_loading_ &&
-                (!exclusive_active_ ||
-                 exclusive_owner_ == std::this_thread::get_id()));
-    });
-    if (reclaim_shutdown_) {
-        return;
-    }
-    prune_stale_routing_helpers_locked();
-}
-
-void Router::reconcile_llm_candidate_floor(int floor, uint64_t generation) {
-    std::unique_lock<std::mutex> lock(load_mutex_);
-    if (generation <= last_llm_floor_generation_) {
-        return;
-    }
-    last_llm_floor_generation_ = generation;
-    // Published immediately, same reasoning as needed_helper_models_ in
-    // apply_routing_helper_reconcile: a load re-acquiring the lock after
-    // this validates against the fresh value regardless of whether the
-    // eviction pass below has run yet.
-    llm_candidate_floor_ = floor;
-
-    // Same wait apply_routing_helper_reconcile uses before its own eviction
-    // pass — evicting is not safe to interleave with an in-flight load or an
-    // exclusive job session. reclaim_shutdown_ breaks it early too (see
-    // reclaim_stale_helper_if_idle) so a background_sync_threads_ join in
-    // ~Server doesn't stall behind a load that's still running.
-    load_cv_.wait(lock, [&] {
-        return reclaim_shutdown_ ||
-               (!is_loading_ &&
-                (!exclusive_active_ ||
-                 exclusive_owner_ == std::this_thread::get_id()));
-    });
-    if (reclaim_shutdown_) {
-        return;
-    }
-    enforce_llm_pool_capacity_locked();
-}
-
 void Router::enforce_llm_pool_capacity() {
     std::unique_lock<std::mutex> lock(load_mutex_);
     load_cv_.wait(lock, [&] {
@@ -527,8 +460,7 @@ void Router::reconcile_policy_state(int floor,
                                     uint64_t generation) {
     // Canonicalize the policy-authored names outside the lock so they match
     // the (already-canonical) live WrappedServer::get_model_name() during
-    // eviction — same contract apply_routing_helper_reconcile's own `needed`
-    // parameter relies on.
+    // eviction.
     std::set<std::string> needed;
     for (const auto& model : needed_helper_models) {
         needed.insert(resolve_model_name(model));
@@ -568,8 +500,8 @@ void Router::enforce_llm_pool_capacity_locked() {
     const bool autosize = config_->llm_pool_autosize();
 
     // See model_residency.h for the floor itself. The check lives here,
-    // not in reconcile_llm_candidate_floor, so a live /internal/set change
-    // triggers it too, not just a policy-driven reconcile.
+    // not in reconcile_policy_state, so a live /internal/set change triggers
+    // it too, not just a policy-driven reconcile.
     if (autosize && max_loaded != -1 && llm_candidate_floor_ > max_loaded && !config_->auto_evict()) {
         if (llm_candidate_floor_ != last_llm_floor_warned_) {
             LOG(WARNING, "Router") << "LLM pool floor raised to " << llm_candidate_floor_
