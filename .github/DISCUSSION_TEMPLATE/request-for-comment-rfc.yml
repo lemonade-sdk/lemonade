@@ -1,0 +1,81 @@
+# Discussion form for the "Request for Comment (RFC)" category.
+# Keep in sync with the "Writing your RFC" section of docs/dev/spec-driven-dev.md.
+labels: ["rfc:open-for-comment"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lemonade follows [spec-driven development](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/spec-driven-dev.md): any change to the project's scope, surface area, or user experience starts as an RFC, and the PR that implements it links back here.
+
+        Before you start:
+
+        - **Write in proportion to the change.** A minor feature, such as a new flag on a CLI subcommand, needs far less detail than a proposal for a new working group.
+        - **The [AI content policy](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/ai-content-policy.md) strictly applies here.** Important decisions in Lemonade are made through human-to-human discourse.
+
+        After you post, tag the relevant [maintainers](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/contribute.md#maintainers) and share the RFC in the `#dev` channel on [Discord](https://discord.gg/5xXzkMu8Zk).
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Proposal size
+      description: How large is the change you are proposing? This sets expectations for how much detail reviewers will look for.
+      options:
+        - Minor feature (a single PR)
+        - Major feature (spans multiple well-scoped PRs)
+        - Working group (a large scope increase spanning multiple release cycles)
+    validations:
+      required: true
+
+  - type: textarea
+    id: updates
+    attributes:
+      label: Updates
+      description: Leave this blank when you first post. As the proposal evolves, edit this discussion and list the changes here so people can follow along.
+      placeholder: |
+        Update 2: Dropped the `--foo` flag in favor of a config key.
+        Update 1: Changed X to Y.
+    validations:
+      required: false
+
+  - type: textarea
+    id: user-story
+    attributes:
+      label: User story
+      description: Explain how the user will apply, and derive benefit from, the change.
+      placeholder: "As a <kind of user>, I want to <task>, so that <benefit>. Today this is impossible or painful because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking-changes
+    attributes:
+      label: Breaking changes
+      description: What breaks for existing users or developers, and what is the negative impact? Write "None" if the change is fully backwards compatible.
+      placeholder: "None."
+    validations:
+      required: true
+
+  - type: textarea
+    id: high-level-design
+    attributes:
+      label: High-level design
+      description: What are you changing in Lemonade, from the perspective of a user or developer? Do not cite code here.
+      placeholder: "New endpoints, CLI commands, flags, GUI elements, install steps, defaults, error messages, docs..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: maintenance-plan
+    attributes:
+      label: Maintenance plan
+      description: Is the feature fully maintained by CI, or does it need continuous human intervention? For example, llama.cpp adds support for new models in their releases, and human maintainers must submit PRs to provide that support in Lemonade. Are human testers needed on the PR? How will CI testing protect the change?
+    validations:
+      required: true
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks
+      description: Does this change introduce any risks (e.g., security)? Optional if there are none.
+    validations:
+      required: false

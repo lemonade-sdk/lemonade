@@ -2,28 +2,28 @@
 
 We're excited that you are interested in contributing!
 
-Please carefully review Lemonade's [philosophy](./philosophy.md) and [spec-driven development guide](./spec-driven-dev.md) before making a pull request.
+Before contributing, please familiarize yourself with these 3 documents:
+1. The [project philosophy](./philosophy.md) will help you understand design priorities.
+2. The [AI content policy](./ai-content-policy.md) is essential to make sure your communications are well received.
+3. Understanding the [spec-driven development guide](./spec-driven-dev.md) is required before opening a pull request.
+
+We also highly recommend that all contributors join the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk), meet [the maintainers](#maintainers) and get a sense of what is trending.
+
+Welcome to the project!
 
 ## Development Process
 
 ### Working Groups
 
-Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md), and most substantial contributions should be within the scope of one of these groups.
+Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md). Most substantial contributions should be within the scope of an existing group, and you can join by reaching out to the leads.
 
-### Proposing a Contribution
-
-1. We highly recommend that all contributors join the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk), meet [the maintainers](#maintainers) and get a sense of what is trending.
-2. Depending on the complexity and nature of your contribution:
-    - Simple fixes: just make a PR.
-    - Already within the scope of a [working group](./working-groups/README.md): just make a PR.
-    - Anything else that alters the scope, surface area, or user experience of Lemonade must follow the [spec-driven development process](./spec-driven-dev.md).
-3. Create a fork of Lemonade repo, implement your code, and then make a pull request to merge your code back to the main repo.
+If you want to found a new working group, or make any change to Lemonade's scope, surface area, or user experience, you need to follow the [spec-driven development process](./spec-driven-dev.md).
 
 ### PR Expectation
 
 Each contribution needs to:
 
-1. Accurately describe the scope, use case, and implementation in the PR body.
+1. Accurately describe the scope, use case, and implementation in the PR body. This must be human-written per the [AI content policy](./ai-content-policy.md).
 2. Solve one clearly defined problem, and limit its scope to what is necessary.
 3. Pass the CI tests and follow the [testing guide](./testing.md).
     - Contributors: make sure the code builds locally before creating the PR.
@@ -33,37 +33,30 @@ Each contribution needs to:
 
 The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.
 
-### AI Contribution Policy
+### Opening a PR
 
-Contributors are welcome to use AI tools while working on Lemonade. However, contributors remain fully responsible for the code they submit.
+1. Depending on the complexity and nature of your contribution:
+    - Simple fixes: just make a PR.
+    - Already within the scope of a [working group](./working-groups/README.md): just make a PR, and link the working group in the PR body.
+    - Anything else: [open an RFC](./spec-driven-dev.md), get it approved, and link it in the PR body.
+2. Create a fork of Lemonade repo and implement your code.
+3. You are strongly encouraged to run an AI code review tool yourself, such as `claude /code-review` and address any issues before opening your PR. Reviewers may put your PR back to draft status and ask you to do this.
+4. Make a pull request to merge your code back to the main repo.
+5. A Lemonade administrator will triage your PR and assign it a label:
+  - `rfc:not-required` or `rfc:on-roadmap`: ready for review.
+  - `rfc:required`: PR will be marked as a draft until an approved RFC or working group is linked.
 
-If you use AI-assisted coding, please make sure that you:
-
-1. Understand the generated code before submitting it.
-2. Review the full diff yourself.
-3. Remove unrelated or unnecessary changes.
-4. Test the result locally where possible.
-
-AI can make it easy to generate large changes, but large or unfocused changes are harder for maintainers to review and are less likely to be accepted quickly.
-
-__Please do not use AI to write issues__. If you feel an issue is important enough for a human to read it then please take the time to write it yourself.
-
-## Review Process
-
-1. Work that is ready for CI testing and AI review, but not ready for human review, should be marked as a draft PR.
-2. Please use an AI review tool such as Claude Code's `/review` on your own code to flag and fix problems before marking the PR ready for human review.
-3. A "ready for review" non-draft PR is a signal that it is ready for human review.
-4. Evaluate the PR for scope:
-    - minor features and fixes should have any 1 reviewer.
-    - major features, breaking changes, refactors, new backends, security-related issues, etc. should have 2 reviewers including 1 subject area expert.
-    - project scope expansion, re-architecture, design language changes, etc. should have @jeremyfowers review.
-5. Evaluate the PR for which subject areas it impacts, and request review from a subject area expert in the maintainers table below.
+> [!NOTE]
+> PRs that have been idle for 30 days will be closed automatically.
 
 ## Maintainers
 
 While each maintainer is welcome to work on any part of the Lemonade codebase, each maintainer does have specific knowledge of certain areas. You should use their knowledge as a starting point for designing your contribution, and they will be the ones to review your contribution when it is ready.
 
 "Admin maintainer" means that individual is a repository admin who can tag releases and take other administrative actions.
+
+> [!TIP]
+> Whenever possible, PRs should have at least one reviewer with subject area expertise. Try to avoid merging PRs that are approved, but not thoroughly reviewed.
 
 | Maintainer        | Admin | Subject Areas                                                                                                                                    |
 |-------------------|-------|--------------------------------------------------------------------------------------------------------------------------------------------------|
