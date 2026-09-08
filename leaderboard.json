@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-09-08T06:52:51.704203+00:00",
-  "run_id": "34192817327",
-  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34192817327",
+  "generated_at": "2026-09-08T07:34:15.655493+00:00",
+  "run_id": "34198871413",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34198871413",
   "repo": "lemonade-sdk/lemonade",
   "repo_url": "https://github.com/lemonade-sdk/lemonade",
   "actions_url": "https://github.com/lemonade-sdk/lemonade/actions/workflows/benchmark-regression.yml",
-  "commit": "63047f53c4c8993296023acbabc57f50ec784f18",
+  "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0",
   "lemonade_version": "v11.5.2",
   "experimental_forks": [
     "llamacpp-hrx"
