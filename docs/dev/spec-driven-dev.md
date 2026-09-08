@@ -39,7 +39,7 @@ The steps are:
 2. Tag the relevant maintainers on the RFC. You can check the [maintainers table](./contribute.md#maintainers) to see each maintainer's area of interest. You should also bring your RFC to the #dev channel on the discord to help raise awareness amongst other contributors. RFCs with more votes may be considered before RFCs with fewer votes.
 3. RFCs start with the `rfc:open-for-comment` label, which indicates no decision has been made yet about whether or when a PR should be opened.
 4. Make sure to regularly update the body of your RFC when the idea progresses or changes. Provide a list of updates at the top (e.g., `Update 3: Changed X to Y`) to help people follow along.
-5. Once the RFC body converges the code owners will provide a final review and change the label to `rfc:on-roadmap`.
+5. Once the RFC body converges the code owners will provide a final review and change the label to `rfc:on-roadmap`. If the maintainers decide the RFC should not be implemented it will be assigned the `rfc:not-planned` label.
 6. Open your PR and link the RFC in the appropriate field of the PR body template.
 7. The PR should faithfully implement the RFC. If the PR has significant scope, surface area, or user experience divergence from the RFC, request the relevant code owner to review the PR.
 
