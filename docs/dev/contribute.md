@@ -47,7 +47,7 @@ The fastest way to build trust as a new contributor is to submit small, clear, w
   - `rfc:required`: PR will be marked as a draft until an approved RFC or working group is linked.
 
 > [!NOTE]
-> PRs that have been idle for 30 days will be closed automatically.
+> PRs that have been idle for 30 days should be closed.
 
 ## Maintainers
 

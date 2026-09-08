@@ -17,7 +17,7 @@ need to be within the scope of a working group or approved RFC.
 -->
 
 This PR:
-- [ ] fixes a bug <!-- (closes #issue-number) --> and does not need a WG/RFC.
+- [ ] fixes something <!-- (closes #issue-number) --> and does not need a WG/RFC.
 - [ ] is within the scope of WG: <!-- working group name -->
 - [ ] has approved RFC #<!--discussion number -->
 

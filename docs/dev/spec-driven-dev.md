@@ -16,7 +16,9 @@ This section helps you identify which changes should follow the policy.
 
 * **Scope: what are Lemonade's capabilities?** For example, `lemond` serves LLM inference over endpoints to clients. It does not provide an agentic memory system as of this writing; that would be a scope increase.
 * **Surface area: how are Lemonade's capabilities exposed?** For example, Lemonade is capable of saving model loading options to a configuration file. As of this writing, `lemonade` CLI supports saving options, but it does not support viewing or editing these options; adding these would be a surface area increase.
-* **User experience: how do end-users and devs interact with Lemonade's surface area?** This is a broad category that covers anything that would change the experience from one release to the next. It includes breaking changes, visual design language, GUI layout, installation/distribution, etc.
+* **User experience: how do users interact with Lemonade's surface area?** This is a broad category that covers anything that would change the experience from one release to the next. It includes breaking changes, visual design language, GUI layout, installation/distribution, etc.
+
+Note that the above applies to developers of Lemonade, as well as end-users. Anything that changes the scope, surface area, or experience of developing Lemonade also should have an RFC. This includes, but is not limited to: changing the release process, adding new tests, refactoring working code, etc.
 
 ### Types of RFCs
 
@@ -50,7 +52,7 @@ The following maintainers are required to review RFCs within their subject area.
 | Code Owner    | Area                                          |
 |---------------|-----------------------------------------------|
 | @bitgamma     | `lemonade` CLI                                |
-| @kpoineal     | GUI app and web ui                            |
+| @kpoineal     | `Lemonade App` GUI                            |
 | @jeremyfowers | new endpoints, new backends, breaking changes |
 
 

@@ -38,8 +38,6 @@ AI can make it easy to generate large changes, but large or unfocused changes ar
 
 Use of AI code review tools is strongly encouraged, however the human is responsible for understanding the AI's output, improving the signal-to-noise ratio by filtering to what is important, and then rewriting their output in their own words.
 
-AI code review tools can post comments directly on a PR, but this is solely for the benefit of the human running the tool and no other human is expected to read it.
-
 ### AI Reporting
 
 AI is extremely useful for finding/reporting bugs and performing other complex analysis tasks over a large codebase like Lemonade. You are encouraged to use AI for analysis and reporting as part of your own work. However, you must synthesize your findings and write them in your own words if you want another human to read them.
