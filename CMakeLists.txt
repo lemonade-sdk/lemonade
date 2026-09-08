@@ -1256,10 +1256,18 @@ elseif(UNIX)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(lemonade-server-core PRIVATE
             ${CMAKE_DL_LIBS}
-            drm_amdgpu
         )
 
         if(PkgConfig_FOUND)
+            pkg_check_modules(LIBDRM QUIET libdrm_amdgpu)
+            if(LIBDRM_FOUND)
+                target_include_directories(lemonade-server-core PUBLIC ${LIBDRM_INCLUDE_DIRS})
+                target_link_directories(lemonade-server-core PUBLIC ${LIBDRM_LIBRARY_DIRS})
+                target_link_libraries(lemonade-server-core PUBLIC ${LIBDRM_LIBRARIES})
+                message(STATUS "libdrm_amdgpu found")
+            else()
+                message(FATAL_ERROR "libdrm_amdgpu not found - required for lemonade-server-core!")
+            endif()
             pkg_check_modules(LIBCAP QUIET libcap)
             if(LIBCAP_FOUND)
                 target_include_directories(lemonade-server-core PUBLIC ${LIBCAP_INCLUDE_DIRS})
