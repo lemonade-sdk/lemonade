@@ -39,10 +39,6 @@ namespace {
 // full request timeout.
 constexpr long kConnectTimeoutSeconds = 30;
 
-// How long a stream may deliver nothing before it is treated as dead. Well
-// above any inter-token gap, well below "never".
-constexpr long kStreamStallSeconds = 120;
-
 // Resolves the 0-means-default convention shared by every request method.
 // Without this, curl reads 0 as "no timeout" and a silent upstream parks the
 // calling httplib worker permanently.
@@ -774,14 +770,10 @@ HttpResponse HttpClient::post_stream(const std::string& url,
         curl_easy_cleanup(curl);
         throw std::runtime_error("Failed to apply HTTP security policy");
     }
-    // A total timeout would kill a long but healthy generation, so an
-    // unqualified request is bounded by upstream silence instead of duration.
-    if (timeout_seconds == 0) {
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
-        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, kStreamStallSeconds);
-    } else {
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, effective_timeout(timeout_seconds));
-    }
+    // A total timeout would kill a long but healthy generation, so the timeout
+    // bounds upstream silence instead of duration.
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, effective_timeout(timeout_seconds));
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 

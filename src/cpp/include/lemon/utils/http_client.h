@@ -154,10 +154,9 @@ public:
     // (names lowercased) before on_status fires, so a caller deciding what to
     // send downstream can see them without waiting for the transfer to finish.
     //
-    // timeout_seconds=0 uses default_timeout_seconds_. A total timeout would
-    // cut off a long but healthy generation, so this bounds upstream silence
-    // instead: the transfer is aborted only after kStreamStallSeconds with no
-    // progress, which a streaming response cannot legitimately exceed.
+    // timeout_seconds bounds upstream silence, not total duration: a total
+    // timeout would cut off a long but healthy generation. 0 uses
+    // default_timeout_seconds_, as in get().
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,
