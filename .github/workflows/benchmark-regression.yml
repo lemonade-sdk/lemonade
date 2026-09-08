@@ -207,9 +207,10 @@ jobs:
           if not fork:
             print(f"ERROR: fork {fork_id} not found"); sys.exit(1)
           cfg_backend    = fork.get("install_as", fork["backend"]).lower()
+          cfg_recipe     = fork.get("recipe", "llamacpp")
           # Default to the fork's recipe, matching validate_backend_bench.py, so a
           # future non-llamacpp fork that omits config_section routes consistently.
-          cfg_section    = fork.get("config_section", fork.get("recipe", "llamacpp"))
+          cfg_section    = fork.get("config_section", cfg_recipe)
           rocm_channel   = fork.get("rocm_channel", "")
           exe            = fork.get("binary_exe_linux", "llama-server")
           bindir         = Path(os.environ["GITHUB_WORKSPACE"]) / ".." / "bench-binaries" / fork_id
@@ -221,6 +222,7 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a") as f:
             f.write(f"BENCH_BACKEND_KEY={cfg_backend}\n")
             f.write(f"BENCH_CONFIG_SECTION={cfg_section}\n")
+            f.write(f"BENCH_RECIPE={cfg_recipe}\n")
             f.write(f"BENCH_BIN_FILE={binary}\n")
             f.write(f"BENCH_BIN_DIR={binary.parent}\n")
             f.write(f"BENCH_ROCM_CHANNEL={rocm_channel}\n")
@@ -344,23 +346,23 @@ jobs:
           # `lemonade bench` reads (discover_backends filters on state=
           # installed/update_*). Catches "No suitable backends found" up front.
           if curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
-              | BACKEND="$BENCH_BACKEND_KEY" CONFIG_SECTION="$BENCH_CONFIG_SECTION" python3 -c '
+              | BACKEND="$BENCH_BACKEND_KEY" RECIPE="$BENCH_RECIPE" python3 -c '
           import json, os, sys
           key = os.environ["BACKEND"]
-          section = os.environ["CONFIG_SECTION"]
+          recipe = os.environ["RECIPE"]
           info = json.load(sys.stdin)
-          b = info.get("recipes", {}).get(section, {}).get("backends", {}).get(key, {})
+          b = info.get("recipes", {}).get(recipe, {}).get("backends", {}).get(key, {})
           state = b.get("state", "missing")
-          print(f"  {section}.{key} state = {state}")
+          print(f"  {recipe}.{key} state = {state}")
           sys.exit(0 if state in ("installed", "update_required", "update_available") else 1)
           '; then
             echo "Detection confirmed: bench will see --backend $BENCH_BACKEND_KEY (routed to $BENCH_BIN_FILE)"
           else
             echo "ERROR: after setting $KEY, system-info never reported '$BENCH_BACKEND_KEY' installed."
             echo "lemonade bench would fail with 'No suitable backends found'. Aborting before wasting a bench run."
-            echo "--- system-info $BENCH_CONFIG_SECTION backends ---"
+            echo "--- system-info $BENCH_RECIPE backends ---"
             curl -sf "http://127.0.0.1:$PORT/api/v1/system-info" 2>/dev/null \
-              | CONFIG_SECTION="$BENCH_CONFIG_SECTION" python3 -c 'import json,sys,os; print(json.dumps(json.load(sys.stdin).get("recipes",{}).get(os.environ["CONFIG_SECTION"],{}).get("backends",{}), indent=2))' || true
+              | RECIPE="$BENCH_RECIPE" python3 -c 'import json,sys,os; print(json.dumps(json.load(sys.stdin).get("recipes",{}).get(os.environ["RECIPE"],{}).get("backends",{}), indent=2))' || true
             exit 1
           fi
 
