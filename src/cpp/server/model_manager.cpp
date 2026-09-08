@@ -118,7 +118,12 @@ static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std
     "checkpoints", "checkpoint", "recipe", "mmproj", "size",
     "image_defaults", "audio_defaults", "components", "recipe_options",
     "routing", "system_prompt", "version", "source", "registry_source",
-    "auto_update"
+    "auto_update",
+    // Cost and latency hints reach the router through ModelInfo::extras rather
+    // than a typed field, so they are deliberately absent from parse_extras'
+    // known-key set and must be listed here to survive registration.
+    "cost_tier", "cost_input_per_million", "cost_output_per_million",
+    "latency_ms_hint"
 };
 
 static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
