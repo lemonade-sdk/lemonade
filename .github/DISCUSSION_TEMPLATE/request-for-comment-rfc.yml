@@ -47,20 +47,20 @@ body:
       required: true
 
   - type: textarea
-    id: breaking-changes
-    attributes:
-      label: Breaking changes
-      description: What breaks for existing users or developers, and what is the negative impact? Write "None" if the change is fully backwards compatible.
-      placeholder: "None."
-    validations:
-      required: true
-
-  - type: textarea
     id: high-level-design
     attributes:
       label: High-level design
       description: What are you changing in Lemonade, from the perspective of a user or developer? Do not cite code here.
       placeholder: "New endpoints, CLI commands, flags, GUI elements, install steps, defaults, error messages, docs..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: breaking-changes
+    attributes:
+      label: Breaking changes
+      description: What breaks for existing users or developers, and what is the negative impact? Write "None" if the change is fully backwards compatible.
+      placeholder: "None."
     validations:
       required: true
 

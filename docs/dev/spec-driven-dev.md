@@ -67,8 +67,8 @@ Reminder: the [AI content policy](./ai-content-policy.md) strictly applies to RF
 Every RFC should have the following sections:
 
 1. User story: people need to accomplish task X with Lemonade. The benefit of enabling X in Lemonade is Y, compared to other available solutions.
-2. Breaking changes (if any): The negative impact of the associated breaking changes is Z.
-3. High-level design: what are you changing in Lemonade, from the perspective of a user or developer? Do not cite code here.
+2. High-level design: what are you changing in Lemonade, from the perspective of a user or developer? Do not cite code here.
+3. Breaking changes (if any): The negative impact of the associated breaking changes is Z.
 4. Maintenance plan:
    - Is the feature fully maintained by CI, or does it need to be continuously maintained through human intervention (e.g., llama.cpp adds support for new models in their releases; human maintainers must merge submit PRs to provide support in Lemonade).
    - Are human testers needed on the PR?
