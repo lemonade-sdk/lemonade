@@ -2,47 +2,34 @@
 
 We're excited that you are interested in contributing!
 
-Please carefully review Lemonade's [philosophy](./philosophy.md) before making a pull request. As a contributor, you can anticipate the vast majority of reviewer feedback by aligning your design to the philosophy.
+Please carefully review Lemonade's [philosophy](./philosophy.md) and [spec-driven development guide](./spec-driven-dev.md) before making a pull request.
 
 ## Development Process
 
 ### Working Groups
 
-Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md), and most substantial contributions should be within the scope of one of these groups. If you would like to participate, start by reading this document and then reach out to the working group lead in your subject of interest.
+Lemonade's roadmap is defined by a set of [working groups](./working-groups/README.md), and most substantial contributions should be within the scope of one of these groups.
 
-### Merging a Contribution
+### Proposing a Contribution
 
 1. We highly recommend that all contributors join the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk), meet [the maintainers](#maintainers) and get a sense of what is trending.
-2. Depending on the complexity of your contribution:
+2. Depending on the complexity and nature of your contribution:
     - Simple fixes: just make a PR.
-    - Features: contact [a maintainer](#maintainers) who works in the area of your feature and get them to agree to review it before you start coding.
-    - Architectural and major scope changes: write an issue explaining the justification and design and bring it to the Discord for debate.
-3. Create a fork of Lemonade repo, implement your code, and then make a pull request to merge your code back to the main repo. Assign the reviewer(s) you discussed the change with.
+    - Already within the scope of a [working group](./working-groups/README.md): just make a PR.
+    - Anything else that alters the scope, surface area, or user experience of Lemonade must follow the [spec-driven development process](./spec-driven-dev.md).
+3. Create a fork of Lemonade repo, implement your code, and then make a pull request to merge your code back to the main repo.
 
-### Picking a Project
-
-Not sure what to work on? Come to the feature-requests and troubleshooting channels on the Discord and see what people need!
-
-### Adding a Backend
-
-Inference backends are self-describing: a backend is a descriptor (plain data) plus a server class, and everything else (router, CLI, `/system-info`, docs) is derived from it. See [Adding a backend](./adding-a-backend.md) for the full contract and a minimal example. Please post in the dev channel on Discord before starting work.
-
-### Issues
-
-Issues are a great way to document a bug or feature request. However, Lemonade is a community-driven project and you still need to find someone to implement your issue. It is highly recommended that you bring your issue to the [Lemonade discord community](https://discord.gg/5xXzkMu8Zk) and connect with a contributor who wants to implement it.
-
-### Reviewer Expectation
+### PR Expectation
 
 Each contribution needs to:
 
-1. Accurately describe the scope, use case, and implementation in the PR description.
+1. Accurately describe the scope, use case, and implementation in the PR body.
 2. Solve one clearly defined problem, and limit its scope to what is necessary.
-3. Adhere to the [project philosophy](./philosophy.md).
-4. Pass the CI tests and follow the [testing guide](./testing.md).
+3. Pass the CI tests and follow the [testing guide](./testing.md).
     - Contributors: make sure the code builds locally before creating the PR.
     - Reviewers: make sure to check the code *before* allowing CI to run!
-5. Meet the requirements of the [documentation guide](./documentation.md).
-6. Sustain the overall code quality and standards of the rest of the repo.
+4. Meet the requirements of the [documentation guide](./documentation.md).
+5. Sustain the overall code quality and standards of the rest of the repo.
 
 The fastest way to build trust as a new contributor is to submit small, clear, well-tested PRs that are easy to review and easy to verify.
 

@@ -24,9 +24,9 @@ The amount of detail provided in an RFC should be proportional to the size of th
 
 Here are 3 general tiers:
 
-1. **Working group proposal:** [working groups](./working-groups/README.md) define large scope increases that many people collaborate on, over the course of multiple release cycles. RFCs that propose a new working group should be highly detailed.
-2. **Major feature proposal:** features large enough to span multiple PRs should go into significant detail.
-3. **Minor feature proposal:** si
+1. **Working group proposal:** [working groups](./working-groups/README.md) define large scope increases that many people collaborate on, over the course of multiple release cycles. RFCs that propose a new working group should be highly detailed and tag many project maintainers.
+2. **Major feature proposal:** features large enough to span multiple PRs should go into significant detail and tag the all the project maintainers in that area.
+3. **Minor feature proposal:** simpler features (e.g., adding a flag to a CLI subcommand) do not need as much detail and only need to tag 1-2 maintainers.
 
 ## Development Lifecycle
 
