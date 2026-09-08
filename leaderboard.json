@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-09-08T07:34:15.655493+00:00",
-  "run_id": "34198871413",
-  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34198871413",
+  "generated_at": "2026-09-08T11:45:18.561817+00:00",
+  "run_id": "34201259700",
+  "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
   "repo": "lemonade-sdk/lemonade",
   "repo_url": "https://github.com/lemonade-sdk/lemonade",
   "actions_url": "https://github.com/lemonade-sdk/lemonade/actions/workflows/benchmark-regression.yml",
@@ -18,18 +18,37 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 51.78,
-        "tps_p95": 52.53,
-        "ttft_ms_mean": 217.17,
+        "tps_mean": 52.07,
+        "tps_p95": 52.59,
+        "ttft_ms_mean": 216.23,
         "input_tokens": 30,
-        "vram_peak_gb": 23.851573944091797,
-        "timestamp": "2026-08-20T22:46:45Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 23.35540008544922,
+        "timestamp": "2026-09-08T03:51:05Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-26B-A4B-it-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 47.0,
+        "tps_p95": 47.3,
+        "ttft_ms_mean": 226.27,
+        "input_tokens": 30,
+        "vram_peak_gb": 18.013858795166016,
+        "timestamp": "2026-09-08T02:01:30Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-GGUF",
@@ -40,15 +59,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 47.29,
-        "tps_p95": 47.86,
-        "ttft_ms_mean": 163.17,
+        "tps_mean": 43.81,
+        "tps_p95": 47.43,
+        "ttft_ms_mean": 207.89,
         "input_tokens": 30,
-        "vram_peak_gb": 22.815906524658203,
-        "timestamp": "2026-09-07T20:54:47Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.869022369384766,
+        "timestamp": "2026-09-08T02:56:34Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-GGUF",
@@ -59,34 +78,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 46.36,
-        "tps_p95": 46.86,
-        "ttft_ms_mean": 225.07,
+        "tps_mean": 40.3,
+        "tps_p95": 46.69,
+        "ttft_ms_mean": 179.93,
         "input_tokens": 30,
-        "vram_peak_gb": 22.912216186523438,
-        "timestamp": "2026-09-07T19:05:53Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Gemma-4-26B-A4B-it-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 42.79,
-        "tps_p95": 47.11,
-        "ttft_ms_mean": 178.35,
-        "input_tokens": 30,
-        "vram_peak_gb": 22.912094116210938,
-        "timestamp": "2026-09-07T20:00:05Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.01593017578125,
+        "timestamp": "2026-09-08T00:49:56Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-26B-A4B-it-GGUF|code-short": [
@@ -96,18 +96,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 52.15,
-        "tps_p95": 52.8,
-        "ttft_ms_mean": 244.03,
+        "tps_mean": 51.98,
+        "tps_p95": 52.46,
+        "ttft_ms_mean": 242.37,
         "input_tokens": 37,
-        "vram_peak_gb": 23.85158920288086,
-        "timestamp": "2026-08-20T22:46:45Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 23.355419158935547,
+        "timestamp": "2026-09-08T03:51:05Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-GGUF",
@@ -118,15 +118,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 47.36,
-        "tps_p95": 48.59,
-        "ttft_ms_mean": 211.36,
+        "tps_mean": 46.95,
+        "tps_p95": 48.43,
+        "ttft_ms_mean": 218.04,
         "input_tokens": 37,
-        "vram_peak_gb": 22.928531646728516,
-        "timestamp": "2026-09-07T19:05:53Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.032245635986328,
+        "timestamp": "2026-09-08T00:49:56Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-26B-A4B-it-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 46.35,
+        "tps_p95": 48.54,
+        "ttft_ms_mean": 186.99,
+        "input_tokens": 37,
+        "vram_peak_gb": 18.03015899658203,
+        "timestamp": "2026-09-08T02:01:30Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-GGUF",
@@ -137,34 +156,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 46.12,
-        "tps_p95": 49.26,
-        "ttft_ms_mean": 188.4,
+        "tps_mean": 45.21,
+        "tps_p95": 49.02,
+        "ttft_ms_mean": 228.71,
         "input_tokens": 37,
-        "vram_peak_gb": 22.824260711669922,
-        "timestamp": "2026-09-07T20:54:47Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Gemma-4-26B-A4B-it-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 45.81,
-        "tps_p95": 48.94,
-        "ttft_ms_mean": 205.87,
-        "input_tokens": 37,
-        "vram_peak_gb": 22.928394317626953,
-        "timestamp": "2026-09-07T20:00:05Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.877391815185547,
+        "timestamp": "2026-09-08T02:56:34Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-26B-A4B-it-MTP-GGUF|chat-short": [
@@ -174,37 +174,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 79.67,
-        "tps_p95": 79.82,
-        "ttft_ms_mean": 219.33,
+        "tps_mean": 80.88,
+        "tps_p95": 82.24,
+        "ttft_ms_mean": 217.46,
         "input_tokens": 30,
-        "vram_peak_gb": 24.655757904052734,
-        "timestamp": "2026-08-20T22:49:25Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-amd-ecosystem-gfx11",
-        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
-        "fork_repo": "AMD-Ecosystem/llama.cpp",
-        "fork_version": "gfx11-rocm-nightly-20260906",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 71.56,
-        "tps_p95": 72.16,
-        "ttft_ms_mean": 171.41,
-        "input_tokens": 30,
-        "vram_peak_gb": 23.30007553100586,
-        "timestamp": "2026-09-07T20:58:06Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 24.145816802978516,
+        "timestamp": "2026-09-08T03:55:11Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
@@ -215,15 +196,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 69.21,
-        "tps_p95": 74.64,
-        "ttft_ms_mean": 169.1,
+        "tps_mean": 72.62,
+        "tps_p95": 73.45,
+        "ttft_ms_mean": 216.95,
         "input_tokens": 30,
-        "vram_peak_gb": 23.387775421142578,
-        "timestamp": "2026-09-07T19:10:13Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.491485595703125,
+        "timestamp": "2026-09-08T00:55:58Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
@@ -231,18 +212,37 @@
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 65.93,
-        "tps_p95": 75.99,
-        "ttft_ms_mean": 184.6,
+        "tps_mean": 70.49,
+        "tps_p95": 76.49,
+        "ttft_ms_mean": 196.33,
         "input_tokens": 30,
-        "vram_peak_gb": 23.389568328857422,
-        "timestamp": "2026-09-07T20:04:29Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.4913330078125,
+        "timestamp": "2026-09-08T02:06:06Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20260906",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 63.04,
+        "tps_p95": 71.8,
+        "ttft_ms_mean": 184.54,
+        "input_tokens": 30,
+        "vram_peak_gb": 23.353214263916016,
+        "timestamp": "2026-09-08T03:00:56Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-26B-A4B-it-MTP-GGUF|code-short": [
@@ -252,37 +252,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 100.5,
-        "tps_p95": 101.12,
-        "ttft_ms_mean": 243.93,
+        "tps_mean": 97.36,
+        "tps_p95": 98.48,
+        "ttft_ms_mean": 246.94,
         "input_tokens": 37,
-        "vram_peak_gb": 24.655719757080078,
-        "timestamp": "2026-08-20T22:49:25Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-nightly",
-        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llamacpp-rocm",
-        "fork_version": "b1326",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 89.92,
-        "tps_p95": 100.22,
-        "ttft_ms_mean": 190.77,
-        "input_tokens": 37,
-        "vram_peak_gb": 23.40407943725586,
-        "timestamp": "2026-09-07T19:10:13Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 24.145835876464844,
+        "timestamp": "2026-09-08T03:55:11Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
@@ -293,15 +274,34 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 86.82,
-        "tps_p95": 97.01,
-        "ttft_ms_mean": 183.51,
+        "tps_mean": 89.89,
+        "tps_p95": 96.97,
+        "ttft_ms_mean": 222.62,
         "input_tokens": 37,
-        "vram_peak_gb": 23.30646514892578,
-        "timestamp": "2026-09-07T20:58:06Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 23.359573364257812,
+        "timestamp": "2026-09-08T03:00:56Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1326",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 86.84,
+        "tps_p95": 96.56,
+        "ttft_ms_mean": 221.67,
+        "input_tokens": 37,
+        "vram_peak_gb": 18.50778579711914,
+        "timestamp": "2026-09-08T00:55:58Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-26B-A4B-it-MTP-GGUF",
@@ -309,18 +309,18 @@
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 78.58,
-        "tps_p95": 99.68,
-        "ttft_ms_mean": 212.72,
+        "tps_mean": 83.35,
+        "tps_p95": 97.51,
+        "ttft_ms_mean": 200.4,
         "input_tokens": 37,
-        "vram_peak_gb": 23.405887603759766,
-        "timestamp": "2026-09-07T20:04:29Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.507644653320312,
+        "timestamp": "2026-09-08T02:06:06Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-31B-it-GGUF|chat-short": [
@@ -330,37 +330,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 11.67,
-        "tps_p95": 11.69,
-        "ttft_ms_mean": 777.76,
+        "tps_mean": 11.73,
+        "tps_p95": 11.75,
+        "ttft_ms_mean": 777.87,
         "input_tokens": 30,
-        "vram_peak_gb": 27.816082000732422,
-        "timestamp": "2026-08-20T22:52:03Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Gemma-4-31B-it-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 10.84,
-        "tps_p95": 11.06,
-        "ttft_ms_mean": 408.12,
-        "input_tokens": 30,
-        "vram_peak_gb": 25.305625915527344,
-        "timestamp": "2026-09-07T20:09:05Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 25.855018615722656,
+        "timestamp": "2026-09-08T03:59:23Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-GGUF",
@@ -371,15 +352,34 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 10.78,
-        "tps_p95": 11.2,
-        "ttft_ms_mean": 477.21,
+        "tps_mean": 11.2,
+        "tps_p95": 11.29,
+        "ttft_ms_mean": 434.25,
         "input_tokens": 30,
-        "vram_peak_gb": 25.268081665039062,
-        "timestamp": "2026-09-07T21:01:32Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 25.32120132446289,
+        "timestamp": "2026-09-08T03:05:30Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-31B-it-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 10.85,
+        "tps_p95": 11.02,
+        "ttft_ms_mean": 466.78,
+        "input_tokens": 30,
+        "vram_peak_gb": 20.40721893310547,
+        "timestamp": "2026-09-08T02:10:56Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-GGUF",
@@ -390,15 +390,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 10.31,
-        "tps_p95": 11.01,
-        "ttft_ms_mean": 418.36,
+        "tps_mean": 10.8,
+        "tps_p95": 11.0,
+        "ttft_ms_mean": 389.08,
         "input_tokens": 30,
-        "vram_peak_gb": 25.30756378173828,
-        "timestamp": "2026-09-07T19:14:45Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 20.411266326904297,
+        "timestamp": "2026-09-08T01:02:20Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-31B-it-GGUF|code-short": [
@@ -408,56 +408,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 11.66,
-        "tps_p95": 11.66,
-        "ttft_ms_mean": 814.51,
+        "tps_mean": 11.71,
+        "tps_p95": 11.73,
+        "ttft_ms_mean": 807.69,
         "input_tokens": 37,
-        "vram_peak_gb": 27.816082000732422,
-        "timestamp": "2026-08-20T22:52:03Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Gemma-4-31B-it-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-nightly",
-        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llamacpp-rocm",
-        "fork_version": "b1326",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 10.91,
-        "tps_p95": 11.01,
-        "ttft_ms_mean": 430.05,
-        "input_tokens": 37,
-        "vram_peak_gb": 25.311473846435547,
-        "timestamp": "2026-09-07T19:14:45Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Gemma-4-31B-it-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 10.76,
-        "tps_p95": 11.0,
-        "ttft_ms_mean": 469.22,
-        "input_tokens": 37,
-        "vram_peak_gb": 25.307586669921875,
-        "timestamp": "2026-09-07T20:09:05Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 25.855022430419922,
+        "timestamp": "2026-09-08T03:59:23Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-GGUF",
@@ -468,15 +430,53 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 10.71,
-        "tps_p95": 11.36,
-        "ttft_ms_mean": 397.61,
+        "tps_mean": 10.81,
+        "tps_p95": 11.37,
+        "ttft_ms_mean": 409.78,
         "input_tokens": 37,
-        "vram_peak_gb": 25.271995544433594,
-        "timestamp": "2026-09-07T21:01:32Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 25.32512664794922,
+        "timestamp": "2026-09-08T03:05:30Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-31B-it-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 10.8,
+        "tps_p95": 11.1,
+        "ttft_ms_mean": 445.41,
+        "input_tokens": 37,
+        "vram_peak_gb": 20.409332275390625,
+        "timestamp": "2026-09-08T02:10:56Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-31B-it-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1326",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 10.71,
+        "tps_p95": 11.04,
+        "ttft_ms_mean": 442.27,
+        "input_tokens": 37,
+        "vram_peak_gb": 20.41518783569336,
+        "timestamp": "2026-09-08T01:02:20Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-31B-it-MTP-GGUF|chat-short": [
@@ -486,18 +486,37 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 38.26,
-        "tps_p95": 38.42,
-        "ttft_ms_mean": 775.97,
+        "tps_mean": 38.21,
+        "tps_p95": 38.33,
+        "ttft_ms_mean": 765.28,
         "input_tokens": 30,
-        "vram_peak_gb": 28.724544525146484,
-        "timestamp": "2026-08-20T22:57:09Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 26.74979019165039,
+        "timestamp": "2026-09-08T04:04:41Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-31B-it-MTP-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 30.31,
+        "tps_p95": 33.37,
+        "ttft_ms_mean": 394.74,
+        "input_tokens": 30,
+        "vram_peak_gb": 20.95810317993164,
+        "timestamp": "2026-09-08T02:16:22Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-MTP-GGUF",
@@ -508,34 +527,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 28.8,
-        "tps_p95": 31.14,
-        "ttft_ms_mean": 426.13,
+        "tps_mean": 28.74,
+        "tps_p95": 30.34,
+        "ttft_ms_mean": 423.43,
         "input_tokens": 30,
-        "vram_peak_gb": 25.85845184326172,
-        "timestamp": "2026-09-07T19:20:15Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Gemma-4-31B-it-MTP-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 28.59,
-        "tps_p95": 32.05,
-        "ttft_ms_mean": 444.71,
-        "input_tokens": 30,
-        "vram_peak_gb": 25.856338500976562,
-        "timestamp": "2026-09-07T20:14:41Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 20.962169647216797,
+        "timestamp": "2026-09-08T01:09:30Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-MTP-GGUF",
@@ -546,15 +546,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 24.25,
-        "tps_p95": 27.83,
-        "ttft_ms_mean": 456.2,
+        "tps_mean": 24.59,
+        "tps_p95": 28.69,
+        "ttft_ms_mean": 502.42,
         "input_tokens": 30,
-        "vram_peak_gb": 25.826248168945312,
-        "timestamp": "2026-09-07T21:07:04Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 25.879371643066406,
+        "timestamp": "2026-09-08T03:11:02Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Gemma-4-31B-it-MTP-GGUF|code-short": [
@@ -564,37 +564,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 35.16,
-        "tps_p95": 35.22,
-        "ttft_ms_mean": 813.96,
+        "tps_mean": 35.01,
+        "tps_p95": 35.42,
+        "ttft_ms_mean": 805.47,
         "input_tokens": 37,
-        "vram_peak_gb": 28.724491119384766,
-        "timestamp": "2026-08-20T22:57:09Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Gemma-4-31B-it-MTP-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 29.54,
-        "tps_p95": 31.08,
-        "ttft_ms_mean": 407.4,
-        "input_tokens": 37,
-        "vram_peak_gb": 25.858287811279297,
-        "timestamp": "2026-09-07T20:14:41Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 26.749797821044922,
+        "timestamp": "2026-09-08T04:04:41Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-MTP-GGUF",
@@ -605,15 +586,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 28.55,
-        "tps_p95": 30.53,
-        "ttft_ms_mean": 401.57,
+        "tps_mean": 30.22,
+        "tps_p95": 31.13,
+        "ttft_ms_mean": 435.75,
         "input_tokens": 37,
-        "vram_peak_gb": 25.86237335205078,
-        "timestamp": "2026-09-07T19:20:15Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 20.966083526611328,
+        "timestamp": "2026-09-08T01:09:30Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Gemma-4-31B-it-MTP-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 29.6,
+        "tps_p95": 31.46,
+        "ttft_ms_mean": 469.59,
+        "input_tokens": 37,
+        "vram_peak_gb": 20.96005630493164,
+        "timestamp": "2026-09-08T02:16:22Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Gemma-4-31B-it-MTP-GGUF",
@@ -624,15 +624,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 25.95,
-        "tps_p95": 27.19,
-        "ttft_ms_mean": 438.3,
+        "tps_mean": 26.19,
+        "tps_p95": 26.99,
+        "ttft_ms_mean": 429.54,
         "input_tokens": 37,
-        "vram_peak_gb": 25.830204010009766,
-        "timestamp": "2026-09-07T21:07:04Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 25.883331298828125,
+        "timestamp": "2026-09-08T03:11:02Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "MiniCPM-V-4.6-GGUF|chat-short": [
@@ -642,18 +642,37 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 223.61,
-        "tps_p95": 227.7,
-        "ttft_ms_mean": 208.04,
+        "tps_mean": 225.66,
+        "tps_p95": 226.77,
+        "ttft_ms_mean": 210.26,
         "input_tokens": 29,
-        "vram_peak_gb": 7.033100128173828,
-        "timestamp": "2026-08-20T23:02:07Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 6.9700469970703125,
+        "timestamp": "2026-09-08T04:09:47Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "MiniCPM-V-4.6-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 187.35,
+        "tps_p95": 191.95,
+        "ttft_ms_mean": 31.23,
+        "input_tokens": 29,
+        "vram_peak_gb": 2.1064682006835938,
+        "timestamp": "2026-09-08T02:21:36Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM-V-4.6-GGUF",
@@ -664,15 +683,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 199.14,
-        "tps_p95": 202.6,
-        "ttft_ms_mean": 32.04,
+        "tps_mean": 179.75,
+        "tps_p95": 199.33,
+        "ttft_ms_mean": 30.89,
         "input_tokens": 29,
-        "vram_peak_gb": 6.956207275390625,
-        "timestamp": "2026-09-07T21:12:22Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 7.009284973144531,
+        "timestamp": "2026-09-08T03:16:26Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM-V-4.6-GGUF",
@@ -683,34 +702,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 189.1,
-        "tps_p95": 193.95,
-        "ttft_ms_mean": 28.73,
+        "tps_mean": 157.75,
+        "tps_p95": 183.63,
+        "ttft_ms_mean": 30.3,
         "input_tokens": 29,
-        "vram_peak_gb": 7.0048675537109375,
-        "timestamp": "2026-09-07T19:25:37Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "MiniCPM-V-4.6-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 175.55,
-        "tps_p95": 195.87,
-        "ttft_ms_mean": 30.0,
-        "input_tokens": 29,
-        "vram_peak_gb": 7.004718780517578,
-        "timestamp": "2026-09-07T20:20:05Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 2.1085777282714844,
+        "timestamp": "2026-09-08T01:16:41Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "MiniCPM-V-4.6-GGUF|code-short": [
@@ -720,18 +720,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 230.21,
-        "tps_p95": 232.0,
-        "ttft_ms_mean": 206.31,
+        "tps_mean": 228.68,
+        "tps_p95": 229.35,
+        "ttft_ms_mean": 210.64,
         "input_tokens": 36,
-        "vram_peak_gb": 7.033321380615234,
-        "timestamp": "2026-08-20T23:02:07Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 6.970241546630859,
+        "timestamp": "2026-09-08T04:09:47Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM-V-4.6-GGUF",
@@ -742,15 +742,34 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 218.53,
-        "tps_p95": 220.23,
-        "ttft_ms_mean": 32.0,
+        "tps_mean": 219.18,
+        "tps_p95": 221.5,
+        "ttft_ms_mean": 32.18,
         "input_tokens": 36,
-        "vram_peak_gb": 6.956211090087891,
-        "timestamp": "2026-09-07T21:12:22Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 7.009319305419922,
+        "timestamp": "2026-09-08T03:16:26Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "MiniCPM-V-4.6-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 197.35,
+        "tps_p95": 202.33,
+        "ttft_ms_mean": 32.02,
+        "input_tokens": 36,
+        "vram_peak_gb": 2.1064796447753906,
+        "timestamp": "2026-09-08T02:21:36Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM-V-4.6-GGUF",
@@ -761,34 +780,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 197.43,
-        "tps_p95": 202.62,
-        "ttft_ms_mean": 30.14,
+        "tps_mean": 168.87,
+        "tps_p95": 202.05,
+        "ttft_ms_mean": 30.53,
         "input_tokens": 36,
-        "vram_peak_gb": 7.0048675537109375,
-        "timestamp": "2026-09-07T19:25:37Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "MiniCPM-V-4.6-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 185.95,
-        "tps_p95": 196.25,
-        "ttft_ms_mean": 30.82,
-        "input_tokens": 36,
-        "vram_peak_gb": 7.004703521728516,
-        "timestamp": "2026-09-07T20:20:05Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 2.1085853576660156,
+        "timestamp": "2026-09-08T01:16:41Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "MiniCPM5-1B-GGUF|chat-short": [
@@ -798,56 +798,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 285.1,
-        "tps_p95": 285.47,
-        "ttft_ms_mean": 11.18,
+        "tps_mean": 284.61,
+        "tps_p95": 284.83,
+        "ttft_ms_mean": 11.46,
         "input_tokens": 30,
-        "vram_peak_gb": 5.8928985595703125,
-        "timestamp": "2026-08-20T23:02:53Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "MiniCPM5-1B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 216.63,
-        "tps_p95": 222.63,
-        "ttft_ms_mean": 18.26,
-        "input_tokens": 30,
-        "vram_peak_gb": 6.0261077880859375,
-        "timestamp": "2026-09-07T20:20:51Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "MiniCPM5-1B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-nightly",
-        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llamacpp-rocm",
-        "fork_version": "b1326",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 214.63,
-        "tps_p95": 217.58,
-        "ttft_ms_mean": 18.44,
-        "input_tokens": 30,
-        "vram_peak_gb": 6.026191711425781,
-        "timestamp": "2026-09-07T19:26:23Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 5.891490936279297,
+        "timestamp": "2026-09-08T04:10:33Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM5-1B-GGUF",
@@ -858,15 +820,53 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 195.8,
-        "tps_p95": 208.75,
-        "ttft_ms_mean": 17.84,
+        "tps_mean": 188.94,
+        "tps_p95": 217.43,
+        "ttft_ms_mean": 17.79,
         "input_tokens": 30,
-        "vram_peak_gb": 5.988758087158203,
-        "timestamp": "2026-09-07T21:13:10Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 6.041877746582031,
+        "timestamp": "2026-09-08T03:17:12Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "MiniCPM5-1B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 183.68,
+        "tps_p95": 218.11,
+        "ttft_ms_mean": 19.5,
+        "input_tokens": 30,
+        "vram_peak_gb": 1.1278648376464844,
+        "timestamp": "2026-09-08T02:22:22Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "MiniCPM5-1B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1326",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 162.28,
+        "tps_p95": 210.49,
+        "ttft_ms_mean": 91.84,
+        "input_tokens": 30,
+        "vram_peak_gb": 1.1299057006835938,
+        "timestamp": "2026-09-08T01:17:29Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "MiniCPM5-1B-GGUF|code-short": [
@@ -876,37 +876,37 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 286.23,
-        "tps_p95": 286.95,
-        "ttft_ms_mean": 15.97,
+        "tps_mean": 286.93,
+        "tps_p95": 287.49,
+        "ttft_ms_mean": 16.11,
         "input_tokens": 37,
-        "vram_peak_gb": 5.892498016357422,
-        "timestamp": "2026-08-20T23:02:53Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 5.891044616699219,
+        "timestamp": "2026-09-08T04:10:33Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM5-1B-GGUF",
         "scenario": "code-short",
-        "fork_id": "llamacpp-amd-ecosystem-gfx11",
-        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
-        "fork_repo": "AMD-Ecosystem/llama.cpp",
-        "fork_version": "gfx11-rocm-nightly-20260906",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 241.58,
-        "tps_p95": 249.49,
-        "ttft_ms_mean": 19.06,
+        "tps_mean": 222.58,
+        "tps_p95": 231.99,
+        "ttft_ms_mean": 20.82,
         "input_tokens": 37,
-        "vram_peak_gb": 5.9887542724609375,
-        "timestamp": "2026-09-07T21:13:10Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 1.1278648376464844,
+        "timestamp": "2026-09-08T02:22:22Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM5-1B-GGUF",
@@ -917,34 +917,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 233.56,
-        "tps_p95": 237.13,
-        "ttft_ms_mean": 19.65,
+        "tps_mean": 222.08,
+        "tps_p95": 231.79,
+        "ttft_ms_mean": 113.77,
         "input_tokens": 37,
-        "vram_peak_gb": 6.02618408203125,
-        "timestamp": "2026-09-07T19:26:23Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 1.1299095153808594,
+        "timestamp": "2026-09-08T01:17:29Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "MiniCPM5-1B-GGUF",
         "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 195.34,
-        "tps_p95": 223.89,
-        "ttft_ms_mean": 19.89,
+        "tps_mean": 204.7,
+        "tps_p95": 249.94,
+        "ttft_ms_mean": 19.37,
         "input_tokens": 37,
-        "vram_peak_gb": 6.026115417480469,
-        "timestamp": "2026-09-07T20:20:51Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 6.041881561279297,
+        "timestamp": "2026-09-08T03:17:12Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Muse-Glimmer-30B-GGUF|chat-short": [
@@ -954,37 +954,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 30.59,
-        "tps_p95": 30.71,
-        "ttft_ms_mean": 514.37,
+        "tps_mean": 29.1,
+        "tps_p95": 29.2,
+        "ttft_ms_mean": 505.83,
         "input_tokens": 41,
-        "vram_peak_gb": 26.932025909423828,
-        "timestamp": "2026-08-20T23:03:29Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Muse-Glimmer-30B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 22.06,
-        "tps_p95": 25.25,
-        "ttft_ms_mean": 441.05,
-        "input_tokens": 41,
-        "vram_peak_gb": 25.97974395751953,
-        "timestamp": "2026-09-07T20:21:31Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 26.743610382080078,
+        "timestamp": "2026-09-08T04:11:09Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Muse-Glimmer-30B-GGUF",
@@ -995,15 +976,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 20.71,
-        "tps_p95": 24.53,
-        "ttft_ms_mean": 477.01,
+        "tps_mean": 21.56,
+        "tps_p95": 24.7,
+        "ttft_ms_mean": 383.36,
         "input_tokens": 41,
-        "vram_peak_gb": 25.99423599243164,
-        "timestamp": "2026-09-07T19:27:03Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 21.09795379638672,
+        "timestamp": "2026-09-08T01:18:11Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Muse-Glimmer-30B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 20.8,
+        "tps_p95": 22.66,
+        "ttft_ms_mean": 412.27,
+        "input_tokens": 41,
+        "vram_peak_gb": 21.081504821777344,
+        "timestamp": "2026-09-08T02:23:02Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Muse-Glimmer-30B-GGUF",
@@ -1014,15 +1014,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 18.57,
-        "tps_p95": 20.34,
-        "ttft_ms_mean": 400.25,
+        "tps_mean": 16.86,
+        "tps_p95": 20.06,
+        "ttft_ms_mean": 421.61,
         "input_tokens": 41,
-        "vram_peak_gb": 26.007381439208984,
-        "timestamp": "2026-09-07T21:13:50Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 26.06051254272461,
+        "timestamp": "2026-09-08T03:17:52Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Muse-Glimmer-30B-GGUF|code-short": [
@@ -1032,18 +1032,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 35.33,
-        "tps_p95": 35.44,
-        "ttft_ms_mean": 523.73,
+        "tps_mean": 33.35,
+        "tps_p95": 33.4,
+        "ttft_ms_mean": 508.14,
         "input_tokens": 48,
-        "vram_peak_gb": 26.932201385498047,
-        "timestamp": "2026-08-20T23:03:29Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 26.74376678466797,
+        "timestamp": "2026-09-08T04:11:09Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Muse-Glimmer-30B-GGUF",
@@ -1051,18 +1051,18 @@
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 27.16,
-        "tps_p95": 28.69,
-        "ttft_ms_mean": 393.78,
+        "tps_mean": 28.37,
+        "tps_p95": 30.69,
+        "ttft_ms_mean": 458.92,
         "input_tokens": 48,
-        "vram_peak_gb": 25.97976303100586,
-        "timestamp": "2026-09-07T20:21:31Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 21.081512451171875,
+        "timestamp": "2026-09-08T02:23:02Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Muse-Glimmer-30B-GGUF",
@@ -1073,15 +1073,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 26.97,
-        "tps_p95": 28.38,
-        "ttft_ms_mean": 442.64,
+        "tps_mean": 25.52,
+        "tps_p95": 27.59,
+        "ttft_ms_mean": 401.84,
         "input_tokens": 48,
-        "vram_peak_gb": 25.99423599243164,
-        "timestamp": "2026-09-07T19:27:03Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 21.097949981689453,
+        "timestamp": "2026-09-08T01:18:11Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Muse-Glimmer-30B-GGUF",
@@ -1092,15 +1092,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 23.71,
-        "tps_p95": 25.02,
-        "ttft_ms_mean": 391.09,
+        "tps_mean": 22.74,
+        "tps_p95": 24.99,
+        "ttft_ms_mean": 436.19,
         "input_tokens": 48,
-        "vram_peak_gb": 26.007381439208984,
-        "timestamp": "2026-09-07T21:13:50Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 26.060504913330078,
+        "timestamp": "2026-09-08T03:17:52Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF|chat-short": [
@@ -1110,18 +1110,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 98.04,
-        "tps_p95": 98.86,
-        "ttft_ms_mean": 670.63,
+        "tps_mean": 96.61,
+        "tps_p95": 98.94,
+        "ttft_ms_mean": 671.71,
         "input_tokens": 30,
-        "vram_peak_gb": 29.820186614990234,
-        "timestamp": "2026-08-20T23:08:45Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 29.233325958251953,
+        "timestamp": "2026-09-08T04:16:29Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
@@ -1129,37 +1129,18 @@
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 86.15,
-        "tps_p95": 86.99,
-        "ttft_ms_mean": 230.98,
+        "tps_mean": 75.21,
+        "tps_p95": 86.07,
+        "ttft_ms_mean": 211.27,
         "input_tokens": 30,
-        "vram_peak_gb": 29.164257049560547,
-        "timestamp": "2026-09-07T20:27:13Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-nightly",
-        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llamacpp-rocm",
-        "fork_version": "b1326",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 77.9,
-        "tps_p95": 85.61,
-        "ttft_ms_mean": 221.62,
-        "input_tokens": 30,
-        "vram_peak_gb": 29.150047302246094,
-        "timestamp": "2026-09-07T19:32:41Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 24.26602554321289,
+        "timestamp": "2026-09-08T02:28:38Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
@@ -1170,15 +1151,34 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 75.51,
+        "tps_mean": 74.75,
         "tps_p95": 77.91,
-        "ttft_ms_mean": 238.22,
+        "ttft_ms_mean": 248.09,
         "input_tokens": 30,
-        "vram_peak_gb": 28.95281219482422,
-        "timestamp": "2026-09-07T21:18:38Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 29.005935668945312,
+        "timestamp": "2026-09-08T03:23:34Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1326",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 61.0,
+        "tps_p95": 81.7,
+        "ttft_ms_mean": 223.92,
+        "input_tokens": 30,
+        "vram_peak_gb": 24.25375747680664,
+        "timestamp": "2026-09-08T01:25:31Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF|code-short": [
@@ -1188,56 +1188,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 84.95,
-        "tps_p95": 85.79,
-        "ttft_ms_mean": 700.17,
+        "tps_mean": 86.35,
+        "tps_p95": 87.55,
+        "ttft_ms_mean": 696.92,
         "input_tokens": 38,
-        "vram_peak_gb": 29.820064544677734,
-        "timestamp": "2026-08-20T23:08:45Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 77.18,
-        "tps_p95": 86.28,
-        "ttft_ms_mean": 299.08,
-        "input_tokens": 38,
-        "vram_peak_gb": 29.168437957763672,
-        "timestamp": "2026-09-07T20:27:13Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-nightly",
-        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llamacpp-rocm",
-        "fork_version": "b1326",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 67.65,
-        "tps_p95": 74.97,
-        "ttft_ms_mean": 290.82,
-        "input_tokens": 38,
-        "vram_peak_gb": 29.154224395751953,
-        "timestamp": "2026-09-07T19:32:41Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 29.233203887939453,
+        "timestamp": "2026-09-08T04:16:29Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
@@ -1248,15 +1210,53 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 67.39,
-        "tps_p95": 71.11,
-        "ttft_ms_mean": 227.16,
+        "tps_mean": 74.74,
+        "tps_p95": 77.89,
+        "ttft_ms_mean": 277.34,
         "input_tokens": 38,
-        "vram_peak_gb": 28.94106674194336,
-        "timestamp": "2026-09-07T21:18:38Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 28.994190216064453,
+        "timestamp": "2026-09-08T03:23:34Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1326",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 71.56,
+        "tps_p95": 77.45,
+        "ttft_ms_mean": 314.41,
+        "input_tokens": 38,
+        "vram_peak_gb": 24.257938385009766,
+        "timestamp": "2026-09-08T01:25:31Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "NVIDIA-Nemotron-3.5-Lightning-30B-A3B-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 68.09,
+        "tps_p95": 75.01,
+        "ttft_ms_mean": 292.36,
+        "input_tokens": 38,
+        "vram_peak_gb": 24.270187377929688,
+        "timestamp": "2026-09-08T02:28:38Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3-4B-GGUF|chat-short": [
@@ -1384,18 +1384,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 90.38,
-        "tps_p95": 90.99,
-        "ttft_ms_mean": 124.8,
+        "tps_mean": 89.14,
+        "tps_p95": 89.8,
+        "ttft_ms_mean": 123.57,
         "input_tokens": 27,
-        "vram_peak_gb": 22.862152099609375,
-        "timestamp": "2026-08-20T23:14:21Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 22.860462188720703,
+        "timestamp": "2026-09-08T04:22:09Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
@@ -1406,34 +1406,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 75.05,
-        "tps_p95": 75.81,
-        "ttft_ms_mean": 121.55,
+        "tps_mean": 71.96,
+        "tps_p95": 75.25,
+        "ttft_ms_mean": 125.24,
         "input_tokens": 27,
-        "vram_peak_gb": 22.973915100097656,
-        "timestamp": "2026-09-07T19:38:29Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 71.55,
-        "tps_p95": 75.5,
-        "ttft_ms_mean": 141.64,
-        "input_tokens": 27,
-        "vram_peak_gb": 22.973793029785156,
-        "timestamp": "2026-09-07T20:33:03Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.07762908935547,
+        "timestamp": "2026-09-08T01:33:15Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
@@ -1444,15 +1425,34 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 67.38,
-        "tps_p95": 74.9,
-        "ttft_ms_mean": 145.64,
+        "tps_mean": 71.54,
+        "tps_p95": 74.96,
+        "ttft_ms_mean": 132.48,
         "input_tokens": 27,
-        "vram_peak_gb": 22.93841552734375,
-        "timestamp": "2026-09-07T21:24:28Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.991539001464844,
+        "timestamp": "2026-09-08T03:29:20Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 65.06,
+        "tps_p95": 74.36,
+        "ttft_ms_mean": 121.69,
+        "input_tokens": 27,
+        "vram_peak_gb": 18.07555389404297,
+        "timestamp": "2026-09-08T02:34:28Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3-Coder-30B-A3B-Instruct-GGUF|code-short": [
@@ -1462,37 +1462,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 91.4,
-        "tps_p95": 91.85,
-        "ttft_ms_mean": 195.69,
+        "tps_mean": 89.16,
+        "tps_p95": 89.98,
+        "ttft_ms_mean": 189.82,
         "input_tokens": 34,
-        "vram_peak_gb": 22.863525390625,
-        "timestamp": "2026-08-20T23:14:21Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 70.1,
-        "tps_p95": 74.0,
-        "ttft_ms_mean": 176.54,
-        "input_tokens": 34,
-        "vram_peak_gb": 22.97378921508789,
-        "timestamp": "2026-09-07T20:33:03Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.861835479736328,
+        "timestamp": "2026-09-08T04:22:09Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
@@ -1503,15 +1484,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 69.03,
-        "tps_p95": 73.05,
-        "ttft_ms_mean": 196.66,
+        "tps_mean": 72.99,
+        "tps_p95": 74.91,
+        "ttft_ms_mean": 160.74,
         "input_tokens": 34,
-        "vram_peak_gb": 22.973918914794922,
-        "timestamp": "2026-09-07T19:38:29Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.07764434814453,
+        "timestamp": "2026-09-08T01:33:15Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 69.51,
+        "tps_p95": 73.37,
+        "ttft_ms_mean": 149.9,
+        "input_tokens": 34,
+        "vram_peak_gb": 18.075550079345703,
+        "timestamp": "2026-09-08T02:34:28Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
@@ -1522,15 +1522,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 68.03,
-        "tps_p95": 72.15,
-        "ttft_ms_mean": 122.66,
+        "tps_mean": 68.04,
+        "tps_p95": 76.31,
+        "ttft_ms_mean": 137.85,
         "input_tokens": 34,
-        "vram_peak_gb": 22.93841552734375,
-        "timestamp": "2026-09-07T21:24:28Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.991531372070312,
+        "timestamp": "2026-09-08T03:29:20Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.5-4B-GGUF|chat-short": [
@@ -1540,56 +1540,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 60.46,
-        "tps_p95": 61.41,
-        "ttft_ms_mean": 561.96,
+        "tps_mean": 59.42,
+        "tps_p95": 59.7,
+        "ttft_ms_mean": 563.2,
         "input_tokens": 29,
-        "vram_peak_gb": 9.55624008178711,
-        "timestamp": "2026-08-20T23:18:29Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Qwen3.5-4B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 57.71,
-        "tps_p95": 58.34,
-        "ttft_ms_mean": 125.58,
-        "input_tokens": 29,
-        "vram_peak_gb": 9.135005950927734,
-        "timestamp": "2026-09-07T20:37:23Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3.5-4B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-amd-ecosystem-gfx11",
-        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
-        "fork_repo": "AMD-Ecosystem/llama.cpp",
-        "fork_version": "gfx11-rocm-nightly-20260906",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 57.35,
-        "tps_p95": 58.12,
-        "ttft_ms_mean": 104.78,
-        "input_tokens": 29,
-        "vram_peak_gb": 9.090980529785156,
-        "timestamp": "2026-09-07T21:28:54Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 9.40008544921875,
+        "timestamp": "2026-09-08T04:26:21Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.5-4B-GGUF",
@@ -1600,15 +1562,53 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 52.52,
-        "tps_p95": 57.27,
-        "ttft_ms_mean": 97.21,
+        "tps_mean": 54.19,
+        "tps_p95": 57.3,
+        "ttft_ms_mean": 100.08,
         "input_tokens": 29,
-        "vram_peak_gb": 9.135177612304688,
-        "timestamp": "2026-09-07T19:42:47Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 4.238903045654297,
+        "timestamp": "2026-09-08T01:39:05Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.5-4B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 51.42,
+        "tps_p95": 57.9,
+        "ttft_ms_mean": 160.05,
+        "input_tokens": 29,
+        "vram_peak_gb": 4.236778259277344,
+        "timestamp": "2026-09-08T02:38:48Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.5-4B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20260906",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 48.37,
+        "tps_p95": 58.07,
+        "ttft_ms_mean": 102.83,
+        "input_tokens": 29,
+        "vram_peak_gb": 9.144065856933594,
+        "timestamp": "2026-09-08T03:33:40Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.5-4B-GGUF|code-short": [
@@ -1618,18 +1618,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 61.37,
-        "tps_p95": 61.85,
-        "ttft_ms_mean": 561.83,
+        "tps_mean": 59.23,
+        "tps_p95": 59.72,
+        "ttft_ms_mean": 565.26,
         "input_tokens": 36,
-        "vram_peak_gb": 9.556129455566406,
-        "timestamp": "2026-08-20T23:18:29Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 9.400009155273438,
+        "timestamp": "2026-09-08T04:26:21Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.5-4B-GGUF",
@@ -1640,34 +1640,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 54.85,
-        "tps_p95": 58.6,
-        "ttft_ms_mean": 140.72,
+        "tps_mean": 56.16,
+        "tps_p95": 58.11,
+        "ttft_ms_mean": 148.02,
         "input_tokens": 36,
-        "vram_peak_gb": 9.180641174316406,
-        "timestamp": "2026-09-07T19:42:47Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3.5-4B-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 53.37,
-        "tps_p95": 58.95,
-        "ttft_ms_mean": 142.44,
-        "input_tokens": 36,
-        "vram_peak_gb": 9.17850112915039,
-        "timestamp": "2026-09-07T20:37:23Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 4.284351348876953,
+        "timestamp": "2026-09-08T01:39:05Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.5-4B-GGUF",
@@ -1678,15 +1659,34 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 47.38,
-        "tps_p95": 49.4,
-        "ttft_ms_mean": 149.07,
+        "tps_mean": 55.79,
+        "tps_p95": 59.63,
+        "ttft_ms_mean": 150.56,
         "input_tokens": 36,
-        "vram_peak_gb": 9.131439208984375,
-        "timestamp": "2026-09-07T21:28:54Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 9.184528350830078,
+        "timestamp": "2026-09-08T03:33:40Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.5-4B-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 50.27,
+        "tps_p95": 56.59,
+        "ttft_ms_mean": 146.69,
+        "input_tokens": 36,
+        "vram_peak_gb": 4.280250549316406,
+        "timestamp": "2026-09-08T02:38:48Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.6-27B-MTP-GGUF|chat-short": [
@@ -1696,18 +1696,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 33.08,
-        "tps_p95": 33.18,
-        "ttft_ms_mean": 1857.49,
+        "tps_mean": 31.61,
+        "tps_p95": 32.92,
+        "ttft_ms_mean": 1854.42,
         "input_tokens": 29,
-        "vram_peak_gb": 25.879833221435547,
-        "timestamp": "2026-08-20T23:19:27Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 24.09534454345703,
+        "timestamp": "2026-09-08T04:27:19Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-27B-MTP-GGUF",
@@ -1715,37 +1715,18 @@
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 28.29,
-        "tps_p95": 32.31,
-        "ttft_ms_mean": 574.64,
+        "tps_mean": 29.16,
+        "tps_p95": 32.13,
+        "ttft_ms_mean": 542.64,
         "input_tokens": 29,
-        "vram_peak_gb": 23.586109161376953,
-        "timestamp": "2026-09-07T20:38:21Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3.6-27B-MTP-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-amd-ecosystem-gfx11",
-        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
-        "fork_repo": "AMD-Ecosystem/llama.cpp",
-        "fork_version": "gfx11-rocm-nightly-20260906",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 26.39,
-        "tps_p95": 27.73,
-        "ttft_ms_mean": 519.3,
-        "input_tokens": 29,
-        "vram_peak_gb": 23.54961395263672,
-        "timestamp": "2026-09-07T21:29:56Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.6878662109375,
+        "timestamp": "2026-09-08T02:39:48Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-27B-MTP-GGUF",
@@ -1756,15 +1737,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 24.68,
-        "tps_p95": 30.84,
-        "ttft_ms_mean": 488.01,
+        "tps_mean": 26.2,
+        "tps_p95": 30.38,
+        "ttft_ms_mean": 490.05,
         "input_tokens": 29,
-        "vram_peak_gb": 23.586284637451172,
-        "timestamp": "2026-09-07T19:43:45Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.689998626708984,
+        "timestamp": "2026-09-08T01:40:05Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.6-27B-MTP-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20260906",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 24.2,
+        "tps_p95": 26.55,
+        "ttft_ms_mean": 502.55,
+        "input_tokens": 29,
+        "vram_peak_gb": 23.602741241455078,
+        "timestamp": "2026-09-08T03:34:38Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.6-27B-MTP-GGUF|code-short": [
@@ -1774,18 +1774,37 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 32.2,
-        "tps_p95": 32.3,
-        "ttft_ms_mean": 1858.63,
+        "tps_mean": 34.25,
+        "tps_p95": 34.33,
+        "ttft_ms_mean": 1850.37,
         "input_tokens": 36,
-        "vram_peak_gb": 25.879730224609375,
-        "timestamp": "2026-08-20T23:19:27Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 24.095237731933594,
+        "timestamp": "2026-09-08T04:27:19Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.6-27B-MTP-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 31.13,
+        "tps_p95": 32.2,
+        "ttft_ms_mean": 527.93,
+        "input_tokens": 36,
+        "vram_peak_gb": 18.694538116455078,
+        "timestamp": "2026-09-08T02:39:48Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-27B-MTP-GGUF",
@@ -1796,34 +1815,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 30.44,
-        "tps_p95": 31.32,
-        "ttft_ms_mean": 597.66,
+        "tps_mean": 30.19,
+        "tps_p95": 30.98,
+        "ttft_ms_mean": 544.09,
         "input_tokens": 36,
-        "vram_peak_gb": 23.593017578125,
-        "timestamp": "2026-09-07T19:43:45Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3.6-27B-MTP-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 29.47,
-        "tps_p95": 31.25,
-        "ttft_ms_mean": 554.53,
-        "input_tokens": 36,
-        "vram_peak_gb": 23.59278106689453,
-        "timestamp": "2026-09-07T20:38:21Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.696651458740234,
+        "timestamp": "2026-09-08T01:40:05Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-27B-MTP-GGUF",
@@ -1834,15 +1834,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 25.75,
-        "tps_p95": 27.3,
-        "ttft_ms_mean": 526.55,
+        "tps_mean": 26.34,
+        "tps_p95": 27.42,
+        "ttft_ms_mean": 496.88,
         "input_tokens": 36,
-        "vram_peak_gb": 23.55615997314453,
-        "timestamp": "2026-09-07T21:29:56Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 23.609272003173828,
+        "timestamp": "2026-09-08T03:34:38Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.6-35B-A3B-GGUF|chat-short": [
@@ -1852,18 +1852,37 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 59.26,
-        "tps_p95": 59.33,
-        "ttft_ms_mean": 753.01,
+        "tps_mean": 57.38,
+        "tps_p95": 58.0,
+        "ttft_ms_mean": 758.52,
         "input_tokens": 29,
-        "vram_peak_gb": 27.41598892211914,
-        "timestamp": "2026-08-20T23:24:15Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 27.22620391845703,
+        "timestamp": "2026-09-08T04:32:03Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.6-35B-A3B-GGUF",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 51.95,
+        "tps_p95": 52.65,
+        "ttft_ms_mean": 187.75,
+        "input_tokens": 29,
+        "vram_peak_gb": 22.11480712890625,
+        "timestamp": "2026-09-08T02:44:46Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-35B-A3B-GGUF",
@@ -1874,15 +1893,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 52.11,
-        "tps_p95": 54.28,
-        "ttft_ms_mean": 191.02,
+        "tps_mean": 49.7,
+        "tps_p95": 54.04,
+        "ttft_ms_mean": 192.11,
         "input_tokens": 29,
-        "vram_peak_gb": 26.93724822998047,
-        "timestamp": "2026-09-07T21:34:54Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 26.99034881591797,
+        "timestamp": "2026-09-08T03:39:28Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-35B-A3B-GGUF",
@@ -1893,34 +1912,15 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 49.09,
-        "tps_p95": 52.6,
-        "ttft_ms_mean": 194.8,
+        "tps_mean": 42.33,
+        "tps_p95": 51.33,
+        "ttft_ms_mean": 231.41,
         "input_tokens": 29,
-        "vram_peak_gb": 27.015148162841797,
-        "timestamp": "2026-09-07T19:48:32Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3.6-35B-A3B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 47.22,
-        "tps_p95": 52.87,
-        "ttft_ms_mean": 184.94,
-        "input_tokens": 29,
-        "vram_peak_gb": 27.013038635253906,
-        "timestamp": "2026-09-07T20:43:08Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.118839263916016,
+        "timestamp": "2026-09-08T01:46:37Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.6-35B-A3B-GGUF|code-short": [
@@ -1930,37 +1930,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 59.55,
-        "tps_p95": 59.75,
-        "ttft_ms_mean": 777.14,
+        "tps_mean": 58.77,
+        "tps_p95": 59.29,
+        "ttft_ms_mean": 776.97,
         "input_tokens": 36,
-        "vram_peak_gb": 27.415924072265625,
-        "timestamp": "2026-08-20T23:24:15Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Qwen3.6-35B-A3B-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-amd-ecosystem-gfx11",
-        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
-        "fork_repo": "AMD-Ecosystem/llama.cpp",
-        "fork_version": "gfx11-rocm-nightly-20260906",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 54.68,
-        "tps_p95": 57.23,
-        "ttft_ms_mean": 193.4,
-        "input_tokens": 36,
-        "vram_peak_gb": 26.943641662597656,
-        "timestamp": "2026-09-07T21:34:54Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 27.226154327392578,
+        "timestamp": "2026-09-08T04:32:03Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-35B-A3B-GGUF",
@@ -1971,15 +1952,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 49.78,
-        "tps_p95": 53.55,
-        "ttft_ms_mean": 263.96,
+        "tps_mean": 49.47,
+        "tps_p95": 51.22,
+        "ttft_ms_mean": 210.67,
         "input_tokens": 36,
-        "vram_peak_gb": 27.019725799560547,
-        "timestamp": "2026-09-07T19:48:32Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.12343978881836,
+        "timestamp": "2026-09-08T01:46:37Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.6-35B-A3B-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-amd-ecosystem-gfx11",
+        "fork_label": "llama.cpp gfx11 (AMD-Ecosystem)",
+        "fork_repo": "AMD-Ecosystem/llama.cpp",
+        "fork_version": "gfx11-rocm-nightly-20260906",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 47.51,
+        "tps_p95": 55.75,
+        "ttft_ms_mean": 202.46,
+        "input_tokens": 36,
+        "vram_peak_gb": 26.996768951416016,
+        "timestamp": "2026-09-08T03:39:28Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.6-35B-A3B-GGUF",
@@ -1987,39 +1987,58 @@
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 48.23,
-        "tps_p95": 53.58,
-        "ttft_ms_mean": 207.59,
+        "tps_mean": 46.56,
+        "tps_p95": 52.07,
+        "ttft_ms_mean": 251.39,
         "input_tokens": 36,
-        "vram_peak_gb": 27.01761245727539,
-        "timestamp": "2026-09-07T20:43:08Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 22.119361877441406,
+        "timestamp": "2026-09-08T02:44:46Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.8-27B-GGUF|chat-short": [
       {
         "model": "Qwen3.8-27B-GGUF",
         "scenario": "chat-short",
+        "fork_id": "llamacpp-rocm-nightly",
+        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llamacpp-rocm",
+        "fork_version": "b1326",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 23.91,
+        "tps_p95": 26.53,
+        "ttft_ms_mean": 566.35,
+        "input_tokens": 67,
+        "vram_peak_gb": 18.34369659423828,
+        "timestamp": "2026-09-08T01:53:55Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.8-27B-GGUF",
+        "scenario": "chat-short",
         "fork_id": "llamacpp-rocm-stable",
         "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
         "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
+        "fork_version": "b10853",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 24.84,
-        "tps_p95": 26.37,
-        "ttft_ms_mean": 546.88,
+        "tps_mean": 22.77,
+        "tps_p95": 25.5,
+        "ttft_ms_mean": 572.88,
         "input_tokens": 67,
-        "vram_peak_gb": 23.23583221435547,
-        "timestamp": "2026-09-07T20:48:38Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.33755111694336,
+        "timestamp": "2026-09-08T02:50:18Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.8-27B-GGUF",
@@ -2027,18 +2046,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 23.32,
-        "tps_p95": 23.61,
-        "ttft_ms_mean": 1962.79,
+        "tps_mean": 22.72,
+        "tps_p95": 23.37,
+        "ttft_ms_mean": 1962.64,
         "input_tokens": 67,
-        "vram_peak_gb": 25.565643310546875,
-        "timestamp": "2026-08-20T23:29:33Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
+        "vram_peak_gb": 23.78124237060547,
+        "timestamp": "2026-09-08T04:37:23Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.8-27B-GGUF",
@@ -2049,34 +2068,15 @@
         "fork_version": "gfx11-rocm-nightly-20260906",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 21.44,
-        "tps_p95": 22.79,
-        "ttft_ms_mean": 807.07,
+        "tps_mean": 20.1,
+        "tps_p95": 23.13,
+        "ttft_ms_mean": 775.5,
         "input_tokens": 67,
-        "vram_peak_gb": 23.344532012939453,
-        "timestamp": "2026-09-07T21:40:26Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
-      },
-      {
-        "model": "Qwen3.8-27B-GGUF",
-        "scenario": "chat-short",
-        "fork_id": "llamacpp-rocm-nightly",
-        "fork_label": "llama.cpp ROCm Nightly (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llamacpp-rocm",
-        "fork_version": "b1326",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 21.44,
-        "tps_p95": 26.2,
-        "ttft_ms_mean": 557.95,
-        "input_tokens": 67,
-        "vram_peak_gb": 23.240013122558594,
-        "timestamp": "2026-09-07T19:54:00Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 23.397632598876953,
+        "timestamp": "2026-09-08T03:45:00Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ],
     "Qwen3.8-27B-GGUF|code-short": [
@@ -2086,37 +2086,18 @@
         "fork_id": "llamacpp-upstream-vulkan",
         "fork_label": "llama.cpp Vulkan (upstream reference)",
         "fork_repo": "ggml-org/llama.cpp",
-        "fork_version": "b10545",
+        "fork_version": "b10856",
         "backend": "vulkan",
         "ctx_size": 4096,
-        "tps_mean": 26.7,
-        "tps_p95": 26.78,
-        "ttft_ms_mean": 1974.23,
+        "tps_mean": 26.81,
+        "tps_p95": 26.91,
+        "ttft_ms_mean": 1977.38,
         "input_tokens": 74,
-        "vram_peak_gb": 25.565147399902344,
-        "timestamp": "2026-08-20T23:29:33Z",
-        "run_id": "32441469152",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152",
-        "commit": "67927b4b745baf37d1da3281e8f0d65c73b525b3"
-      },
-      {
-        "model": "Qwen3.8-27B-GGUF",
-        "scenario": "code-short",
-        "fork_id": "llamacpp-rocm-stable",
-        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
-        "fork_repo": "lemonade-sdk/llama.cpp",
-        "fork_version": "b10851",
-        "backend": "rocm",
-        "ctx_size": 4096,
-        "tps_mean": 25.07,
-        "tps_p95": 27.12,
-        "ttft_ms_mean": 589.22,
-        "input_tokens": 74,
-        "vram_peak_gb": 23.245216369628906,
-        "timestamp": "2026-09-07T20:48:38Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 23.780750274658203,
+        "timestamp": "2026-09-08T04:37:23Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.8-27B-GGUF",
@@ -2127,15 +2108,34 @@
         "fork_version": "b1326",
         "backend": "rocm",
         "ctx_size": 4096,
-        "tps_mean": 24.77,
-        "tps_p95": 26.29,
-        "ttft_ms_mean": 592.13,
+        "tps_mean": 25.09,
+        "tps_p95": 27.07,
+        "ttft_ms_mean": 649.96,
         "input_tokens": 74,
-        "vram_peak_gb": 23.249435424804688,
-        "timestamp": "2026-09-07T19:54:00Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 18.353107452392578,
+        "timestamp": "2026-09-08T01:53:55Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      },
+      {
+        "model": "Qwen3.8-27B-GGUF",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-rocm-stable",
+        "fork_label": "llama.cpp ROCm Stable (lemonade-sdk)",
+        "fork_repo": "lemonade-sdk/llama.cpp",
+        "fork_version": "b10853",
+        "backend": "rocm",
+        "ctx_size": 4096,
+        "tps_mean": 24.4,
+        "tps_p95": 26.73,
+        "ttft_ms_mean": 638.39,
+        "input_tokens": 74,
+        "vram_peak_gb": 18.346973419189453,
+        "timestamp": "2026-09-08T02:50:18Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       },
       {
         "model": "Qwen3.8-27B-GGUF",
@@ -2147,14 +2147,56 @@
         "backend": "rocm",
         "ctx_size": 4096,
         "tps_mean": 20.8,
-        "tps_p95": 22.14,
-        "ttft_ms_mean": 952.46,
+        "tps_p95": 21.7,
+        "ttft_ms_mean": 952.13,
         "input_tokens": 74,
-        "vram_peak_gb": 23.344635009765625,
-        "timestamp": "2026-09-07T21:40:26Z",
-        "run_id": "34178833603",
-        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603",
-        "commit": "bc8d99ccfee301742f1dd86a3f6ec406bb8a863d"
+        "vram_peak_gb": 23.397781372070312,
+        "timestamp": "2026-09-08T03:45:00Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      }
+    ],
+    "Qwen3-30B-A3B-Instruct-2507-HRX|chat-short": [
+      {
+        "model": "Qwen3-30B-A3B-Instruct-2507-HRX",
+        "scenario": "chat-short",
+        "fork_id": "llamacpp-hrx",
+        "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+        "fork_repo": "ROCm/ggml-staging-automation",
+        "fork_version": "hrx-b72",
+        "backend": "hrx",
+        "ctx_size": 4096,
+        "tps_mean": 72.55,
+        "tps_p95": 72.72,
+        "ttft_ms_mean": 151.54,
+        "input_tokens": 27,
+        "vram_peak_gb": 18.222637176513672,
+        "timestamp": "2026-09-08T04:43:13Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
+      }
+    ],
+    "Qwen3-30B-A3B-Instruct-2507-HRX|code-short": [
+      {
+        "model": "Qwen3-30B-A3B-Instruct-2507-HRX",
+        "scenario": "code-short",
+        "fork_id": "llamacpp-hrx",
+        "fork_label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+        "fork_repo": "ROCm/ggml-staging-automation",
+        "fork_version": "hrx-b72",
+        "backend": "hrx",
+        "ctx_size": 4096,
+        "tps_mean": 77.62,
+        "tps_p95": 78.36,
+        "ttft_ms_mean": 171.66,
+        "input_tokens": 34,
+        "vram_peak_gb": 18.22264862060547,
+        "timestamp": "2026-09-08T04:43:13Z",
+        "run_id": "34201259700",
+        "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700",
+        "commit": "2b86c75b3c3ecf2b38916ffe7cfff3a6132885e0"
       }
     ]
   },
@@ -2162,15 +2204,6 @@
     "Gemma-4-26B-A4B-it-GGUF": {
       "chat-short": {
         "llamacpp-amd-ecosystem-gfx11": [
-          {
-            "version": "gfx11-rocm-nightly-20260809",
-            "timestamp": "2026-08-09T23:04:44Z",
-            "tps_mean": 47.09,
-            "ttft_ms_mean": 204.41,
-            "input_tokens": 30,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "gfx11-rocm-nightly-20260810",
             "timestamp": "2026-08-10T16:17:31Z",
@@ -2431,18 +2464,18 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T02:56:34Z",
+            "tps_mean": 43.81,
+            "ttft_ms_mean": 207.89,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
-          {
-            "version": "b1308",
-            "timestamp": "2026-08-09T22:47:09Z",
-            "tps_mean": 47.24,
-            "ttft_ms_mean": 181.49,
-            "input_tokens": 30,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "b1309",
             "timestamp": "2026-08-10T15:51:44Z",
@@ -2703,6 +2736,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T00:49:56Z",
+            "tps_mean": 40.3,
+            "ttft_ms_mean": 179.93,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -2939,6 +2981,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:01:30Z",
+            "tps_mean": 47.0,
+            "ttft_ms_mean": 226.27,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -3040,20 +3091,20 @@
             "input_tokens": 30,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T03:51:05Z",
+            "tps_mean": 52.07,
+            "ttft_ms_mean": 216.23,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
       "code-short": {
         "llamacpp-amd-ecosystem-gfx11": [
-          {
-            "version": "gfx11-rocm-nightly-20260809",
-            "timestamp": "2026-08-09T23:04:44Z",
-            "tps_mean": 47.35,
-            "ttft_ms_mean": 209.26,
-            "input_tokens": 37,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "gfx11-rocm-nightly-20260810",
             "timestamp": "2026-08-10T16:17:31Z",
@@ -3314,18 +3365,18 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T02:56:34Z",
+            "tps_mean": 45.21,
+            "ttft_ms_mean": 228.71,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
-          {
-            "version": "b1308",
-            "timestamp": "2026-08-09T22:47:09Z",
-            "tps_mean": 45.84,
-            "ttft_ms_mean": 266.68,
-            "input_tokens": 37,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "b1309",
             "timestamp": "2026-08-10T15:51:44Z",
@@ -3586,6 +3637,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T00:49:56Z",
+            "tps_mean": 46.95,
+            "ttft_ms_mean": 218.04,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -3822,6 +3882,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:01:30Z",
+            "tps_mean": 46.35,
+            "ttft_ms_mean": 186.99,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -3923,6 +3992,15 @@
             "input_tokens": 37,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T03:51:05Z",
+            "tps_mean": 51.98,
+            "ttft_ms_mean": 242.37,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -4181,6 +4259,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:00:56Z",
+            "tps_mean": 63.04,
+            "ttft_ms_mean": 184.54,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -4435,6 +4522,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T00:55:58Z",
+            "tps_mean": 72.62,
+            "ttft_ms_mean": 216.95,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -4662,6 +4758,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:06:06Z",
+            "tps_mean": 70.49,
+            "ttft_ms_mean": 196.33,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -4745,6 +4850,15 @@
             "input_tokens": 30,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T03:55:11Z",
+            "tps_mean": 80.88,
+            "ttft_ms_mean": 217.46,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -5001,6 +5115,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:00:56Z",
+            "tps_mean": 89.89,
+            "ttft_ms_mean": 222.62,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -5255,6 +5378,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T00:55:58Z",
+            "tps_mean": 86.84,
+            "ttft_ms_mean": 221.67,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -5482,6 +5614,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:06:06Z",
+            "tps_mean": 83.35,
+            "ttft_ms_mean": 200.4,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -5565,6 +5706,15 @@
             "input_tokens": 37,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T03:55:11Z",
+            "tps_mean": 97.36,
+            "ttft_ms_mean": 246.94,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -5823,6 +5973,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:05:30Z",
+            "tps_mean": 11.2,
+            "ttft_ms_mean": 434.25,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -6077,6 +6236,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:02:20Z",
+            "tps_mean": 10.8,
+            "ttft_ms_mean": 389.08,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -6313,6 +6481,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:10:56Z",
+            "tps_mean": 10.85,
+            "ttft_ms_mean": 466.78,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -6396,6 +6573,15 @@
             "input_tokens": 30,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T03:59:23Z",
+            "tps_mean": 11.73,
+            "ttft_ms_mean": 777.87,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -6652,6 +6838,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:05:30Z",
+            "tps_mean": 10.81,
+            "ttft_ms_mean": 409.78,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -6906,6 +7101,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:02:20Z",
+            "tps_mean": 10.71,
+            "ttft_ms_mean": 442.27,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -7142,6 +7346,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:10:56Z",
+            "tps_mean": 10.8,
+            "ttft_ms_mean": 445.41,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -7225,6 +7438,15 @@
             "input_tokens": 37,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T03:59:23Z",
+            "tps_mean": 11.71,
+            "ttft_ms_mean": 807.69,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -7483,6 +7705,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:11:02Z",
+            "tps_mean": 24.59,
+            "ttft_ms_mean": 502.42,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -7737,6 +7968,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:09:30Z",
+            "tps_mean": 28.74,
+            "ttft_ms_mean": 423.43,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -7964,6 +8204,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:16:22Z",
+            "tps_mean": 30.31,
+            "ttft_ms_mean": 394.74,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -8047,6 +8296,15 @@
             "input_tokens": 30,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:04:41Z",
+            "tps_mean": 38.21,
+            "ttft_ms_mean": 765.28,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -8303,6 +8561,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:11:02Z",
+            "tps_mean": 26.19,
+            "ttft_ms_mean": 429.54,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -8557,6 +8824,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:09:30Z",
+            "tps_mean": 30.22,
+            "ttft_ms_mean": 435.75,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -8784,6 +9060,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:16:22Z",
+            "tps_mean": 29.6,
+            "ttft_ms_mean": 469.59,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -8867,6 +9152,15 @@
             "input_tokens": 37,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:04:41Z",
+            "tps_mean": 35.01,
+            "ttft_ms_mean": 805.47,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -9125,6 +9419,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:16:26Z",
+            "tps_mean": 179.75,
+            "ttft_ms_mean": 30.89,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -9379,6 +9682,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:16:41Z",
+            "tps_mean": 157.75,
+            "ttft_ms_mean": 30.3,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -9615,6 +9927,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:21:36Z",
+            "tps_mean": 187.35,
+            "ttft_ms_mean": 31.23,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -9698,6 +10019,15 @@
             "input_tokens": 29,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:09:47Z",
+            "tps_mean": 225.66,
+            "ttft_ms_mean": 210.26,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -9954,6 +10284,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:16:26Z",
+            "tps_mean": 219.18,
+            "ttft_ms_mean": 32.18,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -10208,6 +10547,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:16:41Z",
+            "tps_mean": 168.87,
+            "ttft_ms_mean": 30.53,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -10444,6 +10792,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:21:36Z",
+            "tps_mean": 197.35,
+            "ttft_ms_mean": 32.02,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -10527,6 +10884,15 @@
             "input_tokens": 36,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:09:47Z",
+            "tps_mean": 228.68,
+            "ttft_ms_mean": 210.64,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -10785,6 +11151,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:17:12Z",
+            "tps_mean": 188.94,
+            "ttft_ms_mean": 17.79,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -11039,6 +11414,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:17:29Z",
+            "tps_mean": 162.28,
+            "ttft_ms_mean": 91.84,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -11275,6 +11659,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:22:22Z",
+            "tps_mean": 183.68,
+            "ttft_ms_mean": 19.5,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -11358,6 +11751,15 @@
             "input_tokens": 30,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:10:33Z",
+            "tps_mean": 284.61,
+            "ttft_ms_mean": 11.46,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -11614,6 +12016,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:17:12Z",
+            "tps_mean": 204.7,
+            "ttft_ms_mean": 19.37,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -11868,6 +12279,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:17:29Z",
+            "tps_mean": 222.08,
+            "ttft_ms_mean": 113.77,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -12104,6 +12524,15 @@
             "input_tokens": 37,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:22:22Z",
+            "tps_mean": 222.58,
+            "ttft_ms_mean": 20.82,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -12187,6 +12616,15 @@
             "input_tokens": 37,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:10:33Z",
+            "tps_mean": 286.93,
+            "ttft_ms_mean": 16.11,
+            "input_tokens": 37,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -12391,6 +12829,15 @@
             "input_tokens": 41,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:17:52Z",
+            "tps_mean": 16.86,
+            "ttft_ms_mean": 421.61,
+            "input_tokens": 41,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -12627,6 +13074,15 @@
             "input_tokens": 41,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:18:11Z",
+            "tps_mean": 21.56,
+            "ttft_ms_mean": 383.36,
+            "input_tokens": 41,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -12845,6 +13301,15 @@
             "input_tokens": 41,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:23:02Z",
+            "tps_mean": 20.8,
+            "ttft_ms_mean": 412.27,
+            "input_tokens": 41,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -12910,6 +13375,15 @@
             "input_tokens": 41,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:11:09Z",
+            "tps_mean": 29.1,
+            "ttft_ms_mean": 505.83,
+            "input_tokens": 41,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -13112,6 +13586,15 @@
             "input_tokens": 48,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:17:52Z",
+            "tps_mean": 22.74,
+            "ttft_ms_mean": 436.19,
+            "input_tokens": 48,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -13348,6 +13831,15 @@
             "input_tokens": 48,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:18:11Z",
+            "tps_mean": 25.52,
+            "ttft_ms_mean": 401.84,
+            "input_tokens": 48,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -13566,6 +14058,15 @@
             "input_tokens": 48,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:23:02Z",
+            "tps_mean": 28.37,
+            "ttft_ms_mean": 458.92,
+            "input_tokens": 48,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -13631,6 +14132,15 @@
             "input_tokens": 48,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:11:09Z",
+            "tps_mean": 33.35,
+            "ttft_ms_mean": 508.14,
+            "input_tokens": 48,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -13826,6 +14336,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:23:34Z",
+            "tps_mean": 74.75,
+            "ttft_ms_mean": 248.09,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -14017,6 +14536,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:25:31Z",
+            "tps_mean": 61.0,
+            "ttft_ms_mean": 223.92,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -14190,6 +14718,15 @@
             "input_tokens": 30,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:28:38Z",
+            "tps_mean": 75.21,
+            "ttft_ms_mean": 211.27,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -14210,6 +14747,15 @@
             "input_tokens": 30,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:16:29Z",
+            "tps_mean": 96.61,
+            "ttft_ms_mean": 671.71,
+            "input_tokens": 30,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -14403,6 +14949,15 @@
             "input_tokens": 38,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:23:34Z",
+            "tps_mean": 74.74,
+            "ttft_ms_mean": 277.34,
+            "input_tokens": 38,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -14594,6 +15149,15 @@
             "input_tokens": 38,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:25:31Z",
+            "tps_mean": 71.56,
+            "ttft_ms_mean": 314.41,
+            "input_tokens": 38,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -14767,6 +15331,15 @@
             "input_tokens": 38,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:28:38Z",
+            "tps_mean": 68.09,
+            "ttft_ms_mean": 292.36,
+            "input_tokens": 38,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -14787,6 +15360,15 @@
             "input_tokens": 38,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:16:29Z",
+            "tps_mean": 86.35,
+            "ttft_ms_mean": 696.92,
+            "input_tokens": 38,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -15279,6 +15861,15 @@
             "input_tokens": 27,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:29:20Z",
+            "tps_mean": 71.54,
+            "ttft_ms_mean": 132.48,
+            "input_tokens": 27,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -15533,6 +16124,15 @@
             "input_tokens": 27,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:33:15Z",
+            "tps_mean": 71.96,
+            "ttft_ms_mean": 125.24,
+            "input_tokens": 27,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -15769,6 +16369,15 @@
             "input_tokens": 27,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:34:28Z",
+            "tps_mean": 65.06,
+            "ttft_ms_mean": 121.69,
+            "input_tokens": 27,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -15852,6 +16461,15 @@
             "input_tokens": 27,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:22:09Z",
+            "tps_mean": 89.14,
+            "ttft_ms_mean": 123.57,
+            "input_tokens": 27,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -16108,6 +16726,15 @@
             "input_tokens": 34,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:29:20Z",
+            "tps_mean": 68.04,
+            "ttft_ms_mean": 137.85,
+            "input_tokens": 34,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -16362,6 +16989,15 @@
             "input_tokens": 34,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:33:15Z",
+            "tps_mean": 72.99,
+            "ttft_ms_mean": 160.74,
+            "input_tokens": 34,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -16598,6 +17234,15 @@
             "input_tokens": 34,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:34:28Z",
+            "tps_mean": 69.51,
+            "ttft_ms_mean": 149.9,
+            "input_tokens": 34,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -16681,6 +17326,15 @@
             "input_tokens": 34,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:22:09Z",
+            "tps_mean": 89.16,
+            "ttft_ms_mean": 189.82,
+            "input_tokens": 34,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -16939,6 +17593,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:33:40Z",
+            "tps_mean": 48.37,
+            "ttft_ms_mean": 102.83,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -17193,6 +17856,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:39:05Z",
+            "tps_mean": 54.19,
+            "ttft_ms_mean": 100.08,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -17429,6 +18101,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:38:48Z",
+            "tps_mean": 51.42,
+            "ttft_ms_mean": 160.05,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -17512,6 +18193,15 @@
             "input_tokens": 29,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:26:21Z",
+            "tps_mean": 59.42,
+            "ttft_ms_mean": 563.2,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -17768,6 +18458,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:33:40Z",
+            "tps_mean": 55.79,
+            "ttft_ms_mean": 150.56,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -18022,6 +18721,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:39:05Z",
+            "tps_mean": 56.16,
+            "ttft_ms_mean": 148.02,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -18258,6 +18966,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:38:48Z",
+            "tps_mean": 50.27,
+            "ttft_ms_mean": 146.69,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -18341,6 +19058,15 @@
             "input_tokens": 36,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:26:21Z",
+            "tps_mean": 59.23,
+            "ttft_ms_mean": 565.26,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -18599,6 +19325,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:34:38Z",
+            "tps_mean": 24.2,
+            "ttft_ms_mean": 502.55,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -18853,6 +19588,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:40:05Z",
+            "tps_mean": 26.2,
+            "ttft_ms_mean": 490.05,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -19080,6 +19824,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:39:48Z",
+            "tps_mean": 29.16,
+            "ttft_ms_mean": 542.64,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -19163,6 +19916,15 @@
             "input_tokens": 29,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:27:19Z",
+            "tps_mean": 31.61,
+            "ttft_ms_mean": 1854.42,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -19419,6 +20181,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:34:38Z",
+            "tps_mean": 26.34,
+            "ttft_ms_mean": 496.88,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -19673,6 +20444,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:40:05Z",
+            "tps_mean": 30.19,
+            "ttft_ms_mean": 544.09,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -19900,6 +20680,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:39:48Z",
+            "tps_mean": 31.13,
+            "ttft_ms_mean": 527.93,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -19983,6 +20772,15 @@
             "input_tokens": 36,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:27:19Z",
+            "tps_mean": 34.25,
+            "ttft_ms_mean": 1850.37,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -19990,15 +20788,6 @@
     "Qwen3.6-35B-A3B-GGUF": {
       "chat-short": {
         "llamacpp-amd-ecosystem-gfx11": [
-          {
-            "version": "gfx11-rocm-nightly-20260809",
-            "timestamp": "2026-08-09T23:09:29Z",
-            "tps_mean": 51.72,
-            "ttft_ms_mean": 200.17,
-            "input_tokens": 29,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "gfx11-rocm-nightly-20260810",
             "timestamp": "2026-08-10T16:23:47Z",
@@ -20259,18 +21048,18 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:39:28Z",
+            "tps_mean": 49.7,
+            "ttft_ms_mean": 192.11,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
-          {
-            "version": "b1308",
-            "timestamp": "2026-08-09T22:53:21Z",
-            "tps_mean": 48.1,
-            "ttft_ms_mean": 216.79,
-            "input_tokens": 29,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "b1309",
             "timestamp": "2026-08-10T15:56:39Z",
@@ -20531,6 +21320,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:46:37Z",
+            "tps_mean": 42.33,
+            "ttft_ms_mean": 231.41,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -20767,6 +21565,15 @@
             "input_tokens": 29,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:44:46Z",
+            "tps_mean": 51.95,
+            "ttft_ms_mean": 187.75,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -20868,20 +21675,20 @@
             "input_tokens": 29,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:32:03Z",
+            "tps_mean": 57.38,
+            "ttft_ms_mean": 758.52,
+            "input_tokens": 29,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
       "code-short": {
         "llamacpp-amd-ecosystem-gfx11": [
-          {
-            "version": "gfx11-rocm-nightly-20260809",
-            "timestamp": "2026-08-09T23:09:29Z",
-            "tps_mean": 51.66,
-            "ttft_ms_mean": 223.34,
-            "input_tokens": 36,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "gfx11-rocm-nightly-20260810",
             "timestamp": "2026-08-10T16:23:47Z",
@@ -21142,18 +21949,18 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:39:28Z",
+            "tps_mean": 47.51,
+            "ttft_ms_mean": 202.46,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
-          {
-            "version": "b1308",
-            "timestamp": "2026-08-09T22:53:21Z",
-            "tps_mean": 50.35,
-            "ttft_ms_mean": 238.22,
-            "input_tokens": 36,
-            "run_id": "31359490245",
-            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/31359490245"
-          },
           {
             "version": "b1309",
             "timestamp": "2026-08-10T15:56:39Z",
@@ -21414,6 +22221,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:46:37Z",
+            "tps_mean": 49.47,
+            "ttft_ms_mean": 210.67,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -21650,6 +22466,15 @@
             "input_tokens": 36,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:44:46Z",
+            "tps_mean": 46.56,
+            "ttft_ms_mean": 251.39,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -21751,6 +22576,15 @@
             "input_tokens": 36,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:32:03Z",
+            "tps_mean": 58.77,
+            "ttft_ms_mean": 776.97,
+            "input_tokens": 36,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
@@ -21946,6 +22780,15 @@
             "input_tokens": 67,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:45:00Z",
+            "tps_mean": 20.1,
+            "ttft_ms_mean": 775.5,
+            "input_tokens": 67,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -22137,6 +22980,15 @@
             "input_tokens": 67,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:53:55Z",
+            "tps_mean": 23.91,
+            "ttft_ms_mean": 566.35,
+            "input_tokens": 67,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -22310,6 +23162,15 @@
             "input_tokens": 67,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:50:18Z",
+            "tps_mean": 22.77,
+            "ttft_ms_mean": 572.88,
+            "input_tokens": 67,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -22330,6 +23191,15 @@
             "input_tokens": 67,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:37:23Z",
+            "tps_mean": 22.72,
+            "ttft_ms_mean": 1962.64,
+            "input_tokens": 67,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       },
@@ -22523,6 +23393,15 @@
             "input_tokens": 74,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "gfx11-rocm-nightly-20260906",
+            "timestamp": "2026-09-08T03:45:00Z",
+            "tps_mean": 20.8,
+            "ttft_ms_mean": 952.13,
+            "input_tokens": 74,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-nightly": [
@@ -22714,6 +23593,15 @@
             "input_tokens": 74,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b1326",
+            "timestamp": "2026-09-08T01:53:55Z",
+            "tps_mean": 25.09,
+            "ttft_ms_mean": 649.96,
+            "input_tokens": 74,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-rocm-stable": [
@@ -22887,6 +23775,15 @@
             "input_tokens": 74,
             "run_id": "34178833603",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34178833603"
+          },
+          {
+            "version": "b10853",
+            "timestamp": "2026-09-08T02:50:18Z",
+            "tps_mean": 24.4,
+            "ttft_ms_mean": 638.39,
+            "input_tokens": 74,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ],
         "llamacpp-upstream-vulkan": [
@@ -22907,6 +23804,43 @@
             "input_tokens": 74,
             "run_id": "32441469152",
             "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/32441469152"
+          },
+          {
+            "version": "b10856",
+            "timestamp": "2026-09-08T04:37:23Z",
+            "tps_mean": 26.81,
+            "ttft_ms_mean": 1977.38,
+            "input_tokens": 74,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
+          }
+        ]
+      }
+    },
+    "Qwen3-30B-A3B-Instruct-2507-HRX": {
+      "chat-short": {
+        "llamacpp-hrx": [
+          {
+            "version": "hrx-b72",
+            "timestamp": "2026-09-08T04:43:13Z",
+            "tps_mean": 72.55,
+            "ttft_ms_mean": 151.54,
+            "input_tokens": 27,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
+          }
+        ]
+      },
+      "code-short": {
+        "llamacpp-hrx": [
+          {
+            "version": "hrx-b72",
+            "timestamp": "2026-09-08T04:43:13Z",
+            "tps_mean": 77.62,
+            "ttft_ms_mean": 171.66,
+            "input_tokens": 34,
+            "run_id": "34201259700",
+            "run_url": "https://github.com/lemonade-sdk/lemonade/actions/runs/34201259700"
           }
         ]
       }
