@@ -1,4 +1,4 @@
-# Spec Driven Development
+# Spec Driven Development Policy
 
 Lemonade's maintainers strive to ensure that Lemonade has a great user experience, a coherent scope, and a high degree of robustness. One of our main tools to accomplish this is specification-driven development: the idea that changes to Lemonade's scope, surface area, and/or user experience should be discussed upfront before a PR is opened.
 
@@ -16,7 +16,7 @@ This section helps you identify which changes should follow the policy.
 
 * **Scope: what are Lemonade's capabilities?** For example, `lemond` serves LLM inference over endpoints to clients. It does not provide an agentic memory system as of this writing; that would be a scope increase.
 * **Surface area: how are Lemonade's capabilities exposed?** For example, Lemonade is capable of saving model loading options to a configuration file. As of this writing, `lemonade` CLI supports saving options, but it does not support viewing or editing these options; adding these would be a surface area increase.
-* **User experience: how do end-users and devs interact Lemonade's surface area?** This is a broad category that covers anything that would change the experience from one release to the next. It includes breaking changes, visual design language, GUI layout, installation/distribution, etc.
+* **User experience: how do end-users and devs interact with Lemonade's surface area?** This is a broad category that covers anything that would change the experience from one release to the next. It includes breaking changes, visual design language, GUI layout, installation/distribution, etc.
 
 ### Types of RFCs
 
@@ -47,11 +47,11 @@ The steps are:
 
 The following maintainers are required to review RFCs within their subject area. Other RFCs can be reviewed by other maintainers, as long as it has been sufficiently reviewed.
 
-| Code Owner   | Area                                          |
-|--------------|-----------------------------------------------|
-| bitgamma     | `lemonade` CLI                                |
-| kpoineal     | GUI app and web ui                            |
-| jeremyfowers | new endpoints, new backends, breaking changes |
+| Code Owner    | Area                                          |
+|---------------|-----------------------------------------------|
+| @bitgamma     | `lemonade` CLI                                |
+| @kpoineal     | GUI app and web ui                            |
+| @jeremyfowers | new endpoints, new backends, breaking changes |
 
 
 ## Writing your RFC
