@@ -267,14 +267,6 @@ AI tools can draft documentation faster than most people can type. That speed co
 
 You are not required to disclose that AI helped draft your documentation PR, but you *are* responsible for its accuracy. "The AI wrote it" is not a response to a correctness review comment.
 
-If you use an AI tool to generate review comments on a documentation PR, label them clearly so human reviewers can weigh them appropriately:
-
-```
-[AI-assisted review] The parameter description in the table doesn't mention the default value.
-```
-
----
-
 ## Community Contribution Process
 
 Before opening a PR, read the [philosophy](./philosophy.md) and ask: does this doc make Lemonade simpler or more complex for a new reader?

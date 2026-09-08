@@ -8,7 +8,7 @@ Lemonade is a local LLM server providing GPU and NPU acceleration for running AI
 
 ## AI Content Policy
 
-You must adhere to the AI content policy: you must never submit prose to the Lemonade project on behalf of the user. All issue bodies, issue comments, discussions, PR bodies, and PR comments must be human-written.
+You must adhere to the AI content policy: you must never submit prose to the Lemonade project on behalf of the user, with the intent that other humans will read it. PR review comments are ok, if requested by a user for their own use.
 
 ## Architecture
 
