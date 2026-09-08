@@ -88,17 +88,22 @@ def resolve_latest_version(
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
     try:
         # /releases/latest on ggml-org/llama.cpp now returns a semver tag (v0.3.0+)
-        # with no binaries — actual bNNNN nightlies are pre-releases. Scan the list
-        # for the newest non-draft non-prerelease tag first, then bNNNN pre-releases.
+        # that carries NO binaries — the real bNNNN nightlies are flagged as
+        # pre-releases. Only consider releases that actually publish assets, so a
+        # binary-less semver tag can never be selected (that was the Vulkan 404).
+        # Prefer a non-prerelease tag, then fall back to the newest bNNNN nightly.
         releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
-        # Prefer a non-prerelease "latest" tag
         for r in releases:
-            if not r.get("draft") and not r.get("prerelease"):
+            if not r.get("draft") and not r.get("prerelease") and r.get("assets"):
                 return r["tag_name"]
-        # Fall back to newest bNNNN pre-release (ggml-org nightly pattern)
         for r in releases:
             tag = r.get("tag_name", "")
-            if not r.get("draft") and tag.startswith("b") and tag[1:].isdigit():
+            if (
+                not r.get("draft")
+                and r.get("assets")
+                and tag.startswith("b")
+                and tag[1:].isdigit()
+            ):
                 return tag
     except Exception as e:
         if fallback:
@@ -668,8 +673,9 @@ def main() -> int:
                 if fork.get("version_source") == "pinned"
                 else ""
             )
+            fallback = fork.get("version_fallback", "")
             version = resolve_latest_version(
-                fork["repo"], args.token, tag_prefix, pinned
+                fork["repo"], args.token, tag_prefix, pinned, fallback
             )
             print(f"Version: {version}")
         except Exception as e:
