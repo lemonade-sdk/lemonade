@@ -19,6 +19,7 @@ Usage:
 
 import json as _json
 import threading
+import time
 import platform
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -30,6 +31,8 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
     get_config,
+    set_server_config,
+    unload_all_models,
 )
 from utils.test_models import PORT, TIMEOUT_DEFAULT
 
@@ -308,6 +311,14 @@ class RouterTests(ServerTestBase):
     def _trace_map(self, decision):
         return {t["condition"]: t["result"] for t in decision.get("trace", [])}
 
+    def _model_pid(self, model):
+        resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200, resp.text[:1000])
+        for loaded in resp.json().get("all_models_loaded", []):
+            if loaded.get("model_name") == model:
+                return loaded.get("pid")
+        return None
+
     @staticmethod
     def _classifier_score(decision, classifier_id):
         condition = f"classifier:{classifier_id}"
@@ -537,6 +548,90 @@ class RouterTests(ServerTestBase):
         self.assertFalse(self._trace_map(decision).get("min_total_chars"))
         print(f"[OK] short conversation -> {DEFAULT_MODEL} (default)")
 
+    def test_607_alternating_local_candidates_keep_stable_pids(self):
+        """Routing back and forth between the two local candidates must not
+        reload either one — the reload-thrash issue #2960 fixes."""
+        self._route("Give me a fun fact about otters.")  # -> DEFAULT_MODEL
+        default_pid = self._model_pid(DEFAULT_MODEL)
+        self.assertTrue(default_pid, f"{DEFAULT_MODEL} did not report a pid")
+
+        self._route(
+            "Write a Python function to reverse a linked list."
+        )  # -> CAPABLE_MODEL
+        capable_pid = self._model_pid(CAPABLE_MODEL)
+        self.assertTrue(capable_pid, f"{CAPABLE_MODEL} did not report a pid")
+
+        for _ in range(3):
+            self._route("Give me a fun fact about otters.")
+            self.assertEqual(
+                self._model_pid(DEFAULT_MODEL),
+                default_pid,
+                f"{DEFAULT_MODEL} was reloaded while alternating candidates",
+            )
+            self._route("Write a Python function to reverse a linked list.")
+            self.assertEqual(
+                self._model_pid(CAPABLE_MODEL),
+                capable_pid,
+                f"{CAPABLE_MODEL} was reloaded while alternating candidates",
+            )
+        print("[OK] alternating local candidates kept both subprocesses stable")
+
+    def test_608_health_reports_raised_llm_limit(self):
+        """/health surfaces the raised limit and why it was raised."""
+        resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(resp.status_code, 200, resp.text[:1000])
+        body = resp.json()
+
+        self.assertGreaterEqual(
+            body.get("max_models", {}).get("llm", 0),
+            2,
+            "max_models.llm should be floored to at least the two local candidates",
+        )
+
+        autosize = body.get("llm_pool_autosize", {})
+        self.assertTrue(autosize.get("enabled"))
+        self.assertGreaterEqual(autosize.get("candidate_floor", 0), 2)
+        self.assertGreaterEqual(autosize.get("policies", {}).get(COLLECTION_NAME, 0), 2)
+        print("[OK] /health reflects the raised llm limit and its cause")
+
+    def test_609_autosize_off_restores_thrash(self):
+        """Disabling llm_pool_autosize reverts to today's reload-per-switch
+        behavior, proving the off-switch actually gates the new capacity."""
+        set_server_config({"llm_pool_autosize": False})
+        try:
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            self.assertFalse(resp.json().get("llm_pool_autosize", {}).get("enabled"))
+            self.assertEqual(resp.json().get("max_models", {}).get("llm"), 1)
+            # The diagnostic value must keep reflecting the true count even
+            # while the floor isn't being applied (spec #4: "would apply").
+            self.assertGreaterEqual(
+                resp.json().get("llm_pool_autosize", {}).get("candidate_floor", 0), 2
+            )
+
+            # Earlier tests ran with autosize on (floor >= 2), so both local
+            # candidates may already be resident from before this toggle.
+            # Eviction is enforced lazily (on the next load), not retroactively
+            # when the limit shrinks, so start from a clean slate: otherwise
+            # the assertions below would observe leftover capacity instead of
+            # the reduced limit's real eviction behavior.
+            unload_all_models()
+
+            self._route("Give me a fun fact about otters.")  # -> DEFAULT_MODEL
+            default_pid = self._model_pid(DEFAULT_MODEL)
+            self._route(
+                "Write a Python function to reverse a linked list."
+            )  # -> CAPABLE_MODEL loads, evicts DEFAULT_MODEL
+            self._route("Give me a fun fact about otters.")  # -> DEFAULT_MODEL reloads
+            self.assertNotEqual(
+                self._model_pid(DEFAULT_MODEL),
+                default_pid,
+                "with autosize off, max_loaded_models=1 should still thrash",
+            )
+        finally:
+            set_server_config({"llm_pool_autosize": True})
+        print("[OK] disabling llm_pool_autosize restores max_loaded_models=1 thrash")
+
     def test_610_cloud_candidate_routing(self):
         """A candidate whose recipe is `cloud` routes to a cloud provider.
 
@@ -613,6 +708,20 @@ class RouterTests(ServerTestBase):
                 f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
             )
             self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+
+            # The cloud candidate is unmetered (no local process, no residency
+            # slot) so it must not inflate the LLM pool floor: only DEFAULT_MODEL
+            # counts toward this policy's contribution.
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            policies = resp.json().get("llm_pool_autosize", {}).get("policies", {})
+            self.assertEqual(
+                policies.get(collection),
+                1,
+                f"cloud candidate {cloud_model} should not count toward "
+                f"{collection}'s local candidate floor",
+            )
+            print(f"[OK] cloud candidate {cloud_model} excluded from candidate_floor")
 
             # Coding prompt -> cloud candidate, answered by the mock provider.
             body = {
@@ -1241,6 +1350,138 @@ class RouterTests(ServerTestBase):
             print(f"[OK] classifier benign ({lo:.3f}) -> {DEFAULT_MODEL}")
         finally:
             self._delete_collection(collection)
+
+    def test_631_candidate_floor_unions_across_policies(self):
+        """The LLM pool floor is the union of distinct local candidates across
+        all active policies, not the sum of each policy's candidate count.
+
+        Registers a second policy referencing the same two local candidates as
+        `POLICY` (`COLLECTION_NAME`). If the floor summed per-policy counts
+        instead of unioning, this would report 4 (2 + 2); the correct union is
+        still 2, since both policies share the same two candidates.
+        """
+        collection = "user.Test-Router-Local-Union"
+        policy = {
+            "version": "1",
+            "model_name": collection,
+            "recipe": "collection.router",
+            "components": [DEFAULT_MODEL, CAPABLE_MODEL],
+            "routing": {
+                "candidates": [DEFAULT_MODEL, CAPABLE_MODEL],
+                "default_model": DEFAULT_MODEL,
+                "rules": [
+                    {
+                        "id": "coding-to-capable",
+                        "match": {"keywords_any": ["def ", "function"]},
+                        "route_to": CAPABLE_MODEL,
+                    }
+                ],
+            },
+        }
+        resp = requests.post(
+            f"http://localhost:{PORT}/api/v1/pull", json=policy, timeout=60
+        )
+        self.assertEqual(resp.status_code, 200, f"register failed: {resp.text}")
+        try:
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            body = resp.json()
+            autosize = body.get("llm_pool_autosize", {})
+            self.assertEqual(
+                autosize.get("candidate_floor"),
+                2,
+                "candidate_floor should union distinct local candidates across "
+                "policies, not sum each policy's count (would be 4 if summed)",
+            )
+            self.assertGreaterEqual(
+                autosize.get("policies", {}).get(COLLECTION_NAME, 0), 2
+            )
+            self.assertGreaterEqual(autosize.get("policies", {}).get(collection, 0), 2)
+            self.assertEqual(body.get("max_models", {}).get("llm"), 2)
+            print("[OK] candidate_floor unions overlapping policies instead of summing")
+        finally:
+            self._delete_collection(collection)
+
+    def test_632_full_convergence_survives_in_flight_load_race(self):
+        """A capacity drop landing while a new model is still loading must
+        fully converge the pool once that load finishes, not just evict one
+        model to make room for it.
+
+        Loads two models under a raised max_loaded_models, then starts loading
+        a third in the background while immediately dropping the limit to 1.
+        The pool must end up with exactly one resident model — not two, which
+        is what evicting only one (to make room for the third) would leave.
+        """
+        third_model = "Llama-3.2-1B-Instruct-GGUF"
+        print(f"\n[SETUP] Ensuring {third_model} is pulled...")
+        pull_model_with_retry(third_model)
+
+        # autosize off: the shared POLICY fixture keeps a floor of 2 active
+        # for the whole class, which would otherwise put a second, higher
+        # ceiling under max_loaded_models here (max(1, 2) = 2, not 1).
+        set_server_config({"max_loaded_models": 3, "llm_pool_autosize": False})
+        try:
+            for model in (DEFAULT_MODEL, CAPABLE_MODEL):
+                resp = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": model, "pinned": False, "save_options": False},
+                    timeout=120,
+                )
+                self.assertEqual(
+                    resp.status_code, 200, f"failed to load {model}: {resp.text}"
+                )
+
+            load_result = {}
+
+            def _load_third_model():
+                load_result["response"] = requests.post(
+                    f"{self.base_url}/load",
+                    json={
+                        "model_name": third_model,
+                        "pinned": False,
+                        "save_options": False,
+                    },
+                    timeout=120,
+                )
+
+            loader = threading.Thread(target=_load_third_model)
+            loader.start()
+            # Give the request time to reach the server and start the real
+            # subprocess spawn before the limit drops out from under it.
+            time.sleep(0.3)
+            set_server_config({"max_loaded_models": 1})
+            loader.join(timeout=120)
+
+            self.assertIn(
+                "response", load_result, f"{third_model} load never completed"
+            )
+            self.assertEqual(
+                load_result["response"].status_code,
+                200,
+                f"failed to load {third_model}: {load_result['response'].text}",
+            )
+
+            resp = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(resp.status_code, 200, resp.text[:1000])
+            llm_names = {DEFAULT_MODEL, CAPABLE_MODEL, third_model}
+            resident = [
+                m
+                for m in resp.json().get("all_models_loaded", [])
+                if m.get("model_name") in llm_names
+            ]
+            self.assertEqual(
+                len(resident),
+                1,
+                "pool must fully converge to the new limit once the in-flight "
+                f"load completes, not just evict one: resident={resident}",
+            )
+            print(
+                "[OK] full convergence after a limit drop mid-load, "
+                "not just a single eviction"
+            )
+        finally:
+            set_server_config({"max_loaded_models": 1, "llm_pool_autosize": True})
+            unload_all_models()
 
 
 if __name__ == "__main__":

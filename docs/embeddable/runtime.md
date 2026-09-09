@@ -171,6 +171,8 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `broadcast` | bool | Starts or stops UDP beacon |
 | `models_dir` | string (`"auto"` or path) | Updates the primary model cache location |
 | `extra_models_dir` | string | Validates access and updates the external GGUF search path |
+| `max_loaded_models` | int (-1 or positive) | Reclaims an over-limit LLM pool now, not just on the next load |
+| `llm_pool_autosize` | bool | Same as above |
 
 When `extra_models_dir` points to an existing path, `lemond` validates that it is a readable directory before applying the update. A path that does not exist yet is accepted so the directory watcher can pick it up if it is created later. Because `/internal/set` validates all supplied keys before applying any of them, a directory validation error rejects the whole request with `400`.
 
@@ -178,7 +180,6 @@ When `extra_models_dir` points to an existing path, `lemond` validates that it i
 
 | Key | Type |
 |-----|------|
-| `max_loaded_models` | int (-1 or positive) |
 | `ctx_size` | int (positive) |
 | `llamacpp_backend` | string |
 | `llamacpp_args` | string |

@@ -67,6 +67,19 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
         // downsizing would yank models out from under its next step.
         if (router_->exclusive_active_) return;
 
+        // Retries an LLM-floor convergence enforce_llm_pool_capacity_locked()
+        // deferred earlier because every resident was busy — this periodic
+        // pass is what eventually catches it once one goes idle, since
+        // nothing else re-triggers on a plain busy->idle transition. Skipped
+        // during an in-flight load, same invariant every other caller
+        // (apply_policy_state_reconcile, enforce_llm_pool_capacity) enforces
+        // by waiting on !is_loading_ before this same call — here the next
+        // 5s tick just retries it instead of blocking this lock_guard-held
+        // lock on a wait.
+        if (!router_->is_loading_) {
+            router_->enforce_llm_pool_capacity_locked();
+        }
+
         auto now = std::chrono::steady_clock::now();
         double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
         bool pressure_evict = (current_vram_pct >= threshold);

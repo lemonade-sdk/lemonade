@@ -1489,6 +1489,13 @@ curl http://localhost:13305/v1/health
     "reranking":1,
     "tts":1
   },
+  "llm_pool_autosize": {
+    "enabled": true,
+    "candidate_floor": 2,
+    "policies": {
+      "user.Support-Router": 2
+    }
+  },
   "telemetry": {
     "enabled": false
   },
@@ -1518,12 +1525,16 @@ curl http://localhost:13305/v1/health
   - `recipe_options` - Options used to load the model (e.g., `"ctx_size"`, `"llamacpp_backend"`, `"llamacpp_args"`, `"whispercpp_args"`)
 - `pinned_models` - Counts of pinned models currently loaded in memory per model type (e.g., `llm`, `embedding`, etc.)
 - `max_models` - Maximum number of models that can be loaded simultaneously per type (set via `max_loaded_models` in [Server Configuration](../guide/configuration/README.md)):
-  - `llm` - Maximum LLM/chat models
+  - `llm` - Maximum LLM/chat models. Can exceed `max_loaded_models` when `llm_pool_autosize` (below) is active and raises the floor.
   - `embedding` - Maximum embedding models
   - `reranking` - Maximum reranking models
   - `transcription` - Maximum speech-to-text models
   - `image` - Maximum image models
   - `tts` - Maximum text-to-speech models
+- `llm_pool_autosize` - Diagnostics for the Standard LLM pool's auto-raised capacity (see [Multi-Model Support](../guide/configuration/multi-model.md)):
+  - `enabled` - Whether `llm_pool_autosize` is currently on (set via [Server Configuration](../guide/configuration/README.md))
+  - `candidate_floor` - The union of distinct local (non-cloud) LLM candidates across all active router policies. Reflects the true count even when `enabled` is `false` (diagnostic value — "would apply").
+  - `policies` - Object mapping each active router policy's model name to how many local LLM candidates it contributes
 - `websocket_port` - *(optional)* Port of the WebSocket server for the [Realtime Audio Transcription API](./openai.md#ws-realtime) and [Log Streaming API](#log-streaming-api-websocket). Only present when the WebSocket server is running. The port is OS-assigned or set via `--websocket-port`.
 - `telemetry` - Structured telemetry state object:
   - `enabled` - Boolean indicating if telemetry collection is active

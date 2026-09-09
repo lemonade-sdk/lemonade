@@ -36,12 +36,12 @@ int main() {
               LoadPurpose::RoutingDependency);
 
     check("standard pool honors configured limit",
-          residency_limit(ResidencyClass::Standard, 3) == 3);
+          residency_limit(ResidencyClass::Standard, ModelType::EMBEDDING, 3, 0) == 3);
     check("standard pool preserves unlimited",
-          residency_limit(ResidencyClass::Standard, -1) == -1);
+          residency_limit(ResidencyClass::Standard, ModelType::EMBEDDING, -1, 0) == -1);
     check("each distinct helper model has one capacity identity",
-          residency_limit(ResidencyClass::RoutingHelper, -1) == 1 &&
-              residency_limit(ResidencyClass::RoutingHelper, 8) == 1);
+          residency_limit(ResidencyClass::RoutingHelper, ModelType::LLM, -1, 0) == 1 &&
+              residency_limit(ResidencyClass::RoutingHelper, ModelType::LLM, 8, 0) == 1);
 
     check("standard same type and different models share capacity",
           same_residency_pool(ModelType::LLM, ResidencyClass::Standard, "model-a",

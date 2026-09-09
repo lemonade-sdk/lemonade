@@ -128,6 +128,7 @@ public:
     // Test-only access to routing-helper reconciliation internals (inject stub
     // servers, seed the needed set, drive prune). Defined in the test binary.
     friend struct RoutingHelperTestHook;
+    friend struct LlmPoolFloorTestHook;
     Router(RuntimeConfig* config,
 
            ModelManager* model_manager,
@@ -168,19 +169,30 @@ public:
         const std::string& model_name,
         LoadPurpose load_purpose);
 
-    // Record the authoritative set of routing-helper models the active policies
-    // need resident (the union across all active policies, as policy-authored
-    // names — resolved internally), then reclaim any live helper no longer in
-    // it. The set is published immediately so a helper still mid-load validates
-    // against it at load-completion (see load_model), making reconciliation
-    // durable rather than a one-time snapshot; only the eviction pass is deferred
-    // to a safe point. Pinned and busy helpers are left resident; a busy helper
-    // is marked pending-stale and reclaimed the moment its last request releases
-    // (see WrappedServer::release_inference), or by a later reconcile.
-    // The generation orders concurrent policy notifications: an older generation
-    // arriving after a newer one is ignored so it cannot republish a stale set.
-    void reconcile_routing_helpers(const std::set<std::string>& needed_helper_models,
-                                   uint64_t generation);
+    // Combined entry point a policy change actually drives: publishes the new
+    // floor and helper set together under one load_mutex_ hold, then waits
+    // once. Publishing them through two separate calls (each taking and
+    // releasing load_mutex_ on its own) would leave a gap where a load
+    // completing in between validates the new floor against the old helper
+    // set (or vice versa) — the exact race publishing both together closes.
+    void reconcile_policy_state(int floor,
+                                const std::set<std::string>& needed_helper_models,
+                                uint64_t generation);
+
+    // Proactive counterpart to ensure_residency_capacity, which only ever
+    // evicts one resident to make room for a new one: this converges an
+    // already-populated pool down to its current limit (see
+    // model_residency.h) and re-checks the no-backstop warning, for
+    // whichever event just shrank that limit out from under it — a policy
+    // edit, or a live config change (see Server::apply_config_side_effects).
+    void enforce_llm_pool_capacity();
+
+    // Same reclaim_shutdown_ signal ~Router() sets, exposed so Server::stop()
+    // can raise it before ~Server()'s own thread-join loop runs — router_ is
+    // still a live Server member at that point, well before ~Router() itself
+    // would otherwise fire, so waiting on that later signal would defeat the
+    // point of an early wake.
+    void begin_shutdown();
 
     void unload_model(const std::string& model_name = "");  // Empty = unload all
 
@@ -311,9 +323,19 @@ private:
     // Guarded by load_mutex_; the authoritative snapshot a freshly loaded helper
     // validates itself against and a prune pass reclaims against.
     std::set<std::string> needed_helper_models_;
-    // Highest policy-notification generation applied to needed_helper_models_.
-    // Guarded by load_mutex_; an out-of-order (older) reconcile is ignored.
-    uint64_t last_reconcile_generation_ = 0;
+    // Feeds residency_limit() — see model_residency.h. Guarded by
+    // load_mutex_; published together with needed_helper_models_ under
+    // last_policy_reconcile_generation_ below (see reconcile_policy_state).
+    int llm_candidate_floor_ = 0;
+    // The floor value the no-VRAM-backstop warning last fired for; 0 when the
+    // condition isn't currently active. Re-warns only when the floor changes
+    // while still unguarded, not on every unrelated policy reconcile.
+    int last_llm_floor_warned_ = 0;
+    // Highest policy-notification generation applied to llm_candidate_floor_
+    // and needed_helper_models_ together (see reconcile_policy_state); an
+    // out-of-order (older) reconcile is ignored, and can't leave one field
+    // fresh while the other stays stale.
+    uint64_t last_policy_reconcile_generation_ = 0;
     // Set during ~Router (under load_mutex_) so a reclaim task waiting for the
     // residency slot to clear wakes and returns instead of blocking teardown.
     bool reclaim_shutdown_ = false;
@@ -343,8 +365,14 @@ private:
                                       ResidencyClass residency_class) const;
     WrappedServer* find_lru_server_in_pool(ModelType type, ResidencyClass residency_class,
                                                   const std::string& model_name) const;
+    WrappedServer* find_lru_idle_server_in_pool(ModelType type,
+                                                ResidencyClass residency_class) const;
     void ensure_residency_capacity(ModelType type, ResidencyClass residency_class,
                                    const std::string& model_name);
+    // Caller holds load_mutex_. Bounded by the pool's own size so a resident
+    // evict_server() fails to remove (busy past its timeout, or pinned)
+    // can't spin the loop forever.
+    void enforce_llm_pool_capacity_locked();
     void transition_server_residency_locked(
         WrappedServer* server,
         ResidencyClass requested_residency_class);
@@ -358,11 +386,27 @@ private:
     void evict_all_npu_servers();
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
-    // Publish the (already-canonicalized) needed-helper set under load_mutex_,
-    // then defer the eviction pass until no load holds the slot. Split out from
-    // reconcile_routing_helpers so the set is visible to a mid-load helper's
-    // load-completion validation even while is_loading_ is still true.
-    void apply_routing_helper_reconcile(std::set<std::string> needed, uint64_t generation);
+    // Core of reconcile_policy_state: publishes the floor and the
+    // authoritative set of routing-helper models the active policies need
+    // resident (the union across all active policies, as already-
+    // canonicalized names) together under one load_mutex_ hold, then
+    // converges the LLM pool to the new floor and reclaims any live helper
+    // no longer needed. Both are published immediately, even while a load is
+    // in flight, so a helper or LLM still mid-load validates against fresh
+    // state at load-completion (see load_model), making reconciliation
+    // durable rather than a one-time snapshot; only the eviction/convergence
+    // pass is deferred until no load holds the slot. Pinned and busy helpers
+    // are left resident; a busy helper is marked pending-stale and reclaimed
+    // the moment its last request releases (see
+    // WrappedServer::release_inference), or by a later reconcile. The
+    // generation orders concurrent policy notifications: an older
+    // generation arriving after a newer one is ignored so it cannot
+    // republish stale state. Takes an already-canonicalized helper set so a
+    // test can drive this directly (see LlmPoolFloorTestHook,
+    // RoutingHelperTestHook) without a ModelManager to resolve names
+    // through.
+    void apply_policy_state_reconcile(int floor, std::set<std::string> needed,
+                                      uint64_t generation);
     // Evict idle, unpinned routing helpers whose model is not in
     // needed_helper_models_. A busy not-needed helper is marked pending-stale so
     // it self-reclaims on its final release instead of blocking this pass on an
