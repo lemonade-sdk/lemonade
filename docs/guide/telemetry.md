@@ -298,7 +298,6 @@ Lemonade automatically captures session identifiers to group multi-turn conversa
 
 If an incoming request includes a configured custom client header (`telemetry.session.headers.client`) or a well-known client header (such as `x-opencode-client`, `x-client-id`, or `x-client-name`), Lemonade automatically prefixes the session ID as `<client>/<session>` (for example, `vscode/sess-abc123`). This avoids session collisions when multiple IDE extensions or agent tools share a single Lemonade server.
 
-
 ### Configuring Custom Headers
 
 If your client or proxy uses proprietary headers not included in the built-in list:
