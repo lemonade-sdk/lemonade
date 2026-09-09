@@ -345,7 +345,7 @@ Every `*_bin` key (e.g. `llamacpp.vulkan_bin`, `whispercpp.cpu_bin`, `sdcpp.rocm
 | `""` | Same as `"builtin"`. |
 | `"latest"` | Resolve to the most-recent upstream GitHub release on first install or first status query for that backend, then install on demand. The resolved tag is recorded in `<lemonade-home>/bin/<recipe>/<backend>/version.txt`. |
 | `"b8664"` / `"v1.8.2"` / etc. | A specific upstream release tag. Lemonade downloads that exact version from GitHub. |
-| `"/path/to/bin"` | A directory you populated yourself (e.g. a local build). Lemonade uses the executable inside this directory and never downloads. The path must exist when set. |
+| `"/path/to/backend-server"` | The full path to an executable you built or installed yourself. Lemonade runs this executable directly and never downloads a replacement. The path must exist when set. |
 
 > Note: the `latest` setting is experimental.
 
@@ -361,7 +361,7 @@ lemonade config set llamacpp.vulkan_bin=latest
 lemonade config set llamacpp.vulkan_bin=b8664
 
 # Use your own llama.cpp build
-lemonade config set llamacpp.vulkan_bin=/home/me/llama.cpp/build/bin
+lemonade config set llamacpp.vulkan_bin=/home/me/llama.cpp/build/bin/llama-server
 
 # Revert to the version lemonade ships
 lemonade config set llamacpp.vulkan_bin=builtin
