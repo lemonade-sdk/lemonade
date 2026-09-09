@@ -8,6 +8,8 @@ Lemonade is available on a broad range of platforms.
 
 === "Linux"
 
+    [Flatpak instructions](./flatpak.md).
+
     [Ubuntu instructions](./ubuntu.md).
 
     [Arch instructions](./arch.md).

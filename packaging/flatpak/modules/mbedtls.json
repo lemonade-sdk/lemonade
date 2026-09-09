@@ -1,0 +1,20 @@
+{
+  "name": "mbedtls",
+  "buildsystem": "cmake-ninja",
+  "config-opts": [
+    "-DENABLE_PROGRAMS=OFF",
+    "-DENABLE_TESTING=OFF",
+    "-DGEN_FILES=OFF",
+    "-DMBEDTLS_FATAL_WARNINGS=OFF",
+    "-DUSE_SHARED_MBEDTLS_LIBRARY=ON",
+    "-DUSE_STATIC_MBEDTLS_LIBRARY=OFF"
+  ],
+  "cleanup": [ "/include", "/lib/cmake", "/lib/pkgconfig" ],
+  "sources": [
+    {
+      "type": "archive",
+      "url": "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-4.2.0/mbedtls-4.2.0.tar.bz2",
+      "sha256": "2bed9d713b4668f76553b097e72b8aa30bc8f112a940d7ae228d524bbde6ffea"
+    }
+  ]
+}

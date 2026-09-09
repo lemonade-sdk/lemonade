@@ -64,6 +64,7 @@ nav:
       - Fedora: guide/install/fedora.md
       - Debian: guide/install/debian.md
       - Docker: guide/install/docker.md
+      - Flatpak: guide/install/flatpak.md
     - Local Server Concepts: guide/concepts.md
     - CLI: guide/cli.md
     - Chat in your terminal: guide/cli-chat.md

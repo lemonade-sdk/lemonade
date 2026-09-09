@@ -1,0 +1,19 @@
+{
+  "name": "cli11",
+  "buildsystem": "cmake-ninja",
+  "config-opts": [
+    "-DCLI11_BUILD_TESTS=OFF",
+    "-DCLI11_BUILD_EXAMPLES=OFF",
+    "-DCLI11_BUILD_DOCS=OFF",
+    "-DCLI11_SINGLE_FILE=OFF"
+  ],
+  "cleanup": [ "/include", "/lib/cmake", "/lib/pkgconfig", "/share/pkgconfig" ],
+  "sources": [
+    {
+      "type": "git",
+      "url": "https://github.com/CLIUtils/CLI11.git",
+      "tag": "v2.6.2",
+      "commit": "37bb6edc5317e99af72ef48405e65d9ca5218861"
+    }
+  ]
+}

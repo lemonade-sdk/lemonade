@@ -1,0 +1,61 @@
+name: Flatpak Validation 📦
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flatpak-validation:
+    name: Flatpak Build (${{ matrix.flatpak-arch }})
+    runs-on: ${{ matrix.runs-on }}
+    container:
+      image: ghcr.io/aetherpak/cli:latest-builder
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flatpak-arch: x86_64
+            runs-on: ubuntu-latest
+          - flatpak-arch: aarch64
+            runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Check for packaging or ABI-impacting changes
+        uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            abi_packaging:
+              - 'packaging/flatpak/**'
+              - 'data/ai.lemonadeserver.app.metainfo.xml'
+              - 'data/lemonade-app.desktop'
+              - 'CMakeLists.txt'
+              - 'src/**/CMakeLists.txt'
+              - 'src/app/src-tauri/Cargo.toml'
+              - 'src/app/src-tauri/Cargo.lock'
+              - '.github/workflows/flatpak*.yml'
+
+      - name: Fast-exit notice
+        if: steps.changes.outputs.abi_packaging != 'true' && github.event_name != 'workflow_dispatch'
+        run: echo "No packaging, build system, or ABI-impacting changes detected. Fast-exiting."
+
+      - name: Build Flatpak with AetherPak Action
+        if: steps.changes.outputs.abi_packaging == 'true' || github.event_name == 'workflow_dispatch'
+        uses: aetherpak/actions/build@v3
+        with:
+          config: packaging/flatpak/aetherpak.yaml
+          app-id: ai.lemonadeserver.app
+          branch: unstable
+          arch: ${{ matrix.flatpak-arch }}

@@ -1,0 +1,92 @@
+{
+    "name": "libayatana-appindicator",
+    "buildsystem": "cmake-ninja",
+    "config-opts": [
+        "-DCMAKE_INSTALL_LIBDIR=lib",
+        "-DCMAKE_PREFIX_PATH=/app",
+        "-DENABLE_BINDINGS_MONO=NO",
+        "-DENABLE_BINDINGS_VALA=NO",
+        "-DENABLE_GTKDOC=NO"
+    ],
+    "modules": [
+        "../shared-modules/intltool/intltool-0.51.json",
+        {
+            "name": "libdbusmenu",
+            "buildsystem": "autotools",
+            "build-options": {
+                "cflags": "-Wno-error"
+            },
+            "config-opts": [
+                "--libdir=/app/lib",
+                "--with-gtk=3",
+                "--disable-dumper",
+                "--disable-static",
+                "--disable-tests",
+                "--disable-gtk-doc",
+                "--enable-introspection=no",
+                "--disable-vala"
+            ],
+            "sources": [
+                {
+                    "type": "archive",
+                    "url": "https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz",
+                    "mirror-urls": [
+                        "https://sources.suse.com/SUSE:SLFO:Main:Build/libdbusmenu/a5b3e4717f09f90f9cd5568a5f933e8d/libdbusmenu-16.04.0.tar.gz",
+                        "https://mirror.math.princeton.edu/pub/frugalware/frugalware-2.1/source/xlib/libdbusmenu/libdbusmenu-16.04.0.tar.gz",
+                        "https://ftp.fr.openbsd.org/pub/OpenBSD/distfiles/libdbusmenu-16.04.0.tar.gz"
+                    ],
+                    "sha256": "b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a"
+                },
+                {
+                    "type": "patch",
+                    "path": "../shared-modules/libayatana-appindicator/0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch"
+                }
+            ]
+        },
+        {
+            "name": "ayatana-ido",
+            "buildsystem": "cmake-ninja",
+            "config-opts": [
+                "-DCMAKE_INSTALL_LIBDIR=lib",
+                "-DCMAKE_PREFIX_PATH=/app",
+                "-DENABLE_INTROSPECTION=OFF"
+            ],
+            "sources": [
+                {
+                    "type": "git",
+                    "url": "https://github.com/AyatanaIndicators/ayatana-ido.git",
+                    "tag": "0.10.4",
+                    "commit": "f968079b09e2310fefc3fc307359025f1c74b3eb"
+                },
+                {
+                    "type": "patch",
+                    "path": "../shared-modules/libayatana-appindicator/0001-Make-introspection-configurable.patch"
+                }
+            ]
+        },
+        {
+            "name": "libayatana-indicator",
+            "buildsystem": "cmake-ninja",
+            "config-opts": [
+                "-DCMAKE_INSTALL_LIBDIR=lib",
+                "-DCMAKE_PREFIX_PATH=/app"
+            ],
+            "sources": [
+                {
+                    "type": "git",
+                    "url": "https://github.com/AyatanaIndicators/libayatana-indicator.git",
+                    "tag": "0.9.4",
+                    "commit": "611bb384b73fa6311777ba4c41381a06f5b99dad"
+                }
+            ]
+        }
+    ],
+    "sources": [
+        {
+            "type": "git",
+            "url": "https://github.com/AyatanaIndicators/libayatana-appindicator.git",
+            "tag": "0.5.94",
+            "commit": "31e8bb083b307e1cc96af4874a94707727bd1e79"
+        }
+    ]
+}
