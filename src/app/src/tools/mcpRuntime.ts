@@ -663,63 +663,18 @@ export function composeMcpRuntimes(runtimes: Array<ChatToolRuntime | null | unde
 }
 
 export async function listMcpServerOptions(): Promise<McpServerOption[]> {
-  const external = await api.listMcpServers();
-  return [
-    LEMONADE_MCP_SERVER,
-    ...external.map(server => ({
-      id: server.id,
-      name: server.name,
-      transport: server.transport === 'streamable-http' ? 'streamable-http' as const : 'stdio' as const,
-      connected: server.connected === true,
-      status: server.status || (server.connected ? 'connected' : 'disconnected'),
-      tools: Array.isArray(server.tools) ? server.tools.length : 0,
-      lastError: server.last_error || undefined,
-    })),
-  ];
+  return [LEMONADE_MCP_SERVER];
 }
 
 export async function listMcpServerToolOptions(): Promise<McpServerToolOption[]> {
-  const servers = await listMcpServerOptions();
-  const externalTools = api.adminApiKey ? await api.listMcpTools() : [];
-  return servers.map(server => {
-    if (server.id === LEMONADE_MCP_SERVER_ID) {
-      return {
-        ...server,
-        toolOptions: LEMONADE_MCP_TOOLS.map(tool => ({
-          name: tool.function.name,
-          runtimeName: tool.function.name,
-          description: tool.function.description,
-        })),
-      };
-    }
-
-    const toolOptions = externalTools
-      .filter(tool => tool.server_id === server.id)
-      .map(tool => ({
-        name: tool.name,
-        runtimeName: tool.chat_name,
-        title: tool.title,
-        description: tool.description,
-      }));
-
-    return { ...server, toolOptions };
-  });
-}
-
-async function connectSelectedExternalServers(ids: string[]): Promise<McpServerState[]> {
-  const states = await api.listMcpServers();
-  const selected = ids.map(id => {
-    const state = states.find(server => server.id === id);
-    if (!state) throw new Error(`Selected configuration references missing MCP server '${id}'. Update the MCP selection or add that server again.`);
-    return state;
-  });
-
-  const connected: McpServerState[] = [];
-  for (const server of selected) {
-    if (server.enabled === false) throw new Error(`MCP server '${server.name}' is disabled.`);
-    connected.push(server.connected ? server : await api.connectMcpServer(server.id));
-  }
-  return connected;
+  return [{
+    ...LEMONADE_MCP_SERVER,
+    toolOptions: LEMONADE_MCP_TOOLS.map(tool => ({
+      name: tool.function.name,
+      runtimeName: tool.function.name,
+      description: tool.function.description,
+    })),
+  }];
 }
 
 export async function buildSelectedMcpRuntime(
@@ -732,19 +687,8 @@ export async function buildSelectedMcpRuntime(
 
   const allowed = allowedToolNames ? new Set(allowedToolNames.filter(Boolean)) : undefined;
   const includeLemonade = selectedIds.includes(LEMONADE_MCP_SERVER_ID);
-  const externalIds = selectedIds.filter(id => id !== LEMONADE_MCP_SERVER_ID);
-  if (externalIds.length > 0) await connectSelectedExternalServers(externalIds);
-  const catalog = externalIds.length > 0
-    ? (await api.listMcpTools()).filter(tool => externalIds.includes(tool.server_id))
-    : [];
-
-  const missingTools = externalIds.filter(id => !catalog.some(tool => tool.server_id === id));
-  if (missingTools.length > 0) {
-    throw new Error(`Selected MCP server(s) returned no tools: ${missingTools.join(', ')}.`);
-  }
 
   return composeMcpRuntimes([
     includeLemonade ? buildLemonadeRuntime(context, allowed) : null,
-    buildExternalRuntime(catalog, allowed),
   ]);
 }

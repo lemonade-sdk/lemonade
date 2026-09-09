@@ -330,12 +330,10 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     const flag = api.highSecurity;
     setSecure(flag === false ? false : true);
     void loadGatewayTools();
-    if (flag !== false) {
-      setAdminAccess('checking');
-      void probeAccess();
-    }
+    setAdminAccess('unavailable');
+    setHostError('External MCP connections are temporarily unavailable while the local GUI client is being introduced.');
     return () => abortRef.current?.abort();
-  }, [connectionStatus, isActive, loadGatewayTools, probeAccess]);
+  }, [connectionStatus, isActive, loadGatewayTools]);
 
   const gatewayLabel = gatewayStatus === 'connected' ? 'Connected'
     : gatewayStatus === 'checking' ? 'Checking…'
@@ -501,9 +499,6 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
           ) : adminAccess === 'unavailable' ? (
             <div className="connect__notice mcp-panel__host-unavailable" role="alert" data-mcp-host-unavailable>
               <p>{hostError || 'MCP administration is currently unavailable.'}</p>
-              <button type="button" className="btn btn--ghost" onClick={() => void probeAccess()} disabled={connectionStatus !== 'connected' || hostLoading}>
-                {hostLoading ? 'Retrying…' : 'Retry'}
-              </button>
             </div>
           ) : adminAccess === 'needs-admin' ? (
             <div className="mcp-panel__admin-auth" data-mcp-admin-auth>
@@ -605,7 +600,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                       {nonLocalPlainHttp && !draft.allowInsecureHttp && (
                         <div className="connect__notice mcp-server-form__wide" role="note">This endpoint needs HTTPS, or the explicit insecure HTTP option above.</div>
                       )}
-                      <p className="mcp-server-form__note">Bearer tokens are read from the lemond environment when connecting. Raw credentials are never stored in <code>mcp_servers.json</code>.</p>
+                      <p className="mcp-server-form__note">Bearer tokens are read from the desktop app environment when connecting. Raw credentials are never stored.</p>
                     </>
                   ) : (
                     <>
@@ -613,7 +608,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                       <label><span>Working directory · optional</span><input value={draft.workingDir} onChange={event => setDraft(current => ({ ...current, workingDir: event.target.value }))} /></label>
                       <label className="mcp-server-form__wide"><span>Arguments · one per line</span><textarea value={draft.args} onChange={event => setDraft(current => ({ ...current, args: event.target.value }))} placeholder={'-y\n@modelcontextprotocol/server-filesystem\n/home/user/projects'} rows={4} /></label>
                       <label className="mcp-server-form__wide"><span>Environment references · one <code>{'KEY=${KEY}'}</code> per line</span><textarea value={draft.env} onChange={event => setDraft(current => ({ ...current, env: event.target.value }))} placeholder="GITHUB_TOKEN=${GITHUB_TOKEN}" rows={3} /></label>
-                      <p className="mcp-server-form__note">Lemonade starts this command locally. Environment values must use references, and the referenced variables must exist in the lemond process environment.</p>
+                      <p className="mcp-server-form__note">The desktop app starts this command locally. Environment values must use references, and the referenced variables must exist in the desktop app environment.</p>
                     </>
                   )}
 

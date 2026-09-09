@@ -1085,18 +1085,14 @@ class LemonadeAPI {
           const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
           err.url = url;
           err.endpoint = endpoint;
-          err.userMessage = endpoint.startsWith('/internal/mcp')
-            ? `Could not access ${url}. MCP administration is fail-closed: configure LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY) in the lemond process, restart lemond, then enter the matching admin key in the MCP panel. A key entered only in this client does not configure the server.`
-            : `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+          err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
           throw err;
         }
       } else {
         const err = new Error(`${method} ${url} could not be reached. ${cause instanceof Error ? cause.message : String(cause)}`) as LemonadeRequestError;
         err.url = url;
         err.endpoint = endpoint;
-        err.userMessage = endpoint.startsWith('/internal/mcp')
-          ? `Could not access ${url}. MCP administration is fail-closed: configure LEMONADE_ADMIN_API_KEY (or LEMONADE_API_KEY) in the lemond process, restart lemond, then enter the matching admin key in the MCP panel. A key entered only in this client does not configure the server.`
-          : `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
+        err.userMessage = `Could not reach ${url}. Check that lemond is running and the URL is correct.`;
         throw err;
       }
     }
@@ -1439,24 +1435,10 @@ class LemonadeAPI {
   }
 
   async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
-    const target = modelName.trim().toLowerCase();
-    const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
-    const cachedRecipe = String((cachedModelInfo as any)?.recipe || '').trim().toLowerCase();
-    if (cachedRecipe === 'collection.router' || cachedRecipe.startsWith('collection.router.')) {
-      return {
-        model_name: modelName,
-        recipe: 'collection.router',
-        backend: 'virtual',
-        options: {},
-        args: [],
-      };
-    }
-    const { recipeOptionsForModel } = await import(
-      /* webpackChunkName: "model-configuration" */ './modelConfiguration'
-    );
-    const stagedOptions = recipeOptionsForModel(modelName, cachedModelInfo, recipeOptions as RecipeOptions | undefined, this._systemInfoData);
-    const body: Record<string, unknown> = { model_name: modelName, ...(stagedOptions || {}), ...recipeOptions };
-    return this._json<EffectiveLoadCommand>('/api/v1/load/command', { method: 'POST', body });
+    void modelName;
+    void recipeOptions;
+    void modelInfo;
+    throw new Error('Effective Settings is temporarily unavailable while GUI3 is synchronized with the current server API.');
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
@@ -1625,33 +1607,14 @@ class LemonadeAPI {
     this._notifyModelsChanged();
   }
 
-  // ── MCP client host ─────────────────────────────────────────────
+  // ── External MCP client ─────────────────────────────────────────
 
   async listMcpServers(): Promise<McpServerState[]> {
-    // External MCP administration is deliberately fail-closed on the server.
-    // Do not probe /internal/mcp/servers from ordinary chat rendering
-    // when the app has no admin-capable credential: on a default keyless server
-    // that request is guaranteed to be rejected and only produces noisy 403 logs.
-    // The dedicated MCP panel prompts for a key before calling this method.
-    if (!this.adminApiKey) return [];
-
-    const data = await this._json<{ servers?: McpServerState[] }>(
-      '/internal/mcp/servers',
-      { auth: 'admin' },
-    );
-    return Array.isArray(data.servers) ? data.servers : [];
+    return [];
   }
 
   async probeMcpAccess(): Promise<{ ok: true; servers: McpServerState[] } | { ok: false; status: number }> {
-    try {
-      const data = await this._json<{ servers?: McpServerState[] }>(
-        '/internal/mcp/servers',
-        { auth: 'admin' },
-      );
-      return { ok: true, servers: Array.isArray(data.servers) ? data.servers : [] };
-    } catch (error) {
-      return { ok: false, status: (error as LemonadeRequestError).status ?? 0 };
-    }
+    return { ok: false, status: 0 };
   }
 
   async saveMcpServer(
@@ -1660,12 +1623,8 @@ class LemonadeAPI {
       transport: Exclude<McpTransport, 'builtin'>;
     },
   ): Promise<McpServerConfig> {
-    const data = await this._json<{ server: McpServerConfig }>('/internal/mcp/servers', {
-      method: 'POST',
-      auth: 'admin',
-      body: { server },
-    });
-    return data.server;
+    void server;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   async testMcpServer(
@@ -1674,45 +1633,32 @@ class LemonadeAPI {
       transport: Exclude<McpTransport, 'builtin'>;
     },
   ): Promise<McpServerState> {
-    const data = await this._json<{ server: McpServerState }>('/internal/mcp/servers/test', {
-      method: 'POST',
-      auth: 'admin',
-      body: { server },
-    });
-    return data.server;
+    void server;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   async removeMcpServer(id: string): Promise<void> {
-    await this._fetch(`/internal/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE', auth: 'admin' });
+    void id;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   async connectMcpServer(id: string): Promise<McpServerState> {
-    const data = await this._json<{ server: McpServerState }>(
-      `/internal/mcp/servers/${encodeURIComponent(id)}/connect`,
-      { method: 'POST', auth: 'admin' },
-    );
-    return data.server;
+    void id;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   async disconnectMcpServer(id: string): Promise<McpServerState> {
-    const data = await this._json<{ server: McpServerState }>(
-      `/internal/mcp/servers/${encodeURIComponent(id)}/disconnect`,
-      { method: 'POST', auth: 'admin' },
-    );
-    return data.server;
+    void id;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   async refreshMcpServerTools(id: string): Promise<McpServerState> {
-    const data = await this._json<{ server: McpServerState }>(
-      `/internal/mcp/servers/${encodeURIComponent(id)}/refresh-tools`,
-      { method: 'POST', auth: 'admin' },
-    );
-    return data.server;
+    void id;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   async listMcpTools(): Promise<McpToolCatalogEntry[]> {
-    const data = await this._json<{ tools?: McpToolCatalogEntry[] }>('/internal/mcp/tools', { auth: 'admin' });
-    return Array.isArray(data.tools) ? data.tools : [];
+    return [];
   }
 
   async callMcpTool(
@@ -1721,18 +1667,11 @@ class LemonadeAPI {
     args: Record<string, unknown>,
     timeoutMs?: number,
   ): Promise<McpToolCallResponse> {
-    return this._json<McpToolCallResponse>(
-      `/internal/mcp/servers/${encodeURIComponent(serverId)}/tools/call`,
-      {
-        method: 'POST',
-        auth: 'admin',
-        body: {
-          name,
-          arguments: args,
-          ...(typeof timeoutMs === 'number' ? { timeout_ms: timeoutMs } : {}),
-        },
-      },
-    );
+    void serverId;
+    void name;
+    void args;
+    void timeoutMs;
+    throw new Error('External MCP connections are temporarily unavailable.');
   }
 
   // ── Capability-specific inference endpoints ────────────────────
@@ -1916,10 +1855,12 @@ class LemonadeAPI {
   }
 
   async setLogLevel(level: string): Promise<{ status: string; level: string }> {
-    return this._json<{ status: string; level: string }>('/api/v1/log-level', {
-      method: 'POST',
-      body: { level },
-    });
+    const response = await this.setRuntimeConfig({ log_level: level });
+    const updated = isObject(response.updated) ? response.updated : {};
+    return {
+      status: typeof response.status === 'string' ? response.status : 'success',
+      level: typeof updated.log_level === 'string' ? updated.log_level : level,
+    };
   }
 
   // ── Log stream (WebSocket) ──────────────────────────────────────
