@@ -19,6 +19,7 @@ The `--extra-models-dir PATH` argument specifies a secondary directory to scan f
 1. The directory is scanned recursively for `.gguf` files.
 2. Discovered models are added to the model list alongside registered models from `server_models.json` and `user_models.json`.
 3. HuggingFace cache remains the primary source for registered models.
+4. The top-level directory a model sits in selects how it runs. `chat`, `embeddings`, and `reranking` are reserved for this; anything else defaults to chat. Filenames are never used to guess. See [Embedding and Reranking Detection](#embedding-and-reranking-detection).
 
 ### Access and Failure Behavior
 
@@ -57,13 +58,43 @@ Files are merged into one model only when their names declare the same shard ser
 
 Sharing a quantization token is not sufficient. `Model-Q4_K_M.gguf` and `Model-Q4_K_M-imatrix.gguf` are two independent models and are listed separately.
 
-### Legacy Folder Names
+### Preserved Folder Names
 
 When a folder is split into variants, its folder name is still accepted in requests as a hidden input alias, resolving to the first variant alphabetically. It is not listed as an extra model, so existing scripts keep working without a duplicate entry appearing in `/api/v1/models`.
 
+Reserving a directory has the same effect. Any directory holding GGUF files is listed as a single model named after that directory, so `embeddings/` produced `extra.embeddings`. Once the directory is reserved, its files are listed separately instead.
+
+For a directory holding `all-MiniLM-L6-v2.gguf` and `nomic-embed-text-v2.gguf`:
+
+| | Model ids |
+|---|---|
+| Before it was reserved | `extra.embeddings` |
+| After | `extra.all-MiniLM-L6-v2`, `extra.nomic-embed-text-v2` |
+
+`extra.embeddings` is still accepted in requests so existing configs keep working. It resolves to the first file alphabetically, which is the file the single model used.
+
 ### Multimodal Detection
 
-If a directory contains a file with `mmproj` anywhere in the filename, it is automatically set as the model's `mmproj` field and the `vision` label is applied. When several `mmproj` files are present, the first by filename is chosen, so the selection is stable across restarts.
+If a model directory contains a file with `mmproj` anywhere in the filename, it is automatically set as the model's `mmproj` field and the `vision` label is applied. When several `mmproj` files are present, the first by filename is chosen, so the selection is stable across restarts.
+
+A direct `mmproj` inside a reserved directory is attached only when that directory contains one logical main model. Convention: if a reserved directory contains multiple multimodal models, place each model and its `mmproj` together in their own subdirectory. This makes it clear which files belong together.
+
+### Embedding and Reranking Detection
+
+The folder a model sits in tells the server how to run it, and filenames are never used to guess. The top-level directory selects the deployment mode, and the reserved directories are `chat`, `embeddings`, and `reranking`:
+
+```text
+extra_models_dir/
+├── chat/
+├── embeddings/
+└── reranking/
+```
+
+Files directly inside a reserved directory are listed as separate models. Files whose numbered shard names declare that they belong together are grouped as one model. Nested folder models and split variants inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat.
+
+Reserved directory names must match exactly. `embeddings` is reserved; `Embedding`, `embedding`, and `embeddings 2` are ordinary directories.
+
+The server does not try to infer near-matches because doing so could accidentally select the wrong runtime behavior. Filenames are not used to infer model type for the same reason, so `embeddings/bge-reranker-v2.gguf` is still an embedding model.
 
 ## Model Properties
 
@@ -74,7 +105,8 @@ Discovered models receive the following default properties:
 | `recipe` | `llamacpp` |
 | `suggested` | `true` |
 | `downloaded` | `true` |
-| `labels` | `["custom"]` (plus `"vision"` if multimodal) |
+| `labels` | `["custom"]`, the directory-selected mode (or `"chat"` by default), and `"vision"` if multimodal |
+| `type` | Derived from `labels` |
 | `size` | Sum of all `.gguf` file sizes in GB |
 | `source` | `extra_models_dir` |
 
@@ -92,7 +124,14 @@ Two scanned directories can contain identically named GGUF files. The first mode
 | `Llama-Local-GGUF/model-Q4_K_M.gguf` | `extra.model-Q4_K_M` |
 | `Mistral-Local-GGUF/model-Q4_K_M.gguf` | `extra.Mistral-Local-GGUF-model-Q4_K_M` |
 
-Directories are scanned in sorted path order, so the assignment is stable across restarts.
+Names are assigned in a fixed order so the result is stable across restarts and platforms: files at the root of `extra_models_dir` first, then files inside reserved directories, then directory models, each group in sorted path order.
+
+Root files come first so that adding a reserved directory later never renames a model that already exists:
+
+| File | Model Name |
+|------|------------|
+| `nomic-embed-text-v2.gguf` | `extra.nomic-embed-text-v2` |
+| `embeddings/nomic-embed-text-v2.gguf` | `extra.embeddings-nomic-embed-text-v2` |
 
 ## Model Deletion
 

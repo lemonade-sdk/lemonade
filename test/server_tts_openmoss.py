@@ -10,9 +10,11 @@ Usage:
 """
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import io
 import math
 import struct
+import time
 import wave
 
 import requests
@@ -244,15 +246,17 @@ class OpenMossTTSTests(ServerTestBase):
         )
 
     def test_010_voice_design(self):
-        """Test voice design: a free-text voice description instead of a fixed voice."""
-        model = get_test_model("tts_design")
-        print(f"[INFO] Ensuring {model} is pulled...")
-        pull_model_with_retry(model)
+        """Test voice design: an invented voice from a text description.
 
+        Design is opt-in through `voice_design_description` and needs no separate
+        model: the voice generator is a component of the speech model. Note this
+        request spans two model loads, since the backend swaps the speech model
+        out for the generator and back again.
+        """
         payload = {
-            "model": model,
+            "model": get_test_model("tts"),
             "input": "Designing a brand new voice from a description.",
-            "voice": "a calm, deep male narrator voice",
+            "voice_design_description": "a calm, deep male narrator voice",
         }
 
         response = requests.post(
@@ -264,20 +268,83 @@ class OpenMossTTSTests(ServerTestBase):
         self._assert_wav_response(response, "Voice design")
         print(f"[OK] Voice design produced a clip ({len(response.content)} bytes)")
 
-    def test_011_streaming_wav(self):
-        """A wav-only backend streams its own container instead of being rejected."""
+    def _loaded_model_pid(self, model):
+        response = requests.get(
+            f"{self.base_url}/health",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        for loaded in response.json().get("all_models_loaded", []):
+            if loaded.get("model_name") == model:
+                return loaded.get("pid")
+        return None
+
+    def test_011_concurrent_speech_and_voice_design(self):
+        """A request arriving after speech is stopped waits for voice design."""
+
+        model = get_test_model("tts")
+        voice_design_payload = {
+            "model": model,
+            "input": "This request designs a voice without interrupting its neighbor.",
+            "voice_design_description": (
+                "a precise late-night radio narrator with a softly rising cadence"
+            ),
+        }
+        plain_payload = {
+            "model": model,
+            "input": (
+                "A request entering during the model swap must wait and then speak."
+            ),
+        }
+
+        def send(payload):
+            return requests.post(
+                f"{self.base_url}/audio/speech",
+                json=payload,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            design_future = executor.submit(send, voice_design_payload)
+            # The Lemonade /health snapshot keeps the model visible during the
+            # intentional swap, but its wrapped speech PID is zero after the
+            # speech process was actually stopped. Enter the second request only
+            # in that exact window; this is the race the old simultaneous-start
+            # test could miss.
+
+            deadline = time.monotonic() + min(TIMEOUT_MODEL_OPERATION, 120)
+            while time.monotonic() < deadline:
+                if self._loaded_model_pid(model) == 0:
+                    break
+                if design_future.done():
+                    self.fail(
+                        "Voice design completed before the test observed the "
+                        "speech-process swap window"
+                    )
+                time.sleep(0.05)
+            else:
+                self.fail("Timed out waiting for OpenMOSS speech PID to become zero")
+
+            plain_future = executor.submit(send, plain_payload)
+            design_response = design_future.result(timeout=TIMEOUT_MODEL_OPERATION)
+            plain_response = plain_future.result(timeout=TIMEOUT_MODEL_OPERATION)
+
+        self._assert_wav_response(design_response, "Concurrent voice design")
+        self._assert_wav_response(
+            plain_response, "Speech entering during voice-design swap"
+        )
+
+    def test_012_streaming_pcm(self):
+        """OpenMOSS native streaming uses PCM rather than a buffered WAV."""
         model = get_test_model("tts")
         payload = {
             "model": model,
-            "input": "Lemonade can stream speech from a wav-only backend.",
-            "stream_format": "audio",
+            "input": "Lemonade can stream speech through the OpenMOSS native path.",
+            "stream": True,
         }
 
-        print(f"[INFO] Requesting streamed speech from {model}")
+        print(f"[INFO] Requesting native streamed speech from {model}")
 
-        # Headers and body are read off the live response before any assertion:
-        # unittest evaluates a failure message eagerly, so touching response.text
-        # here would consume the stream and leave iter_content replaying a cache.
         with requests.post(
             f"{self.base_url}/audio/speech",
             json=payload,
@@ -294,17 +361,125 @@ class OpenMossTTSTests(ServerTestBase):
             f"Streamed speech failed with status {status}: {body[:1000]!r}",
         )
         self.assertIn(
-            "audio/wav",
+            "audio/pcm",
             content_type,
-            f"Streamed speech should keep the backend's WAV container, got '{content_type}'",
+            f"OpenMOSS streaming must use PCM, got '{content_type}'",
         )
-        self.assertTrue(
+        self.assertEqual(response.headers.get("X-MOSS-Sample-Rate"), "24000")
+        self.assertEqual(response.headers.get("X-MOSS-Channels"), "1")
+        self.assertFalse(
             body[:4] == b"RIFF",
-            "Streamed body should be a valid WAV (RIFF) file",
+            "Native OpenMOSS streaming should not buffer a WAV container",
         )
-        self.assertGreater(len(body), 1000, "Streamed clip should be substantial")
+        self.assertFalse(
+            body.lstrip().startswith(b"{"),
+            "A backend JSON error must not be returned as successful audio",
+        )
+        self.assertGreater(len(body), 1000, "Streamed PCM should be substantial")
 
-        print(f"[OK] Streamed WAV received ({len(body)} bytes)")
+        print(f"[OK] Streamed PCM received ({len(body)} bytes)")
+
+    def test_013_voice_field_does_not_trigger_design(self):
+        """A plain `voice` value must speak, not design a voice by that name.
+
+        `voice` keeps its OpenAI-compatible meaning and is forwarded as a style
+        instruction. A client sending "default" must get speech back rather than
+        an attempt to invent a voice literally called "default".
+        """
+        payload = {
+            "model": get_test_model("tts"),
+            "input": "A standard voice field should still just speak.",
+            "voice": "default",
+        }
+
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json=payload,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+
+        self._assert_wav_response(response, "Plain voice field")
+        print(
+            f"[OK] `voice` was treated as an instruction ({len(response.content)} bytes)"
+        )
+
+    def test_014_tts_model_rejected_by_audio_generation_endpoint(self):
+        """A TTS deployment cannot be driven through /audio/generations."""
+        model = get_test_model("tts")
+        response = requests.post(
+            f"{self.base_url}/audio/generations",
+            json={"model": model, "prompt": "This is the wrong endpoint."},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+        self.assertEqual(
+            response.json().get("error", {}).get("code"), "model_not_applicable"
+        )
+
+    def test_015_model_metadata_preserves_local_pcm_layout(self):
+        """The live /models object must retain 48 kHz stereo PCM metadata."""
+        response = requests.get(
+            f"{self.base_url}/models/MOSS-TTS-Local",
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        model = response.json()
+        audio_defaults = model.get("audio_defaults", {})
+        self.assertIsInstance(audio_defaults, dict)
+        self.assertEqual(
+            audio_defaults.get("pcm_sample_rate"),
+            48000,
+            "MOSS-TTS-Local must export its native 48 kHz PCM rate",
+        )
+        self.assertEqual(
+            audio_defaults.get("pcm_channels"),
+            2,
+            "MOSS-TTS-Local must export its native stereo PCM layout",
+        )
+        self.assertNotIn("pcm_sample_rate", model)
+        self.assertNotIn("pcm_channels", model)
+
+    def test_016_default_launch_does_not_force_large_context(self):
+        """Default TTS launch must leave n_ctx to OpenMOSS v0.3 (8192)."""
+        model = get_test_model("tts")
+
+        def loaded_model():
+            response = requests.get(
+                f"{self.base_url}/health",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text[:1000])
+            return next(
+                (
+                    entry
+                    for entry in response.json().get("all_models_loaded", [])
+                    if entry.get("model_name") == model
+                ),
+                None,
+            )
+
+        loaded = loaded_model()
+        if loaded is None:
+            # Keep this test useful when selected on its own. In the full suite
+            # an earlier speech test has already loaded the model, so this adds
+            # no extra generation work.
+            speech = requests.post(
+                f"{self.base_url}/audio/speech",
+                json={"model": model, "input": "Checking the default OpenMOSS launch."},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self._assert_wav_response(speech, "Context-default launch setup")
+            loaded = loaded_model()
+
+        self.assertIsNotNone(loaded, f"{model} should be loaded")
+        command = loaded.get("launch_command", [])
+        self.assertIsInstance(command, list)
+        self.assertNotIn(
+            "--n-ctx",
+            command,
+            f"Lemonade must not override OpenMOSS's default context: {command}",
+        )
 
 
 if __name__ == "__main__":

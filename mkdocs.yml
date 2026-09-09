@@ -111,6 +111,7 @@ nav:
       - OpenAI Compatible: api/openai.md
       - Ollama Compatible: api/ollama.md
       - Anthropic Compatible: api/anthropic.md
+      - MCP Gateway: api/mcp.md
       - llama.cpp Specific: api/llamacpp.md
       - Lemonade Specific: api/lemonade.md
   - Embeddable Lemonade:

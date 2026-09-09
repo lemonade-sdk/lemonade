@@ -597,7 +597,6 @@ class OllamaTests(ServerTestBase):
                 "top_p",
                 "num_predict",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ):
@@ -606,6 +605,14 @@ class OllamaTests(ServerTestBase):
                     recipe_options,
                     f"Request-scoped field '{field}' must not leak into recipe_options",
                 )
+
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Ollama request llamacpp_args must not leak into recipe_options",
+            )
         finally:
             unload_all_models()
 

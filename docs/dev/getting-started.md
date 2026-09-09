@@ -591,7 +591,7 @@ A GUI application for desktop users that exposes the server via a system tray ic
 The `lemonade` client communicates with `lemond` server via HTTP:
 - **Model operations:** `/api/v1/models`, `/api/v1/pull`, `/api/v1/delete`
 - **Model control:** `/api/v1/load`, `/api/v1/unload`
-- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`
+- **Server management:** `/api/v1/health`, `/internal/shutdown`, `/internal/set`, `/internal/config`, `/internal/cleanup-cache`, `/internal/pin`, `/internal/models/sync`, `/internal/models/sync/status`
 - **Inference:** `/api/v1/chat/completions`, `/api/v1/completions`, `/api/v1/audio/transcriptions`
 
 The client automatically:
@@ -628,6 +628,9 @@ Internal endpoints accept connections from any address, so first-party clients o
 | `GET`  | `/internal/config/defaults` | Returns the canonical default config (factory defaults) |
 | `POST` | `/internal/cleanup-cache` | Cleans up orphaned files in the Hugging Face cache |
 | `POST` | `/internal/pin` | Pin or unpin a loaded model |
+| `POST` | `/internal/models/sync` | Sync/update downloaded models to the latest version (async or dry-run) |
+| `GET`  | `/internal/models/sync/status` | Retrieve status/progress of background model synchronization |
+| `POST` | `/internal/simulate-vram-pressure` | Test/admin hook: synchronously simulate a VRAM-pressure callback |
 
 #### `POST /internal/set`
 
@@ -641,6 +644,7 @@ Accepts a JSON object with one or more keys to update atomically. Returns `{"sta
 | `host` | string | HTTP rebind |
 | `log_level` | string (`trace`, `debug`, `info`, `warning`, `error`, `fatal`, `none`) | Reconfigures log filter |
 | `global_timeout` | int (positive) | Updates default HTTP client timeout |
+| `download_rate_limit` | string (`0`/`""` = unlimited) | Sets the active download-rate cap (curl-style byte rate) |
 | `broadcast` | bool | Starts or stops UDP beacon |
 | `extra_models_dir` | string | Updates model manager search path |
 
@@ -686,6 +690,36 @@ Returns the canonical default configuration — the values a brand-new `config.j
 curl http://localhost:13305/internal/config/defaults
 ```
 
+#### `POST /internal/simulate-vram-pressure`
+
+Test/admin hook for the [dynamic VRAM management](../guide/configuration/multi-model.md) path. Fires the VRAM pressure callback the eviction engine registers, synchronously and on the calling thread, without waiting for — or depending on — a real VRAM reading. The response returns only after the callback and any resulting eviction-engine evaluation have finished. When `pct` triggers an evaluation, a test can therefore assert on the outcome immediately instead of polling.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `pct` | number | No | Simulated VRAM utilization. Pressure simulations normally use a fraction in `[0, 1]`; numeric values are not range-validated. Defaults to `0.0`. Exactly `-1` requests an idle-only evaluation instead. |
+
+Behavior by `pct`:
+
+- **`pct >= auto_evict_threshold_pct`** — runs one evaluation with pressure eviction enabled. The first eligible model encountered in loaded-model order that is already past its `evict_idle_timeout` is selected immediately; if none has reached that timeout, the highest-scoring eligible pressure candidate is selected.
+- **`0 <= pct < auto_evict_threshold_pct`** — the callback returns without running an eviction-engine evaluation, so this does not force an idle-timeout sweep.
+- **`pct == -1`** — runs one idle-only evaluation, the same sweep used by the engine's background timer. Models past `evict_idle_timeout` can be evicted, while ready models past `downsize_idle_timeout` can be downsized.
+- **Other negative numeric values** — are accepted by the HTTP handler but do not trigger an evaluation.
+
+Eligibility starts with the global `auto_evict` setting and is overridden by a model's boolean `auto_evict` option when present. A per-model `false` therefore excludes that model even when the global setting is on; a per-model `true` can opt that model in even when the global setting is off.
+
+For pressure selection, the eviction score is `idle_time_ms / (load_duration_ms * evict_weight_factor)`. Higher scores are more disposable: longer-idle and faster-loading models rank higher, while a larger `evict_weight_factor` protects a model. If the recorded load duration is not positive, the engine uses `1000 ms`; a non-positive weight factor is treated as `1.0`.
+
+Pinned models are never auto-evicted or downsized, and models currently in use are not selected for eviction. If an exclusive job session is active when an evaluation begins, the evaluation is skipped and the hook does not reschedule it. The endpoint still returns `200`, so a successful response means the callback completed, not necessarily that an evaluation ran.
+
+**Example:**
+```bash
+curl -X POST http://localhost:13305/internal/simulate-vram-pressure \
+  -H "Content-Type: application/json" \
+  -d '{"pct": 0.95}'
+```
+
+Returns `{"status": "ok"}` after the callback completes for a valid JSON object when `pct` is absent or numeric, including when no evaluation ran or nothing was evicted. Returns `400` with an `error` field if the body is invalid JSON, is not a JSON object, or contains a non-numeric `pct`.
+
 ### Dependencies
 
 All dependencies are automatically fetched by CMake via FetchContent:
@@ -712,7 +746,8 @@ The `lemond` executable is a pure HTTP server without any command-based interfac
 ./lemond --port 8080
 
 # Available options:
-#   [cache_dir]              Path to lemonade cache directory (optional)
+#   [cache_dir]              Path to lemonade cache/data directory (optional)
+#   [config_dir]             Path to lemonade config directory (optional)
 #   --port PORT              Port number (default: 13305)
 #   --host HOST              Bind address (default: localhost)
 #   --version, -v            Show version
@@ -792,7 +827,7 @@ The tray application provides a system tray icon for desktop users:
 ### Logging and Console Output
 
 When running `LemonadeServer.exe` or `lemond`:
-- **Log File:** Direct runs write logs to a persistent log file (default: `%TEMP%\lemonade-server.log` on Windows). When `lemond` runs as the systemd service, logs go to the journal instead.
+- **Log File:** Direct CLI server runs (`lemond`) default to standard console output (`stdout`/`stderr`) with file logging disabled (`"auto"` mode), allowing systemd, launchd, container runtimes, and CI runners to capture and rotate logs natively. When running via `LemonadeServer.exe` (embedded tray app) or when file logging is explicitly enabled (`--log-file enabled` or a custom file path), logs are written to `lemonade-server.log` (under `%TEMP%` on Windows, `$XDG_RUNTIME_DIR/lemonade/` on Linux) with automatic log rotation (10 MB file cap, 5 rotated backups `.1` through `.5`, bounding steady-state log disk usage to ~60 MB under normal record sizes). Pre-existing legacy logs at startup are rotated into `.1` to preserve diagnostic history and pruned across subsequent rotation cycles.
 - **Logs UI:** Click "Show Logs" in the tray or use `lemonade logs` to open the desktop app's logs view
   - Connects to the server's WebSocket log stream
   - Shows retained recent log history plus live entries

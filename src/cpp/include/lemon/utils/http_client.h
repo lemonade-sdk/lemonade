@@ -1,14 +1,15 @@
 #pragma once
 
-#include <string>
-#include <map>
-#include <vector>
-#include <functional>
-#include <chrono>
-#include <memory>
-#include <iostream>
-#include <iomanip>
 #include <atomic>
+#include <chrono>
+#include <cstdint>
+#include <functional>
+#include <iomanip>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace lemon {
 namespace utils {
@@ -16,6 +17,8 @@ namespace utils {
 struct HttpResponse {
     int status_code = 0;
     std::string body;
+    // Response headers, names lowercased. Populated by post(); other verbs
+    // leave this empty.
     std::map<std::string, std::string> headers;
 
     // Transport status from libcurl. For non-streaming callers this remains
@@ -94,12 +97,27 @@ struct DownloadOptions {
 
 class HttpClient {
 public:
+    // curl reads CURLOPT_TIMEOUT 0 as "no timeout", which collides with the
+    // 0-means-default convention every request method here uses. A caller that
+    // genuinely wants to block indefinitely passes this instead.
+    static constexpr long kNoTimeout = -1;
+
     static void set_default_timeout(long timeout_seconds) {
         default_timeout_seconds_ = timeout_seconds;
     }
 
     static long get_default_timeout() {
         return default_timeout_seconds_;
+    }
+
+    // Global cap; when set, downloads are also serialized so concurrent
+    // transfers cannot exceed it in aggregate.
+    static void set_download_rate_limit(int64_t bytes_per_second) {
+        download_rate_limit_bytes_per_second_ = bytes_per_second;
+    }
+
+    static int64_t get_download_rate_limit() {
+        return download_rate_limit_bytes_per_second_.load();
     }
 
     // Simple GET request. timeout_seconds=0 (default) uses default_timeout_seconds_.
@@ -109,6 +127,8 @@ public:
                            HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
 
     // Simple POST request. Redirects are never followed.
+    // timeout_seconds=0 uses default_timeout_seconds_, as in get(); pass
+    // kNoTimeout to opt out deliberately.
     static HttpResponse post(
         const std::string& url,
         const std::string& body,
@@ -118,6 +138,7 @@ public:
         std::atomic<bool>* cancel_flag = nullptr);
 
     // Multipart form data POST request. Redirects are never followed.
+    // timeout_seconds=0 uses default_timeout_seconds_.
     static HttpResponse post_multipart(
         const std::string& url,
         const std::vector<MultipartField>& fields,
@@ -128,6 +149,14 @@ public:
     // on_status fires once, before the first chunk is delivered, so callers can
     // divert an error body instead of forwarding it as payload bytes. Redirects
     // are never followed.
+    //
+    // out_response_headers, when non-null, is filled with the response headers
+    // (names lowercased) before on_status fires, so a caller deciding what to
+    // send downstream can see them without waiting for the transfer to finish.
+    //
+    // timeout_seconds bounds upstream silence, not total duration: a total
+    // timeout would cut off a long but healthy generation. 0 uses
+    // default_timeout_seconds_, as in get().
     static HttpResponse post_stream(
         const std::string& url,
         const std::string& body,
@@ -136,7 +165,8 @@ public:
         long timeout_seconds = 300,
         std::function<void(int status_code)> on_status = nullptr,
         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
-        std::function<bool()> should_cancel = nullptr);
+        std::function<bool()> should_cancel = nullptr,
+        std::map<std::string, std::string>* out_response_headers = nullptr);
 
     // Download file to disk with automatic retry and resume support
     static DownloadResult download_file(const std::string& url,
@@ -154,6 +184,7 @@ public:
 
 private:
     static std::atomic<long> default_timeout_seconds_;
+    static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
 
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
@@ -207,6 +238,10 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
         return true;  // Always continue (console callback never cancels)
     };
 }
+
+// Global flag: set from signal handler to cancel in-progress model downloads.
+// Checked by the libcurl progress callback during transfer.
+extern std::atomic<bool> g_download_cancelled;
 
 } // namespace utils
 } // namespace lemon

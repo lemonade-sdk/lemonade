@@ -1,22 +1,79 @@
-#include <iostream>
-#include <csignal>
-#include <atomic>
-#include <chrono>
-#include <thread>
+#include <lemon/server.h>
+
 #include <lemon/cli_parser.h>
 #include <lemon/config_file.h>
 #include <lemon/logging_config.h>
-#include <lemon/server.h>
 #include <lemon/system_info.h>
-#include <lemon/version.h>
-#include <lemon/utils/path_utils.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/http_client.h>
+#include <lemon/utils/json_utils.h>
+#include <lemon/utils/path_utils.h>
+#include <lemon/version.h>
+#include "telemetry.h"
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <iostream>
+#include <thread>
+
+#if defined(__GLIBC__)
+#include <cstdlib>
+#include <malloc.h>
+#include <string_view>
+#endif
 
 #ifndef _WIN32
 #include <unistd.h>
 #endif
 
 using namespace lemon;
+
+namespace {
+
+#if defined(__GLIBC__)
+constexpr int GLIBC_MMAP_THRESHOLD_BYTES = 1024 * 1024;
+constexpr std::string_view GLIBC_MMAP_THRESHOLD_TUNABLE =
+    "glibc.malloc.mmap_threshold";
+
+bool glibc_tunable_is_set(std::string_view tunables,
+                          std::string_view name) noexcept {
+    while (!tunables.empty()) {
+        const size_t separator = tunables.find(':');
+        const std::string_view entry = tunables.substr(0, separator);
+        const size_t assignment = entry.find('=');
+        if (assignment != std::string_view::npos &&
+            entry.substr(0, assignment) == name) {
+            return true;
+        }
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        tunables.remove_prefix(separator + 1);
+    }
+    return false;
+}
+
+bool glibc_mmap_threshold_is_overridden() noexcept {
+    if (std::getenv("MALLOC_MMAP_THRESHOLD_") != nullptr) {
+        return true;
+    }
+    const char* tunables = std::getenv("GLIBC_TUNABLES");
+    return tunables != nullptr &&
+           glibc_tunable_is_set(tunables, GLIBC_MMAP_THRESHOLD_TUNABLE);
+}
+
+bool configure_glibc_mmap_threshold() noexcept {
+    if (glibc_mmap_threshold_is_overridden()) {
+        return true;
+    }
+    // Fixing the threshold prevents glibc from retaining large temporary
+    // allocations after its dynamic threshold has increased.
+    return mallopt(M_MMAP_THRESHOLD, GLIBC_MMAP_THRESHOLD_BYTES) != 0;
+}
+#endif
+
+} // namespace
 
 // Global flags for signal handling
 static std::atomic<bool> g_reload_requested(false);
@@ -34,6 +91,10 @@ void signal_handler(int signal) {
         ssize_t written = write(STDOUT_FILENO, msg, 38);
         (void)written;
 #endif
+
+        // Cancel any in-progress model download immediately. The libcurl
+        // progress callback checks this flag and aborts the transfer.
+        utils::g_download_cancelled.store(true);
 
         // Signal shutdown via the Server instance. The main loop will detect
         // this flag and call server->stop() for graceful cleanup (unloading
@@ -58,6 +119,18 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
+#if defined(__GLIBC__)
+    // mallopt() is process-wide and MT-Unsafe. Apply it before initializing
+    // telemetry or constructing Server, both of which start worker threads.
+    if (!configure_glibc_mmap_threshold()) {
+        std::cerr << "Warning: failed to set glibc M_MMAP_THRESHOLD; "
+                  << "memory from large requests may not be released promptly"
+                  << std::endl;
+    }
+#endif
+
+    telemetry::initialize();
+
     try {
         CLIParser parser;
         parser.parse(argc, argv);
@@ -76,49 +149,52 @@ int main(int argc, char** argv) {
         }
 
         utils::set_cache_dir(cli_config.cache_dir);
-        json config_json = ConfigFile::load(cli_config.cache_dir);
-
-        // CLI --port/--host override config.json and persist
-        bool cli_overrides = false;
-        if (cli_config.port != -1) {
-            config_json["port"] = cli_config.port;
-            cli_overrides = true;
-        }
-        if (!cli_config.host.empty()) {
-            config_json["host"] = cli_config.host;
-            cli_overrides = true;
-        }
-
-        if (cli_overrides) {
-            ConfigFile::save(cli_config.cache_dir, config_json);
-        }
+        utils::set_config_dir(cli_config.config_dir);
+        utils::migrate_legacy_paths(cli_config.cache_dir, cli_config.config_dir);
+        json config_json = ConfigFile::load(cli_config.cache_dir,
+                                            cli_config.config_dir);
 
         auto config = std::make_shared<RuntimeConfig>(config_json);
+        RuntimeConfig::set_global(config.get());
+
+        if (cli_config.port != -1) {
+            config->set_port_override(cli_config.port);
+        }
+        if (!cli_config.host.empty()) {
+            config->set_host_override(cli_config.host);
+        }
         if (cli_config.broadcast.has_value()) {
             config->set_broadcast_override(cli_config.broadcast);
         }
-        RuntimeConfig::set_global(config.get());
-
-        // Initialize logging with the configured level — console + file + log hub
-        configure_application_logging(config->log_level(), LoggingMode::direct_server);
-
-        if (cli_overrides) {
-            if (cli_config.port != -1) {
-                LOG(INFO) << "Persisted port=" << cli_config.port << " to config.json" << std::endl;
-            }
-            if (!cli_config.host.empty()) {
-                LOG(INFO) << "Persisted host=" << cli_config.host << " to config.json" << std::endl;
-            }
+        if (!cli_config.log_file.empty()) {
+            config->set_log_file_override(cli_config.log_file);
         }
+        if (cli_config.log_max_file_size_mb != -1) {
+            config->set_log_max_file_size_mb_override(cli_config.log_max_file_size_mb);
+        }
+        if (cli_config.log_max_files != -1) {
+            config->set_log_max_files_override(cli_config.log_max_files);
+        }
+
+        // Initialize logging with configured level and rotation limits
+        LogRotationConfig rot_cfg;
+        rot_cfg.file_mode = config->log_file();
+        rot_cfg.max_file_size_mb = static_cast<size_t>(config->log_max_file_size_mb());
+        rot_cfg.max_files = static_cast<size_t>(config->log_max_files());
+        configure_application_logging(config->log_level(), LoggingMode::direct_server, rot_cfg);
 
         utils::set_models_dir(config->models_dir());
 
         LOG(INFO) << "Starting Lemonade Server..." << std::endl;
         LOG(INFO) << "  Version: " << LEMON_VERSION_STRING << std::endl;
         LOG(INFO) << "  Cache dir: " << cli_config.cache_dir << std::endl;
+        LOG(INFO) << "  Config dir: " << cli_config.config_dir << std::endl;
         LOG(INFO) << "  Port: " << config->port() << std::endl;
         LOG(INFO) << "  Host: " << config->host() << std::endl;
         LOG(INFO) << "  Log level: " << config->log_level() << std::endl;
+        LOG(INFO) << "  Log file mode: " << config->log_file() << std::endl;
+        LOG(INFO) << "  Log max file size: " << config->log_max_file_size_mb() << " MB" << std::endl;
+        LOG(INFO) << "  Log max files: " << config->log_max_files() << std::endl;
         if (!config->extra_models_dir().empty()) {
             LOG(INFO) << "  Extra models dir: " << config->extra_models_dir() << std::endl;
         }
@@ -140,7 +216,7 @@ int main(int argc, char** argv) {
             LOG(INFO) << "  Telemetry: disabled" << std::endl;
         }
 
-        Server server(config, cli_config.cache_dir);
+        Server server(config, cli_config.cache_dir, cli_config.config_dir);
 
         g_server_instance = &server;
         std::signal(SIGINT, signal_handler);

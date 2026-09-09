@@ -369,7 +369,7 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         self.assertEqual(
             res.headers.get("Access-Control-Allow-Private-Network"), "true"
         )
-        self.assertEqual(res.headers.get("Vary"), "Origin")
+        self.assertIn("Origin", res.headers.get("Vary", ""))
 
         # 2. Rejected malicious origin (OPTIONS returns 403)
         headers = {
@@ -385,7 +385,7 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         self.assertEqual(res.status_code, 403)
         self.assertNotIn("Access-Control-Allow-Origin", res.headers)
         self.assertNotIn("Access-Control-Allow-Private-Network", res.headers)
-        self.assertEqual(res.headers.get("Vary"), "Origin")
+        self.assertIn("Origin", res.headers.get("Vary", ""))
 
         # 3. Rejected malicious origin (POST returns 403, not dispatched)
         headers = {
@@ -465,7 +465,7 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         )
         self.assertNotEqual(res.status_code, 403)
 
-        # Loopback origin OPTIONS preflight still succeeds
+        # Loopback origin OPTIONS preflight still succeeds per RFC 4.2 Layer 1
         res = requests.options(
             f"http://localhost:{remote_port}/api/v1/chat/completions",
             headers={
@@ -487,7 +487,61 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
         )
         self.assertEqual(res.status_code, 403)
 
-        # 6. Regression test: Request without Origin header still returns Vary: Origin
+        # 6. Same-origin HTTP request without explicit allowlist succeeds for loopback/self
+        lan_origin = "http://localhost:3000"
+        lan_host = "localhost:3000"
+        res = requests.options(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            headers={
+                "Origin": lan_origin,
+                "Host": lan_host,
+                "Access-Control-Request-Method": "POST",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(res.headers.get("Access-Control-Allow-Origin"), lan_origin)
+
+        # 7. DNS rebind attempt (Host: evil.com matching Origin: http://evil.com without allowlist) is rejected with 403
+        res = requests.options(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            headers={
+                "Origin": "http://evil.com",
+                "Host": "evil.com",
+                "Access-Control-Request-Method": "POST",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+
+        res = requests.post(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            headers={
+                "Origin": "http://evil.com",
+                "Host": "evil.com",
+                "Authorization": "Bearer admin_key",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 7b. Cross-origin request to host without allowlist fails
+        res = requests.options(
+            f"http://localhost:{self.port}/api/v1/chat/completions",
+            headers={
+                "Origin": "http://evil.com",
+                "Host": f"localhost:{self.port}",
+                "Access-Control-Request-Method": "POST",
+            },
+            timeout=5,
+        )
+        self.assertEqual(res.status_code, 403)
+
+        # 8. Regression test: Request without Origin header still returns Vary: Origin
         res = requests.post(
             f"http://localhost:{self.port}/api/v1/chat/completions",
             json={
@@ -497,7 +551,25 @@ class TelemetryGuestSecurityTests(TelemetrySecurityTestBase):
             headers={"Authorization": "Bearer admin_key"},
             timeout=5,
         )
-        self.assertEqual(res.headers.get("Vary"), "Origin")
+        self.assertIn("Origin", res.headers.get("Vary", ""))
+
+        # 9. Verify unauthorized origin rejections logged warnings with origin name and remediation hint
+        for _, log_f, _ in self.procs:
+            log_f.flush()
+
+        with open(self.procs[0][2], "r") as f:
+            default_server_logs = f.read()
+        self.assertIn(
+            "Rejected request from unauthorized origin: http://malicious.com. Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin.",
+            default_server_logs,
+        )
+
+        with open(self.procs[1][2], "r") as f:
+            remote_server_logs = f.read()
+        self.assertIn(
+            "Rejected request from unauthorized origin: https://unconfigured.com. Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin.",
+            remote_server_logs,
+        )
 
 
 class TelemetryFallbackSecurityTests(TelemetrySecurityTestBase):
@@ -748,6 +820,36 @@ class TelemetryOTLPSecurityTests(TelemetrySecurityTestBase):
                     additional_headers={"Origin": "https://unconfigured.com"},
                 ):
                     self.fail("Expected WebSocket to fail due to unconfigured origin")
+            except (
+                websockets.exceptions.InvalidStatus,
+                websockets.exceptions.InvalidHandshake,
+            ):
+                pass
+
+            # 5. Loopback origin succeeds per RFC 4.2 Layer 1
+            async with websockets.connect(
+                f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                additional_headers={"Origin": "http://localhost:3000"},
+            ) as ws:
+                pass
+
+            # 6. Desktop scheme (lemonade://) succeeds per RFC 4.2 Layer 1
+            async with websockets.connect(
+                f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                additional_headers={"Origin": "lemonade://app"},
+            ) as ws:
+                pass
+
+            # 7. DNS rebind attempt (Host: evil.com matching Origin: http://evil.com) fails
+            try:
+                async with websockets.connect(
+                    f"ws://localhost:{ws_port}/spans/stream?api_key=admin_key",
+                    additional_headers={
+                        "Origin": "http://evil.com",
+                        "Host": "evil.com",
+                    },
+                ):
+                    self.fail("Expected WebSocket to fail due to DNS rebind origin")
             except (
                 websockets.exceptions.InvalidStatus,
                 websockets.exceptions.InvalidHandshake,

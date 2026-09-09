@@ -9,13 +9,22 @@
 
 namespace lemon::telemetry {
 
+struct ToolCall {
+    std::string id;
+    std::string function_name;
+    std::string function_arguments;
+};
+
+// Start the metrics worker explicitly after process-wide startup configuration.
+void initialize();
+
 class InferenceSpan {
 public:
     InferenceSpan(const std::string& span_kind, const std::string& name, const std::string& model_name, const nlohmann::json& request_json);
     ~InferenceSpan(); // Auto-completes with error if not ended
 
     void set_attribute(const std::string& key, const nlohmann::json& value);
-    void end_with_success(const nlohmann::json& usage_or_timings, const std::string& complete_output);
+    void end_with_success(const nlohmann::json& usage_or_timings, const std::string& complete_output, const std::vector<ToolCall>& tool_calls = {});
     void end_with_error(const std::string& error_message);
     void cancel();
 
@@ -58,7 +67,8 @@ void end_llm_span_async(
     const std::string& metrics_url,
     std::function<std::map<std::string, nlohmann::json>(const std::string&)> parser,
     const nlohmann::json& usage_payload,
-    const std::string& text_output);
+    const std::string& text_output,
+    const std::vector<ToolCall>& tool_calls = {});
 
 using SpanListenerCallback = std::function<void(const nlohmann::json&)>;
 void register_span_listener(SpanListenerCallback callback);
@@ -72,5 +82,7 @@ extern thread_local std::chrono::steady_clock::time_point g_request_start_time;
 extern thread_local std::string g_current_client_session_id;
 extern thread_local std::string g_incoming_trace_id;
 extern thread_local std::string g_incoming_parent_span_id;
+extern thread_local std::string g_incoming_client_id;
+extern thread_local std::string g_incoming_session_id;
 
 } // namespace lemon::telemetry

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -159,7 +160,16 @@ public:
 
     // Global GPU memory pressure across all processes (used/total in [0,1]),
     // or -1.0 if no source is available. Used by the dynamic VRAM eviction engine.
+    // Folds every GPU in the machine into one worst-case number, so it must not be read
+    // as a measurement of any single device -- see get_rocm_device_memory().
     static double get_global_vram_usage_pct();
+
+    // Free and total bytes the ROCm runtime exposes for the GPU whose ISA is `arch`
+    // (e.g. "gfx1151"). False unless exactly one GPU matches and both values are
+    // readable.
+    static bool get_rocm_device_memory(const std::string& arch,
+                                       uint64_t& free_bytes,
+                                       uint64_t& total_bytes);
 };
 
 // Windows implementation

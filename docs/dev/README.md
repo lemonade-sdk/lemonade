@@ -37,3 +37,9 @@ Lemonade has a unique capability to group LLM, image, and speech models together
 ### CI System
 
 Lemonade has a CI system that tests changes on real AI PC hardware targets — in the merge queue by default, or on a labeled PR (the [testing guide](./testing.md#what-defers-to-the-merge-queue) maps each `ci:*` label to the jobs it opts in). The [self-hosted runners](./self-hosted-runners.md) guide documents how those are set up.
+
+### Performance Diagnostics
+
+The [large-request memory benchmark](./large-request-memory-benchmark.md)
+documents the manual Linux reproducer for allocator high-water retention and
+its real-backend validation mode.

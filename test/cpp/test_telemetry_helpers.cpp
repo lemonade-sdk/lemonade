@@ -8,8 +8,10 @@
 #include <thread>
 #include <vector>
 #include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/conversation_fingerprint.h"
+#include "telemetry.h"
 
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
@@ -24,6 +26,16 @@ static void check_eq(const char* name, const std::string& actual, const std::str
     if (!ok) {
         std::printf("      Expected: \"%s\"\n", expected.c_str());
         std::printf("      Actual:   \"%s\"\n", actual.c_str());
+        ++g_failures;
+    }
+}
+
+static void check_bool(const char* name, bool actual, bool expected) {
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("      Expected: %s\n", expected ? "true" : "false");
+        std::printf("      Actual:   %s\n", actual ? "true" : "false");
         ++g_failures;
     }
 }
@@ -402,6 +414,13 @@ int main() {
     // --- Client disconnect telemetry error handling tests ---
     std::printf("===========================================\n");
     {
+#ifdef _WIN32
+        _putenv("NO_PROXY=*");
+        _putenv("no_proxy=*");
+#else
+        setenv("NO_PROXY", "*", 1);
+        setenv("no_proxy", "*", 1);
+#endif
         httplib::Server svr;
         svr.Post("/stream", [](const httplib::Request& req, httplib::Response& res) {
             res.set_content_provider(
@@ -463,6 +482,177 @@ int main() {
 
             check_eq("Client disconnected error message check", error_msg, "Client disconnected during stream");
         }
+    }
+
+    // --- InferenceSpan session ID resolution tests ---
+    std::printf("===========================================\n");
+    {
+        nlohmann::json test_cfg_json = {
+            {"config_version", 2},
+            {"port", 13305},
+            {"host", "localhost"},
+            {"telemetry", {
+                {"enabled", false},
+                {"max_attribute_length", 20},
+                {"otlp", {
+                    {"semantics", {"openinference", "otel_genai"}}
+                }}
+            }}
+        };
+        lemon::RuntimeConfig test_cfg(test_cfg_json);
+        lemon::RuntimeConfig::set_global(&test_cfg);
+
+        auto get_span_attr = [](const nlohmann::json& span, const std::string& attr_key) -> std::string {
+            if (span.contains("attributes") && span["attributes"].is_array()) {
+                for (const auto& attr : span["attributes"]) {
+                    if (attr.value("key", "") == attr_key) {
+                        if (attr.contains("value") && attr["value"].contains("stringValue")) {
+                            return attr["value"]["stringValue"].get<std::string>();
+                        }
+                    }
+                }
+            }
+            return "";
+        };
+
+        nlohmann::json last_span;
+        lemon::telemetry::register_span_listener([&last_span](const nlohmann::json& span) {
+            last_span = span;
+        });
+
+        // 1. Body session_id present, header present -> body wins
+        lemon::telemetry::g_incoming_client_id = "hdr_client";
+        lemon::telemetry::g_incoming_session_id = "hdr_session_123";
+        auto span1 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", {{"session_id", "body_session_456"}});
+        span1->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: body wins over header (session.id)", get_span_attr(last_span, "session.id"), "body_session_456");
+        check_eq("InferenceSpan session: body wins over header (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "body_session_456");
+
+        // 2. Body session_id explicitly empty, header present -> body wins (empty session.id, no header fallback)
+        auto span1_empty = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", {{"session_id", ""}});
+        span1_empty->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: explicit empty body wins over header (session.id)", get_span_attr(last_span, "session.id"), "");
+        check_eq("InferenceSpan session: explicit empty body wins over header (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "");
+
+        // 3. Body session_id absent, header present -> header used
+        lemon::telemetry::g_incoming_client_id = "";
+        lemon::telemetry::g_incoming_session_id = "hdr_session_789";
+        auto span2 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span2->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: header fallback (session.id)", get_span_attr(last_span, "session.id"), "hdr_session_789");
+        check_eq("InferenceSpan session: header fallback (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "hdr_session_789");
+
+        // 4. Namespaced header session (<client>/<session>) with long client preserves session ID
+        lemon::telemetry::g_incoming_client_id = "opencode-cli-desktop-extra-long";
+        lemon::telemetry::g_incoming_session_id = "sess-xyz";
+        auto span3 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span3->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: namespaced preserves session ID (session.id)", get_span_attr(last_span, "session.id"), "opencode-cl/sess-xyz");
+        check_eq("InferenceSpan session: namespaced preserves session ID (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "opencode-cl/sess-xyz");
+
+        // 5. Neither body nor header present -> omitted from attributes
+        lemon::telemetry::g_incoming_client_id = "";
+        lemon::telemetry::g_incoming_session_id = "";
+        auto span4 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span4->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: omitted when absent (session.id)", get_span_attr(last_span, "session.id"), "");
+        check_eq("InferenceSpan session: omitted when absent (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "");
+
+        // 6. Tool calls output messages, max_attribute_length truncation with valid JSON, and fallback output.value
+        std::vector<lemon::telemetry::ToolCall> sample_tool_calls = {
+            {"call_abc123", "bash", "{\"command\": \"git branch --all -vv\"}"}
+        };
+        auto span5 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span5->end_with_success(nlohmann::json::object(), "", sample_tool_calls);
+        check_eq("InferenceSpan tool calls: openinference role", get_span_attr(last_span, "llm.output_messages.0.message.role"), "assistant");
+        check_eq("InferenceSpan tool calls: openinference tool id", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.id"), "call_abc123");
+        check_eq("InferenceSpan tool calls: openinference function name", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.name"), "bash");
+        std::string args_str = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
+        nlohmann::json parsed_args = nlohmann::json::parse(args_str, nullptr, false);
+        check_bool("InferenceSpan tool calls: function args is valid JSON", parsed_args.is_discarded(), false);
+        check_bool("InferenceSpan tool calls: function args has _truncated flag", parsed_args.value("_truncated", false), true);
+        check_eq("InferenceSpan tool calls: openinference fallback output.value truncated", get_span_attr(last_span, "output.value"), "[{\"fu... [TRUNCATED]");
+
+        // 7. hide_thinking preserves stripped output in output_messages content
+        nlohmann::json test_cfg_thinking_json = {
+            {"config_version", 2},
+            {"port", 13305},
+            {"host", "localhost"},
+            {"telemetry", {
+                {"enabled", false},
+                {"hide_outputs", false},
+                {"hide_thinking", true},
+                {"otlp", {
+                    {"semantics", {"openinference", "otel_genai"}}
+                }}
+            }}
+        };
+        lemon::RuntimeConfig test_cfg_thinking(test_cfg_thinking_json);
+        lemon::RuntimeConfig::set_global(&test_cfg_thinking);
+
+        auto span6 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span6->end_with_success(nlohmann::json::object(), "<think>internal reasoning</think>visible reply");
+        check_eq("InferenceSpan hide_thinking: openinference content stripped", get_span_attr(last_span, "llm.output_messages.0.message.content"), "visible reply");
+        check_eq("InferenceSpan hide_thinking: gen_ai content stripped", get_span_attr(last_span, "gen_ai.output.messages.0.content"), "visible reply");
+
+        // 8. hide_outputs suppresses tool-call attributes and redacts output content
+        nlohmann::json test_cfg_hide_out_json = {
+            {"config_version", 2},
+            {"port", 13305},
+            {"host", "localhost"},
+            {"telemetry", {
+                {"enabled", false},
+                {"hide_outputs", true},
+                {"otlp", {
+                    {"semantics", {"openinference", "otel_genai"}}
+                }}
+            }}
+        };
+        lemon::RuntimeConfig test_cfg_hide_out(test_cfg_hide_out_json);
+        lemon::RuntimeConfig::set_global(&test_cfg_hide_out);
+
+        auto span7 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span7->end_with_success(nlohmann::json::object(), "sensitive text", sample_tool_calls);
+        check_eq("InferenceSpan hide_outputs: output.value redacted", get_span_attr(last_span, "output.value"), "[REDACTED]");
+        check_eq("InferenceSpan hide_outputs: openinference content redacted", get_span_attr(last_span, "llm.output_messages.0.message.content"), "[REDACTED]");
+        check_eq("InferenceSpan hide_outputs: openinference tool id suppressed", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.id"), "");
+        check_eq("InferenceSpan hide_outputs: openinference function name suppressed", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.name"), "");
+        // 9. Unicode boundary and strict max_attribute_length bounds
+        std::vector<lemon::telemetry::ToolCall> unicode_tool_calls = {
+            {"call_uni", "search", "{\"query\": \"日本語テスト🚀 emoji and characters\"}"}
+        };
+        for (int bound : {0, 1, 2, 10, 18, 30, 50, 100}) {
+            nlohmann::json test_cfg_bound_json = {
+                {"config_version", 2},
+                {"port", 13305},
+                {"host", "localhost"},
+                {"telemetry", {
+                    {"enabled", false},
+                    {"max_attribute_length", bound},
+                    {"otlp", {
+                        {"semantics", {"openinference"}}
+                    }}
+                }}
+            };
+            lemon::RuntimeConfig test_cfg_bound(test_cfg_bound_json);
+            lemon::RuntimeConfig::set_global(&test_cfg_bound);
+
+            auto span_bound = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+            span_bound->end_with_success(nlohmann::json::object(), "", unicode_tool_calls);
+            std::string bound_args = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
+            check_bool("InferenceSpan unicode args length <= max_len", bound_args.size() <= static_cast<size_t>(bound), true);
+            if (!bound_args.empty()) {
+                nlohmann::json p = nlohmann::json::parse(bound_args, nullptr, false);
+                check_bool("InferenceSpan unicode args valid JSON", p.is_discarded(), false);
+            }
+            lemon::RuntimeConfig::set_global(nullptr);
+        }
+
+        // Clean up
+        lemon::telemetry::unregister_span_listener();
+        lemon::RuntimeConfig::set_global(nullptr);
+        lemon::telemetry::flush();
+        lemon::telemetry::shutdown();
     }
 
     std::printf("===========================================\n");
