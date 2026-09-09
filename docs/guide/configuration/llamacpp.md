@@ -43,6 +43,16 @@ Lemonade uses [llama.cpp](https://github.com/ggerganov/llama.cpp) as its primary
 - **Runtime**: Bundled CUDA runtime libraries (no system-wide CUDA toolkit installation required)
 - **Notes**: On Windows, .7z extraction requires the bsdtar bundled with Windows 11 22H2+. On Linux, the build is shipped as .tar.xz and extracts with the system `tar`.
 
+### SYCL
+- **Platform**: Linux
+- **Hardware**: Intel Arc discrete GPUs and Intel Xe iGPUs (Level Zero)
+- **Use Case**: Intel GPU-optimized llama.cpp
+- **Performance**: Prefer SYCL over Vulkan on Intel Arc
+- **Installation**: Set `llamacpp.sycl_bin` to a directory containing an Intel
+  oneAPI `llama-server` (Lemonade does not download a Linux SYCL zip). Example:
+  `lemonade config set llamacpp.backend=sycl llamacpp.sycl_bin=/opt/llama/bin`
+- **Device**: `--device SYCL0` by default; override with `llamacpp.device`
+
 ### Metal
 - **Platform**: macOS only
 - **Hardware**: Apple Silicon (M1/M2/M3/M4) and Intel Macs with Metal support
@@ -197,7 +207,8 @@ lemonade config set llamacpp.rocm_bin=b1260
      - Use **Vulkan** (ROCm not supported)
 
 3. **Do you have an Intel GPU or older NVIDIA GPU?**
-   - Use **Vulkan**
+   - Intel GPU → **SYCL** if `sycl_bin` is set, else **Vulkan**
+   - Older NVIDIA GPU → **Vulkan**
 
 4. **Are you using macOS?**
    - Use **Metal**
@@ -222,7 +233,7 @@ lemonade config set llamacpp.rocm_bin=b1260
 ## Platform Specifics
 
 ### Linux
-- All backends supported (CPU, Vulkan, ROCm, CUDA, System)
+- All backends supported (CPU, Vulkan, ROCm, CUDA, SYCL, System)
 - CPU and Vulkan backends support both x86_64 and ARM64 (aarch64) systems; on ARM64, Vulkan is the default
 - ROCm requires compatible AMD GPU (see above)
 - CUDA requires compatible NVIDIA GPU (see above)

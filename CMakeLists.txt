@@ -948,6 +948,7 @@ include_directories(
 set(SOURCES_CORE
     src/cpp/server/server.cpp
     src/cpp/server/collection_orchestrator.cpp
+    src/cpp/server/image_multipart.cpp
     src/cpp/server/jobs/job_ops.cpp
     src/cpp/server/jobs/job_manager.cpp
     src/cpp/server/router.cpp
@@ -1180,6 +1181,35 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     )
     target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
+endif()
+
+set(IMAGE_MULTIPART_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_image_multipart.cpp")
+if(BUILD_TESTING AND EXISTS "${IMAGE_MULTIPART_TEST_SOURCE}")
+    add_executable(test_image_multipart
+        ${IMAGE_MULTIPART_TEST_SOURCE}
+        src/cpp/server/image_multipart.cpp
+        src/cpp/server/utils/json_utils.cpp
+        src/cpp/server/utils/path_utils.cpp
+    )
+    target_include_directories(test_image_multipart PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server
+    )
+    target_link_libraries(test_image_multipart PRIVATE
+        lemonade-httplib
+        nlohmann_json::nlohmann_json
+    )
+    if(WIN32)
+        target_sources(test_image_multipart PRIVATE
+            src/cpp/server/utils/platform/path_windows.cpp)
+    elseif(APPLE)
+        target_sources(test_image_multipart PRIVATE
+            src/cpp/server/utils/platform/path_macos.cpp)
+    else()
+        target_sources(test_image_multipart PRIVATE
+            src/cpp/server/utils/platform/path_linux.cpp)
+    endif()
+    add_cpp_ci_test(ImageMultipartTest CI ON COMMAND test_image_multipart)
 endif()
 
 set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
@@ -3120,6 +3150,18 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_
     target_link_libraries(test_llamacpp_system_backend PRIVATE lemonade-server-core)
     add_dependencies(test_llamacpp_system_backend copy_resources)
     add_cpp_ci_test(LlamaCppSystemBackendTest CI ON COMMAND test_llamacpp_system_backend)
+endif()
+
+set(_LLAMACPP_SYCL_DEFAULT_BACKEND_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_llamacpp_sycl_default_backend.cpp"
+)
+if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "${_LLAMACPP_SYCL_DEFAULT_BACKEND_TEST_SRC}")
+    add_executable(test_llamacpp_sycl_default_backend
+        test/cpp/test_llamacpp_sycl_default_backend.cpp
+    )
+    target_link_libraries(test_llamacpp_sycl_default_backend PRIVATE lemonade-server-core)
+    add_dependencies(test_llamacpp_sycl_default_backend copy_resources)
+    add_cpp_ci_test(LlamaCppSyclDefaultBackendTest CI ON COMMAND test_llamacpp_sycl_default_backend)
 endif()
 
 set(_DLL_VERSION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_utils_dll_version.cpp")

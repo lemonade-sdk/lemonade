@@ -253,6 +253,15 @@ namespace lemon::backends {
             bool skip_visible_devices = false);
 
         /**
+         * Adds default SYCL runtime variables without overriding host settings.
+         * The default oneAPI device selector is omitted when the caller supplied
+         * an explicit llama.cpp device.
+         */
+        static void apply_sycl_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            bool has_explicit_device);
+
+        /**
          * Validates that the device selection string prefix matches the selected backend.
          * Throws std::invalid_argument if a device prefix contradicts the backend choice
          * (e.g. passing target_device "ROCm2" to a "vulkan" or "cuda" backend).

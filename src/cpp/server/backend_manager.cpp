@@ -557,9 +557,24 @@ BackendManager::InstallParams BackendManager::get_install_params(const std::stri
     // Two-pass: first call gets the repo for resolve_user_version (filename
     // discarded); second call templates the resolved tag into the real filename.
     auto pinned_params = spec->install_params_fn(resolved_backend, pinned);
+    if (pinned_params.repo.empty()) {
+        if (recipe == "llamacpp" && resolved_backend == "sycl") {
+            throw std::runtime_error(
+                "llamacpp:sycl is user-managed; set llamacpp.sycl_bin to a "
+                "llama-server directory or install oneAPI");
+        }
+        throw std::runtime_error(
+            "Backend " + recipe + ":" + resolved_backend +
+            " does not provide automatic install parameters");
+    }
     std::string resolved_version = resolve_user_version(
         recipe, resolved_backend, pinned, pinned_params.repo);
     auto final_params = spec->install_params_fn(resolved_backend, resolved_version);
+    if (final_params.repo.empty() || final_params.filename.empty()) {
+        throw std::runtime_error(
+            "Backend " + recipe + ":" + resolved_backend +
+            " returned incomplete automatic install parameters");
+    }
     // Allow backends to override the release tag (e.g. per-GPU-target releases)
     std::string release_version = final_params.version_override.empty()
                                       ? resolved_version
@@ -586,6 +601,12 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
+
+    if (recipe == "llamacpp" && resolved_backend == "sycl" &&
+        has_existing_backend) {
+        report_backend_ready(recipe, resolved_backend, progress_cb);
+        return;
+    }
 
     if (auto* cfg = RuntimeConfig::global()) {
         const bool offline = cfg->offline();

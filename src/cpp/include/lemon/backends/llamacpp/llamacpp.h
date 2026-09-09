@@ -35,6 +35,7 @@ inline const BackendDescriptor descriptor = {
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
         {"cuda", {"windows", "linux"},
          {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
+        {"sycl", {"linux"}, {{"intel_gpu", {}}}, "Intel Arc / Xe GPUs (oneAPI SYCL)"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}, "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)"},
         {"rocm", {"windows", "linux"},
          {{"amd_gpu", {"gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X", "gfx908", "gfx90a", "gfx942", "gfx950"}}}, "AMD GPUs supported by ROCm",
@@ -57,8 +58,8 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"rocm", "vulkan", "cpu"},
-    /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
+    /*arg_variants*/    {"rocm", "vulkan", "cpu", "sycl"},
+    /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu", "sycl"},
     /*config_extra*/    {{"prefer_system", true}},
 };
 

@@ -522,6 +522,7 @@ static const std::map<std::string, std::string> DEVICE_TYPE_NAMES = {
     {"amd_gpu", "AMD GPU"},
     {"amd_npu", "AMD NPU"},
     {"nvidia_gpu", "NVIDIA GPU"},
+    {"intel_gpu", "Intel GPU"},
     {"metal", "MacOS Metal GPU"}
 };
 
@@ -990,6 +991,34 @@ json SystemInfo::get_device_dict() {
         devices["nvidia_gpu_error"] = std::string("Detection exception: ") + e.what();
     }
 
+    try {
+        devices["intel_gpu"] = json::array();
+        for (const auto& gpu : get_intel_gpu_devices()) {
+            json gpu_json = {
+                {"name", gpu.name},
+                {"available", gpu.available},
+                {"integrated", gpu.integrated},
+                {"family", gpu.integrated ? "i915" : "xe"}
+            };
+            if (!gpu.pci_addr.empty()) {
+                gpu_json["pci"] = gpu.pci_addr;
+            }
+            if (!gpu.pci_device_id.empty()) {
+                gpu_json["device_id"] = gpu.pci_device_id;
+            }
+            if (gpu.vram_gb > 0) {
+                gpu_json["vram_gb"] = gpu.vram_gb;
+            }
+            if (!gpu.error.empty()) {
+                gpu_json["error"] = gpu.error;
+            }
+            devices["intel_gpu"].push_back(gpu_json);
+        }
+    } catch (const std::exception& e) {
+        devices["intel_gpu"] = json::array();
+        devices["intel_gpu_error"] = std::string("Detection exception: ") + e.what();
+    }
+
     // Get NPU info - with fault tolerance
     // Use CPU processor name as the NPU device name (e.g., "AMD Ryzen AI 9 HX 375")
     try {
@@ -1147,6 +1176,23 @@ json SystemInfo::build_recipes_info(const json& devices) {
         }
     }
 
+    if (devices.contains("intel_gpu") && devices["intel_gpu"].is_array()) {
+        for (const auto& gpu : devices["intel_gpu"]) {
+            if (gpu.value("available", false)) {
+                std::string name = gpu.value("name", "");
+                std::string family = gpu.value("family", "");
+                if (!name.empty()) {
+                    detected_devices.push_back({
+                        "intel_gpu",
+                        name,
+                        family,
+                        true
+                    });
+                }
+            }
+        }
+    }
+
     // AMD NPU
     if (devices.contains("amd_npu") && devices["amd_npu"].is_object()) {
         const auto& npu = devices["amd_npu"];
@@ -1242,6 +1288,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
     std::map<std::pair<std::string, std::string>, int> backend_status_priority;
     std::set<std::string> default_backend_installed;
+    std::map<std::string, bool> configured_default_resolved;
+    std::map<std::string, bool> configured_default_applied;
 
     auto set_backend_status = [&recipes, &backend_status_priority](
                                 const std::string& recipe,
@@ -1585,16 +1633,32 @@ json SystemInfo::build_recipes_info(const json& devices) {
 
         auto configured_default = configured_default_backends.find(def.recipe);
         if (configured_default != configured_default_backends.end()) {
-            if (def.backend == configured_default->second) {
-                recipes[def.recipe]["default_backend"] = def.backend;
+            const std::string& configured_backend = configured_default->second;
+            if (def.backend == configured_backend) {
+                configured_default_resolved[def.recipe] = true;
+                const std::string effective_state =
+                    recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
+                if (system_info_detail::backend_state_can_be_default(effective_state)) {
+                    recipes[def.recipe]["default_backend"] = def.backend;
+                    configured_default_applied[def.recipe] = true;
+                }
+                continue;
             }
-            continue;
+            if (!configured_default_resolved.count(def.recipe)) {
+                continue;
+            }
+            if (configured_default_applied.count(def.recipe)) {
+                continue;
+            }
         }
 
         bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
         if (supported && !skip_as_default) {
             const std::string effective_state =
                 recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");
+            if (!system_info_detail::backend_state_can_be_default(effective_state)) {
+                continue;
+            }
             const bool locally_installed = effective_state == "installed"
                 || effective_state == "update_available"
                 || effective_state == "update_required";
@@ -1685,7 +1749,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
         if (recipe_info["backends"].contains(default_backend)) {
             const auto& backend = recipe_info["backends"][default_backend];
             std::string state = backend.value("state", "unsupported");
-            if (state != "unsupported") {
+            if (system_info_detail::backend_state_is_supported(state)) {
                 result.backends.push_back(default_backend);
             }
         }
@@ -1702,7 +1766,7 @@ SystemInfo::SupportedBackendsResult SystemInfo::get_supported_backends(const std
             if (recipe_info["backends"].contains(def.backend)) {
                 const auto& backend = recipe_info["backends"][def.backend];
                 std::string state = backend.value("state", "unsupported");
-                if (state != "unsupported") {
+                if (system_info_detail::backend_state_is_supported(state)) {
                     result.backends.push_back(def.backend);
                 } else if (result.not_supported_error.empty() && backend.contains("message")) {
                     // Capture first error encountered (in preference order)
@@ -3137,6 +3201,34 @@ std::vector<GPUInfo> LinuxSystemInfo::get_amd_dgpu_devices() {
     return detect_amd_gpus("discrete");
 }
 
+std::vector<GPUInfo> LinuxSystemInfo::get_intel_gpu_devices() {
+    std::vector<GPUInfo> gpus;
+    auto devices = system_info_detail::intel_pci_devices_from_sysfs(
+        "/sys/bus/pci/devices");
+    int index = 0;
+    for (const auto& device : devices) {
+        GPUInfo gpu;
+        gpu.index = index++;
+        gpu.pci_addr = device.pci_addr;
+        gpu.pci_device_id = device.device_id;
+        gpu.available = device.driver == "xe" || device.driver == "i915";
+        gpu.integrated = device.driver == "i915";
+        gpu.name = gpu.integrated ? "Intel integrated GPU" : "Intel discrete GPU";
+        if (device.device_id == "0xe223") {
+            gpu.name = "Intel Arc Pro B70";
+        }
+        gpu.driver_version = device.driver;
+        gpu.uuid = device.pci_addr;
+        gpus.push_back(gpu);
+    }
+    std::stable_sort(gpus.begin(), gpus.end(),
+                     [](const GPUInfo& a, const GPUInfo& b) {
+                         return static_cast<int>(a.integrated) <
+                                static_cast<int>(b.integrated);
+                     });
+    return gpus;
+}
+
 std::vector<GPUInfo> LinuxSystemInfo::get_nvidia_gpu_devices() {
     std::vector<GPUInfo> gpus;
 
@@ -4241,6 +4333,46 @@ double SystemInfo::get_global_vram_usage_pct() {
             }
         }
     } catch (...) {}
+
+    try {
+        double intel_ratio = -1.0;
+        if (!find_executable_in_path("xpu-smi").empty()) {
+            std::string output;
+            const int rc = lemon::utils::ProcessManager::run_command(
+                "xpu-smi stats -d 0", output, 5);
+            if (rc == 0) {
+                const double r =
+                    lemon::system_info_detail::xpu_smi_vram_usage_ratio(output);
+                if (r >= 0.0) {
+                    intel_ratio = std::max(intel_ratio, r);
+                }
+            }
+        }
+
+        if (intel_ratio < 0.0) {
+            auto intel = lemon::system_info_detail::intel_pci_devices_from_sysfs(
+                "/sys/bus/pci/devices");
+            for (const auto& d : intel) {
+                const fs::path mm =
+                    fs::path("/sys/kernel/debug/dri") / d.pci_addr / "vram0_mm";
+                std::ifstream in(mm);
+                if (in) {
+                    std::ostringstream oss;
+                    oss << in.rdbuf();
+                    const double r =
+                        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(
+                            oss.str());
+                    if (r >= 0.0) {
+                        intel_ratio = std::max(intel_ratio, r);
+                    }
+                }
+            }
+        }
+        if (intel_ratio >= 0.0) {
+            highest_ratio = std::max(highest_ratio, intel_ratio);
+        }
+    } catch (...) {
+    }
 #endif
 
 #ifdef _WIN32

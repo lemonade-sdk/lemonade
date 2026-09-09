@@ -6,12 +6,16 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include <lemon/backend_manager.h>
+#include <lemon/backends/backend_registry.h>
 #include <lemon/backends/backend_utils.h>
+#include <lemon/backends/llamacpp/llamacpp_server.h>
 #include <lemon/runtime_config.h>
 
 #ifdef _WIN32
@@ -68,6 +72,9 @@ int main() {
     clear_env_var("HIP_VISIBLE_DEVICES");
     clear_env_var("ROCR_VISIBLE_DEVICES");
     clear_env_var("CUDA_VISIBLE_DEVICES");
+    clear_env_var("GGML_SYCL_F16");
+    clear_env_var("ONEAPI_DEVICE_SELECTOR");
+    clear_env_var("ZES_ENABLE_SYSMAN");
 
     // Test 1: apply_cuda_env_vars respects pre-existing CUDA_VISIBLE_DEVICES in host environment
     {
@@ -113,6 +120,33 @@ int main() {
         }
         check(no_throw_matching,
               "validate_device_backend_match accepts matching pairs and system/auto backends gracefully");
+
+        bool threw_sycl_vulkan = false;
+        try {
+            BackendUtils::validate_device_backend_match("sycl", "Vulkan0");
+        } catch (const std::invalid_argument&) {
+            threw_sycl_vulkan = true;
+        }
+        check(threw_sycl_vulkan,
+              "validate_device_backend_match throws for Vulkan device on sycl backend");
+
+        bool threw_vulkan_sycl = false;
+        try {
+            BackendUtils::validate_device_backend_match("vulkan", "SYCL0");
+        } catch (const std::invalid_argument&) {
+            threw_vulkan_sycl = true;
+        }
+        check(threw_vulkan_sycl,
+              "validate_device_backend_match throws for SYCL device on vulkan backend");
+
+        bool sycl_ok = true;
+        try {
+            BackendUtils::validate_device_backend_match("sycl", "SYCL0");
+            BackendUtils::validate_device_backend_match("sycl", "SYCL1");
+        } catch (...) {
+            sycl_ok = false;
+        }
+        check(sycl_ok, "validate_device_backend_match accepts SYCL0 on sycl backend");
     }
 
     // Test 3: a custom backend binary environment variable takes precedence
@@ -158,6 +192,84 @@ int main() {
         check(BackendUtils::find_external_backend_binary("llamacpp", "rocm-stable").empty(),
               "builtin remains reserved after clearing the environment");
         lemon::RuntimeConfig::set_global(nullptr);
+    }
+
+    {
+        const std::filesystem::path bin_dir =
+            std::filesystem::temp_directory_path() /
+            ("lemonade_sycl_bin_" + std::to_string(
+#ifdef _WIN32
+                _getpid()
+#else
+                getpid()
+#endif
+            ));
+        std::filesystem::create_directories(bin_dir);
+#ifdef _WIN32
+        const std::filesystem::path executable = bin_dir / "llama-server.exe";
+#else
+        const std::filesystem::path executable = bin_dir / "llama-server";
+#endif
+        std::ofstream(executable) << "stub";
+        std::filesystem::permissions(
+            executable,
+            std::filesystem::perms::owner_exec |
+                std::filesystem::perms::group_exec |
+                std::filesystem::perms::others_exec,
+            std::filesystem::perm_options::add);
+
+        lemon::RuntimeConfig config(
+            lemon::json{{"llamacpp", {{"sycl_bin", bin_dir.string()}}}});
+        lemon::RuntimeConfig::set_global(&config);
+        const lemon::backends::BackendSpec spec("llamacpp", "llama-server");
+        check(BackendUtils::get_backend_binary_path(spec, "sycl") ==
+                  executable.string(),
+              "SYCL directory override resolves its llama-server executable");
+        lemon::RuntimeConfig::set_global(nullptr);
+        std::filesystem::remove_all(bin_dir);
+    }
+
+    {
+        const auto params =
+            lemon::backends::LlamaCppServer::get_install_params("sycl", "test");
+        check(params.repo.empty() && params.filename.empty(),
+              "SYCL remains a user-managed backend without GitHub install parameters");
+
+        const auto unavailable = lemon::backends::ops_for("llamacpp")
+                                     ->classify_unavailable(
+                                         "sycl", "", "lemonade backends install llamacpp:sycl");
+        check(unavailable.has_value() && unavailable->state == "not_installed",
+              "missing SYCL binary is not marked installable");
+        check(unavailable.has_value() &&
+                  unavailable->message.find("llamacpp.sycl_bin") != std::string::npos &&
+                  unavailable->action.empty(),
+              "missing SYCL binary reports configuration guidance without install action");
+
+        bool rejected_empty_install = false;
+        try {
+            lemon::BackendManager manager;
+            (void)manager.get_install_params("llamacpp", "sycl");
+        } catch (const std::runtime_error& error) {
+            rejected_empty_install =
+                std::string(error.what()).find("llamacpp.sycl_bin") != std::string::npos;
+        }
+        check(rejected_empty_install,
+              "backend manager rejects SYCL before attempting an empty GitHub install");
+    }
+
+    {
+        std::vector<std::pair<std::string, std::string>> env_vars;
+        BackendUtils::apply_sycl_env_vars(env_vars, /*has_explicit_device=*/true);
+        check(!has_key(env_vars, "ONEAPI_DEVICE_SELECTOR"),
+              "explicit SYCL device suppresses the default oneAPI selector");
+        check(has_key(env_vars, "ZES_ENABLE_SYSMAN") &&
+                  has_key(env_vars, "GGML_SYCL_F16"),
+              "explicit SYCL device retains non-selection runtime defaults");
+
+        env_vars.clear();
+        BackendUtils::apply_sycl_env_vars(env_vars, /*has_explicit_device=*/false);
+        check(has_key(env_vars, "ONEAPI_DEVICE_SELECTOR"),
+              "automatic SYCL device selection adds the default oneAPI selector");
     }
 
     if (g_failures > 0) {

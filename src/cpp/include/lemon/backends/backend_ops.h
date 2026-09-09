@@ -142,7 +142,7 @@ public:
     // The /system-info state for a backend variant that is supported but not
     // currently available (install probe failed).
     struct UnavailableState {
-        std::string state;    // "installable" | "update_required" | "action_required"
+        std::string state;    // "installable" | "not_installed" | "update_required" | "action_required"
         std::string message;  // shown to the user
         std::string action;   // remediation (a URL or an install command)
         bool attach_installed_version = false;  // surface the installed version too

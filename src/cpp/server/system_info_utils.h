@@ -2,18 +2,30 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <set>
-#include <system_error>
+#include <sstream>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 namespace lemon::system_info_detail {
+
+inline bool backend_state_is_supported(const std::string& state) {
+    return state != "unsupported" && state != "not_installed";
+}
+
+inline bool backend_state_can_be_default(const std::string& state) {
+    return backend_state_is_supported(state);
+}
 
 inline const std::set<std::string>& cuda_supported_archs() {
     static const std::set<std::string> archs = {
@@ -239,6 +251,182 @@ inline bool rocm_device_memory_from_sysfs(const std::filesystem::path& kfd_nodes
     free_bytes = total - used;
     total_bytes = total;
     return true;
+}
+
+struct IntelPciDevice {
+    std::string pci_addr;
+    std::string vendor;
+    std::string device_id;
+    std::string pci_class;
+    std::string driver;
+    bool is_display = false;
+};
+
+inline std::string read_sysfs_trimmed(const std::filesystem::path& path) {
+    std::ifstream in(path);
+    std::string line;
+    if (!in || !std::getline(in, line)) {
+        return "";
+    }
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r' ||
+                             line.back() == ' ' || line.back() == '\t')) {
+        line.pop_back();
+    }
+    return line;
+}
+
+inline bool intel_pci_is_display(const std::string& pci_class_hex) {
+    std::string c = pci_class_hex;
+    for (char& ch : c) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return c == "0x030000" || c == "0x038000";
+}
+
+inline std::string intel_driver_name(const std::filesystem::path& device_dir) {
+    std::error_code ec;
+    const std::filesystem::path drv = device_dir / "driver";
+    if (!std::filesystem::is_symlink(drv, ec) && !std::filesystem::exists(drv, ec)) {
+        return "";
+    }
+    auto target = std::filesystem::read_symlink(drv, ec);
+    if (ec) {
+        target = std::filesystem::canonical(drv, ec);
+    }
+    if (ec) {
+        return "";
+    }
+    return target.filename().string();
+}
+
+inline std::vector<IntelPciDevice> intel_pci_devices_from_sysfs(
+    const std::filesystem::path& pci_devices_root) {
+    std::vector<IntelPciDevice> out;
+    std::error_code ec;
+    if (!std::filesystem::is_directory(pci_devices_root, ec)) {
+        return out;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(pci_devices_root, ec)) {
+        if (!entry.is_directory(ec)) {
+            continue;
+        }
+        const auto dir = entry.path();
+        const std::string vendor = read_sysfs_trimmed(dir / "vendor");
+        if (vendor != "0x8086") {
+            continue;
+        }
+        IntelPciDevice d;
+        d.pci_addr = dir.filename().string();
+        d.vendor = vendor;
+        d.device_id = read_sysfs_trimmed(dir / "device");
+        d.pci_class = read_sysfs_trimmed(dir / "class");
+        d.driver = intel_driver_name(dir);
+        d.is_display = intel_pci_is_display(d.pci_class);
+        if (d.is_display) {
+            out.push_back(d);
+        }
+    }
+    return out;
+}
+
+inline double xe_vram_usage_ratio_from_mm(const std::string& vram0_mm_text) {
+    uint64_t size = 0;
+    uint64_t usage = 0;
+    bool have_size = false;
+    bool have_usage = false;
+    std::istringstream iss(vram0_mm_text);
+    std::string line;
+    while (std::getline(iss, line)) {
+        auto colon = line.find(':');
+        if (colon == std::string::npos) {
+            continue;
+        }
+        std::string key = line.substr(0, colon);
+        std::string val = line.substr(colon + 1);
+        auto trim = [](std::string s) {
+            size_t b = s.find_first_not_of(" \t");
+            size_t e = s.find_last_not_of(" \t\r");
+            if (b == std::string::npos) {
+                return std::string();
+            }
+            return s.substr(b, e - b + 1);
+        };
+        key = trim(key);
+        val = trim(val);
+        auto parse_u64 = [](const std::string& s, uint64_t& out) -> bool {
+            if (s.empty() || s[0] == '-') {
+                return false;
+            }
+            char* end = nullptr;
+            errno = 0;
+            const unsigned long long parsed = std::strtoull(s.c_str(), &end, 10);
+            if (end == s.c_str() || *end != '\0' || errno == ERANGE) {
+                return false;
+            }
+            out = parsed;
+            return true;
+        };
+        if (key == "size") {
+            uint64_t parsed = 0;
+            if (parse_u64(val, parsed) && parsed > 0) {
+                size = parsed;
+                have_size = true;
+            }
+        } else if (key == "usage") {
+            uint64_t parsed = 0;
+            if (parse_u64(val, parsed)) {
+                usage = parsed;
+                have_usage = true;
+            }
+        }
+    }
+    if (!have_size || !have_usage) {
+        return -1.0;
+    }
+    return std::min(1.0, static_cast<double>(usage) / static_cast<double>(size));
+}
+
+inline double xpu_smi_vram_usage_ratio(const std::string& stats_text) {
+    double used = -1.0;
+    double total = -1.0;
+    double utilization_pct = -1.0;
+    auto metric_value = [](const std::string& line,
+                           const std::string& metric) {
+        const size_t metric_pos = line.find(metric);
+        if (metric_pos == std::string::npos) {
+            return -1.0;
+        }
+        std::string remainder = line.substr(metric_pos + metric.size());
+        std::replace(remainder.begin(), remainder.end(), '|', ' ');
+        std::istringstream values(remainder);
+        std::string token;
+        while (values >> token) {
+            char* end = nullptr;
+            const double value = std::strtod(token.c_str(), &end);
+            if (end != token.c_str() && *end == '\0' && std::isfinite(value)) {
+                return value;
+            }
+        }
+        return -1.0;
+    };
+    std::istringstream iss(stats_text);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (line.find("GPU Memory Util (%)") != std::string::npos) {
+            utilization_pct = metric_value(line, "GPU Memory Util (%)");
+        } else if (line.find("GPU Memory Used (MiB)") != std::string::npos) {
+            used = metric_value(line, "GPU Memory Used (MiB)");
+        } else if (line.find("GPU Memory Total (MiB)") != std::string::npos) {
+            total = metric_value(line, "GPU Memory Total (MiB)");
+        }
+    }
+    if (std::isfinite(used) && std::isfinite(total) && used >= 0.0 && total > 0.0) {
+        return std::min(1.0, used / total);
+    }
+    if (utilization_pct >= 0.0 && utilization_pct <= 100.0) {
+        return utilization_pct / 100.0;
+    }
+    return -1.0;
 }
 
 }  // namespace lemon::system_info_detail

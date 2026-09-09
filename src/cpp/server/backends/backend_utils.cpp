@@ -384,6 +384,16 @@ namespace lemon::backends {
         std::string exe_path = find_external_backend_binary(spec.recipe, resolved_backend);
 
         if (!exe_path.empty()) {
+            std::error_code ec;
+            if (fs::is_directory(fs::path(exe_path), ec)) {
+                const std::string external_executable =
+                    find_executable_in_install_dir(exe_path, spec.binary);
+                if (!external_executable.empty()) {
+                    return external_executable;
+                }
+                throw std::runtime_error(
+                    spec.binary + " not found in configured directory: " + exe_path);
+            }
             return exe_path;
         }
 
@@ -2071,6 +2081,23 @@ namespace lemon::backends {
 #endif
     }
 
+    void BackendUtils::apply_sycl_env_vars(
+            std::vector<std::pair<std::string, std::string>>& env_vars,
+            bool has_explicit_device) {
+        auto inherit_or_set = [&env_vars](const char* key, const char* value) {
+            const char* existing = std::getenv(key);
+            if (!existing || existing[0] == '\0') {
+                env_vars.push_back({key, value});
+            }
+        };
+
+        if (!has_explicit_device) {
+            inherit_or_set("ONEAPI_DEVICE_SELECTOR", "level_zero:0");
+        }
+        inherit_or_set("ZES_ENABLE_SYSMAN", "1");
+        inherit_or_set("GGML_SYCL_F16", "1");
+    }
+
     void BackendUtils::validate_device_backend_match(
             const std::string& backend,
             const std::string& target_device) {
@@ -2091,16 +2118,20 @@ namespace lemon::backends {
         const bool is_rocm_device = (lower_device.rfind("rocm", 0) == 0);
         const bool is_cuda_device = (lower_device.rfind("cuda", 0) == 0);
         const bool is_vulkan_device = (lower_device.rfind("vulkan", 0) == 0);
+        const bool is_sycl_device = (lower_device.rfind("sycl", 0) == 0);
 
         const bool is_rocm_backend = (lower_backend.rfind("rocm", 0) == 0);
         const bool is_cuda_backend = (lower_backend.rfind("cuda", 0) == 0);
         const bool is_vulkan_backend = (lower_backend.rfind("vulkan", 0) == 0);
+        const bool is_sycl_backend = (lower_backend == "sycl");
 
         if (is_rocm_device && !is_rocm_backend) {
             throw std::invalid_argument(
                 "Device selection '" + target_device + "' contradicts backend choice '" + backend +
                 "'. Expected a " + backend + " device identifier (e.g. " +
-                (is_vulkan_backend ? "Vulkan0" : is_cuda_backend ? "CUDA0" : "a matching device") + ").");
+                (is_vulkan_backend ? "Vulkan0" :
+                 is_cuda_backend ? "CUDA0" :
+                 is_sycl_backend ? "SYCL0" : "a matching device") + ").");
         }
         if (is_cuda_device && !is_cuda_backend) {
             throw std::invalid_argument(
@@ -2108,6 +2139,11 @@ namespace lemon::backends {
                 "'. Expected a " + backend + " device identifier.");
         }
         if (is_vulkan_device && !is_vulkan_backend) {
+            throw std::invalid_argument(
+                "Device selection '" + target_device + "' contradicts backend choice '" + backend +
+                "'. Expected a " + backend + " device identifier.");
+        }
+        if (is_sycl_device && !is_sycl_backend) {
             throw std::invalid_argument(
                 "Device selection '" + target_device + "' contradicts backend choice '" + backend +
                 "'. Expected a " + backend + " device identifier.");

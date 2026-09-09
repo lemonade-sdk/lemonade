@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <set>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -128,6 +129,174 @@ static bool expect_device_memory(const char* name,
                     static_cast<unsigned long long>(expected_total));
     }
     return ok;
+}
+
+static bool test_intel_pci_and_vram() {
+    bool pass = true;
+    pass &= expect_bool(
+        "not-installed backend is excluded from automatic defaults",
+        lemon::system_info_detail::backend_state_can_be_default("not_installed"),
+        false);
+    pass &= expect_bool(
+        "unsupported backend is excluded from automatic defaults",
+        lemon::system_info_detail::backend_state_can_be_default("unsupported"),
+        false);
+    pass &= expect_bool(
+        "not-installed backend is excluded from supported backends",
+        lemon::system_info_detail::backend_state_is_supported("not_installed"),
+        false);
+    pass &= expect_bool(
+        "installable backend is supported for selection",
+        lemon::system_info_detail::backend_state_is_supported("installable"),
+        true);
+    pass &= expect_bool(
+        "installable backend remains eligible for automatic defaults",
+        lemon::system_info_detail::backend_state_can_be_default("installable"),
+        true);
+    pass &= expect_bool("display class 0x030000",
+        lemon::system_info_detail::intel_pci_is_display("0x030000"), true);
+    pass &= expect_bool("3d class 0x038000",
+        lemon::system_info_detail::intel_pci_is_display("0x038000"), true);
+    pass &= expect_bool("non-display class 0x020000",
+        lemon::system_info_detail::intel_pci_is_display("0x020000"), false);
+
+    fs::path root = fs::temp_directory_path() / "lemonade_intel_pci";
+    fs::remove_all(root);
+    fs::path b70 = root / "0000:03:00.0";
+    fs::create_directories(b70);
+    {
+        std::ofstream(b70 / "vendor") << "0x8086\n";
+        std::ofstream(b70 / "device") << "0xe223\n";
+        std::ofstream(b70 / "class") << "0x038000\n";
+        std::ofstream(b70 / "uevent") << "DRIVER=xe\n";
+        fs::create_symlink("../../../bus/pci/drivers/xe", b70 / "driver");
+    }
+    fs::path igpu = root / "0000:00:02.0";
+    fs::create_directories(igpu);
+    {
+        std::ofstream(igpu / "vendor") << "0x8086\n";
+        std::ofstream(igpu / "device") << "0x4680\n";
+        std::ofstream(igpu / "class") << "0x030000\n";
+        std::ofstream(igpu / "uevent") << "DRIVER=i915\n";
+        fs::create_symlink("../../../bus/pci/drivers/i915", igpu / "driver");
+    }
+    fs::path nic = root / "0000:04:00.0";
+    fs::create_directories(nic);
+    {
+        std::ofstream(nic / "vendor") << "0x8086\n";
+        std::ofstream(nic / "device") << "0x15f2\n";
+        std::ofstream(nic / "class") << "0x020000\n";
+    }
+    fs::path nvidia = root / "0000:01:00.0";
+    fs::create_directories(nvidia);
+    {
+        std::ofstream(nvidia / "vendor") << "0x10de\n";
+        std::ofstream(nvidia / "device") << "0x2204\n";
+        std::ofstream(nvidia / "class") << "0x030000\n";
+    }
+
+    auto gpus = lemon::system_info_detail::intel_pci_devices_from_sysfs(root);
+    pass &= expect_bool("two intel display functions", gpus.size() == 2, true);
+    bool saw_b70 = false;
+    bool saw_igpu = false;
+    for (const auto& d : gpus) {
+        if (d.device_id == "0xe223" && d.driver == "xe") saw_b70 = true;
+        if (d.device_id == "0x4680" && d.driver == "i915") saw_igpu = true;
+    }
+    pass &= expect_bool("found B70 xe", saw_b70, true);
+    pass &= expect_bool("found iGPU i915", saw_igpu, true);
+    fs::remove_all(root);
+
+    const char* mm =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n"
+        "                usage: 8589934592\n";
+    pass &= expect_bool(
+        "vram0_mm ratio 0.25",
+        std::abs(lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm) - 0.25) < 1e-9,
+        true);
+    pass &= expect_bool(
+        "empty mm is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm("") < 0.0,
+        true);
+    const char* mm_no_usage =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n";
+    pass &= expect_bool(
+        "mm without usage is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_no_usage) < 0.0,
+        true);
+    const char* mm_negative_usage =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n"
+        "                usage: -1\n";
+    pass &= expect_bool(
+        "mm negative usage is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_negative_usage) < 0.0,
+        true);
+    const char* mm_nonnumeric_usage =
+        "         vram0_mm:\n"
+        "                 name: vram0\n"
+        "                 size: 34359738368\n"
+        "                usage: n/a\n";
+    pass &= expect_bool(
+        "mm nonnumeric usage is -1",
+        lemon::system_info_detail::xe_vram_usage_ratio_from_mm(mm_nonnumeric_usage) < 0.0,
+        true);
+
+    const char* smi =
+        "GPU Utilization (%)    12\n"
+        "GPU Memory Used (MiB)  8192\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi ratio 0.25",
+        std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi) - 0.25) < 1e-9,
+        true);
+    const char* smi_with_rounded_utilization =
+        "GPU Memory Util (%)   33\n"
+        "GPU Memory Used (MiB) 8192\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi used and total override rounded utilization",
+        std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(
+                     smi_with_rounded_utilization) -
+                 0.25) <
+            1e-9,
+        true);
+    const char* smi_b70 =
+        "+-----------------------------+--------------------------------------------------------------------+\n"
+        "| GPU Memory Used (MiB)       | 0                                                                  |\n"
+        "| GPU Memory Util (%)         | 0                                                                  |\n"
+        "+-----------------------------+--------------------------------------------------------------------+\n";
+    pass &= expect_bool(
+        "xpu-smi B70 utilization ratio 0",
+        std::abs(lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_b70)) < 1e-9,
+        true);
+    const char* smi_nonnumeric =
+        "GPU Memory Used (MiB)  n/a\n"
+        "GPU Memory Total (MiB) unknown\n";
+    pass &= expect_bool(
+        "xpu-smi nonnumeric memory is -1",
+        lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_nonnumeric) < 0.0,
+        true);
+    const char* smi_nan =
+        "GPU Memory Used (MiB)  nan\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi nan memory used is -1",
+        lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_nan) < 0.0,
+        true);
+    const char* smi_inf =
+        "GPU Memory Used (MiB)  inf\n"
+        "GPU Memory Total (MiB) 32768\n";
+    pass &= expect_bool(
+        "xpu-smi inf memory used is -1",
+        lemon::system_info_detail::xpu_smi_vram_usage_ratio(smi_inf) < 0.0,
+        true);
+    return pass;
 }
 
 int main() {
@@ -338,6 +507,8 @@ int main() {
             "an empty topology goes unreported",
             sysfs, "gfx1151", false);
     }
+
+    failures += !test_intel_pci_and_vram();
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

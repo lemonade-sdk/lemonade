@@ -101,6 +101,10 @@ static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
 }
 
+static bool is_llamacpp_sycl_backend(const std::string& backend) {
+    return backend == "sycl";
+}
+
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
     std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -245,6 +249,10 @@ InstallParams LlamaCppServer::get_install_params(const std::string& backend, con
 #else
         throw std::runtime_error("CPU llamacpp not supported on this platform");
 #endif
+    } else if (resolved_backend == "sycl") {
+        // Linux SYCL builds need the oneAPI runtime. Do not download a Vulkan
+        // zip. Users set llamacpp.sycl_bin (or LEMONADE_LLAMACPP_SYCL_BIN).
+        return params;
     } else {  // vulkan
         params.repo = "ggml-org/llama.cpp";
 #ifdef _WIN32
@@ -527,6 +535,23 @@ void LlamaCppServer::load(const std::string& model_name,
             skip_visible_devices = true;
         }
         BackendUtils::apply_cuda_env_vars(env_vars, "LlamaCpp", skip_visible_devices);
+    }
+
+    if (is_llamacpp_sycl_backend(llamacpp_backend)) {
+        BackendUtils::apply_sycl_env_vars(
+            env_vars, /*has_explicit_device=*/!llamacpp_device.empty());
+#ifndef _WIN32
+        fs::path exe_dir = fs::path(executable).parent_path();
+        std::string lib_path = exe_dir.string();
+        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
+        if (existing_ld_path && existing_ld_path[0] != '\0') {
+            lib_path = lib_path + ":" + std::string(existing_ld_path);
+        }
+        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
+#endif
+        if (llamacpp_device.empty()) {
+            push_arg(args, reserved_flags, "--device", "SYCL0");
+        }
     }
 
 #ifdef __APPLE__
@@ -884,6 +909,13 @@ public:
     }
 
     InstallCheck check_install(const std::string& backend, bool binary_found) const override {
+        if (backend == "sycl" && !binary_found) {
+            return {
+                false,
+                "Set llamacpp.sycl_bin to a llama-server directory or install oneAPI"
+            };
+        }
+
         // The system llama-server also needs the ggml HIP plugin for ROCm GPU
         // acceleration when an AMD GPU (KFD) is present.
         if (binary_found && backend == "system") {
@@ -894,6 +926,24 @@ public:
 #endif
         }
         return {binary_found, ""};
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend,
+        const std::string& install_error,
+        const std::string& default_install_command) const override {
+        (void)default_install_command;
+        if (backend != "sycl") {
+            return std::nullopt;
+        }
+        return UnavailableState{
+            "not_installed",
+            install_error.empty()
+                ? "Set llamacpp.sycl_bin to a llama-server directory or install oneAPI"
+                : install_error,
+            "",
+            false
+        };
     }
 };
 }  // namespace
