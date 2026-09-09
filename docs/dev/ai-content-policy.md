@@ -2,13 +2,9 @@
 
 This policy is designed to keep humans at the center of the Lemonade community. It is built on the first principle that if a human wants another human to spend time reading and understanding something, then they need to write it themselves.
 
-Use of AI tools is encouraged in all aspects of Lemonade development, however they must be used responsibly and in accordance with these policies.
-
 ## Goals
 
-The maintainers of this project make every effort to read and understand the prose you send us. Over the past few months, we have felt overwhelmed by the volume, both in quantity and length, of AI prose being sent to us. We don't want this to overwhelm the genuine human innovations and feedback that make this project special.
-
-Our goal is to greatly increase the quality of discourse and enjoyment of genuine human connections in our community.
+The maintainers of this project make every effort to read and understand the prose you send us. We want to reserve this effort for genuine human ideas and connections, rather than spending it on a high volume (both quantity and length) of AI-generated prose.
 
 > [!NOTE]
 > This policy is an experiment. 30 days after it is introduced we will evaluate whether we want to keep, modify, or drop it.
@@ -19,9 +15,11 @@ No human involved in this project should expect any other human to read AI-gener
 
 AI prose is not permitted in any Issue, Discussion, PR body, PR comment, or Discord message. Anyone, at any time, for any reason, may cite Rule 1 to request that a human replace any AI prose with human-authored prose. The person who posted the AI prose should not expect any further replies until the replacement is done.
 
+> Note: "prose" refers to sentences and paragraphs posted in a communications channel. Things that are not prose include: code (including comments), diagrams, tables, graphics, etc.
+
 ## Additional Policies
 
-Contributors are encouraged to use AI tools, however you are fully responsible for the code and prose you submit.
+Contributors can use AI tools, however you are fully responsible for the code and prose you submit.
 
 ### AI Coding
 
