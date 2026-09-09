@@ -8504,6 +8504,38 @@ class EndpointTests(ServerTestBase):
         response = requests.post(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
         self.assertEqual(response.status_code, 404)
 
+    def test_065_unversioned_docs_returns_404_and_not_spa(self):
+        """GET /docs and /docs/ return 404; with web-app resources present, /docs-example falls through to SPA."""
+        server_origin = f"http://localhost:{PORT}"
+
+        # 1. Unconditional /docs subtree rejection
+        for path in ["/docs", "/docs/", "/docs/api/lemonade"]:
+            res = requests.get(f"{server_origin}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(res.status_code, 404, f"{path} did not return 404")
+            self.assertIn("application/json", res.headers.get("Content-Type", ""))
+            self.assertIn("For API documentation, use /v1/docs", res.text)
+
+        # 2. Determine web-app availability independently to test SPA fallback
+        root_res = requests.get(f"{server_origin}/", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(root_res.status_code, 200)
+        self.assertIn("text/html", root_res.headers.get("Content-Type", ""))
+        has_web_app = (
+            "window.api" in root_res.text or '<div id="root">' in root_res.text
+        )
+
+        spa_res = requests.get(f"{server_origin}/docs-example", timeout=TIMEOUT_DEFAULT)
+        if has_web_app:
+            self.assertEqual(
+                spa_res.status_code, 200, "/docs-example failed to reach SPA fallback"
+            )
+            self.assertIn("text/html", spa_res.headers.get("Content-Type", ""))
+        else:
+            self.assertEqual(
+                spa_res.status_code,
+                404,
+                "/docs-example returned unexpected status without web app",
+            )
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")
