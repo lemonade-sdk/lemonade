@@ -14,11 +14,37 @@
 
 namespace lemon {
 
-static thread_local std::atomic<bool>* t_request_cancel = nullptr;
+static thread_local WrappedServer::RequestCancelContext t_request_cancel_ctx{};
 
-void WrappedServer::set_request_cancel_flag(std::atomic<bool>* f) { t_request_cancel = f; }
+WrappedServer::RequestCancelScope::RequestCancelScope(std::function<bool()> should_cancel, std::atomic<bool>* flag)
+    : prev_context_(t_request_cancel_ctx) {
+    t_request_cancel_ctx = {flag, std::move(should_cancel)};
+}
 
-std::atomic<bool>* WrappedServer::current_request_cancel() { return t_request_cancel; }
+WrappedServer::RequestCancelScope::RequestCancelScope(std::atomic<bool>* flag)
+    : prev_context_(t_request_cancel_ctx) {
+    t_request_cancel_ctx = {flag, nullptr};
+}
+
+WrappedServer::RequestCancelScope::~RequestCancelScope() {
+    t_request_cancel_ctx = prev_context_;
+}
+
+void WrappedServer::set_request_cancel_context(const RequestCancelContext& ctx) {
+    t_request_cancel_ctx = ctx;
+}
+
+WrappedServer::RequestCancelContext WrappedServer::current_request_cancel_context() {
+    return t_request_cancel_ctx;
+}
+
+void WrappedServer::set_request_cancel_flag(std::atomic<bool>* f) {
+    t_request_cancel_ctx.flag = f;
+}
+
+std::atomic<bool>* WrappedServer::current_request_cancel() {
+    return t_request_cancel_ctx.flag;
+}
 
 namespace {
 
@@ -669,7 +695,9 @@ json WrappedServer::forward_get_request(const std::string& endpoint, long timeou
     }
 }
 
-json WrappedServer::forward_request(const std::string& endpoint, const json& request, long timeout_seconds) {
+json WrappedServer::forward_request(const std::string& endpoint,
+                                     const json& request,
+                                     long timeout_seconds) {
     if (!is_backend_alive()) {
         if (was_watchdog_triggered() || has_backend_process_exited()) {
             if (!was_watchdog_triggered()) {
@@ -685,6 +713,14 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
     std::string url = get_base_url() + endpoint;
     std::map<std::string, std::string> headers = {{"Content-Type", "application/json"}};
 
+    auto cancel_ctx = current_request_cancel_context();
+    auto* cancel_flag = cancel_ctx.flag;
+    auto cancel_checker = cancel_ctx.should_cancel;
+    if ((cancel_flag && cancel_flag->load()) || (cancel_checker && cancel_checker())) {
+        LOG(WARNING, "WrappedServer") << "Client request already cancelled before forwarding non-streaming request; aborting." << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+
     try {
         auto response = utils::HttpClient::post(
             url,
@@ -692,7 +728,8 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
             headers,
             timeout_seconds,
             utils::HttpSecurityPolicy::TrustedLoopback,
-            current_request_cancel());
+            cancel_flag,
+            cancel_checker);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -712,6 +749,9 @@ json WrappedServer::forward_request(const std::string& endpoint, const json& req
                 error_details
             );
         }
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "WrappedServer") << "Non-streaming request aborted due to client disconnect: " << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
         if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
             if (!was_watchdog_triggered()) {
@@ -743,12 +783,22 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
 
     std::string url = get_base_url() + endpoint;
 
+    auto cancel_ctx = current_request_cancel_context();
+    auto* cancel_flag = cancel_ctx.flag;
+    auto cancel_checker = cancel_ctx.should_cancel;
+    if ((cancel_flag && cancel_flag->load()) || (cancel_checker && cancel_checker())) {
+        LOG(WARNING, "WrappedServer") << "Client request already cancelled before forwarding multipart request; aborting." << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+
     try {
         auto response = utils::HttpClient::post_multipart(
             url,
             fields,
             timeout_seconds,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            cancel_flag,
+            cancel_checker);
         note_backend_activity();
 
         if (response.status_code == 200) {
@@ -772,6 +822,9 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
                 }
             );
         }
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "WrappedServer") << "Multipart request aborted due to client disconnect: " << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
         if (was_watchdog_triggered() || has_backend_process_exited() || is_backend_connection_failure(e.what())) {
             if (!was_watchdog_triggered()) {
@@ -820,7 +873,6 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     };
 
     try {
-
         if (sse) {
             // Use StreamingProxy to forward the SSE stream with telemetry callback
             // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time

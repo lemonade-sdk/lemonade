@@ -8,6 +8,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,21 @@ struct DownloadResult {
     bool can_resume = false;          // Whether partial download can be resumed
     bool disk_full = false;            // True if download failed due to insufficient disk space
     bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
+};
+
+class HttpClientException : public std::runtime_error {
+public:
+    HttpClientException(int curl_code, const std::string& message)
+        : std::runtime_error(message), curl_code_(curl_code) {}
+    int curl_code() const noexcept { return curl_code_; }
+private:
+    int curl_code_ = 0;
+};
+
+class HttpClientCancellationException : public HttpClientException {
+public:
+    HttpClientCancellationException(int curl_code, const std::string& message)
+        : HttpClientException(curl_code, message) {}
 };
 
 // Progress callback returns bool: true = continue, false = cancel download
@@ -135,7 +151,8 @@ public:
         const std::map<std::string, std::string>& headers = {},
         long timeout_seconds = 300,
         HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
-        std::atomic<bool>* cancel_flag = nullptr);
+        std::atomic<bool>* cancel_flag = nullptr,
+        std::function<bool()> should_cancel = nullptr);
 
     // Multipart form data POST request. Redirects are never followed.
     // timeout_seconds=0 uses default_timeout_seconds_.
@@ -143,7 +160,9 @@ public:
         const std::string& url,
         const std::vector<MultipartField>& fields,
         long timeout_seconds = 300,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::atomic<bool>* cancel_flag = nullptr,
+        std::function<bool()> should_cancel = nullptr);
 
     // Streaming POST request (calls callback for each chunk as it arrives).
     // on_status fires once, before the first chunk is delivered, so callers can

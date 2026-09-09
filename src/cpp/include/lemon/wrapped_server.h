@@ -443,6 +443,26 @@ public:
 
     void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
 
+    struct RequestCancelContext {
+        std::atomic<bool>* flag = nullptr;
+        std::function<bool()> should_cancel = nullptr;
+    };
+
+    class RequestCancelScope {
+    public:
+        explicit RequestCancelScope(std::function<bool()> should_cancel, std::atomic<bool>* flag = nullptr);
+        explicit RequestCancelScope(std::atomic<bool>* flag);
+        ~RequestCancelScope();
+
+        RequestCancelScope(const RequestCancelScope&) = delete;
+        RequestCancelScope& operator=(const RequestCancelScope&) = delete;
+
+    private:
+        RequestCancelContext prev_context_;
+    };
+
+    static void set_request_cancel_context(const RequestCancelContext& ctx);
+    static RequestCancelContext current_request_cancel_context();
     static void set_request_cancel_flag(std::atomic<bool>* f);
     static std::atomic<bool>* current_request_cancel();
 
@@ -610,7 +630,9 @@ protected:
     void set_watchdog_health_endpoint(const std::string& endpoint);
 
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
+    json forward_request(const std::string& endpoint,
+                         const json& request,
+                         long timeout_seconds = 0);
 
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 

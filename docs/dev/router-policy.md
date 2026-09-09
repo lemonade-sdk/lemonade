@@ -290,3 +290,10 @@ Unlike a `type: "llm"` classifier (which never receives `has_tools`/
 `has_images`, see above), the router always does: it's the sole decision
 mechanism here, so `prompt` can rely on them directly — e.g. "use Vision-GGUF
 when the request includes images."
+
+## Request Cancellation & Connection Robustness
+
+When an HTTP client disconnects or times out mid-request:
+1. **Socket Progress Interception**: `utils::HttpClient` progress callbacks (`CURLOPT_XFERINFOFUNCTION`) monitor client socket liveness during prefill and generation for both streaming and non-streaming requests.
+2. **Upstream Transfer Abort**: Detecting client disconnect immediately aborts the active upstream HTTP transfer to the backend, enabling the backend process to reclaim execution slots without re-entering `Router` mutex scopes.
+3. **Isolated Disconnect Handling**: Client disconnects are recorded with HTTP status 499 in event streams and return clean cancellation responses without triggering nuclear model reloads or disrupting concurrent clients.
