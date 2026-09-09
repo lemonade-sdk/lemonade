@@ -46,9 +46,6 @@ The fastest way to build trust as a new contributor is to submit small, clear, w
   - `rfc:not-required` or `rfc:on-roadmap`: ready for review.
   - `rfc:required`: PR will be marked as a draft until an approved RFC or working group is linked.
 
-> [!NOTE]
-> PRs that have been idle for 30 days should be closed.
-
 ## Maintainers
 
 While each maintainer is welcome to work on any part of the Lemonade codebase, each maintainer does have specific knowledge of certain areas. You should use their knowledge as a starting point for designing your contribution, and they will be the ones to review your contribution when it is ready.
