@@ -16,6 +16,7 @@
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
     std::string hex_to_bytes(const std::string& hex);
+    std::string truncate_string(const std::string& str, size_t max_len);
 }
 
 static int g_failures = 0;
@@ -68,8 +69,31 @@ static void check_map_empty(const char* name, const std::map<std::string, nlohma
 int main() {
     using lemon::telemetry::hex_to_bytes;
     using lemon::telemetry::standardize_thinking;
+    using lemon::telemetry::truncate_string;
 
     std::printf("=== RUNNING TELEMETRY HELPERS C++ TESTS ===\n");
+
+    // --- truncate_string tests ---
+    std::string long_text = "This is a very long string that would previously be truncated at 4096 bytes or custom limits.";
+    check_eq("truncate_string: max_len = 0 (unlimited / no truncation)", truncate_string(long_text, 0), long_text);
+    check_eq("truncate_string: max_len >= string length", truncate_string("short text", 100), "short text");
+    check_eq("truncate_string: max_len <= 15 (hard prefix)", truncate_string("0123456789ABCDEF", 10), "0123456789");
+    check_eq("truncate_string: max_len = 16 boundary threshold", truncate_string("0123456789ABCDEF0123", 16), "0... [TRUNCATED]");
+    check_eq("truncate_string: max_len > 15 (truncated with suffix)", truncate_string("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", 25), "0123456789... [TRUNCATED]");
+
+    // --- format_namespaced_session tests ---
+    using lemon::telemetry::format_namespaced_session;
+    check_eq("format_namespaced_session: 0 = unlimited", format_namespaced_session("client", "session", 0), "client/session");
+    check_eq("format_namespaced_session: empty client, 0 = unlimited", format_namespaced_session("", "session", 0), "session");
+    check_eq("format_namespaced_session: empty session, 0 = unlimited", format_namespaced_session("client", "", 0), "client");
+    check_eq("format_namespaced_session: fits exactly within limit", format_namespaced_session("c", "s", 3), "c/s");
+    check_eq("format_namespaced_session: max_len=1 returns single char without underflow", format_namespaced_session("client", "session", 1), "s");
+    check_eq("format_namespaced_session: max_len=2 returns 2 chars without underflow", format_namespaced_session("client", "session", 2), "se");
+    check_eq("format_namespaced_session: max_len=3 returns 3 chars without underflow", format_namespaced_session("client", "session", 3), "ses");
+    check_eq("format_namespaced_session: max_len=4 returns 4 chars without underflow", format_namespaced_session("client", "session", 4), "sess");
+    check_eq("format_namespaced_session: max_len=8 splits budget", format_namespaced_session("client", "session", 8), "cli/sess");
+    check_eq("format_namespaced_session: max_len=10 splits budget", format_namespaced_session("client", "session", 10), "cli/sessio");
+    check_eq("format_namespaced_session: max_len=15 includes full with room", format_namespaced_session("client", "session", 15), "client/session");
 
     // --- hex_to_bytes tests ---
     check_eq("hex_to_bytes: empty string", hex_to_bytes(""), "");
@@ -640,7 +664,11 @@ int main() {
             auto span_bound = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
             span_bound->end_with_success(nlohmann::json::object(), "", unicode_tool_calls);
             std::string bound_args = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
-            check_bool("InferenceSpan unicode args length <= max_len", bound_args.size() <= static_cast<size_t>(bound), true);
+            if (bound == 0) {
+                check_eq("InferenceSpan unicode args unlimited when bound is 0", bound_args, unicode_tool_calls[0].function_arguments);
+            } else {
+                check_bool("InferenceSpan unicode args length <= max_len", bound_args.size() <= static_cast<size_t>(bound), true);
+            }
             if (!bound_args.empty()) {
                 nlohmann::json p = nlohmann::json::parse(bound_args, nullptr, false);
                 check_bool("InferenceSpan unicode args valid JSON", p.is_discarded(), false);
