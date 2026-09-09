@@ -75,6 +75,13 @@ CAPABILITIES = {
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
             },
         },
+        "llamacpp-hrx": {
+            "backends": ["hrx"],
+            "supports": {"chat_completions": True},
+            "test_models": {
+                "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
+            },
+        },
         "ryzenai": {
             "backends": ["cpu", "hybrid", "npu"],
             "supports": {

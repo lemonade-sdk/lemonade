@@ -1303,6 +1303,11 @@ jobs:
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
             runner: [Linux, vulkan, rocm, lemon-prod]
+          - name: llamacpp-hrx
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp-hrx"
+            backends: "hrx"
+            runner: [Linux, rocm, stx-halo, lemon-prod]
           - name: omni
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
