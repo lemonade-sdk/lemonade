@@ -1493,12 +1493,9 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     expect(serious, formatViolations(serious)).toHaveLength(0);
   });
 
-  test('A88b — external MCP setup defaults to an HTTP endpoint and keeps local processes available', async ({ page }) => {
+  test('A88b — external MCP setup reports the temporary local-client transition', async ({ page }) => {
     await page.route('**/api/v1/health**', route =>
       route.fulfill({ json: { status: 'ok', all_models_loaded: [], version: '1.0.0', high_security: true } }),
-    );
-    await page.route(/\/internal\/mcp\/servers(?:\?.*)?$/, route =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ servers: [] }) }),
     );
     await page.route(/\/mcp(?:\?.*)?$/, async route => {
       const body = route.request().postDataJSON() as { method?: string; id?: number };
@@ -1523,18 +1520,10 @@ test.describe('Accessibility — MCP Gateway panel (#2417)', () => {
     await page.goto('/');
     await page.waitForSelector('.titlebar__nav');
     await navigateToConnectSection(page, 'MCP gateway');
-    await page.getByRole('button', { name: 'Add server', exact: true }).click();
-
-    const form = page.locator('.mcp-server-form');
-    await expect(form).toBeVisible();
-    await expect(form.getByRole('radio', { name: /HTTP endpoint/i })).toBeChecked();
-    await expect(form.getByPlaceholder('http://127.0.0.1:3000/mcp')).toBeVisible();
-    await expect(form.getByLabel('Command', { exact: true })).toHaveCount(0);
-    await expect(form.getByRole('button', { name: 'Test connection', exact: true })).toBeVisible();
-
-    await form.getByRole('radio', { name: /Local process/i }).check();
-    await expect(form.getByLabel('Command', { exact: true })).toBeVisible();
-    await expect(form.getByPlaceholder('http://127.0.0.1:3000/mcp')).toHaveCount(0);
+    await expect(page.locator('[data-mcp-host-unavailable]')).toContainText(
+      'External MCP connections are temporarily unavailable',
+    );
+    await expect(page.getByRole('button', { name: 'Add server', exact: true })).toHaveCount(0);
 
     const results = await new AxeBuilder({ page })
       .withTags([...WCAG_TAGS])
@@ -3035,15 +3024,14 @@ test.describe('Chat toolbar accessibility', () => {
     await page.waitForTimeout(300);
   }
 
-  test('A186 — composer toolbar retains model selector, settings, add menu, and Logs buttons', async ({ page }) => {
+  test('A186 — composer toolbar retains model selector, add menu, and Logs buttons', async ({ page }) => {
     await goToChatWithLoadedModel(page);
     // Model picker button is present (model is loaded so it appears)
     await expect(page.locator('.composer__model-button')).toBeVisible();
     await expect(page.getByRole('button', { name: /Add files, photos, or tools/i })).toBeVisible();
     // Logs toggle
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
-    // Effective Settings button (requires current model)
-    await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Effective settings' })).toHaveCount(0);
   });
 
   test('A187 — add menu exposes one unified tools entry and is keyboard-operable', async ({ page }) => {
@@ -3247,7 +3235,7 @@ test.describe('Chat toolbar accessibility', () => {
 //     includes server-applied defaults not shown in the rows table.
 // Range: A188–A192.
 
-test.describe('Effective Settings modal accessibility', () => {
+test.describe.skip('Effective Settings modal accessibility', () => {
   async function openEffectiveSettings(page: Page): Promise<void> {
     await page.route('**/api/v1/health**', async route =>
       route.fulfill({

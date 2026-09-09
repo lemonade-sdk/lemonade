@@ -18,8 +18,6 @@ const files = {
   navigation: path.join(root, 'src/features/navigation/workspaceNavigation.ts'),
 };
 const sources = Object.fromEntries(Object.entries(files).map(([key, filename]) => [key, fs.readFileSync(filename, 'utf8')]));
-const mcpClientHeader = fs.readFileSync(path.join(root, '../cpp/include/lemon/mcp_client.h'), 'utf8');
-const mcpClientSource = fs.readFileSync(path.join(root, '../cpp/server/mcp_client.cpp'), 'utf8');
 const styles = fs.readFileSync(path.join(root, 'src/styles/styles.css'), 'utf8');
 
 for (const [key, filename] of Object.entries(files)) {
@@ -126,23 +124,11 @@ assert.match(sources.mcpPanel, /placeholder="http:\/\/127\.0\.0\.1:3000\/mcp"/);
 assert.match(sources.mcpPanel, />Bearer token from environment</);
 assert.match(sources.mcpPanel, /Test connection/);
 assert.match(sources.mcpPanel, /api\.testMcpServer\(serverPayload\(draft\)\)/);
+assert.match(sources.mcpPanel, /External MCP connections are temporarily unavailable/);
 assert.match(sources.api, /export type McpTransport = 'streamable-http' \| 'stdio' \| 'builtin'/);
 assert.match(sources.api, /async testMcpServer\(/);
 assert.doesNotMatch(sources.api, /body: \{ server: \{ \.\.\.server, transport: 'stdio' \} \}/);
-assert.match(sources.mcpRuntime, /server\.transport === 'streamable-http'/);
-
-assert.match(mcpClientHeader, /std::string url;/);
-assert.match(mcpClientHeader, /std::string bearer_token;/);
-assert.match(mcpClientSource, /kStreamableHttpTransport = "streamable-http"/);
-assert.match(mcpClientSource, /server\.Post\("\/internal\/mcp\/servers\/test"/);
-assert.match(mcpClientSource, /enable_server_certificate_verification\(true\)/);
-assert.match(mcpClientSource, /Plain HTTP is allowed only for localhost/);
-assert.match(mcpClientSource, /connect_http\(new_config\)/);
-assert.doesNotMatch(mcpClientSource, /httplib::stream/);
-assert.match(mcpClientSource, /httplib::Request request;/);
-assert.match(mcpClientSource, /client\.send\(request\)/);
-assert.match(mcpClientSource, /kMaxMessageBytes - received/);
-assert.match(mcpClientSource, /class SseJsonDecoder/);
-assert.doesNotMatch(mcpClientSource, /Mcp-Method|Mcp-Name/);
+assert.doesNotMatch(sources.api, /\/internal\/mcp/);
+assert.match(sources.mcpRuntime, /return \[LEMONADE_MCP_SERVER\]/);
 
 console.log('UI regression contract checks passed.');

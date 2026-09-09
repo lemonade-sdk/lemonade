@@ -14,25 +14,19 @@ async function main(): Promise<void> {
   api.setSessionAdminApiKey('admin-key');
   assert.equal(api.adminApiKey, 'admin-key', 'an explicit admin key must override the regular API key');
 
+  let fetchCalled = false;
   const originalFetch = globalThis.fetch;
-  const authHeaders: string[] = [];
-  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
-    const headers = new Headers(init?.headers);
-    authHeaders.push(headers.get('Authorization') || '');
-    return new Response(JSON.stringify({ servers: [] }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    throw new Error('External MCP discovery must remain disabled');
   }) as typeof fetch;
   try {
     api.setSessionApiKey('');
     api.setSessionAdminApiKey('');
     assert.deepEqual(await api.listMcpServers(), []);
-    assert.deepEqual(authHeaders, [], 'default MCP discovery must not probe a fail-closed admin endpoint without credentials');
-
     api.setSessionAdminApiKey('admin-key');
     assert.deepEqual(await api.listMcpServers(), []);
-    assert.deepEqual(authHeaders, ['Bearer admin-key'], 'credentialed MCP discovery must use admin auth directly');
+    assert.equal(fetchCalled, false, 'external MCP discovery must not call a retired server endpoint');
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -216,18 +210,8 @@ async function main(): Promise<void> {
   assert.equal(notDownloaded.error, true);
   assert.match(notDownloaded.content, /not downloaded/);
 
-  (api as any).listMcpServers = async () => [{ id: 'srv', name: 'Echo', transport: 'stdio', enabled: true, connected: true, status: 'connected', tools: [{ name: 'echo' }] }];
-  (api as any).listMcpTools = async () => [{
-    server_id: 'srv', server_name: 'Echo', name: 'echo', chat_name: 'srv__echo', description: 'Echo text',
-    inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
-    openai_tool: { type: 'function', function: { name: 'echo', description: 'unsafe raw name', parameters: {} } },
-  }];
-  (api as any).callMcpTool = async (_server: string, _name: string, args: Record<string, unknown>) => ({ server_id: 'srv', tool: 'echo', result: { content: [{ type: 'text', text: `echo:${args.text}` }], isError: false } });
   const external = await buildSelectedMcpRuntime(['srv']);
-  assert.ok(external);
-  assert.equal((external!.tools[0] as any).function.name, 'srv__echo', 'chat tool name must remain namespaced');
-  const echoed = await external!.execute({ id: 'call-echo', type: 'function', function: { name: 'srv__echo', arguments: '{"text":"hello"}' } });
-  assert.equal(echoed.content, 'echo:hello');
+  assert.equal(external, null, 'external MCP selections must remain inactive during the transport transition');
 
   const first: ChatToolRuntime = { tools: [{ type: 'function', function: { name: 'same', parameters: {} } }], execute: async call => ({ tool_call_id: call.id, role: 'tool', content: 'first' }) };
   const second: ChatToolRuntime = { tools: [{ type: 'function', function: { name: 'same', parameters: {} } }], execute: async call => ({ tool_call_id: call.id, role: 'tool', content: 'second' }) };

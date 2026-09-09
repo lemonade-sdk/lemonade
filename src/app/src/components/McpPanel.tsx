@@ -330,12 +330,10 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     const flag = api.highSecurity;
     setSecure(flag === false ? false : true);
     void loadGatewayTools();
-    if (flag !== false) {
-      setAdminAccess('checking');
-      void probeAccess();
-    }
+    setAdminAccess('unavailable');
+    setHostError('External MCP connections are temporarily unavailable while the local GUI client is being introduced.');
     return () => abortRef.current?.abort();
-  }, [connectionStatus, isActive, loadGatewayTools, probeAccess]);
+  }, [connectionStatus, isActive, loadGatewayTools]);
 
   const gatewayLabel = gatewayStatus === 'connected' ? 'Connected'
     : gatewayStatus === 'checking' ? 'Checking…'
@@ -501,9 +499,6 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
           ) : adminAccess === 'unavailable' ? (
             <div className="connect__notice mcp-panel__host-unavailable" role="alert" data-mcp-host-unavailable>
               <p>{hostError || 'MCP administration is currently unavailable.'}</p>
-              <button type="button" className="btn btn--ghost" onClick={() => void probeAccess()} disabled={connectionStatus !== 'connected' || hostLoading}>
-                {hostLoading ? 'Retrying…' : 'Retry'}
-              </button>
             </div>
           ) : adminAccess === 'needs-admin' ? (
             <div className="mcp-panel__admin-auth" data-mcp-admin-auth>
