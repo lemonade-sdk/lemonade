@@ -81,7 +81,6 @@ void test_standard_cache_layout_migrates_to_explicit_config_dir() {
         write_text(cache_dir / "config.json", "{\"port\":13305}\n");
         write_text(cache_dir / "user_models.json", "{\"demo\":{}}\n");
         write_text(cache_dir / "recipe_options.json", "{\"demo\":{\"ctx_size\":4096}}\n");
-        write_text(cache_dir / "mcp_servers.json", "{\"servers\":[]}\n");
         write_text(cache_dir / "jobs.json", "{\"jobs\":[]}\n");
 
         lemon::utils::migrate_legacy_json_files_to_config_dir(cache_dir.string(),
@@ -89,7 +88,6 @@ void test_standard_cache_layout_migrates_to_explicit_config_dir() {
 
         for (const char* filename : {"config.json",
                                      "jobs.json",
-                                     "mcp_servers.json",
                                      "recipe_options.json",
                                      "user_models.json"}) {
             const fs::path old_path = cache_dir / filename;
