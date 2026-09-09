@@ -49,8 +49,15 @@ def main() -> None:
         for line in Path(args.sweep).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    pii = [r for r in records if r.get("pii_category")]
-    benign = [r for r in records if not r.get("pii_category")]
+
+    # The corpus marks its one benign case with the literal string "none",
+    # not an empty field - treating that as PII would silently add a case.
+    def has_pii(r):
+        cat = (r.get("pii_category") or "").strip()
+        return bool(cat) and cat != "none"
+
+    pii = [r for r in records if has_pii(r)]
+    benign = [r for r in records if not has_pii(r)]
     n = len(pii)
     if not n:
         raise SystemExit(f"no PII-bearing cases in {args.sweep}")
