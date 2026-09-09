@@ -140,7 +140,7 @@ jobs:
           # of the package. Same reasoning as BUILD_TESTING=OFF in
           # contrib/debian/rules and the RPM job.
           echo "Reconfiguring without the unit-test targets..."
-          cmake --preset default -DBUILD_TESTING=OFF
+          cmake --preset default -DBUILD_TESTING=OFF -DLEMON_USE_NONO_RUST=OFF
 
           # Build
           echo "Building binaries..."

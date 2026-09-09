@@ -129,6 +129,7 @@ int main() {
     fs::path temp = fs::temp_directory_path() / "lemonade-recipe-hiding-test";
     fs::create_directories(temp);
     lemon::utils::set_cache_dir(temp.string());
+    lemon::utils::set_config_dir(temp.string());
 
     test_pure_set_difference();
 

@@ -44,10 +44,12 @@ def find_free_port():
         s.close()
 
 
+import tempfile
+
 MOCK_BIN_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "build", "mock-bin"
 )
-STATE_FILE = os.path.join(MOCK_BIN_DIR, "state.json")
+STATE_FILE = os.path.join(tempfile.gettempdir(), "lemonade_gpu_hang_state.json")
 
 MOCK_LLAMA_SERVER = """#!/usr/bin/env python3
 import sys

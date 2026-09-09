@@ -1,8 +1,10 @@
 #pragma once
 
+#include <lemon/sandbox/sandbox_policy.h>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
-#include <functional>
 
 namespace lemon {
 namespace utils {
@@ -23,7 +25,8 @@ public:
         const std::string& working_dir = "",
         bool inherit_output = false,
         bool filter_health_logs = false,
-        const std::vector<std::pair<std::string, std::string>>& env_vars = {});
+        const std::vector<std::pair<std::string, std::string>>& env_vars = {},
+        const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy = std::nullopt);
 
     // Blocks until process exits or callback returns false (which kills the process)
     // Returns exit code, or -1 if killed by callback

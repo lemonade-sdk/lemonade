@@ -73,7 +73,9 @@ Optional API key auth via `LEMONADE_API_KEY` env var (regular API endpoints) or 
 
 **C++ (FetchContent):** cpp-httplib, nlohmann/json, CLI11, libcurl, zstd, libwebsockets, brotli (macOS). Platform SSL: Schannel (Windows), SecureTransport (macOS), OpenSSL (Linux).
 
-**Desktop app:** Tauri v2 (Rust), React 19, TypeScript 5.3, Webpack 5, markdown-it, highlight.js, katex. Rust crates: `tauri`, `tauri-plugin-{opener,clipboard-manager,single-instance,deep-link}`, `tokio`, `reqwest`, `serde`.
+**Rust (Cargo):**
+- **Server sandboxing:** In-tree `src/rust/nono-c` static library wrapping `nono` 0.73 (`libnono_c.a` / `nono_c.lib`), statically linked into `lemond` and CLI via C FFI.
+- **Desktop app:** Tauri v2 in `src/app/src-tauri` (`tauri`, `tauri-plugin-*`, `tokio`, `reqwest`, `serde`).
 
 ## Build Commands
 
@@ -237,6 +239,7 @@ These MUST be maintained in all changes:
 11. **Many-clients-one-server topology** — A single `lemond` can be driven by multiple desktop/tray/CLI clients, potentially on different machines. Per-client UI state (layout, zoom, view selection, the client's own base URL and API key) MUST live locally in the client, never in `lemond`. Do not move `app_settings.json` behind an HTTP endpoint. **Shared infrastructure config** (cloud provider URLs, backend version pins) lives in `lemond`'s `config.json` so it's visible to every client and to the CLI. **Cloud API keys** specifically MUST NOT be written to disk: they live in `LEMONADE_<PROVIDER>_API_KEY` env vars (persistent) or in `lemond`'s process memory via `POST /v1/cloud/auth` (ephemeral, dies on restart).
 12. **Web-app dependencies constrained by Debian native packaging** — `src/web-app/package.json` is kept separate from `src/app/package.json` because the native Debian package (`lemonade-server` .deb) must build using only npm modules available in Debian's `/usr/share/nodejs` (see `USE_SYSTEM_NODEJS_MODULES` in `src/web-app/webpack.config.js`). The old Electron app depended on packages Debian does not ship. Do NOT consolidate the two `package.json` files — the split is required for reproducible distro packaging.
 13. **Desktop app is on-demand; `lemond` runs independently** — On Windows, `LemonadeServer.exe` (which embeds `lemond` + tray icon) is the always-on process, auto-started via the Windows startup folder. The Tauri desktop app (`lemonade-app.exe`) is opened on demand when the user wants the UI and must not be added to startup. The desktop app must not embed or manage `lemond`'s lifecycle — it discovers the already-running server (UDP beacon for local, explicit base URL for remote) and speaks to it over HTTP.
+14. **Process Sandboxing & Capability Profiling** — Wrapped backend inference subprocesses run under kernel sandboxing (Landlock on Linux, Seatbelt on macOS) with ambient secret scrubbing and default-deny network egress. Model snapshot isolation blocks parent token roots (`~/.cache/huggingface/token`). When onboarding or debugging backends, use `nono learn -- <command>` from the `nono` toolchain to trace required system paths, devices, and ports. `lemond` logs the full policy at `DEBUG` log level before spawn. Admin bypass is available via `LEMONADE_SANDBOX_MODE=disabled`.
 
 ## Contributing
 

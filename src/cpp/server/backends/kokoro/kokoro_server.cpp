@@ -125,13 +125,18 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         "--port", std::to_string(port_)
     };
 
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        exe_path, model_path.string(), "cpu");
+    sandbox_policy.add_read_path(model_dir.string());
+
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
         is_debug(),  // inherit_output
         false,
-        env_vars
+        env_vars,
+        sandbox_policy
     );
     set_process_handle(started_handle, exe_path, args);
 

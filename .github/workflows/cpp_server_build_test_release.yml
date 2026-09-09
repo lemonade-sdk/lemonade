@@ -127,17 +127,17 @@ jobs:
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
-      - name: Run MCP client unit test on Windows
+      - name: Run Windows unit tests
         shell: PowerShell
         run: |
           $ErrorActionPreference = "Stop"
 
-          # Exercise the Windows-only process, quoting, environment-block, and
-          # pipe/handle paths that Linux and macOS cannot cover.
-          cmake --build build --config Release --target test_mcp_client_config
+          # Exercise Windows-specific process, AppContainer, quoting, environment-block,
+          # and policy validation paths that Linux and macOS cannot cover.
+          cmake --build build --config Release --target test_mcp_client_config test_sandbox_windows test_sandbox_policy test_sandbox_env_scrubber test_sandbox_env_scrubber_confinement test_sandbox_engine test_sandbox_wrapped_server test_sandbox_process
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-          ctest --test-dir build -C Release --output-on-failure -R "^mcp_client_config$"
+          ctest --test-dir build -C Release --output-on-failure -R "^(mcp_client_config|SandboxWindowsTest|SandboxPolicyTest|SandboxEnvScrubberTest|SandboxEngineTest|SandboxWrappedServerTest|SandboxProcessTest)$"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload Lemonade Server Installers
@@ -275,6 +275,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - name: Compile-check nono-c Rust staticlib
+        if: runner.os != 'Windows'
+        working-directory: src/rust/nono-c
+        run: cargo check --all-targets
 
       - name: Compile-check the Tauri host
         working-directory: src/app/src-tauri
@@ -673,7 +678,7 @@ jobs:
           # --target, so every unit-test binary would be built and then left out
           # of the .rpm. Same reasoning as BUILD_TESTING=OFF in contrib/debian/rules.
           echo "Reconfiguring without the unit-test targets..."
-          cmake --preset default -DBUILD_TESTING=OFF
+          cmake --preset default -DBUILD_TESTING=OFF -DLEMON_USE_NONO_RUST=OFF
 
           echo "Building lemond and lemonade for Fedora ${{ matrix.fedora-version }} (${{ matrix.arch-name }})..."
           cmake --build --preset default

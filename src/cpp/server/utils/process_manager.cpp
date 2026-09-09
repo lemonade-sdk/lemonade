@@ -10,10 +10,11 @@ ProcessHandle ProcessManager::start_process(
     const std::string& working_dir,
     bool inherit_output,
     bool filter_health_logs,
-    const std::vector<std::pair<std::string, std::string>>& env_vars) {
+    const std::vector<std::pair<std::string, std::string>>& env_vars,
+    const std::optional<lemon::sandbox::SandboxPolicy>& sandbox_policy) {
 
     auto platform = create_process_platform();
-    return platform->spawn(executable, args, working_dir, inherit_output, filter_health_logs, env_vars);
+    return platform->spawn(executable, args, working_dir, inherit_output, filter_health_logs, env_vars, sandbox_policy);
 }
 
 void ProcessManager::stop_process(ProcessHandle handle) {

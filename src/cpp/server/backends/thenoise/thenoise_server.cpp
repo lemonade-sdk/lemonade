@@ -148,13 +148,22 @@ void TheNoiseServer::load(const std::string& model_name,
     // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
     std::vector<std::pair<std::string, std::string>> env_vars;
 
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(
+        exe_path, dit_path, "gpu");
+    if (!vae_path.empty()) {
+        sandbox_policy.add_read_path(vae_path);
+    }
+    if (!text_encoder_path.empty()) {
+        sandbox_policy.add_read_path(text_encoder_path);
+    }
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",
         is_debug(),  // inherit_output
         false,  // filter_health_logs
-        env_vars
+        env_vars,
+        sandbox_policy
     );
     set_process_handle(started_handle, exe_path, args);
 
@@ -463,9 +472,13 @@ std::string TheNoiseServer::upscale_via_cli(
         "--out", output_path.string()
     };
 
+    lemon::sandbox::SandboxPolicy upscale_policy = build_default_sandbox_policy(
+        upscale_model_path, exe_path, 0, "cpu");
+    upscale_policy.add_write_path(temp_dir.string());
+
     std::vector<std::pair<std::string, std::string>> env_vars;
     auto proc = ProcessManager::start_process(
-        exe_path, args, "", true, false, env_vars);
+        exe_path, args, "", true, false, env_vars, upscale_policy);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
 

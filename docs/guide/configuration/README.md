@@ -115,6 +115,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "ryzenai": {
     "server_bin": "builtin"
   },
+  "sandbox": "auto",
   "sdcpp": {
     "args": "",
     "backend": "auto",

@@ -524,8 +524,10 @@ void VLLMServer::load(const std::string& model_name,
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
     bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
-                       executable, args);
+    lemon::sandbox::SandboxPolicy sandbox_policy = build_sandbox_policy(executable, model_target, "rocm");
+    set_process_handle(ProcessManager::start_process(
+        executable, args, "", inherit_output, true, env_vars, sandbox_policy),
+        executable, args);
 
     // vLLM can take longer to start (loading model, compiling kernels)
     if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
@@ -786,6 +788,31 @@ std::function<std::map<std::string, nlohmann::json>(const std::string&)> VLLMSer
     return [](const std::string& body) {
         return parse_vllm_metrics_text(body);
     };
+}
+
+void VLLMServer::customize_sandbox_policy(lemon::sandbox::SandboxPolicy& policy) const {
+    if (!rocm_shim_dir_.empty()) {
+        policy.add_read_path(rocm_shim_dir_);
+    }
+
+    const char* home = std::getenv("HOME");
+#ifdef _WIN32
+    if (!home) home = std::getenv("USERPROFILE");
+#endif
+    if (home) {
+        std::filesystem::path h(home);
+        policy.add_write_path((h / ".cache" / "vllm").string());
+        policy.add_write_path((h / ".cache" / "triton").string());
+        policy.add_write_path((h / ".cache" / "miopen").string());
+    }
+
+    policy.allow_env_vars({
+        "VLLM_USAGE_SOURCE", "FLASH_ATTENTION_TRITON_AMD_ENABLE", "PYTHONNOUSERSITE"
+    });
+
+    if (policy.network_access == lemon::sandbox::NetworkAccess::Full) {
+        policy.allow_env_vars({"HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"});
+    }
 }
 
 } // namespace backends
