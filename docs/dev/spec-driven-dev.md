@@ -29,7 +29,7 @@ Here are 3 general tiers:
 3. **Minor feature proposal:** simpler features (e.g., adding a flag to a CLI subcommand) do not need as much detail and only need to tag 1-2 maintainers.
 
 > [!TIP]
-> If you are planning to make a lot of contributions to Lemonade, we encourage you to join to found a working group. A ratified working group can make any amount of PRs within the scope of its charter without needing to open additional RFCs.
+> If you are planning to make a lot of contributions to Lemonade, we encourage you to join or found a working group. A ratified working group can make any amount of PRs within the scope of its charter without needing to open additional RFCs.
 
 ## Development Lifecycle
 
