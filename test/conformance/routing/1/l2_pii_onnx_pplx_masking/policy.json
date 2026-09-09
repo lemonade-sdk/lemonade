@@ -1,0 +1,254 @@
+{
+  "version": "1",
+  "model_name": "user.PII-ONNX-PplxMasking-Router",
+  "recipe": "collection.router",
+  "components": [
+    "fireworks.kimi-k2p6",
+    "Qwen3.5-0.8B-GGUF",
+    "user.pplx-pii-masking-onnx"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-0.8B-GGUF",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pii-onnx-pplx",
+        "type": "classifier",
+        "model": "user.pplx-pii-masking-onnx",
+        "labels": [
+          "O",
+          "B-private_person",
+          "I-private_person",
+          "E-private_person",
+          "S-private_person",
+          "B-private_email",
+          "I-private_email",
+          "E-private_email",
+          "S-private_email",
+          "B-private_phone",
+          "I-private_phone",
+          "E-private_phone",
+          "S-private_phone",
+          "B-private_address",
+          "I-private_address",
+          "E-private_address",
+          "S-private_address",
+          "B-private_url",
+          "I-private_url",
+          "E-private_url",
+          "S-private_url",
+          "B-private_date",
+          "I-private_date",
+          "E-private_date",
+          "S-private_date",
+          "B-account_number",
+          "I-account_number",
+          "E-account_number",
+          "S-account_number",
+          "B-secret",
+          "I-secret",
+          "E-secret",
+          "S-secret",
+          "B-other_pii",
+          "I-other_pii",
+          "E-other_pii",
+          "S-other_pii"
+        ],
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "pii-detected",
+        "match": {
+          "any": [
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-private_phone",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-private_phone",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-private_phone",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-private_phone",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-private_address",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-private_address",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-private_address",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-private_address",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-private_date",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-private_date",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-private_date",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-private_date",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "B-other_pii",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "I-other_pii",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "E-other_pii",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-onnx-pplx",
+              "label": "S-other_pii",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-0.8B-GGUF"
+      }
+    ]
+  }
+}
