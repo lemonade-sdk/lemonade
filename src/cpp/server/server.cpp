@@ -1843,10 +1843,9 @@ window.api = {
             std::string file_path = req.matches[1].str();
             serve_web_app_asset(req, res, file_path);
         });
-
         // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /v0, /v1, /static, or /live
         // This enables client-side routing
-        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal).*)",
+        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal|/docs(/|$)).*)",
                       [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
             // Only serve index.html if the path doesn't look like a file with extension
             std::string path = req.path;
@@ -1889,6 +1888,13 @@ window.api = {
             }
         });
     }
+
+    auto docs_not_found = [](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Not Found. For API documentation, use /v1/docs.\"}", "application/json");
+    };
+    web_server.Get("/docs", docs_not_found);
+    web_server.Get(R"(/docs/(.*))", docs_not_found);
 
     // Override default headers for static files to include no-cache
     // This ensures the web UI always gets the latest version
