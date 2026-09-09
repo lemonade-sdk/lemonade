@@ -248,6 +248,25 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
     return result;
 }
 
+size_t get_physical_gpu_count(WMIConnection& conn) {
+    size_t count = 0;
+    conn.query(L"SELECT Name FROM Win32_VideoController",
+               [&count](IWbemClassObject*) { ++count; });
+    return count;
+}
+
+std::vector<GpuAdapterMemory> get_gpu_adapter_memory(WMIConnection& conn) {
+    std::vector<GpuAdapterMemory> adapters;
+    conn.query(L"SELECT DedicatedUsage FROM "
+               L"Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory",
+               [&adapters](IWbemClassObject* pObj) {
+                   GpuAdapterMemory adapter;
+                   adapter.dedicated_bytes = get_property_uint64(pObj, L"DedicatedUsage");
+                   adapters.push_back(adapter);
+               });
+    return adapters;
+}
+
 std::string get_driver_version_setupapi(const std::string& device_name_substr) {
     // Convert search string to lowercase for case-insensitive matching
     std::string needle = device_name_substr;
