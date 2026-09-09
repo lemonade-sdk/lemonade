@@ -248,24 +248,29 @@ uint64_t get_property_uint64(IWbemClassObject* pObj, const std::wstring& prop_na
     return result;
 }
 
-std::string get_driver_version_setupapi(const std::string& device_name_substr) {
-    // Convert search string to lowercase for case-insensitive matching
+namespace {
+
+// Walks every present device and hands the first whose friendly name (or, when
+// that is empty, its device description) contains `device_name_substr` to
+// `visit`. Matching is case-insensitive; enumeration stops when `visit` returns
+// true.
+void with_matching_device(const std::string& device_name_substr,
+                          const std::function<bool(HDEVINFO, SP_DEVINFO_DATA&)>& visit) {
     std::string needle = device_name_substr;
     std::transform(needle.begin(), needle.end(), needle.begin(), ::tolower);
 
     HDEVINFO dev_info = SetupDiGetClassDevs(NULL, NULL, NULL,
                                             DIGCF_ALLCLASSES | DIGCF_PRESENT);
     if (dev_info == INVALID_HANDLE_VALUE) {
-        return "";
+        return;
     }
 
-    std::string result;
     SP_DEVINFO_DATA dev_data = {};
     dev_data.cbSize = sizeof(SP_DEVINFO_DATA);
 
     for (DWORD i = 0; SetupDiEnumDeviceInfo(dev_info, i, &dev_data); ++i) {
-        // Get device name: prefer friendly name, fall back to device description.
-        // Always use description if friendly name is empty (common for software components).
+        // Always use the description if the friendly name is empty, which is
+        // common for software components.
         wchar_t name_buf[512] = {};
         bool got_name = SetupDiGetDeviceRegistryPropertyW(dev_info, &dev_data,
                                                           SPDRP_FRIENDLYNAME, NULL,
@@ -281,15 +286,56 @@ std::string get_driver_version_setupapi(const std::string& device_name_substr) {
             }
         }
 
-        std::string name = wstring_to_string(name_buf);
-        std::string name_lower = name;
+        std::string name_lower = wstring_to_string(name_buf);
         std::transform(name_lower.begin(), name_lower.end(), name_lower.begin(), ::tolower);
-
         if (name_lower.find(needle) == std::string::npos) {
             continue;
         }
 
-        // Found a matching device — get its driver version.
+        if (visit(dev_info, dev_data)) {
+            break;
+        }
+    }
+
+    SetupDiDestroyDeviceInfoList(dev_info);
+}
+
+std::string read_reg_string(HKEY hkey, const wchar_t* value_name) {
+    wchar_t buf[512] = {};
+    // Reserve the final element so a value that fills the buffer stays terminated.
+    DWORD size = sizeof(buf) - sizeof(wchar_t);
+    DWORD type = 0;
+    if (RegQueryValueExW(hkey, value_name, NULL, &type, (LPBYTE)buf, &size) == ERROR_SUCCESS) {
+        return wstring_to_string(buf);
+    }
+    return "";
+}
+
+// Opens HKLM\SYSTEM\CurrentControlSet\Control\Class\<SPDRP_DRIVER>, the key
+// holding the vendor's own per-adapter driver metadata. Returns NULL on failure.
+HKEY open_class_driver_key(HDEVINFO dev_info, SP_DEVINFO_DATA& dev_data) {
+    wchar_t driver_key[512] = {};
+    if (!SetupDiGetDeviceRegistryPropertyW(dev_info, &dev_data, SPDRP_DRIVER, NULL,
+                                           (PBYTE)driver_key, sizeof(driver_key), NULL)) {
+        return NULL;
+    }
+
+    std::wstring reg_path = L"SYSTEM\\CurrentControlSet\\Control\\Class\\";
+    reg_path += driver_key;
+
+    HKEY hkey = NULL;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, reg_path.c_str(), 0, KEY_READ, &hkey) != ERROR_SUCCESS) {
+        return NULL;
+    }
+    return hkey;
+}
+
+} // namespace
+
+std::string get_driver_version_setupapi(const std::string& device_name_substr) {
+    std::string result;
+
+    with_matching_device(device_name_substr, [&result](HDEVINFO dev_info, SP_DEVINFO_DATA& dev_data) {
         // First try DEVPKEY_Device_DriverVersion (works for most hardware devices).
         DEVPROPTYPE prop_type = 0;
         wchar_t ver_buf[256] = {};
@@ -309,45 +355,41 @@ std::string get_driver_version_setupapi(const std::string& device_name_substr) {
                                              DICS_FLAG_GLOBAL, 0,
                                              DIREG_DEV, KEY_READ);
             if (hkey != INVALID_HANDLE_VALUE) {
-                wchar_t ver[256] = {};
-                DWORD ver_size = sizeof(ver);
-                DWORD type = 0;
-                if (RegQueryValueExW(hkey, L"DriverVersion", NULL, &type,
-                                     (LPBYTE)ver, &ver_size) == ERROR_SUCCESS) {
-                    result = wstring_to_string(ver);
-                }
+                result = read_reg_string(hkey, L"DriverVersion");
                 RegCloseKey(hkey);
             }
         }
 
-        // Second fallback: read DriverVersion from the class driver key
-        // HKLM\SYSTEM\CurrentControlSet\Control\Class\<SPDRP_DRIVER value>
+        // Second fallback: the class driver key.
         if (result.empty()) {
-            wchar_t driver_key[512] = {};
-            if (SetupDiGetDeviceRegistryPropertyW(dev_info, &dev_data,
-                                                  SPDRP_DRIVER, NULL,
-                                                  (PBYTE)driver_key, sizeof(driver_key),
-                                                  NULL)) {
-                std::wstring reg_path = L"SYSTEM\\CurrentControlSet\\Control\\Class\\";
-                reg_path += driver_key;
-                HKEY hkey = NULL;
-                if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, reg_path.c_str(),
-                                  0, KEY_READ, &hkey) == ERROR_SUCCESS) {
-                    wchar_t ver[256] = {};
-                    DWORD ver_size = sizeof(ver);
-                    DWORD type = 0;
-                    if (RegQueryValueExW(hkey, L"DriverVersion", NULL, &type,
-                                        (LPBYTE)ver, &ver_size) == ERROR_SUCCESS) {
-                        result = wstring_to_string(ver);
-                    }
-                    RegCloseKey(hkey);
-                }
+            HKEY hkey = open_class_driver_key(dev_info, dev_data);
+            if (hkey) {
+                result = read_reg_string(hkey, L"DriverVersion");
+                RegCloseKey(hkey);
             }
         }
-        break;
-    }
+        return true;
+    });
 
-    SetupDiDestroyDeviceInfoList(dev_info);
+    return result;
+}
+
+std::string get_driver_key_value_setupapi(const std::string& device_name_substr,
+                                          const std::wstring& value_name) {
+    std::string result;
+
+    with_matching_device(device_name_substr, [&result, &value_name](HDEVINFO dev_info,
+                                                                    SP_DEVINFO_DATA& dev_data) {
+        HKEY hkey = open_class_driver_key(dev_info, dev_data);
+        if (hkey) {
+            result = read_reg_string(hkey, value_name.c_str());
+            RegCloseKey(hkey);
+        }
+        // Keep looking when an identically named adapter matched first but
+        // carried no value.
+        return !result.empty();
+    });
+
     return result;
 }
 
