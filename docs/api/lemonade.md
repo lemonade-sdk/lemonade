@@ -1473,8 +1473,8 @@ The same files are installed on disk, so they can be read without a running serv
 
 | Platform | Path |
 |----------|------|
-| Windows (per-user) | `%LOCALAPPDATA%\lemonade_serverinesources\docs\` |
-| Windows (all users) | `C:\Program Files\Lemonade Serverinesources\docs\` |
+| Windows (per-user) | `%LOCALAPPDATA%\lemonade_server\bin\resources\docs\` |
+| Windows (all users) | `C:\Program Files\Lemonade Server\bin\resources\docs\` |
 | macOS | `/Library/Application Support/Lemonade/resources/docs/` |
 | Linux (local) | `/usr/local/share/lemonade-server/resources/docs/` |
 | Linux (system) | `/usr/share/lemonade-server/resources/docs/` |
