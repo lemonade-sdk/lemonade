@@ -23,6 +23,7 @@ You can see the full set of project maintainers, and the subject areas they main
 | Cloud Hybrid | @ramkrishna2910 | @ramkrishna2910 | Lemonade can intelligently route between local and cloud models. |
 | Remote Use | @Geramy | @geramyl | Lemonade can serve inference to any device in any location. |
 | GUI App | @kponiel | @primaL- | Users can explore local AI in a delightful built‑in GUI. |
+| [Backend Plugins & Sandboxing](./backend-plugins-sandboxing.md) | @abn | @abn.null | Dynamic plugin architecture, marketplace, client UX, and kernel sandboxing for inference backends. |
 | [Enterprise Grade](./enterprise-grade.md) | @jeremyfowers | @jfowers_amd | Provide systematic testing and quality assurance for Lemonade components. |
 
 ## Archived Working Groups
