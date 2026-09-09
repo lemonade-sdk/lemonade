@@ -140,6 +140,16 @@ jobs:
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
 
+      - name: Set HF_HOME environment variable
+        run: |
+          # Persistent HF cache outside the workspace so model weights survive across
+          # jobs. The checkout clean wipes untracked workspace files (#2103), and the
+          # step below points HOME into the workspace, so the default cache location
+          # would be re-downloaded on every run.
+          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> "$GITHUB_ENV"
+
       - name: Run validation with lemond
         env:
           HOME: ${{ github.workspace }}/.home
