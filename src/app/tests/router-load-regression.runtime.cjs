@@ -79,7 +79,7 @@ try {
   assert.doesNotMatch(registrationSource, /\/api\/v1\/pull/, 'definition registration must never fall back to /pull');
 
   const loadStart = apiSource.indexOf('async loadModel(');
-  const loadEnd = apiSource.indexOf('async effectiveLoadCommand', loadStart);
+  const loadEnd = apiSource.indexOf('async unloadModel', loadStart);
   assert.ok(loadStart >= 0 && loadEnd > loadStart, 'loadModel source must be inspectable');
   const loadSource = apiSource.slice(loadStart, loadEnd);
   assert.doesNotMatch(loadSource, /registerModelDefinition/, 'Router load must never write a cached Router definition back to the server');

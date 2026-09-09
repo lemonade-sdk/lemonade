@@ -11,6 +11,7 @@ import { scheduleIdleWork } from '../startupScheduler';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
+const EffectiveSettingsModal = lazy(() => import(/* webpackChunkName: "chat-effective-settings" */ './EffectiveSettingsModal'));
 const LazyMarkdownMessage = lazy(() => import(/* webpackChunkName: "markdown-renderer" */ './MarkdownMessage'));
 const MarkdownMessage: React.FC<React.ComponentProps<typeof LazyMarkdownMessage>> = props => (
   <Suspense fallback={<div className="message__content message__content--loading" aria-busy="true" />}>
@@ -957,6 +958,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   const [downloadItems, setDownloadItems] = useState<DownloadListItem[]>([]);
   const downloadAvailabilityKeyRef = useRef(chatBlockingDownloadsKey(downloadItems));
   const [unloadAnnouncement, setUnloadAnnouncement] = useState('');
+  const [effectiveSettingsOpen, setEffectiveSettingsOpen] = useState(false);
   const [serverDefaultCtxSize, setServerDefaultCtxSize] = useState(DEFAULT_CONTEXT_SIZE);
   const [currentModelRecipeOptions, setCurrentModelRecipeOptions] = useState<Record<string, unknown> | null>(null);
   const chatRootRef = useRef<HTMLDivElement>(null);
@@ -3752,6 +3754,17 @@ ${finalText}`
               )}
             </div>
           )}
+          {currentModel && currentCapability !== 'image' && (
+            <button
+              type="button"
+              className="composer__tools-toggle composer__effective-settings"
+              onClick={() => setEffectiveSettingsOpen(true)}
+              title="Effective settings"
+              aria-label="Effective settings"
+            >
+              <Icon name="sliders-horizontal" size={13} />
+            </button>
+          )}
           <button
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={handleToggleInlineLogs}
@@ -3761,6 +3774,32 @@ ${finalText}`
             <Icon name="logs" size={13} /> Logs
           </button>
         </div>
+        {currentModel && effectiveSettingsOpen && (
+          <Suspense fallback={null}>
+            <EffectiveSettingsModal
+              open={effectiveSettingsOpen}
+              onClose={() => setEffectiveSettingsOpen(false)}
+              modelName={currentModel}
+              modelInfo={currentKnownModelInfo || currentCustomModelInfo || null}
+              recipe={currentRecipe}
+              mcpEnabled={useMcp}
+              mcpServerIds={selectedMcpServerIds}
+              fallbackCtxSize={serverDefaultCtxSize}
+              loadedModel={currentLoadedModel}
+              isModelLoaded={!!currentLoadedModel}
+              onReload={async () => {
+                const api = await getApiClient();
+                await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
+                await Promise.resolve(onRefresh());
+              }}
+              onLoad={async () => {
+                const api = await getApiClient();
+                await api.loadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);
+                await Promise.resolve(onRefresh());
+              }}
+            />
+          </Suspense>
+        )}
         {streamingToolStatus && (
           <div className="composer__tool-status">
             <span className="composer__tool-status-dot" />

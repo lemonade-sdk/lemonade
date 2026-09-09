@@ -2997,6 +2997,7 @@ test.describe('Chat toolbar accessibility', () => {
               labels: ['chat'],
               capabilities: ['chat'],
               input_modalities: inputModalities,
+              launch_command: ['llama-server', '--threads', '8'],
             },
           ],
         }),
@@ -3031,7 +3032,7 @@ test.describe('Chat toolbar accessibility', () => {
     await expect(page.getByRole('button', { name: /Add files, photos, or tools/i })).toBeVisible();
     // Logs toggle
     await expect(page.getByRole('button', { name: /Logs/i })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Effective settings' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Effective settings' })).toBeVisible();
   });
 
   test('A187 — add menu exposes one unified tools entry and is keyboard-operable', async ({ page }) => {
@@ -3231,12 +3232,11 @@ test.describe('Chat toolbar accessibility', () => {
 //
 //   - Built-in tuning source badge is renamed to "Recipe default".
 //   - Local direct-config badge renamed to "Direct configuration".
-//   - An authority note near Settings by source explains that the load command
-//     includes server-applied defaults not shown in the rows table.
-// Range: A188–A192.
+//   - An authority note identifies the running server as the command source.
+// Range: A188–A193.
 
-test.describe.skip('Effective Settings modal accessibility', () => {
-  async function openEffectiveSettings(page: Page): Promise<void> {
+test.describe('Effective Settings modal accessibility', () => {
+  async function openEffectiveSettings(page: Page, includeLaunchCommand = true): Promise<void> {
     await page.route('**/api/v1/health**', async route =>
       route.fulfill({
         contentType: 'application/json',
@@ -3255,24 +3255,37 @@ test.describe.skip('Effective Settings modal accessibility', () => {
               last_use: Date.now(),
               labels: ['chat'],
               capabilities: ['chat'],
+              ...(includeLaunchCommand ? { launch_command: ['llama-server', '--threads', '8'] } : {}),
             },
           ],
         }),
       }),
     );
-    await page.route('**/api/v1/models**', async route =>
-      route.fulfill({
+    await page.route('**/api/v1/models**', async route => {
+      if (route.request().url().includes('/options')) {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            model_name: 'Llama-3.1-8B-Instruct',
+            recipe: 'llamacpp',
+            saved: {},
+            effective: { llamacpp_backend: 'cpu' },
+            defaults: {},
+            resolved_ctx_size: 4096,
+            load_command: '',
+          }),
+        });
+        return;
+      }
+      await route.fulfill({
         contentType: 'application/json',
         body: JSON.stringify({
           data: [
             { id: 'Llama-3.1-8B-Instruct', name: 'Llama-3.1-8B-Instruct', labels: ['chat'], recipe: 'llamacpp', downloaded: true },
           ],
         }),
-      }),
-    );
-    await page.route('**/api/v1/load**', async route =>
-      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ args: ['--threads', '8'], options: {}, backend: 'llamacpp' }) }),
-    );
+      });
+    });
     await page.goto('/');
     await page.waitForSelector('.chat');
     await page.waitForTimeout(300);
@@ -3290,6 +3303,7 @@ test.describe.skip('Effective Settings modal accessibility', () => {
     const copy = note.locator('.effective-settings__note-copy');
     await expect(copy).toHaveCount(1);
     await expect(copy.locator('strong')).toHaveText('Effective load command');
+    await expect(page.locator('.effective-settings__command')).toHaveText('llama-server --threads 8');
   });
 
   test('A192 — modal passes a WCAG 2.1 AA axe-core scan with no critical/serious violations', async ({ page }) => {
@@ -3302,5 +3316,13 @@ test.describe.skip('Effective Settings modal accessibility', () => {
       v => v.impact === 'critical' || v.impact === 'serious',
     );
     expect(critical, formatViolations(critical)).toHaveLength(0);
+  });
+
+  test('A193 — missing runtime launch command is explained explicitly', async ({ page }) => {
+    await openEffectiveSettings(page, false);
+    await expect(page.locator('.effective-settings__error')).toHaveText(
+      'The server did not report a launch command for this loaded model.',
+    );
+    await expect(page.locator('.effective-settings__command')).toHaveCount(0);
   });
 });

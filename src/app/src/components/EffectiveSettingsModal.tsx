@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api, { type ModelInfo, type ModelOptions, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
+import api, { type ModelInfo, type ModelOptions, type LoadedModel, friendlyErrorMessage } from '../api';
 import {
   type RecipeOptions,
   type SamplingParams,
@@ -91,9 +91,8 @@ function shellQuote(token: string): string {
   return `'${token.replace(/'/g, `'\\''`)}'`;
 }
 
-function formatCommand(modelName: string, args: string[]): string {
-  const parts = ['lemonade', 'load', shellQuote(modelName), ...args.map(shellQuote)];
-  return parts.join(' ');
+function formatCommand(command: string[]): string {
+  return command.map(shellQuote).join(' ');
 }
 
 interface SourceRow {
@@ -124,15 +123,14 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   const argsField = backendArgsFieldForRecipe(recipe);
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
 
-  const [effective, setEffective] = useState<EffectiveLoadCommand | null>(null);
   const [serverModelOptions, setServerModelOptions] = useState<ModelOptions | null>(null);
+  const [runtimeModel, setRuntimeModel] = useState<LoadedModel | null>(loadedModel || null);
+  const [launchCommand, setLaunchCommand] = useState<string[] | null>(loadedModel?.launch_command || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [unlocked, setUnlocked] = useState(false);
   const [draft, setDraft] = useState('');
-  const [preview, setPreview] = useState<EffectiveLoadCommand | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [samplingDraft, setSamplingDraft] = useState<Record<keyof SamplingParams, string>>({
@@ -160,33 +158,46 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     if (!modelName) return;
     setLoading(true);
     setError(null);
-    try {
-      const result = await api.effectiveLoadCommand(modelName, undefined, modelInfo);
-      setEffective(result);
-      const committed = argsField ? result.options[argsField] : undefined;
+    const [healthResult, optionsResult] = await Promise.allSettled([
+      api.health(),
+      api.getModelOptions(modelName),
+    ]);
+
+    if (optionsResult.status === 'fulfilled') {
+      setServerModelOptions(optionsResult.value);
+      const committed = argsField ? optionsResult.value.effective?.[argsField] : undefined;
       setDraft(typeof committed === 'string' ? committed : '');
-      try {
-        setServerModelOptions(await api.getModelOptions(modelName));
-      } catch {
-        // The effective load command remains useful even if the auxiliary
-        // saved/default source breakdown cannot be fetched.
-        setServerModelOptions(null);
-      }
-    } catch (err) {
-      setError(friendlyErrorMessage(err));
-      setEffective(null);
+    } else {
       setServerModelOptions(null);
-    } finally {
-      setLoading(false);
+      const committed = argsField ? loadedModel?.recipe_options?.[argsField] : undefined;
+      setDraft(typeof committed === 'string' ? committed : '');
     }
-  }, [modelName, modelInfo, argsField]);
+
+    if (healthResult.status === 'rejected') {
+      setRuntimeModel(null);
+      setLaunchCommand(null);
+      setError(friendlyErrorMessage(healthResult.reason));
+    } else {
+      const target = modelName.trim().toLowerCase();
+      const running = healthResult.value.all_models_loaded.find(
+        model => model.model_name.trim().toLowerCase() === target,
+      ) || null;
+      setRuntimeModel(running);
+      setLaunchCommand(running?.launch_command || null);
+      if (!running) {
+        setError('Launch command unavailable because this model is not currently loaded.');
+      } else if (!running.launch_command?.length) {
+        setError('The server did not report a launch command for this loaded model.');
+      }
+    }
+
+    setLoading(false);
+  }, [modelName, argsField, loadedModel]);
 
   useEffect(() => {
     if (!open) return;
     setUnlocked(false);
     setNotice(null);
-    setPreview(null);
-    setPreviewError(null);
     loadEffective();
     const savedSampling = loadModelTuning(modelName)?.sampling || {};
     setSamplingDraft({
@@ -225,21 +236,6 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       window.clearTimeout(timeout);
     };
   }, [open, loadedModel]);
-
-  useEffect(() => {
-    if (!open || !unlocked || !argsField) { setPreview(null); return; }
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      setPreviewError(null);
-      try {
-        const result = await api.effectiveLoadCommand(modelName, { [argsField]: draft, merge_args: false }, modelInfo);
-        if (!cancelled) setPreview(result);
-      } catch (err) {
-        if (!cancelled) { setPreview(null); setPreviewError(friendlyErrorMessage(err)); }
-      }
-    }, 350);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [open, unlocked, draft, argsField, modelName, modelInfo]);
 
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -305,7 +301,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
   }, [modelName, isModelLoaded, onReload, loadEffective]);
 
-  const serverContextRaw = serverModelOptions?.effective?.ctx_size ?? effective?.options?.ctx_size;
+  const serverContextRaw = serverModelOptions?.effective?.ctx_size;
   const resolvedContextRaw = serverContextRaw ?? resolved?.tuning.recipe_options?.ctx_size;
   const autoContextSizeEnabled = isAutoContextSize(serverContextRaw);
 
@@ -323,7 +319,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       return { value: runtimeContext.toLocaleString(), source: 'Runtime' };
     }
 
-    const effectiveContext = positiveContextSize(effective?.options?.ctx_size);
+    const effectiveContext = positiveContextSize(serverModelOptions?.resolved_ctx_size);
     if (effectiveContext !== null) {
       return { value: effectiveContext.toLocaleString(), source: 'Effective load' };
     }
@@ -338,7 +334,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
 
     if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
     return { value: 'Unavailable', source: 'Configuration' };
-  }, [autoContextSizeEnabled, effective, loadedContextSize, loadedModel, resolved, resolvedContextRaw, resolvingContextSize]);
+  }, [autoContextSizeEnabled, loadedContextSize, loadedModel, resolved, resolvedContextRaw, resolvingContextSize, serverModelOptions]);
 
   const sourceRows = useMemo<SourceRow[]>(() => {
     if (!resolved && !serverModelOptions) return [];
@@ -394,8 +390,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
 
   if (!open) return null;
 
-  const previewArgs = preview?.args ?? effective?.args ?? [];
-  const backendLabel = effective?.backend || '—';
+  const backend = serverModelOptions?.effective?.[`${recipe}_backend`];
+  const backendLabel = (typeof backend === 'string' && backend)
+    || runtimeModel?.recipe
+    || recipe
+    || '—';
 
   const body = (
     <div className="inspect-modal-overlay effective-settings-overlay" onClick={onClose}>
@@ -431,7 +430,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title">Settings by source</h5>
             <p className="effective-settings__note">
               <Icon name="info" size={12} />
-              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative. It includes architecture and global defaults applied by the server that may not appear here.</span>
+              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is the authoritative command reported by the running server.</span>
             </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
@@ -520,11 +519,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Effective load command</h5>
             {loading && <p className="effective-settings__empty">Resolving…</p>}
             {error && <p className="effective-settings__error">{error}</p>}
-            {!loading && !error && (
+            {!loading && !error && launchCommand && (
               <>
-                <pre className="effective-settings__command"><code>{formatCommand(modelName, previewArgs)}</code></pre>
+                <pre className="effective-settings__command"><code>{formatCommand(launchCommand)}</code></pre>
                 <p className="effective-settings__note">
-                  <Icon name="info" size={12} /> Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.
+                  <Icon name="info" size={12} /> This is the exact command used to start the current backend process. Argument changes appear here after the model reloads.
                 </p>
               </>
             )}
@@ -549,7 +548,6 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                   <p className="effective-settings__hint">
                     These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.
                   </p>
-                  {previewError && <p className="effective-settings__error">{previewError}</p>}
                   <div className="effective-settings__actions">
                     <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy}>
                       {busy ? 'Applying…' : (isModelLoaded ? 'Apply & reload' : 'Apply for next load')}
