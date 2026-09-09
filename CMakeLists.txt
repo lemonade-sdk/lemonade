@@ -991,7 +991,6 @@ set(SOURCES_CORE
     src/cpp/server/backend_manager.cpp
     src/cpp/server/ollama_api.cpp
     src/cpp/server/anthropic_api.cpp
-    src/cpp/server/mcp_client.cpp
     src/cpp/server/mcp_server.cpp
     src/cpp/server/streaming_audio_buffer.cpp
     src/cpp/server/vad.cpp
@@ -1180,27 +1179,6 @@ if(BUILD_TESTING AND EXISTS "${LLAMACPP_REQUEST_TEST_SOURCE}")
     )
     target_link_libraries(test_llamacpp_request PRIVATE nlohmann_json::nlohmann_json)
     add_cpp_ci_test(llamacpp_request CI OFF COMMAND test_llamacpp_request)
-endif()
-
-set(MCP_CLIENT_CONFIG_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_mcp_client_config.cpp")
-if(BUILD_TESTING AND EXISTS "${MCP_CLIENT_CONFIG_TEST_SOURCE}")
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    find_package(Threads REQUIRED)
-
-    add_executable(test_mcp_client_config
-        ${MCP_CLIENT_CONFIG_TEST_SOURCE}
-    )
-    target_link_libraries(test_mcp_client_config PRIVATE lemonade-server-core)
-
-    if(Python3_Interpreter_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py")
-        file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" LEMONADE_TEST_PYTHON_PATH)
-        file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures/mock_mcp_stdio_server.py" LEMONADE_TEST_MCP_STDIO_SERVER_PATH)
-        target_compile_definitions(test_mcp_client_config PRIVATE
-            "LEMONADE_TEST_PYTHON=\"${LEMONADE_TEST_PYTHON_PATH}\""
-            "LEMONADE_TEST_MCP_STDIO_SERVER=\"${LEMONADE_TEST_MCP_STDIO_SERVER_PATH}\"")
-    endif()
-
-    add_cpp_ci_test(mcp_client_config CI ON COMMAND test_mcp_client_config)
 endif()
 
 # libwebsockets for the realtime and log-stream WebSocket server

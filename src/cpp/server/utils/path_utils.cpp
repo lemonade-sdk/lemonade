@@ -198,10 +198,9 @@ void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,
         return;
     }
 
-    constexpr std::array<const char*, 5> kLegacyJsonFiles = {
+    constexpr std::array<const char*, 4> kLegacyJsonFiles = {
         "config.json",
         "jobs.json",
-        "mcp_servers.json",
         "recipe_options.json",
         "user_models.json",
     };
@@ -355,7 +354,7 @@ void migrate_legacy_paths(const std::string& cache_dir,
             LOG(INFO) << "Migrating legacy cache " << legacy_cache << " -> " << cache_dir;
             migrate_legacy_json_files_to_config_dir(legacy_cache, config_dir);
             static const std::vector<std::string> kJsonFiles = {
-                "config.json", "jobs.json", "mcp_servers.json",
+                "config.json", "jobs.json",
                 "recipe_options.json", "user_models.json"};
             if (move_tree_into(legacy_cache_path, new_cache_path, kJsonFiles)) {
                 std::error_code rm_ec;
