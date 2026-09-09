@@ -9,11 +9,11 @@
 
 static int g_failures = 0;
 
-static void check(bool condition, const char* name) {
+static void check(bool condition, const std::string& name) {
     if (condition) {
-        std::printf("[PASS] %s\n", name);
+        std::printf("[PASS] %s\n", name.c_str());
     } else {
-        std::printf("[FAIL] %s\n", name);
+        std::printf("[FAIL] %s\n", name.c_str());
         ++g_failures;
     }
 }
@@ -26,16 +26,18 @@ struct StreamResult {
     bool done_called = false;
 };
 
-// Runs one SSE proxy request against a mock backend whose response body is
-// produced by backend_body, and reports what reached the client.
-StreamResult run_proxy(const std::function<void(httplib::DataSink&)>& backend_body) {
+// Runs one SSE proxy request against a mock backend that answers 200
+// text/event-stream with backend_body, and reports what reached the client.
+StreamResult run_proxy(const std::string& backend_body) {
     httplib::Server backend;
     backend.Post("/v1/chat/completions",
         [&](const httplib::Request&, httplib::Response& res) {
             res.set_chunked_content_provider(
                 "text/event-stream",
                 [&](size_t, httplib::DataSink& sink) {
-                    backend_body(sink);
+                    if (!backend_body.empty()) {
+                        sink.write(backend_body.data(), backend_body.size());
+                    }
                     sink.done();
                     return false;
                 });
@@ -82,99 +84,92 @@ bool contains(const std::string& haystack, const std::string& needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
+size_t count(const std::string& haystack, const std::string& needle) {
+    size_t total = 0;
+    for (size_t pos = haystack.find(needle); pos != std::string::npos;
+         pos = haystack.find(needle, pos + needle.size())) {
+        ++total;
+    }
+    return total;
+}
+
+// A stream that delivered an event is forwarded as the backend sent it and
+// terminated with [DONE], never rewritten into an error.
+void expect_accepted(const std::string& name, const std::string& backend_body,
+                     const std::string& content) {
+    const StreamResult result = run_proxy(backend_body);
+
+    if (!content.empty()) {
+        check(contains(result.downstream, content), name + ": content is forwarded");
+    }
+    check(contains(result.downstream, "data: [DONE]"), name + ": stream ends with [DONE]");
+    check(!contains(result.downstream, "\"error\""), name + ": no error event");
+    check(result.error_message.empty(), name + ": telemetry reports success");
+}
+
+// A stream that delivered nothing produced no response at all, so the client
+// gets a framed error event rather than a [DONE] reporting empty success.
+void expect_rejected(const std::string& name, const std::string& backend_body) {
+    const StreamResult result = run_proxy(backend_body);
+
+    check(contains(result.downstream, "data: {"), name + ": client receives a framed data event");
+    check(contains(result.downstream, "\"error\""), name + ": event carries an error object");
+    check(!contains(result.downstream, "[DONE]"), name + ": no [DONE] claims success");
+    check(!result.error_message.empty(), name + ": telemetry records the failure");
+    check(result.done_called, name + ": response is terminated");
+}
+
+const std::string kEvent = R"(data: {"choices":[{"delta":{"content":"Hello"}}]})";
+
 }  // namespace
 
-// A backend that answers 200 text/event-stream and then closes without emitting
-// a single event has failed the request, even though the transport was clean.
-static void test_empty_stream_is_reported_as_an_error() {
-    const StreamResult result = run_proxy([](httplib::DataSink&) {});
+static void test_delivered_events_are_forwarded() {
+    expect_accepted("LF terminators", kEvent + "\n\n", "Hello");
 
-    check(contains(result.downstream, "data: {"), "empty stream: client receives a framed data event");
-    check(contains(result.downstream, "\"error\""), "empty stream: event carries an error object");
-    check(!contains(result.downstream, "[DONE]"), "empty stream: no [DONE] claims success");
-    check(!result.error_message.empty(), "empty stream: telemetry records the failure");
-    check(result.done_called, "empty stream: response is terminated");
+    // SSE makes the space after the colon optional.
+    expect_accepted("no space after the colon",
+                    R"(data:{"choices":[{"delta":{"content":"Hello"}}]})"
+                    "\n\n",
+                    "Hello");
+
+    // SSE also ends lines with CRLF or a bare CR.
+    expect_accepted("CR terminators", kEvent + "\r\r", "Hello");
+
+    // A field name with no colon carries an empty value, so "data" alone still
+    // completes an event.
+    expect_accepted("bare data field", "data\n\n", "");
+
+    // This backend prefix is not SSE: it has no blank-line terminator, and like
+    // any field its value need not be preceded by a space.
+    expect_accepted("ChatCompletionChunk without a space",
+                    R"(ChatCompletionChunk:{"choices":[{"delta":{"content":"Hello"}}]})"
+                    "\n",
+                    "Hello");
 }
 
-// Backends log their own failures into the already-committed 200 stream. Those
-// bytes are not SSE, so the client still needs a framed error event.
-static void test_unframed_backend_output_is_reported_as_an_error() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string noise = "backend: model arena alloc failed: out of memory\n";
-        sink.write(noise.data(), noise.size());
-    });
+static void test_streams_that_delivered_nothing_are_errors() {
+    expect_rejected("empty stream", "");
 
-    check(contains(result.downstream, "\"error\""), "unframed output: event carries an error object");
-    check(!contains(result.downstream, "[DONE]"), "unframed output: no [DONE] claims success");
-    check(!result.error_message.empty(), "unframed output: telemetry records the failure");
+    // Backends log their own failures into the already committed 200 stream.
+    // Those bytes are not SSE, so the client still needs a framed error event.
+    expect_rejected("unframed backend output", "backend: model arena alloc failed: out of memory\n");
+
+    // A data field only reaches the client once its blank line arrives, so a
+    // stream cut off before that showed nothing.
+    expect_rejected("unterminated event", kEvent + "\n");
+
+    // A comment is not an event, so the heartbeat must not pass for a response.
+    expect_rejected("comment only", ": ping\n\n");
 }
 
-// A backend that streamed content but omitted [DONE] served a real response, so
-// the marker is still synthesized rather than turned into an error.
-static void test_stream_without_done_marker_still_completes() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
-        sink.write(chunk.data(), chunk.size());
-    });
+// A backend that sent its own [DONE] has already terminated the stream.
+static void test_backend_done_marker_is_not_duplicated() {
+    const StreamResult result = run_proxy(kEvent + "\n\n" + "data: [DONE]\n\n");
 
-    check(contains(result.downstream, "Hello"), "missing [DONE]: content is forwarded");
-    check(contains(result.downstream, "data: [DONE]"), "missing [DONE]: marker is synthesized");
-    check(!contains(result.downstream, "\"error\""), "missing [DONE]: no error event");
-    check(result.error_message.empty(), "missing [DONE]: telemetry reports success");
-}
-
-// SSE makes the space after the colon optional, so a backend that omits it is
-// still delivering events.
-static void test_data_field_without_space_counts_as_an_event() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string chunk = "data:{\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
-        sink.write(chunk.data(), chunk.size());
-    });
-
-    check(contains(result.downstream, "Hello"), "no space after colon: content is forwarded");
-    check(contains(result.downstream, "data: [DONE]"), "no space after colon: marker is synthesized");
-    check(!contains(result.downstream, "\"error\""), "no space after colon: no error event");
-    check(result.error_message.empty(), "no space after colon: telemetry reports success");
-}
-
-// A data field is only dispatched once its blank line arrives, so a stream cut
-// off before that leaves the client with nothing to show.
-static void test_unterminated_event_is_reported_as_an_error() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n";
-        sink.write(chunk.data(), chunk.size());
-    });
-
-    check(contains(result.downstream, "\"error\""), "unterminated event: event carries an error object");
-    check(!contains(result.downstream, "[DONE]"), "unterminated event: no [DONE] claims success");
-    check(!result.error_message.empty(), "unterminated event: telemetry records the failure");
-}
-
-// SSE terminates lines with LF, CRLF or a bare CR, so a stream that uses CR
-// carries real events and must not be classified as empty.
-static void test_cr_terminated_stream_counts_as_an_event() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\r\r";
-        sink.write(chunk.data(), chunk.size());
-    });
-
-    check(contains(result.downstream, "Hello"), "CR terminators: content is forwarded");
-    check(contains(result.downstream, "data: [DONE]"), "CR terminators: marker is synthesized");
-    check(!contains(result.downstream, "\"error\""), "CR terminators: no error event");
-    check(result.error_message.empty(), "CR terminators: telemetry reports success");
-}
-
-// A field name with no colon is an empty-valued field, so "data" alone still
-// completes an event.
-static void test_data_field_without_colon_counts_as_an_event() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string chunk = "data\n\n";
-        sink.write(chunk.data(), chunk.size());
-    });
-
-    check(contains(result.downstream, "data: [DONE]"), "bare data field: marker is synthesized");
-    check(!contains(result.downstream, "\"error\""), "bare data field: no error event");
-    check(result.error_message.empty(), "bare data field: telemetry reports success");
+    check(contains(result.downstream, "Hello"), "backend [DONE]: content is forwarded");
+    check(count(result.downstream, "data: [DONE]") == 1, "backend [DONE]: marker is not duplicated");
+    check(!contains(result.downstream, "\"error\""), "backend [DONE]: no error event");
+    check(result.error_message.empty(), "backend [DONE]: telemetry reports success");
 }
 
 // Chunk boundaries are arbitrary, so a CRLF may be split between two reads. The
@@ -200,29 +195,11 @@ static void test_line_parser_handles_every_terminator() {
           "line parser: end of stream releases the held CR");
 }
 
-static void test_complete_stream_is_unchanged() {
-    const StreamResult result = run_proxy([](httplib::DataSink& sink) {
-        const std::string chunk = "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\n";
-        sink.write(chunk.data(), chunk.size());
-        const std::string done = "data: [DONE]\n\n";
-        sink.write(done.data(), done.size());
-    });
-
-    check(contains(result.downstream, "Hello"), "complete stream: content is forwarded");
-    check(!contains(result.downstream, "\"error\""), "complete stream: no error event");
-    check(result.error_message.empty(), "complete stream: telemetry reports success");
-}
-
 int main() {
-    test_empty_stream_is_reported_as_an_error();
-    test_unframed_backend_output_is_reported_as_an_error();
-    test_stream_without_done_marker_still_completes();
-    test_data_field_without_space_counts_as_an_event();
-    test_unterminated_event_is_reported_as_an_error();
-    test_cr_terminated_stream_counts_as_an_event();
-    test_data_field_without_colon_counts_as_an_event();
+    test_delivered_events_are_forwarded();
+    test_streams_that_delivered_nothing_are_errors();
+    test_backend_done_marker_is_not_duplicated();
     test_line_parser_handles_every_terminator();
-    test_complete_stream_is_unchanged();
 
     if (g_failures == 0) {
         std::printf("All silent stream tests passed.\n");

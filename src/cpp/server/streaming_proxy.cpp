@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstring>
 #include <stdexcept>
+#include <string_view>
 #include <curl/curl.h>
 #include <lemon/utils/aixlog.hpp>
 
@@ -77,6 +78,26 @@ void extract_telemetry_from_chunk(const nlohmann::json& chunk, StreamingProxy::T
     }
 }
 
+struct Field {
+    std::string_view name;
+    std::string_view value;
+};
+
+// Everything before the first colon names the field and the rest is its value,
+// minus the optional single space that may follow the colon. A line with no
+// colon is a field name carrying an empty value.
+Field parse_field(std::string_view line) {
+    const auto colon = line.find(':');
+    if (colon == std::string_view::npos) {
+        return {line, {}};
+    }
+    std::string_view value = line.substr(colon + 1);
+    if (!value.empty() && value.front() == ' ') {
+        value.remove_prefix(1);
+    }
+    return {line.substr(0, colon), value};
+}
+
 std::string lower_copy(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -134,25 +155,24 @@ void StreamingProxy::forward_sse_stream(
             return;
         }
 
-        std::string json_str;
-        if (line == "data") {
-            // A field name with no colon carries an empty value in SSE.
+        if (line.front() == ':') {
+            // SSE comment, such as the heartbeat.
+            return;
+        }
+
+        const Field field = parse_field(line);
+        if (field.name == "data") {
             has_pending_data_field = true;
-        } else if (line.find("data:") == 0) {
-            json_str = line.substr(5);
-            // The single space after the colon is optional in SSE.
-            if (!json_str.empty() && json_str.front() == ' ') {
-                json_str.erase(0, 1);
-            }
-            has_pending_data_field = true;
-        } else if (line.find("ChatCompletionChunk: ") == 0) {
-            json_str = line.substr(21);
+        } else if (field.name == "ChatCompletionChunk") {
             // Not SSE, so there is no blank-line terminator to wait for.
             has_data_event = true;
+        } else {
+            return;
         }
-        if (!json_str.empty() && json_str != "[DONE]") {
+
+        if (!field.value.empty() && field.value != "[DONE]") {
             try {
-                auto chunk = json::parse(json_str);
+                auto chunk = json::parse(field.value.begin(), field.value.end());
                 extract_telemetry_from_chunk(chunk, telemetry);
             } catch (...) {}
         }
@@ -324,9 +344,8 @@ void StreamingProxy::forward_sse_stream(
         LOG(INFO, "Server") << "Streaming completed - 200 OK" << std::endl;
 
         if (!line_buffer.empty()) {
-            if (line_buffer.back() == '\r') {
-                line_buffer.pop_back();
-            }
+            // Whatever is left is an unterminated final line: the end-of-stream
+            // pass above already consumed every CR and LF.
             process_line(line_buffer);
         }
 
@@ -467,16 +486,14 @@ StreamingProxy::TelemetryData StreamingProxy::parse_telemetry(const std::string&
     json last_chunk_with_usage;
 
     while (std::getline(stream, line)) {
-        std::string json_str;
-        if (line.find("data: ") == 0) {
-            json_str = line.substr(6);
-        } else if (line.find("ChatCompletionChunk: ") == 0) {
-            json_str = line.substr(21);
+        const Field field = parse_field(line);
+        if (field.name != "data" && field.name != "ChatCompletionChunk") {
+            continue;
         }
 
-        if (!json_str.empty() && json_str != "[DONE]") {
+        if (!field.value.empty() && field.value != "[DONE]") {
             try {
-                auto chunk = json::parse(json_str);
+                auto chunk = json::parse(field.value.begin(), field.value.end());
                 bool has_usage = chunk.contains("usage") || chunk.contains("timings");
                 if (!has_usage && chunk.contains("response") && chunk["response"].is_object()) {
                     has_usage = chunk["response"].contains("usage") || chunk["response"].contains("timings");
