@@ -10,6 +10,8 @@ These conversations take place on request for comment (RFC) discussions [on the 
 > [!TIP]
 > When in doubt, assume this policy applies. Some changes may be minor enough to not require this policy, but maintainers can request that any PR close, follow this policy, and then re-open.
 
+## When is an RFC needed?
+
 ### Definitions
 
 This section helps you identify which changes should follow the policy.
