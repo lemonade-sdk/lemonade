@@ -59,6 +59,7 @@ The following maintainers are required to review RFCs within their subject area.
 |---------------|-----------------------------------------------|
 | @bitgamma     | `lemonade` CLI                                |
 | @kpoineal     | `Lemonade App` GUI                            |
+| @Geramy       | networking and security changes               |
 | @jeremyfowers | new endpoints, new backends, breaking changes |
 
 
