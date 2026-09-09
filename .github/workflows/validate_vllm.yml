@@ -90,11 +90,29 @@ jobs:
         run: |
           set -e
           ./setup.sh
+          # setup.sh also performs a normal CMake configure. Portable mode changes
+          # several system-vs-bundled dependency choices, so discard that configured
+          # tree instead of relying on cached discovery state to switch cleanly.
+          rm -rf build
+          # This artifact is built on ubuntu-22.04 and executed on a different
+          # host. Use one portable-build policy instead of inheriting runtime
+          # dependency choices from the build runner.
           # Skip the web app; CI only exercises the backend.
-          cmake -DBUILD_WEB_APP=OFF --preset default
+          cmake -DBUILD_WEB_APP=OFF -DLEMONADE_PORTABLE_BUILD=ON --preset default
           cmake --build --preset default --target lemond lemonade
           test -f build/lemond || { echo "lemond not found!"; exit 1; }
           test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
+
+          # Verify the portable-build contract for dependencies that Lemonade
+          # can provide itself. Base OS/runtime libraries are intentionally
+          # outside this check; portable mode is not a fully-static build.
+          MANAGED_RUNTIME_SO_RE='lib(curl|zstd|websockets|cpp-httplib|httplib|mbedtls|mbedx509|mbedcrypto|tfpsacrypto)\.so'
+          if readelf -d build/lemond build/lemonade | grep -Eq "$MANAGED_RUNTIME_SO_RE"; then
+            echo "ERROR: portable binaries directly depend on a system-managed Lemonade runtime dependency"
+            readelf -d build/lemond build/lemonade | grep -E "$MANAGED_RUNTIME_SO_RE" || true
+            exit 1
+          fi
+
           echo "Build successful!"
 
       - name: Upload build artifacts

@@ -174,6 +174,11 @@ if command_exists pkg-config; then
 
     # Check for required libraries using pkg-config
     libs_to_check=("libcurl" "openssl" "zlib" "libsystemd" "libdrm" "libcap" "libwebsockets")
+    # Linux distro/package builds intentionally exercise system mbedTLS.
+    # Portable artifacts select bundled runtime dependencies at CMake configure time.
+    if [ "$OS" = "linux" ]; then
+        libs_to_check+=("mbedtls")
+    fi
     missing_libs=()
 
     for lib in "${libs_to_check[@]}"; do
@@ -198,6 +203,7 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-dev") ;;
                         libcap) missing_packages+=("libcap-dev") ;;
                         libwebsockets) missing_packages+=("libwebsockets-dev") ;;
+                        mbedtls) missing_packages+=("libmbedtls-dev") ;;
                     esac
                 done
             elif command_exists pacman; then
@@ -211,6 +217,7 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm") ;;
                         libcap) missing_packages+=("libcap") ;;
                         libwebsockets) ;; # Not available in Arch repos, will use FetchContent
+                        mbedtls) missing_packages+=("mbedtls") ;;
                     esac
                 done
             elif is_rpm_ostree; then
@@ -224,6 +231,7 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                        mbedtls) missing_packages+=("mbedtls-devel") ;;
                     esac
                 done
             elif command_exists dnf; then
@@ -237,6 +245,7 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                        mbedtls) missing_packages+=("mbedtls-devel") ;;
                     esac
                 done
             elif command_exists zypper; then
@@ -250,6 +259,7 @@ if command_exists pkg-config; then
                         libdrm) missing_packages+=("libdrm-devel") ;;
                         libcap) missing_packages+=("libcap-devel") ;;
                         libwebsockets) missing_packages+=("libwebsockets-devel") ;;
+                        mbedtls) missing_packages+=("mbedtls-devel") ;;
                     esac
                 done
             fi
@@ -269,15 +279,15 @@ else
     print_warning "pkg-config not found, assuming libraries need to be installed"
     if [ "$OS" = "linux" ]; then
         if command_exists apt; then
-            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev")
+            missing_packages+=("pkg-config" "curl" "libcurl4-openssl-dev" "libssl-dev" "zlib1g-dev" "libsystemd-dev" "libdrm-dev" "libcap-dev" "libwebsockets-dev" "libmbedtls-dev")
         elif command_exists pacman; then
-            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap")
+            missing_packages+=("pkgconf" "curl" "openssl" "zlib" "systemd" "libdrm" "libcap" "mbedtls")
         elif is_rpm_ostree; then
-            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel" "mbedtls-devel")
         elif command_exists dnf; then
-            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+            missing_packages+=("pkgconfig" "libcurl-devel" "openssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel" "mbedtls-devel")
         elif command_exists zypper; then
-            missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel")
+            missing_packages+=("pkg-config" "libcurl-devel" "libopenssl-devel" "zlib-devel" "systemd-devel" "libdrm-devel" "libcap-devel" "libwebsockets-devel" "mbedtls-devel")
         fi
     elif [ "$OS" = "macos" ]; then
         missing_packages+=("pkg-config" "curl" "openssl" "zlib")

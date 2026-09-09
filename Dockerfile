@@ -23,10 +23,22 @@ RUN apt-get update && apt-get install -y \
 COPY . /app
 WORKDIR /app
 
-# Build the project
+# Build the project for a different runtime image. Use the same generic
+# portable dependency policy as cross-host release/validation artifacts.
 RUN rm -rf build && \
-    cmake --preset default && \
+    cmake --preset default -DLEMONADE_PORTABLE_BUILD=ON && \
     cmake --build --preset default web-app
+
+# Do not let the runtime image accidentally mask a leaked system copy of a
+# dependency that portable mode is responsible for bundling.
+RUN set -e; \
+    deps="$(readelf -d build/lemond build/lemonade)"; \
+    managed_re='lib(curl|zstd|websockets|cpp-httplib|httplib|mbedtls|mbedx509|mbedcrypto|tfpsacrypto)\.so'; \
+    if printf '%s\n' "$deps" | grep -Eq "$managed_re"; then \
+        echo 'ERROR: Docker binaries leaked a system-managed Lemonade runtime dependency'; \
+        printf '%s\n' "$deps" | grep -E "$managed_re" || true; \
+        exit 1; \
+    fi
 
 # Debug: Check build outputs
 RUN echo "=== Build directory contents ===" && \

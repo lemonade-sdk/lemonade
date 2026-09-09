@@ -14,6 +14,8 @@ Contents:
 
 The `embeddable` CMake target builds the server, CLI, and required resource files, then packages them into a single archive. The [release workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) uses this target to produce the embeddable archives.
 
+On Windows and macOS, portable dependency mode is enabled automatically. On Linux, use `-DLEMONADE_PORTABLE_BUILD=ON` when producing an archive or raw binary that will run outside the build host. This selects bundled copies of runtime dependencies that Lemonade manages itself, matching release CI.
+
 === "Windows (cmd.exe)"
 
     ```cmd
@@ -28,7 +30,7 @@ The `embeddable` CMake target builds the server, CLI, and required resource file
     ```bash
     sudo apt-get update
     sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
-    cmake --preset default -DBUILD_WEB_APP=OFF
+    cmake --preset default -DBUILD_WEB_APP=OFF -DLEMONADE_PORTABLE_BUILD=ON
     cmake --build --preset default --target embeddable
     ```
 
@@ -58,7 +60,7 @@ If you want the embeddable build to include the browser UI assets under `resourc
 === "Linux (bash)"
 
     ```bash
-    cmake --preset default -DBUILD_WEB_APP=ON
+    cmake --preset default -DBUILD_WEB_APP=ON -DLEMONADE_PORTABLE_BUILD=ON
     cmake --build --preset default --target web-app embeddable
     ```
 
