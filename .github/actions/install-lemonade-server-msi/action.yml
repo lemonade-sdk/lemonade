@@ -32,11 +32,54 @@ runs:
             exit 1
         }
 
+        # If this MSI's ProductCode is already registered (leftover from a prior
+        # job on a shared runner), msiexec runs in maintenance mode and ignores
+        # INSTALLDIR, leaving nothing at the requested path. Uninstall by file
+        # first so the install below is always a fresh one. Anything other than
+        # 0 (removed), 1605 (not installed) or 3010 (removed, reboot pending)
+        # can leave the registration active, so retry and then fail loudly
+        # rather than installing into maintenance mode.
+        $uninstallLogPath = "$((Get-Location).Path)\lemonade-msi-preuninstall.log"
+        Write-Host "Removing any pre-existing registration of this MSI..." -ForegroundColor Gray
+
+        $uninstallCleared = $false
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            $u = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x lemonade-server-minimal.msi /qn /norestart /L*V `"$uninstallLogPath`"" -Wait -PassThru
+
+            if ($u.ExitCode -eq 0) {
+                Write-Host "Removed a pre-existing installation of this MSI." -ForegroundColor Yellow
+                $uninstallCleared = $true
+            } elseif ($u.ExitCode -eq 1605) {
+                Write-Host "No pre-existing registration of this MSI (1605)." -ForegroundColor Gray
+                $uninstallCleared = $true
+            } elseif ($u.ExitCode -eq 3010) {
+                Write-Host "Removed a pre-existing installation of this MSI (3010: reboot pending)." -ForegroundColor Yellow
+                $uninstallCleared = $true
+            } else {
+                Write-Host "Pre-install uninstall attempt $attempt exited with code $($u.ExitCode)" -ForegroundColor Yellow
+                if ($attempt -lt 3) { Start-Sleep -Seconds 10 }
+            }
+
+            if ($uninstallCleared) { break }
+        }
+
+        if (-not $uninstallCleared) {
+            Write-Host "ERROR: Could not clear a pre-existing registration of this MSI. Installing now would run in maintenance mode and ignore INSTALLDIR." -ForegroundColor Red
+            if (Test-Path $uninstallLogPath) {
+                Write-Host "=== MSI Uninstall Log ($uninstallLogPath) ===" -ForegroundColor Yellow
+                Get-Content $uninstallLogPath
+                Write-Host "=== End MSI Uninstall Log ===" -ForegroundColor Yellow
+            }
+            exit 1
+        }
+
         # Run installer silently with verbose logging
-        $args = "/i lemonade-server-minimal.msi /qn INSTALLDIR=`"$installPath`" /L*V `"$logPath`""
+        $args = "/i lemonade-server-minimal.msi /qn /norestart INSTALLDIR=`"$installPath`" /L*V `"$logPath`""
         $p = Start-Process -FilePath "msiexec.exe" -ArgumentList $args -Wait -PassThru
 
-        if ($p.ExitCode -ne 0) {
+        if ($p.ExitCode -eq 3010) {
+            Write-Host "Installation complete (3010: reboot pending, not performed on CI runners)." -ForegroundColor Yellow
+        } elseif ($p.ExitCode -ne 0) {
              Write-Host "ERROR: Installation failed with exit code $($p.ExitCode)" -ForegroundColor Red
 
              if (Test-Path $logPath) {
@@ -48,9 +91,9 @@ runs:
              }
 
              exit $p.ExitCode
+        } else {
+             Write-Host "Installation complete." -ForegroundColor Green
         }
-
-        Write-Host "Installation complete." -ForegroundColor Green
 
     - name: Verify Installation
       shell: PowerShell

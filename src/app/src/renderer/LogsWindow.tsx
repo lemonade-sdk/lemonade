@@ -61,9 +61,7 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       setIsInitialized(true);
 
       try {
-        // Using serverFetch with the full URL to reach the root-level /internal/config
-        // endpoint while benefiting from automatic authentication and init-waiting.
-        const response = await serverFetch(`${url}/internal/config`);
+        const response = await serverFetch('/internal/config');
         if (!response.ok) return;
 
         const config = await response.json();
@@ -250,10 +248,10 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
     setIsSettingLogLevel(true);
 
     try {
-      const response = await serverFetch('/log-level', {
+      const response = await serverFetch('/internal/set', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level: nextLevel }),
+        body: JSON.stringify({ log_level: nextLevel }),
       });
 
       if (!response.ok) {
@@ -261,8 +259,9 @@ const LogsWindow: React.FC<LogsWindowProps> = ({ isVisible, height }) => {
       }
 
       const data = await response.json();
-      if (isLogLevel(data.level)) {
-        setLogLevel(data.level);
+      const applied = data?.updated?.log_level;
+      if (isLogLevel(applied)) {
+        setLogLevel(applied);
       }
     } catch (error) {
       console.error('Failed to update log level:', error);

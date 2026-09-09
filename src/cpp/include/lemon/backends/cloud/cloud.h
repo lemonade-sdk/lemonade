@@ -20,9 +20,9 @@ inline const BackendDescriptor descriptor = {
     /*dynamic_models*/  true,   // models discovered at runtime from the provider
     /*options*/ {},
     /*support*/ {},             // no local gating: install/support machinery skips cloud
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {},  // no downloaded files
-    /*modality*/        "",
+    /*default_capabilities*/ {},
     /*experimental*/    false,
     /*web_display_name*/ "",
 };

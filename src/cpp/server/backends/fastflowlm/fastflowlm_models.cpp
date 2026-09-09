@@ -1,5 +1,7 @@
 #include "lemon/backends/fastflowlm/fastflowlm_models.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -31,6 +33,12 @@ using lemon::utils::path_to_utf8;
 bool safe_exists(const fs::path& p) {
     std::error_code ec;
     return fs::exists(p, ec);
+}
+
+std::string to_lower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
 }
 
 // Candidate roots that FLM may use to store models. FLM resolves its model
@@ -286,6 +294,27 @@ std::vector<ModelInfo> flm_discover_models() {
                                 info.labels.push_back(l.get<std::string>());
                             }
                         }
+                    }
+
+                    // `flm list --json` reports characteristics and input
+                    // modalities, never a deployment mode: FLM's chat models
+                    // report no label at all (llama3.2:3b, lfm2:1.2b, ...) or
+                    // only "reasoning"/"vision"/"tool-calling", and the
+                    // any-to-text ones add "audio"/"chat-transcription". The
+                    // catalog's only two non-chat models name their mode
+                    // ("embeddings" on embed-gemma:300m, "transcription" on
+                    // whisper-v3:turbo) and both are identifiable from the
+                    // checkpoint name, so classify from the name and treat the
+                    // rest as chat.
+                    // https://github.com/ROCm/FastFlowLM/issues/668 would let
+                    // FLM report the mode and remove this workaround.
+                    const std::string id = to_lower(checkpoint);
+                    if (id.find("whisper") != std::string::npos) {
+                        add_label_once(info.labels, "transcription");
+                    } else if (id.find("embed") != std::string::npos) {
+                        add_label_once(info.labels, "embeddings");
+                    } else {
+                        add_label_once(info.labels, "chat");
                     }
 
                     info.type = get_model_type_from_labels(info.labels);

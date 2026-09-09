@@ -60,8 +60,8 @@ struct FixedClassifier : Classifier {
     FixedClassifier(std::string id, OnError on_error, Score s,
                     std::vector<std::string> labels = {},
                     std::optional<std::string> default_label = std::nullopt)
-        : Classifier(std::move(id), "classifier", on_error, std::move(labels),
-                     std::move(default_label)),
+        : Classifier(std::move(id), "classifier", on_error, "test-fixed-model",
+                     std::move(labels), std::move(default_label)),
           score(std::move(s)) {}
 
     Score evaluate(const ClassifierContext&) const override {
@@ -74,7 +74,7 @@ struct ThrowingClassifier : Classifier {
     mutable int calls = 0;
 
     ThrowingClassifier(std::string id, OnError on_error)
-        : Classifier(std::move(id), "classifier", on_error) {}
+        : Classifier(std::move(id), "classifier", on_error, "test-throwing-model") {}
 
     Score evaluate(const ClassifierContext&) const override {
         ++calls;

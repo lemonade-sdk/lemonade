@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useModels, DEFAULT_MODEL_ID } from '../hooks/useModels';
 import { isCollectionModel } from '../utils/collectionModels';
 import { isCustomCollectionModel } from '../utils/customCollections';
+import { COLLECTION_ROUTER_MODEL_RECIPE } from '../utils/recipeNames';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 
 interface ModelSelectorProps {
@@ -112,7 +113,7 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({ disabled, filterLabel, ef
             {dropdownModels.length > 0 ? dropdownModels.map((model) => (
               <div
                 key={model.id}
-                className={`model-selector-option${model.id === displayedModel ? ' selected' : ''}${isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
+                className={`model-selector-option${model.id === displayedModel ? ' selected' : ''}${model.info?.recipe === COLLECTION_ROUTER_MODEL_RECIPE ? ' router-option' : isCustomCollectionModel(model.id, model.info) ? ' collection-option' : ''}${model.unavailable ? ' unavailable' : ''}`}
                 onClick={() => handleSelect(model)}
                 title={model.unavailable ? `${model.id} is not available until all component models are downloaded.` : model.id}
                 aria-disabled={model.unavailable ? true : undefined}

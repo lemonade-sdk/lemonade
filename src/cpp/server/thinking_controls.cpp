@@ -1,6 +1,41 @@
 #include "lemon/thinking_controls.h"
 
 namespace lemon {
+namespace {
+
+bool apply_native_disable_thinking_controls(json& request_json) {
+    bool modified = false;
+
+    // llama.cpp treats OpenAI-compatible reasoning_effort=none as a hard
+    // per-request disable. Other reasoning-capable backends can consume the
+    // same field without the client needing backend-specific knowledge.
+    if (!request_json.contains("reasoning_effort") ||
+        !request_json["reasoning_effort"].is_string() ||
+        request_json["reasoning_effort"].get<std::string>() != "none") {
+        request_json["reasoning_effort"] = "none";
+        modified = true;
+    }
+
+    auto kwargs = request_json.find("chat_template_kwargs");
+    if (kwargs == request_json.end()) {
+        request_json["chat_template_kwargs"] = {
+            {"enable_thinking", false},
+        };
+        modified = true;
+    } else if (kwargs->is_object()) {
+        auto enable_thinking = kwargs->find("enable_thinking");
+        if (enable_thinking == kwargs->end() ||
+            !enable_thinking->is_boolean() ||
+            enable_thinking->get<bool>() != false) {
+            (*kwargs)["enable_thinking"] = false;
+            modified = true;
+        }
+    }
+
+    return modified;
+}
+
+} // namespace
 
 bool should_disable_thinking(const json& request_json) {
     // enable_thinking takes precedence over thinking when both are present.
@@ -61,6 +96,7 @@ bool strip_handled_thinking_fields(json& request_json) {
 bool normalize_thinking_controls(json& request_json) {
     bool modified = false;
     if (should_disable_thinking(request_json)) {
+        modified = apply_native_disable_thinking_controls(request_json) || modified;
         modified = prepend_no_think_to_last_user_message(request_json) || modified;
     }
     modified = strip_handled_thinking_fields(request_json) || modified;

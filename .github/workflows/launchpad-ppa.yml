@@ -10,9 +10,15 @@ on:
     tags:
       - '*'
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     branches:
       - main
+  merge_group:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   prepare-matrix:
@@ -36,12 +42,6 @@ jobs:
                 "ppa": "ppa:lemonade-team/bleeding-edge"
               },
               {
-                "release": "25.10",
-                "distro": "ubuntu",
-                "codename": "questing",
-                "ppa": "ppa:lemonade-team/bleeding-edge"
-              },
-              {
                 "release": "26.04",
                 "distro": "ubuntu",
                 "codename": "resolute",
@@ -59,6 +59,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
@@ -94,7 +96,9 @@ jobs:
 
       - name: Build binary package
         id: build_binary
-        if: github.event_name == 'pull_request'
+        # Also on a labelled PR: the label has to reproduce what the queue runs,
+        # and a source-only package compiles nothing.
+        if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: ./.github/actions/build-debian-package
         with:
           package-type: binary
@@ -102,14 +106,14 @@ jobs:
 
       - name: Build source package
         id: build_source
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'merge_group' && !contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: ./.github/actions/build-debian-package
         with:
           package-type: source
           deb-version: ${{ steps.get_version.outputs.version }}
 
       - name: Upload Debian package
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ matrix.codename }}-deb
@@ -117,7 +121,7 @@ jobs:
           retention-days: 30
 
       - name: Upload source package
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'merge_group' && !contains(github.event.pull_request.labels.*.name, 'ci:distros')
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ matrix.codename }}-source-package
@@ -134,7 +138,8 @@ jobs:
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
-    if: github.event_name == 'pull_request'
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name == 'merge_group' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     strategy:
       matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     container:
@@ -142,8 +147,21 @@ jobs:
     steps:
       - name: Install checkout prerequisites
         run: |
-          apt-get update
-          apt-get install -y git ca-certificates software-properties-common
+          set -e
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if apt-get update && \
+                apt-get install -y git ca-certificates software-properties-common; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Add PPA for build dependencies
         if: matrix.ppa != ''
@@ -161,17 +179,30 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          apt-get update
-          apt-get install -y \
-            build-essential \
-            curl \
-            debhelper \
-            devscripts \
-            dpkg-dev \
-            git \
-            python3-pip \
-            python3-venv \
-            unzip
+          set -e
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if apt-get update && \
+                apt-get install -y \
+                  build-essential \
+                  curl \
+                  debhelper \
+                  devscripts \
+                  dpkg-dev \
+                  git \
+                  python3-pip \
+                  python3-venv \
+                  unzip; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Prepare Debian build
         id: get_version
@@ -202,7 +233,7 @@ jobs:
     needs: [prepare-matrix, package]
     permissions:
       contents: read
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/stable
@@ -216,9 +247,38 @@ jobs:
     needs: [prepare-matrix, package]
     permissions:
       contents: read
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && github.event_name != 'pull_request' }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/bleeding-edge
       artifact: lemonade-${{ matrix.codename }}-source-package
     secrets: inherit
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  gate:
+    name: Launchpad PPA builds
+    needs: [prepare-matrix, package, package-arm64]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi

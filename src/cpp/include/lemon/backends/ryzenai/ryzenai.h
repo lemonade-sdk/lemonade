@@ -26,9 +26,9 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text generation",
+    /*default_capabilities*/ {},
     /*experimental*/    false,
     /*web_display_name*/ "Ryzen AI SW NPU",
     /*rocm_channels*/   {},

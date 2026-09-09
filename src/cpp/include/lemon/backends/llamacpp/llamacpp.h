@@ -37,15 +37,18 @@ inline const BackendDescriptor descriptor = {
          {{"nvidia_gpu", {"sm_75", "sm_80", "sm_86", "sm_89", "sm_90", "sm_100", "sm_120", "sm_121"}}}, "NVIDIA GPUs (Turing or newer)**"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}, {"amd_gpu", {}}}, "x86_64 CPU, AMD iGPU, AMD dGPU; ARM64 CPU/GPU (Linux)"},
         {"rocm", {"windows", "linux"},
-         {{"amd_gpu", {"gfx1150", "gfx1151", "gfx1152", "gfx103X", "gfx110X", "gfx120X", "gfx942", "gfx950"}}}, "Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*",
-         // gfx950 (MI350) only ships a Linux + stable-channel asset so far; the
-         // Windows TheRock dist and the nightly build aren't published yet.
-         {{"gfx950", {/*os*/ {"linux"}, /*channels*/ {"stable"}}}}},
+         {{"amd_gpu", {"gfx103X", "gfx110X", "gfx1150", "gfx1151", "gfx1152", "gfx120X", "gfx908", "gfx90a", "gfx942", "gfx950"}}}, "AMD GPUs supported by ROCm",
+         // CDNA arches (gfx908, gfx90a, gfx942) lack Windows ROCm binaries; gfx950
+         // additionally lacks a nightly-channel asset.
+         {{"gfx950", {/*os*/ {"linux"}, /*channels*/ {"stable"}}},
+          {"gfx908", {/*os*/ {"linux"}, /*channels*/ {}}},
+          {"gfx90a", {/*os*/ {"linux"}, /*channels*/ {}}},
+          {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat", "embeddings", "reranking"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text generation",
+    /*default_capabilities*/ {},
     /*experimental*/    false,
     /*web_display_name*/ "llama.cpp GPU",
     /*rocm_channels*/   {"stable", "nightly"},

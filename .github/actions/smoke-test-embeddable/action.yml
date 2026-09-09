@@ -1,0 +1,112 @@
+name: 'Smoke test embeddable archive'
+description: 'Validates an extracted embeddable Lemonade archive: structure, --version, and lemond health check'
+
+inputs:
+  version:
+    description: 'Lemonade version, as it appears in the archive filename'
+    required: true
+  platform:
+    description: 'Platform slug in the archive filename (e.g. ubuntu-x64, macos-arm64)'
+    required: true
+  label:
+    description: 'Human-readable platform label, used in log output'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate archive structure
+      shell: bash
+      env:
+        LEMONADE_VERSION: ${{ inputs.version }}
+        PLATFORM: ${{ inputs.platform }}
+      run: |
+        set -e
+
+        ARCHIVE="lemonade-embeddable-${LEMONADE_VERSION}-${PLATFORM}.tar.gz"
+        test -f "$ARCHIVE"
+        tar xzf "$ARCHIVE"
+
+        DIR="lemonade-embeddable-${LEMONADE_VERSION}-${PLATFORM}"
+
+        # Verify expected files exist
+        test -f "$DIR/lemond"
+        test -f "$DIR/lemonade"
+        test -f "$DIR/LICENSE"
+        test -f "$DIR/resources/server_models.json"
+        test -f "$DIR/resources/backend_versions.json"
+        test -f "$DIR/resources/defaults.json"
+        test -f "$DIR/resources/toolDefinitions.json"
+        echo "All expected files present"
+
+        # Verify NO forbidden files
+        FORBIDDEN=0
+        if ls "$DIR"/lemonade-server* 2>/dev/null; then
+          echo "ERROR: Found lemonade-server (legacy CLI) in archive"; FORBIDDEN=1
+        fi
+        if [ -d "$DIR/resources/web-app" ]; then
+          echo "ERROR: Found web-app directory in archive"; FORBIDDEN=1
+        fi
+        if ls "$DIR"/lemonade-app* 2>/dev/null; then
+          echo "ERROR: Found desktop app in archive"; FORBIDDEN=1
+        fi
+        if ls "$DIR"/lemonade-tray* 2>/dev/null; then
+          echo "ERROR: Found tray app in archive"; FORBIDDEN=1
+        fi
+        if ls "$DIR"/LemonadeServer* 2>/dev/null; then
+          echo "ERROR: Found LemonadeServer in archive"; FORBIDDEN=1
+        fi
+        if [ "$FORBIDDEN" -ne 0 ]; then exit 1; fi
+        echo "No forbidden files found"
+
+    - name: Test version commands
+      shell: bash
+      env:
+        LEMONADE_VERSION: ${{ inputs.version }}
+        PLATFORM: ${{ inputs.platform }}
+      run: |
+        set -e
+        DIR="lemonade-embeddable-${LEMONADE_VERSION}-${PLATFORM}"
+        "$DIR/lemond" --version
+        "$DIR/lemonade" --version
+
+    - name: Test lemond startup and health check
+      shell: bash
+      env:
+        LEMONADE_VERSION: ${{ inputs.version }}
+        PLATFORM: ${{ inputs.platform }}
+        LABEL: ${{ inputs.label }}
+      run: |
+        set -e
+        DIR="lemonade-embeddable-${LEMONADE_VERSION}-${PLATFORM}"
+        cd "$DIR"
+        mkdir -p "$RUNNER_TEMP/xdg-runtime"
+        chmod 700 "$RUNNER_TEMP/xdg-runtime"
+        echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/xdg-runtime" >> "$GITHUB_ENV"
+        export XDG_RUNTIME_DIR="$RUNNER_TEMP/xdg-runtime"
+
+        ./lemond ./ &
+        LEMOND_PID=$!
+
+        # Wait for server to become healthy
+        for i in $(seq 1 15); do
+          if curl -sf http://localhost:13305/api/v1/health > /dev/null 2>&1; then
+            echo "Server is healthy!"
+            break
+          fi
+          if [ $i -eq 15 ]; then
+            echo "ERROR: Server failed to start within 30 seconds"
+            kill $LEMOND_PID 2>/dev/null || true
+            exit 1
+          fi
+          sleep 2
+        done
+
+        # Verify health endpoint responds with valid JSON
+        HEALTH=$(curl -sf http://localhost:13305/api/v1/health)
+        echo "Health response: $HEALTH"
+
+        # Clean shutdown
+        kill $LEMOND_PID 2>/dev/null || true
+        wait $LEMOND_PID 2>/dev/null || true
+        echo "Embeddable ${LABEL} smoke test PASSED!"

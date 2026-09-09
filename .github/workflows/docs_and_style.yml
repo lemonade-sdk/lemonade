@@ -13,14 +13,22 @@ jobs:
   app-regression-tests:
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-app-regression-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-app-regression-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: src/app/package-lock.json
+      - name: Install app dependencies
+        working-directory: src/app
+        run: npm ci
+      - name: Type-check application (same strictness as the production Webpack build)
+        working-directory: src/app
+        run: npm run typecheck
       - name: Run app regression tests
         run: node test/app/run-app-regression-tests.cjs
 
@@ -30,8 +38,8 @@ jobs:
     # if the committed doc is stale — the same guarantee a lint provides.
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -55,11 +63,54 @@ jobs:
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
 
+  pre-commit:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-pre-commit-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install pre-commit
+      - name: Run the comment-slop unit tests
+        run: python -m unittest test.test_comment_slop -v
+
+      - name: Run pre-commit on the changed files
+        # Scoped to what the change touches; running repo-wide would fail on drift that
+        # predates it and is not the contributor's to fix.
+        #
+        # The base is the branch the change actually targets, so a PR onto a release
+        # branch is not diffed against main. In a merge queue HEAD also carries the PRs
+        # ahead of this one, so the diff is widened by changes this author never made:
+        # the deterministic hooks are fine with that, but the comment-slop heuristic
+        # would then compare comments across several independently-approved PRs and fail
+        # one of them for the first time in the queue. Keep that decision PR-scoped.
+        env:
+          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || github.event.repository.default_branch }}
+        run: |
+          BASE_BRANCH="${BASE_REF#refs/heads/}"
+          # checkout already fetched full history (fetch-depth: 0); fetch the base branch
+          # so origin/<base> resolves for merge-base. No --depth: 0 is not a valid depth.
+          git fetch --no-tags origin "$BASE_BRANCH"
+          BASE=$(git merge-base "origin/$BASE_BRANCH" HEAD)
+
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            SKIP=comment-slop
+          fi
+          SKIP="${SKIP:-}" pre-commit run \
+            --from-ref "$BASE" \
+            --to-ref HEAD \
+            --show-diff-on-failure
+
   markdown-link-check:
     runs-on: ubuntu-latest
     concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: true
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
       - name: Setup Node.js

@@ -17,6 +17,13 @@ public:
     struct TelemetryData {
         int input_tokens = 0;
         int output_tokens = 0;
+        // usage.prompt_tokens / usage.input_tokens as reported (includes cached
+        // tokens). -1 = not reported; llama.cpp timings then leave input_tokens
+        // holding only the processed count.
+        int prompt_tokens = -1;
+        // Prompt tokens served from the backend's prefix cache. -1 = the
+        // backend did not report cache usage (0 is a real cold-prefill value).
+        int cache_tokens = -1;
         double time_to_first_token = 0.0;
         double tokens_per_second = 0.0;
         std::string error_message = "";
@@ -47,7 +54,8 @@ public:
         httplib::DataSink& sink,
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300,
-        std::function<void()> on_chunk = nullptr
+        std::function<void()> on_chunk = nullptr,
+        long heartbeat_interval_ms = 1000
     );
 
     static void forward_byte_stream(
@@ -61,6 +69,11 @@ public:
     static void process_sse_lines(std::string& line_buffer, std::function<void(const std::string&)> line_callback);
 
     static TelemetryData parse_telemetry(const std::string& buffer);
+
+    // Extract telemetry from a complete (non-streaming) response body or a
+    // single SSE chunk payload: OpenAI usage (chat and Responses field names,
+    // cached-token details) and llama.cpp timings.
+    static TelemetryData extract_telemetry(const nlohmann::json& payload);
 
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
 

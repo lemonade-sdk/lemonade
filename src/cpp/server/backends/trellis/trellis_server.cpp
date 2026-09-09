@@ -9,6 +9,7 @@
 #include "lemon/model_manager.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
+#include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
@@ -17,6 +18,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <cstdlib>
 #include <filesystem>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -68,6 +70,18 @@ void TrellisServer::load(const std::string& model_name,
         throw std::runtime_error("Model path not found for checkpoint: " + model_info.checkpoint());
     }
 
+    // Validate before resolve_binary_path(), which can download a backend archive.
+    const std::string trellis_args = options.get_option("trellis_args");
+    if (!trellis_args.empty()) {
+        const std::set<std::string> reserved_flags = {"-m", "--models", "--host", "--port", "--res"};
+        const std::string validation_error =
+            utils::validate_custom_args(trellis_args, reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument(
+                "Invalid custom trellis-server arguments:\n" + validation_error);
+        }
+    }
+
     std::string backend = options.get_option("trellis_backend");
     if (backend.empty()) {
         auto supported = SystemInfo::get_supported_backends("trellis");
@@ -92,6 +106,12 @@ void TrellisServer::load(const std::string& model_name,
         "--res", "512",
     };
 
+    if (!trellis_args.empty()) {
+        LOG(DEBUG, "trellis-server") << "Adding custom arguments: " << trellis_args << std::endl;
+        const std::vector<std::string> custom_args_vec = utils::parse_custom_args(trellis_args);
+        args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
+    }
+
     std::vector<std::pair<std::string, std::string>> env_vars;
     const std::string exe_dir = std::filesystem::path(exe_path).parent_path().string();
     auto prepend_loader_path = [&env_vars, &exe_dir](const std::string& extra_dirs) {
@@ -107,16 +127,10 @@ void TrellisServer::load(const std::string& model_name,
     };
     if (backend == "rocm") {
         const std::string arch = SystemInfo::get_rocm_arch();
-        const std::string therock_lib = arch.empty() ? "" : BackendUtils::get_therock_lib_path(arch);
         std::string dirs;
-        if (!therock_lib.empty()) {
-#ifdef _WIN32
-            const std::string llvm_bin =
-                (std::filesystem::path(therock_lib).parent_path() / "lib" / "llvm" / "bin").string();
-            dirs = therock_lib + ";" + llvm_bin;
-#else
-            dirs = therock_lib + ":" + therock_lib + "/llvm/lib";
-#endif
+        if (!arch.empty()) {
+            dirs = BackendUtils::join_runtime_dirs(
+                BackendUtils::get_therock_lib_paths(arch));
         }
         prepend_loader_path(dirs);
     } else if (backend == "cuda") {
@@ -127,7 +141,7 @@ void TrellisServer::load(const std::string& model_name,
     LOG(INFO, "trellis-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path, args, "", is_debug(), true, env_vars);
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, exe_path, args);
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start trellis-server process");
     }
@@ -164,7 +178,7 @@ void TrellisServer::model_3d_generations(const json& request, httplib::DataSink&
         const std::string payload = json{{"error", {
             {"message", "unsupported image format: expected PNG, JPEG, BMP, or GIF"},
             {"type", "invalid_request_error"},
-            {"status", 400}}}}.dump();
+            {"status_code", 400}}}}.dump();
         sink.write(payload.data(), payload.size());
         return;
     }

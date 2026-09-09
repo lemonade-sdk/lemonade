@@ -38,6 +38,41 @@ jobs:
           git config --global --add safe.directory /opt/lemonade-manager/.repo-manager/checkout
           gh auth setup-git
 
+      - name: Trigger snap release candidate build
+        # Fires on every push to a release-v* branch (including the branch's
+        # initial creation), kicking off an RC build/publish of the snap in
+        # the sibling lemonade-server-snap repo. Cross-repo workflow dispatch
+        # requires a PAT with Actions:write on that repo (the default
+        # GITHUB_TOKEN is scoped to this repo only) -- add it as the
+        # SNAP_RC_DISPATCH_TOKEN secret here, same pattern used by
+        # TRIAGE_DASHBOARD_TOKEN for triage-dashboard.yml.
+        if: startsWith(github.ref, 'refs/heads/release-v')
+        env:
+          GH_TOKEN: ${{ secrets.SNAP_RC_DISPATCH_TOKEN }}
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          RELEASE_VERSION="${BRANCH_NAME#release-}"
+          echo "Triggering snap RC build for ${RELEASE_VERSION} (branch ${BRANCH_NAME})"
+          gh workflow run snap-rc-build.yaml \
+            -R lemonade-sdk/lemonade-server-snap \
+            -f release_version="${RELEASE_VERSION}"
+
+      - name: Trigger lemonade-desktop snap release candidate build
+        # Same as above, but for the sibling lemonade-snap repo, which builds
+        # and publishes the lemonade-desktop snap (candidate channel). Reuses
+        # SNAP_RC_DISPATCH_TOKEN since it just needs Actions:write on the
+        # target repo, not repo-specific scoping.
+        if: startsWith(github.ref, 'refs/heads/release-v')
+        env:
+          GH_TOKEN: ${{ secrets.SNAP_RC_DISPATCH_TOKEN }}
+        run: |
+          BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+          RELEASE_VERSION="${BRANCH_NAME#release-}"
+          echo "Triggering lemonade-desktop snap RC build for ${RELEASE_VERSION} (branch ${BRANCH_NAME})"
+          gh workflow run snap-rc-build.yaml \
+            -R lemonade-sdk/lemonade-snap \
+            -f release_version="${RELEASE_VERSION}"
+
       - name: Clean stale repo-manager state
         run: rm -rf /opt/lemonade-manager/.repo-manager/pages
 

@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "lemon/model_types.h"
+
 namespace lemon {
 
 struct GgufCapabilities {
@@ -66,12 +68,6 @@ inline void inspect_gguf_string(const std::string& key, const std::string& value
          contains(v, "'tools'"))) {
         caps.tool_calling = true;
     }
-}
-
-inline bool add_label_once(std::vector<std::string>& labels, const std::string& label) {
-    if (std::find(labels.begin(), labels.end(), label) != labels.end()) return false;
-    labels.push_back(label);
-    return true;
 }
 
 inline bool apply_gguf_capability_labels(std::vector<std::string>& labels, const GgufCapabilities& caps) {

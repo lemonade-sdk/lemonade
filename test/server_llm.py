@@ -24,6 +24,8 @@ import os
 import time
 import requests
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from utils.server_base import (
     ServerTestBase,
@@ -138,6 +140,83 @@ class LLMTests(ServerTestBase):
             completion.usage.total_tokens,
             completion.usage.prompt_tokens + completion.usage.completion_tokens,
         )
+
+    @skip_if_unsupported("chat_completions")
+    def test_001b_chat_completions_concurrent_requests(self):
+        """Test simultaneous non-streaming chat completion requests."""
+        model = self.get_test_model("llm")
+        concurrency = 5
+        barrier = threading.Barrier(concurrency)
+
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        load_response = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": model},
+            headers=headers,
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        load_response.raise_for_status()
+
+        def make_request(index):
+            # Release all workers at approximately the same time.
+            barrier.wait(timeout=TIMEOUT_DEFAULT)
+
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Reply briefly to request {index}.",
+                        }
+                    ],
+                    "max_tokens": 8,
+                    "stream": False,
+                },
+                headers=headers,
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            response.raise_for_status()
+
+            return index, response.json()
+
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = [
+                executor.submit(make_request, index) for index in range(concurrency)
+            ]
+            results = [future.result() for future in futures]
+
+        self.assertEqual(len(results), concurrency)
+
+        for index, payload in results:
+            self.assertNotIn(
+                "error",
+                payload,
+                f"Concurrent request {index} returned an error: {payload}",
+            )
+            self.assertIn(
+                "choices",
+                payload,
+                f"Concurrent request {index} returned no choices: {payload}",
+            )
+            self.assertGreater(
+                len(payload["choices"]),
+                0,
+                f"Concurrent request {index} returned an empty choices list",
+            )
+
+            message = payload["choices"][0].get("message", {})
+            content = message.get("content", "")
+
+            self.assertTrue(
+                content.strip(),
+                f"Concurrent request {index} returned empty content",
+            )
 
     @skip_if_unsupported("chat_completions_streaming")
     def test_002_chat_completions_streaming(self):
@@ -302,6 +381,16 @@ class LLMTests(ServerTestBase):
 
         print(f"Response: {response.output[0].content[0].text}")
         self.assertGreater(len(response.output[0].content[0].text), 0)
+
+        # Non-streaming Responses requests record telemetry like chat does.
+        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT).json()
+        self.assertGreater(
+            stats.get("input_tokens", 0),
+            0,
+            f"responses request did not record telemetry: {stats}",
+        )
+        self.assertGreater(stats.get("output_tokens", 0), 0)
+        self.assertIn("cache_tokens", stats)
 
     @skip_if_unsupported("responses_api_streaming")
     def test_008_responses_api_streaming(self):
@@ -566,6 +655,34 @@ class LLMTests(ServerTestBase):
         self.assertGreater(len(response.data[0].embedding), 0)
         print(f"Embedding dimension: {len(response.data[0].embedding)}")
 
+    @skip_if_unsupported("embeddings")
+    def test_015b_embeddings_missing_model_returns_400(self):
+        """Test embeddings request without model returns a helpful 400 error."""
+        headers = {}
+        api_key = os.environ.get("LEMONADE_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        response = requests.post(
+            f"{self.base_url}/embeddings",
+            json={
+                "input": "Hello, how are you today?",
+                "encoding_format": "float",
+            },
+            headers=headers,
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        self.assertEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertEqual(error.get("type"), "invalid_request")
+        self.assertIn(
+            "no model specified",
+            error.get("message", "").lower(),
+        )
+
     @skip_if_unsupported("embeddings_batch")
     def test_016_embeddings_array_of_strings(self):
         """Test embeddings with array of strings."""
@@ -651,6 +768,43 @@ class LLMTests(ServerTestBase):
         }
 
         response = requests.post(
+            f"{self.base_url}/rerank", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        results = result.get("results", [])
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        top_3_indices = [r["index"] for r in results[:3]]
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+        actual_top_3 = set(top_3_indices)
+
+        print(f"/rerank top 3 indices: {top_3_indices}")
+        self.assertEqual(
+            actual_top_3,
+            expected_top_3,
+            f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
+        )
+
+    @skip_if_unsupported("reranking")
+    def test_018b_reranking_alias(self):
+        """Test that the legacy /reranking alias behaves like /rerank."""
+        model = self.get_test_model("reranking")
+
+        query = "A man is eating pasta."
+        documents = [
+            "A man is eating food.",
+            "The girl is carrying a baby.",
+            "A man is riding a horse.",
+            "A young girl is playing violin.",
+            "A man is eating a piece of bread.",
+            "A man is eating noodles.",
+        ]
+        payload = {"query": query, "documents": documents, "model": model}
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+
+        response = requests.post(
             f"{self.base_url}/reranking", json=payload, timeout=TIMEOUT_MODEL_OPERATION
         )
         response.raise_for_status()
@@ -663,12 +817,73 @@ class LLMTests(ServerTestBase):
         expected_top_3 = {0, 4, 5}  # Food-related documents
         actual_top_3 = set(top_3_indices)
 
-        print(f"Top 3 indices: {top_3_indices}")
+        print(f"/reranking top 3 indices: {top_3_indices}")
         self.assertEqual(
             actual_top_3,
             expected_top_3,
             f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
         )
+
+    @skip_if_unsupported("reranking")
+    def test_018c_reranker_alias(self):
+        """Test that the /reranker alias behaves like /rerank."""
+        model = self.get_test_model("reranking")
+
+        query = "A man is eating pasta."
+        documents = [
+            "A man is eating food.",
+            "The girl is carrying a baby.",
+            "A man is riding a horse.",
+            "A young girl is playing violin.",
+            "A man is eating a piece of bread.",
+            "A man is eating noodles.",
+        ]
+        payload = {"query": query, "documents": documents, "model": model}
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+
+        response = requests.post(
+            f"{self.base_url}/reranker", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        results = result.get("results", [])
+        results.sort(key=lambda x: x.get("relevance_score", 0), reverse=True)
+
+        top_3_indices = [r["index"] for r in results[:3]]
+        expected_top_3 = {0, 4, 5}  # Food-related documents
+        actual_top_3 = set(top_3_indices)
+
+        print(f"/reranker top 3 indices: {top_3_indices}")
+        self.assertEqual(
+            actual_top_3,
+            expected_top_3,
+            f"Expected food-related documents {expected_top_3} in top 3, got {actual_top_3}",
+        )
+
+    @skip_if_unsupported("reranking")
+    def test_018d_reranking_error_is_not_reported_as_success(self):
+        """Test reranking a model that cannot rerank returns an error status."""
+        model = self.get_test_model("llm")
+
+        payload = {
+            "query": "A man is eating pasta.",
+            "documents": ["A man is eating food.", "A man is riding a horse."],
+            "model": model,
+        }
+
+        response = requests.post(
+            f"{self.base_url}/rerank", json=payload, timeout=TIMEOUT_MODEL_OPERATION
+        )
+
+        print(
+            f"/rerank with {model}: HTTP {response.status_code} {response.text[:200]}"
+        )
+        self.assertGreaterEqual(response.status_code, 400, response.text)
+
+        error = response.json().get("error")
+        self.assertIsInstance(error, dict, response.text)
+        self.assertTrue(error.get("message"), response.text)
 
     # =========================================================================
     # MULTI-MODEL TESTS
@@ -881,17 +1096,21 @@ class LLMTests(ServerTestBase):
                     print(f"Slots erase response: {erase_data}")
                     if "id_slot" in erase_data:
                         self.assertEqual(erase_data["id_slot"], slot_id_to_erase)
-                    elif "error" in erase_data:
-                        # Received an error response from the erase endpoint, this may be because the server
-                        # was not started with the --slot-save-path argument
-                        print(
-                            f"Slots erase backend error response: {erase_data['error']}"
-                        )
-                        pass
                     else:
                         self.fail(
                             f"Unexpected response from slots erase endpoint: {erase_data}"
                         )
+                elif erase_response.status_code == 501:
+                    error_data = erase_response.json()
+                    print(f"Slots erase backend error response: {error_data}")
+                    self.assertIn("error", error_data)
+                    self.assertEqual(
+                        error_data["error"].get("type"), "not_supported_error"
+                    )
+                    self.assertIn(
+                        "--slot-save-path",
+                        error_data["error"].get("message", ""),
+                    )
                 else:
                     error_data = erase_response.json()
                     print(f"Slots erase error response: {error_data}")
@@ -899,11 +1118,57 @@ class LLMTests(ServerTestBase):
                         f"Failed to erase slot with id {slot_id_to_erase}, "
                         f"status code: {erase_response.status_code}"
                     )
-
             else:
                 self.fail("No slot id found to erase in /api/v1/slots response")
         else:
             self.fail("No slots available to test erasure in /api/v1/slots endpoint")
+
+    @skip_if_unsupported("slots")
+    def test_023b_cache_tokens_telemetry(self):
+        """A repeated conversation prefix surfaces cache_tokens in /stats."""
+        client = self.get_openai_client()
+        model = self.get_test_model("llm")
+
+        shared_history = [
+            {
+                "role": "system",
+                "content": "You are a concise assistant. " + "Context filler. " * 60,
+            },
+            {"role": "user", "content": "Reply with the single word: ready."},
+        ]
+        first = client.chat.completions.create(
+            model=model,
+            messages=shared_history,
+            max_completion_tokens=10,
+            stream=False,
+        )
+        followup = shared_history + [
+            {"role": "assistant", "content": first.choices[0].message.content},
+            {"role": "user", "content": "Reply with the single word: again."},
+        ]
+        client.chat.completions.create(
+            model=model,
+            messages=followup,
+            max_completion_tokens=10,
+            stream=False,
+        )
+
+        response = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("cache_tokens", data)
+        self.assertIn("cache_tokens_total", data)
+        self.assertGreater(
+            data["cache_tokens"],
+            0,
+            "second request repeats the first request's prefix, so llama-server "
+            f"should reuse cached prompt tokens (stats: {data})",
+        )
+        self.assertGreater(data["cache_tokens_total"], 0)
+        print(
+            f"[OK] cache telemetry: cache_tokens={data['cache_tokens']}, "
+            f"cache_tokens_total={data['cache_tokens_total']}"
+        )
 
     @skip_if_unsupported("tokenize")
     def test_024_tokenize(self):

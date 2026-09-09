@@ -1,0 +1,37 @@
+name: 'Teardown Windows CI Environment'
+description: 'Terminate processes, cleanup current run directories, and prune old transient directories.'
+runs:
+  using: 'composite'
+  steps:
+    - name: Cleanup processes (Windows)
+      if: always()
+      uses: ./.github/actions/cleanup-processes-windows
+
+    - name: Cleanup current Windows CI directories
+      if: always()
+      uses: ./.github/actions/cleanup-ci-paths-windows
+      with:
+        paths: |
+          ${{ env.LEMONADE_INSTALL_PATH }}
+          ${{ env.TEMP }}
+        expected-root: C:\lemonade-ci
+
+    - name: Cleanup legacy workspace cache dirs
+      if: always()
+      uses: ./.github/actions/cleanup-ci-paths-windows
+      with:
+        paths: |
+          ${{ github.workspace }}\ci-cache
+          ${{ github.workspace }}\hf-cache
+          ${{ github.workspace }}\lemonade_server_install
+        expected-root: ${{ github.workspace }}
+
+    - name: Prune old transient Windows CI directories
+      if: always()
+      uses: ./.github/actions/cleanup-ci-paths-windows
+      with:
+        paths: |
+          C:\lemonade-ci\install
+          C:\lemonade-ci\tmp
+        expected-root: C:\lemonade-ci
+        prune-children-older-than-days: '2'

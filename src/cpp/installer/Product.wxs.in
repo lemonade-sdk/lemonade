@@ -90,6 +90,11 @@
                       Name="InstallLocation"
                       Type="raw" />
     </Property>
+    <SetProperty Id="INSTALLDIR"
+                 Value="[EXISTINGINSTALLDIR]"
+                 Before="CostFinalize"
+                 Sequence="first"
+                 Condition="EXISTINGINSTALLDIR AND (ALLUSERS &lt;&gt; 1)" />
 
     <!-- ============================================ -->
     <!-- Conflict Detection: Block dual per-user/all-users installs -->

@@ -300,7 +300,7 @@ void validate_leaf(const json& leaf,
             throw std::invalid_argument(path + ".regex must be a non-empty string");
         }
     }
-    for (const char* op : {"min_chars", "max_chars"}) {
+    for (const char* op : {"min_chars", "max_chars", "min_total_chars", "max_total_chars"}) {
         if (leaf.contains(op)) {
             ++condition_count;
             if (!leaf.at(op).is_number_integer() || leaf.at(op).get<long long>() < 0) {
@@ -474,11 +474,9 @@ std::vector<Rule> parse_rules(const json& routing,
                               const std::map<std::string, ClassifierPtr>& classifiers,
                               const std::set<std::string>& declared,
                               const RoutingPolicyParseOptions& options) {
-    if (routing.contains("router")) {
-        reject_unknown_keys(routing.at("router"), routing_router_keys(), "routing.router");
-        throw std::invalid_argument(
-            "routing.router desugaring is reserved for #2405 and is not implemented by the M9 parser");
-    }
+    // `routing.router` is desugared into `classifiers` + `rules` by the caller
+    // (see desugar_routing_router) before this runs, so `routing` here is
+    // always already in core form.
     const json& rules_json = required_field(routing, "rules", "routing");
     if (!rules_json.is_array() || rules_json.empty()) {
         throw std::invalid_argument("routing.rules must be a non-empty array");
@@ -553,7 +551,7 @@ const std::set<std::string>& routing_match_expr_keys() {
     static const std::set<std::string> keys = {
         "any", "all", "not", "classifier", "label", "min_score", "max_score",
         "keywords_any", "keywords_all", "regex", "min_chars", "max_chars",
-        "has_tools", "has_images", "metadata"};
+        "min_total_chars", "max_total_chars", "has_tools", "has_images", "metadata"};
     return keys;
 }
 
@@ -631,7 +629,8 @@ json desugar_routing_router(const json& routing) {
 }
 
 RoutePolicy parse_route_policy_collection(const json& collection_json,
-                                          const RoutingPolicyParseOptions& options) {
+                                          const RoutingPolicyParseOptions& options,
+                                          json* out_normalized_routing) {
     reject_unknown_keys(collection_json, routing_policy_root_keys(), "collection");
     validate_version_1(collection_json);
 
@@ -652,16 +651,27 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     // Desugar the L0a `routing.router` sugar into explicit classifiers + rules
     // before the normal parse path runs. Everything downstream sees the core
     // form only.
+    const bool is_router_sugar = routing.contains("router");
     json desugared;
     const json* routing_eff = &routing;
-    if (routing.contains("router")) {
+    if (is_router_sugar) {
         desugared = desugar_routing_router(routing);
         routing_eff = &desugared;
     }
 
+    // Only the routing.router sugar's synthesized classifier gets
+    // has_tools/has_images (#2789) — see LlmClassifier::effective_prompt in
+    // routing_policy.cpp for why an author-declared classifier never does.
+    const bool expose_request_features = is_router_sugar;
+
     const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
-    policy.classifiers = make_classifiers(classifier_configs);
+    policy.classifiers = make_classifiers(classifier_configs, expose_request_features);
     policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
+    policy.helper_models = collect_policy_helper_models(policy);
+
+    if (out_normalized_routing) {
+        *out_normalized_routing = *routing_eff;
+    }
     return policy;
 }
 

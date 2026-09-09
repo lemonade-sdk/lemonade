@@ -440,7 +440,7 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 
 > **Note:** This endpoint uses [whisper.cpp](https://github.com/ggerganov/whisper.cpp) as the backend. Whisper models are automatically downloaded when first used.
 >
-> **Limitations:** Only `wav` audio format and `json` response format are currently supported.
+> **Limitations:** Only `wav` audio input is currently supported. The `response_format` field supports `json`, `verbose_json`, `text`, `srt`, and `vtt`. On the FastFlowLM (FLM) backend, `srt` and `vtt` are rejected with a `400` because FLM returns no segment timestamps, and `verbose_json` returns the compact shape without a `segments` field.
 
 ### Parameters
 
@@ -448,8 +448,8 @@ Audio Transcription API. You provide an audio file and receive a text transcript
 |-----------|----------|-------------|--------|
 | `file` | Yes | The audio file to transcribe. Supported formats: wav. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `model` | Yes | The Whisper model to use for transcription (e.g., `Whisper-Tiny`, `Whisper-Base`, `Whisper-Small`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). If not specified, Whisper will auto-detect the language. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | The format of the response. Currently only `json` is supported. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `language` | No | The language of the audio (ISO 639-1 code, e.g., `en`, `es`, `fr`). Defaults to `auto`, which tells whisper.cpp to detect the source language instead of using whisper-server's English default. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | The response format. Supported values: `json`, `verbose_json`, `text`, `srt`, `vtt`. `srt` and `vtt` require a backend that reports segment timestamps (whisper.cpp). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -628,18 +628,16 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 ## `POST /v1/images/generations`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Generation API. You provide a text prompt and receive a generated image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+Image Generation API. You provide a text prompt and receive a generated image.
 
-> **Note:** Image generation uses Stable Diffusion models. Available models include `SD-Turbo` (fast, ~4 steps), `SDXL-Turbo`, `SD-1.5`, and `SDXL-Base-1.0`.
->
-> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
+> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (ROCm) is significantly faster.
 
 ### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The Stable Diffusion model to use (e.g., `SD-Turbo`, `SDXL-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, `256x256`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate. Currently only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
@@ -666,7 +664,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 ## `POST /v1/images/edits`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image.
 
 > **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
 >
@@ -676,7 +674,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `image` / `image[]` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -728,7 +726,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 ## `POST /v1/images/variations`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Variations API. You provide a source image and receive a variation of it. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+Image Variations API. You provide a source image and receive a variation of it.
 
 > **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, a `prompt` parameter is not supported and will be ignored — the model generates a variation based solely on the input image.
 >
@@ -780,10 +778,8 @@ Image Variations API. You provide a source image and receive a variation of it. 
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the `sd-cli` binary from [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) to perform super-resolution.
+Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive an upscaled image. The upscale factor depends on the selected model, and it is usually reflected in its name.
 
-> **Note:** Available upscale models are `RealESRGAN-x4plus` (general-purpose, 64 MB) and `RealESRGAN-x4plus-anime` (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).
->
 > **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.
 
 ### Parameters
@@ -791,7 +787,7 @@ Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `RealESRGAN-x4plus-anime`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `Remacri-4x-TheNoise`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
@@ -913,11 +909,11 @@ A typical workflow is to generate an image first, then upscale it:
 ## `POST /v1/audio/speech`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Speech Generation API. You provide a text input and receive an audio file. This API uses [Kokoros](https://github.com/lucasjinreal/Kokoros) as the backend.
+Speech Generation API. You provide a text input and receive an audio file. Which engine serves the request depends on the model.
 
-> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` (voice cloning from a reference WAV) and `MOSS-VoiceGen` (voice design from a text description).
+> **Note:** Supported models are `kokoro-v1` (fixed voices, [Kokoros](https://github.com/lucasjinreal/Kokoros) backend) and the OpenMOSS family — `OpenMOSS-TTS` and `MOSS-TTS-Local` support cloning and integrated voice design. `MOSS-VoiceGen` remains available as a legacy compatibility model while existing GUI/settings paths migrate to the integrated design flow.
 >
-> **Limitations:** `kokoro-v1` supports `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS models natively produce `wav` only, and other formats are rejected with `400 Bad Request`. Streaming is supported in `audio` (`pcm`) mode on `kokoro-v1`.
+> **Limitations:** Which `response_format` values are accepted depends on the model's backend: `kokoro-v1` encodes `mp3`, `wav`, `opus`, and `pcm`; OpenMOSS v0.3 encodes buffered `wav` or `pcm`. Native streaming is narrower for both backends and uses `pcm` only, so an explicit non-PCM `response_format` on a streaming request is rejected rather than mislabeled or silently transcoded. OpenMOSS raw PCM is returned as `audio/pcm` with `X-MOSS-Sample-Rate` and `X-MOSS-Channels`, because its native format is model-dependent (24 kHz mono for OpenMOSS-TTS and 48 kHz stereo for MOSS-TTS-Local).
 
 ### Parameters
 
@@ -929,8 +925,9 @@ Speech Generation API. You provide a text input and receive an audio file. This 
 | `voice` | No | The voice to use. All OpenAI-defined voices can be used (`alloy`, `ash`, ...), as well as those defined by the kokoro model (`af_sky`, `am_echo`, ...). Default: `shimmer` | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `voice` (OpenMOSS) | No | For OpenMOSS models the field is a free-text voice/style instruction instead of a fixed voice name (e.g. `a calm, deep male narrator voice`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `reference_wav_b64` | No | Lemonade extension (OpenMOSS voice cloning): base64-encoded WAV sample of the voice to clone. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `response_format` | No | Format of the response. `mp3`, `wav`, `opus`, and `pcm` are supported. Default: `mp3`| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
-| `stream_format` | No | If set, the response will be streamed. Only `audio` is supported, which will output `pcm` audio. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `voice_design_description` | No | Lemonade extension (OpenMOSS voice design): a description of the voice to invent, e.g. `a warm low female voice with a British accent`. Lemonade renders a short sample in that voice and uses it as the reference, so the effect is the same as supplying `reference_wav_b64` yourself. Ignored when `reference_wav_b64` is also present. Design is opt-in through this field only — `voice` never triggers it. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `response_format` | No | Container for the returned audio. Which values are accepted depends on the model's backend (see Limitations above). Default: `mp3` when buffered and `pcm` when streaming, falling back to the backend's first supported format when it cannot encode that default. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
+| `stream_format` | No | If set, the response is streamed. Only `audio` is supported. This selects the transport only — the container still comes from `response_format`, and an explicit one is honored on both transports. Default: not set| <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 
 ### Example request
 
@@ -956,7 +953,7 @@ The generated audio file is returned as-is.
 ## `GET /v1/models`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, and, when known, `max_context_window`.
+Returns a list of models available on the server in an OpenAI-compatible format. Each model object includes extended fields like `checkpoint`, `recipe`, `size`, `downloaded`, `labels`, `context_length`, and, when known, `max_context_window`.
 
 By default, only models available locally (downloaded) are shown, matching OpenAI API behavior.
 
@@ -993,6 +990,7 @@ curl http://localhost:13305/v1/models?show_all=true
       "recipe": "llamacpp",
       "size": 0.38,
       "max_context_window": 40960,
+      "context_length": 8192,
       "downloaded": true,
       "suggested": true,
       "update_available": false,
@@ -1044,6 +1042,7 @@ curl http://localhost:13305/v1/models?show_all=true
   - `recipe` - Backend/device recipe used to load the model (e.g., `"ryzenai-llm"`, `"llamacpp"`, `"flm"`)
   - `size` - Model size in GB (omitted for models without size information)
   - `max_context_window` - Optional integer indicating the maximum model-supported text context discovered from local static metadata. Currently populated for downloaded GGUF/llama.cpp models and installed FLM text-context models.
+  - `context_length` - Number of tokens the model can handle in one request. Uses the loaded value when the model is running and the configured `ctx_size` otherwise (omitted when neither is known).
   - `downloaded` - Boolean indicating if the model is downloaded and available locally
   - `update_available` - Boolean indicating a newer commit exists on HuggingFace for this model. Only set for downloaded HF-backed models. `false` otherwise.
   - `suggested` - Boolean indicating if the model is recommended for general use
@@ -1061,23 +1060,50 @@ curl http://localhost:13305/v1/models?show_all=true
 
 Labels describe what a model can do. A model may carry multiple labels.
 
-**Deployment labels** — determine which backend endpoint the model is routed to:
+**Deployment labels** — determine which backend endpoint the model is routed to.
+Every model names exactly one deployment mode, and a model is never given two
+labels that name different modes:
 
 | Label | Endpoint | Description |
 |-------|----------|-------------|
-| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). Mutually exclusive with LLM deployment. |
-| `embeddings` | `/embeddings` | Produces text embedding vectors. |
-| `reranking` | `/reranking` | Scores and reranks a list of passages given a query. |
-| `image` | `/images/generations` | Text-to-image generation model. |
-| `edit` | Image editing model; supports the `/images/edits` endpoint. |
+| `chat` | `/chat/completions`, `/completions`, `/responses` | Text-generating LLM. This label is what makes a model an LLM — it is not inferred from `reasoning`/`vision`/`tool-calling`/`chat-transcription`, which are characteristics rather than deployment modes. |
+| `transcription` | `/audio/transcriptions` | Speech-to-text transcription model (e.g. Whisper). An omni LLM that accepts audio in a chat turn is not one of these — it carries `chat` and the `chat-transcription` capability below. |
+| `embeddings` | `/embeddings` | Produces text embedding vectors. Also accepted as `embedding`. |
+| `reranking` | `/rerank` | Scores and reranks a list of passages given a query. Also reachable at the aliases `/reranking` and `/reranker`. |
+| `image` | `/images/generations`, `/images/edits`, `/images/variations` | Text-to-image generation model. |
 | `tts` | `/audio/speech` | Text-to-speech synthesis model. |
+| `audio-generation` | `/audio/generations` | Text-to-audio generation model (e.g. music, sound effects). |
+| `classification` | `/classify` | Text classification model. Also accepted as `classifier`. |
+| `3d` | `/3d/generations` | Text- or image-to-3D mesh generation model. |
 
-**Input-modality labels** — the model is deployed as an LLM but accepts additional input types in `/chat/completions`:
+When a model declares no deployment label at all, it inherits its recipe's
+default — `chat` for `llamacpp`, `flm`, `ryzenai-llm`, `vllm` and `cloud`,
+`transcription` for `whispercpp`, `image` for `sd-cpp`, `tts` for `kokoro`, and
+so on.
+
+Two label sets describe a model that cannot exist, and are refused rather than
+repaired:
+
+- **A mode the recipe's backend does not serve.** `/classify` is served only by
+  `onnxruntime`, so `labels: ["classification"]` on a `llamacpp` model is an
+  error — register it as the chat model it is.
+- **Two different modes.** `labels: ["chat", "embeddings"]` on a `llamacpp` model
+  is an error even though llama.cpp serves both: the subprocess is launched for
+  one mode, so the second would name an endpoint it was never configured to
+  answer. Register one model per mode. The legacy `embedding` and `reranking`
+  booleans count as mode claims here, exactly as the labels do.
+
+[`POST /v1/pull`](./lemonade.md#post-v1pull) answers `400` and registers nothing.
+An entry already stored in `user_models.json` — written before these rules — is
+skipped at startup with an error naming it, and the file is left untouched so it
+can be corrected by hand.
+
+**Input-modality labels** — the model accepts additional input types in `/chat/completions`:
 
 | Label | Description |
 |-------|-------------|
 | `vision` | Accepts image attachments in chat messages. |
-| `chat-transcription` | Accepts audio attachments in chat messages (e.g. Qwen2.5-Omni). |
+| `chat-transcription` | Accepts audio attachments in chat messages and transcribes them as part of its answer (e.g. Qwen2.5-Omni). Like `vision`, this is something a chat model can do, not a deployment mode of its own — a model carrying it also carries `chat`. It is distinct from `transcription`, which deploys a dedicated ASR model on `/audio/transcriptions`. |
 
 **Streaming labels** — capability flags for real-time features:
 
@@ -1091,6 +1117,13 @@ Labels describe what a model can do. A model may carry multiple labels.
 |-------|-------------|
 | `mtp` | Enables llama.cpp MTP draft decoding defaults (`--spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-p-min 0.75`); users can override these with `llamacpp_args`. |
 
+**Image capability labels** — carried alongside `image`; they refine what the model is offered for without changing its deployment mode:
+
+| Label | Description |
+|-------|-------------|
+| `edit` | Tuned for editing an input image (`/images/edits`). Also selects the model for the `edit_image` role in an omni collection. |
+| `upscaling` | Image upscaling model (e.g. Real-ESRGAN, `/images/upscale`). Used as a component in image pipelines rather than offered on its own. |
+
 **Characteristic labels** — informational, do not affect routing:
 
 | Label | Description |
@@ -1099,7 +1132,6 @@ Labels describe what a model can do. A model may carry multiple labels.
 | `reasoning` | Uses extended chain-of-thought reasoning (e.g. DeepSeek, Qwen3). |
 | `tool-calling` | Supports function/tool calling in chat completions. |
 | `coding` | Tuned for code generation and software tasks. |
-| `upscaling` | Image upscaling model (e.g. Real-ESRGAN). Used as a component in image pipelines. |
 | `experimental` | Not yet validated for production use. |
 
 
@@ -1134,6 +1166,7 @@ Returns a single model object with the same fields as described in the [models l
   "recipe": "llamacpp",
   "size": 0.38,
   "max_context_window": 40960,
+  "context_length": 8192,
   "downloaded": true,
   "suggested": true,
   "labels": ["reasoning"],

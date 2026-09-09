@@ -9,17 +9,23 @@ Usage:
     python server_streaming_errors.py --cli-binary /path/to/lemonade
 """
 
+import json
 import time
 
 import requests
 
-from utils.server_base import ServerTestBase, run_server_tests
+from utils.server_base import ServerTestBase, model_recipe_options, run_server_tests
 from utils.test_models import (
     PORT,
     ENDPOINT_TEST_MODEL,
     TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
 )
+
+# The overflow tests pin the model to a context their prompt cannot fit in;
+# with nothing saved, ctx_size is sized from available memory and can exceed it.
+OVERFLOW_CTX_SIZE = 2048
+OVERFLOW_PROMPT = "The quick brown fox jumps over the lazy dog. " * 600  # ~6 000 tokens
 
 
 class StreamingErrorTests(ServerTestBase):
@@ -49,13 +55,16 @@ class StreamingErrorTests(ServerTestBase):
         )
 
     def _consume_stream(self, response):
-        """Consume all SSE lines; fails the test on ChunkedEncodingError."""
+        """Consume all SSE lines; fails the test on ChunkedEncodingError or ConnectionError."""
         lines = []
         try:
             for raw in response.iter_lines():
                 if raw:
                     lines.append(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
-        except requests.exceptions.ChunkedEncodingError as exc:
+        except (
+            requests.exceptions.ChunkedEncodingError,
+            requests.exceptions.ConnectionError,
+        ) as exc:
             self.fail(f"Stream not properly terminated (sink.done() missing?): {exc}")
         return lines
 
@@ -196,18 +205,60 @@ class StreamingErrorTests(ServerTestBase):
         HTTP response, llama.cpp returns 400 (prompt exceeds n_ctx), and without
         the fix sink.done() is never called, leaving the stream open.
         """
-        self._ensure_test_model_loaded()
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            self._ensure_test_model_loaded()
 
-        # ~5 000 tokens — well above the 2048-token context of Tiny-Test-Model-GGUF
-        overflow_prompt = "The quick brown fox jumps over the lazy dog. " * 600
+            response = self._post_streaming(
+                ENDPOINT_TEST_MODEL,
+                messages=[{"role": "user", "content": OVERFLOW_PROMPT}],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            lines = self._consume_stream(response)
 
-        response = self._post_streaming(
-            ENDPOINT_TEST_MODEL,
-            messages=[{"role": "user", "content": overflow_prompt}],
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        lines = self._consume_stream(response)
         print(f"[OK] Context overflow: stream closed cleanly ({len(lines)} line(s))")
+
+    def test_004a_context_overflow_error_is_sse_framed(self):
+        """Backend non-200 during a stream reaches the client as an SSE event.
+
+        An SSE parser drops any line that is not a recognized field, so an
+        error body written without framing is invisible to every OpenAI-style
+        client even though its bytes are on the wire.
+        """
+        with model_recipe_options(ENDPOINT_TEST_MODEL, ctx_size=OVERFLOW_CTX_SIZE):
+            self._ensure_test_model_loaded()
+
+            response = self._post_streaming(
+                ENDPOINT_TEST_MODEL,
+                messages=[{"role": "user", "content": OVERFLOW_PROMPT}],
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            lines = self._consume_stream(response)
+
+        sse_fields = ("data:", "event:", "id:", "retry:", ":")
+        unframed = [line for line in lines if not line.startswith(sse_fields)]
+        self.assertEqual(unframed, [], f"Lines no SSE parser will read: {unframed[:5]}")
+
+        errors = []
+        for line in lines:
+            if not line.startswith("data:"):
+                continue
+            payload = line.split(":", 1)[1].strip()
+            if payload == "[DONE]":
+                continue
+            try:
+                parsed = json.loads(payload)
+            except ValueError:
+                continue
+            if isinstance(parsed, dict) and isinstance(parsed.get("error"), dict):
+                errors.append(parsed["error"])
+
+        self.assertTrue(errors, f"No error event in stream. Lines: {lines[:10]}")
+
+        self.assertNotEqual(errors[0].get("type"), "backend_error", errors[0])
+        self.assertIn("context", errors[0].get("message", "").lower(), errors[0])
+        print(
+            f"[OK] Context overflow: error event framed ({errors[0]['message'][:80]})"
+        )
 
     def test_005_streaming_with_many_tools_terminates_cleanly(self):
         """Streaming with 15 tools terminates cleanly (original bug report scenario)."""

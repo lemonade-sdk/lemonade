@@ -3,7 +3,7 @@
 
 namespace PlatformConstants {
     // macOS Identity & Paths
-    inline constexpr char MACOS_BUNDLE_ID[] = "com.lemonade.server";
+    inline constexpr char MACOS_BUNDLE_ID[] = "ai.lemonadeserver.server";
     inline constexpr char MACOS_PROPERTY_LIST_EXT[] = ".plist";
     inline constexpr char MACOS_LAUNCH_DAEMON_DIR[] = "/Library/LaunchDaemons/";
     inline constexpr char LAUNCHCTL_PATH[] = "/bin/launchctl";

@@ -8,7 +8,10 @@
 #include <thread>
 #include <vector>
 #include "lemon/backends/vllm/vllm_server.h"
+#include "lemon/runtime_config.h"
 #include "lemon/streaming_proxy.h"
+#include "lemon/utils/conversation_fingerprint.h"
+#include "telemetry.h"
 
 namespace lemon::telemetry {
     std::string standardize_thinking(const std::string& text);
@@ -23,6 +26,16 @@ static void check_eq(const char* name, const std::string& actual, const std::str
     if (!ok) {
         std::printf("      Expected: \"%s\"\n", expected.c_str());
         std::printf("      Actual:   \"%s\"\n", actual.c_str());
+        ++g_failures;
+    }
+}
+
+static void check_bool(const char* name, bool actual, bool expected) {
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("      Expected: %s\n", expected ? "true" : "false");
+        std::printf("      Actual:   %s\n", actual ? "true" : "false");
         ++g_failures;
     }
 }
@@ -185,6 +198,57 @@ int main() {
             auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
             check_int("parse_telemetry: root usage prompt_tokens", tel.input_tokens, 10);
             check_int("parse_telemetry: root usage completion_tokens", tel.output_tokens, 20);
+            check_int("parse_telemetry: usage sets prompt_tokens field", tel.prompt_tokens, 10);
+            check_int("parse_telemetry: cache_tokens -1 when unreported", tel.cache_tokens, -1);
+        }
+
+        // 1a. extract_telemetry on complete response bodies (non-streaming)
+        {
+            nlohmann::json chat_body = nlohmann::json::parse(
+                "{\"usage\": {\"prompt_tokens\": 59, \"completion_tokens\": 3, "
+                "\"prompt_tokens_details\": {\"cached_tokens\": 33}}, "
+                "\"timings\": {\"prompt_n\": 19, \"predicted_n\": 3, \"prompt_ms\": 100.0, "
+                "\"predicted_per_second\": 50.0, \"cache_n\": 40}}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(chat_body);
+            check_int("extract_telemetry: timings override input", tel.input_tokens, 19);
+            check_int("extract_telemetry: usage prompt preserved", tel.prompt_tokens, 59);
+            check_int("extract_telemetry: timings cache_n wins", tel.cache_tokens, 40);
+            check_int("extract_telemetry: output from timings", tel.output_tokens, 3);
+        }
+        {
+            nlohmann::json responses_body = nlohmann::json::parse(
+                "{\"usage\": {\"input_tokens\": 30, \"output_tokens\": 40, "
+                "\"input_tokens_details\": {\"cached_tokens\": 12}}}");
+            auto tel = lemon::StreamingProxy::extract_telemetry(responses_body);
+            check_int("extract_telemetry: responses input_tokens", tel.input_tokens, 30);
+            check_int("extract_telemetry: responses prompt from input", tel.prompt_tokens, 30);
+            check_int("extract_telemetry: responses cached via input_tokens_details", tel.cache_tokens, 12);
+            check_int("extract_telemetry: responses output_tokens", tel.output_tokens, 40);
+        }
+
+        // 1b. Cached tokens from usage.prompt_tokens_details (OpenAI-wire)
+        {
+            std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"completion_tokens\": 20, \"prompt_tokens_details\": {\"cached_tokens\": 8}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: usage cached_tokens", tel.cache_tokens, 8);
+        }
+        {
+            std::string buffer = "data: {\"usage\": {\"prompt_tokens\": 10, \"prompt_tokens_details\": {\"cached_tokens\": 0}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: usage cached_tokens zero is reported, not -1", tel.cache_tokens, 0);
+        }
+
+        // 1c. Responses API usage shape: input_tokens_details.cached_tokens
+        {
+            std::string buffer = "data: {\"response\": {\"usage\": {\"input_tokens\": 30, \"output_tokens\": 40, \"input_tokens_details\": {\"cached_tokens\": 12}}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: responses input_tokens_details cached_tokens", tel.cache_tokens, 12);
+            check_int("parse_telemetry: responses input_tokens alongside details", tel.input_tokens, 30);
+        }
+        {
+            std::string buffer = "data: {\"usage\": {\"input_tokens\": 30, \"input_tokens_details\": {\"cached_tokens\": 7}, \"prompt_tokens_details\": {\"cached_tokens\": 9}}}\n";
+            auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
+            check_int("parse_telemetry: prompt_tokens_details wins over input_tokens_details", tel.cache_tokens, 9);
         }
 
         // 2. Nested usage under response (OpenAI keys)
@@ -209,12 +273,13 @@ int main() {
 
         // 3. Root level timings
         {
-            std::string buffer = "data: {\"timings\": {\"prompt_n\": 50, \"predicted_n\": 60, \"prompt_ms\": 1500.0, \"predicted_per_second\": 25.5}}\n";
+            std::string buffer = "data: {\"timings\": {\"prompt_n\": 50, \"predicted_n\": 60, \"prompt_ms\": 1500.0, \"predicted_per_second\": 25.5, \"cache_n\": 45}}\n";
             auto tel = lemon::StreamingProxy::parse_telemetry(buffer);
             check_int("parse_telemetry: root timings prompt_tokens", tel.input_tokens, 50);
             check_int("parse_telemetry: root timings completion_tokens", tel.output_tokens, 60);
             check_double_val("parse_telemetry: root timings prompt_ms", tel.time_to_first_token, 1.5);
             check_double_val("parse_telemetry: root timings predicted_per_second", tel.tokens_per_second, 25.5);
+            check_int("parse_telemetry: root timings cache_n", tel.cache_tokens, 45);
         }
 
         // 4. Nested timings under response
@@ -226,6 +291,56 @@ int main() {
             check_double_val("parse_telemetry: nested timings prompt_ms", tel.time_to_first_token, 2.0);
             check_double_val("parse_telemetry: nested timings predicted_per_second", tel.tokens_per_second, 30.0);
         }
+    }
+
+    // --- conversation_fingerprint tests ---
+    std::printf("===========================================\n");
+    {
+        auto check_bool = [](const char* name, bool ok) {
+            std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+            if (!ok) ++g_failures;
+        };
+        using lemon::utils::conversation_fingerprint;
+
+        nlohmann::json turn1 = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", "Refactor my parser"}}
+        })}};
+        nlohmann::json turn2 = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", "Refactor my parser"}},
+            {{"role", "assistant"}, {"content", "Done."}},
+            {{"role", "user"}, {"content", "now add tests"}}
+        })}};
+        check_bool("conversation_fingerprint: stable across appended turns",
+                   conversation_fingerprint(turn1) == conversation_fingerprint(turn2));
+
+        nlohmann::json other = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", "Write a poem"}}
+        })}};
+        check_bool("conversation_fingerprint: differs for different first user message",
+                   conversation_fingerprint(turn1) != conversation_fingerprint(other));
+
+        nlohmann::json no_system = {{"messages", nlohmann::json::array({
+            {{"role", "user"}, {"content", "Refactor my parser"}}
+        })}};
+        check_bool("conversation_fingerprint: system prompt participates",
+                   conversation_fingerprint(turn1) != conversation_fingerprint(no_system));
+
+        nlohmann::json parts = {{"messages", nlohmann::json::array({
+            {{"role", "system"}, {"content", "You are helpful."}},
+            {{"role", "user"}, {"content", nlohmann::json::array({
+                {{"type", "text"}, {"text", "Refactor my parser"}}
+            })}}
+        })}};
+        check_bool("conversation_fingerprint: content-part form matches plain string form",
+                   conversation_fingerprint(turn1) == conversation_fingerprint(parts));
+
+        nlohmann::json prompt_a = {{"prompt", "complete this"}};
+        nlohmann::json prompt_b = {{"prompt", "complete that"}};
+        check_bool("conversation_fingerprint: legacy prompt form distinguishes inputs",
+                   conversation_fingerprint(prompt_a) != conversation_fingerprint(prompt_b));
     }
 
     // --- accumulate_responses_delta tests ---
@@ -299,6 +414,13 @@ int main() {
     // --- Client disconnect telemetry error handling tests ---
     std::printf("===========================================\n");
     {
+#ifdef _WIN32
+        _putenv("NO_PROXY=*");
+        _putenv("no_proxy=*");
+#else
+        setenv("NO_PROXY", "*", 1);
+        setenv("no_proxy", "*", 1);
+#endif
         httplib::Server svr;
         svr.Post("/stream", [](const httplib::Request& req, httplib::Response& res) {
             res.set_content_provider(
@@ -360,6 +482,177 @@ int main() {
 
             check_eq("Client disconnected error message check", error_msg, "Client disconnected during stream");
         }
+    }
+
+    // --- InferenceSpan session ID resolution tests ---
+    std::printf("===========================================\n");
+    {
+        nlohmann::json test_cfg_json = {
+            {"config_version", 2},
+            {"port", 13305},
+            {"host", "localhost"},
+            {"telemetry", {
+                {"enabled", false},
+                {"max_attribute_length", 20},
+                {"otlp", {
+                    {"semantics", {"openinference", "otel_genai"}}
+                }}
+            }}
+        };
+        lemon::RuntimeConfig test_cfg(test_cfg_json);
+        lemon::RuntimeConfig::set_global(&test_cfg);
+
+        auto get_span_attr = [](const nlohmann::json& span, const std::string& attr_key) -> std::string {
+            if (span.contains("attributes") && span["attributes"].is_array()) {
+                for (const auto& attr : span["attributes"]) {
+                    if (attr.value("key", "") == attr_key) {
+                        if (attr.contains("value") && attr["value"].contains("stringValue")) {
+                            return attr["value"]["stringValue"].get<std::string>();
+                        }
+                    }
+                }
+            }
+            return "";
+        };
+
+        nlohmann::json last_span;
+        lemon::telemetry::register_span_listener([&last_span](const nlohmann::json& span) {
+            last_span = span;
+        });
+
+        // 1. Body session_id present, header present -> body wins
+        lemon::telemetry::g_incoming_client_id = "hdr_client";
+        lemon::telemetry::g_incoming_session_id = "hdr_session_123";
+        auto span1 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", {{"session_id", "body_session_456"}});
+        span1->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: body wins over header (session.id)", get_span_attr(last_span, "session.id"), "body_session_456");
+        check_eq("InferenceSpan session: body wins over header (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "body_session_456");
+
+        // 2. Body session_id explicitly empty, header present -> body wins (empty session.id, no header fallback)
+        auto span1_empty = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", {{"session_id", ""}});
+        span1_empty->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: explicit empty body wins over header (session.id)", get_span_attr(last_span, "session.id"), "");
+        check_eq("InferenceSpan session: explicit empty body wins over header (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "");
+
+        // 3. Body session_id absent, header present -> header used
+        lemon::telemetry::g_incoming_client_id = "";
+        lemon::telemetry::g_incoming_session_id = "hdr_session_789";
+        auto span2 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span2->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: header fallback (session.id)", get_span_attr(last_span, "session.id"), "hdr_session_789");
+        check_eq("InferenceSpan session: header fallback (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "hdr_session_789");
+
+        // 4. Namespaced header session (<client>/<session>) with long client preserves session ID
+        lemon::telemetry::g_incoming_client_id = "opencode-cli-desktop-extra-long";
+        lemon::telemetry::g_incoming_session_id = "sess-xyz";
+        auto span3 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span3->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: namespaced preserves session ID (session.id)", get_span_attr(last_span, "session.id"), "opencode-cl/sess-xyz");
+        check_eq("InferenceSpan session: namespaced preserves session ID (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "opencode-cl/sess-xyz");
+
+        // 5. Neither body nor header present -> omitted from attributes
+        lemon::telemetry::g_incoming_client_id = "";
+        lemon::telemetry::g_incoming_session_id = "";
+        auto span4 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span4->end_with_success(nlohmann::json::object(), "response text");
+        check_eq("InferenceSpan session: omitted when absent (session.id)", get_span_attr(last_span, "session.id"), "");
+        check_eq("InferenceSpan session: omitted when absent (gen_ai)", get_span_attr(last_span, "gen_ai.conversation.id"), "");
+
+        // 6. Tool calls output messages, max_attribute_length truncation with valid JSON, and fallback output.value
+        std::vector<lemon::telemetry::ToolCall> sample_tool_calls = {
+            {"call_abc123", "bash", "{\"command\": \"git branch --all -vv\"}"}
+        };
+        auto span5 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span5->end_with_success(nlohmann::json::object(), "", sample_tool_calls);
+        check_eq("InferenceSpan tool calls: openinference role", get_span_attr(last_span, "llm.output_messages.0.message.role"), "assistant");
+        check_eq("InferenceSpan tool calls: openinference tool id", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.id"), "call_abc123");
+        check_eq("InferenceSpan tool calls: openinference function name", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.name"), "bash");
+        std::string args_str = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
+        nlohmann::json parsed_args = nlohmann::json::parse(args_str, nullptr, false);
+        check_bool("InferenceSpan tool calls: function args is valid JSON", parsed_args.is_discarded(), false);
+        check_bool("InferenceSpan tool calls: function args has _truncated flag", parsed_args.value("_truncated", false), true);
+        check_eq("InferenceSpan tool calls: openinference fallback output.value truncated", get_span_attr(last_span, "output.value"), "[{\"fu... [TRUNCATED]");
+
+        // 7. hide_thinking preserves stripped output in output_messages content
+        nlohmann::json test_cfg_thinking_json = {
+            {"config_version", 2},
+            {"port", 13305},
+            {"host", "localhost"},
+            {"telemetry", {
+                {"enabled", false},
+                {"hide_outputs", false},
+                {"hide_thinking", true},
+                {"otlp", {
+                    {"semantics", {"openinference", "otel_genai"}}
+                }}
+            }}
+        };
+        lemon::RuntimeConfig test_cfg_thinking(test_cfg_thinking_json);
+        lemon::RuntimeConfig::set_global(&test_cfg_thinking);
+
+        auto span6 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span6->end_with_success(nlohmann::json::object(), "<think>internal reasoning</think>visible reply");
+        check_eq("InferenceSpan hide_thinking: openinference content stripped", get_span_attr(last_span, "llm.output_messages.0.message.content"), "visible reply");
+        check_eq("InferenceSpan hide_thinking: gen_ai content stripped", get_span_attr(last_span, "gen_ai.output.messages.0.content"), "visible reply");
+
+        // 8. hide_outputs suppresses tool-call attributes and redacts output content
+        nlohmann::json test_cfg_hide_out_json = {
+            {"config_version", 2},
+            {"port", 13305},
+            {"host", "localhost"},
+            {"telemetry", {
+                {"enabled", false},
+                {"hide_outputs", true},
+                {"otlp", {
+                    {"semantics", {"openinference", "otel_genai"}}
+                }}
+            }}
+        };
+        lemon::RuntimeConfig test_cfg_hide_out(test_cfg_hide_out_json);
+        lemon::RuntimeConfig::set_global(&test_cfg_hide_out);
+
+        auto span7 = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+        span7->end_with_success(nlohmann::json::object(), "sensitive text", sample_tool_calls);
+        check_eq("InferenceSpan hide_outputs: output.value redacted", get_span_attr(last_span, "output.value"), "[REDACTED]");
+        check_eq("InferenceSpan hide_outputs: openinference content redacted", get_span_attr(last_span, "llm.output_messages.0.message.content"), "[REDACTED]");
+        check_eq("InferenceSpan hide_outputs: openinference tool id suppressed", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.id"), "");
+        check_eq("InferenceSpan hide_outputs: openinference function name suppressed", get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.name"), "");
+        // 9. Unicode boundary and strict max_attribute_length bounds
+        std::vector<lemon::telemetry::ToolCall> unicode_tool_calls = {
+            {"call_uni", "search", "{\"query\": \"日本語テスト🚀 emoji and characters\"}"}
+        };
+        for (int bound : {0, 1, 2, 10, 18, 30, 50, 100}) {
+            nlohmann::json test_cfg_bound_json = {
+                {"config_version", 2},
+                {"port", 13305},
+                {"host", "localhost"},
+                {"telemetry", {
+                    {"enabled", false},
+                    {"max_attribute_length", bound},
+                    {"otlp", {
+                        {"semantics", {"openinference"}}
+                    }}
+                }}
+            };
+            lemon::RuntimeConfig test_cfg_bound(test_cfg_bound_json);
+            lemon::RuntimeConfig::set_global(&test_cfg_bound);
+
+            auto span_bound = lemon::telemetry::TelemetryTracker::start_span("LLM", "chat.completions", "test-model", nlohmann::json::object());
+            span_bound->end_with_success(nlohmann::json::object(), "", unicode_tool_calls);
+            std::string bound_args = get_span_attr(last_span, "llm.output_messages.0.message.tool_calls.0.tool_call.function.arguments");
+            check_bool("InferenceSpan unicode args length <= max_len", bound_args.size() <= static_cast<size_t>(bound), true);
+            if (!bound_args.empty()) {
+                nlohmann::json p = nlohmann::json::parse(bound_args, nullptr, false);
+                check_bool("InferenceSpan unicode args valid JSON", p.is_discarded(), false);
+            }
+            lemon::RuntimeConfig::set_global(nullptr);
+        }
+
+        // Clean up
+        lemon::telemetry::unregister_span_listener();
+        lemon::RuntimeConfig::set_global(nullptr);
+        lemon::telemetry::flush();
+        lemon::telemetry::shutdown();
     }
 
     std::printf("===========================================\n");

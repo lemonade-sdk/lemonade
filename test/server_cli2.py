@@ -6,6 +6,7 @@ Tests the lemonade CLI client commands (HTTP client for Lemonade Server):
 - list
 - export
 - backends
+- cloud
 - import (from JSON file)
 - pull with labels and checkpoints
 - load
@@ -37,6 +38,7 @@ import uuid
 from utils.server_base import _auth_headers, set_server_config, wait_for_server
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
+    ENDPOINT_TEST_MODEL_CTX_SIZE,
     MULTI_REPO_MODEL_A_CACHE_DIR,
     MULTI_REPO_MODEL_A_MAIN,
     MULTI_REPO_MODEL_A_NAME,
@@ -237,6 +239,7 @@ def _is_transient_cli_pull_failure(result):
         or "connection reset" in output
         or "connection aborted" in output
         or "connection refused" in output
+        or "ssl connect error" in output
         or "timed out" in output
         or "timeout" in output
     )
@@ -394,6 +397,37 @@ sys.exit(0)
         result = self.assertCommandSucceeds(["status"])
         output = result.stdout + result.stderr
         print(f"Status output: {output}")
+
+    def test_010a_status_json(self):
+        """Test status --json emits parseable per-model detail."""
+        result = self.assertCommandSucceeds(["status", "--json"])
+        data = json.loads(result.stdout)
+
+        self.assertIn("port", data)
+        self.assertIsInstance(data["port"], int)
+        self.assertIn("version", data)
+        self.assertIn("models", data)
+        self.assertIsInstance(data["models"], list)
+
+        # Per-model detail only exists when something is loaded; the CLI suite
+        # does not guarantee that, so the contract is checked opportunistically.
+        for model in data["models"]:
+            for key in (
+                "model_name",
+                "checkpoint",
+                "type",
+                "device",
+                "recipe",
+                "recipe_options",
+                "status",
+                "pinned",
+                "pid",
+                "backend_url",
+            ):
+                self.assertIn(key, model)
+            self.assertIsInstance(model["recipe_options"], dict)
+            self.assertIsInstance(model["pinned"], bool)
+            self.assertIsInstance(model["pid"], int)
 
     def test_011_status_with_global_options(self):
         """Test status command with global options."""
@@ -577,6 +611,51 @@ sys.exit(0)
         print(f"Backends uninstall exit code: {result.returncode}")
 
     # =============================================================================
+    # Cloud Tests
+    # =============================================================================
+
+    def test_046_cloud_list_json(self):
+        """Test `cloud list --json` emits the provider array from system-info."""
+        result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+        providers = json.loads(result.stdout)
+        self.assertIsInstance(providers, list)
+
+        provider = "clijsonprobe"
+        base_url = "https://example.invalid/v1"
+        try:
+            self.assertCommandSucceeds(
+                ["cloud", "install", provider, "--base-url", base_url]
+            )
+            result = self.assertCommandSucceeds(["cloud", "list", "--json"])
+            providers = json.loads(result.stdout)
+            self.assertIsInstance(providers, list)
+            entry = next((p for p in providers if p.get("name") == provider), None)
+            self.assertIsNotNone(entry, f"{provider} missing from {providers}")
+            for key in (
+                "name",
+                "base_url",
+                "env_var",
+                "env_var_set",
+                "runtime_key_set",
+                "models_discovered",
+                "allow_insecure_http",
+            ):
+                self.assertIn(key, entry)
+            self.assertEqual(entry["base_url"], base_url)
+            self.assertEqual(entry["env_var"], "LEMONADE_CLIJSONPROBE_API_KEY")
+            self.assertFalse(entry["env_var_set"])
+            self.assertFalse(entry["runtime_key_set"])
+            self.assertEqual(entry["models_discovered"], 0)
+            self.assertFalse(entry["allow_insecure_http"])
+
+            human = self.assertCommandSucceeds(["cloud", "list"])
+            with self.assertRaises(json.JSONDecodeError):
+                json.loads(human.stdout)
+            self.assertIn(provider, human.stdout)
+        finally:
+            run_cli_command(["cloud", "uninstall", provider])
+
+    # =============================================================================
     # Runtime Config Tests
     # =============================================================================
 
@@ -638,7 +717,8 @@ sys.exit(0)
                     timeout=10,
                 )
                 if response.status_code < 400:
-                    print("[OK] Restored host to localhost")
+                    wait_for_server(port=PORT, timeout=30)
+                    print("[OK] Restored host to localhost and server is reachable")
                 else:
                     print(
                         "Warning: Failed to restore host to localhost: "
@@ -681,13 +761,14 @@ sys.exit(0)
                 "set",
                 "telemetry.otlp.endpoint=http://127.0.0.1:4444/v1/traces",
                 "telemetry.otlp.protocol=http/json",
+                'telemetry.otlp.semantics=["openinference"]',
             ]
         )
         print(f"Config set output: {result.stdout}")
 
-        # 2. Query the params to verify it parsed correctly and merged
+        # 2. Read the config back to verify it parsed correctly and merged
         response = requests.get(
-            f"http://localhost:{PORT}/api/v1/params",
+            f"http://localhost:{PORT}/internal/config",
             headers=_auth_headers(),
             timeout=10,
         )
@@ -697,6 +778,70 @@ sys.exit(0)
             telemetry.get("otlp", {}).get("endpoint"), "http://127.0.0.1:4444/v1/traces"
         )
         self.assertEqual(telemetry.get("otlp", {}).get("protocol"), "http/json")
+        self.assertEqual(telemetry.get("otlp", {}).get("semantics"), ["openinference"])
+
+    def test_045_config_set_broadcast(self):
+        """Verify that CLI config set can modify broadcast setting, and client CLI works with --discovery / --no-discovery."""
+        try:
+            # 1. Set broadcast to false using the CLI config set
+            result = self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "config",
+                    "set",
+                    "broadcast=false",
+                ]
+            )
+            print(f"Config set broadcast=false output: {result.stdout}")
+
+            # Verify it is set to false on the server
+            response = requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json().get("broadcast"), False)
+
+            # 2. Set broadcast back to true
+            result = self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "config",
+                    "set",
+                    "broadcast=true",
+                ]
+            )
+            response = requests.get(
+                f"http://localhost:{PORT}/internal/config",
+                headers=_auth_headers(),
+                timeout=10,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json().get("broadcast"), True)
+
+            # 3. Test that the client works with --no-discovery and --discovery flags
+            self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "--no-discovery",
+                    "status",
+                ]
+            )
+            self.assertCommandSucceeds(
+                [
+                    "--port",
+                    str(PORT),
+                    "--discovery",
+                    "status",
+                ]
+            )
+        finally:
+            # Restore default
+            run_cli_command(["--port", str(PORT), "config", "set", "broadcast=true"])
 
     # =============================================================================
     # Pull Tests
@@ -800,8 +945,9 @@ sys.exit(0)
     def test_055_pull_components_omni_collection(self):
         """Test pull command with --components flag registers an omni collection."""
         collection_name = f"user.CliColl-{uuid.uuid4().hex[:8]}"
-        # Unique user.<name> entries surface under the bare public name.
-        public_name = collection_name[5:]
+        # Registered collections list under their canonical `user.` id (matching
+        # registration/fetch/chat); the bare name is a resolvable alias only.
+        bare_name = collection_name[5:]
         try:
             result = run_cli_pull_command_with_retry(
                 [
@@ -832,13 +978,34 @@ sys.exit(0)
                 timeout=TIMEOUT_DEFAULT,
             )
             self.assertEqual(response.status_code, 200)
-            entry = next(
-                (m for m in response.json()["data"] if m["id"] == public_name),
-                None,
+            ids = [m["id"] for m in response.json()["data"]]
+            self.assertIn(
+                collection_name,
+                ids,
+                f"{collection_name} should appear in /models under its user. id",
             )
-            self.assertIsNotNone(entry, f"{public_name} should appear in /models")
+            self.assertNotIn(
+                bare_name,
+                ids,
+                "Collection must not also be listed under its bare name",
+            )
+            entry = next(
+                m for m in response.json()["data"] if m["id"] == collection_name
+            )
             self.assertEqual(entry.get("recipe"), "collection.omni")
             self.assertEqual(entry.get("components"), [ENDPOINT_TEST_MODEL])
+
+            # Both the bare and prefixed ids still resolve on GET /models/{id}.
+            for lookup in (collection_name, bare_name):
+                single = requests.get(
+                    f"http://localhost:{PORT}/api/v1/models/{lookup}",
+                    headers=_auth_headers(),
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    single.status_code, 200, f"{lookup} should resolve: {single.text}"
+                )
+                self.assertEqual(single.json().get("id"), collection_name)
         finally:
             try:
                 requests.post(
@@ -1647,8 +1814,12 @@ sys.exit(0)
             )
             self.assertIn(ENDPOINT_TEST_MODEL, lemonade["models"])
             self.assertEqual(
-                lemonade["models"][ENDPOINT_TEST_MODEL]["contextWindow"],
-                40960,
+                lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["context"],
+                ENDPOINT_TEST_MODEL_CTX_SIZE,
+            )
+            self.assertEqual(
+                lemonade["models"][ENDPOINT_TEST_MODEL]["limit"]["output"],
+                int(ENDPOINT_TEST_MODEL_CTX_SIZE / 3),
             )
 
     def test_119_launch_opencode_refreshes_model_entries(self):
@@ -1874,7 +2045,10 @@ sys.exit(0)
 
         # Pull both models (downloads both quants into the same models-- directory)
         for name in [SHARED_REPO_MODEL_A_NAME, SHARED_REPO_MODEL_B_NAME]:
-            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+            result = run_cli_pull_command_with_retry(
+                ["pull", name], timeout=TIMEOUT_MODEL_OPERATION
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
         # Verify both show as downloaded
         result = self.assertCommandSucceeds(["list", "--downloaded"])
@@ -1959,7 +2133,10 @@ sys.exit(0)
 
         # Pull both models
         for name in [MULTI_REPO_MODEL_A_NAME, MULTI_REPO_MODEL_B_NAME]:
-            self.assertCommandSucceeds(["pull", name], timeout=TIMEOUT_MODEL_OPERATION)
+            result = run_cli_pull_command_with_retry(
+                ["pull", name], timeout=TIMEOUT_MODEL_OPERATION
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
 
         # Verify both show as downloaded
         result = self.assertCommandSucceeds(["list", "--downloaded"])
@@ -2086,6 +2263,33 @@ sys.exit(0)
             f"repo3 should be deleted after removing Model B: {repo3_path}",
         )
         print("[OK] After deleting B: all repo directories cleaned up")
+
+    def test_models_sync_command(self):
+        """Test the 'update-models' CLI subcommand dry-run check and execution."""
+        # 1. Run update-models dry-run check (using --check)
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check"]
+        )
+        self.assertIn("Checked", result.stdout)
+        self.assertIn("update(s) available", result.stdout)
+
+        # 3. Run update-models with --check --json option
+        result = self.assertCommandSucceeds(
+            ["update-models", ENDPOINT_TEST_MODEL, "--check", "--json"]
+        )
+        self.assertIn("checked_count", result.stdout)
+
+        # 4. Run update-models on nonexistent model with --check --json, expecting exit code 1
+        result = run_cli_command(
+            ["update-models", "nonexistent-model-test-xyz", "--check", "--json"],
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            result.returncode,
+            1,
+            f"update-models nonexistent model with --json should fail, got returncode {result.returncode}",
+        )
+        self.assertIn("failed_models", result.stdout)
 
 
 class CLIHelpDocsConsistencyTests(unittest.TestCase):

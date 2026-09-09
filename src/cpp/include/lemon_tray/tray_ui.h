@@ -1,5 +1,6 @@
 #pragma once
 
+#include <lemon/utils/url_utils.h>
 #include "lemon_tray/platform/tray_interface.h"
 #include <httplib.h>
 #include <nlohmann/json.hpp>
@@ -40,9 +41,16 @@ struct LoadedModelInfo {
     }
 };
 
+struct TrayUIOptions {
+    int port = 13305;
+    std::string host = "127.0.0.1";
+    bool is_ssl = false;
+    bool silent = false;
+};
+
 class TrayUI {
 public:
-    TrayUI(int port, const std::string& host, bool silent = false);
+    explicit TrayUI(const TrayUIOptions& options);
     ~TrayUI();
 
     bool initialize();
@@ -53,6 +61,8 @@ private:
     // HTTP helpers (inline, using httplib::Client)
     std::string http_get(const std::string& endpoint);
     std::string http_post(const std::string& endpoint, const std::string& body = "");
+    httplib::Client make_client(const std::string& host, int port, bool is_ssl) const;
+    httplib::Client make_client() const;
 
     // Data fetchers
     std::pair<bool, std::vector<LoadedModelInfo>> fetch_server_state();
@@ -96,6 +106,7 @@ private:
     // State
     int port_;
     std::string host_;
+    bool is_ssl_ = false;
     int max_loaded_models_ = 1;  // Mirrors server config; default 1 per configuration.md
     bool silent_;  // Suppress startup notification
     std::unique_ptr<TrayInterface> tray_;

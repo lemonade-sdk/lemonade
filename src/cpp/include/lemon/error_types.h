@@ -21,6 +21,7 @@ namespace ErrorType {
     constexpr const char* FILE_ERROR = "file_error";
     constexpr const char* INTERNAL_ERROR = "internal_error";
     constexpr const char* SLOTS_PINNED = "slots_pinned_error";
+    constexpr const char* ROUTER_RESIDENCY_CONFLICT = "router_residency_conflict";
 }
 
 // Base exception class for all Lemon errors
@@ -62,6 +63,18 @@ public:
     SlotsPinnedException(const std::string& model_type, const std::string& details = "")
         : LemonException("All loaded models of type " + model_type + " are pinned. Unload a model first." + (details.empty() ? "" : " " + details),
                         ErrorType::SLOTS_PINNED) {}
+};
+
+class RouterResidencyConflictException : public LemonException {
+public:
+    RouterResidencyConflictException(const std::string& incoming_model,
+                                     const std::string& resident_model,
+                                     const std::string& constraint)
+        : LemonException(
+              "Routing residency conflict: model '" + incoming_model +
+                  "' cannot coexist with resident model '" + resident_model +
+                  "' because " + constraint + ".",
+              ErrorType::ROUTER_RESIDENCY_CONFLICT) {}
 };
 
 class BackendException : public LemonException {

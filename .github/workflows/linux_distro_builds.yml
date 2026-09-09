@@ -3,33 +3,28 @@ name: Linux Distro Builds 🐧
 on:
   push:
     branches: ["main"]
+  # No paths filter here: the required "Linux distro builds" check has to report
+  # on every PR, and a workflow that never triggers leaves it pending forever.
+  # `labeled` is here so the ci:distros escape hatch takes effect without a
+  # push. Adding `types` replaces the defaults, so the three default activity
+  # types have to be listed explicitly.
   pull_request:
-    paths:
-      - "src/cpp/**"
-      - "CMakeLists.txt"
-      - "**/CMakeLists.txt"
-      - "CMakePresets.json"
-      - "cmake/**"
-      - "setup.sh"
-      - "test/server_cli2.py"
-      - "test/server_endpoints.py"
-      - "test/requirements.txt"
-      - "test/utils/**"
-      - ".github/workflows/linux_distro_builds.yml"
-      - ".github/actions/**"
-      - "!**/*.md"
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-linux:
     name: Build on ${{ matrix.distro }}
+    # Label a PR `ci:distros` to opt it back in.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros')
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
@@ -40,7 +35,7 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
 
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'merge_group' }}
       matrix:
         include:
           - distro: Arch
@@ -91,15 +86,29 @@ jobs:
 
       - name: Install ccache
         run: |
-          if command -v pacman >/dev/null 2>&1; then
-            pacman -Syu --needed --noconfirm ccache
-          elif command -v zypper >/dev/null 2>&1; then
-            zypper install -y ccache
-          elif command -v apt-get >/dev/null 2>&1; then
-            apt-get update && apt-get install -y ccache
-          elif command -v dnf >/dev/null 2>&1; then
-            dnf install -y ccache
-          fi
+          # Distro mirrors intermittently serve an index that is out of sync
+          # with their pool, 404ing individual packages. Retry a few times.
+          install_ccache() {
+            if command -v pacman >/dev/null 2>&1; then
+              pacman -Syu --needed --noconfirm ccache
+            elif command -v zypper >/dev/null 2>&1; then
+              zypper install -y ccache
+            elif command -v apt-get >/dev/null 2>&1; then
+              apt-get update && apt-get install -y ccache
+            elif command -v dnf >/dev/null 2>&1; then
+              dnf install -y ccache
+            fi
+          }
+          success=false
+          for i in 1 2 3; do
+            if install_ccache; then
+              success=true
+              break
+            fi
+            echo "ccache install failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
           ccache -z
 
       - name: Run setup.sh to configure environment
@@ -125,6 +134,13 @@ jobs:
           set -e
 
           echo "Building lemond and lemonade on ${{ matrix.distro }}..."
+
+          # setup.sh configures with testing on and the build below has no
+          # --target, so every unit-test binary would be built and then left out
+          # of the package. Same reasoning as BUILD_TESTING=OFF in
+          # contrib/debian/rules and the RPM job.
+          echo "Reconfiguring without the unit-test targets..."
+          cmake --preset default -DBUILD_TESTING=OFF
 
           # Build
           echo "Building binaries..."
@@ -241,8 +257,52 @@ jobs:
 
           echo "Endpoint tests PASSED!"
 
+      - name: Run log rotation tests
+        env:
+          LEMONADE_CI_MODE: "True"
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -e
+
+          . .venv/bin/activate
+          CLI_BINARY="$(pwd)/build/lemonade"
+
+          echo "Running log rotation tests..."
+          python test/server_log_rotation.py
+
+          echo "Log rotation tests PASSED!"
+
       - name: Capture and upload server logs
         if: always()
         uses: ./.github/actions/capture-server-logs
         with:
           artifact-name: server-logs-distro-${{ matrix.distro }}
+
+  # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran
+  # successfully (otherwise the merge is blocked), and 2. these jobs do not need
+  # to run on ordinary pull request pushes.
+  distro-gate:
+    name: Linux distro builds
+    needs: [build-linux]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check gated jobs
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          # $NEEDS: {"job-id": {"result": "success|failure|skipped|cancelled"}, ...}
+          # Fail if any job broke. In the merge queue, also fail if any never ran.
+          echo "$NEEDS"
+          broke=$(jq -r 'to_entries[]|select(.value.result=="failure" or .value.result=="cancelled")|.key' <<<"$NEEDS")
+          if [ -n "$broke" ]; then
+            echo "FAILED: $broke"
+            exit 1
+          fi
+          if [ "${{ github.event_name }}" = "merge_group" ]; then
+            absent=$(jq -r 'to_entries[]|select(.value.result!="success")|.key' <<<"$NEEDS")
+            if [ -n "$absent" ]; then
+              echo "DID NOT RUN IN MERGE QUEUE: $absent"
+              exit 1
+            fi
+          fi

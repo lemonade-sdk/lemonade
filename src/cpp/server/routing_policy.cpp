@@ -1,4 +1,5 @@
 #include "lemon/routing_policy.h"
+#include "lemon/error_types.h"
 
 #include <algorithm>
 #include <cmath>
@@ -231,10 +232,9 @@ public:
     ModelClassifier(std::string id, std::string type, std::string model, OnError on_error,
                     std::vector<std::string> labels,
                     std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)) {
-        if (model_.empty()) {
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("classifier requires model");
         }
     }
@@ -246,16 +246,13 @@ public:
         }
 
         try {
-            score.labels = ctx.services.run_classifier(model_, ctx.request.input);
+            score.labels = ctx.services.run_classifier(model_name_, ctx.request.input);
             score.ok = true;
         } catch (...) {
             score = failed_score();
         }
         return score;
     }
-
-private:
-    std::string model_;
 };
 
 // The `llm` router / L0(a) on-ramp. Runs a small chat model with the author's
@@ -272,11 +269,13 @@ class LlmClassifier final : public Classifier {
 public:
     LlmClassifier(std::string id, std::string type, std::string model, std::string prompt,
                   OnError on_error, std::vector<std::string> labels,
-                  std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)), prompt_(std::move(prompt)) {
-        if (model_.empty()) {
+                  std::optional<std::string> default_label,
+                  bool expose_request_features)
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
+          prompt_(std::move(prompt)),
+          expose_request_features_(expose_request_features) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("llm classifier requires model");
         }
         if (prompt_.empty()) {
@@ -293,8 +292,12 @@ public:
         }
         std::string reply;
         try {
-            reply = ctx.services.chat(model_, effective_prompt(),
+            reply = ctx.services.chat(model_name_, effective_prompt(),
                                       build_context_payload(ctx.request));
+        } catch (const RouterResidencyConflictException&) {
+            // A hardware coexistence conflict is not a classifier-quality
+            // failure and must reach the HTTP layer as a deterministic 409.
+            throw;
         } catch (...) {
             return failed_score();
         }
@@ -328,29 +331,37 @@ public:
     }
 
 private:
-    // The user message handed to the router LLM: a structured JSON view of the
-    // routing context, so the router can see everything a deterministic rule
-    // could — not just the latest text. An image-only request is visible as
-    // has_images=true with empty text; a tool-bearing request as
-    // has_tools=true; length via chars; caller routing hints via metadata.
+    // The user message handed to the judge: a structured JSON view of the
+    // routing context — not just the latest text. has_tools/has_images are
+    // only present when expose_request_features_ is set (see
+    // effective_prompt below for which classifiers that is); when present, an
+    // image-only request is visible as has_images=true with empty text and a
+    // tool-bearing request as has_tools=true. chars and metadata are always
+    // present regardless.
     //
     // History policy (explicit, per the frozen v1 RouteContext contract):
     // `text` is the LATEST USER TURN ONLY. RouteContext deliberately carries a
     // single turn so earlier assistant/system turns can't skew routing;
     // supplying more history to the router requires extending that contract
     // for all classifiers, which is out of scope for this classifier.
-    static std::string build_context_payload(const RouteContext& request) {
+    std::string build_context_payload(const RouteContext& request) const {
         json metadata = json::object();
         for (const auto& [key, value] : request.metadata) {
             metadata[key] = value;
         }
-        const json payload = {
+        json payload = {
             {"text", request.input},
-            {"has_tools", request.params.has_tools},
-            {"has_images", request.params.has_images},
             {"chars", request.params.chars},
             {"metadata", std::move(metadata)},
         };
+        // Withheld entirely (not just disclaimed) unless expose_request_features_
+        // is set. When constructed through the policy parser this is only the
+        // routing.router sugar's synthesized classifier; the make_classifier(s)
+        // helpers default it to true for direct callers.
+        if (expose_request_features_) {
+            payload["has_tools"] = request.params.has_tools;
+            payload["has_images"] = request.params.has_images;
+        }
         return payload.dump();
     }
 
@@ -358,13 +369,39 @@ private:
     // input format, candidate vocabulary, and the required JSON shape — is
     // appended here so every llm router speaks the same protocol regardless
     // of authoring.
+    //
+    // has_tools/has_images reach the judge only when expose_request_features_
+    // is set, which the parser sets true solely for the routing.router
+    // sugar's synthesized classifier (#2789): it's the sole decision
+    // mechanism, so it needs them directly (e.g. "use the vision model when
+    // has_images"). An author-declared classifier always gets false — even
+    // one composed alongside a deterministic has_tools/has_images rule
+    // (risky-tool-calls-stay-local) would otherwise leak the same field into
+    // its own judgment, recreating #2789. Compose the leaf in a rule instead
+    // of trusting the judge to weigh it.
     std::string effective_prompt() const {
-        std::string suffix =
-            "The user message is a JSON object describing the request to "
-            "route: {\"text\": latest user turn only, \"has_tools\": whether "
-            "the request carries tools, \"has_images\": whether it carries "
-            "images, \"chars\": byte length of text, \"metadata\": caller "
-            "routing hints}. You must choose exactly one of these models: ";
+        std::string suffix;
+        if (expose_request_features_) {
+            suffix =
+                "The user message is a JSON object describing the request to "
+                "route: {\"text\": latest user turn only, \"has_tools\": "
+                "whether the API call includes a non-empty tools parameter, "
+                "\"has_images\": whether it includes image content, "
+                "\"chars\": byte length of text, \"metadata\": caller routing "
+                "hints}. has_tools and has_images describe the request's "
+                "FORMAT, not its content: treat either as evidence of intent "
+                "or risk only when the routing criteria above explicitly ask "
+                "you to condition on tool or image presence; otherwise judge "
+                "the request using \"text\" alone. You must choose exactly "
+                "one of these models: ";
+        } else {
+            suffix =
+                "The user message is a JSON object describing the request to "
+                "route: {\"text\": latest user turn only, \"chars\": byte "
+                "length of text, \"metadata\": caller routing hints}. Judge "
+                "the request using \"text\" against the routing criteria "
+                "above. You must choose exactly one of these models: ";
+        }
         for (std::size_t i = 0; i < labels().size(); ++i) {
             if (i > 0) suffix += ", ";
             suffix += labels()[i];
@@ -409,8 +446,9 @@ private:
         return nullptr;
     }
 
-    std::string model_;
+private:
     std::string prompt_;
+    bool expose_request_features_;
 };
 
 class SemanticSimilarityClassifier final : public Classifier {
@@ -430,11 +468,10 @@ public:
                                  std::vector<Concept> concepts, OnError on_error,
                                  std::vector<std::string> labels,
                                  std::optional<std::string> default_label)
-        : Classifier(std::move(id), std::move(type), on_error, std::move(labels),
-                     std::move(default_label)),
-          model_(std::move(model)),
+        : Classifier(std::move(id), std::move(type), on_error, std::move(model),
+                     std::move(labels), std::move(default_label)),
           concepts_(std::move(concepts)) {
-        if (model_.empty()) {
+        if (model_name_.empty()) {
             throw std::invalid_argument("semantic_similarity classifier requires model");
         }
         if (concepts_.empty()) {
@@ -461,7 +498,7 @@ public:
 
         Embedding input_embedding;
         try {
-            input_embedding = ctx.services.embed(model_, ctx.request.input);
+            input_embedding = ctx.services.embed(model_name_, ctx.request.input);
         } catch (...) {
             return failed_score();
         }
@@ -505,7 +542,7 @@ private:
                 ConceptEmbeddings phrase_embeddings;
                 phrase_embeddings.reserve(concept.second.size());
                 for (const auto& phrase : concept.second) {
-                    phrase_embeddings.push_back(services.embed(model_, phrase));
+                    phrase_embeddings.push_back(services.embed(model_name_, phrase));
                 }
                 embeddings.push_back(std::move(phrase_embeddings));
             }
@@ -515,7 +552,6 @@ private:
         return reference_embeddings_;
     }
 
-    std::string model_;
     std::vector<Concept> concepts_;
 
     mutable std::mutex cache_mutex_;
@@ -867,25 +903,37 @@ void reject_catastrophic_regex(const std::string& pattern) {
     }
 }
 
-// min_chars / max_chars — inclusive bound on input length in UTF-8 bytes.
+// min_chars / max_chars — inclusive bound on routing-input length in UTF-8
+// bytes — and min_total_chars / max_total_chars, the same bound over every text
+// part the request carries.
 class CharsCondition final : public Condition {
 public:
     enum class Bound { Min, Max };
+    enum class Source { Input, Total };
 
-    CharsCondition(std::size_t threshold, Bound bound)
-        : threshold_(threshold), bound_(bound) {}
+    CharsCondition(std::size_t threshold, Bound bound, Source source = Source::Input)
+        : threshold_(threshold), bound_(bound), source_(source) {}
 
     bool evaluate(EvalContext& ctx) const override {
-        const std::size_t n = ctx.request.params.chars;
+        const std::size_t n = source_ == Source::Input ? ctx.request.params.chars
+                                                       : ctx.request.params.total_chars;
         const bool result =
             bound_ == Bound::Min ? (n >= threshold_) : (n <= threshold_);
-        trace_leaf(ctx, bound_ == Bound::Min ? "min_chars" : "max_chars", result);
+        trace_leaf(ctx, op_name(), result);
         return result;
     }
 
 private:
+    const char* op_name() const {
+        if (source_ == Source::Input) {
+            return bound_ == Bound::Min ? "min_chars" : "max_chars";
+        }
+        return bound_ == Bound::Min ? "min_total_chars" : "max_total_chars";
+    }
+
     std::size_t threshold_;
     Bound bound_;
+    Source source_;
 };
 
 // has_tools / has_images — boolean request feature equals the authored value.
@@ -973,13 +1021,14 @@ ConditionPtr build_keywords(const json& arr, bool require_all, const char* op) {
     return std::make_shared<KeywordsCondition>(std::move(keywords), require_all);
 }
 
-ConditionPtr build_chars(const json& value, CharsCondition::Bound bound, const char* op) {
+ConditionPtr build_chars(const json& value, CharsCondition::Bound bound,
+                         CharsCondition::Source source, const char* op) {
     if (!value.is_number_integer() || value.get<long long>() < 0) {
         throw std::invalid_argument(std::string(op) +
                                     " requires a non-negative integer");
     }
     return std::make_shared<CharsCondition>(
-        static_cast<std::size_t>(value.get<long long>()), bound);
+        static_cast<std::size_t>(value.get<long long>()), bound, source);
 }
 
 ConditionPtr build_bool_feature(const json& value, BoolFeatureCondition::Feature feature,
@@ -1068,7 +1117,7 @@ ConditionPtr compile_match_expr(const MatchExpr& expr, const LeafFactory& leaf_f
     return compile_match_expr_impl(expr, leaf_factory, 0);
 }
 
-ClassifierPtr make_classifier(const json& config) {
+ClassifierPtr make_classifier(const json& config, bool expose_request_features) {
     if (!config.is_object()) {
         throw std::invalid_argument("classifier entry must be an object");
     }
@@ -1116,7 +1165,8 @@ ClassifierPtr make_classifier(const json& config) {
         std::optional<std::string> default_label = parse_default_label(config, labels, id);
         return std::make_shared<LlmClassifier>(
             id, type, config.value("model", ""), config.value("prompt", ""),
-            on_error, std::move(labels), std::move(default_label));
+            on_error, std::move(labels), std::move(default_label),
+            expose_request_features);
     }
 
     if (type == "pii_detection" || type == "prompt_safety" ||
@@ -1128,7 +1178,8 @@ ClassifierPtr make_classifier(const json& config) {
     throw std::invalid_argument("unknown classifier type: " + type);
 }
 
-std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json) {
+std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_json,
+                                                       bool expose_request_features) {
     std::map<std::string, ClassifierPtr> classifiers;
     if (classifiers_json.is_null()) {
         return classifiers;
@@ -1138,12 +1189,27 @@ std::map<std::string, ClassifierPtr> make_classifiers(const json& classifiers_js
     }
 
     for (const auto& item : classifiers_json) {
-        auto classifier = make_classifier(item);
+        auto classifier = make_classifier(item, expose_request_features);
         if (!classifiers.emplace(classifier->id(), classifier).second) {
             throw std::invalid_argument("duplicate classifier id: " + classifier->id());
         }
     }
     return classifiers;
+}
+
+std::vector<std::string> collect_policy_helper_models(const RoutePolicy& policy) {
+    std::set<std::string> unique;
+    for (const auto& [id, classifier] : policy.classifiers) {
+        if (!classifier) {
+            continue;
+        }
+        for (auto& model : classifier->referenced_models()) {
+            if (!model.empty()) {
+                unique.insert(std::move(model));
+            }
+        }
+    }
+    return {unique.begin(), unique.end()};
 }
 
 LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classifiers,
@@ -1259,10 +1325,20 @@ NamedLeafFactories make_deterministic_leaf_factories() {
         }
     };
     factories["min_chars"] = [](const json& leaf) -> ConditionPtr {
-        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min, "min_chars");
+        return build_chars(leaf.at("min_chars"), CharsCondition::Bound::Min,
+                           CharsCondition::Source::Input, "min_chars");
     };
     factories["max_chars"] = [](const json& leaf) -> ConditionPtr {
-        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max, "max_chars");
+        return build_chars(leaf.at("max_chars"), CharsCondition::Bound::Max,
+                           CharsCondition::Source::Input, "max_chars");
+    };
+    factories["min_total_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("min_total_chars"), CharsCondition::Bound::Min,
+                           CharsCondition::Source::Total, "min_total_chars");
+    };
+    factories["max_total_chars"] = [](const json& leaf) -> ConditionPtr {
+        return build_chars(leaf.at("max_total_chars"), CharsCondition::Bound::Max,
+                           CharsCondition::Source::Total, "max_total_chars");
     };
     factories["has_tools"] = [](const json& leaf) -> ConditionPtr {
         return build_bool_feature(leaf.at("has_tools"), BoolFeatureCondition::Feature::Tools,
@@ -1279,8 +1355,57 @@ NamedLeafFactories make_deterministic_leaf_factories() {
     return factories;
 }
 
-RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services)
-    : policy_(std::move(policy)), services_(std::move(services)) {
+namespace {
+
+void log_cost_of_failure_once(const std::string& candidate, const char* detail) {
+    static std::mutex logged_mu;
+    static std::set<std::string> logged_candidates;
+    bool should_log = false;
+    {
+        std::lock_guard<std::mutex> lock(logged_mu);
+        should_log = logged_candidates.insert(candidate).second;
+    }
+    if (!should_log) {
+        return;
+    }
+    LOG(WARNING, "Routing") << "CostServices::cost_of threw for candidate '"
+                            << candidate << "': " << detail
+                            << " (further throws for this candidate suppressed)"
+                            << std::endl;
+}
+
+// Best-effort: cost_of is caller-injected and must never make route() throw,
+// so any exception here is logged and swallowed rather than propagated. Also
+// leaves an author-set outputs["estimated_cost"] alone rather than clobbering it.
+// WARNING for a throwing candidate is emitted at most once per process to avoid
+// hot-path log spam when one model persistently fails cost lookup.
+void attach_estimated_cost(Decision& decision, const CostServices& cost_services) {
+    if (!cost_services.cost_of || decision.outputs.contains("estimated_cost")) {
+        return;
+    }
+    CostInfo info;
+    try {
+        info = cost_services.cost_of(decision.route_to);
+    } catch (const std::exception& e) {
+        log_cost_of_failure_once(decision.route_to, e.what());
+        return;
+    } catch (...) {
+        log_cost_of_failure_once(decision.route_to, "unknown exception");
+        return;
+    }
+    json estimated = info.to_json();
+    if (!estimated.empty()) {
+        decision.outputs["estimated_cost"] = std::move(estimated);
+    }
+}
+
+} // namespace
+
+RoutingPolicyEngine::RoutingPolicyEngine(RoutePolicy policy, ClassifierServices services,
+                                         CostServices cost_services)
+    : policy_(std::move(policy)),
+      services_(std::move(services)),
+      cost_services_(std::move(cost_services)) {
     // Compile every rule's match expression once, at construction, so route()
     // does pure tree-walking on immutable state. Classifier leaves resolve
     // against policy_.classifiers; deterministic leaf types (keywords/regex/
@@ -1304,7 +1429,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
     try {
         for (std::size_t i = 0; i < compiled_rules_.size(); ++i) {
             if (compiled_rules_[i]->evaluate(eval)) {
-                return Decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                Decision decision(policy_.rules[i], want_trace, std::move(eval.trace));
+                attach_estimated_cost(decision, cost_services_);
+                return decision;
             }
         }
     } catch (const std::exception& e) {
@@ -1316,7 +1443,9 @@ Decision RoutingPolicyEngine::route(const RouteContext& ctx, bool want_trace) co
                                 << std::endl;
     }
 
-    return Decision(policy_.default_model, want_trace, std::move(eval.trace));
+    Decision decision(policy_.default_model, want_trace, std::move(eval.trace));
+    attach_estimated_cost(decision, cost_services_);
+    return decision;
 }
 
 } // namespace lemon

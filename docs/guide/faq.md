@@ -1,14 +1,15 @@
-# 🍋 Lemonade Frequently Asked Questions
+# Lemonade Frequently Asked Questions
 
 ## Overview
 
 ### 1. **What is Lemonade and what does it include?**
 
    Lemonade is an open-source local LLM solution that:
-      - Gets you started in minutes with one-click installers.
-      - Auto-configures optimized inference engines for your PC.
-      - Provides a convenient app to get set up and test out LLMs.
-      - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
+   
+   - Gets you started in minutes with one-click installers.
+   - Auto-configures optimized inference engines for your PC.
+   - Provides a convenient app to get set up and test out LLMs.
+   - Provides LLMs through the OpenAI API standard, enabling apps on your PC to access them.
 
 ### 2. **What are the use cases for different audiences?**
 
@@ -21,7 +22,7 @@
 
 ### 1. **How do I install Lemonade SDK or Server?**
 
-   Visit https://lemonade-server.ai/install_options.html and click the options that apply to you.
+   Visit https://lemonade-server.ai/docs/guide/install/ and click the options that apply to you.
 
 ### 2. **Which devices are supported?**
 
@@ -33,8 +34,8 @@
 
    Yes, both Linux and macOS are supported!
 
-   - **Linux**: Visit https://lemonade-server.ai/install_options.html#linux for installation instructions.
-   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/install_options.html#macos to download. macOS support uses the llama.cpp backend with Metal acceleration.
+   - **Linux**: Visit https://lemonade-server.ai/docs/guide/install/ for installation instructions.
+   - **macOS**: A macOS installer (.pkg) is available for Apple Silicon Macs. Visit https://lemonade-server.ai/docs/guide/install/ to download. macOS support uses the llama.cpp backend with Metal acceleration.
 
    Visit the [Supported Configurations](https://github.com/lemonade-sdk/lemonade?tab=readme-ov-file#supported-configurations) section to see the support matrix for CPU, GPU, and NPU.
 
@@ -193,7 +194,7 @@
 
    No inference engine providers have plans to support NPUs prior to Ryzen AI 300-series, but you can still request this by filing an issue on their respective GitHubs:
       - Ryzen AI SW: https://github.com/amd/ryzenai-sw
-      - FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
+      - FastFlowLM: https://github.com/ROCm/FastFlowLM
 
 ### 5. **How do I know what model architectures are supported by the NPU?**
 
@@ -228,20 +229,6 @@
    Lemonade Server allows you to use custom `llama-server` or `whisper-server` binaries instead of the bundled ones by setting environment variables to the full path of your binary.
 
    👉 [Custom Backend Binaries](./configuration/README.md)
-
-## TTS
-
-### 1. **What voices are supported?**
-
-Lemonade supports most of the voices listed in [Kokoro-82M VOICES](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md). OpenAI voices can be selected from a default list, while other voices must be entered manually via text.
-
-### 2. **Can voices be mixed?**
-
-Yes, two voices can be mixed using the following format: `af_jessica.5+af_kore.4`
-
-### 3. **I entered a voice, but no audio is playing?**
-
-Some voices are not supported yet. If you manually enter a voice name instead of selecting one from the default list, and that voice is not supported, a muted audio will be generated.
 
 ## TTS
 

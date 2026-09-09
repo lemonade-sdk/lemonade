@@ -6,7 +6,9 @@ DEB_BUILD_DIR := obj-$(DEB_HOST_GNU_TYPE)
 	dh $@ --buildsystem=cmake+ninja
 
 override_dh_auto_configure:
-	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON
+	# BUILD_TESTING=OFF: override_dh_auto_test is a no-op and no test binary is
+	# packaged, so the unit-test targets would be built and discarded.
+	dh_auto_configure -- -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_WEB_APP=ON -DUSE_SYSTEM_NODEJS_MODULES=ON -DBUILD_TESTING=OFF
 
 override_dh_auto_test:
 	# No tests configured
