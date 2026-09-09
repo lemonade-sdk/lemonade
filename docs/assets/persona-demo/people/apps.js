@@ -87,10 +87,11 @@
   }
 
   // "Add as an MCP server": a generic client's MCP-server settings panel showing the
-  // lemonade entry being added to mcp.json (highlighted), a connected status, and the
-  // tools it exposes. Mirrors the real /mcp gateway (Streamable HTTP) -- see
-  // docs/api/mcp.md: five tools, JSON-RPC over a single POST /mcp endpoint.
+  // lemonade entry being added to mcp.json (highlighted), a connected status, and a
+  // representative sample of discovered tools. The real /mcp gateway exposes its
+  // canonical catalog through tools/list over the single POST /mcp endpoint.
   function mcpDemo() {
+    // Keep the visual compact: this is a sample, not the canonical catalog.
     var tools = [
       { icon: 'forum', name: 'lemonade_chat', tag: 'chat completion' },
       { icon: 'image', name: 'lemonade_generate_image', tag: 'image generation' },
@@ -130,7 +131,7 @@
             '<button class="hp-mcp-add-btn" type="button"><span class="material-symbols-outlined">add</span>Add server</button>' +
           '</div>' +
           '<div class="hp-mcp-col hp-mcp-col-tools">' +
-            '<div class="hp-mcp-status"><span class="hp-mcp-dot"></span>Connected · 5 tools</div>' +
+            '<div class="hp-mcp-status"><span class="hp-mcp-dot"></span>Connected · tools discovered</div>' +
             '<div class="hp-mcp-tools">' + toolRows + '</div>' +
           '</div>' +
         '</div>' +

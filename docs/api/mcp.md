@@ -1,6 +1,6 @@
 # MCP Gateway
 
-Lemonade exposes its inference capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
+Lemonade exposes its inference and model-management capabilities as a Model Context Protocol (MCP) server, so any MCP-compatible client (GitHub Copilot, Claude Desktop, MCP Inspector, Cursor, the `mcp` Python client, etc.) can call your locally running models as tools.
 
 The gateway implements the **MCP "Streamable HTTP" transport** (spec version `2025-06-18`) with the `tools` capability only. All traffic flows through a single endpoint:
 
@@ -22,6 +22,16 @@ curl -s http://localhost:13305/mcp \
     -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
 ```
 
+### Lifecycle tool safety
+
+Model and backend lifecycle tools are intentionally part of the default `tools/list`
+catalog so MCP remains the complete server capability contract. They use the same
+API authentication boundary as the corresponding REST endpoints. Their MCP
+`annotations` describe read-only, destructive, and open-world behavior so hosts can
+apply their own approval UX or policy. These annotations, and `confirm: true` on
+`lemonade_delete_model`, are safety metadata and accident guards, not authorization
+boundaries.
+
 ## Supported methods
 
 | Method | Purpose |
@@ -34,7 +44,7 @@ curl -s http://localhost:13305/mcp \
 
 ## Tools
 
-All tools auto-load (and download, if missing) the requested model on first call, exactly like `POST /v1/chat/completions`. Errors are returned as MCP results with `"isError": true` rather than JSON-RPC errors, matching the spec's guidance for tool failures.
+Inference tools auto-load (and download, when explicitly permitted) models through the existing server paths. Model-management tools are thin adapters over the same lifecycle implementation used by Lemonade's REST APIs. Errors are returned as MCP results with `"isError": true` rather than JSON-RPC errors, matching the spec's guidance for tool failures.
 
 ### `lemonade_list_models`
 
@@ -51,6 +61,87 @@ Discover what's loaded, what's downloaded, and what's recommended. Call this fir
 ```
 
 Returns a summary text block plus a JSON-stringified text block with `{loaded, available, suggested_to_pull, recommended_chat_model}`.
+
+
+### `lemonade_get_model_info`
+
+Get detailed metadata for one exact model ID returned by `lemonade_list_models`.
+The result is backed by the same model record used by Lemonade's REST model APIs,
+including recipe, local/download state, collection components, recipe options,
+and Router metadata when present.
+
+```json
+{
+  "name": "lemonade_get_model_info",
+  "arguments": {"model_name": "Qwen3-1.7B-GGUF"}
+}
+```
+
+### `lemonade_load_model`
+
+Explicitly load one model through the same implementation as `POST /v1/load`.
+The model name is exact. Known registry models may be downloaded by the normal
+load path when they are not local yet. `collection.router` models remain virtual:
+loading them acknowledges readiness without creating a Router backend process.
+
+Recipe-specific options can be passed in the `options` object. They apply only
+to this load; this MCP tool does not persist them.
+
+```json
+{
+  "name": "lemonade_load_model",
+  "arguments": {
+    "model_name": "Qwen3-1.7B-GGUF",
+    "ctx_size": 8192,
+    "options": {"llamacpp_backend": "vulkan"}
+  }
+}
+```
+
+### `lemonade_unload_model`
+
+Unload exactly one named model through the same implementation as
+`POST /v1/unload`. Unlike the raw REST endpoint, the MCP schema requires
+`model_name`; omitting it cannot trigger the REST empty-name "unload all"
+behavior.
+
+```json
+{
+  "name": "lemonade_unload_model",
+  "arguments": {"model_name": "Qwen3-1.7B-GGUF"}
+}
+```
+
+### `lemonade_pull_model`
+
+Download or register a model through the same implementation as `POST /v1/pull`.
+For a built-in model, pass the exact model ID. For a custom remote model, use a
+`user.*` model ID plus the checkpoint and recipe fields accepted by `/pull`.
+The MCP call is synchronous, so large downloads can take a long time.
+
+```json
+{
+  "name": "lemonade_pull_model",
+  "arguments": {"model_name": "Qwen3-1.7B-GGUF"}
+}
+```
+
+### `lemonade_delete_model`
+
+Delete exactly one existing model through the same implementation as
+`POST /v1/delete`. This is destructive and requires `confirm: true`. If the
+model is loaded, the existing server implementation unloads it before deleting
+its local files/definition.
+
+```json
+{
+  "name": "lemonade_delete_model",
+  "arguments": {
+    "model_name": "user.my-model",
+    "confirm": true
+  }
+}
+```
 
 ### `lemonade_chat`
 
@@ -147,6 +238,54 @@ If the planner emits app-defined tool calls (those you passed in via `tools`/`to
 
 Passing a non-collection model (e.g. a plain LLM) returns `isError: true` with a hint to use `lemonade_chat`.
 
+
+## Canonical capability hub
+
+`tools/list` is the runtime source of truth for Lemonade tool names, descriptions, and input schemas.
+Lemonade App and other MCP clients are assumed to consume that catalog.
+UI-only metadata such as icons, ordering, grouping, attachment selection, and rendering can remain local to the host.
+
+| Tool | Server capability |
+|---|---|
+| `lemonade_list_models` | Model discovery |
+| `lemonade_get_model_info` | Detailed model record |
+| `lemonade_load_model` | Explicit load |
+| `lemonade_unload_model` | Explicit single-model unload |
+| `lemonade_get_loaded_models` | Current residency |
+| `lemonade_get_server_health` | Health and runtime limits |
+| `lemonade_pull_model` | Download/register model |
+| `lemonade_delete_model` | Destructive model delete (`confirm=true`) |
+| `lemonade_get_system_info` | Hardware + recipe/backend state |
+| `lemonade_list_backends` | Backend-focused system-info view |
+| `lemonade_install_backend` | Backend install/update |
+| `lemonade_generate_image` | Text-to-image |
+| `lemonade_edit_image` | Explicit-image edit |
+| `lemonade_generate_audio` | Music/SFX generation |
+| `lemonade_text_to_speech` | TTS |
+| `lemonade_transcribe_audio` | Speech-to-text |
+| `lemonade_generate_3d` | Image-to-3D GLB |
+| `lemonade_chat` | LLM chat completion |
+| `lemonade_omni` | Omni collection orchestration |
+
+The media contracts are server contracts, not conversation contracts. For
+example, `lemonade_edit_image`, `lemonade_transcribe_audio`, and
+`lemonade_generate_3d` require the host to send the actual image/audio input;
+"use the latest attachment" remains GUI/host adaptation and is not encoded in
+`tools/list`.
+
+### Additional server-adapter tools
+
+- `lemonade_get_loaded_models`, `lemonade_get_server_health`,
+  `lemonade_get_system_info`, and `lemonade_list_backends` are read-only views
+  over existing server state.
+- `lemonade_install_backend` delegates to `POST /api/v1/install` and is
+  synchronous through MCP.
+- `lemonade_generate_audio`, `lemonade_text_to_speech`, and
+  `lemonade_generate_3d` delegate to their existing `/api/v1` generation paths
+  and return generated bytes in MCP content/structured data.
+- `lemonade_edit_image` shares the same post-parse image-edit execution helper
+  as the multipart REST endpoint, avoiding a second image-edit implementation.
+
 ## Error model
 
 | Code | Meaning |
@@ -165,7 +304,7 @@ Tool-level failures (bad arguments, model load errors, backend exceptions) are r
 - No session resumption (`Mcp-Session-Id` header is not issued).
 - `resources/*` and `prompts/*` capabilities are not implemented.
 - Streaming chat output is not exposed via MCP — `stream=true` is ignored. Use `POST /v1/chat/completions` directly for streamed tokens.
-- Embeddings and text-to-speech are not currently exposed as MCP tools; use the OpenAI-compatible endpoints (`/v1/embeddings`, `/v1/audio/speech`) for those.
+- Embeddings are not currently exposed as an MCP tool; use the OpenAI-compatible `/v1/embeddings` endpoint.
 
 ## Quick test with curl
 

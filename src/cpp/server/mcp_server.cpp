@@ -215,10 +215,12 @@ std::string unique_token() {
 
 }  // namespace
 
-McpServer::McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded)
+McpServer::McpServer(Router* router, ModelManager* model_manager,
+                     EnsureLoadedFn ensure_loaded, ServerToolFn server_tool)
     : router_(router),
       model_manager_(model_manager),
-      ensure_loaded_(std::move(ensure_loaded)) {}
+      ensure_loaded_(std::move(ensure_loaded)),
+      server_tool_(std::move(server_tool)) {}
 
 McpServer::~McpServer() = default;
 
@@ -390,6 +392,24 @@ json McpServer::handle_tools_call(const json& params, const json& id) {
             result = tool_omni(arguments);
         } else if (tool_name == "lemonade_list_models") {
             result = tool_list_models(arguments);
+        } else if (tool_name == "lemonade_get_model_info" ||
+                   tool_name == "lemonade_load_model" ||
+                   tool_name == "lemonade_unload_model" ||
+                   tool_name == "lemonade_get_loaded_models" ||
+                   tool_name == "lemonade_get_server_health" ||
+                   tool_name == "lemonade_pull_model" ||
+                   tool_name == "lemonade_delete_model" ||
+                   tool_name == "lemonade_get_system_info" ||
+                   tool_name == "lemonade_list_backends" ||
+                   tool_name == "lemonade_install_backend" ||
+                   tool_name == "lemonade_edit_image" ||
+                   tool_name == "lemonade_generate_audio" ||
+                   tool_name == "lemonade_text_to_speech" ||
+                   tool_name == "lemonade_generate_3d") {
+            if (!server_tool_) {
+                throw std::runtime_error("Lemonade server tools are not configured");
+            }
+            result = server_tool_(tool_name, arguments);
         } else {
             // Per MCP spec, unknown-tool errors are isError=true results, not JSON-RPC errors.
             result = {
@@ -1148,6 +1168,11 @@ json McpServer::tools_descriptor() {
     return json::array({
         {
             {"name", "lemonade_list_models"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
             {"description",
              "List models known to the Lemonade server. ALWAYS call this "
              "first if you don't already know the exact model name to use "
@@ -1160,6 +1185,321 @@ json McpServer::tools_descriptor() {
                 {"properties", {
                     {"include_available", {{"type", "boolean"}}},
                     {"include_suggested", {{"type", "boolean"}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_get_model_info"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "Get the server's detailed record for one exact model ID returned "
+             "by lemonade_list_models. Returns the same model metadata used by "
+             "the REST model APIs, including recipe, download state, components, "
+             "recipe options, and Router metadata when present."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"model_name"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"model_name", {{"type", "string"},
+                                    {"description", "Exact model ID from lemonade_list_models."}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_load_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", false},
+                {"openWorldHint", true},
+            }},
+            {"description",
+             "Explicitly load a Lemonade model using the same implementation as "
+             "POST /v1/load. The model_name must be exact. A known registry model "
+             "that is not local may be downloaded by the existing load path. "
+             "collection.router models are virtual and are acknowledged without "
+             "starting a Router backend process. `options` contains ephemeral "
+             "recipe-specific load options such as llamacpp_backend or "
+             "llamacpp_device; they are not persisted by this MCP tool."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"model_name"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"model_name", {{"type", "string"},
+                                    {"description", "Exact model ID from lemonade_list_models."}}},
+                    {"ctx_size", {{"type", "integer"},
+                                  {"description", "Optional context size. Use -1 for automatic sizing."}}},
+                    {"pinned", {{"type", "boolean"},
+                                {"description", "Optional residency pin state for this load."}}},
+                    {"options", {{"type", "object"},
+                                 {"additionalProperties", true},
+                                 {"description", "Optional recipe-specific load options. Applied only to this load; model/model_name/save_options/pinned are not allowed here."}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_unload_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "Unload exactly one named model using the same implementation as "
+             "POST /v1/unload. model_name is mandatory: this MCP tool never "
+             "exposes the REST endpoint's empty-name unload-all behavior."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"model_name"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"model_name", {{"type", "string"},
+                                    {"description", "Exact model ID to unload."}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_pull_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", false},
+                {"openWorldHint", true},
+            }},
+            {"description",
+             "Download or register a model using the same implementation as "
+             "POST /v1/pull. For a built-in/registered model, pass its exact "
+             "model_name. For a custom remote model, pass a user.* model_name "
+             "plus checkpoint and recipe. This call is synchronous and may take "
+             "a long time for large model downloads."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"model_name"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"model_name", {{"type", "string"},
+                                    {"description", "Exact registered model ID, or user.* ID for a new custom model."}}},
+                    {"checkpoint", {{"type", "string"},
+                                    {"description", "Optional remote repository/checkpoint selector accepted by /pull."}}},
+                    {"recipe", {{"type", "string"},
+                                {"description", "Recipe required when registering a custom checkpoint."}}},
+                    {"source", {{"type", "string"},
+                                {"description", "Optional remote registry source, for example huggingface or modelscope."}}},
+                    {"do_not_upgrade", {{"type", "boolean"},
+                                        {"description", "Skip upgrading an already-cached registered model."}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_delete_model"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", true},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "Delete exactly one model using the same implementation as POST "
+             "/v1/delete. This is destructive. The model_name must identify an "
+             "existing model exactly and confirm must be true. A loaded model is "
+             "unloaded first, matching the REST endpoint."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"model_name", "confirm"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"model_name", {{"type", "string"},
+                                    {"description", "Exact existing model ID to delete."}}},
+                    {"confirm", {{"type", "boolean"},
+                                 {"enum", json::array({true})},
+                                 {"description", "Must be true to execute deletion."}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_get_loaded_models"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "List the models currently loaded in Lemonade, including runtime "
+             "recipe/type/device information reported by the server. Use this "
+             "when the question is specifically about current residency; use "
+             "lemonade_list_models for broader discovery."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"additionalProperties", false},
+                {"properties", json::object()},
+            }},
+        },
+        {
+            {"name", "lemonade_get_server_health"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "Return Lemonade server health and runtime limits using the same "
+             "implementation as GET /api/v1/health."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"additionalProperties", false},
+                {"properties", json::object()},
+            }},
+        },
+        {
+            {"name", "lemonade_get_system_info"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "Return Lemonade hardware and recipe/backend capability information "
+             "using the same implementation as GET /api/v1/system-info."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"additionalProperties", false},
+                {"properties", json::object()},
+            }},
+        },
+        {
+            {"name", "lemonade_list_backends"},
+            {"annotations", {
+                {"readOnlyHint", true},
+                {"destructiveHint", false},
+                {"openWorldHint", false},
+            }},
+            {"description",
+             "List Lemonade recipes/backends and their installation/support "
+             "state. This is the backend-focused view of the canonical "
+             "/api/v1/system-info data."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"additionalProperties", false},
+                {"properties", json::object()},
+            }},
+        },
+        {
+            {"name", "lemonade_install_backend"},
+            {"annotations", {
+                {"readOnlyHint", false},
+                {"destructiveHint", true},
+                {"openWorldHint", true},
+            }},
+            {"description",
+             "Install or update one Lemonade recipe/backend through the same "
+             "implementation as POST /api/v1/install. The MCP call is "
+             "synchronous; use lemonade_list_backends first to inspect support "
+             "and current state."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"recipe", "backend"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"recipe", {{"type", "string"}}},
+                    {"backend", {{"type", "string"}}},
+                    {"force", {{"type", "boolean"},
+                               {"description", "Override an unsupported-state guard when the underlying API permits it."}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_edit_image"},
+            {"description",
+             "Edit an explicitly supplied image with a Lemonade image model. "
+             "The host/client must provide `image` as raw base64 or a data:image "
+             "URL; conversation attachment selection remains a host concern. "
+             "When model is omitted, the server reuses a loaded/downloaded image model."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"prompt", "image"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"prompt", {{"type", "string"}}},
+                    {"image", {{"type", "string"},
+                               {"description", "Base64 image bytes or a data:image/...;base64 URL."}}},
+                    {"model", {{"type", "string"}}},
+                    {"size", {{"type", "string"}}},
+                    {"steps", {{"type", "integer"}, {"minimum", 1}}},
+                    {"cfg_scale", {{"type", "number"}}},
+                    {"seed", {{"type", "integer"}}},
+                    {"n", {{"type", "integer"}, {"minimum", 1}, {"maximum", 10}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_generate_audio"},
+            {"description",
+             "Generate music or a sound effect with a Lemonade audio-generation "
+             "model using the same server generation path as POST "
+             "/api/v1/audio/generations. When model is omitted, reuse a "
+             "loaded/downloaded audio-generation model."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"prompt"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"prompt", {{"type", "string"}}},
+                    {"model", {{"type", "string"}}},
+                    {"duration", {{"type", "number"}}},
+                    {"steps", {{"type", "integer"}, {"minimum", 1}}},
+                    {"cfg", {{"type", "number"}}},
+                    {"seed", {{"type", "integer"}}},
+                    {"lyrics", {{"type", "string"}}},
+                    {"vocal_language", {{"type", "string"}}},
+                    {"response_format", {{"type", "string"}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_text_to_speech"},
+            {"description",
+             "Convert text to speech using the same server generation path as "
+             "POST /api/v1/audio/speech. When model is omitted, reuse a "
+             "loaded/downloaded TTS model."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"input"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"input", {{"type", "string"}}},
+                    {"model", {{"type", "string"}}},
+                    {"voice", {{"type", "string"}}},
+                    {"speed", {{"type", "number"}}},
+                    {"response_format", {{"type", "string"}}},
+                }},
+            }},
+        },
+        {
+            {"name", "lemonade_generate_3d"},
+            {"description",
+             "Create a GLB from an explicitly supplied image using the same "
+             "server generation path as POST /api/v1/3d/generations. The "
+             "current server API is image-to-3D; prompt-to-image-to-3D "
+             "orchestration remains a follow-up capability rather than hidden "
+             "GUI-only behavior. When model is omitted, reuse a loaded/downloaded 3D model."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"required", json::array({"image"})},
+                {"additionalProperties", false},
+                {"properties", {
+                    {"image", {{"type", "string"},
+                               {"description", "Base64 image bytes or a data:image/...;base64 URL."}}},
+                    {"model", {{"type", "string"}}},
+                    {"resolution", {{"type", "integer"},
+                                    {"enum", json::array({512, 1024, 1536})}}},
+                    {"bg_removal", {{"type", "string"},
+                                    {"enum", json::array({"threshold", "birefnet"})}}},
+                    {"seed", {{"type", "integer"}}},
+                    {"uv", {{"type", "string"},
+                            {"enum", json::array({"box", "xatlas"})}}},
                 }},
             }},
         },

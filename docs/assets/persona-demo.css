@@ -1913,8 +1913,8 @@ html[data-md-color-scheme="zest-dark"] .hp-slide.is-active .hp-slide-demo {
 
 /* ======================================================================
    "Add as an MCP server": a client's MCP-server settings panel. Shows the
-   lemonade entry added to mcp.json (highlighted), a connected status, and the
-   five tools the gateway exposes (staggered in, as if discovered on connect).
+   lemonade entry added to mcp.json (highlighted), a connected status, and a
+   representative sample of discovered tools (staggered in on connect).
    ====================================================================== */
 /* The content sits in a 16:9 panel floating over the (scrimmed) app window, in two
    columns: the mcp.json config on the left, the connected status + tools on the

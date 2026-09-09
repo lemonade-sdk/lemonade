@@ -22,8 +22,11 @@ using json = nlohmann::json;
 class McpServer : public std::enable_shared_from_this<McpServer> {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
+    using ServerToolFn =
+        std::function<json(const std::string&, const json&)>;
 
-    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
+    McpServer(Router* router, ModelManager* model_manager,
+              EnsureLoadedFn ensure_loaded, ServerToolFn server_tool);
     ~McpServer();
 
     // Must be called on a shared_ptr instance — handlers capture shared_from_this().
@@ -76,6 +79,7 @@ private:
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    ServerToolFn server_tool_;
 };
 
 }  // namespace lemon
