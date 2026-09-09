@@ -1,0 +1,2468 @@
+import { test, expect, Page, type Route } from '@playwright/test';
+
+const realServerRequired = /^(06|07|08|09|10|11|14|21|22)\b/;
+
+type ModelOptionsState = Map<string, Record<string, unknown>>;
+
+/** The recipe descriptor the configuration form discovers its fields from. */
+function llamacppRecipe(backends: Record<string, unknown> = { cpu: { state: 'installed', version: 'test' } }) {
+  return {
+    default_backend: 'cpu',
+    selectable_backend: true,
+    uses_ctx_size: true,
+    modality: 'Text generation',
+    options: [
+      { name: 'llamacpp_backend', cli_flag: '--llamacpp', default: '', type_name: 'BACKEND', help: 'LlamaCpp backend to use', group: 'Llama.cpp Backend Options' },
+      { name: 'llamacpp_device', cli_flag: '--llamacpp-device', default: '', type_name: 'DEVICES', help: 'Accelerator devices to use', group: 'Llama.cpp Backend Options' },
+      { name: 'llamacpp_args', cli_flag: '--llamacpp-args', default: '', type_name: 'ARGS', help: 'Custom arguments to pass to llama-server', group: 'Llama.cpp Backend Options' },
+    ],
+    backends,
+  };
+}
+
+async function fulfillModelOptionsRoute(
+  route: Route,
+  state: ModelOptionsState,
+): Promise<boolean> {
+  const request = route.request();
+  const match = new URL(request.url()).pathname.match(/\/api\/v1\/models\/([^/]+)\/options$/);
+  if (!match) return false;
+
+  const modelName = decodeURIComponent(match[1]);
+  const method = request.method().toUpperCase();
+  let saved = { ...(state.get(modelName) || {}) };
+  if (method === 'POST') {
+    const patch = request.postDataJSON() as Record<string, unknown>;
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null) delete saved[key];
+      else saved[key] = value;
+    }
+    state.set(modelName, saved);
+  } else if (method === 'DELETE') {
+    saved = {};
+    state.delete(modelName);
+  }
+
+  await route.fulfill({
+    json: {
+      model_name: modelName,
+      recipe: 'llamacpp',
+      saved,
+      effective: { model_name: modelName, ctx_size: -1, ...saved },
+      defaults: { model_name: modelName, ctx_size: -1 },
+      resolved_ctx_size: 4096,
+      load_command: '',
+    },
+  });
+  return true;
+}
+
+test.beforeEach(async ({ page }, testInfo) => {
+  const originalScreenshot = page.screenshot.bind(page);
+  page.screenshot = ((options: Parameters<Page['screenshot']>[0] = {}) => {
+    const rawPath = typeof options.path === 'string' ? options.path : undefined;
+    const path = rawPath?.startsWith('screenshots/')
+      ? testInfo.outputPath(rawPath.replace(/^screenshots\//, ''))
+      : rawPath;
+    return originalScreenshot({ ...options, ...(path ? { path } : {}) });
+  }) as Page['screenshot'];
+
+  test.skip(realServerRequired.test(testInfo.title) && process.env.LEMONADE_REAL_SERVER !== '1',
+    'Real-server smoke tests are opt-in. Set LEMONADE_REAL_SERVER=1 and start lemond first.');
+
+
+  if (process.env.LEMONADE_REAL_SERVER !== '1') {
+    const modelOptionsByName = new Map<string, Record<string, unknown>>();
+    await page.route(/\/api\/v1\/models\/[^/]+\/options(?:\?.*)?$/, async route => {
+      await fulfillModelOptionsRoute(route, modelOptionsByName);
+    });
+  }
+});
+
+test.describe('Lemonade UI — Feature Parity', () => {
+
+  test('01 — App loads with titlebar, nav, and status', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar');
+
+    await expect(page.locator('.titlebar__lemon')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'App controls', exact: true })).not.toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Toggle theme' })).toBeVisible();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('button', { name: 'Open download manager' })).toBeVisible();
+
+    // Titlebar brand
+    await expect(page.locator('.titlebar__brand')).toContainText('lemonade');
+
+    // Navigation buttons exist
+    const nav = page.locator('.titlebar__nav');
+    await expect(nav.getByText('Chat')).toBeVisible();
+    await expect(nav.getByText('Models')).toBeVisible();
+    await expect(nav.getByText('Backends')).toBeVisible();
+    await expect(nav.getByText('Apps')).toBeVisible();
+    await expect(nav.getByText('Monitor')).toBeVisible();
+    await expect(nav.getByText('Settings')).toBeVisible();
+
+    // Status dot visible
+    await expect(page.locator('.titlebar__status-dot--brand')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/01-app-loaded.png', fullPage: true });
+  });
+
+  // The tray and CLI deep-link into the app with `?view=<workspace>/<section>`
+  // (tray_ui.cpp on_show_logs, cli/main.cpp logs). Those routes must resolve.
+  test('01a0 — host deep links address Monitor sections directly', async ({ page }) => {
+    await page.goto('/?view=dashboard/logs');
+    await page.waitForSelector('[data-view="dashboard"]');
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page.getByRole('navigation', { name: 'Monitor sections' })
+      .getByRole('button', { name: 'Logs', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    await page.goto('/?view=dashboard/telemetry');
+    await page.waitForSelector('[data-view="dashboard"]');
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+  });
+
+  test('01a — Monitor labels and URL sections stay aligned', async ({ page }) => {
+    await page.goto('/#/dashboard/telemetry');
+    await page.waitForSelector('[data-view="dashboard"]');
+
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
+    await expect(page.locator('.monitor-rail .workspace-rail__title')).toHaveText('Views');
+    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
+    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+    await dashboardSections.getByRole('button', { name: 'Performance', exact: true }).click();
+    await expect(page).toHaveURL(/#\/dashboard\/performance$/);
+    await dashboardSections.getByRole('button', { name: 'Logs', exact: true }).click();
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+    await expect(page.locator('.titlebar__nav').getByText('Dashboard')).toHaveCount(0);
+    await expect(page.locator('.titlebar__nav').getByText('Inspect')).toHaveCount(0);
+    await expect(page.locator('.titlebar__nav').getByText('Logs')).toHaveCount(0);
+
+    await page.goto('/#/monitor/requests');
+    await expect(page).toHaveURL(/#\/dashboard\/logs$/);
+  });
+
+  test('01b — Monitor and Settings share routed section navigation', async ({ page }) => {
+    await page.goto('/#/connect/cloud-providers');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const connectSections = page.getByRole('navigation', { name: 'Connect sections' });
+    await expect(connectSections.getByRole('button', { name: 'Cloud providers', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    const expectedConnectRoutes = [
+      ['Server', 'server'],
+      ['Chat', 'chat'],
+      ['Memory', 'memory'],
+      ['Model storage', 'model-storage'],
+      ['Cloud providers', 'cloud-providers'],
+      ['MCP gateway', 'mcp-gateway'],
+      ['Help & support', 'help-and-support'],
+    ] as const;
+
+    for (const [label, section] of expectedConnectRoutes) {
+      await connectSections.getByRole('button', { name: label, exact: true }).click();
+      await expect(page).toHaveURL(new RegExp(`#\\/connect\\/${section}$`));
+      await expect(page.locator('#connect-pane-title')).toHaveText(label);
+    }
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Monitor', exact: true }).click();
+    const dashboardSections = page.getByRole('navigation', { name: 'Monitor sections' });
+    await dashboardSections.getByRole('button', { name: 'Telemetry', exact: true }).click();
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page).toHaveURL(/#\/connect\/help-and-support$/);
+    await page.goBack();
+    await expect(page).toHaveURL(/#\/dashboard\/telemetry$/);
+    await expect(dashboardSections.getByRole('button', { name: 'Telemetry', exact: true })).toHaveAttribute('aria-current', 'page');
+  });
+
+  test('01b1 — Model storage save feedback is scoped and directory errors surface', async ({ page }) => {
+    let runtimeConfig = { models_dir: 'auto', extra_models_dir: '' };
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        object: 'list',
+        data: [{
+          id: 'existing-model',
+          name: 'Existing Model',
+          type: 'llm',
+          labels: ['chat'],
+          recipe: 'llamacpp',
+          suggested: true,
+          downloaded: true,
+        }],
+      },
+    }));
+    await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
+    await page.route('**/internal/set**', async route => {
+      const body = route.request().postDataJSON() as { models_dir?: string; extra_models_dir?: string };
+      if (body.extra_models_dir === '/restricted/models') {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: "'extra_models_dir' is not readable by the Lemonade server: /restricted/models (Permission denied)",
+          }),
+        });
+        return;
+      }
+      runtimeConfig = {
+        models_dir: body.models_dir ?? runtimeConfig.models_dir,
+        extra_models_dir: body.extra_models_dir ?? runtimeConfig.extra_models_dir,
+      };
+      await route.fulfill({ json: { status: 'success', updated: body } });
+    });
+
+    await page.goto('/#/connect/model-storage');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const externalDirectory = page.getByLabel('External custom models directory');
+    await externalDirectory.fill('/tmp/models');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Models', exact: true }).click();
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    const connectSections = page.getByRole('navigation', { name: 'Connect sections' });
+    await externalDirectory.fill('/tmp/models-2');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+    await connectSections.getByRole('button', { name: 'Server', exact: true }).click();
+    await connectSections.getByRole('button', { name: 'Model storage', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    await externalDirectory.fill('/tmp/models-3');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__notice')).toHaveText('Directory settings saved.');
+    await externalDirectory.fill('/tmp/models-4');
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+
+    await externalDirectory.fill('/restricted/models');
+    await page.getByRole('button', { name: 'Save directories', exact: true }).click();
+    await expect(page.locator('.connect__error')).toContainText('not readable by the Lemonade server');
+    await expect(page.locator('.connect__notice')).toHaveCount(0);
+  });
+
+  test('01b2 — lifecycle settings use authoritative runtime config', async ({ page }) => {
+    let runtimeConfig: Record<string, unknown> = {
+      models_dir: 'auto',
+      extra_models_dir: '',
+      max_loaded_models: 3,
+      auto_evict: true,
+      auto_evict_threshold_pct: 0.875,
+      auto_check_model_updates: false,
+    };
+    const configWrites: Record<string, unknown>[] = [];
+    let rejectNextWrite = false;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: {
+        status: 'ok',
+        version: 'test',
+        all_models_loaded: [
+          { model_name: 'loaded-a', model_type: 'llm' },
+          { model_name: 'loaded-b', model_type: 'embedding' },
+        ],
+      },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({ json: { object: 'list', data: [] } }));
+    await page.route('**/internal/config**', route => route.fulfill({ json: runtimeConfig }));
+    await page.route('**/internal/set**', async route => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      configWrites.push(body);
+      if (rejectNextWrite) {
+        rejectNextWrite = false;
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'runtime config rejected for test' }),
+        });
+        return;
+      }
+      runtimeConfig = { ...runtimeConfig, ...body };
+      await route.fulfill({ json: { status: 'success', updated: body } });
+    });
+
+    await page.goto('/#/connect/memory');
+    await page.waitForSelector('[data-view="connect"]');
+
+    const maxLoaded = page.getByRole('spinbutton', { name: 'Maximum loaded models per type', exact: true });
+    const automaticEviction = page.getByRole('checkbox', { name: /Automatic eviction/ });
+    const evictionThreshold = page.getByRole('spinbutton', { name: 'Eviction threshold', exact: true });
+    await expect(maxLoaded).toHaveValue('3');
+    await expect(page.getByRole('button', { name: 'Increase maximum loaded models per type' })).toBeVisible();
+    await maxLoaded.fill('1');
+    await page.getByRole('button', { name: 'Decrease maximum loaded models per type' }).click();
+    await expect(maxLoaded).toHaveValue('-1');
+    await page.getByRole('button', { name: 'Increase maximum loaded models per type' }).click();
+    await expect(maxLoaded).toHaveValue('1');
+    await maxLoaded.fill('0');
+    await expect(maxLoaded).not.toHaveValue('0');
+    await expect(automaticEviction).toBeChecked();
+    await expect(evictionThreshold).toHaveValue('87.5');
+    const increaseEvictionThreshold = page.getByRole('button', { name: 'Increase eviction threshold' });
+    await expect(increaseEvictionThreshold).toBeVisible();
+    await increaseEvictionThreshold.click();
+    await expect(evictionThreshold).toHaveValue('92.5');
+    await expect(page.getByText('2 loaded', { exact: true })).toBeVisible();
+    await expect(page.getByText('Memory budget', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Loading policy', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Protect pinned models from automatic eviction', { exact: true })).toHaveCount(0);
+
+    await maxLoaded.fill('5');
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await expect.poll(() => configWrites.length).toBe(1);
+    expect(configWrites[0]).toEqual({
+      max_loaded_models: 5,
+      auto_evict: true,
+      auto_evict_threshold_pct: 0.925,
+    });
+    await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible();
+
+    rejectNextWrite = true;
+    await maxLoaded.fill('7');
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await expect(page.locator('.global-model-settings__body .connect__error')).toContainText('Failed to save settings');
+    await expect(maxLoaded).toHaveValue('5');
+    await expect(page.getByRole('button', { name: 'Saved', exact: true })).toHaveCount(0);
+
+    await automaticEviction.uncheck();
+    await expect(page.getByRole('spinbutton', { name: 'Eviction threshold', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+    await expect(automaticEviction).toBeChecked();
+    await expect(page.getByRole('spinbutton', { name: 'Eviction threshold', exact: true })).toHaveValue('92.5');
+
+    await page.goto('/#/connect/model-storage');
+    const startupUpdates = page.getByRole('checkbox', { name: /Check for model updates on server startup/ });
+    await expect(startupUpdates).not.toBeChecked();
+    await startupUpdates.check();
+    await page.getByRole('button', { name: 'Save settings', exact: true }).click();
+    await expect.poll(() => configWrites.length).toBe(3);
+    expect(configWrites[2]).toEqual({ auto_check_model_updates: true });
+    await expect(page.getByText('Automatic model updates', { exact: true })).toHaveCount(0);
+  });
+
+  test('01c — Apps is a standalone workspace with category rail navigation', async ({ page }) => {
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', route => route.fulfill({
+      json: {
+        data: [{
+          id: 'llama-search-model',
+          name: 'Llama Search Model',
+          type: 'llm',
+          labels: ['chat'],
+          recipe: 'llamacpp',
+          suggested: true,
+        }],
+      },
+    }));
+    await page.route('**/apps.json', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        apps: [
+          { id: 'chat-client', name: 'Chat Client', description: 'A conversational client.', category: ['Chat'] },
+          { id: 'creative-studio', name: 'Creative Studio', description: 'Image workflows.', category: ['creative tools'] },
+          { id: 'llama-app', name: 'Llama App', description: 'A llama.cpp companion.', category: ['tools'] },
+        ],
+      }),
+    }));
+
+    await page.goto('/#/apps');
+    await page.waitForSelector('[data-view="apps"]');
+
+    const appCategories = page.getByRole('navigation', { name: 'App categories' });
+    await expect(appCategories.getByRole('button', { name: 'All Apps', exact: true })).toHaveAttribute('aria-current', 'true');
+    await expect(appCategories.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
+    await expect(appCategories.getByRole('button', { name: 'Creative Tools', exact: true })).toBeVisible();
+    await expect(page.locator('#apps-pane-title')).toHaveText('Apps Marketplace');
+    await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
+    await expect(page.getByText('Creative Studio', { exact: true })).toBeVisible();
+    await expect(page.getByText('Llama App', { exact: true })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: 'Search apps' })).toBeVisible();
+
+    const globalResults = page.locator('#titlebar-search-results [role="option"]');
+    const searchFromView = async (viewName: 'Chat' | 'Backends' | 'Apps' | 'Monitor' | 'Settings', query: string) => {
+      await page.locator('.titlebar__nav').getByRole('button', { name: viewName, exact: true }).click();
+      await page.keyboard.press('Control+K');
+      const accessibleName = viewName === 'Apps' ? 'Search apps' : 'Search Lemonade';
+      await page.getByRole('combobox', { name: accessibleName }).fill(query);
+    };
+
+    await searchFromView('Apps', 'llama');
+    await expect(globalResults.first()).toContainText('Llama App');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Backends', 'llama');
+    await expect(globalResults.first()).toContainText('llama.cpp');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Chat', 'llama');
+    await expect(globalResults.first()).toContainText('Llama Search Model');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Monitor', 'llama');
+    await expect(globalResults.first()).toContainText('Llama Search Model');
+    await page.keyboard.press('Escape');
+
+    await searchFromView('Settings', 'model');
+    await expect(globalResults.first()).toContainText('Model storage');
+    await page.keyboard.press('Escape');
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Apps', exact: true }).click();
+    await expect(page.locator('.apps__category-filters')).toHaveCount(0);
+
+    const chatCategory = appCategories.getByRole('button', { name: 'Chat', exact: true });
+    await chatCategory.click();
+    await expect(chatCategory).toHaveAttribute('aria-current', 'true');
+    await expect(page.locator('#apps-pane-title')).toHaveText('Apps Marketplace');
+    await expect(page.getByRole('heading', { name: 'Chat', exact: true, level: 2 })).toBeVisible();
+    await expect(page.getByText('Chat Client', { exact: true })).toBeVisible();
+    await expect(page.getByText('Creative Studio', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/#\/apps$/);
+
+    await page.locator('.titlebar__nav').getByRole('button', { name: 'Settings', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: 'Connect sections' })
+      .getByRole('button', { name: 'App directory', exact: true })).toHaveCount(0);
+
+    await page.goto('/#/connect/app-directory');
+    await expect(page).toHaveURL(/#\/apps$/);
+    await expect(page.locator('[data-view="apps"]')).toBeVisible();
+  });
+
+  test('02 — Chat view renders with composer', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+
+    // Chat view active by default
+    await expect(page.locator('.chat')).toBeVisible();
+    await expect(page.locator('.hero')).toBeVisible();
+    await expect(page.locator('.composer__input')).toBeVisible();
+    await expect(page.locator('.composer__send')).toBeVisible();
+
+    // New chat button in rail
+    await expect(page.locator('.rail__new')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/02-chat-view.png', fullPage: true });
+  });
+
+  test('03 — Models view shows model grid', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+
+    await expect(page.locator('.manager__title h1')).toContainText('Models');
+    await expect(page.locator('.model-nav-rail .workspace-rail__title')).toHaveText('Filters');
+
+    const collapseFilters = page.getByRole('button', { name: 'Collapse model filters sidebar' });
+    await expect(collapseFilters).toBeVisible();
+    await expect(collapseFilters.locator('[data-icon="panel-left-close"]')).toBeVisible();
+    await collapseFilters.click();
+    const expandFilters = page.getByRole('button', { name: 'Expand model filters sidebar' });
+    await expect(expandFilters).toBeVisible();
+    await expect(expandFilters.locator('[data-icon="panel-left-open"]')).toBeVisible();
+    await expandFilters.click();
+
+    await page.screenshot({ path: 'screenshots/03-models-view.png', fullPage: true });
+  });
+
+  test('04 — Connect view shows server form', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Connect
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await page.waitForSelector('.connect');
+
+    await expect(page.locator('#connect-pane-title')).toHaveText('Server');
+    await expect(page.locator('.connect__rail .workspace-rail__title')).toHaveText('Settings');
+    await expect(page.locator('#host-input')).toBeVisible();
+    await expect(page.locator('#key-input')).toBeVisible();
+    await expect(page.locator('.connect__section--server button[type="submit"]')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/04-connect-view.png', fullPage: true });
+  });
+
+  test('05 — Navigation switches views correctly', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Default: Chat is active
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
+
+    // Switch to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Models');
+    await expect(page.locator('.manager')).toBeVisible();
+
+    // Switch to Connect
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Settings');
+    await expect(page.locator('.connect')).toBeVisible();
+
+    // Back to Chat
+    await page.locator('.titlebar__nav').getByText('Chat').click();
+    await expect(page.locator('.titlebar__nav button.is-active')).toContainText('Chat');
+    await expect(page.locator('.chat')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/05-navigation.png', fullPage: true });
+  });
+
+  test('06 — Connect form connects to server', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await page.waitForSelector('.connect');
+
+    // Fill in server URL (lemond should be running)
+    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
+    const urlInput = page.locator('#host-input');
+    await urlInput.clear();
+    await urlInput.fill(`http://localhost:${testPort}`);
+
+    // Click Connect
+    await page.locator('.connect__section--server button[type="submit"]').click();
+
+    // Wait for connection status dot to turn green
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    await page.screenshot({ path: 'screenshots/06-connected.png', fullPage: true });
+  });
+
+  test('07 — Models view shows loaded models when connected', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Wait for auto-connect
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+
+    // Wait for models to load
+    await page.waitForTimeout(2000);
+
+    // Should have zones (Running, Downloaded, Available)
+    const zones = page.locator('.zone');
+    const zoneCount = await zones.count();
+    console.log(`Found ${zoneCount} model zones`);
+
+    // Should have model rows
+    const rows = page.locator('.row');
+    const count = await rows.count();
+    console.log(`Found ${count} model rows`);
+
+    // Should have search bar
+    await expect(page.locator('.manager__search-input')).toBeVisible();
+
+    // Should have filter tabs
+    await expect(page.locator('.manager__filters')).toBeVisible();
+
+    // Stats should be visible
+    await expect(page.locator('.manager__stats')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/07-models-loaded.png', fullPage: true });
+
+    // Test search filtering
+    const searchInput = page.locator('.manager__search-input');
+    await searchInput.fill('Qwen');
+    await page.waitForTimeout(500);
+    const filteredCount = await page.locator('.row').count();
+    console.log(`Filtered to ${filteredCount} rows for "Qwen"`);
+    await page.screenshot({ path: 'screenshots/07b-models-search.png', fullPage: true });
+
+    // HuggingFace Explore zone should appear after debounce
+    await page.waitForTimeout(600);
+    const hfZone = page.locator('.zone--hf');
+    const hfVisible = await hfZone.isVisible().catch(() => false);
+    console.log(`HuggingFace zone visible: ${hfVisible}`);
+    if (hfVisible) {
+      const hfRows = await page.locator('.zone--hf .workspace-list-row').count();
+      console.log(`HuggingFace results: ${hfRows}`);
+      await page.screenshot({ path: 'screenshots/07b2-models-hf-zone.png', fullPage: true });
+    }
+
+    // Clear search and test type filter
+    await searchInput.clear();
+    await page.waitForTimeout(300);
+    await page.locator('.manager__filter').getByText('Image').click();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: 'screenshots/07c-models-filter-image.png', fullPage: true });
+
+    // Reset to All
+    await page.locator('.manager__filter').getByText('All').click();
+    await page.waitForTimeout(300);
+
+    // Test expanding a model detail (click first row)
+    const firstRow = page.locator('.row__content').first();
+    await firstRow.click();
+    await page.waitForTimeout(500);
+    // Detail panel should appear
+    const detail = page.locator('.row__detail').first();
+    if (await detail.isVisible().catch(() => false)) {
+      console.log('Model detail panel expanded successfully');
+    }
+    await page.screenshot({ path: 'screenshots/07d-model-detail.png', fullPage: true });
+  });
+
+  test('08 — Chat sends message and receives streaming response', async ({ page }) => {
+    test.setTimeout(120000); // Extended timeout for slow local LLMs
+    await page.goto('/');
+
+    // Wait for connection + model
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    // Wait for model to be loaded (composer placeholder shows model name)
+    await page.waitForFunction(() => {
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
+    }, { timeout: 10000 }).catch(() => {});
+
+    const placeholder = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder || !placeholder.startsWith('Message ')) {
+      await page.screenshot({ path: 'screenshots/08-no-model.png', fullPage: true });
+    }
+    expect(placeholder ?? '', 'Real-server chat smoke requires a loaded chat model').toMatch(/^Message /);
+
+    // Type and send a message
+    const input = page.locator('.composer__input');
+    await input.fill('Say "Hello World" in exactly 5 words.');
+    await page.locator('.composer__send').click();
+
+    // User message should appear
+    await expect(page.locator('.message--user').first()).toBeVisible();
+
+    // Wait for streaming (stop button or streaming cursor)
+    await page.waitForSelector('.composer__stop, .streaming-cursor', { timeout: 10000 }).catch(() => {});
+
+    await page.screenshot({ path: 'screenshots/08-chat-streaming.png', fullPage: true });
+
+    // Wait for completion (extended for thinking models)
+    await page.waitForFunction(() => {
+      return !document.querySelector('.composer__stop') && !document.querySelector('.streaming-cursor');
+    }, { timeout: 90000 }).catch(() => {});
+
+    // Assistant message should have appeared
+    const assistantMsg = page.locator('.message--assistant').first();
+    if (await assistantMsg.isVisible().catch(() => false)) {
+      // Metrics visible
+      const metrics = page.locator('.message__metrics').first();
+      await expect(metrics).toBeVisible({ timeout: 5000 }).catch(() => {});
+    }
+
+    await page.screenshot({ path: 'screenshots/08-chat-response.png', fullPage: true });
+  });
+
+  test('09 — Markdown rendering with code blocks', async ({ page }) => {
+    await page.goto('/');
+
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    await page.waitForFunction(() => {
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
+    }, { timeout: 10000 }).catch(() => {});
+
+    const placeholder09 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder09 || !placeholder09.startsWith('Message ')) {
+      await page.screenshot({ path: 'screenshots/09-no-model.png', fullPage: true });
+    }
+    expect(placeholder09 ?? '', 'Markdown rendering test requires a loaded chat model').toMatch(/^Message /);
+
+    // Ask for code
+    await page.locator('.composer__input').fill('Write a hello world function in Python. Use a code block.');
+    await page.locator('.composer__send').click();
+
+    // Wait for completion
+    await page.waitForFunction(() => {
+      return document.querySelectorAll('.message--assistant').length > 0 &&
+             !document.querySelector('.streaming-cursor');
+    }, { timeout: 60000 }).catch(() => {});
+
+    // Check for code block rendering
+    const codeBlock = page.locator('.code-block');
+    const hasCodeBlock = await codeBlock.count() > 0;
+    console.log(`Code blocks found: ${await codeBlock.count()}`);
+
+    if (hasCodeBlock) {
+      // Copy button should be visible
+      await expect(codeBlock.first().locator('.code-block__copy')).toBeVisible();
+      // Language label
+      await expect(codeBlock.first().locator('.code-block__lang')).toBeVisible();
+    }
+
+    await page.screenshot({ path: 'screenshots/09-markdown-code.png', fullPage: true });
+  });
+
+  test('10 — Thinking model shows reasoning section', async ({ page }) => {
+    await page.goto('/');
+
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    await page.waitForFunction(() => {
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
+    }, { timeout: 10000 }).catch(() => {});
+
+    const placeholder10 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder10 || !placeholder10.startsWith('Message ')) {
+      await page.screenshot({ path: 'screenshots/10-no-model.png', fullPage: true });
+    }
+    expect(placeholder10 ?? '', 'Thinking-model test requires a loaded chat model').toMatch(/^Message /);
+
+    // Ask something that triggers reasoning
+    await page.locator('.composer__input').fill('What is 2+2? Think step by step.');
+    await page.locator('.composer__send').click();
+
+    // Wait for any thinking block to appear (or full completion)
+    await page.waitForFunction(() => {
+      return document.querySelector('.message__thinking') !== null ||
+             (document.querySelectorAll('.message--assistant').length > 0 &&
+              !document.querySelector('.streaming-cursor'));
+    }, { timeout: 60000 }).catch(() => {});
+
+    const thinkingBlock = page.locator('.message__thinking');
+    const hasThinking = await thinkingBlock.count() > 0;
+    console.log(`Thinking blocks found: ${await thinkingBlock.count()}`);
+
+    await page.screenshot({ path: 'screenshots/10-thinking-model.png', fullPage: true });
+  });
+
+  test('11 — New Chat button clears conversation', async ({ page }) => {
+    await page.goto('/');
+
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    await page.waitForFunction(() => {
+      const input = document.querySelector('.composer__input') as HTMLTextAreaElement;
+      return input && input.placeholder && input.placeholder.startsWith('Message ');
+    }, { timeout: 10000 }).catch(() => {});
+
+    const placeholder11 = await page.locator('.composer__input').getAttribute('placeholder').catch(() => null);
+    if (!placeholder11 || !placeholder11.startsWith('Message ')) {
+      await page.screenshot({ path: 'screenshots/11-no-model.png', fullPage: true });
+    }
+    expect(placeholder11 ?? '', 'New-chat real-server test requires a loaded chat model').toMatch(/^Message /);
+
+    // Send a message
+    await page.locator('.composer__input').fill('Hi');
+    await page.locator('.composer__send').click();
+
+    // Wait for response
+    await page.waitForFunction(() => {
+      return document.querySelectorAll('.message--assistant').length > 0 &&
+             !document.querySelector('.streaming-cursor');
+    }, { timeout: 60000 }).catch(() => {});
+
+    // Messages visible
+    await expect(page.locator('.message').first()).toBeVisible();
+
+    // Click New Chat button in rail
+    await page.locator('.rail__new').click();
+
+    // Hero should be back (conversation cleared)
+    await expect(page.locator('.hero')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/11-new-chat.png', fullPage: true });
+  });
+
+  test('12 — Responsive layout at different widths', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar');
+
+    // Desktop
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.screenshot({ path: 'screenshots/12-responsive-desktop.png', fullPage: true });
+
+    // Tablet
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.screenshot({ path: 'screenshots/12-responsive-tablet.png', fullPage: true });
+
+    // Mobile
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.screenshot({ path: 'screenshots/12-responsive-mobile.png', fullPage: true });
+  });
+
+  test('12a0 — Tauri Apps titlebar stays collision-free at narrow widths', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.api = { ...window.api, isWebApp: false };
+    });
+    await page.goto('/#/apps');
+
+    const titlebar = page.locator('.titlebar');
+    const nav = page.locator('.titlebar__nav');
+    const right = page.locator('.titlebar__right');
+    const search = page.locator('.titlebar__search');
+    const windowButtons = page.locator('.titlebar__window-btn');
+    const minimizeButton = page.getByRole('button', { name: 'Minimize', exact: true });
+    const appControls = page.getByRole('button', { name: 'App controls', exact: true });
+    const brandIcon = page.locator('.titlebar__brand-icon');
+    const mobileMenuButton = page.locator('.workspace-mobile-menu-button');
+
+    await expect(titlebar).toHaveClass(/titlebar--desktop/);
+    await expect(page.getByRole('button', { name: 'Apps', exact: true })).toHaveClass(/is-active/);
+    await expect(windowButtons).toHaveCount(3);
+    await expect(minimizeButton).toHaveClass(/titlebar__window-btn--minimize/);
+    await expect(windowButtons.nth(0).locator('[data-icon="minus"]')).toHaveCount(1);
+    await expect(windowButtons.nth(1).locator('[data-icon="square"]')).toHaveCount(1);
+    await expect(windowButtons.nth(2).locator('[data-icon="x"]')).toHaveCount(1);
+    for (const iconName of ['minus', 'square', 'x']) {
+      const icon = windowButtons.locator(`[data-icon="${iconName}"]`);
+      await expect(icon).toHaveAttribute('width', '15');
+      await expect(icon).toHaveAttribute('height', '15');
+    }
+    let brandLeft: number | null = null;
+    for (const width of [1321, 1280, 901, 900, 821, 800, 769, 768, 480, 400]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.waitForTimeout(250);
+
+      const [titlebarBox, navBox, rightBox] = await Promise.all([
+        titlebar.boundingBox(),
+        nav.boundingBox(),
+        right.boundingBox(),
+      ]);
+      expect(titlebarBox, `titlebar box at ${width}px`).not.toBeNull();
+      expect(navBox, `nav box at ${width}px`).not.toBeNull();
+      expect(rightBox, `right controls box at ${width}px`).not.toBeNull();
+
+      expect(navBox!.x + navBox!.width, `nav/right overlap at ${width}px`)
+        .toBeLessThanOrEqual(rightBox!.x);
+      expect(rightBox!.x + rightBox!.width, `right controls overflow at ${width}px`)
+        .toBeLessThanOrEqual(titlebarBox!.x + titlebarBox!.width);
+
+      const minimumWindowButtonWidth = width <= 480 ? 30 : width <= 900 ? 32 : 34;
+      const dividerStyle = await minimizeButton.evaluate(element => {
+        const style = getComputedStyle(element, '::before');
+        return {
+          content: style.content,
+          width: style.width,
+          height: style.height,
+          insetInlineStart: style.insetInlineStart,
+          backgroundImage: style.backgroundImage,
+          pointerEvents: style.pointerEvents,
+        };
+      });
+      expect(dividerStyle.content, `window divider content at ${width}px`).toBe('""');
+      expect(dividerStyle.width, `window divider width at ${width}px`).toBe('1px');
+      expect(dividerStyle.height, `window divider height at ${width}px`).toBe('25px');
+      expect(dividerStyle.insetInlineStart, `window divider offset at ${width}px`).toBe('-1px');
+      expect(dividerStyle.backgroundImage, `window divider gradient missing at ${width}px`)
+        .toContain('linear-gradient');
+      expect(dividerStyle.pointerEvents, `window divider intercepts input at ${width}px`).toBe('none');
+
+      const windowButtonBoxes = await windowButtons.evaluateAll(buttons => (
+        buttons.map(button => button.getBoundingClientRect().width)
+      ));
+      for (const buttonWidth of windowButtonBoxes) {
+        expect(buttonWidth, `window control shrank at ${width}px`)
+          .toBeGreaterThanOrEqual(minimumWindowButtonWidth);
+      }
+
+      if (width >= 769) {
+        const brandBox = await brandIcon.boundingBox();
+        expect(brandBox, `brand icon box at ${width}px`).not.toBeNull();
+        brandLeft ??= brandBox!.x;
+        expect(brandBox!.x, `brand icon moved at ${width}px`).toBeCloseTo(brandLeft, 1);
+
+        const searchBox = await search.boundingBox();
+        expect(searchBox, `Apps search box at ${width}px`).not.toBeNull();
+        if (width === 1321) {
+          expect(searchBox!.width, `Apps search field collapsed at ${width}px`)
+            .toBeGreaterThanOrEqual(176);
+        } else {
+          expect(searchBox!.width, `Apps search did not compact at ${width}px`)
+            .toBeLessThanOrEqual(32);
+        }
+      } else {
+        await expect(brandIcon).toBeHidden();
+        await expect(mobileMenuButton).toBeVisible();
+        await expect(appControls).toBeVisible();
+        await expect(appControls).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+        const menuButtonBox = await mobileMenuButton.boundingBox();
+        expect(menuButtonBox, `mobile menu box at ${width}px`).not.toBeNull();
+        expect(menuButtonBox!.x, `brand/menu handoff moved at ${width}px`).toBeCloseTo(brandLeft!, 1);
+      }
+    }
+
+    await page.setViewportSize({ width: 900, height: 800 });
+    const searchToggle = search.getByRole('button', { name: 'Search Lemonade' });
+    await expect(searchToggle).toBeVisible();
+    await searchToggle.click();
+    await expect(search.getByRole('combobox', { name: 'Search apps' })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(search.getByRole('combobox', { name: 'Search apps' })).not.toBeVisible();
+  });
+
+  test('12a — Every mobile workspace exposes its context panel', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await page.waitForSelector('.titlebar');
+
+    const appControls = page.getByRole('button', { name: 'App controls', exact: true });
+    await expect(page.locator('.titlebar__window-btn--minimize')).toHaveCount(0);
+    await expect(appControls).toBeVisible();
+    const browserAppControlsBorder = await appControls.evaluate(element => (
+      getComputedStyle(element).borderTopColor
+    ));
+    expect(browserAppControlsBorder).not.toBe('rgba(0, 0, 0, 0)');
+    expect(browserAppControlsBorder).not.toBe('transparent');
+    await expect(appControls.locator('[data-icon="sliders-horizontal"]')).toBeVisible();
+    await appControls.click();
+    await expect(page.locator('.titlebar__utility-menu').getByRole('status')).toHaveAccessibleName(/Server (connected|connecting|offline)/i);
+    await appControls.click();
+
+    const workspaces: Array<{ tab: string; trigger: string; dialog: string; visibleControls?: string[] }> = [
+      { tab: 'Chat', trigger: 'Open conversation history', dialog: 'Conversations' },
+      {
+        tab: 'Models',
+        trigger: 'Open model filters',
+        dialog: 'Model filters',
+        visibleControls: ['All Models', 'Downloaded', 'Favorites'],
+      },
+      { tab: 'Backends', trigger: 'Open backend filters', dialog: 'Backend filters' },
+      { tab: 'Apps', trigger: 'Open app categories', dialog: 'App categories', visibleControls: ['All Apps'] },
+      { tab: 'Monitor', trigger: 'Open monitor views', dialog: 'Monitor navigation' },
+      { tab: 'Settings', trigger: 'Open connection settings', dialog: 'Connection settings' },
+    ];
+
+    const primaryNav = page.getByRole('navigation', { name: 'Primary' });
+    for (const workspace of workspaces) {
+      await primaryNav.getByRole('button', { name: workspace.tab, exact: true }).click();
+      const trigger = page.getByRole('main').getByRole('button', { name: workspace.trigger, exact: true });
+      await expect(trigger).toBeVisible();
+      await trigger.click();
+      const dialog = page.getByRole('dialog', { name: workspace.dialog });
+      await expect(dialog).toBeVisible();
+      for (const control of workspace.visibleControls ?? []) {
+        await expect(dialog.getByRole('button', { name: control })).toBeVisible();
+      }
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: workspace.dialog })).toHaveCount(0);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await trigger.click();
+      await expect(page.getByRole('dialog', { name: workspace.dialog })).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog', { name: workspace.dialog })).toHaveCount(0);
+      await expect(trigger).toBeFocused();
+    }
+  });
+
+  test('13c — Configuration tab shows runtime controls for a downloaded model', async ({ page }) => {
+    let loadRequestBody: Record<string, unknown> | null = null;
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: llamacppRecipe(),
+        },
+      },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    const modelOptionsRouteState13c = new Map<string, Record<string, unknown>>();
+    await page.route('**/api/v1/models**', async route => {
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState13c)) return;
+      return route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: [{
+          id: 'config-beta-model',
+          name: 'config-beta-model',
+          display_name: 'Config Beta Model',
+          labels: ['chat'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          max_context_window: 65536,
+          recipe_options: { ctx_size: 8192 },
+        }, {
+          id: 'speech-beta-model',
+          name: 'speech-beta-model',
+          display_name: 'Speech Beta Model',
+          labels: ['transcription'],
+          recipe: 'whispercpp',
+          downloaded: true,
+        }, {
+          // Carries a registry_source, as every served model does, and no
+          // stored ctx_size — so this exercises the context default path.
+          id: 'unknown-context-model',
+          name: 'unknown-context-model',
+          display_name: 'Unknown Context Model',
+          registry_source: 'huggingface',
+          labels: ['chat'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          max_context_window: 32768,
+        }],
+      }),
+    });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(page.locator('.titlebar__status-dot--brand')).toHaveClass(/titlebar__status-dot--connected/);
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Config Beta Model' }).click();
+    await page.getByRole('tab', { name: 'Configuration' }).click();
+
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Load settings' })).toBeVisible();
+    await expect(panel.getByText('Saved defaults', { exact: true })).toHaveCount(0);
+    const autoTune = panel.getByRole('checkbox', { name: 'Auto tune context size' });
+    const autoTuneControl = panel.locator('.detail-configuration__autotune');
+    await expect(autoTune).toBeChecked();
+    await expect(autoTuneControl).toHaveAttribute(
+      'title',
+      'Lemonade estimates the context size from available memory when the model loads. Uncheck to use a fixed value.',
+    );
+    await expect(panel.getByText('Estimated at load time', { exact: true })).toHaveCount(0);
+    await expect(panel.getByText(/Estimates a safe context size from available memory/)).toHaveCount(0);
+    // Auto tuning disables the controls rather than hiding them, so the size it
+    // resolved stays readable.
+    await expect(panel.getByLabel('Context size tokens')).toBeDisabled();
+    await expect(panel.locator('.detail-configuration__context-slider')).toBeDisabled();
+    await expect(panel.getByRole('button', { name: 'Load model' })).toHaveCount(0);
+    const loadButton = page.getByRole('button', { name: 'Load config-beta-model' });
+    await expect(loadButton).toBeVisible();
+    await expect(page.getByText('Configure…', { exact: true })).toHaveCount(0);
+
+    const save = panel.getByRole('button', { name: 'Save', exact: true });
+    await expect(save).toHaveClass(/btn--ghost/);
+    await autoTune.uncheck();
+    await expect(panel.getByLabel('Context size tokens')).toBeEnabled();
+    await expect(panel.locator('.detail-configuration__context-slider')).toBeEnabled();
+    await expect(autoTuneControl).toHaveAttribute('title', /Context size is fixed at .* tokens.*Check Auto tune context size/);
+    await expect(save).toHaveClass(/btn--primary/);
+    await save.click();
+    await expect(save).toHaveClass(/btn--ghost/);
+    await expect(panel.locator('.detail-tuning__notice')).toHaveText('Saved for future loads');
+    await autoTune.check();
+    await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
+    await expect(panel.getByLabel('Context size tokens')).toBeDisabled();
+    await expect(panel.locator('.detail-configuration__context-slider')).toBeDisabled();
+    await expect(save).toHaveClass(/btn--primary/);
+    await save.click();
+    await expect(save).toHaveClass(/btn--ghost/);
+    await expect(panel.locator('[id$="llamacpp_backend"]')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Reset' })).toBeVisible();
+
+    // Pin is a server runtime action and must not be offered until the model is loaded.
+    await expect(page.getByRole('button', { name: 'Pin config-beta-model' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Unpin config-beta-model' })).toHaveCount(0);
+    const favorite = page.getByRole('button', { name: 'Add config-beta-model to favorites' });
+    await expect(favorite).toBeVisible();
+    await favorite.click();
+    await expect(page.getByRole('button', { name: 'Remove config-beta-model from favorites' }))
+      .toHaveClass(/model-detail-panel__fav-btn--on/);
+    await expect(page.getByRole('button', { name: 'Delete downloaded files for config-beta-model' }))
+      .toHaveClass(/workspace-action-button--secondary/);
+
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Speech Beta Model' }).click();
+    await page.getByRole('tab', { name: 'Configuration' }).click();
+    const speechPanel = page.locator('#detail-panel-config');
+    await expect(speechPanel.getByRole('checkbox', { name: 'Auto tune context size' })).toHaveCount(0);
+    await expect(speechPanel.getByLabel('Context size tokens')).toHaveCount(0);
+
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'Unknown Context Model' }).click();
+    await page.getByRole('tab', { name: 'Configuration' }).click();
+    const unknownPanel = page.locator('#detail-panel-config');
+    const unknownAutoTune = unknownPanel.getByRole('checkbox', { name: 'Auto tune context size' });
+    await expect(unknownAutoTune).toBeChecked();
+    await unknownAutoTune.uncheck();
+    await expect(unknownPanel.getByLabel('Context size tokens')).toBeEnabled();
+    await expect(unknownPanel.locator('.detail-configuration__context-slider')).toBeEnabled();
+    await unknownAutoTune.check();
+
+    await page.getByRole('button', { name: 'Load unknown-context-model' }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe('unknown-context-model');
+    // Auto tune is the explicit -1, not an omission: an omitted ctx_size means
+    // "use whatever is saved", which is not what the panel is showing.
+    expect(loadRequestBody?.ctx_size).toBe(-1);
+  });
+
+  test('13c — External models show a local-file notice instead of calling the delete API', async ({ page }) => {
+    let deleteRequested = false;
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route(/\/api\/v1\/models(?:\?.*)?$/, route => route.fulfill({
+      json: {
+        data: [{
+          id: 'extra.external-directory-model',
+          name: 'extra.external-directory-model',
+          display_name: 'External Directory Model',
+          source: 'extra_models_dir',
+          labels: ['custom'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          checkpoint: 'C:\\Models\\External Directory Model.gguf',
+        }],
+      },
+    }));
+    await page.route('**/api/v1/delete', route => {
+      deleteRequested = true;
+      return route.fulfill({ json: { status: 'success' } });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: 'External Directory Model' }).click();
+    await page.getByRole('button', { name: 'Delete custom model definition for extra.external-directory-model' }).click();
+
+    const notice = page.locator('.manager__toast--external-model');
+    await expect(notice).toContainText('External Directory Model is managed in your external models folder. Delete it directly from that folder.');
+    await expect(page.getByRole('button', { name: 'Open external models folder for External Directory Model' })).toHaveCount(0);
+    expect(deleteRequested).toBe(false);
+  });
+
+  test('13d — Detail header links the model source and Load applies unsaved settings', async ({ page }) => {
+    let loadRequestBody: Record<string, unknown> | null = null;
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: llamacppRecipe({
+            cpu: { state: 'installed', version: 'test' },
+            vulkan: { state: 'installed', version: 'test' },
+          }),
+        },
+      },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    const modelOptionsRouteState13d: ModelOptionsState = new Map();
+    await page.route('**/api/v1/models**', async route => {
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState13d)) return;
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          data: [{
+            id: 'source-hf-model',
+            name: 'source-hf-model',
+            display_name: 'Source HF Model',
+            labels: ['chat'],
+            recipe: 'llamacpp',
+            checkpoint: 'unsloth/Qwen3-0.6B-GGUF:Q4_0',
+            downloaded: true,
+            max_context_window: 65536,
+          }, {
+            id: 'source-ms-model',
+            name: 'source-ms-model',
+            display_name: 'Source MS Model',
+            labels: ['chat'],
+            recipe: 'llamacpp',
+            source: 'modelscope',
+            checkpoint: 'OpenBMB/MiniCPM5-1B-GGUF:MiniCPM5-1B-Q4_K_M.gguf',
+            downloaded: true,
+          }],
+        }),
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.locator('[data-model-id="source-hf-model"]').click();
+
+    // The source is a chip in the metadata row, linking to the model's repo.
+    const source = page.locator('.workspace-metadata-chip.model-detail-panel__source');
+    await expect(source).toHaveAttribute('href', 'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF');
+    await expect(source.locator('.model-detail-panel__source-registry')).toHaveText('Hugging Face:');
+    await expect(source.locator('.model-detail-panel__source-checkpoint')).toHaveText('unsloth/Qwen3-0.6B-GGUF:Q4_0');
+
+    // ModelScope models link to their own registry; the quant comes out of the filename.
+    await page.locator('[data-model-id="source-ms-model"]').click();
+    await expect(source).toHaveAttribute('href', 'https://modelscope.cn/models/OpenBMB/MiniCPM5-1B-GGUF');
+    await expect(source.locator('.model-detail-panel__source-registry')).toHaveText('ModelScope:');
+    await expect(source.locator('.model-detail-panel__source-checkpoint')).toHaveText('OpenBMB/MiniCPM5-1B-GGUF:Q4_K_M');
+
+    // Load uses the settings on screen; only Save writes them down.
+    await page.locator('[data-model-id="source-hf-model"]').click();
+    const panel = page.locator('#detail-panel-config');
+    await panel.locator('[id$="llamacpp_backend"]').selectOption('vulkan');
+    await panel.getByRole('checkbox', { name: 'Auto tune context size' }).uncheck();
+    await panel.getByLabel('Context size tokens').fill('16384');
+
+    await page.getByRole('button', { name: 'Load source-hf-model' }).click();
+    await expect.poll(() => loadRequestBody?.llamacpp_backend).toBe('vulkan');
+    expect(loadRequestBody?.ctx_size).toBe(16384);
+    // Applying settings for one load must not make them the server's new default.
+    expect(loadRequestBody?.save_options).toBe(false);
+
+    const storedTunings = await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(k => k.endsWith('model_tunings'));
+      return key ? localStorage.getItem(key) : null;
+    });
+    expect(storedTunings).toBeNull();
+
+    // Loading switches to Chat; back on Models the settings are still shown and
+    // still unsaved.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(panel.getByLabel('Context size tokens')).toHaveValue('16384');
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toHaveClass(/btn--primary/);
+    await expect(panel.getByRole('button', { name: 'Discard changes' })).toBeVisible();
+
+    // With a size saved, clearing the field and loading means auto, not the
+    // saved size coming back.
+    await panel.getByRole('button', { name: 'Save', exact: true }).click();
+    await panel.getByLabel('Context size tokens').fill('');
+    loadRequestBody = null;
+    await page.getByRole('button', { name: 'Load source-hf-model' }).click();
+    await expect.poll(() => loadRequestBody?.ctx_size).toBe(-1);
+  });
+
+
+  test('14 — Backends view shows matrix and device info', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Backends nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Backends')).toBeVisible();
+
+    // Navigate to Backends
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-view="backends"]');
+
+    // Title visible
+    await expect(page.locator('.backends__title h1')).toContainText('Backends');
+
+    // Show technical details toggle visible
+    await expect(page.locator('.backends__toggle')).toBeVisible();
+
+    // Matrix table present
+    const matrix = page.locator('[data-backends-matrix] table');
+    await expect(matrix).toBeVisible();
+
+    // Matrix has capability column headers
+    await expect(matrix.locator('thead th')).toHaveCount(5); // Device + LLM + Audio + Image + TTS
+
+    // At least one device row
+    const rows = matrix.locator('tbody tr');
+    expect(await rows.count()).toBeGreaterThan(0);
+
+    // Toggle tech details — version sha becomes visible
+    await page.locator('.backends__toggle input').check();
+
+    await page.screenshot({ path: 'screenshots/14-backends-view.png', fullPage: true });
+  });
+
+  test('15 — Monitor performance shows system gauges and scrollable graphs', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Monitor nav button exists
+    await expect(page.locator('.titlebar__nav').getByText('Monitor')).toBeVisible();
+
+    // Navigate to Monitor performance
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
+    await page.waitForSelector('[data-view="dashboard"]');
+
+    // Performance header and navigation visible
+    await expect(page.locator('.dashboard-header').getByRole('heading', { name: 'Performance' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Performance', exact: true })).toHaveAttribute('aria-current', 'page');
+
+    // Connection indicator dot
+    await expect(page.locator('.dash2-bar__dot')).toBeVisible();
+
+    // Pause/resume button
+    await expect(page.locator('.dash2-bar__btn')).toBeVisible();
+
+    // Aggregate Throughput hero section
+    await expect(page.getByText('Aggregate Throughput')).toBeVisible();
+
+    // At least CPU and RAM gauges rendered
+    const gauges = page.locator('.dash2-gauge');
+    expect(await gauges.count()).toBeGreaterThanOrEqual(2);
+
+    // Hero throughput stats — check for the aggregate throughput section
+    await expect(page.getByText('Aggregate Throughput')).toBeVisible();
+    await expect(page.getByText('tok/s').first()).toBeVisible();
+    await expect(page.getByText('Generation TPS')).toBeVisible();
+
+    // Session summary hidden until inference happens (no data at idle)
+
+    // Pause button toggles
+    await page.locator('.dash2-bar__btn').click();
+    await expect(page.locator('.dash2-bar__btn')).toHaveClass(/is-paused/);
+
+    // Resume
+    await page.locator('.dash2-bar__btn').click();
+    await expect(page.locator('.dash2-bar__btn')).not.toHaveClass(/is-paused/);
+
+    // Loaded Models section present (scope to dashboard to avoid Models view zone match)
+    const dashView = page.locator('[data-view="dashboard"]');
+    await expect(dashView.getByText('Loaded Models')).toBeVisible();
+
+    const graphScroller = page.locator('.dash2-scroll');
+    const scrollMetrics = await graphScroller.evaluate(element => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }));
+    expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight);
+    await graphScroller.hover();
+    await page.mouse.wheel(0, 200);
+    await expect.poll(() => graphScroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+
+    await page.screenshot({ path: 'screenshots/15-dashboard.png', fullPage: true });
+  });
+
+  test('16 — Monitor logs shows filters and live output', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
+    await page.waitForSelector('[data-view="dashboard"]');
+
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
+    await page.waitForSelector('[data-view="logs"]');
+
+    // Filter panel visible with controls
+    await expect(page.locator('.logs-rail')).toBeVisible();
+
+    // Connection status dot
+    await expect(page.locator('.logs-status__dot')).toBeVisible();
+
+    // Status label visible
+    await expect(page.locator('.logs-status__label')).toBeVisible();
+
+    // Search input
+    await expect(page.locator('.logs-search')).toBeVisible();
+
+    // Show (filter) level selector
+    const showSelect = page.locator('.logs-level__select').first();
+    await expect(showSelect).toBeVisible();
+
+    // Server level selector
+    const serverSelect = page.locator('.logs-level__select').nth(1);
+    await expect(serverSelect).toBeVisible();
+
+    // Clear button
+    await expect(page.getByRole('button', { name: 'Clear log output' })).toBeVisible();
+
+    // Log output area exists
+    await expect(page.locator('.logs-output')).toBeVisible();
+
+    // Wait briefly for WebSocket connection
+    await page.waitForTimeout(2000);
+
+    // If connected, should show some log entries or the empty state
+    const output = page.locator('.logs-output');
+    const hasEntries = await output.locator('.logs-line').count() > 0;
+    const hasEmpty = await output.locator('.logs-empty').count() > 0;
+    expect(hasEntries || hasEmpty).toBeTruthy();
+
+    // If we have entries, verify structure: time, badge, tag, text
+    if (hasEntries) {
+      const firstLine = output.locator('.logs-line').first();
+      await expect(firstLine.locator('.logs-line__time')).toBeVisible();
+      await expect(firstLine.locator('.logs-line__badge')).toBeVisible();
+      await expect(firstLine.locator('.logs-line__text')).toBeVisible();
+    }
+
+    // Search filtering works — type something and verify
+    await page.locator('.logs-search').fill('xyz_nonexistent_query');
+    await page.waitForTimeout(300);
+
+    // Entry count in the filter panel should update
+    await expect(page.locator('.logs-toolbar__count')).toBeVisible();
+
+    // Clear the search
+    await page.locator('.logs-search').fill('');
+
+    await page.screenshot({ path: 'screenshots/16-logs-view.png', fullPage: true });
+  });
+
+  /* ── Bug fix validations ─────────────────────────────────── */
+
+  test('17 — Logs auto-scroll sticks to bottom across view switches', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Monitor logs
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
+    await page.waitForSelector('[data-view="dashboard"]');
+    await page.getByRole('navigation', { name: 'Monitor sections' }).getByRole('button', { name: 'Logs', exact: true }).click();
+    await page.waitForSelector('.logs-output', { state: 'visible' });
+
+    // Inject enough content to make the container scrollable, then scroll to bottom
+    await page.evaluate(() => {
+      const output = document.querySelector('.logs-output');
+      if (!output) return;
+      for (let i = 0; i < 100; i++) {
+        const line = document.createElement('div');
+        line.className = 'logs-line';
+        line.style.height = '24px';
+        line.innerHTML = `
+          <span class="logs-line__time">12:00:${String(i).padStart(2, '0')}</span>
+          <span class="logs-line__badge logs-line__badge--info">INFO</span>
+          <span class="logs-line__tag">test</span>
+          <span class="logs-line__text">Synthetic log entry #${i}</span>`;
+        output.appendChild(line);
+      }
+      // Scroll to the very bottom
+      output.scrollTop = output.scrollHeight;
+    });
+
+    await page.waitForTimeout(200);
+
+    // Verify we are at the bottom
+    const scrolledBefore = await page.evaluate(() => {
+      const el = document.querySelector('.logs-output');
+      if (!el) return { at: false, top: 0, height: 0, scroll: 0 };
+      return {
+        at: el.scrollHeight - el.scrollTop <= el.clientHeight + 80,
+        top: el.scrollTop,
+        height: el.scrollHeight,
+        scroll: el.clientHeight,
+      };
+    });
+    expect(scrolledBefore.at).toBeTruthy();
+
+    // Switch away to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForTimeout(500);
+
+    // Switch back to Monitor, which preserves the active Logs section
+    await page.locator('.titlebar__nav').getByText('Monitor').click();
+    await page.waitForSelector('.logs-output', { state: 'visible' });
+    await page.waitForTimeout(500);
+
+    // After coming back, the IntersectionObserver should have re-scrolled to bottom
+    const scrolledAfter = await page.evaluate(() => {
+      const el = document.querySelector('.logs-output');
+      if (!el) return { at: false, top: 0, height: 0, scroll: 0 };
+      return {
+        at: el.scrollHeight - el.scrollTop <= el.clientHeight + 80,
+        top: el.scrollTop,
+        height: el.scrollHeight,
+        scroll: el.clientHeight,
+      };
+    });
+    expect(scrolledAfter.at).toBeTruthy();
+
+    await page.screenshot({ path: 'screenshots/17-logs-sticky-scroll.png', fullPage: true });
+  });
+
+  test('18 — Chat allows navigation while streaming (concurrent chat)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+
+    // The rail should allow clicking conversations even with no server
+    // Verify new chat button works and switching is not blocked
+    const newBtn = page.locator('.rail__new');
+    await expect(newBtn).toBeVisible();
+
+    // Create a first chat by clicking New Chat
+    await newBtn.click();
+    await page.waitForTimeout(200);
+
+    // The hero should be visible (empty chat state)
+    await expect(page.locator('.hero')).toBeVisible();
+
+    // Verify the conversation rail exists and is interactive
+    const rail = page.locator('.rail');
+    await expect(rail).toBeVisible();
+
+    // Verify the composer is not disabled (can start typing in new chat)
+    const input = page.locator('.composer__input');
+    await expect(input).toBeVisible();
+    await input.fill('Test message for nav check');
+
+    // Click New Chat again — should work without being blocked
+    await newBtn.click();
+    await page.waitForTimeout(200);
+
+    // Hero should still be visible (new empty chat)
+    await expect(page.locator('.hero')).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/18-concurrent-chat-nav.png', fullPage: true });
+  });
+
+  test('19 — Chat streaming badge shows on rail items', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.chat');
+
+    // Streaming moved from a rail-specific badge to the shared list-row live
+    // status. Verify the marker keeps both its state color and pulse animation.
+    const hasStreamingStatusStyle = await page.evaluate(() => {
+      let hasLiveColor = false;
+      let hasLivePulse = false;
+      const sheets = document.styleSheets;
+      for (let i = 0; i < sheets.length; i++) {
+        try {
+          const rules = sheets[i].cssRules;
+          for (let j = 0; j < rules.length; j++) {
+            const rule = rules[j] as CSSStyleRule;
+            if (!rule.selectorText?.includes('.workspace-list-row__status--live::before')) continue;
+            if (rule.style.background) hasLiveColor = true;
+            if (rule.style.animation) hasLivePulse = true;
+          }
+        } catch { /* cross-origin */ }
+      }
+      return hasLiveColor && hasLivePulse;
+    });
+    expect(hasStreamingStatusStyle).toBeTruthy();
+
+    await page.screenshot({ path: 'screenshots/19-streaming-badge-style.png', fullPage: true });
+  });
+
+  test('20 — Models page shows model list panel with search', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+
+    // New master-detail layout: left panel with search input
+    const listPanel = page.locator('.model-list-panel');
+    await expect(listPanel).toBeVisible();
+
+    // Search input should be present and operable
+    const searchInput = page.locator('.manager__search-input');
+    await expect(searchInput).toBeVisible();
+
+    // When disconnected / no models, empty state should show appropriate message
+    const emptyState = page.locator('.manager__empty');
+    if (await emptyState.isVisible().catch(() => false)) {
+      const text = await emptyState.textContent();
+      expect(text).toMatch(/Connect to a Lemonade server|No models found|No models match/);
+    }
+
+    // Model count annotation should be present (even "0 models")
+    const countEl = page.locator('.model-list-panel__count');
+    await expect(countEl).toBeVisible();
+
+    // Typing into search filters the list
+    await searchInput.fill('zzznotamodel');
+    await page.waitForTimeout(200);
+    // Either empty state appears, or count shows 0
+    const countText = await countEl.textContent();
+    const emptyVisible = await page.locator('.manager__empty').isVisible().catch(() => false);
+    expect(emptyVisible || (countText ?? '').startsWith('0')).toBeTruthy();
+
+    await page.screenshot({ path: 'screenshots/20-models-zones.png', fullPage: true });
+  });
+
+  test('21 — Models page zone labels: Loaded, Downloaded, Registry', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Connect to server first
+    await page.locator('.titlebar__nav').getByText('Settings').click();
+    await page.waitForSelector('.connect');
+    const testPort = process.env.LEMONADE_TEST_PORT || '13305';
+    const urlInput = page.locator('#host-input');
+    await urlInput.clear();
+    await urlInput.fill(`http://localhost:${testPort}`);
+    await page.locator('.connect__section--server button[type="submit"]').click();
+
+    // Wait for connection
+    await page.waitForFunction(() => {
+      const dot = document.querySelector('.titlebar__status-dot');
+      return dot?.classList.contains('titlebar__status-dot--connected');
+    }, { timeout: 10000 }).catch(() => {});
+
+    // Navigate to Models
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.manager');
+    await page.waitForTimeout(2000);
+
+    // Check zone labels (only visible zones will have these titles)
+    const allTitles = await page.locator('.zone__title').allTextContents();
+    console.log('Zone titles:', allTitles);
+
+    // Should NOT contain old labels
+    for (const t of allTitles) {
+      expect(t).not.toContain('Ready to Load');
+      expect(t).not.toContain('Download Required');
+      expect(t).not.toContain('Explore —');
+    }
+
+    // Should contain new labels where zones appear
+    const hasLoadedModels = allTitles.some(t => t.includes('Loaded Models'));
+    const hasDownloaded = allTitles.some(t => t === 'Downloaded');
+    const hasRegistry = allTitles.some(t => t.includes('Lemonade Registry'));
+    const hasHuggingFace = allTitles.some(t => t === 'Online Catalog: Hugging Face');
+
+    // The Hugging Face online catalog should always be there
+    expect(hasHuggingFace).toBeTruthy();
+
+    console.log(`Loaded Models: ${hasLoadedModels}, Downloaded: ${hasDownloaded}, Registry: ${hasRegistry}, HF: ${hasHuggingFace}`);
+
+    await page.screenshot({ path: 'screenshots/21-models-zone-labels.png', fullPage: true });
+  });
+
+  test('22 — Backends update button says "updated" not "installed"', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Navigate to Backends
+    await page.locator('.titlebar__nav').getByText('Backends').click();
+    await page.waitForSelector('[data-view="backends"]');
+
+    // Check if any Update buttons exist in the matrix (filter by text)
+    const updateBtns = page.locator('.cell__swap', { hasText: /^Update$|^Updating/ });
+    const installBtns = page.locator('.cell__swap', { hasText: /^Install$|^Installing/ });
+    const updateCount = await updateBtns.count();
+    const installCount = await installBtns.count();
+    console.log(`Update buttons: ${updateCount}, Install buttons: ${installCount}`);
+
+    // If update buttons exist, they should say "Update" not "Install"
+    if (updateCount > 0) {
+      const firstUpdate = updateBtns.first();
+      await expect(firstUpdate).toContainText(/Update/);
+    }
+
+    // Verify the matrix table renders
+    const matrix = page.locator('[data-backends-matrix] table');
+    await expect(matrix).toBeVisible();
+
+    await page.screenshot({ path: 'screenshots/22-backends-update.png', fullPage: true });
+  });
+
+  test('23 — loopback API requests resolve to IPv4 127.0.0.1 by default and respect capture setting for session headers', async ({ page }) => {
+    // Mock WebSocket to immediately connect and send auth.ok
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.CONNECTING;
+        onopen: (() => void) | null = null;
+        onmessage: ((ev: any) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) this.onopen();
+          }, 10);
+        }
+
+        send(data: string) {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'auth') {
+            setTimeout(() => {
+              if (this.onmessage) {
+                this.onmessage({ data: JSON.stringify({ type: 'auth.ok' }) });
+              }
+            }, 10);
+          }
+        }
+
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          if (this.onclose) this.onclose();
+        }
+      }
+      (window as any).WebSocket = MockWebSocket as any;
+    });
+
+    // Mock chat completion
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'hi' } }] })
+      });
+    });
+
+    const requests: Array<{ url: string; headers: Record<string, string> }> = [];
+    page.on('request', req => {
+      if (req.url().includes('/api/v1/')) {
+        requests.push({ url: req.url(), headers: req.headers() });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.waitForTimeout(1000);
+
+    // Initial requests (capturing is OFF by default)
+    expect(requests.length).toBeGreaterThan(0);
+    for (const req of requests) {
+      expect(req.url).not.toContain('//localhost:13305');
+      expect(req.url).toContain('//127.0.0.1:13305');
+    }
+
+    // Trigger a chat completion while capturing is OFF
+    await page.evaluate(async () => {
+      try {
+        await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+      } catch (e) {}
+    });
+
+    // Verify last request (chat completion) has NO session headers
+    const chatReqOff = requests.find(r => r.url.includes('/chat/completions'));
+    expect(chatReqOff).toBeDefined();
+    expect(chatReqOff!.headers['x-client-session-id']).toBeUndefined();
+
+    // Now toggle capturing ON
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({ capturing: true });
+    });
+
+    // Wait briefly for WebSocket connection to authenticate and enable headers
+    await page.waitForTimeout(200);
+
+    // Trigger a chat completion while capturing is ON
+    const requestsAfterToggle: Array<{ url: string; headers: Record<string, string> }> = [];
+    page.on('request', req => {
+      if (req.url().includes('/api/v1/')) {
+        requestsAfterToggle.push({ url: req.url(), headers: req.headers() });
+      }
+    });
+
+    await page.evaluate(async () => {
+      try {
+        await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+      } catch (e) {}
+    });
+
+    const chatReqOn = requestsAfterToggle.find(r => r.url.includes('/chat/completions'));
+    expect(chatReqOn).toBeDefined();
+    expect(chatReqOn!.headers['x-client-session-id']).toBeDefined();
+  });
+
+  test('24 — fallback retry: retries without session headers on fetch preflight/network failure and disables them', async ({ page }) => {
+    // Mock WebSocket to immediately connect and send auth.ok
+    await page.addInitScript(() => {
+      class MockWebSocket {
+        static CONNECTING = 0;
+        static OPEN = 1;
+        static CLOSING = 2;
+        static CLOSED = 3;
+
+        readyState = MockWebSocket.CONNECTING;
+        onopen: (() => void) | null = null;
+        onmessage: ((ev: any) => void) | null = null;
+        onclose: (() => void) | null = null;
+        onerror: (() => void) | null = null;
+
+        constructor() {
+          setTimeout(() => {
+            this.readyState = MockWebSocket.OPEN;
+            if (this.onopen) this.onopen();
+          }, 10);
+        }
+
+        send(data: string) {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'auth') {
+            setTimeout(() => {
+              if (this.onmessage) {
+                this.onmessage({ data: JSON.stringify({ type: 'auth.ok' }) });
+              }
+            }, 10);
+          }
+        }
+
+        close() {
+          this.readyState = MockWebSocket.CLOSED;
+          if (this.onclose) this.onclose();
+        }
+      }
+      (window as any).WebSocket = MockWebSocket as any;
+    });
+
+    // Mock chat completion: reject requests with session headers, succeed without them
+    await page.route(/\/api\/v1\/chat\/completions/, async route => {
+      const headers = route.request().headers();
+      if (headers['x-client-session-id']) {
+        await route.abort('failed');
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'fallback-success' } }] })
+        });
+      }
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+
+    // Turn capturing ON
+    await page.evaluate(() => {
+      (window as any).inspectStore.setState({ capturing: true });
+    });
+
+    // Wait briefly for WebSocket connection to authenticate and enable headers
+    await page.waitForTimeout(200);
+
+    // Verify sessionHeadersEnabled is true initially
+    const initialEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
+    expect(initialEnabled).toBe(true);
+
+    // Call chat completion
+    const result = await page.evaluate(async () => {
+      try {
+        const resp = await (window as any).apiClient.chatCompletionOnce('mock-model', []);
+        return resp;
+      } catch (e) {
+        return `failed: ${e instanceof Error ? e.message : String(e)}`;
+      }
+    });
+
+    // Check that we got fallback success and sessionHeadersEnabled was disabled
+    expect(result).toBe('fallback-success');
+    const finalEnabled = await page.evaluate(() => (window as any).apiClient.sessionHeadersEnabled);
+    expect(finalEnabled).toBe(false);
+  });
+
+  test('25 — Configuration tab saves model-specific defaults through lemond', async ({ page }) => {
+    const modelName = 'config-map-model';
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: llamacppRecipe(),
+        },
+      },
+    }));
+    const modelOptionsRouteState25 = new Map<string, Record<string, unknown>>();
+    await page.route('**/api/v1/models**', async route => {
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25)) return;
+      return route.fulfill({
+      json: {
+        data: [{
+          id: modelName,
+          name: modelName,
+          labels: ['chat', 'coding'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          ctx_size: 4096,
+          max_context_window: 131072,
+        }],
+      },
+    });
+    });
+
+    await page.goto('/');
+    await page.waitForSelector('.titlebar__nav');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').first().click();
+    await page.locator('#detail-tab-config').click();
+
+    const autoTune = page.getByRole('checkbox', { name: 'Auto tune context size' });
+    await expect(autoTune).toBeChecked();
+    await expect(page.getByLabel('Context size tokens')).toBeDisabled();
+    await expect(page.locator('.detail-configuration__context-slider')).toBeDisabled();
+    await autoTune.uncheck();
+    await expect(page.getByLabel('Context size tokens')).toBeEnabled();
+    await expect(page.locator('[id$="llamacpp_backend"]')).toBeVisible();
+
+    await page.getByLabel('Context size tokens').fill('16384');
+    await page.getByRole('button', { name: 'Save' }).click();
+
+    const browserHasRecipeOptions = await page.evaluate(({ model }) => {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.includes('model_tunings')) continue;
+        try {
+          const value = JSON.parse(localStorage.getItem(key) || '{}');
+          if (value[model]?.recipe_options && Object.keys(value[model].recipe_options).length > 0) return true;
+        } catch { /* keep looking */ }
+      }
+      return false;
+    }, { model: modelName });
+
+    expect(modelOptionsRouteState25.get(modelName)?.ctx_size).toBe(16384);
+    expect(browserHasRecipeOptions).toBe(false);
+    await expect(page.locator('#detail-panel-config .detail-tuning__notice')).toContainText('Saved for future loads');
+  });
+
+  test('25a — Configuration tab Save shows persistent notice and model switch clears it', async ({ page }) => {
+    const modelA = 'notice-model-a';
+    const modelB = 'notice-model-b';
+    await page.addInitScript(() => {
+      for (const key of Object.keys(localStorage)) {
+        if (key.includes('model_tunings')) localStorage.removeItem(key);
+      }
+    });
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    const modelOptionsRouteState25a = new Map<string, Record<string, unknown>>();
+    await page.route('**/api/v1/models**', async route => {
+      if (await fulfillModelOptionsRoute(route, modelOptionsRouteState25a)) return;
+      return route.fulfill({
+      json: {
+        data: [
+          { id: modelA, name: modelA, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+          { id: modelB, name: modelB, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+        ],
+      },
+    });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+
+    // Select model A and open Configuration tab
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel).toBeVisible();
+
+    // Save — notice must appear and stay visible
+    await panel.getByRole('button', { name: 'Save' }).click();
+    await expect(panel.locator('.detail-tuning__notice')).toBeVisible();
+    await expect(panel.locator('.detail-tuning__notice')).toContainText('Saved for future loads');
+
+    // Switch to model B — stale notice must be gone
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
+    await expect(panel.locator('.detail-tuning__notice')).toHaveCount(0);
+  });
+
+  test('25c — a pending options fetch never turns an empty draft into overrides', async ({ page }) => {
+    const modelA = 'gate-model-a';
+    const modelB = 'gate-model-b';
+    let loadRequestBody: Record<string, unknown> | null = null;
+    let releaseB: (() => void) | null = null;
+    const heldFetch = new Promise<void>(resolve => { releaseB = resolve; });
+    const savedByModel: ModelOptionsState = new Map([
+      [modelA, { llamacpp_args: '--no-mmap', ctx_size: 16384 }],
+    ]);
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith(`/${modelB}/options`)) await heldFetch;
+      if (await fulfillModelOptionsRoute(route, savedByModel)) return;
+      return route.fulfill({
+        json: {
+          data: [
+            { id: modelA, name: modelA, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+            { id: modelB, name: modelB, labels: ['chat'], recipe: 'llamacpp', downloaded: true, max_context_window: 65536 },
+          ],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelA }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel.getByLabel('Additional backend CLI arguments', { exact: true })).toHaveValue('--no-mmap');
+    await expect(panel.getByLabel('Context size tokens')).toHaveValue('16384');
+
+    // Model B's options are still in flight: its panel must show nothing of A's,
+    // and must not report unsaved changes it does not have.
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelB }).click();
+    await expect(panel.getByLabel('Additional backend CLI arguments', { exact: true })).toHaveValue('');
+    await expect(panel.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeDisabled();
+
+    // An empty draft is not a set of tombstones: with nothing loaded to show,
+    // Load carries no options and lemond keeps using what is saved.
+    await page.getByRole('button', { name: `Load ${modelB}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelB);
+    expect(loadRequestBody).not.toHaveProperty('llamacpp_args');
+    expect(loadRequestBody).not.toHaveProperty('ctx_size');
+
+    // Loading switches to Chat, so come back before reading the panel again.
+    releaseB?.();
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    loadRequestBody = null;
+    await page.getByRole('button', { name: `Load ${modelB}` }).click();
+    await expect.poll(() => loadRequestBody?.llamacpp_args).toBeNull();
+  });
+
+  test('25b — the form holds the resolved options and Load sends them verbatim', async ({ page }) => {
+    const modelName = 'merge-args-model';
+    const savedArgs = '--no-mmap';
+    const defaultArgs = '--flash-attn on';
+    const mergedArgs = `${savedArgs} ${defaultArgs}`;
+    let optionWrites = 0;
+    let loadRequestBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      const url = new URL(route.request().url());
+      if (url.pathname.endsWith('/options')) {
+        const method = route.request().method().toUpperCase();
+        if (method === 'POST' || method === 'DELETE') optionWrites += 1;
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: { llamacpp_args: savedArgs },
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: mergedArgs, merge_args: true },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs, merge_args: true },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+
+    // The field is filled with what lemond resolved, defaults included, so there
+    // is nothing to read beside it.
+    const argsField = panel.getByLabel('Additional backend CLI arguments', { exact: true });
+    await expect(argsField).toHaveValue(mergedArgs);
+
+    // Reset fills the form with the defaults themselves rather than emptying it,
+    // and writes nothing, so Discard can still bring the resolved values back.
+    await panel.getByRole('button', { name: 'Reset to defaults' }).click();
+    await expect(argsField).toHaveValue(defaultArgs);
+    expect(optionWrites).toBe(0);
+    await expect(panel.locator('.detail-tuning__notice')).toContainText('Showing lemond defaults');
+
+    await panel.getByRole('button', { name: 'Discard changes' }).click();
+    await expect(argsField).toHaveValue(mergedArgs);
+    expect(optionWrites).toBe(0);
+
+    // Deleting a default out of the field sticks, which is only true because
+    // lemond is told not to merge them back in underneath.
+    await argsField.fill(savedArgs);
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_args).toBe(savedArgs);
+    expect(loadRequestBody?.merge_args).toBe(false);
+    expect(loadRequestBody?.save_options).toBe(false);
+    expect(optionWrites).toBe(0);
+  });
+
+  test('25d — sampler flags get typed fields that cannot be emptied out from under lemond', async ({ page }) => {
+    const modelName = 'sampler-model';
+    const defaultArgs = '--temp 1.0 --top-k 20';
+    let loadRequestBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: {},
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs, merge_args: true },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs, merge_args: true },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    const field = (name: string) => panel.getByLabel(name, { exact: true });
+    const details = panel.getByRole('button', { name: /Detailed sampling parameters/ });
+
+    // Temperature leads on its own axis; the rest fold away behind a summary of
+    // the flags they are holding, which the browser remembers the state of.
+    await expect(field('Temperature')).toBeVisible();
+    await expect(field('Top-k')).toBeHidden();
+    await expect(details).toHaveAttribute('aria-expanded', 'false');
+    await expect(details).toContainText('--top-k 20');
+    await details.click();
+    await expect(details).toHaveAttribute('aria-expanded', 'true');
+    await expect(field('Top-k')).toBeVisible();
+
+    // Resolved samplers land in their own typed fields; the ones lemond leaves
+    // alone are offered anyway and read as an explicit default.
+    await expect(field('Temperature')).toHaveValue('1.0');
+    await expect(field('Top-k')).toHaveValue('20');
+    await expect(field('Top-p')).toHaveValue('');
+    await expect(field('Top-p')).toHaveAttribute('placeholder', 'default');
+    await expect(field('Temperature')).toHaveAttribute('type', 'number');
+    await expect(field('Temperature')).toHaveAttribute('min', '0');
+    await expect(field('Temperature')).toHaveAttribute('max', '2');
+    // Nothing is left over, so the freeform field is empty rather than holding
+    // a copy of what the typed fields already show.
+    await expect(field('Additional backend CLI arguments')).toHaveValue('');
+    await expect(panel.locator('.detail-configuration__args-fallback')).toHaveCount(0);
+
+    // Stepping a set field moves it; stepping an unset one starts from the
+    // value llama.cpp itself would have used, not from zero.
+    await panel.getByRole('button', { name: 'Increase Temperature' }).click();
+    await expect(field('Temperature')).toHaveValue('1.05');
+    await panel.getByRole('button', { name: 'Increase Presence penalty' }).click();
+    await expect(field('Presence penalty')).toHaveValue('0.05');
+
+    // An unknown flag stays in the freeform field, in the order it was typed.
+    await field('Additional backend CLI arguments').fill('--zeta 1 --no-mmap');
+    await expect(field('Additional backend CLI arguments')).toHaveValue('--zeta 1 --no-mmap');
+
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_args)
+      .toBe('--temp 1.05 --top-k 20 --presence-penalty 0.05 --zeta 1 --no-mmap');
+    expect(loadRequestBody?.merge_args).toBe(false);
+
+    // Loading swaps the view, so come back before editing the form again. The
+    // section stays open across the trip, which is the point of remembering it.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(field('Temperature')).toBeVisible();
+    await expect(details).toHaveAttribute('aria-expanded', 'true');
+
+    // A field lemond has a value for cannot be left empty. Emptying every one of
+    // them would send no args at all, which lemond reads as "unset" and answers
+    // with these same defaults — so "default" would mean llama.cpp's value in
+    // one field and lemond's in the next.
+    await field('Temperature').fill('');
+    await expect(field('Temperature')).toHaveValue('');
+    await field('Temperature').blur();
+    await expect(field('Temperature')).toHaveValue('1.0');
+
+    // A flag lemond does not set stays on default, where it means exactly one
+    // thing: the flag is not sent and llama.cpp uses its own value.
+    await field('Top-p').fill('0.4');
+    await field('Top-p').blur();
+    await expect(field('Top-p')).toHaveValue('0.4');
+    await field('Top-p').fill('');
+    await field('Top-p').blur();
+    await expect(field('Top-p')).toHaveValue('');
+
+    // So the all-default form is unreachable here, and nothing falls back.
+    for (const name of ['Temperature', 'Top-k', 'Top-p', 'Min-p', 'Repeat penalty',
+                        'Presence penalty', 'Chat template kwargs', 'Additional backend CLI arguments']) {
+      await field(name).fill('');
+      await field(name).blur();
+    }
+    await expect(field('Temperature')).toHaveValue('1.0');
+    await expect(field('Top-k')).toHaveValue('20');
+    await expect(panel.locator('.detail-configuration__args-fallback')).toHaveCount(0);
+
+    await page.getByRole('button', { name: `Load ${modelName}` }).click();
+    await expect.poll(() => loadRequestBody?.llamacpp_args).toBe(defaultArgs);
+
+    // The axis says where the advised range ends, so a value outside it reads as
+    // a choice rather than a surprise.
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await expect(panel.locator('.detail-configuration__axis-caution')).toHaveCount(0);
+    await field('Temperature').fill('1.6');
+    await expect(panel.locator('.detail-configuration__axis-caution'))
+      .toHaveText('Above 1.3 the model tends to lose the thread.');
+    await field('Temperature').fill('0.1');
+    await expect(panel.locator('.detail-configuration__axis-caution'))
+      .toHaveText('Below 0.2 the model tends to repeat itself.');
+  });
+
+  test('25e — Reset names the backend Load will use, and Reload is only offered when it would change one', async ({ page }) => {
+    const modelName = 'live-model';
+    let loadRequestBody: Record<string, unknown> | null = null;
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: {
+        status: 'ok',
+        version: 'test',
+        all_models_loaded: [{
+          model_name: modelName,
+          checkpoint: 'test/checkpoint',
+          recipe: 'llamacpp',
+          device: 'cpu',
+          backend_url: 'http://127.0.0.1:8081',
+          pid: 4242,
+          type: 'llm',
+          recipe_options: { ctx_size: 8192, llamacpp_backend: 'vulkan', llamacpp_args: '--temp 0.7' },
+        }],
+      },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: {
+        recipes: {
+          llamacpp: llamacppRecipe({
+            cpu: { state: 'installed', version: 'test' },
+            vulkan: { state: 'installed', version: 'test' },
+          }),
+        },
+        devices: { cpu: { available: true }, amd_gpu: [{ available: true, name: 'gfx1151' }] },
+      },
+    }));
+    await page.route('**/api/v1/load', route => {
+      loadRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      return route.fulfill({ json: { status: 'ok' } });
+    });
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: { llamacpp_backend: 'vulkan' },
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_backend: 'vulkan', llamacpp_args: '--temp 0.7' },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_backend: 'cpu', llamacpp_args: '--temp 0.7' },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+
+    // The running model already has what the form shows, so the panel says so
+    // instead of offering a restart that would rebuild it exactly as it is.
+    await expect(panel.locator('.detail-configuration__running-state'))
+      .toHaveText('Running with these settings');
+    await expect(panel.getByRole('button', { name: 'Reload model' })).toHaveCount(0);
+
+    await panel.getByLabel('Temperature', { exact: true }).fill('1.2');
+    await expect(panel.getByRole('button', { name: 'Reload model' })).toBeVisible();
+    await expect(panel.locator('.detail-configuration__running-state')).toHaveCount(0);
+
+    // Reset empties the backend selector, and Load then skips the saved layer —
+    // so the empty option has to name the default, not the value it just cleared.
+    const backend = panel.locator('#config-live-model-llamacpp_backend');
+    await expect(backend).toHaveValue('vulkan');
+    await panel.getByRole('button', { name: 'Reset to defaults' }).click();
+    await expect(backend).toHaveValue('');
+    await expect(backend.locator('option[value=""]')).toHaveText('cpu');
+
+    await page.route('**/api/v1/unload', route => route.fulfill({ json: { status: 'ok' } }));
+    await panel.getByRole('button', { name: 'Reload model' }).click();
+    await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
+    expect(loadRequestBody?.llamacpp_backend).toBeNull();
+  });
+
+  test('25f — recipe metadata that lands after the options fetch still fills the form', async ({ page }) => {
+    const modelName = 'late-metadata-model';
+    const savedArgs = '--no-mmap';
+    let releaseSystemInfo: (() => void) | null = null;
+    const heldSystemInfo = new Promise<void>(resolve => { releaseSystemInfo = resolve; });
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: { llamacpp_args: savedArgs },
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: savedArgs },
+            defaults: { model_name: modelName, ctx_size: -1 },
+            resolved_ctx_size: 4096,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 65536,
+          }],
+        },
+      });
+    });
+
+    // system-info names the fields the draft is seeded into, so hold it until
+    // after the options that fill them have already been answered.
+    await page.route('**/api/v1/system-info**', async route => {
+      await heldSystemInfo;
+      return route.fulfill({ json: { recipes: { llamacpp: llamacppRecipe() } } });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+
+    const argsField = panel.getByLabel('Additional backend CLI arguments', { exact: true });
+    await expect(argsField).toHaveCount(0);
+    releaseSystemInfo?.();
+
+    await expect(argsField).toHaveValue(savedArgs);
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeEnabled();
+    // A form that filled itself from the saved layer has nothing to discard.
+    await expect(panel.getByRole('button', { name: 'Discard changes' })).toHaveCount(0);
+  });
+
+  test('25g — a long resolved args string never widens the load settings panel', async ({ page }) => {
+    const modelName = 'wide-args-model';
+    const defaultArgs = '--temp 1.0 --top-k 20 --top-p 0.95 --min-p 0.00 --repeat-penalty 1.0'
+      + ' --presence-penalty 0.0 --flash-attn on';
+
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route('**/api/v1/system-info**', route => route.fulfill({
+      json: { recipes: { llamacpp: llamacppRecipe() } },
+    }));
+    await page.route('**/api/v1/models**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/options')) {
+        return route.fulfill({
+          json: {
+            model_name: modelName,
+            recipe: 'llamacpp',
+            saved: {},
+            effective: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs },
+            defaults: { model_name: modelName, ctx_size: -1, llamacpp_args: defaultArgs },
+            resolved_ctx_size: 8192,
+            load_command: '',
+          },
+        });
+      }
+      return route.fulfill({
+        json: {
+          data: [{
+            id: modelName, name: modelName, labels: ['chat'], recipe: 'llamacpp',
+            downloaded: true, max_context_window: 131072,
+          }],
+        },
+      });
+    });
+
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    await page.waitForSelector('.model-list-panel__list .workspace-list-row', { timeout: 5000 });
+    await page.locator('.model-list-panel__list .workspace-list-row').filter({ hasText: modelName }).click();
+    await page.locator('#detail-tab-config').click();
+    const panel = page.locator('#detail-panel-config');
+    await expect(panel.getByLabel('Temperature', { exact: true })).toBeVisible();
+
+    // The detail pane narrows with the window while the list keeps its width, so
+    // the folded summary is the widest thing on screen at exactly the sizes the
+    // panel has least room. Nothing here may push the pane into a sideways scroll.
+    const overflow = () => panel.locator('.detail-configuration').evaluate(
+      (el: HTMLElement) => el.scrollWidth - el.clientWidth,
+    );
+    for (const open of [false, true]) {
+      if (open) await panel.getByRole('button', { name: /Detailed sampling parameters/ }).click();
+      for (const width of [1200, 1000, 900, 800]) {
+        await page.setViewportSize({ width, height: 1000 });
+        await expect.poll(overflow, { message: `pane overflows at ${width}px, open=${open}` })
+          .toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+});

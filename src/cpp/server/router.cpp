@@ -1405,6 +1405,23 @@ RecipeOptions Router::get_model_recipe_options(const std::string& model_name) co
     return RecipeOptions();
 }
 
+RecipeOptions Router::resolve_effective_recipe_options(const ModelInfo& model_info,
+                                                       const RecipeOptions& options) const {
+    const std::string backend_option = model_info.recipe + "_backend";
+
+    RecipeOptions tentative = options.inherit(model_info.recipe_options.inherit(
+        RecipeOptions(model_info.recipe, config_->recipe_options(""))));
+    json backend_json = tentative.get_option(backend_option);
+    const std::string backend = backend_json.is_string() ? backend_json.get<std::string>() : "";
+
+    // Second pass: rebuild defaults using the resolved backend.
+    // Per-architecture defaults sit between global config and model-level recipe_options.
+    RecipeOptions default_opt = RecipeOptions(model_info.recipe, config_->recipe_options(backend));
+    RecipeOptions arch_opts(model_info.recipe,
+                            model_manager_->get_architecture_defaults(model_info.gguf.architecture));
+    return options.inherit(model_info.recipe_options.inherit(arch_opts.inherit(default_opt)));
+}
+
 ModelType Router::get_model_type(const std::string& model_name) const {
     std::lock_guard<std::mutex> lock(load_mutex_);
     WrappedServer* server = model_name.empty()

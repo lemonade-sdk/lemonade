@@ -515,7 +515,7 @@ void VLLMServer::load(const std::string& model_name,
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
         if (needs_gfx1151_cwsr_fix()) {
-            err += ". Your kernel may be missing the gfx1151 CWSR fix — "
+            err += ". Your kernel may be missing the gfx1151 CWSR fix; "
                    "see https://lemonade-server.ai/gfx1151_linux.html";
         }
         throw std::runtime_error(err);

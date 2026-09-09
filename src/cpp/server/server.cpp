@@ -3,6 +3,7 @@
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
 #include <optional>
+#include "lemon/auto_tune.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/hf_variants.h"
 #include "lemon/model_registry.h"
@@ -13,7 +14,6 @@
 #include "lemon/config_file.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
-#include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
@@ -905,9 +905,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
     //   regular key also authenticates against /internal/*.
     // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), legacy /internal/* routes
-    //   require no authentication. The MCP process-launch surface is deliberately
-    //   fail-closed and requires an explicitly configured admin key.
+    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
     // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
@@ -926,23 +924,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
-    const bool is_mcp_internal_route =
-        req.path == "/internal/mcp" ||
-        req.path.rfind("/internal/mcp/", 0) == 0;
-
     if (is_internal_route) {
-        // MCP server registration can launch arbitrary local processes. Do not
-        // expose that capability on a keyless server, even on loopback: permissive
-        // CORS would otherwise let an unrelated web page drive these endpoints.
-        // Apply this to OPTIONS as well so a browser preflight fails closed.
-        if (is_mcp_internal_route && admin_api_key_.empty()) {
-            res.status = 403;
-            res.set_content(
-                "{\"error\": \"MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY\"}",
-                "application/json");
-            return httplib::Server::HandlerResponse::Handled;
-        }
-
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -1263,6 +1245,10 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_load(req, res);
     });
 
+    register_post("load/command", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_load_command(req, res);
+    });
+
     register_post("unload", [this](const httplib::Request& req, httplib::Response& res) {
         handle_unload(req, res);
     });
@@ -1354,11 +1340,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     web_server.Delete(R"(/internal/aliases/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_aliases_remove(req, res);
     });
-
-    // Server-side MCP client host foundation (admin-gated through the existing
-    // /internal/* pre-routing auth). GUI3 and the web UI can both use these
-    // endpoints via the normal Lemonade server connection.
-    register_mcp_client_routes(web_server, cache_dir_);
 
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
@@ -1958,10 +1939,9 @@ void Server::run() {
             LOG(WARNING, "Server")
                 << "Serving on non-loopback host '" << bound_host
                 << "' without an API key. All endpoints, including the /internal/* "
-                   "control endpoints and the /internal/mcp/* process-launch endpoints, "
-                   "are reachable from other machines unauthenticated. Set "
-                   "LEMONADE_API_KEY to secure all endpoints; LEMONADE_ADMIN_API_KEY "
-                   "on its own only secures the /internal/* "
+                   "control endpoints, are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
+                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
                    "control endpoints." << std::endl;
         } else if (api_key_.empty()) {
             LOG(WARNING, "Server")
@@ -2471,6 +2451,8 @@ void Server::handle_health(const httplib::Request& req, httplib::Response& res) 
         response["telemetry"] = telemetry_info;
     }
 
+    response["high_security"] = !admin_api_key_.empty();
+
     // Add model loaded information like Python implementation
     std::string loaded_model = router_->get_loaded_model();
 
@@ -2885,6 +2867,22 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     // models that don't carry one so the field doesn't pollute every entry.
     if (!info.system_prompt.empty()) {
         model_json["system_prompt"] = info.system_prompt;
+    }
+
+    // User-defined metadata must round-trip through /models. GUI3 uses these
+    // fields to reconstruct and edit Omni collections after an application or
+    // server restart instead of relying on renderer-local storage.
+    for (const auto& label : info.labels) {
+        if (label == "custom") {
+            model_json["custom"] = true;
+            break;
+        }
+    }
+    for (const char* key : {"display_name", "component_roles", "custom_tools"}) {
+        auto it = info.extras.find(key);
+        if (it != info.extras.end() && !it->second.is_null()) {
+            model_json[key] = it->second;
+        }
     }
 
     // Add image_defaults if present (for sd-cpp models)
@@ -5914,6 +5912,57 @@ void Server::handle_load(const httplib::Request& req, httplib::Response& res) {
             }}};
             res.set_content(error.dump(), "application/json");
         }
+    }
+}
+
+void Server::handle_load_command(const httplib::Request& req, httplib::Response& res) {
+    nlohmann::json request_json;
+    if (!parse_required_json_body(req, res, request_json)) return;
+
+    std::string model_name;
+    try {
+        model_name = request_json.value("model_name", "");
+        if (model_name.empty()) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", "model_name is required"}}.dump(), "application/json");
+            return;
+        }
+
+        if (!model_manager_->model_exists(model_name)) {
+            res.status = 404;
+            res.set_content(create_model_error(model_name, "Model not found").dump(), "application/json");
+            return;
+        }
+
+        auto info = model_manager_->get_model_info(model_name);
+        RecipeOptions options = RecipeOptions(info.recipe, request_json);
+        RecipeOptions effective = router_->resolve_effective_recipe_options(info, options);
+
+        bool ctx_size_auto_resolved = false;
+        int64_t auto_ctx = resolve_auto_ctx_size(effective, info);
+        if (auto_ctx > 0) {
+            effective.set_option("ctx_size", auto_ctx);
+            ctx_size_auto_resolved = true;
+        }
+
+        json backend_json = effective.get_option(info.recipe + "_backend");
+
+        nlohmann::json response = {
+            {"model_name", model_name},
+            {"recipe", info.recipe},
+            {"backend", backend_json.is_string() ? backend_json.get<std::string>() : ""},
+            {"options", effective.to_json()},
+            {"args", RecipeOptions::to_cli_options(effective.to_json())},
+            {"ctx_size_auto_resolved", ctx_size_auto_resolved}
+        };
+        res.set_content(response.dump(), "application/json");
+    } catch (const std::exception& e) {
+        LOG(ERROR, "Server") << "ERROR in handle_load_command: " << e.what() << std::endl;
+        res.status = 500;
+        auto error_response = model_name.empty()
+            ? nlohmann::json{{"error", e.what()}}
+            : create_model_error(model_name, e.what());
+        res.set_content(error_response.dump(), "application/json");
     }
 }
 

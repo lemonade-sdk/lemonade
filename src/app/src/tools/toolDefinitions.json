@@ -1,0 +1,129 @@
+{
+  "image_size": "1024x1024",
+  "system_prompt": "You are a helpful multimodal AI assistant and the planner LLM for a Lemonade Omni model.\nYou can chat normally, and you can call specialized server-side Omni tools when the user asks for media work.\n\nAvailable server-side Omni tools:\n{tool_list}\n{tool_guidance}\n\nUse generate_image only for creating a brand-new image. If an image already exists and the user asks to add, remove, change, modify, fix, or adjust it, use edit_image when available.\nUse text_to_speech when the user asks you to speak, read aloud, narrate, or create audio.\nNever claim that you are only a text model when an appropriate Omni tool is available.\nAfter a server-side tool succeeds, give a brief friendly response. The server attaches generated media to the response.",
+  "tools": [
+    {
+      "requires_labels": [
+        "image",
+        "image-generation",
+        "diffusion"
+      ],
+      "prompt_guidance": "For new image requests, call generate_image with a concise but specific prompt. The output size is fixed at {image_size} unless an explicit size argument is available and requested.",
+      "function": {
+        "name": "generate_image",
+        "description": "Generate a new image from scratch based on a text description. Use this only when the user asks to create an entirely new image.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "Detailed image prompt. Output size is fixed at {image_size}."
+            },
+            "size": {
+              "type": "string",
+              "description": "Optional explicit output size such as 1024x1024. Leave unset unless the user explicitly requests a size."
+            },
+            "steps": {
+              "type": "integer",
+              "description": "Optional positive inference step count."
+            },
+            "cfg_scale": {
+              "type": "number",
+              "description": "Optional positive classifier-free guidance scale."
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Optional seed for reproducible generation."
+            },
+            "sample_method": {
+              "type": "string",
+              "description": "Optional sampler name."
+            },
+            "flow_shift": {
+              "type": "number",
+              "description": "Optional positive flow shift value."
+            }
+          },
+          "required": [
+            "prompt"
+          ]
+        }
+      }
+    },
+    {
+      "requires_labels": [
+        "edit"
+      ],
+      "prompt_guidance": "For image edit requests, call edit_image only when a prior generated or uploaded image is available. Describe the requested change in the prompt.",
+      "function": {
+        "name": "edit_image",
+        "description": "Edit or modify the most recent image from this conversation. Use this when the user wants to add, remove, change, modify, fix, or adjust an existing image.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "Description of the requested edit. Output size is fixed at {image_size}."
+            },
+            "size": {
+              "type": "string",
+              "description": "Optional explicit output size such as 1024x1024. Leave unset unless the user explicitly requests a size."
+            },
+            "steps": {
+              "type": "integer",
+              "description": "Optional positive inference step count."
+            },
+            "cfg_scale": {
+              "type": "number",
+              "description": "Optional positive classifier-free guidance scale."
+            },
+            "seed": {
+              "type": "integer",
+              "description": "Optional seed for reproducible generation."
+            },
+            "sample_method": {
+              "type": "string",
+              "description": "Optional sampler name."
+            },
+            "flow_shift": {
+              "type": "number",
+              "description": "Optional positive flow shift value."
+            }
+          },
+          "required": [
+            "prompt"
+          ]
+        }
+      }
+    },
+    {
+      "requires_labels": [
+        "tts",
+        "speech",
+        "text-to-speech"
+      ],
+      "prompt_guidance": "For speech requests, call text_to_speech with exactly the text the user wants spoken. If the user quotes text, use the quoted text as input.",
+      "function": {
+        "name": "text_to_speech",
+        "description": "Convert text to spoken audio. Use this when the user asks you to speak, say, read aloud, narrate, or convert text to speech.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string",
+              "description": "The text to convert to speech."
+            },
+            "voice": {
+              "type": "string",
+              "description": "Voice to use for speech synthesis.",
+              "default": "af_heart"
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  ]
+}

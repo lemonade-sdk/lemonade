@@ -213,6 +213,25 @@ ChevronLeft, ChevronRight, BookOpen, ExternalLink, Boxes, Cpu, Store,
 Settings, and SlidersHorizontal. These icons are licensed under the ISC
 license from https://github.com/lucide-icons/lucide.
 
+## GUI3 frontend dependencies and distro fallback stubs
+
+The GUI3 frontend references the following third-party packages through npm or
+system Node.js packages:
+
+- DOMPurify: Apache-2.0
+- highlight.js: BSD-3-Clause
+- KaTeX: MIT
+- markdown-it: MIT
+- markdown-it-texmath: MIT
+- Mermaid: MIT
+- React and React DOM: MIT
+- Recharts: MIT
+
+The files under `src/web-app/system-stubs/` are original conservative fallback
+implementations for distro system-node builds and are licensed as part of
+Lemonade under Apache-2.0. They are not copied from the upstream DOMPurify,
+Mermaid, Recharts, or highlight.js source trees.
+
 > ISC License
 >
 > Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as

@@ -66,7 +66,7 @@ std::string capture_startup_error(const std::string& executable,
         std::ostringstream detail;
         detail << "exited with code " << exit_code;
         if (exit_code == static_cast<int>(0xC0000135)) {
-            detail << " (STATUS_DLL_NOT_FOUND — a required library is missing "
+            detail << " (STATUS_DLL_NOT_FOUND: a required library is missing "
                       "from the backend install directory)";
         }
         std::error_code ec;
@@ -175,7 +175,7 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         throw std::runtime_error(
             "Ambiguous model layout under '" + model_path + "': " +
             std::to_string(candidates.size()) +
-            " complete model directories found — keep exactly one:" + listing);
+            " complete model directories found. Keep exactly one:" + listing);
     }
     model_path = path_to_utf8(candidates.front());
     LOG(INFO, "OnnxRuntimeServer") << "Using model: " << model_path << std::endl;
