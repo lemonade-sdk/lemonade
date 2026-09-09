@@ -88,9 +88,8 @@
       "runner_os": "linux",
       "arch": "gfx1151",
       "experimental": true,
-      "model_filter": ["Qwen3-30B-A3B-Instruct-2507-HRX"],
       "tracked": true,
-      "notes": "Experimental HRX backend. Linux gfx1151 only. Scoped to qualified models via model_filter. Relates to #3374, #3382."
+      "notes": "Experimental HRX backend. Linux gfx1151 only. Auto-discovers all 'llamacpp-hrx' models from server_models.json; add an optional model_filter to pin a subset."
     }
   ]
 }

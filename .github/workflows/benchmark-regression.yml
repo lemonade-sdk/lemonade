@@ -208,8 +208,6 @@ jobs:
             print(f"ERROR: fork {fork_id} not found"); sys.exit(1)
           cfg_backend    = fork.get("install_as", fork["backend"]).lower()
           cfg_recipe     = fork.get("recipe", "llamacpp")
-          # Default to the fork's recipe, matching validate_backend_bench.py, so a
-          # future non-llamacpp fork that omits config_section routes consistently.
           cfg_section    = fork.get("config_section", cfg_recipe)
           rocm_channel   = fork.get("rocm_channel", "")
           exe            = fork.get("binary_exe_linux", "llama-server")

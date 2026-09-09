@@ -87,11 +87,8 @@ def resolve_latest_version(
                 return r["tag_name"]
         raise RuntimeError(f"No release with prefix {tag_prefix!r} in {repo}")
     try:
-        # /releases/latest on ggml-org/llama.cpp now returns a semver tag (v0.3.0+)
-        # that carries NO binaries — the real bNNNN nightlies are flagged as
-        # pre-releases. Only consider releases that actually publish assets, so a
-        # binary-less semver tag can never be selected (that was the Vulkan 404).
-        # Prefer a non-prerelease tag, then fall back to the newest bNNNN nightly.
+        # /releases/latest can be a binary-less semver tag; require assets so a
+        # binary-less tag is never picked. Prefer a stable release, else newest bNNNN.
         releases = gh_api(f"repos/{repo}/releases?per_page=20", token)
         for r in releases:
             if not r.get("draft") and not r.get("prerelease") and r.get("assets"):
@@ -199,8 +196,12 @@ def find_lemonade_bin() -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_models_from_registry(base_url: str) -> list[str]:
-    """Mirror validate_llamacpp.py:get_hot_llamacpp_models() — reads live registry."""
+def get_models_from_registry(
+    base_url: str, recipe: str = "llamacpp", require_hot: bool = True
+) -> list[str]:
+    """Live-registry models for `recipe`. Production forks want the curated hot
+    set; experimental forks (require_hot=False) take every model on their recipe,
+    so a new hrx model needs only a server_models.json entry."""
     try:
         req = urllib.request.Request(f"{base_url}/api/v1/models?show_all=true")
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -208,7 +209,8 @@ def get_models_from_registry(base_url: str) -> list[str]:
         models = [
             m["id"]
             for m in data.get("data", [])
-            if m.get("recipe") == "llamacpp" and "hot" in m.get("labels", [])
+            if m.get("recipe") == recipe
+            and (not require_hot or "hot" in m.get("labels", []))
         ]
         return sorted(models)
     except Exception as e:
@@ -716,20 +718,28 @@ def main() -> int:
                     f"  Skipping POST /install — fork provides its own prebuilt binary"
                 )
 
-        # Fetch model list: global --model-filter wins, then per-fork model_filter
-        # from benchmark_forks.json (used by experimental backends whose models are
-        # not in the hot llamacpp list), then fall back to the live registry.
+        # Precedence: --model-filter, then the fork's model_filter, then registry
+        # discovery by the fork's recipe.
         run_models = models
         if not run_models:
             run_models = fork.get("model_filter", [])
             if run_models:
                 print(f"  Models (from fork model_filter): {run_models}")
         if not run_models and not args.dry_run:
-            run_models = get_models_from_registry(base_url)
+            fork_recipe = fork.get("recipe", "llamacpp")
+            require_hot = not fork.get("experimental", False)
+            run_models = get_models_from_registry(
+                base_url, recipe=fork_recipe, require_hot=require_hot
+            )
             if run_models:
-                print(f"  Models from registry ({len(run_models)}): {run_models}")
+                print(
+                    f"  Models from registry ({len(run_models)}, "
+                    f"recipe={fork_recipe}, require_hot={require_hot}): {run_models}"
+                )
             else:
-                print("  [ERROR] No models from registry and no --model-filter set")
+                print(
+                    f"  [ERROR] No {fork_recipe} models in registry and no --model-filter set"
+                )
                 continue
 
         for model in run_models:
