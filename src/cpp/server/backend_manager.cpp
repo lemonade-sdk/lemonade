@@ -26,17 +26,7 @@ namespace lemon {
 
 namespace {
 
-std::string normalize_backend_name(const std::string& recipe, const std::string& backend) {
-    if (backends::recipe_has_rocm_channels(recipe) && backend == "rocm") {
-        // Map "rocm" to the appropriate channel based on config
-        std::string channel = "stable";  // default to stable for now
-        if (auto* cfg = RuntimeConfig::global()) {
-            channel = cfg->rocm_channel_for_recipe(recipe);
-        }
-        return "rocm-" + channel;
-    }
-    return backend;
-}
+using backends::normalize_backend_name;
 
 std::string get_backend_runtime_version(const json& backend_versions,
                                         const std::string& recipe,

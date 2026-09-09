@@ -101,9 +101,17 @@ static bool is_empty_option(json option) {
 // model can be pinned to auto even when a lower layer sets an explicit size.
 // Anything that is not a number is discarded, since every consumer of ctx_size
 // reads it as an integer.
+//
+// kv_cache_quantization needs the same shape of carve-out for the same reason:
+// "auto" is a real, storable value (asks the ladder to choose), not an unset
+// marker. max_kv_quantization, min_kv_quantization, and kv_cache_priority need
+// no carve-out — no valid value of any of them collides with a sentinel.
 static bool is_empty_option(const std::string& key, const json& option) {
     if (key == "ctx_size") {
         return !option.is_number();
+    }
+    if (key == "kv_cache_quantization") {
+        return option.is_null() || (option.is_string() && option == "");
     }
     return is_empty_option(option);
 }

@@ -114,6 +114,10 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp_backend` | `--llamacpp` | BACKEND | "" | LlamaCpp backend to use |
 | `llamacpp_device` | `--llamacpp-device` | DEVICES | "" | Comma-separated list of accelerator devices to use (e.g. Vulkan0) |
 | `llamacpp_args` | `--llamacpp-args` | ARGS | "" | Custom arguments to pass to llama-server |
+| `kv_cache_quantization` | `--kv-cache-quantization` | ARGS | f16 | KV cache quantization: f16 (default), auto, q8_0, or q4_0 |
+| `max_kv_quantization` | `--max-kv-quantization` | ARGS | f16 | Highest-quality KV cache tier the auto ladder may select |
+| `min_kv_quantization` | `--min-kv-quantization` | ARGS | q8_0 | Lowest-quality KV cache tier the auto ladder may select |
+| `kv_cache_priority` | `--kv-cache-priority` | ARGS | balanced | KV cache ladder bias: max_context, balanced (default), or max_speed |
 
 #### `llamacpp-hrx` — HRX GPU (experimental)
 

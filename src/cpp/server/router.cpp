@@ -4,6 +4,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/llamacpp/llamacpp_server.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/fastflowlm/fastflowlm_server.h"
 #include "lemon/backends/ryzenai/ryzenai_server.h"
 #include "lemon/backends/whispercpp/whispercpp_server.h"
@@ -871,6 +872,10 @@ void Router::load_model(const std::string& model_name,
             evict_server(existing);
             existing = nullptr;
         }
+        RecipeOptions rollback_options;
+        bool have_rollback = false;
+        bool rollback_was_pinned = false;
+        ResidencyClass rollback_residency_class = ResidencyClass::Standard;
         if (existing) {
             // Compare resolved rather than stored sets: a request that spells
             // out an option the running process left to its default (e.g. a
@@ -887,8 +892,26 @@ void Router::load_model(const std::string& model_name,
                 existing_opts.erase("ctx_size");
                 requested_opts.erase("ctx_size");
             }
+            // Same shape, for the KV cache quant tier: a quant-auto-
+            // resolved process holds the concrete tier the ladder picked, which
+            // no request can spell. Asking for auto again asks for what is running.
+            if (existing->kv_cache_quant_is_auto() &&
+                requested_opts.value("kv_cache_quantization", json(nullptr)) == "auto") {
+                existing_opts.erase("kv_cache_quantization");
+                requested_opts.erase("kv_cache_quantization");
+            }
             if (allow_reload_on_option_change && existing_opts != requested_opts) {
                 LOG(INFO, "Router") << "Options changed, reloading model: " << canonical_model_name << std::endl;
+                // Capture the running configuration before eviction: if the
+                // resolve step below fails for the new options, this lets us
+                // restore the previously-working process instead of leaving
+                // the model unloaded. Eviction still has to happen before
+                // resolve (comment further down) so the freed memory is
+                // visible to that check.
+                rollback_options = existing->get_recipe_options();
+                rollback_was_pinned = existing->is_pinned();
+                rollback_residency_class = existing->get_residency_class();
+                have_rollback = true;
                 evict_server(existing);
                 // Fall through to create and load with new options
             } else {
@@ -998,13 +1021,77 @@ void Router::load_model(const std::string& model_name,
                                       canonical_model_name);
         }
 
-        // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
+        // Auto-tune: resolve ctx_size = -1 and the KV cache quant tier together.
         // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
-        const bool ctx_size_auto = auto_ctx != -2;
-        if (auto_ctx > 0) {
-            LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;
-            effective_options.set_option("ctx_size", auto_ctx);
+        //
+        // If this was a same-model reload that evicted a healthy running
+        // process to free memory for the check below, that process is gone
+        // now. Resolve can fail two ways -- a returned KvCacheResolution with
+        // ok()==false (memory/flash-attention conflicts), or a direct throw
+        // (malformed option values, ladder-bounds contradictions) -- and both
+        // must restore the evicted process before surfacing the failure, so
+        // neither leaves a previously-working model unloaded.
+        auto restore_previous_config_on_resolve_failure = [&](const std::string& reason) {
+            if (!have_rollback) return;
+            LOG(WARNING, "Router") << "KV cache resolve failed for reload of "
+                                   << canonical_model_name << " (" << reason
+                                   << "); restoring previous configuration" << std::endl;
+            is_loading_ = false;
+            load_cv_.notify_all();
+            lock.unlock();
+            try {
+                load_model(canonical_model_name, model_info, rollback_options, do_not_upgrade,
+                          /*allow_reload_on_option_change=*/false, rollback_was_pinned,
+                          load_purpose_for_residency_class(rollback_residency_class));
+                LOG(INFO, "Router") << "Restored previous configuration for "
+                                    << canonical_model_name << " after failed reload" << std::endl;
+            } catch (const std::exception& rollback_error) {
+                LOG(ERROR, "Router") << "Failed to restore previous configuration for "
+                                     << canonical_model_name << " after failed reload: "
+                                     << rollback_error.what() << std::endl;
+            }
+        };
+
+        KvCacheResolution kv_resolution;
+        std::string normalized_backend;
+        double kv_available_memory_gb = 0.0;
+        try {
+            auto kv_ctx = backends::llamacpp::resolve_llamacpp_kv_cache(effective_options, model_info);
+            normalized_backend = kv_ctx.normalized_backend;
+            kv_resolution = kv_ctx.resolution;
+            kv_available_memory_gb = kv_ctx.available_memory_gb;
+        } catch (const std::exception& resolve_error) {
+            restore_previous_config_on_resolve_failure(resolve_error.what());
+            throw;
+        }
+        if (!kv_resolution.ok()) {
+            // Raised here, before a backend server is constructed, so it
+            // never reaches the evict-all-and-retry branch below.
+            restore_previous_config_on_resolve_failure(kv_resolution.failure);
+            throw std::invalid_argument(kv_resolution.failure);
+        }
+        const int64_t auto_ctx = kv_resolution.ctx_size;
+        const bool ctx_size_auto = kv_resolution.ctx_size_is_auto;
+        const json kv_quant_config_json = effective_options.get_option("kv_cache_quantization");
+        const bool kv_cache_quant_auto = kv_quant_config_json.is_string() && kv_quant_config_json == "auto";
+        effective_options.set_option("ctx_size", auto_ctx);
+        // Internal key, deliberately outside get_keys_for_recipe(): never
+        // appears in to_resolved_json(), so it cannot leak into the replayable
+        // `effective`/`defaults` option bodies the options endpoint returns.
+        effective_options.set_option("resolved_kv_cache_tier",
+                                     kv_cache_quant_tier_to_string(kv_resolution.tier));
+        if (kv_resolution.ctx_size_is_auto) {
+            LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx
+                                << ", KV cache tier " << kv_cache_quant_tier_to_string(kv_resolution.tier)
+                                << std::endl;
+        }
+        if (kv_resolution.structurally_ineligible) {
+            // Told explicitly rather than left to infer from a tier
+            // field that looks identical to the default.
+            LOG(WARNING, "Router") << "kv_cache_quantization requested but no KV cache quant "
+                                   << "tier is eligible on backend '" << normalized_backend
+                                   << "' for model '" << canonical_model_name
+                                   << "'; staying at f16." << std::endl;
         }
 
         // NPU models on memory-constrained systems: when auto-tune can only
@@ -1019,7 +1106,7 @@ void Router::load_model(const std::string& model_name,
         if (auto_ctx == AUTO_CTX_FALLBACK
             && (model_info.device & DEVICE_NPU)
             && model_info.size > 10.0
-            && get_available_memory_gb(model_info.device) > 0) {
+            && kv_available_memory_gb > 0) {
             throw std::runtime_error(
                 "Not enough memory to load " + canonical_model_name
                 + " (" + std::to_string(static_cast<int>(model_info.size))
@@ -1035,6 +1122,7 @@ void Router::load_model(const std::string& model_name,
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
         new_server->set_ctx_size_auto(ctx_size_auto);
+        new_server->set_kv_cache_quant_auto(kv_cache_quant_auto);
         new_server->set_residency_class(requested_residency_class);
         new_server->set_pinned(final_pinned);
         new_server->update_access_time();
@@ -1144,6 +1232,7 @@ void Router::load_model(const std::string& model_name,
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
             retry_server->set_ctx_size_auto(ctx_size_auto);
+            retry_server->set_kv_cache_quant_auto(kv_cache_quant_auto);
             retry_server->set_residency_class(requested_residency_class);
             retry_server->set_pinned(final_pinned);
             retry_server->update_access_time();

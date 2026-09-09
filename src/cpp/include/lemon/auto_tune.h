@@ -4,10 +4,16 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <optional>
+#include <stdexcept>
+#include <string>
+#include <vector>
+#include <lemon/kv_cache_quant.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
 #include <lemon/system_metrics_platform.h>
 #include <lemon/utils/aixlog.hpp>
+#include <lemon/utils/custom_args.h>
 
 namespace lemon {
 
@@ -36,30 +42,36 @@ constexpr double BYTES_PER_GIB = 1024.0 * 1024.0 * 1024.0;
 ///   ~32B  (64 layers)  → ~512 KB/token
 ///   ~70B  (80 layers)  → ~640 KB/token
 ///   ~100B+ (96 layers) → ~768 KB/token
-static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb) {
+///
+/// The buckets above are derived assuming 2 bytes per KV element (F16); a
+/// non-default bytes_per_element scales the result by bytes_per_element/2.0.
+static double estimate_kv_bytes_per_token_from_model_size(double model_size_gb,
+                                                           double bytes_per_element = 2.0) {
     // Layer count scales with model size; 16 KV heads assumed uniformly.
+    double f16_bytes_per_token;
     if (model_size_gb < 1.0) {
         // Tiny model (< 1B)
-        return 128.0 * 1024.0;  // 128 KB/token (12 layers)
+        f16_bytes_per_token = 128.0 * 1024.0;  // 128 KB/token (12 layers)
     } else if (model_size_gb < 3.0) {
         // ~3B class
-        return 224.0 * 1024.0;  // 224 KB/token (28 layers)
+        f16_bytes_per_token = 224.0 * 1024.0;  // 224 KB/token (28 layers)
     } else if (model_size_gb < 8.0) {
         // ~7B class
-        return 256.0 * 1024.0;  // 256 KB/token (32 layers)
+        f16_bytes_per_token = 256.0 * 1024.0;  // 256 KB/token (32 layers)
     } else if (model_size_gb < 16.0) {
         // ~14B class
-        return 320.0 * 1024.0;  // 320 KB/token (40 layers)
+        f16_bytes_per_token = 320.0 * 1024.0;  // 320 KB/token (40 layers)
     } else if (model_size_gb < 32.0) {
         // ~32B class
-        return 512.0 * 1024.0; // 512 KB/token (64 layers)
+        f16_bytes_per_token = 512.0 * 1024.0; // 512 KB/token (64 layers)
     } else if (model_size_gb < 64.0) {
         // ~70B class
-        return 640.0 * 1024.0; // 640 KB/token (80 layers)
+        f16_bytes_per_token = 640.0 * 1024.0; // 640 KB/token (80 layers)
     } else {
         // 100B+
-        return 768.0 * 1024.0; // 768 KB/token (96 layers)
+        f16_bytes_per_token = 768.0 * 1024.0; // 768 KB/token (96 layers)
     }
+    return f16_bytes_per_token * (bytes_per_element / 2.0);
 }
 
 /// Get the amount of memory currently in use by the platform.
@@ -194,7 +206,8 @@ inline double get_available_memory_gb(DeviceType device_type) {
 }
 inline int64_t compute_auto_context_size(const ModelInfo& model_info,
                                           double available_memory_gb,
-                                          bool is_embedding = false) {
+                                          bool is_embedding = false,
+                                          double bytes_per_element = 2.0) {
     if (available_memory_gb <= 0) {
         LOG(DEBUG, "AutoTune") << "compute_auto_context_size: " << model_info.model_name
                                << " — not enough memory, returning " << AUTO_CTX_FALLBACK  << " ";
@@ -213,7 +226,7 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 
     if (block_count > 0 && head_count_kv > 0 && key_length > 0) {
         kv_bytes_per_token = compute_weighted_kv_cache_bytes_per_token(
-            model_info.gguf, &kv_cache_scale);
+            model_info.gguf, &kv_cache_scale, bytes_per_element);
         if (kv_cache_scale < 1.0) {
             estimated = true;  // mark as architecture-adjusted
         }
@@ -239,7 +252,8 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
         }
     } else {
         // GGUF metadata missing — estimate from model size
-        kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(model_info.size);
+        kv_bytes_per_token = estimate_kv_bytes_per_token_from_model_size(
+            model_info.size, bytes_per_element);
         estimated = true;
     }
 
@@ -300,33 +314,327 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
     return ctx_size;
 }
 
-/// Auto-resolve ctx_size if it is -1 in the effective options.
-/// Returns the resolved context size, or -2 if no auto-resolution is needed
-/// (i.e. ctx_size was already set to an explicit non-negative value).
-/// The caller should check the return value and update RecipeOptions accordingly.
-inline int64_t resolve_auto_ctx_size(const RecipeOptions& effective_options,
-                                      const ModelInfo& model_info) {
+// ── KV cache quantization ladder resolver ──────────────────────────────
+
+// Bias values for kv_cache_priority: which end of the context-vs-
+// throughput axis the ladder favors. Distinct from the tier types because it
+// drives ladder-floor selection, not a quantization amount.
+enum class KvCachePriority {
+    MaxContext,
+    Balanced,
+    MaxSpeed,
+};
+
+inline std::optional<KvCachePriority> parse_kv_cache_priority(const std::string& value) {
+    if (value == "max_context") return KvCachePriority::MaxContext;
+    if (value == "balanced")    return KvCachePriority::Balanced;
+    if (value == "max_speed")   return KvCachePriority::MaxSpeed;
+    return std::nullopt;
+}
+
+// Result of resolving both context size and KV cache quant tier together.
+// Replaces resolve_auto_ctx_size's bare int64_t / -2-sentinel contract:
+// `ctx_size_is_auto` carries what -2 used to mean, and `failure` carries
+// the two resolve-time failure modes below, which callers must raise before
+// constructing a backend server rather than let surface from inside load().
+struct KvCacheResolution {
+    KvCacheQuantTier tier = KvCacheQuantTier::F16;
+    int64_t ctx_size = 0;
+    bool ctx_size_is_auto = false;
+
+    // True when the ladder was entered (auto or an explicit tier) but
+    // zero candidates survived the backend/model gates — a structural
+    // property of the backend or model, not a memory-fit shortfall. The
+    // tier still resolves to f16 in this case; this flag is what makes that
+    // outcome distinguishable from an ordinary f16 resolution.
+    bool structurally_ineligible = false;
+
+    // Non-empty when resolution failed: an explicit ctx_size that no
+    // eligible tier can fit, or a quantized tier would be selected but
+    // llamacpp_args explicitly disables flash attention. `tier`/`ctx_size`
+    // carry no meaning when this is set.
+    std::string failure;
+
+    bool ok() const { return failure.empty(); }
+};
+
+namespace kv_cache_quant_detail {
+
+inline std::string kv_cache_option_string(const RecipeOptions& options, const char* key,
+                                          const std::string& fallback) {
+    json v = options.get_option(key);
+    return v.is_string() ? v.get<std::string>() : fallback;
+}
+
+// True when llamacpp_args explicitly sets -fa/--flash-attn to an off-like
+// value. A bare flag (no value) or an on/auto value is not a conflict.
+inline bool llamacpp_args_disable_flash_attention(const std::string& llamacpp_args) {
+    auto tokens = utils::parse_custom_args(llamacpp_args);
+    auto args_map = utils::build_custom_args_map(tokens);
+    for (const char* flag : {"-fa", "--flash-attn"}) {
+        auto it = args_map.find(flag);
+        if (it == args_map.end()) continue;
+        for (const auto& occurrence : it->second) {
+            if (occurrence.empty()) continue;  // bare flag: not a disable
+            const std::string value = gguf_reader_detail::to_lower(occurrence[0]);
+            if (value == "off" || value == "0" || value == "false" || value == "no") {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// The f16 path is exactly today's resolve_auto_ctx_size/compute_auto_context_size
+// behavior: unconstrained by any target, no per-tier ladder semantics. Both the
+// plain `kv_cache_quantization: f16` config and every "no eligible tier"
+// outcome land here.
+inline KvCacheResolution resolve_kv_cache_f16_only(const RecipeOptions& effective_options,
+                                                   const ModelInfo& model_info,
+                                                   double available_memory_gb,
+                                                   bool structurally_ineligible) {
+    KvCacheResolution result;
+    result.tier = KvCacheQuantTier::F16;
+    result.structurally_ineligible = structurally_ineligible;
+
     json ctx_json = effective_options.get_option("ctx_size");
     int64_t ctx_size = ctx_json.is_number() ? ctx_json.get<int64_t>() : -1;
 
     if (ctx_size != -1) {
-        return -2;  // Explicit value, no auto-resolution needed
+        result.ctx_size = ctx_size;
+        result.ctx_size_is_auto = false;
+        return result;
     }
 
     bool is_embedding = (model_info.type == ModelType::EMBEDDING);
-    double available_gb = get_available_memory_gb(model_info.device);
+    result.ctx_size_is_auto = true;
 
-    if (available_gb <= 0) {
-        int64_t fallback = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
-        LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
-                               << " — memory undetectable, returning " << fallback;
-        return fallback;
+    if (available_memory_gb <= 0) {
+        result.ctx_size = is_embedding ? EMBEDDING_CTX_SIZE : AUTO_CTX_FALLBACK;
+        return result;
     }
 
-    int64_t result = compute_auto_context_size(model_info, available_gb, is_embedding);
-    LOG(DEBUG, "AutoTune") << "resolve_auto_ctx_size: " << model_info.model_name
-                           << " → ctx_size=" << result;
+    result.ctx_size = compute_auto_context_size(model_info, available_memory_gb, is_embedding);
     return result;
 }
+
+} // namespace kv_cache_quant_detail
+
+/// Resolve both the effective KV cache quant tier and ctx_size together.
+/// Called once per load (after residency-capacity eviction, so freed
+/// memory is visible) and once per options-endpoint read.
+///
+/// `available_memory_gb` is queried once by the caller (mirroring
+/// resolve_auto_ctx_size's pattern) rather than inside this function, so the
+/// whole resolver stays a pure computation over its inputs and is directly
+/// unit-testable with fabricated memory figures. `normalized_backend` and
+/// `safety_table` are likewise supplied by the caller, which already links
+/// the server core and has already normalized the backend name —
+/// this function stays free of backend includes and reaches for no global
+/// state, so it links into a standalone test.
+///
+/// Throws std::invalid_argument if any of the four kv-cache-quant option
+/// values is out of its accepted set, before any memory query —
+/// the same exception type RuntimeConfig::validate_backend_choice uses.
+inline KvCacheResolution resolve_kv_cache(const RecipeOptions& effective_options,
+                                          const ModelInfo& model_info,
+                                          double available_memory_gb,
+                                          const std::string& normalized_backend,
+                                          const KvCacheQuantSafetyTable& safety_table) {
+    using namespace kv_cache_quant_detail;
+
+    const std::string kv_quant_raw = kv_cache_option_string(effective_options, "kv_cache_quantization", "f16");
+    auto kv_quant = parse_kv_cache_quant_config(kv_quant_raw);
+    if (!kv_quant) {
+        throw std::invalid_argument(
+            "kv_cache_quantization must be one of: f16, auto, q8_0, q4_0 (got '" + kv_quant_raw + "')");
+    }
+
+    const std::string max_kv_raw = kv_cache_option_string(effective_options, "max_kv_quantization", "f16");
+    auto max_kv_tier = parse_kv_cache_quant_tier(max_kv_raw);
+    if (!max_kv_tier) {
+        throw std::invalid_argument(
+            "max_kv_quantization must be one of: f16, q8_0, q4_0 (got '" + max_kv_raw + "')");
+    }
+
+    const std::string min_kv_raw = kv_cache_option_string(effective_options, "min_kv_quantization", "q8_0");
+    auto min_kv_tier = parse_kv_cache_quant_tier(min_kv_raw);
+    if (!min_kv_tier) {
+        throw std::invalid_argument(
+            "min_kv_quantization must be one of: f16, q8_0, q4_0 (got '" + min_kv_raw + "')");
+    }
+
+    const std::string priority_raw = kv_cache_option_string(effective_options, "kv_cache_priority", "balanced");
+    auto priority = parse_kv_cache_priority(priority_raw);
+    if (!priority) {
+        throw std::invalid_argument(
+            "kv_cache_priority must be one of: max_context, balanced, max_speed (got '" + priority_raw + "')");
+    }
+
+    if (*kv_quant == KvCacheQuantConfig::F16) {
+        return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, /*structurally_ineligible=*/false);
+    }
+    if (*kv_quant == KvCacheQuantConfig::Auto && *priority == KvCachePriority::MaxSpeed) {
+        // max_speed disables auto-quantization entirely; context
+        // auto-sizing stays at f16 only. Does not consult min_kv_quantization.
+        return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, /*structurally_ineligible=*/false);
+    }
+
+    // --- Build the candidate ladder ---
+    std::vector<KvCacheQuantTier> ladder;
+    if (*kv_quant == KvCacheQuantConfig::Auto) {
+        KvCacheQuantTier floor = *min_kv_tier;
+        if (*priority == KvCachePriority::Balanced) {
+            // Invariant, not a default: floors at the higher quality of q8_0
+            // and min_kv_quantization. No min_kv_quantization value pulls
+            // balanced down to q4_0.
+            floor = kv_cache_quant_tier_higher_quality(KvCacheQuantTier::Q8_0, *min_kv_tier)
+                  ? KvCacheQuantTier::Q8_0 : *min_kv_tier;
+        }
+        // max_context floors at min_kv_quantization unconditionally (floor already set above).
+        const int lo = kv_cache_quant_tier_rank(*max_kv_tier);
+        const int hi = kv_cache_quant_tier_rank(floor);
+        if (lo > hi) {
+            // max_kv_quantization is a higher-quality ceiling than the
+            // priority-selected floor, so no tier in [lo, hi] exists. Reject
+            // rather than silently falling through to an empty ladder and
+            // resolving to plain f16 with no signal (the structural-
+            // ineligibility signal exists for the
+            // backend/model-gate case, not for a contradictory config).
+            throw std::invalid_argument(
+                "max_kv_quantization (" + kv_cache_quant_tier_to_string(*max_kv_tier) +
+                ") is lower quality than the effective floor (" + kv_cache_quant_tier_to_string(floor) +
+                ") set by kv_cache_priority/min_kv_quantization; raise max_kv_quantization or lower "
+                "kv_cache_priority/min_kv_quantization.");
+        }
+        for (int r = lo; r <= hi; ++r) {
+            ladder.push_back(kv_cache_quant_tier_from_rank(r));
+        }
+    } else {
+        // Explicit q8_0/q4_0: no ladder-walking, subject to the same gates.
+        ladder.push_back(*kv_cache_quant_tier_from_config(*kv_quant));
+    }
+
+    // --- Filter through both eligibility gates ---
+    const int64_t key_dim = model_info.gguf.key_length;
+    const int64_t value_dim = model_info.gguf.value_length;
+    std::vector<KvCacheQuantTier> eligible;
+    bool ladder_had_quant_candidate = false;
+    bool quant_candidate_survived = false;
+    std::string skip_trace;
+    for (auto tier : ladder) {
+        if (tier != KvCacheQuantTier::F16) ladder_had_quant_candidate = true;
+        if (!kv_cache_quant_backend_eligible(tier, normalized_backend, safety_table)) {
+            skip_trace += kv_cache_quant_tier_to_string(tier) + "=skipped(backend gate) ";
+            continue;
+        }
+        if (!kv_cache_quant_model_eligible(tier, key_dim, value_dim)) {
+            skip_trace += kv_cache_quant_tier_to_string(tier) + "=skipped(model gate) ";
+            continue;
+        }
+        if (tier != KvCacheQuantTier::F16) quant_candidate_survived = true;
+        eligible.push_back(tier);
+    }
+    // The ladder wanted quantization but nothing below f16 survived the
+    // gates — structural, not a fit shortfall. f16 itself always passes both
+    // gates, so it surviving (and even being selected) does not make this
+    // false; the point of this flag is that no *quantization* was possible.
+    const bool structurally_ineligible = ladder_had_quant_candidate && !quant_candidate_survived;
+
+    if (eligible.empty()) {
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " " << skip_trace
+                               << "-> f16 (no eligible tier)" << " ";
+        return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, structurally_ineligible);
+    }
+
+    bool is_embedding = (model_info.type == ModelType::EMBEDDING);
+    if (available_memory_gb <= 0) {
+        // Undetectable memory falls back to the existing fallback context at
+        // f16, without consulting the ladder.
+        return resolve_kv_cache_f16_only(effective_options, model_info, available_memory_gb, /*structurally_ineligible=*/false);
+    }
+
+    json ctx_json = effective_options.get_option("ctx_size");
+    const int64_t requested_ctx = ctx_json.is_number() ? ctx_json.get<int64_t>() : -1;
+    const bool ctx_explicit = (requested_ctx != -1);
+    const int64_t target = ctx_explicit
+        ? requested_ctx
+        : (model_info.max_context_window > 0 ? model_info.max_context_window : AUTO_CTX_UNKNOWN_MAX);
+
+    // Walk highest-quality first; select the first eligible tier that
+    // reaches the target. Track the lowest-quality survivor's achieved
+    // context along the way — it doubles as the shrink target when nothing
+    // reaches the target, and the "best tier tried" report when an explicit
+    // ctx_size doesn't fit anywhere.
+    KvCacheQuantTier chosen = eligible.back();
+    int64_t chosen_achieved = 0;
+    bool reached_target = false;
+    for (auto tier : eligible) {
+        const int64_t achieved = compute_auto_context_size(
+            model_info, available_memory_gb, is_embedding, kv_cache_quant_bytes_per_element(tier));
+        skip_trace += kv_cache_quant_tier_to_string(tier) + "=" + std::to_string(achieved) +
+            (achieved >= target ? "(fits) " : "(short of target) ");
+        if (tier == eligible.back()) chosen_achieved = achieved;
+        if (!reached_target && achieved >= target) {
+            chosen = tier;
+            chosen_achieved = achieved;
+            reached_target = true;
+            break;
+        }
+    }
+
+    KvCacheResolution result;
+    if (reached_target) {
+        result.tier = chosen;
+        result.ctx_size = ctx_explicit ? requested_ctx : chosen_achieved;
+        result.ctx_size_is_auto = !ctx_explicit;
+        result.structurally_ineligible = structurally_ineligible;
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " target=" << target
+                               << " " << skip_trace << "-> " << kv_cache_quant_tier_to_string(chosen)
+                               << " ";
+    } else if (ctx_explicit) {
+        // An explicit request no eligible tier can fit. Raised at
+        // resolve time, before a backend server is constructed.
+        result.failure = "Requested ctx_size " + std::to_string(requested_ctx) +
+            " does not fit at any eligible KV cache quant tier for this model; the best tier "
+            "tried (" + kv_cache_quant_tier_to_string(eligible.back()) + ") supports at most " +
+            std::to_string(chosen_achieved) + " tokens.";
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " target=" << target
+                               << " " << skip_trace << "-> R8 failure" << " ";
+        return result;
+    } else {
+        // Shrink to the lowest-quality surviving tier's maximum — the
+        // same memory-constrained behavior ctx_size: -1 has today.
+        result.tier = eligible.back();
+        result.ctx_size = chosen_achieved;
+        result.ctx_size_is_auto = true;
+        result.structurally_ineligible = structurally_ineligible;
+        LOG(DEBUG, "AutoTune") << "resolve_kv_cache: " << model_info.model_name
+                               << " — backend=" << normalized_backend << " target=" << target
+                               << " " << skip_trace << "-> " << kv_cache_quant_tier_to_string(result.tier)
+                               << " (shrunk, R7)" << " ";
+    }
+
+    if (result.tier != KvCacheQuantTier::F16) {
+        const std::string llamacpp_args =
+            kv_cache_option_string(effective_options, "llamacpp_args", "");
+        if (llamacpp_args_disable_flash_attention(llamacpp_args)) {
+            // Raised at resolve time, once a tier below f16 is chosen,
+            // before a backend server is constructed.
+            KvCacheResolution conflict;
+            conflict.failure = "kv_cache_quantization resolved to " +
+                kv_cache_quant_tier_to_string(result.tier) +
+                ", which requires flash attention, but llamacpp_args explicitly disables it "
+                "(-fa/--flash-attn off). Remove the override or use kv_cache_quantization: f16.";
+            return conflict;
+        }
+    }
+
+    return result;
+}
+
 
 } // namespace lemon
