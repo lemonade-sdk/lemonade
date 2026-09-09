@@ -130,7 +130,7 @@ Env vars always win. If you `POST /v1/cloud/auth` while the env var is set, the 
 - **Public name** — `<provider>.<cleaned_upstream_id>` after stripping `accounts/<x>/models/` wrappers and deduplicating leading provider segments.
 - **Capability labels** — `vision`, `tool-calling`, `reasoning`, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.
 - **Context window** — from `context_length`, when reported.
-- **Per-million-token cost** — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Surfaced on `/v1/models` for display, and attached to `collection.router` decisions as illustrative `outputs.estimated_cost` (not a billing figure).
+- **Per-million-token cost** — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Surfaced on `/v1/models` for display, and attached to `collection.router` decisions as `outputs.estimated_cost`; treat that figure as illustrative for display, not a substitute for the provider's own invoice. A `collection.router` policy with `routing.router.type: "cost_select"` uses these same numbers as its actual routing input, not just for display — see [cost-based routing](../../dev/router-policy.md#cost-based-routing-routingroutertype-cost_select). Because that makes a provider's reported price a routing-control input, Lemonade treats a positive price under $0.000001/M (implausible for any real rate) as invalid rather than letting it always win the ranking.
 
 Discovery runs at every cache build (server startup, install, auth) and is best-effort: an unreachable provider logs a warning and is skipped without blocking the rest of the catalog.
 
