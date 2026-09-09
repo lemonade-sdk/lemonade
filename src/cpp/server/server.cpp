@@ -404,9 +404,16 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // When a router collection is added, edited, or removed (via the API or an
     // on-disk edit), reclaim any routing helper no remaining policy references.
     model_manager_->set_models_changed_callback([this](uint64_t generation) {
-        auto floor_info = active_policy_llm_candidate_floor();
+        // One snapshot feeds both calls below — each independently calling
+        // get_supported_models() could observe a concurrent registry change
+        // land in between, producing a floor and a helper set from two
+        // different policy states even though reconcile_policy_state stamps
+        // them with the same generation.
+        const auto supported_models = model_manager_->get_supported_models();
+        auto floor_info = active_policy_llm_candidate_floor(supported_models);
         router_->reconcile_policy_state(static_cast<int>(floor_info.models.size()),
-                                        active_policy_helper_models(), generation);
+                                        active_policy_helper_models(supported_models),
+                                        generation);
         {
             std::lock_guard<std::mutex> lock(llm_candidate_floor_info_mutex_);
             if (generation > last_llm_floor_info_generation_) {
@@ -425,8 +432,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // C++) could stamp this stale snapshot with a newer generation and clobber
     // the watcher's authoritative state.
     const uint64_t seed_generation = model_manager_->next_notify_generation();
-    const std::set<std::string> seed_needed = active_policy_helper_models();
-    auto seed_floor_info = active_policy_llm_candidate_floor();
+    const auto seed_supported_models = model_manager_->get_supported_models();
+    const std::set<std::string> seed_needed = active_policy_helper_models(seed_supported_models);
+    auto seed_floor_info = active_policy_llm_candidate_floor(seed_supported_models);
     router_->reconcile_policy_state(static_cast<int>(seed_floor_info.models.size()),
                                     seed_needed, seed_generation);
     {
@@ -3910,9 +3918,10 @@ std::optional<RouterDispatchResult> Server::apply_router_collection_dispatch(
     return std::nullopt;
 }
 
-std::set<std::string> Server::active_policy_helper_models() {
+std::set<std::string> Server::active_policy_helper_models(
+    const std::map<std::string, ModelInfo>& supported_models) {
     std::set<std::string> needed;
-    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+    for (const auto& [name, info] : supported_models) {
         (void)name;
         if (!info.route_policy) {
             continue;
@@ -3924,9 +3933,10 @@ std::set<std::string> Server::active_policy_helper_models() {
     return needed;
 }
 
-Server::LlmCandidateFloorInfo Server::active_policy_llm_candidate_floor() {
+Server::LlmCandidateFloorInfo Server::active_policy_llm_candidate_floor(
+    const std::map<std::string, ModelInfo>& supported_models) {
     LlmCandidateFloorInfo result;
-    for (const auto& [name, info] : model_manager_->get_supported_models()) {
+    for (const auto& [name, info] : supported_models) {
         if (!info.route_policy) {
             continue;
         }

@@ -172,16 +172,25 @@ private:
         nlohmann::json& request_json);
     // Union of routing-helper models across every active router collection's
     // policy. Passed to Router::reconcile_policy_state after a policy is
-    // removed so helpers no remaining policy needs are reclaimed.
-    std::set<std::string> active_policy_helper_models();
+    // removed so helpers no remaining policy needs are reclaimed. Takes the
+    // caller's own model_manager_->get_supported_models() snapshot so this
+    // and active_policy_llm_candidate_floor() always derive from the exact
+    // same registry state — each calling get_supported_models() on its own
+    // would let a concurrent policy change land between the two calls,
+    // producing a floor from one snapshot and a helper set from another.
+    std::set<std::string> active_policy_helper_models(
+        const std::map<std::string, ModelInfo>& supported_models);
     // Computes the LLM pool floor — see residency_limit() in
     // model_residency.h. Only `models`'s size feeds that floor;
-    // per_policy_counts exists solely for /health diagnostics.
+    // per_policy_counts exists solely for /health diagnostics. Takes the same
+    // shared supported_models snapshot as active_policy_helper_models, for
+    // the same reason.
     struct LlmCandidateFloorInfo {
         std::set<std::string> models;
         std::map<std::string, int> per_policy_counts;
     };
-    LlmCandidateFloorInfo active_policy_llm_candidate_floor();
+    LlmCandidateFloorInfo active_policy_llm_candidate_floor(
+        const std::map<std::string, ModelInfo>& supported_models);
     void handle_completions(const httplib::Request& req, httplib::Response& res);
     void handle_embeddings(const httplib::Request& req, httplib::Response& res);
     void handle_reranking(const httplib::Request& req, httplib::Response& res);
