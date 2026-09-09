@@ -37,6 +37,8 @@ Here are 3 general tiers:
 
 This section helps you understand how to take your idea to production as part of Lemonade.
 
+### RFC to PR process
+
 The steps are:
 
 1. Open an RFC discussion [on the Lemonade discussions tab](https://github.com/lemonade-sdk/lemonade/discussions). Make sure to select the `Request for Comment (RFC)` category. See the [Writing your RFC](#writing-your-rfc) section below for guidance on how to ensure your RFC is well received.
@@ -46,6 +48,8 @@ The steps are:
 5. Once the RFC body converges the code owners will provide a final review and change the label to `rfc:on-roadmap`. If the maintainers decide the RFC should not be implemented it will be assigned the `rfc:not-planned` label.
 6. Open your PR and link the RFC in the appropriate field of the PR body template.
 7. The PR should faithfully implement the RFC. If the PR has significant scope, surface area, or user experience divergence from the RFC, request the relevant code owner to review the PR.
+
+> Note: Every PR that is opened will get a `rfc:required` or `rfc:not-required` label to indicate whether the maintainers need to see a linked approved RFC before reviewing the PR.
 
 ### Code Owners
 
@@ -58,7 +62,7 @@ The following maintainers are required to review RFCs within their subject area.
 | @jeremyfowers | new endpoints, new backends, breaking changes |
 
 
-## Writing your RFC
+### Writing your RFC
 
 This section helps you understand how to write a polished RFC that is likely to get a good reception with the community. The `Request for Comment (RFC)` discussion category also has a template that will guide you.
 
