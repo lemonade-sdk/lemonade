@@ -353,8 +353,6 @@ private:
     nlohmann::json create_model_error(const std::string& requested_model, const std::string& exception_msg);
     // System stats helper methods
     double get_cpu_usage();
-    double get_gpu_usage();
-    double get_vram_usage();
     double get_npu_utilization();
 
     std::shared_ptr<RuntimeConfig> config_;
