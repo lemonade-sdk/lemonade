@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -42,6 +43,14 @@ struct DeviceClassLaunchPolicy {
 DeviceClassLaunchPolicy device_class_launch_policy(const std::string& arch,
                                                    bool has_memory_budget_arg,
                                                    bool has_enforce_eager = false);
+
+constexpr uint64_t kKvCacheCapBytes = 4ULL << 30;
+constexpr const char* kKvCacheCapArg = "4G";
+
+// The --gpu-memory-utilization for a device holding `free_bytes` of `total_bytes`, or a
+// negative value to leave vLLM's own default in place. Both must describe the one device
+// vLLM will run on; the definition explains why.
+double shared_memory_gpu_utilization(uint64_t free_bytes, uint64_t total_bytes);
 
 } // namespace backends
 } // namespace lemon

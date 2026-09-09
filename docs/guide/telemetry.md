@@ -91,7 +91,7 @@ lemonade config set telemetry.enabled=true \
 ```
 
 ##### Option B: Configuration via `config.json`
-Alternatively, edit the `telemetry` block in your `config.json` file inside the Lemonade cache directory.
+Alternatively, edit the `telemetry` block in your `config.json` file inside the Lemonade config directory.
 
 > [!IMPORTANT]
 > Manually modifying `config.json` requires a restart of the Lemonade server to apply the changes. See the [Configuration Guide](./configuration/README.md#configjson) to find the location of the `config.json` file on your operating system.
@@ -182,6 +182,8 @@ Telemetry settings are configured under the `telemetry` block in your `config.js
 | `telemetry.otlp.retry_backoff_base_s` | double | `5.0` | Base exponential backoff delay in seconds for retries. |
 | `telemetry.otlp.send_batch_size` | int | `100` | Target number of spans to dispatch in a single HTTP request batch. |
 | `telemetry.otlp.batch_timeout_s` | double | `1.0` | Maximum buffer timeout in seconds before exporting a partial batch. |
+| `telemetry.session.headers.id` | array / string | `[]` | Optional list of custom HTTP request headers to extract session IDs from (e.g. `["x-corp-session"]`). |
+| `telemetry.session.headers.client` | array / string | `[]` | Optional list of custom HTTP request headers to identify the client (e.g. `["x-corp-client"]`). |
 
 ---
 
@@ -272,6 +274,42 @@ curl http://localhost:13305/api/v1/chat/completions \
 
 > [!WARNING]
 > Only enable `telemetry.trust_incoming_trace_context` if you trust the callers on your network. Enabling this setting allows client-supplied headers to modify the structure of your trace parentage.
+
+---
+
+## Session Tracking & Client Identification
+
+Lemonade automatically captures session identifiers to group multi-turn conversations in telemetry traces (`session.id` and `gen_ai.conversation.id`).
+
+### Resolution Precedence
+
+1. **Request Body**: An explicit `"session_id"` in the JSON request payload always takes highest precedence.
+2. **Configured Custom Headers**: If no body `session_id` is supplied, Lemonade checks custom headers configured in `telemetry.session.headers.id` (e.g. `["x-custom-session"]`).
+3. **Well-Known HTTP Headers**: If neither is present, Lemonade automatically checks built-in well-known session headers in priority order:
+   - `x-opencode-session` (OpenCode)
+   - `x-session-id` (Claude Code / general agents)
+   - `x-client-session-id` (OpenAI / Lemonade clients)
+   - `mcp-session-id` (Model Context Protocol gateway)
+   - `x-conversation-id`
+   - `session-id`
+4. **No Session**: If no session identifier is found, the span is recorded without a session attribute.
+
+### Client Namespacing
+
+If an incoming request includes a configured custom client header (`telemetry.session.headers.client`) or a well-known client header (such as `x-opencode-client`, `x-client-id`, or `x-client-name`), Lemonade automatically prefixes the session ID as `<client>/<session>` (for example, `vscode/sess-abc123`). This avoids session collisions when multiple IDE extensions or agent tools share a single Lemonade server.
+
+### Configuring Custom Headers
+
+If your client or proxy uses proprietary headers not included in the built-in list:
+
+```bash
+# Configure custom session ID header(s)
+lemonade config set telemetry.session.headers.id='["x-corp-session", "x-team-session"]'
+lemonade config set telemetry.session.headers.id="x-corp-session"
+
+# Configure custom client identification header(s)
+lemonade config set telemetry.session.headers.client="x-corp-client"
+```
 
 ---
 

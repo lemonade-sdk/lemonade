@@ -59,8 +59,8 @@ RUN apt-get update && apt-get install -y \
 # Run as an unprivileged user; lemond never needs root at runtime.
 RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
 
-# The application directory doubles as the user's HOME so the HuggingFace and
-# lemonade caches (both derived from $HOME) resolve to writable, owned paths.
+# The application directory doubles as the user's HOME so Lemonade's cache and
+# config directories (plus the HuggingFace cache) resolve to writable paths.
 WORKDIR /opt/lemonade
 ENV HOME=/opt/lemonade
 
@@ -83,6 +83,7 @@ ENV PATH="/opt/lemonade:${PATH}"
 # Create cache directories and hand the whole tree to the unprivileged user.
 RUN mkdir -p /opt/lemonade/llama/cpu \
     /opt/lemonade/llama/vulkan \
+    /opt/lemonade/.config/lemonade \
     /opt/lemonade/.cache/huggingface \
     /opt/lemonade/.cache/lemonade && \
     chown -R lemonade:lemonade /opt/lemonade /run/lemonade

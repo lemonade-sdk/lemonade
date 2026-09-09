@@ -51,6 +51,7 @@ json build_comparison_json(const std::vector<BenchBackendResult>& results,
                            const std::string& model,
                            const std::string& timestamp,
                            const BenchConfig& config,
+                           const json& model_info,
                            const json& previous_results,
                            const std::vector<BenchComparisonDelta>& deltas);
 

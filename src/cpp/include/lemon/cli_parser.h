@@ -7,10 +7,14 @@
 namespace lemon {
 
 struct ServerConfig {
-    std::string cache_dir;                // Positional arg: lemonade cache dir (optional, platform default)
-    int port = -1;                        // -1 = not specified on CLI, use config.json value
-    std::string host;                     // Empty = not specified on CLI, use config.json value
+    std::string cache_dir;     // Positional arg: lemonade cache/data dir (optional, platform default)
+    std::string config_dir;    // Positional arg: lemonade config dir (optional, platform default)
+    int port = -1;             // -1 = not specified on CLI, use config.json value
+    std::string host;          // Empty = not specified on CLI, use config.json value
     std::optional<bool> broadcast;        // std::nullopt = not specified on CLI, use config.json value
+    std::string log_file;                 // Empty = not specified on CLI, use config.json value
+    int log_max_file_size_mb = -1;        // -1 = not specified on CLI, use config.json value
+    int log_max_files = -1;               // -1 = not specified on CLI, use config.json value
 };
 
 class CLIParser {
@@ -37,6 +41,8 @@ public:
 private:
     CLI::App app_;
     ServerConfig config_;
+    CLI::Option* cache_dir_opt_ = nullptr;
+    CLI::Option* config_dir_opt_ = nullptr;
     bool should_continue_ = true;
     int exit_code_ = 0;
 };

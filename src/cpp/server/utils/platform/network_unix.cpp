@@ -1,15 +1,55 @@
+#include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/network_utils.h"
 
 #include <arpa/inet.h>
+#include <cstring>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined(__APPLE__)
+#define LEMON_TCP_KEEPIDLE TCP_KEEPALIVE
+#elif defined(TCP_KEEPIDLE)
+#define LEMON_TCP_KEEPIDLE TCP_KEEPIDLE
+#endif
+
 namespace lemon::utils {
+
+bool configure_tcp_keepalive(socket_t sock) {
+    int opt = 1;
+    bool ok = true;
+    if (setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &opt, sizeof(opt)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(SO_KEEPALIVE) failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
+        ok = false;
+    }
+#ifdef LEMON_TCP_KEEPIDLE
+    int idle = 15;
+    if (setsockopt(sock, IPPROTO_TCP, LEMON_TCP_KEEPIDLE, &idle, sizeof(idle)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(LEMON_TCP_KEEPIDLE) failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
+        ok = false;
+    }
+#endif
+#ifdef TCP_KEEPINTVL
+    int interval = 5;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(TCP_KEEPINTVL) failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
+        ok = false;
+    }
+#endif
+#ifdef TCP_KEEPCNT
+    int count = 3;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count)) != 0) {
+        LOG(DEBUG, "Server") << "setsockopt(TCP_KEEPCNT) failed: " << std::strerror(errno) << " (" << errno << ")" << std::endl;
+        ok = false;
+    }
+#endif
+    return ok;
+}
 
 bool is_tcp_listener_active(int family, const std::string& host_ip, int port) {
     int sock = socket(family, SOCK_STREAM, IPPROTO_TCP);

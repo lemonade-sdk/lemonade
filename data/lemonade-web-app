@@ -12,7 +12,23 @@ if command -v lemonade &> /dev/null; then
     fi
 fi
 
-URL="http://localhost:${LEMONADE_PORT}/lemonade"
+# Parse lemonade:// URI if provided
+# Format: lemonade://open?view=logs becomes /lemonade?view=logs#/open
+BASE_URL="http://localhost:${LEMONADE_PORT}/lemonade"
+if [ $# -gt 0 ] && [[ "$1" == lemonade://* ]]; then
+    # Strip lemonade:// prefix
+    REMAINDER="${1#lemonade://}"
+    # Split on '?' to separate path from query string
+    if [[ "$REMAINDER" == *"?"* ]]; then
+        PATH_PART="${REMAINDER%%\?*}"
+        QUERY_PART="${REMAINDER#*\?}"
+        URL="${BASE_URL}?${QUERY_PART}#/${PATH_PART}"
+    else
+        URL="${BASE_URL}#/${REMAINDER}"
+    fi
+else
+    URL="$BASE_URL"
+fi
 
 # Prefer chromium based browsers otherwise xdg-open
 if [ "$(echo "${LEMONADE_PREFER_CHROMIUM:-true}" | tr '[:upper:]' '[:lower:]')" = "true" ]; then

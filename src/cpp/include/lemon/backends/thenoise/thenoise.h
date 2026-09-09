@@ -10,7 +10,7 @@ namespace thenoise {
 // links into both the lemonade CLI and lemond without a separate source file.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "thenoise",
-    /*display_name*/    "TheNoise ROCm (experimental)",
+    /*display_name*/    "TheNoise ROCm",
     /*binary*/          "thenoise",
     /*config_section*/  "thenoise",
     /*default_device*/  DEVICE_GPU,
@@ -48,7 +48,7 @@ inline const BackendDescriptor descriptor = {
     /*self_manages_downloads*/ false,
     /*takes_args*/      false,
     /*arg_variants*/    {},
-    /*bin_variants*/    {},
+    /*bin_variants*/    {"rocm"},
     /*config_extra*/    {{"lora_dir", ""}, {"upscaler_dir", ""}},
 };
 

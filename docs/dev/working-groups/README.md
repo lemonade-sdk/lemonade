@@ -12,7 +12,7 @@ Charters are ratified by @jeremyfowers with two primary considerations (in order
 
 ## Maintainers
 
-You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end‑to‑end maintainance and support of this project.
+You can see the full set of project maintainers, and the subject areas they maintain, in the [contribution guide](../contribute.md#maintainers). Working groups are focused areas of roadmap development, and are a subset of the end‑to‑end maintenance and support of this project.
 
 ## Table of Working Groups
 

@@ -87,7 +87,7 @@ Supported registration flags:
 |------|-------------|
 | `--source SOURCE` | Remote registry for every checkpoint in this model: `huggingface` or `modelscope`. When omitted, the server's configured `default_model_source` applies. |
 | `--checkpoint TYPE CHECKPOINT` | Add a checkpoint entry. Repeat for multi-file models such as `main` + `mmproj` or `main` + `vae`. |
-| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
+| `--recipe RECIPE` | Recipe to associate with the new `user.*` model. Common values: <!-- BEGIN GENERATED: recipe-values -->`llamacpp`, `llamacpp-hrx`, `whispercpp`, `moonshine`, `kokoro`, `sd-cpp`, `flm`, `ryzenai-llm`, `vllm`, `thenoise`, `ds4`, `thinksound`, `acestep`, `onnxruntime`, `trellis`, `openmoss`, `collection.omni`<!-- END GENERATED: recipe-values -->. |
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
@@ -242,22 +242,22 @@ Advanced users can edit `user_models.json` and `recipe_options.json` directly. T
 
 ## Overview
 
-Custom model configuration involves two files, both located in the Lemonade cache directory:
+Custom model configuration involves two files, both located in the Lemonade config directory:
 
 | File | Purpose |
 |------|---------|
 | `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
 | `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
 
-If you used an installer from a Lemonade release, the cache directory is typically:
+If you used an installer from a Lemonade release, the config directory is typically:
 
-| OS | Cache directory |
-|----|-----------------|
-| Linux systemd install | `/var/lib/lemonade/.cache/lemonade` |
-| Windows | `%USERPROFILE%\.cache\lemonade` |
-| macOS system install | `/Library/Application Support/lemonade/.cache` |
+| OS | Config directory |
+|----|------------------|
+| Linux systemd install | `/var/lib/lemonade` |
+| Windows | `%USERPROFILE%\.config\lemonade` |
+| macOS system install | `/Library/Application Support/lemonade/.config` |
 
-For a standalone `lemond` executable, the default is `~/.cache/lemonade` unless you pass an explicit `cache_dir` argument or set `LEMONADE_CACHE_DIR`.
+For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
 
 ## Model naming spec
 

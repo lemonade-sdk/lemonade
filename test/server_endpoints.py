@@ -20,6 +20,7 @@ Usage:
     python server_endpoints.py
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -103,6 +104,62 @@ def _lemond_health_ok(port, headers):
         return False
 
 
+@contextlib.contextmanager
+def _running_lemond(config=None, cache_prefix="lemond_test_"):
+    """Spawn lemond on a free port with the given config.json body.
+
+    Skips the calling test when no daemon binary is available. Yields
+    (proc, port, headers, log_path) and terminates the daemon plus removes
+    its cache directory on exit.
+    """
+    lemond_binary = _resolve_lemond_binary()
+    if not lemond_binary:
+        raise unittest.SkipTest("lemond binary not found (build it or add it to PATH)")
+
+    headers = {}
+    api_key = os.environ.get("LEMONADE_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    port = _pick_free_port()
+    cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
+    log_path = os.path.join(cache_dir, "lemond.log")
+    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump({"config_version": 2, **(config or {})}, f)
+
+    proc = None
+    try:
+        with open(log_path, "w", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                [lemond_binary, cache_dir, "--port", str(port)],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=os.environ.copy(),
+            )
+        yield proc, port, headers, log_path
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _wait_until_healthy(proc, port, headers, timeout_s=60):
+    """Poll /api/v1/health until lemond answers or the deadline expires."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            return False
+        if _lemond_health_ok(port, headers):
+            return True
+        time.sleep(1)
+    return False
+
+
 class EndpointTests(ServerTestBase):
     """Tests for inference-agnostic endpoints."""
 
@@ -146,6 +203,25 @@ class EndpointTests(ServerTestBase):
         self.assertIn("pid", model_info)
         self.assertIsInstance(model_info["pid"], int)
         self.assertGreater(model_info["pid"], 0)
+
+    def _assert_loaded_model_launch_command(self, model_info):
+        """Assert /health exposes the command the wrapped backend was started with."""
+        self.assertIsNotNone(model_info, "Model should appear in /health")
+        self.assertIn("launch_command", model_info)
+        command = model_info["launch_command"]
+        self.assertIsInstance(command, list)
+        self.assertGreater(len(command), 1)
+        self.assertTrue(all(isinstance(part, str) for part in command))
+        self.assertTrue(command[0], "Executable belongs at index 0")
+
+        # The backend is started with a resolved on-disk path, so the checkpoint
+        # file name has to appear somewhere in the arguments.
+        checkpoint_file = model_info.get("checkpoint", "").split(":")[-1]
+        if checkpoint_file:
+            self.assertTrue(
+                any(checkpoint_file in part for part in command),
+                f"Checkpoint {checkpoint_file} missing from {command}",
+            )
 
     def _parse_prometheus_text(self, body):
         """Validate Prometheus text format and return sample labels by metric name."""
@@ -217,6 +293,39 @@ class EndpointTests(ServerTestBase):
                     404,
                     f"POST endpoint {endpoint} is not registered on {version}",
                 )
+
+        session.close()
+
+    def test_000b_retired_endpoints_removed(self):
+        """Verify the retired routes stay gone on every prefix."""
+        session = requests.Session()
+        headers = _auth_headers()
+
+        for endpoint in ["params", "log-level", "test"]:
+            for prefix in ["/api/v0", "/api/v1", "/v0", "/v1"]:
+                url = f"http://localhost:{PORT}{prefix}/{endpoint}"
+                for response in (
+                    session.get(url, headers=headers, timeout=TIMEOUT_DEFAULT),
+                    session.post(
+                        url, json={}, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ),
+                ):
+                    self.assertEqual(
+                        response.status_code,
+                        404,
+                        f"Retired endpoint {prefix}/{endpoint} still responds",
+                    )
+
+        response = session.get(
+            f"http://localhost:{PORT}/status", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 404, "Retired /status still responds")
+
+        # The legacy status page is still served at its documented location.
+        response = session.get(
+            f"http://localhost:{PORT}/api/v1", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
 
         session.close()
 
@@ -696,6 +805,168 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] NotFoundError raised for non-existent model")
 
+    def _retrieve_model_json(self, model=ENDPOINT_TEST_MODEL):
+        """Fetch one model entry. The OpenAI SDK object does not expose
+        context_length, so read the raw JSON."""
+        response = requests.get(
+            f"{self.base_url}/models/{model}", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()
+
+    def _unload_for_configured_context(self):
+        """Unload first: a loaded model reports its own size, which outranks
+        the configured value these tests check."""
+        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+
+    def test_006a_context_length_uses_explicit_ctx_size(self):
+        """An explicit per-model ctx_size is what context_length reports."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": 8192}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            8192,
+            "context_length should match the explicitly saved ctx_size",
+        )
+
+        print("[OK] context_length reflects an explicit ctx_size")
+
+    def test_006b_context_length_inherits_global_ctx_size(self):
+        """With nothing saved on the model, context_length follows the global."""
+        original_ctx_size = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()["ctx_size"]
+        self._snapshot_options()
+        self.addCleanup(self._set_global_ctx_size, original_ctx_size)
+
+        self._unload_for_configured_context()
+        self._reset_options()
+        self._set_global_ctx_size(4096)
+
+        model = self._retrieve_model_json()
+        self.assertEqual(
+            model.get("context_length"),
+            4096,
+            "context_length should inherit the server-wide ctx_size",
+        )
+
+        print("[OK] context_length inherits the global ctx_size")
+
+    def test_006c_context_length_never_reports_a_sentinel(self):
+        """ctx_size=-1 means "size automatically" and must never be returned."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        requests.post(
+            self._options_url(), json={"ctx_size": -1}, timeout=TIMEOUT_DEFAULT
+        )
+
+        model = self._retrieve_model_json()
+        context_length = model.get("context_length")
+        self.assertIsNotNone(
+            context_length,
+            "context_length should still be present when ctx_size is automatic",
+        )
+        self.assertGreater(
+            context_length,
+            0,
+            "context_length must never surface the -1 auto sentinel",
+        )
+
+        print(
+            f"[OK] context_length with automatic ctx_size resolved to {context_length}"
+        )
+
+    def test_006d_context_length_agrees_between_list_and_retrieve(self):
+        """The list and retrieve endpoints must report the same value."""
+        response = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+
+        listed = {m["id"]: m for m in response.json()["data"]}
+        self.assertIn(ENDPOINT_TEST_MODEL, listed)
+
+        for model_id, entry in listed.items():
+            if "context_length" in entry:
+                self.assertGreater(
+                    entry["context_length"],
+                    0,
+                    f"{model_id} reported a non-positive context_length",
+                )
+
+        self.assertEqual(
+            listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            self._retrieve_model_json().get("context_length"),
+            "list and retrieve should report the same context_length",
+        )
+
+        print("[OK] context_length agrees across /models and /models/{id}")
+
+    def test_006e_context_length_resolves_user_alias(self):
+        """An alias and its loaded target must report the same context length."""
+        alias_name = "test-context-length-alias"
+        loaded_ctx_size = 3072
+
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        try:
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200, add_res.text)
+
+            load_res = requests.post(
+                f"{self.base_url}/load",
+                json={
+                    "model_name": ENDPOINT_TEST_MODEL,
+                    "ctx_size": loaded_ctx_size,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(load_res.status_code, 200, load_res.text)
+
+            list_res = requests.get(f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(list_res.status_code, 200, list_res.text)
+            listed = {model["id"]: model for model in list_res.json()["data"]}
+
+            self.assertIn(ENDPOINT_TEST_MODEL, listed)
+            self.assertIn(alias_name, listed)
+            self.assertEqual(
+                listed[ENDPOINT_TEST_MODEL].get("context_length"), loaded_ctx_size
+            )
+            self.assertEqual(
+                listed[alias_name].get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+            self.assertEqual(
+                self._retrieve_model_json(alias_name).get("context_length"),
+                listed[ENDPOINT_TEST_MODEL].get("context_length"),
+            )
+        finally:
+            delete_res = requests.delete(
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias_name)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertIn(delete_res.status_code, (200, 404), delete_res.text)
+
+        print("[OK] context_length resolves user aliases")
+
     def test_007_pull_model_non_streaming(self):
         """Test pulling/downloading a model (non-streaming mode)."""
         # First delete model if it exists to ensure we're actually testing pull
@@ -811,6 +1082,7 @@ class EndpointTests(ServerTestBase):
         # Verify model is loaded via health endpoint and exposes backend PID
         loaded_model = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
         self._assert_loaded_model_pid(loaded_model)
+        self._assert_loaded_model_launch_command(loaded_model)
 
         print(f"[OK] Loaded model: {ENDPOINT_TEST_MODEL}")
 
@@ -1109,6 +1381,15 @@ class EndpointTests(ServerTestBase):
         )
         self.assertEqual(response.status_code, 200, response.text)
 
+    def _set_global_llamacpp_args(self, args):
+        """Set the server-wide llama.cpp custom arguments."""
+        response = requests.post(
+            f"{self.internal_url}/set",
+            json={"llamacpp_args": args},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
     def test_012la_load_null_transiently_clears_saved_args(self):
         """Explicit null skips a saved *_args value for one load only."""
         self._snapshot_options()
@@ -1148,7 +1429,9 @@ class EndpointTests(ServerTestBase):
         loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
         self.assertNotIn("--threads 1", loaded_args)
 
-        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"]
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
         self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
 
     def test_012lb_load_null_keeps_other_saved_keys(self):
@@ -1187,13 +1470,20 @@ class EndpointTests(ServerTestBase):
         self.assertNotIn("--threads 1", recipe_options.get("llamacpp_args", ""))
         self.assertEqual(recipe_options.get("ctx_size"), 3072)
 
-        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()["saved"]
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
         self.assertEqual(saved.get("llamacpp_args"), "--threads 1")
         self.assertEqual(saved.get("ctx_size"), 3072)
 
-    def test_012lc_load_merge_args_still_merges_saved_and_request_args(self):
-        """Concrete *_args requests keep the existing merge_args behavior."""
+    def test_012lc_load_request_args_replace_saved_args_layer(self):
+        """Concrete *_args requests replace the saved same-key layer."""
         self._snapshot_options()
+        config = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()
+        original_global_args = config.get("llamacpp", {}).get("args", "")
+        self.addCleanup(self._set_global_llamacpp_args, original_global_args)
         self.addCleanup(
             requests.post,
             f"{self.base_url}/unload",
@@ -1206,6 +1496,7 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self._reset_options()
+        self._set_global_llamacpp_args("")
 
         response = requests.post(
             self._options_url(),
@@ -1232,8 +1523,17 @@ class EndpointTests(ServerTestBase):
         self.assertIsNotNone(loaded)
         loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
         self.assertIn("--threads 2", loaded_args)
-        self.assertIn("--threads-batch 1", loaded_args)
+        self.assertNotIn("--threads-batch 1", loaded_args)
         self.assertNotIn("--threads 1 ", loaded_args + " ")
+
+        saved = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()[
+            "saved"
+        ]
+        self.assertEqual(
+            saved.get("llamacpp_args"),
+            "--threads 1 --threads-batch 1",
+            "Transient /load must not rewrite the saved args layer",
+        )
 
     def test_012ld_load_ctx_size_minus_one_remains_explicit_auto(self):
         """ctx_size=-1 is a concrete auto value, not a transient tombstone."""
@@ -1272,6 +1572,57 @@ class EndpointTests(ServerTestBase):
         options = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
         self.assertEqual(options["saved"].get("ctx_size"), -1)
         self.assertEqual(options["effective"].get("ctx_size"), -1)
+
+    def test_012le_load_request_args_still_merge_global_args(self):
+        """Request *_args skips saved same-key but still merges lower global args."""
+        self._snapshot_options()
+        config = requests.get(
+            f"{self.internal_url}/config", timeout=TIMEOUT_DEFAULT
+        ).json()
+        original_global_args = config.get("llamacpp", {}).get("args", "")
+        self.addCleanup(self._set_global_llamacpp_args, original_global_args)
+        self.addCleanup(
+            requests.post,
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        requests.post(
+            f"{self.base_url}/unload",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self._reset_options()
+        self._set_global_llamacpp_args("--no-mmap --threads 1")
+
+        response = requests.post(
+            self._options_url(),
+            json={
+                "llamacpp_args": "--threads-batch 1",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        response = requests.post(
+            f"{self.base_url}/load",
+            json={
+                "model_name": ENDPOINT_TEST_MODEL,
+                "llamacpp_args": "--threads 2",
+                "merge_args": True,
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        loaded = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
+        self.assertIsNotNone(loaded)
+        loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
+        self.assertIn("--threads 2", loaded_args)
+        self.assertIn("--no-mmap", loaded_args)
+        self.assertNotIn("--threads-batch 1", loaded_args)
+        self.assertNotIn("--threads 1 ", loaded_args + " ")
 
     def test_012m_model_options_save_without_loading(self):
         """POST /models/{id}/options persists options without loading the model."""
@@ -1547,16 +1898,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(data["resolved_ctx_size"], 4096)
         self.assertEqual(data["saved"], {}, "dry_run must not persist anything")
 
-        # load_command is effective posted to /v1/load, with the base URL left
-        # to the caller: lemond only ever listens over plain HTTP, so it cannot
-        # know the scheme a client reached it through.
-        command = data["load_command"]
-        self.assertTrue(
-            command.startswith("curl -X POST $LEMONADE_BASE_URL/v1/load"), command
-        )
-        self.assertIn('"ctx_size":4096', command)
-        self.assertIn(f'"model_name":"{ENDPOINT_TEST_MODEL}"', command)
-
         after = requests.get(self._options_url(), timeout=TIMEOUT_DEFAULT).json()
         self.assertEqual(after["saved"], {}, "dry_run must not persist anything")
         self.assertGreater(
@@ -1573,96 +1914,6 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(rejected.status_code, 400, "dry_run still validates")
 
         print("[OK] resolved_ctx_size is concrete and dry_run persists nothing")
-
-    def test_012v_load_command_omits_client_supplied_host(self):
-        """The command is built from what the server knows, not what it is told.
-
-        `Host` is the caller's own claim about where it sent the request, and
-        the command is meant to be run, so none of it may reach the string.
-        """
-        forged = "evil.example.com; touch /tmp/lemonade-load-command"
-        response = requests.get(
-            self._options_url(),
-            headers={"Host": forged},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(response.status_code, 200, response.text)
-
-        command = response.json()["load_command"]
-        self.assertIn("$LEMONADE_BASE_URL/v1/load", command)
-        self.assertNotIn("evil.example.com", command)
-        self.assertNotIn("touch", command)
-
-        print("[OK] load_command never repeats the caller's Host header")
-
-    def test_012w_load_command_carries_auth_when_a_key_is_required(self):
-        """A key-protected server renders the header its own /v1/load demands.
-
-        Without it the command reports a load that would come back 401. The key
-        itself stays out of the response: only the variable holding it is named.
-        """
-        lemond_binary = _resolve_lemond_binary()
-        if not lemond_binary:
-            self.skipTest("lemond binary not found (build it or add it to PATH)")
-
-        api_key = "options-load-command-key"
-        headers = {"Authorization": f"Bearer {api_key}"}
-        port = _pick_free_port()
-        cache_dir = tempfile.mkdtemp(prefix="lemond_optauth_")
-        log_path = os.path.join(cache_dir, "lemond.log")
-        env = os.environ.copy()
-        env["LEMONADE_API_KEY"] = api_key
-        env.pop("LEMONADE_ADMIN_API_KEY", None)
-
-        server = None
-        try:
-            with open(log_path, "w", encoding="utf-8") as log_file:
-                server = subprocess.Popen(
-                    [lemond_binary, cache_dir, "--port", str(port)],
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                )
-
-            deadline = time.time() + 60
-            healthy = False
-            while time.time() < deadline:
-                if server.poll() is not None:
-                    break  # exited early; surface the log below
-                if _lemond_health_ok(port, headers):
-                    healthy = True
-                    break
-                time.sleep(1)
-
-            if not healthy:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    log = f.read()
-                self.fail(
-                    f"lemond never became healthy on port {port}.\n"
-                    f"=== lemond log ===\n{log}"
-                )
-
-            response = requests.get(
-                f"http://localhost:{port}/api/v1/models/{ENDPOINT_TEST_MODEL}/options",
-                headers=headers,
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(response.status_code, 200, response.text)
-
-            command = response.json()["load_command"]
-            self.assertIn('-H "Authorization: Bearer $LEMONADE_API_KEY"', command)
-            self.assertNotIn(api_key, command)
-
-            print("[OK] load_command carries the Authorization header /load requires")
-        finally:
-            if server is not None and server.poll() is None:
-                server.terminate()
-                try:
-                    server.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    server.kill()
-                    server.wait(timeout=10)
-            shutil.rmtree(cache_dir, ignore_errors=True)
 
     def test_013_auto_load_forwards_only_allowlisted_options(self):
         """Regression for #2663 / PR #2664 review: request-scoped params must NOT leak
@@ -1765,7 +2016,6 @@ class EndpointTests(ServerTestBase):
                 "max_completion_tokens",
                 "model",
                 "pinned",
-                "llamacpp_args",
                 "auto_evict",
                 "evict_idle_timeout",
             ]
@@ -1776,6 +2026,15 @@ class EndpointTests(ServerTestBase):
                     f"Request-scoped field '{field}' must NOT leak into recipe_options "
                     f"on auto-load (found: {recipe_options.get(field)})",
                 )
+
+            # Runtime defaults may populate llamacpp_args; the inference request must not.
+            effective_llamacpp_args = recipe_options.get("llamacpp_args", "")
+            self.assertIsInstance(effective_llamacpp_args, str)
+            self.assertNotIn(
+                "--foo-bar",
+                effective_llamacpp_args,
+                "Request llamacpp_args must not leak into recipe_options on auto-load",
+            )
 
             print(
                 f"[OK] Auto-load forwarded only ctx_size={custom_ctx_size}; "
@@ -4423,6 +4682,57 @@ class EndpointTests(ServerTestBase):
         self.assertEqual(decision["route_to"], "Qwen3-8B-GGUF")
         self.assertTrue(decision["default_used"])
         print("[OK] /routing/validate fell through to the default model")
+
+    def test_021zta_routing_validate_total_chars_uses_prompt_length(self):
+        """A test prompt is a single turn with no history, so `min_total_chars`
+        measures the prompt itself — the same equality the history-less
+        completions form gives. A context that left the total at 0 would make
+        every whole-conversation rule untestable in the Router Builder."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "long-conversation-to-big",
+                        "match": {"min_total_chars": 100},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        long_prompt = "tell me more about this topic. " * 10  # 310 chars
+        self.assertGreater(len(long_prompt), 100)
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": long_prompt},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "long-conversation-to-big")
+        self.assertFalse(decision["default_used"])
+        self.assertTrue(
+            any(
+                entry.get("condition") == "min_total_chars"
+                and entry.get("result") is True
+                for entry in decision.get("trace", [])
+            ),
+            f"trace must include the matched min_total_chars condition: {decision}",
+        )
+
+        short_response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(short_response.status_code, 200, short_response.text)
+        self.assertTrue(short_response.json()["decision"]["default_used"])
+        print("[OK] /routing/validate measures min_total_chars on the test prompt")
 
     def test_021zu_routing_validate_bad_policy_returns_400(self):
         """A malformed policy (missing the required 'routing' key) is rejected
@@ -7788,6 +8098,302 @@ class EndpointTests(ServerTestBase):
                 provenance_file.write(original_provenance)
 
         print("[OK] /models/check-updates ignores stale provenance snapshots")
+
+    def test_056_models_sync_internal_security_boundary(self):
+        """Verify that model sync routes are exclusively administrative internal routes and public routes return 404."""
+        # 1. Verify GET /internal/models/sync/status returns the status JSON
+        status_url = f"http://localhost:{PORT}/internal/models/sync/status"
+        resp = requests.get(status_url, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync/status failed: {resp.text}"
+        )
+        status_json = resp.json()
+        self.assertIn("status", status_json)
+        self.assertIn("sync_id", status_json)
+        self.assertIn("completed_sync_id", status_json)
+        self.assertIn("checked_count", status_json)
+        self.assertIn("models_updated", status_json)
+        self.assertIn("terminal_error", status_json)
+
+        # 2. Verify POST /internal/models/sync dry_run returns dry_run: true
+        sync_url = f"http://localhost:{PORT}/internal/models/sync"
+        resp = requests.post(
+            sync_url,
+            json={"dry_run": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code, 200, f"/internal/models/sync dry run failed: {resp.text}"
+        )
+        sync_json = resp.json()
+        self.assertTrue(sync_json.get("dry_run"))
+        self.assertIn("checked_count", sync_json)
+
+        # 3. Verify POST /internal/models/sync async returns 202 Accepted
+        resp = requests.post(
+            sync_url,
+            json={"async": True, "models": [ENDPOINT_TEST_MODEL]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            resp.status_code,
+            202,
+            f"/internal/models/sync async dispatch failed: {resp.text}",
+        )
+        async_json = resp.json()
+        self.assertTrue(async_json.get("async"))
+        self.assertIn("sync_id", async_json)
+
+        # 4. Verify querying status by sync_id
+        target_sync_id = async_json.get("sync_id")
+        if target_sync_id:
+            resp = requests.get(
+                f"{status_url}?sync_id={target_sync_id}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                resp.status_code,
+                200,
+                f"/internal/models/sync/status?sync_id={target_sync_id} failed: {resp.text}",
+            )
+            sync_id_json = resp.json()
+            self.assertEqual(sync_id_json.get("sync_id"), target_sync_id)
+
+        # 5. Verify public quad-prefix route /api/v1/models/sync returns 404
+        public_url = f"{self.base_url}/models/sync"
+        resp = requests.post(
+            public_url, json={"dry_run": True}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            404,
+            f"public /api/v1/models/sync should not exist, got {resp.status_code}",
+        )
+
+        # 5. Verify invalid payload types return 400 Bad Request
+        resp = requests.post(
+            sync_url, json={"models": "invalid_not_array"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-array models, got {resp.status_code}",
+        )
+
+        resp = requests.post(sync_url, json={"models": [123]}, timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-string model item, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"dry_run": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool dry_run, got {resp.status_code}",
+        )
+
+        resp = requests.post(
+            sync_url, json={"async": "invalid_not_bool"}, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(
+            resp.status_code,
+            400,
+            f"Expected 400 for non-bool async, got {resp.status_code}",
+        )
+
+        print("[OK] /internal/models/sync security boundary is secure")
+
+    def test_057_download_rate_limit_config(self):
+        """download_rate_limit is a string cap that validates and round-trips
+        via /internal/set. Spawns its own lemond so it does not depend on an
+        externally-managed server (unlike the shared-server assumption of
+        ServerTestBase)."""
+        with _running_lemond(cache_prefix="lemond_ratecfg_") as (
+            proc,
+            port,
+            headers,
+            log_path,
+        ):
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            # Invalid values are rejected by config validation.
+            bad_changes = [
+                {"download_rate_limit": "10M5"},  # malformed rate string
+                {"download_rate_limit": -5},  # non-string / negative
+                {"download_rate_limit": "abc"},  # invalid rate string
+            ]
+            for body in bad_changes:
+                resp = requests.post(
+                    set_url,
+                    headers=headers,
+                    json=body,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    resp.status_code,
+                    400,
+                    f"expected 400 for {body!r}, got {resp.status_code}: {resp.text}",
+                )
+
+            # A full round-trip persists in the config snapshot.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "10M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "10M")
+
+            # A partial update preserves unrelated keys.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "20M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "20M")
+
+            # Clearing the cap means runtime unlimited.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "")
+
+            print(
+                "[OK] download_rate_limit validates and round-trips via /internal/set"
+            )
+
+    def test_058_download_rate_limit_invalid_config_startup(self):
+        """An invalid download_rate_limit in config.json must not crash
+        lemond: the raw value is preserved in the snapshot and the server stays
+        healthy (invalid caps are treated as unlimited)."""
+        with _running_lemond(
+            config={"download_rate_limit": "-1"},
+            cache_prefix="lemond_badcfg_",
+        ) as (proc, port, headers, log_path):
+            if not _wait_until_healthy(proc, port, headers):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"lemond with invalid download_rate_limit crashed or never "
+                    f"became healthy on port {port}.\n=== lemond log ===\n{log}"
+                )
+
+            cfg = requests.get(
+                f"http://localhost:{port}/internal/config",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            # The raw value is preserved verbatim in the config snapshot.
+            self.assertEqual(cfg.get("download_rate_limit"), "-1")
+
+            print(
+                "[OK] lemond stays healthy with an invalid download_rate_limit "
+                "in config.json"
+            )
+
+    def test_059_download_rate_limit_runtime_effect(self):
+        """Changing download_rate_limit via /internal/set must actually apply
+        the cap to HttpClient at runtime: the side-effect log line records the
+        newly active byte rate, clearing it disables capping, and the last
+        value is persisted to config.json."""
+        with _running_lemond(
+            config={"download_rate_limit": "10M"},
+            cache_prefix="lemond_ratecfg_",
+        ) as (proc, port, headers, log_path):
+            config_path = os.path.join(os.path.dirname(log_path), "config.json")
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            def _wait_for_log(needle, timeout_s=10.0):
+                deadline = time.time() + timeout_s
+                while time.time() < deadline:
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                        if needle in f.read():
+                            return True
+                    time.sleep(0.2)
+                return False
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "10M")
+
+            # Raising the cap takes effect immediately and is logged.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "50M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(
+                _wait_for_log("Download rate limit enabled at 52428800 B/s"),
+                "runtime cap change was not applied to HttpClient",
+            )
+
+            # Clearing the cap disables limiting at runtime too.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(
+                _wait_for_log("Download rate limit disabled"),
+                "clearing the cap did not disable runtime limiting",
+            )
+
+            # The persistent channel wrote the final value; "" equals the
+            # default, so the key may be pruned from disk.
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f).get("download_rate_limit", ""), "")
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "")
+
+            print(
+                "[OK] /internal/set applies download_rate_limit at runtime "
+                "and persists it"
+            )
 
 
 if __name__ == "__main__":

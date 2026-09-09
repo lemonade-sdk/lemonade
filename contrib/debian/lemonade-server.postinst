@@ -28,6 +28,50 @@ if [ "$1" = "configure" ]; then
 	if getent group render > /dev/null; then
 		usermod -a -G render lemonade
 	fi
+
+	# Create /var/lib/lemonade (writable state + config for lemonade user).
+	# Ensure ownership even if usermod -m didn't move existing data.
+	if [ ! -d /var/lib/lemonade ]; then
+		mkdir -p /var/lib/lemonade
+	fi
+	# Own the state + config tree, but skip the HuggingFace model cache: it can
+	# be tens of GB and is already owned by the service that downloaded it, so
+	# recursing into it would make every upgrade's chown walk the whole cache.
+	find /var/lib/lemonade -path /var/lib/lemonade/.cache/huggingface -prune -o \
+		-exec chown lemonade:lemonade {} + 2>/dev/null || true
+	chmod 0750 /var/lib/lemonade
+
+	# Create the FHS cache directory for the service (owned by the service user).
+	# Systemd CacheDirectory= handles this at runtime on fresh boots, but we
+	# create it here to set correct ownership immediately after install.
+	if [ ! -d /var/cache/lemonade ]; then
+		mkdir -p /var/cache/lemonade
+	fi
+	chown lemonade:lemonade /var/cache/lemonade
+	chmod 0755 /var/cache/lemonade
+
+	# Migrate split environment files from /etc/lemonade/conf.d/*.conf to /etc/default/lemond
+	if [ -d /etc/lemonade/conf.d ]; then
+		if [ -f /etc/default/lemond ]; then
+			# Append old conf.d files to existing /etc/default/lemond
+			for conf in /etc/lemonade/conf.d/*.conf; do
+				[ -f "$conf" ] || continue
+				echo "" >> /etc/default/lemond
+				echo "# Migrated from $conf" >> /etc/default/lemond
+				cat "$conf" >> /etc/default/lemond
+			done
+		else
+			# Create /etc/default/lemond by merging all conf.d files
+			for conf in /etc/lemonade/conf.d/*.conf; do
+				[ -f "$conf" ] || continue
+				cat "$conf" >> /etc/default/lemond
+				echo "" >> /etc/default/lemond
+			done
+			chmod 0640 /etc/default/lemond
+			chown root:root /etc/default/lemond
+		fi
+		echo "Migrated environment files from /etc/lemonade/conf.d/ to /etc/default/lemond"
+	fi
 fi
 
 # #2125: migrate pre-fix upgrades — disable per-user lemond.service and stop

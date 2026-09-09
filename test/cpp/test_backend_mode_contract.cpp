@@ -10,6 +10,8 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <set>
 #include <string>
 #include <vector>
@@ -62,6 +64,72 @@ std::string join(const std::vector<std::string>& items) {
         out += item;
     }
     return out.empty() ? "(none)" : out;
+}
+
+
+void check_server_model_registry() {
+    std::ifstream input(SERVER_MODELS_JSON_PATH);
+    if (!input.good()) {
+        check("server_models.json is readable", false);
+        return;
+    }
+
+    const nlohmann::json models = nlohmann::json::parse(input, nullptr, false);
+    if (!models.is_object()) {
+        check("server_models.json is a JSON object", false);
+        return;
+    }
+
+    const int failures_before = failures;
+    for (const auto& [name, entry] : models.items()) {
+        if (!entry.is_object()) {
+            check(name + ": registry entry is an object", false);
+            continue;
+        }
+
+        std::vector<std::string> labels;
+        bool labels_valid = entry.contains("labels") && entry["labels"].is_array();
+        if (labels_valid) {
+            for (const auto& label : entry["labels"]) {
+                if (!label.is_string()) {
+                    labels_valid = false;
+                    continue;
+                }
+                labels.push_back(label.get<std::string>());
+            }
+        }
+        if (!labels_valid) {
+            check(name + ": labels are a string array", false);
+        }
+
+        ModelType resolved = ModelType::LLM;
+        const bool has_mode = lemon::find_deployment_mode(labels, resolved);
+        if (!has_mode) {
+            check(name + ": declares a deployment mode", false);
+        }
+
+        std::set<ModelType> declared_modes;
+        for (const auto& label : labels) {
+            ModelType mode = ModelType::LLM;
+            if (deployment_mode_of(label, mode)) {
+                declared_modes.insert(mode);
+            }
+        }
+        if (has_mode && declared_modes.size() != 1) {
+            check(name + ": deployment mode is unambiguous", false);
+        }
+
+        const std::string recipe = entry.value("recipe", std::string());
+        const std::string illegal =
+            lemon::backends::illegal_deployment_labels(labels, recipe);
+        if (!illegal.empty()) {
+            check(name + ": " + illegal, false);
+        }
+    }
+
+    if (failures == failures_before) {
+        check("server_models.json matches the deployment-mode/backend contract", true);
+    }
 }
 
 } // namespace
@@ -131,6 +199,8 @@ int main() {
                     join(desc.supported_modes).c_str(),
                     join(desc.default_capabilities).c_str());
     }
+
+    check_server_model_registry();
 
     // Ingest: a label set either describes a model this backend can deploy, or
     // no model at all. Nothing in between, so a model's labels and its resolved

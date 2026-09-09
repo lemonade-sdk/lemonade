@@ -114,6 +114,11 @@ struct BackendDescriptor {
     std::vector<std::string> bin_variants;         // each emits `<variant>_bin: "builtin"`
     nlohmann::json config_extra = nlohmann::json::object();  // fixed extras (e.g. prefer_system, image defaults)
 
+    // True if the backend streams the model from storage rather than loading it
+    // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
+    // filter_models_by_backend in model_manager.cpp).
+    bool streams_model_from_storage = false;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;
