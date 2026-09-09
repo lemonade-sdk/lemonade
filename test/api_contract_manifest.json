@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "description": "Public Lemonade API route contract. CI compares this manifest with the C++ route registrations so accidental method or path removals are caught during review.",
+  "sources": [
+    "src/cpp/server/server.cpp",
+    "src/cpp/server/ollama_api.cpp",
+    "src/cpp/server/anthropic_api.cpp",
+    "src/cpp/server/mcp_server.cpp",
+    "src/cpp/server/websocket_server.cpp"
+  ],
+  "versioned_prefixes": [
+    "/api/v0",
+    "/api/v1",
+    "/v0",
+    "/v1"
+  ],
+  "http_routes": [
+    {"method": "GET", "path": "/live"},
+    {"method": "GET", "path": "/metrics"},
+
+    {"method": "GET", "versioned_path": "health"},
+    {"method": "GET", "versioned_path": "models"},
+    {"method": "GET", "versioned_path": "models/{param}"},
+    {"method": "GET", "versioned_path": "slots"},
+    {"method": "GET", "versioned_path": "pull/variants"},
+    {"method": "GET", "versioned_path": "downloads"},
+    {"method": "GET", "versioned_path": "stats"},
+    {"method": "GET", "versioned_path": "system-info"},
+    {"method": "GET", "versioned_path": "system-stats"},
+
+    {"method": "POST", "versioned_path": "chat/completions"},
+    {"method": "POST", "versioned_path": "completions"},
+    {"method": "POST", "versioned_path": "embeddings"},
+    {"method": "POST", "versioned_path": "reranking"},
+    {"method": "POST", "versioned_path": "slots/{param}"},
+    {"method": "POST", "versioned_path": "tokenize"},
+    {"method": "POST", "versioned_path": "audio/transcriptions"},
+    {"method": "POST", "versioned_path": "audio/speech"},
+    {"method": "POST", "versioned_path": "images/generations"},
+    {"method": "POST", "versioned_path": "images/edits"},
+    {"method": "POST", "versioned_path": "images/variations"},
+    {"method": "POST", "versioned_path": "images/upscale"},
+    {"method": "POST", "versioned_path": "responses"},
+    {"method": "POST", "versioned_path": "pull"},
+    {"method": "POST", "versioned_path": "downloads/control"},
+    {"method": "POST", "versioned_path": "load"},
+    {"method": "POST", "versioned_path": "unload"},
+    {"method": "POST", "versioned_path": "delete"},
+    {"method": "POST", "versioned_path": "params"},
+    {"method": "POST", "versioned_path": "install"},
+    {"method": "POST", "versioned_path": "uninstall"},
+    {"method": "POST", "versioned_path": "log-level"},
+    {"method": "POST", "versioned_path": "cloud/auth"},
+    {"method": "DELETE", "versioned_path": "cloud/auth/{param}"},
+
+    {"method": "POST", "path": "/api/chat"},
+    {"method": "POST", "path": "/api/generate"},
+    {"method": "GET", "path": "/api/tags"},
+    {"method": "POST", "path": "/api/show"},
+    {"method": "DELETE", "path": "/api/delete"},
+    {"method": "POST", "path": "/api/pull"},
+    {"method": "POST", "path": "/api/embed"},
+    {"method": "POST", "path": "/api/embeddings"},
+    {"method": "GET", "path": "/api/ps"},
+    {"method": "GET", "path": "/api/version"},
+    {"method": "POST", "path": "/api/create"},
+    {"method": "POST", "path": "/api/copy"},
+    {"method": "POST", "path": "/api/push"},
+    {"method": "POST", "path": "/api/blobs/{param}"},
+
+    {"method": "POST", "path": "/v1/messages"},
+    {"method": "POST", "path": "/mcp"}
+  ],
+  "websocket_routes": [
+    {"method": "WS", "path": "/realtime"},
+    {"method": "WS", "versioned_path": "realtime"},
+    {"method": "WS", "path": "/logs/stream"},
+    {"method": "WS", "versioned_path": "logs/stream"}
+  ]
+}
