@@ -3604,17 +3604,12 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
         for (const auto& dev : dev_list) {
-            // Expand this later to accommodate mixed pools.  Behavior must be
-            // chosen per device, not per device-type: system_info never emits
-            // an "amd_igpu" container key -- AMD APUs are reported under
-            // "amd_gpu" with an "integrated": true flag and the large
-            // host-visible GTT pool in virtual_mem_gb, while the VRAM
-            // carve-out can be only ~1-4 GB.  Keying Largest on the old
-            // dev_type == "amd_igpu" check made that branch dead, so every
-            // device fell back to Hardware (vram_gb only) and streaming
-            // models that fit in GTT were falsely rejected on APUs.
+            // Behavior is chosen per device, not per device-type: AMD APUs are
+            // reported under "amd_gpu" with "integrated": true and their GTT
+            // pool in virtual_mem_gb -- an "amd_igpu" container key is never
+            // emitted, so default to integrated when the flag is absent.
             MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
-            if (dev.value("integrated", false))
+            if (dev.value("integrated", true))
                 dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
             if (enable_dgpu_gtt)
                 dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
