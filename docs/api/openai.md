@@ -628,18 +628,16 @@ python examples/realtime_transcription.py --model Whisper-Tiny
 ## `POST /v1/images/generations`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Generation API. You provide a text prompt and receive a generated image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+Image Generation API. You provide a text prompt and receive a generated image.
 
-> **Note:** Image generation uses Stable Diffusion models. Available models include `SD-Turbo` (fast, ~4 steps), `SDXL-Turbo`, `SD-1.5`, and `SDXL-Base-1.0`.
->
-> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.
+> **Performance:** CPU inference takes ~4-5 minutes per image. GPU (ROCm) is significantly faster.
 
 ### Parameters
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `prompt` | Yes | The text description of the image to generate. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The Stable Diffusion model to use (e.g., `SD-Turbo`, `SDXL-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The diffusion model to use (e.g., `SD-Turbo`, `Krea-2-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `size` | No | The size of the generated image. Format: `WIDTHxHEIGHT` (e.g., `512x512`, `256x256`). Default: `512x512`. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `n` | No | Number of images to generate. Currently only `1` is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
 | `response_format` | No | Format of the response. Only `b64_json` (base64-encoded image) is supported. | <sub>![Status](https://img.shields.io/badge/partial-yellow)</sub> |
@@ -666,7 +664,7 @@ Image Generation API. You provide a text prompt and receive a generated image. T
 ## `POST /v1/images/edits`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image.
 
 > **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Use editing-capable models such as `Flux-2-Klein-4B` or `SD-Turbo`.
 >
@@ -676,7 +674,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
-| `model` | Yes | The Stable Diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The diffusion model to use (e.g., `Flux-2-Klein-4B`, `SD-Turbo`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `image` / `image[]` | Yes | The source image file to edit (PNG). Sent as a file in multipart/form-data. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `prompt` | Yes | A text description of the desired edit. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 | `mask` | No | An optional mask image (PNG). White areas indicate regions to edit; black areas are preserved. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
@@ -728,7 +726,7 @@ Image Editing API. You provide a source image and a text prompt describing the d
 ## `POST /v1/images/variations`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Variations API. You provide a source image and receive a variation of it. This API uses [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) as the backend.
+Image Variations API. You provide a source image and receive a variation of it.
 
 > **Note:** This endpoint accepts `multipart/form-data` requests (not JSON). Unlike `/images/edits`, a `prompt` parameter is not supported and will be ignored — the model generates a variation based solely on the input image.
 >
@@ -780,10 +778,8 @@ Image Variations API. You provide a source image and receive a variation of it. 
 ## `POST /v1/images/upscale`
 <sub>![Status](https://img.shields.io/badge/status-fully_available-green)</sub>
 
-Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the `sd-cli` binary from [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) to perform super-resolution.
+Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive an upscaled image. The upscale factor depends on the selected model, and it is usually reflected in its name.
 
-> **Note:** Available upscale models are `RealESRGAN-x4plus` (general-purpose, 64 MB) and `RealESRGAN-x4plus-anime` (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).
->
 > **Note:** Unlike `/images/edits` and `/images/variations`, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.
 
 ### Parameters
@@ -791,7 +787,7 @@ Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `RealESRGAN-x4plus-anime`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes | The ESRGAN model to use (e.g., `RealESRGAN-x4plus`, `Remacri-4x-TheNoise`). | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
