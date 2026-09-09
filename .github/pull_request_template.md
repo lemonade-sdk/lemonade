@@ -38,7 +38,7 @@ For new features, explain how the feature works and what use case it supports.
 
 ## Testing
 
-- [ ] I tested this change locally.
+- [ ] The code change has been locally tested.
 
 <!-- Describe what you tested, commands run, and results -->
 _Testing details:_
