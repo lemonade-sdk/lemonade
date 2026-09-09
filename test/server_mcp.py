@@ -220,13 +220,15 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(body["result"], {})
 
     def test_012_tools_list(self):
-        """tools/list must include the five gateway tools, each with a schema."""
+        """tools/list must include all seven gateway tools, each with a schema."""
         response = _post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         body = response.json()
         tools = body["result"]["tools"]
         names = {tool["name"] for tool in tools}
         expected = {
             "lemonade_list_models",
+            "lemonade_search_models",
+            "lemonade_get_pull_variants",
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",

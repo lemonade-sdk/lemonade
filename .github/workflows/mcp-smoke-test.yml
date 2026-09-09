@@ -22,6 +22,7 @@ on:
       - "setup.sh"
       - "test/server_mcp_smoke.py"
       - "test/server_mcp.py"
+      - "test/server_mcp_remote_discovery.py"
       - ".github/workflows/mcp-smoke-test.yml"
   push:
     branches: ["main"]
@@ -104,6 +105,10 @@ jobs:
       - name: Run MCP smoke tests against CMake build
         run: |
           python test/server_mcp_smoke.py --host 127.0.0.1 --port 13305
+
+      - name: Run deterministic MCP remote discovery tests
+        run: |
+          python test/server_mcp_remote_discovery.py --lemond ./build/lemond
 
       - name: Shut down lemond
         if: always()
