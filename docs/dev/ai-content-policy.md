@@ -17,6 +17,8 @@ AI prose is not permitted in any Issue, Discussion, PR body, PR comment, or Disc
 
 > Note: "prose" refers to sentences and paragraphs posted in a communications channel. Things that are not prose include: code (including comments), diagrams, tables, graphics, etc.
 
+> Note: AI tools that operate by posting their feedback directly to the PR are an exception to this rule, however nobody other than the person who invoked the agent is expected to read its output. Examples: `@claude review this`, assigning copilot as a reviewer, or codex's auto-review on newly opened PRs.
+
 ## Additional Policies
 
 Contributors can use AI tools, however you are fully responsible for the code and prose you submit.
