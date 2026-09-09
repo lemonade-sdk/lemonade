@@ -14,7 +14,7 @@ If you used an installer from the Lemonade release your `config.json` will be at
   > Note: The systemd service runs as the `lemonade` user. Persistent config lives in `/var/lib/lemonade` (systemd StateDirectory), downloaded backends go to `/var/cache/lemonade` (CacheDirectory), and models are cached under `/var/lib/lemonade/.cache/huggingface`. For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
 - **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
-- **macOS:** `/Library/Application Support/lemonade/.config/config.json`
+- **macOS:** `~/.config/lemonade/config.json` (user install) or `/Library/Application Support/lemonade/.config/config.json` (system install)
 
 If you are using a standalone `lemond` executable, the default location is `~/.config/lemonade/config.json`.
 

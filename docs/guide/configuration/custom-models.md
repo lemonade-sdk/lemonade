@@ -255,7 +255,8 @@ If you used an installer from a Lemonade release, the config directory is typica
 |----|------------------|
 | Linux systemd install | `/var/lib/lemonade` |
 | Windows | `%USERPROFILE%\.config\lemonade` |
-| macOS system install | `/Library/Application Support/lemonade/.config` |
+| macOS (user install) | `~/.config/lemonade` |
+| macOS (system install) | `/Library/Application Support/lemonade/.config` |
 
 For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
 
