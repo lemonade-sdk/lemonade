@@ -59,11 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           archive_root="lemonade-${LEMONADE_VERSION}"
-          staging_dir=$(mktemp -d)
-          git archive --format=tar --prefix="${archive_root}/" HEAD | tar -xf - -C "$staging_dir"
-          printf '%s\n' "$LEMONADE_VERSION" > "$staging_dir/$archive_root/.version"
-          tar -czf "lemonade-${LEMONADE_VERSION}.tar.gz" -C "$staging_dir" "$archive_root"
-
+          python3 tools/source_archive.py --version "$LEMONADE_VERSION"
           archived_version=$(tar -xOf "lemonade-${LEMONADE_VERSION}.tar.gz" "$archive_root/.version")
           test "$archived_version" = "$LEMONADE_VERSION"
 

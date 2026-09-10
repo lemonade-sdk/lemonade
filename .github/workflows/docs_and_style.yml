@@ -79,8 +79,8 @@ jobs:
       - name: Run the comment-slop unit tests
         run: python -m unittest test.test_comment_slop -v
 
-      - name: Run the version helper unit tests
-        run: python -m unittest test.test_version -v
+      - name: Run the version and source archive unit tests
+        run: python -m unittest test.test_version test.test_source_archive -v
 
       - name: Run pre-commit on the changed files
         # Scoped to what the change touches; running repo-wide would fail on drift that
