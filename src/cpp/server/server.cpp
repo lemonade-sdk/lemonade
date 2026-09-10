@@ -3741,6 +3741,44 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
                             request_json.contains("input") ||
                             request_json.contains("tools") || prompt_is_array;
 
+    // Presence alone decides `real_body` above; without these, a wrong-typed
+    // messages/input/tools would still flip into real-body mode and then
+    // silently evaluate as empty (build_route_context's own type guards treat
+    // a malformed field as absent, not an error) — a confidently-wrong 200
+    // instead of a 400 naming the mistake.
+    if (request_json.contains("messages") && !request_json["messages"].is_array()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'messages' must be an array"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (request_json.contains("input") && !request_json["input"].is_string() &&
+        !request_json["input"].is_array()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'input' must be a string or an array"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (request_json.contains("tools") && !request_json["tools"].is_array()) {
+        res.status = 400;
+        nlohmann::json error = {{"error", "'tools' must be an array"}};
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    if (prompt_is_array) {
+        for (const auto& part : request_json["prompt"]) {
+            if (!part.is_string()) {
+                res.status = 400;
+                nlohmann::json error = {{"error", "'prompt' array elements must be strings"}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
+        }
+    }
+
     if (real_body &&
         (request_json.contains("has_images") || request_json.contains("has_tools"))) {
         res.status = 400;
@@ -3775,7 +3813,6 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
     }
     const bool has_tools = request_json.value("has_tools", false);
 
-    std::map<std::string, std::string> metadata;
     if (request_json.contains("metadata")) {
         const nlohmann::json& metadata_json = request_json["metadata"];
         if (!metadata_json.is_object()) {
@@ -3792,7 +3829,6 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
                 res.set_content(error.dump(), "application/json");
                 return;
             }
-            metadata[it.key()] = it.value().get<std::string>();
         }
     }
 
@@ -3820,21 +3856,20 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
             });
         RoutingPolicyEngine engine(std::move(policy), std::move(services));
 
-        RouteContext ctx;
-        if (real_body) {
-            ctx = build_route_context(request_json, std::string());
-        } else {
-            const std::string prompt = request_json.value("prompt", std::string());
-            ctx.input = prompt;
-            ctx.params.chars = prompt.size();
-            // A test prompt is a single turn with no history, so its whole-request
-            // total is the prompt itself — the same equality build_route_context
-            // gives the history-less `prompt` form. Leaving this at 0 would make
-            // every min_total_chars rule silently untestable here.
-            ctx.params.total_chars = prompt.size();
+        // Always derive ctx from build_route_context, the same function
+        // production uses, so every Params field (present today or added
+        // later, e.g. total_chars) comes from one place instead of being
+        // re-plumbed by hand here. A flattened legacy request has no
+        // messages/tools content for build_route_context to detect
+        // has_images/has_tools from, though — those two booleans are the
+        // caller's literal signal values, not something to derive, so
+        // they're the one deliberate override. (build_route_context's
+        // history-less `prompt` branch already sets total_chars to the same
+        // prompt.size() a hand-built ctx would need to set explicitly here.)
+        RouteContext ctx = build_route_context(request_json, std::string());
+        if (!real_body) {
             ctx.params.has_images = has_images;
             ctx.params.has_tools = has_tools;
-            ctx.metadata = std::move(metadata);
         }
 
         Decision decision = engine.route(ctx, /*want_trace=*/true);

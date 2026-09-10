@@ -5255,6 +5255,54 @@ class EndpointTests(ServerTestBase):
             "[OK] /routing/validate rejected mixing a real body with the flattened flags"
         )
 
+    def test_021z2a_routing_validate_bad_real_body_field_types_return_400(self):
+        """A wrong-typed messages/input/tools/array-prompt field is rejected
+        with a 400 naming the field, instead of silently flipping into
+        real-body mode and evaluating against an empty/wrong context."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF"],
+                "default_model": "Qwen3-8B-GGUF",
+            },
+        }
+        response_bad_messages = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "messages": "not-an-array"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_messages.status_code, 400)
+        self.assertIn("messages", response_bad_messages.json()["error"])
+
+        response_bad_input = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "input": 12345},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_input.status_code, 400)
+        self.assertIn("input", response_bad_input.json()["error"])
+
+        response_bad_tools = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi", "tools": "not-an-array"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_tools.status_code, 400)
+        self.assertIn("tools", response_bad_tools.json()["error"])
+
+        response_bad_prompt_array = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": ["ok", 123]},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response_bad_prompt_array.status_code, 400)
+        self.assertIn("prompt", response_bad_prompt_array.json()["error"])
+        print(
+            "[OK] /routing/validate rejected wrong-typed messages/input/tools/prompt-array fields with 400"
+        )
+
     def test_021zj_router_llm_l0a_live(self):
         """L0a live path (#2405), deterministic: the router component is a mock
         cloud model (via _start_mock_cloud_provider) that returns a fixed valid
