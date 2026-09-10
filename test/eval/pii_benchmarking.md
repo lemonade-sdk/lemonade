@@ -640,6 +640,7 @@ columns do not survive a markdown table.
 | OpenAI/privacy-filter | 20k | 5.31% (1062/20000) | 94.69% | resumed; partial | `ner_privacy-filter_...-224152` |
 | **perplexity-ai/pplx-pii-masking** | 20k | **0.80% (159/20000)** | **99.20%** | **2.55hr** | `pplx_f1f90a53..._20260908-173941` |
 | **pplx-pii-masking (ONNX/onnxruntime)** | 20k | **0.80% (159/20000)** | **99.20%** | 2.17hr (split run — see §6.2) | `pplx_onnx_20260908-214405` |
+| **pplx-pii-masking (ONNX/Lemonade router)** | 20k | **0.45% (89/20000)** | **99.56%** | 1.83s/case (split run — see §6.5) | `policy_local_default_20260909-213259` |
 
 Routing / model-eval split, where the router logs report one:
 
@@ -649,6 +650,7 @@ Routing / model-eval split, where the router logs report one:
 | LLM Qwen3.5-0.8B | 2.21hr | 1.86hr | 18min |
 | mmBERT32K (ONNX) | 7.19hr | 4.60hr | 2.59hr |
 | OpenMed v2 (ONNX) | 8.12hr | 7.05hr | 1.06hr |
+| pplx (ONNX router) | 1.83s/case | 1.25s/case (68.3%) | 0.58s/case (31.7%) |
 
 All runs are CPU. pplx safetensors is fp32 on 16 threads, single clean pass over
 all 20,001 cases with no resume. **The pplx ONNX runtime is not a usable
@@ -750,8 +752,10 @@ Repeating §2.1 because this table is what circulates: **with one benign case,
 the precision side is unmeasured.** A model that flagged every document would
 show a perfect leak rate here. For the record, on that single benign case
 mmBERT, OpenMed-v2 and GLiNER all flagged it (FP=1, over-route 100%), while
-OpenMed-v1, OpenAI/privacy-filter and pplx did not. At n=1 that separates
-nothing — it is listed only to make the gap concrete.
+OpenMed-v1, OpenAI/privacy-filter and pplx-direct did not. **pplx *through the
+router* did flag it** — the one visible instance of the sensitivity the router's
+aggregation buys (§6.5) being paid for on the precision side. At n=1 that
+separates nothing — it is listed only to make the gap concrete.
 
 ### 6.4 † The two mmBERT rows measure different decision rules, not backends
 
@@ -772,8 +776,8 @@ than argmax** — a containment, not a tunable equivalent.
 
 | Check | Result |
 |---|---|
-| Backend, same argmax rule (13,708 shared cases) | **0 entity-set mismatches, 0 has_pii flips, FN sets equal** |
-| — that check's source | `onnx_mmbert32k-pii_...-194225`, an interrupted direct-ONNX argmax run covering 13,708 of 20,001. Partial coverage is fine here: it is a per-case identity check, not a rate |
+| Backend, same argmax rule (all 20,001 cases) | **0 entity-set mismatches, 0 has_pii flips, FN sets equal** |
+| — that check's source | `onnx_mmbert32k-pii_...-194225`, now a **complete** 20,001-case direct-ONNX argmax run (1,718s): **20,001/20,001 exact label-set match, 25 misses, miss sets identical by case name**, set difference empty both ways |
 | Router leaks ⊇ safetensors leaks | **25 / 25 contained, 0 violations** |
 | The 49 = the 25 + threshold-only misses | **24 threshold-only** |
 | `min_score` the run actually used | bracketed to **(0.4963, 0.5043]** by max(leaked) / min(non-leaked) |
@@ -812,6 +816,77 @@ route-or-not decision an accidental catch still routes correctly, but the same
 spurious firing is exactly what would cost precision on benign traffic — the
 thing this corpus cannot measure. **Do not lower `min_score` off this curve
 without a benign arm.**
+
+### 6.5 For pplx the router *beats* the model's own decoder, and the gap is one-directional
+
+The mmBERT rows (§6.4) show the router's gate costing 24 cases. pplx shows the
+opposite, at the same `min_score: 0.5`, and by more:
+
+| Path | Decision rule | Leaks | Recall |
+|---|---|---|---|
+| `pii_pplx_onnx_eval.py` | ONNX logits → the checkpoint's own constrained BIOES Viterbi | 159 / 20,000 | 99.205% |
+| the router (ort-server) | ONNX logits → softmax → max over tokens → any non-`O` ≥ 0.5 | **89 / 20,000** | **99.555%** |
+
+The leak sets nest, strictly, in the router's favour:
+
+| Check | Result |
+|---|---|
+| Cases compared | 20,000 |
+| Both leaked | 89 |
+| **Only the router leaked** | **0** |
+| **Only the Viterbi run missed** | **70** |
+| Router leaks ⊂ Viterbi misses | **True (strict subset)** |
+| HTTP/parse errors | 0 |
+
+**Why, and why it is the opposite sign from mmBERT.** The two comparisons have
+different baselines, not different routers. mmBERT's direct baseline is
+*argmax*, which fires on any winning non-`O` token however weak — so a 0.5 gate
+can only remove detections (§6.4's containment argument). pplx's direct baseline
+is *Viterbi*, which requires a **coherent BIOES span**: legal `B→I→E`
+transitions. A confident isolated token that cannot form a valid span is
+suppressed **by design**. That is correct for masking — you need well-formed
+spans to redact — and it is the wrong constraint for a binary route-or-not gate,
+where the only question is whether evidence exists anywhere. The router's
+max-over-tokens carries no sequence constraint, so it keeps exactly the evidence
+Viterbi discards. Hence 70 recoveries and zero regressions.
+
+The general statement, which covers both rows: **the router's rule is neither
+uniformly stricter nor uniformly looser than "what the model says" — it is
+stricter than argmax and looser than Viterbi.** Which direction a given model
+moves depends entirely on what its native decoder does. Do not generalise either
+row to "the router costs recall" or "the router improves recall".
+
+**What this does *not* say.** Nothing here is about export fidelity — that was
+settled separately and is exact for both models (§6.2, §6.4). And per §2.1 the
+precision side is unmeasured: the router's extra sensitivity flagged the single
+benign case that pplx-direct left alone (§6.3). Seventy recovered leaks for an
+unknown false-positive cost is a favourable-looking trade that **this corpus
+cannot price**.
+
+**Run provenance and two caveats.**
+
+- Policy: `l2_pii_onnx_pplx_masking/policy_local_default.json` — identical to the
+  committed `policy.json` except the default (non-PII) route is
+  `Qwen3.5-9B-GGUF` instead of `fireworks.kimi-k2p6`, which is not registered on
+  this machine. This also matches how the mmBERT and OpenMed router rows were
+  actually produced, so the three router rows share a candidate structure. No
+  document was sent to a cloud provider.
+- Serving this model required adding `"pii_masking"` to ort-server's
+  `supported_model_types()`. That allowlist is a claim about *input convention*,
+  not a name check; pplx qualifies because its graph declares only
+  `input_ids`/`attention_mask` (the fabricated `token_type_ids` is never bound),
+  its tokenizer adds no BOS/EOS, and its bidirectional attention is baked into
+  the graph. `outputs[0]` is the 37-label `logits`; `sensitivity_logits` is
+  output 1 and is ignored, as the manifest has no task type for a scalar
+  sequence score.
+- **The runtime is not usable as a total.** The run was interrupted by a machine
+  restart at 14,926 cases and resumed (`--resume-from-log` replays prior
+  outcomes into a fresh log, so the final log is a complete 20,001-case record
+  and nothing was re-queried). Independently, `pii_routing_eval.py` measures
+  heartbeat and total elapsed with `time.time()`, and the wall clock moved
+  backwards during the run — the log contains `-17443s elapsed, 0.00 cases/s`.
+  Per-case timings use `time.perf_counter()` and are sound: **1.83s/case E2E,
+  68.3% routing, 31.7% routed model.** Quote those, never the total.
 
 ## 7. Context length is a non-issue on this corpus
 
@@ -902,7 +977,10 @@ Roughly in order of value:
    vs strict (§5.2) on evidence rather than convention. Start with the pplx
    500-case slice in §5.5 before committing ~10-15 hr of re-inference.
 3. **Review `pii_taxonomy.py`'s mappings** (§8.7).
-4. **Commit the policy JSONs that back table rows.** `policy_smoke.json`
+4. **Commit the policy JSONs that back table rows.** **Done for the pplx
+   router row** (§6.5): `l2_pii_onnx_pplx_masking/policy_local_default.json` is
+   committed beside `policy.json`, so that row's `min_score` and route targets
+   are readable rather than reconstructed. `policy_smoke.json`
    produced the mmBERT-ONNX row and is not in the repo, so its `min_score` had
    to be recovered from the run itself — the threshold is bracketed by
    max(score among leaked) < T <= min(score among non-leaked), which pinned it
@@ -922,10 +1000,22 @@ Roughly in order of value:
    OpenMed-v2-ONNX still rest on router logs. **mmBERT-ONNX's 0.24% vs its
    safetensors 0.12% is now explained** (§6.4): the backend is decision-identical
    and the whole gap is argmax vs `min_score`. OpenMed-v2-ONNX's row has not had
-   the same treatment and carries the same confound.
+   the same treatment and carries the same confound — and unlike mmBERT, whose
+   direct baseline is argmax, it is the only remaining router row whose
+   direct-vs-router direction is still unknown.
 7. **Re-time the pplx ONNX row on an uninterrupted run** with
    `--intra-op-threads` pinned. The current 2.17hr is a resumed,
    default-threaded run and is not comparable to the 2.55hr torch figure (§6).
+   The pplx *router* row (§6.5) needs the same treatment for a different reason:
+   it was resumed **and** its wall-clock total is corrupt (`time.time()` ran
+   backwards mid-run), so only its `perf_counter`-based 1.83s/case is quotable.
+   Fixing `pii_routing_eval.py` to measure elapsed with `time.monotonic()`
+   would stop this recurring.
+8. **Price the router's aggregation against Viterbi on benign traffic** (§6.5).
+   The 70 recovered leaks are free as measured, because the corpus cannot charge
+   for the false positives that the same unconstrained max-over-tokens would
+   produce. This is the benign-arm item (1) applied to the one result most
+   likely to be quoted.
 
 ## 10. Files
 
