@@ -704,8 +704,12 @@ a single case, the character numbers would be measuring the harness.
 | mmBERT leaks, `min_score` 0.5 | 49 / 20000 | **49** |
 | argmax leaks ⊆ `min_score` leaks | 25/25 contained | **0 violations** |
 | threshold-only leaks | 24 | **24** |
-| mmBERT on the one benign case | flagged (FP=1) | **FP=1** |
-| documents truncated | none (§7) | **0** |
+| pplx leaks, viterbi rule | 159 / 20000 | **159** |
+| privacy-filter leaks | 0 / 20000 | **0** |
+| mmBERT / OpenMed-v2 on the one benign case | both flagged (FP=1) | **FP=1, FP=1** |
+| pplx on the one benign case | not flagged | **FP=0** |
+| documents truncated | none (§7) | **0**, all three |
+| inference errors | — | **0**, all three |
 
 Reached independently: this scorer shares no code with `pii_ner_eval.py` or the
 router, and it runs **both** rules over the same ONNX graph in the same
@@ -721,20 +725,19 @@ both sides, each model under its own primary rule.
 
 | Model | Rule | char P | char R | **char F1** | macro F1 | doc leak | Runtime |
 |---|---|---:|---:|---:|---:|---:|---:|
-| **privacy-filter** (OpenMed ml-v2) | argmax | 0.9769 | 0.9359 | **0.9559** | 0.9568 | 0.00% | *in flight* |
+| **privacy-filter** (OpenMed ml-v2) | argmax | 0.9769 | 0.9365 | **0.9563** | 0.9571 | 0.00% (0) | 3.29 hr |
 | **pplx-pii-masking** | viterbi | 0.9725 | 0.7330 | **0.8360** | 0.8379 | 0.795% (159) | 2.27 hr |
 | **mmBERT32K-PII** | argmax | 0.9202 | 0.6842 | **0.7849** | 0.8045 | 0.125% (25) | 0.40 hr |
 | *flag-everything strawman* | — | *0.1458* | *1.0000* | *0.2544* | — | *0.00%* | — |
 
-privacy-filter's row is from **15,838 of 20,001 cases** and is marked *in
-flight*; its figures moved by <0.002 between 1% and 79% coverage, but it is not
-a number of record until the run finishes. The corpus is shuffled, so a prefix
-is a random sample rather than a biased slice.
+All three are complete single passes over all 20,001 cases, 0 errors, 0
+truncations, CPU, sequential at 16 intra-op threads (see trap 19 for why
+sequential).
 
 **This is the ranking document-level scoring could not produce.** Those three
 models sit at 0.00%, 0.125% and 0.795% document leak — a spread of under one
 percentage point, all of it inside the noise of "essentially perfect" — and
-they spread across **0.16 of character F1**. The ordering is not even the same:
+they spread across **0.17 of character F1**. The ordering is not even the same:
 mmBERT leaks 6x fewer documents than pplx and is the *worse* model by
 characters, because it fires *somewhere* on almost every document while
 covering far less of what is actually there.
@@ -772,55 +775,91 @@ covers those characters or it does not — so `pii_taxonomy.py`'s editorial
 judgment (§8.7) is not in the loop, and there is no lenient-vs-strict question
 to settle (§5.2). Selected rows, sorted by gold character support:
 
-| Gold label | gold chars | mmbert | pplx | privacy-filter\* |
+| Gold label | gold chars | mmbert | pplx | privacy-filter |
 |---|---:|---:|---:|---:|
 | url | 401,181 | 47.6% | 78.6% | 99.1% |
-| email | 261,331 | 91.7% | 99.7% | 99.5% |
+| email | 261,331 | 91.7% | 99.7% | 99.4% |
 | company_name | 189,208 | 58.3% | **1.2%** | 84.0% |
-| date | 147,817 | 89.7% | 76.0% | 92.8% |
-| occupation | 135,450 | **3.7%** | **1.4%** | 57.0% |
-| first_name | 99,871 | 86.0% | 99.1% | 98.4% |
-| http_cookie | 80,175 | 36.6% | 78.3% | 98.5% |
-| last_name | 78,681 | 95.3% | 98.9% | 98.6% |
+| date | 147,817 | 89.7% | 76.0% | 92.6% |
+| occupation | 135,450 | **3.7%** | **1.4%** | 56.6% |
+| first_name | 99,871 | 86.0% | 99.1% | 98.5% |
+| http_cookie | 80,175 | 36.6% | 78.3% | 98.3% |
 | phone_number | 58,429 | 98.9% | 99.9% | 99.9% |
-| api_key | 42,602 | 70.1% | 99.8% | 97.2% |
+| api_key | 42,602 | 70.1% | 99.8% | 96.7% |
 | credit_debit_card | 39,246 | 99.7% | 99.8% | 100.0% |
-| **time** | 38,949 | **60.6%** | **46.7%** | **75.2%** |
-| city | 28,884 | 73.3% | 63.2% | 95.1% |
-| education_level | 26,415 | **0.5%** | **2.7%** | 75.6% |
-| county | 25,617 | 43.0% | 45.2% | 94.1% |
-| state | 24,575 | 38.9% | 48.5% | 92.9% |
+| **time** | 38,949 | **60.6%** | **46.7%** | **74.5%** |
+| city | 28,884 | 73.3% | 63.2% | 95.6% |
+| education_level | 26,415 | **0.5%** | **2.7%** | 76.1% |
+| county | 25,617 | 43.0% | 45.2% | 94.0% |
+| state | 24,575 | 38.9% | 48.5% | 93.0% |
 | country | 24,298 | **23.3%** | **28.4%** | 97.5% |
+| employment_status | 20,534 | **0.9%** | **7.0%** | 83.5% |
+| political_view | 17,182 | 19.9% | 34.5% | 74.4% |
+| religious_belief | 14,059 | **7.2%** | **65.8%** | 83.4% |
+| race_ethnicity | 12,573 | 22.9% | 62.3% | 89.5% |
+| language | 11,663 | **3.8%** | **11.7%** | 93.0% |
+| gender | 8,233 | **1.0%** | **73.7%** | 93.3% |
+| sexuality | 4,833 | **6.0%** | **69.0%** | 93.5% |
+| blood_type | 4,686 | 10.9% | **86.9%** | 90.8% |
+| age | 3,187 | 91.3% | **44.1%** | 93.7% |
 
-\* privacy-filter at 79% coverage; see the note above.
+Four readings, and the first one **corrects §5.1 rather than extending it**:
 
-Three readings that the document-level view could not reach:
+- **"No class" is two completely different situations, and character scoring
+  separates them.** §5.1 reports `no class` for pplx on GENDER_SEXUALITY,
+  RACE_ETHNICITY and BELIEF_POLITICAL, and §5's rule 3 excludes its `other_pii`
+  catch-all from per-category credit — correctly, for *label attribution*. But
+  the characters tell a different story: pplx covers **73.7% of gender
+  characters, 69.0% of sexuality, 65.8% of religious_belief, 86.9% of
+  blood_type, 62.3% of race_ethnicity**. Its catch-all is doing real work that
+  the label-attribution rule is designed not to see.
 
-- **A coverage hole is not a clean zero, and that matters.** §5.1 reports
-  `no class` for pplx on ORG_COMPANY and OCCUPATION_EMPLOYMENT — a declared
-  gap, scored as neither hit nor miss. In characters those come out at **1.2%**
-  and **1.4%**, not 0%: pplx does occasionally cover a company name or a job
-  title, incidentally, via `other_pii` or by swallowing it inside an adjacent
-  span. The gap is real and the honest number is "essentially nothing", but
-  `no class` and 1.2% are different claims and only one of them is measured.
+  Meanwhile the holes that *are* real come out near zero: **company_name 1.2%,
+  occupation 1.4%, education_level 2.7%, employment_status 7.0%, language
+  11.7%**. So `no class` covers both "the model finds this and cannot name it"
+  and "the model does not find this at all", and **only the character view
+  distinguishes them.** For routing — where naming is irrelevant and coverage
+  is everything — that distinction is the whole question.
+
+- **mmBERT's demographic failure is confirmed and is worse than §5.1 showed.**
+  Its NRP class fires on 5.0% / 5.2% of the *documents* needing it (§5.1); in
+  characters it covers gender **1.0%**, language **3.8%**, sexuality **6.0%**,
+  religious_belief **7.2%**. Unlike pplx it has no catch-all to fall back on.
+  On these categories pplx is 10-70x better than mmBERT despite having no class
+  for any of them.
 
 - **Geographic granularity is where the two smaller models actually break.**
-  `country` 23.3% / 28.4%, `state` 38.9% / 48.5%, `county` 43.0% / 45.2% for
-  mmBERT and pplx, against 92.9-97.5% for privacy-filter. §5.1 folds all of
-  these into one `ADDRESS_LOCATION` row (91.3% / 74.7%) where the collapse is
-  invisible, because a model that finds the street address scores the category
-  while missing the country entirely.
+  `country` 23.3% / 28.4%, `state` 38.9% / 48.5%, `county` 43.0% / 45.2%,
+  against 93.0-97.5% for privacy-filter. §5.1 folds all of these into one
+  `ADDRESS_LOCATION` row (91.3% / 74.7%) where the collapse is invisible: a
+  model that finds the street address scores the category while missing the
+  country entirely.
 
-- **`time` is a shared blind spot nobody had flagged**: 60.6% / 46.7% / 75.2%,
+- **`time` is a shared blind spot nobody had flagged**: 60.6% / 46.7% / 74.5%,
   the weakest row on which *all three* models are simultaneously poor, on
-  38,949 gold characters. §5.1's `DATE_TIME` row reads 99.2% / 84.8% / 97.4%,
-  because `date` is easy and dominates the category. Splitting them is a
-  character-level result and a real finding: **times are much harder than
-  dates for every detector measured.**
+  38,949 gold characters. §5.1's `DATE_TIME` row reads 99.2% / 84.8% / 97.4%
+  because `date` is easy and dominates the category. **Times are much harder
+  than dates for every detector measured**, and splitting them is only possible
+  at character level.
 
-`--by-length` adds one more: recall falls off at both ends for mmBERT and pplx
-(short entities to subword fragmentation, 40+ char entities to partial
-coverage) while privacy-filter stays above 90% across every bucket.
+`--by-length` adds one more, and it is not the symmetric story the worked
+example in §5.5 suggested:
+
+| Gold span length | gold chars | mmbert | pplx | privacy-filter |
+|---|---:|---:|---:|---:|
+| 1-4 | 46,342 | 61.5% | 73.4% | 92.9% |
+| 5-9 | 379,898 | 70.8% | 76.7% | 92.4% |
+| 10-19 | 942,205 | 79.5% | 73.9% | 93.0% |
+| 20-39 | 544,757 | 70.3% | 66.4% | 91.8% |
+| 40+ | 463,351 | **42.3%** | 77.6% | **98.3%** |
+
+**mmBERT falls off a cliff on long entities (42.3% at 40+) and pplx does not
+(77.6%)** — the opposite of what fragmentation alone would predict, and the
+reverse of their ordering in every other bucket. Long gold spans here are
+mostly addresses, URLs and multi-part identifiers; mmBERT covers a fragment and
+stops. privacy-filter is *best* on the longest spans (98.3%) and never drops
+below 91.8% in any bucket. Short entities are the hardest bucket only for
+privacy-filter and mmBERT, not for pplx.
 
 #### What the document-level table could not see
 
@@ -836,6 +875,22 @@ different thresholds and the document-level table cannot show that.
 Note the direction of the precision/recall trade, too: `min_score` *raises*
 char precision (0.9202 → 0.9494) while collapsing recall. It is a strictly
 more conservative rule in exactly the way the containment predicts.
+
+**And the size of that bill is model-dependent, by a factor of thirty.** The
+same threshold, the same rule, on all three:
+
+| Model | char R, argmax | char R, `min_score` 0.5 | Δ |
+|---|---:|---:|---:|
+| privacy-filter | 0.9365 | 0.9298 | **−0.7 pp** |
+| pplx | 0.7328 | 0.7190 | −1.4 pp |
+| mmBERT | 0.6842 | 0.4849 | **−19.9 pp** |
+
+privacy-filter and pplx are confident where they fire, so a 0.5 floor costs
+them almost nothing. mmBERT spends a third of its recall on sub-threshold
+predictions. **A threshold cannot be carried from one model to another**, and a
+0.5 default that is genuinely free on one checkpoint is expensive on the next.
+§6.4's curve was measured on mmBERT — the model where it happens to matter
+most.
 
 ## 6. Consolidated results
 

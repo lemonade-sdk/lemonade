@@ -282,7 +282,7 @@ benchmarking doc):
 
 | Model | char P | char R | **char F1** | doc leak |
 |---|---:|---:|---:|---:|
-| OpenMed privacy-filter-ml-v2 | 0.9769 | 0.9359 | **0.9559** | 0.00% |
+| OpenMed privacy-filter-ml-v2 | 0.9769 | 0.9365 | **0.9563** | 0.00% |
 | pplx-pii-masking | 0.9725 | 0.7330 | **0.8360** | 0.795% |
 | mmBERT32K-PII | 0.9202 | 0.6842 | **0.7849** | 0.125% |
 | *flag everything* | *0.1458* | *1.0000* | *0.2544* | *0.00%* |
@@ -297,10 +297,21 @@ This also **replaces E9's strawman** with a measured one: the *flag everything*
 row is a real number now (0.2544), not a rhetorical device, and every model
 clears it by a wide margin.
 
-Then per-label character recall for the blind spots — `time` at 60.6 / 46.7 /
-75.2% across all three, `country` at 23.3 / 28.4% for the two smaller models —
-and note that this view needs **no taxonomy mapping at all**, which retires the
-lenient-vs-strict caveat for these three rows.
+Then per-label character recall, which needs **no taxonomy mapping at all** and
+so retires the lenient-vs-strict caveat for these three rows. Lead it with the
+correction, not the blind spots — it is the more interesting claim:
+
+> pplx has no class for gender, sexuality or religion. It covers 73.7%, 69.0%
+> and 65.8% of their characters anyway.
+
+Its catch-all label does real work that per-category *label* scoring is designed
+not to credit. Its genuine holes, by contrast, read near zero (company_name
+1.2%, occupation 1.4%). **"The model has no class for this" and "the model does
+not find this" are different claims, and only characters tell them apart** —
+which for a routing decision, where naming is irrelevant, is the whole question.
+
+Then the blind spots: `time` at 60.6 / 46.7 / 74.5% across all three, and
+`country` at 23.3 / 28.4% for the two smaller models.
 
 **Then make the turn.** Four models are bunched between 0.00% and 0.24% and the
 leak rate has stopped discriminating. Two moves recover the signal:
@@ -431,6 +442,12 @@ curve.
    plain argmax (159 vs 84) while buying precision (0.9627 → 0.9725). A
    constrained decoder is a trade, not a free upgrade.
 
+   **And the bill is model-dependent by 30x** — char recall costs
+   privacy-filter −0.7 pp, pplx −1.4 pp, mmBERT **−19.9 pp**. Worth stating
+   plainly, because the curve in step 6 is measured on mmBERT, the model where
+   the threshold matters most: **a threshold does not port between
+   checkpoints.**
+
    **The generalizable claim, and a good candidate for the post's closing
    line: route with the loose rule, mask with the strict one.** Same weights,
    same graph, two jobs, two thresholds. Note also that this is a *cleaner*
@@ -495,9 +512,11 @@ A recommendation with numbers, not a shrug. **E2 sharpens this considerably:**
 
 - **OpenMed privacy-filter-ml-v2 is the recommendation**, and now for a reason
   beyond a 0% leak rate that four models tie on: it wins character F1 by 0.12
-  (0.9559 vs 0.8360), holds >90% recall in every span-length bucket, and is the
-  only one of the three without a catastrophic per-label hole. The cost is size
-  — a 5.6 GB fp32 graph, ~3x slower per document than mmBERT.
+  (0.9563 vs 0.8360), never drops below 91.8% recall in any span-length bucket,
+  and is the only one of the three without a catastrophic per-label hole — its
+  weakest category is `time` at 74.5%, where the other two are at 60.6% and
+  46.7%. The cost is size: a 5.6 GB fp32 graph, 3.29 hr against mmBERT's 0.40
+  hr over the same 20,001 documents — **8x slower per document**.
 - **Match the decision rule to the job.** Both E2 decoder findings point the
   same way: `min_score` 0.5 costs mmBERT char recall 0.6842 → 0.4849 while
   barely moving document leak, and pplx's own Viterbi decoder nearly doubles its
@@ -648,7 +667,7 @@ once mmBERT came in at 24 minutes.
 
 | Model | char P | char R | **char F1** | doc leak |
 |---|---:|---:|---:|---:|
-| privacy-filter (OpenMed ml-v2) | 0.9769 | 0.9359 | **0.9559** | 0.00% |
+| privacy-filter (OpenMed ml-v2) | 0.9769 | 0.9365 | **0.9563** | 0.00% |
 | pplx-pii-masking | 0.9725 | 0.7330 | **0.8360** | 0.795% |
 | mmBERT32K-PII | 0.9202 | 0.6842 | **0.7849** | 0.125% |
 | *flag-everything strawman* | *0.1458* | *1.0000* | *0.2544* | *0.00%* |
@@ -670,18 +689,37 @@ better version of the E9 strawman than E9 was going to be.
    shape: **route with the loose rule, mask with the strict one** — and the post
    can say that with numbers.
 3. **Per-label recall with no taxonomy in the loop**, which kills the
-   lenient-vs-strict caveat (§5.2) for these three models. New findings: `time`
-   is a shared blind spot (60.6/46.7/75.2) that §5.1's `DATE_TIME` row hides
-   behind easy dates; geographic granularity (`country` 23.3%/28.4%) is where
-   the two smaller models actually break, invisible inside `ADDRESS_LOCATION`.
+   lenient-vs-strict caveat (§5.2) for these three models — and which
+   **corrects §5.1 rather than extending it**. The headline correction:
+   *"no class" turns out to be two different situations.* pplx has no gender,
+   sexuality or religion class and §5.1 scores it `no class` there, but in
+   characters it covers **73.7% of gender, 69.0% of sexuality, 65.8% of
+   religious_belief** via its `other_pii` catch-all — which §5's rule 3
+   deliberately excludes from label credit. Its *real* holes come out near
+   zero (company_name 1.2%, occupation 1.4%, education_level 2.7%). For a
+   routing decision, where naming is irrelevant and coverage is everything,
+   that distinction is the whole question, and only characters show it.
+
+   Two more: `time` is a shared blind spot (60.6/46.7/74.5) that §5.1's
+   `DATE_TIME` row hides behind easy dates; geographic granularity (`country`
+   23.3%/28.4%) is where the two smaller models actually break, invisible
+   inside `ADDRESS_LOCATION`.
 4. **A validation gate worth one sentence in §8.** The new pipeline reproduces
    every known document-level number exactly — mmBERT 25 and 49 leaks, the 24
    threshold-only cases, pplx's 159 — from code sharing nothing with the
    original scorers. It is the strongest reproducibility claim the post has.
 
-**Cost, actual:** ~3.5 hr of CPU for the three full runs, plus the builder
-change. Not the 10-15 hr estimated, because only three models were in scope and
-the corpus never needed rebuilding — `annotate_gold_spans.py` back-fills
+5. **A threshold-portability finding worth its own paragraph in §9.** The
+   `min_score` 0.5 bill is model-dependent by a factor of thirty: char recall
+   costs privacy-filter −0.7 pp, pplx −1.4 pp, and mmBERT **−19.9 pp**. §6.4's
+   whole tuning-curve discussion was measured on mmBERT — the one model where
+   the threshold matters most. **A threshold cannot be carried between
+   checkpoints**, and a 0.5 default that is free on one is expensive on the
+   next.
+
+**Cost, actual:** ~6 hr of CPU for the three full runs, for the three full runs (0.40 / 2.27 / 3.29 hr,
+sequential), plus the builder change. Under the 10-15 hr estimated, because
+only three models were in scope and the corpus never needed rebuilding — `annotate_gold_spans.py` back-fills
 offsets onto the existing corpus, so every document-level row stays comparable.
 
 <details>
