@@ -4,6 +4,9 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <chrono>
+#include <cstdint>
+#include <unordered_map>
 
 namespace lemon {
 
@@ -26,12 +29,17 @@ private:
     void evaluation_loop();
     void evaluate_servers(double current_vram_pct);
 
+    // Collects the backends due for a keepalive ping while an exclusive job
+    // session has EvictionEngine's normal downsize/evict pass paused
+    std::vector<WrappedServer*> collect_exclusive_session_keepalive_candidates();
+
     Router* router_;
     GlobalVramMonitor* vram_monitor_;
 
     std::atomic<bool> running_;
     int interval_ms_;
     std::thread engine_thread_;
+    std::unordered_map<uint64_t, std::chrono::steady_clock::time_point> last_keepalive_sent_;
 };
 
 } // namespace lemon

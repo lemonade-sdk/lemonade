@@ -9,10 +9,8 @@ namespace lemon {
 
 using json = nlohmann::json;
 
-/// Default soft-idle timeout (seconds) before a loaded model is downsized to
-/// free VRAM while its subprocess stays warm. Shared so recipe_options.cpp,
-/// eviction_engine.cpp, and each backend's resolve_runtime_options() can't
-/// drift out of sync.
+/// Default soft-idle timeout before a loaded model is downsized to
+/// free VRAM while its subprocess stays warm.
 constexpr long kDefaultDownsizeIdleTimeoutSec = 60;
 
 class RecipeOptions {

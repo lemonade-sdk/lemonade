@@ -116,8 +116,7 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
                                                  bool merge_args,
                                                  long sleep_idle_seconds = -1) {
     // Applied even when merge_args=false so opting out of other runtime
-    // defaults doesn't also disable auto_evict's downsize behavior. Clamped to
-    // 1 because llama-server rejects --sleep-idle-seconds 0 (valid: -1 or >=1).
+    // defaults doesn't also disable auto_evict's downsize behavior.
     std::string args = custom_args;
     if (sleep_idle_seconds >= 0) {
         args = append_runtime_arg_defaults(
@@ -154,8 +153,6 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     return append_runtime_arg_defaults(args, defaults);
 }
 
-// Returns -1 (llama-server's own "disabled" value) if the flag is absent or
-// unparseable.
 static long parse_sleep_idle_seconds_arg(const std::string& args) {
     const auto tokens = parse_custom_args(args);
     const auto map = build_custom_args_map(tokens);
@@ -313,10 +310,7 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
-    // Parse what actually ended up in the resolved args (a custom llamacpp_args
-    // can override the computed --sleep-idle-seconds) rather than just the
-    // downsize_idle_timeout request, so eligibility and scheduling below track
-    // what's really baked into this launch.
+
     sleep_idle_seconds_effective_ = parse_sleep_idle_seconds_arg(llamacpp_args);
     sleep_idle_enabled_ = sleep_idle_seconds_effective_ >= 1;
 
@@ -642,9 +636,6 @@ bool LlamaCppServer::downsize() {
         return true;
     }
 
-    // Ground-truth check via /props rather than trusting that llama-server's
-    // independent timer fired just because Lemonade's did; false here retries
-    // on EvictionEngine's next tick.
     const json props = forward_get_request("/props");
     const bool is_sleeping = props.value("is_sleeping", false);
     LOG(INFO, "LlamaCpp") << "Downsize check via /props: is_sleeping=" << is_sleeping
@@ -657,11 +648,14 @@ bool LlamaCppServer::downsize_effective_for_this_instance(bool /*auto_evict_conf
 }
 
 long LlamaCppServer::effective_downsize_idle_timeout_sec() const {
-    // Only meaningful once downsize_effective_for_this_instance() is true, at
-    // which point sleep_idle_seconds_effective_ is guaranteed >= 1 -- return
-    // -1 (no override) otherwise so a caller can't mistake "disabled" for a
-    // real 0-or-negative timeout.
+    // -1 (disabled) unless sleep_idle_enabled_
     return sleep_idle_enabled_ ? sleep_idle_seconds_effective_ : -1;
+}
+
+void LlamaCppServer::send_self_sleep_keepalive() {
+    if (!sleep_idle_enabled_) return;
+    forward_request("/v1/completions", json{{"prompt", " "}, {"max_tokens", 1}});
+    LOG(DEBUG, "LlamaCpp") << "Sent self-sleep keepalive to " << get_model_name() << std::endl;
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
@@ -783,8 +777,7 @@ std::string system_llamacpp_version() {
     return "unknown";
 }
 
-// Numeric build tag embedded in a "bNNNN" version string (see
-// system_llamacpp_version() above), or -1 if unparseable ("detected"/"unknown").
+// Numeric build tag embedded in a "bNNNN" version string
 long parse_llamacpp_build_number(const std::string& version) {
     if (version.size() < 2 || version[0] != 'b') return -1;
     try {
@@ -794,9 +787,7 @@ long parse_llamacpp_build_number(const std::string& version) {
     }
 }
 
-// --sleep-idle-seconds landed in llama.cpp build b7492; only a PATH-installed
-// system backend can predate it. Memoized since resolve_runtime_options() runs
-// on every options-resolve, not just at model-load time.
+// --sleep-idle-seconds landed in llama.cpp build b7492
 constexpr long kMinSleepIdleSecondsBuild = 7492;
 
 bool system_llamacpp_supports_sleep_idle_seconds() {
@@ -865,32 +856,17 @@ public:
         const json pinned_value = options.get_option("pinned");
         const bool pinned = pinned_value.is_boolean() && pinned_value.get<bool>();
         // A pinned model must never sleep on its own; strip any
-        // --sleep-idle-seconds already in custom_args, not just skip adding
-        // a new one, since it can be user-supplied or carried over from a
-        // prior resolve (e.g. /internal/pin re-resolving baked args).
+        // --sleep-idle-seconds already in custom_args
         if (pinned) {
             custom_args = utils::remove_custom_arg(custom_args, "--sleep-idle-seconds");
         }
-        // Passing --parallel 1 above keeps kv_unified off, so --cache-idle-slots
-        // only RAM-copies an idle slot's KV instead of releasing its GPU memory.
-        // To actually free the GPU memory we use llama-server's
-        // --sleep-idle-seconds argument. When idle time elapses, llama-server
-        // drops the model, KV, and compute buffers entirely, releasing the
-        // real GPU allocation.
         long sleep_idle_seconds = -1;
         if (auto_evict && !pinned) {
             const json downsize_timeout_value = options.get_option("downsize_idle_timeout");
-            // is_number_integer() is false for a JSON value that arrived as a float
-            // even when it holds a whole number (e.g. 3.0), which would silently
-            // fall back to the default below. is_number() plus truncation covers
-            // both representations.
             sleep_idle_seconds = downsize_timeout_value.is_number()
                                       ? static_cast<long>(downsize_timeout_value.get<double>())
                                       : kDefaultDownsizeIdleTimeoutSec;
 
-            // A PATH-installed "system" llama-server predating --sleep-idle-seconds
-            // (build b7492) would silently ignore the flag, so don't pass it — the
-            // model would just never downsize instead of failing to load.
             const std::string backend =
                 resolve_llamacpp_backend(options.get_option("llamacpp_backend"));
             if (backend == "system" && !system_llamacpp_supports_sleep_idle_seconds()) {

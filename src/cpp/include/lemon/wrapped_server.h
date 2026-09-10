@@ -397,8 +397,17 @@ public:
         return recipe_options_;
     }
 
-    // Backend's own /props endpoint, verbatim (an error-shaped response for
-    // backends that don't expose one). See LlamaCppServer::downsize().
+    // Merged request options as they stood before the backend's
+    // resolve_runtime_options() hook ran
+    void set_requested_options(const RecipeOptions& requested_options) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        requested_options_ = requested_options;
+    }
+    RecipeOptions get_requested_options() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return requested_options_;
+    }
+
     json get_backend_props() { return forward_get_request("/props"); }
 
     // recipe_options_ holds the ctx_size the backend was started with, so the
@@ -459,27 +468,19 @@ public:
         return true;
     }
 
-    // Restore the model from a downsized state. No-op by default is safe:
-    // the caller flips state_ to READY right after this returns, but for a
-    // backend that self-wakes on its next request (llama.cpp waking a
-    // sleeping subprocess), the forwarded request itself blocks until the
-    // backend is actually ready, so the optimistic state flip can't race a
-    // request into a still-sleeping backend.
+    // No-op by default.
     virtual void restore() {}
 
-    // Default mirrors the live auto_evict config. llama.cpp overrides this
-    // since --sleep-idle-seconds is baked into launch args and can't be
-    // added/removed from an already-running subprocess by a config toggle.
     virtual bool downsize_effective_for_this_instance(bool auto_evict_config) const {
         return auto_evict_config;
     }
 
-    // -1 means "use the recipe/global downsize_idle_timeout"; only consulted
-    // when downsize_effective_for_this_instance() is true. See
-    // LlamaCppServer::load() for a backend that overrides this.
     virtual long effective_downsize_idle_timeout_sec() const {
         return -1;
     }
+
+    // No-op by default
+    virtual void send_self_sleep_keepalive() {}
 
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
@@ -668,6 +669,7 @@ protected:
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
+    RecipeOptions requested_options_;
     bool ctx_size_auto_ = false;
 
     // Busy state tracking (for safe eviction)

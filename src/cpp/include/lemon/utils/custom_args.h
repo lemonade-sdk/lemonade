@@ -48,47 +48,47 @@ inline std::vector<std::string> parse_custom_args(const std::string& custom_args
 
 using CustomArgsMap = std::map<std::string, std::vector<std::vector<std::string>>>;
 
-inline CustomArgsMap build_custom_args_map(const std::vector<std::string>& tokens) {
-    CustomArgsMap result;
-    std::string last_flag;  // Track the most recently seen flag independently of map ordering
-
-    // Detect a complete negative number so it's treated as a value, not a flag.
-    auto is_negative_number = [](const std::string& token) -> bool {
-        if (token.size() < 2 || token[0] != '-') {
-            return false;
-        }
-        size_t i = 1;
-        bool has_digits = false;
+// Detect a complete negative number so it's treated as a value, not a flag.
+inline bool is_negative_number(const std::string& token) {
+    if (token.size() < 2 || token[0] != '-') {
+        return false;
+    }
+    size_t i = 1;
+    bool has_digits = false;
+    while (i < token.size() && token[i] >= '0' && token[i] <= '9') {
+        has_digits = true;
+        ++i;
+    }
+    if (i < token.size() && token[i] == '.') {
+        ++i;
         while (i < token.size() && token[i] >= '0' && token[i] <= '9') {
             has_digits = true;
             ++i;
         }
-        if (i < token.size() && token[i] == '.') {
+    }
+    if (!has_digits) {
+        return false;
+    }
+    if (i < token.size() && (token[i] == 'e' || token[i] == 'E')) {
+        ++i;
+        if (i < token.size() && (token[i] == '-' || token[i] == '+')) {
             ++i;
-            while (i < token.size() && token[i] >= '0' && token[i] <= '9') {
-                has_digits = true;
-                ++i;
-            }
         }
-        if (!has_digits) {
+        bool has_exp_digits = false;
+        while (i < token.size() && token[i] >= '0' && token[i] <= '9') {
+            has_exp_digits = true;
+            ++i;
+        }
+        if (!has_exp_digits) {
             return false;
         }
-        if (i < token.size() && (token[i] == 'e' || token[i] == 'E')) {
-            ++i;
-            if (i < token.size() && (token[i] == '-' || token[i] == '+')) {
-                ++i;
-            }
-            bool has_exp_digits = false;
-            while (i < token.size() && token[i] >= '0' && token[i] <= '9') {
-                has_exp_digits = true;
-                ++i;
-            }
-            if (!has_exp_digits) {
-                return false;
-            }
-        }
-        return i == token.size();
-    };
+    }
+    return i == token.size();
+}
+
+inline CustomArgsMap build_custom_args_map(const std::vector<std::string>& tokens) {
+    CustomArgsMap result;
+    std::string last_flag;  // Track the most recently seen flag independently of map ordering
 
     for (const auto& token : tokens) {
         if (!token.empty() && token[0] == '-' && !is_negative_number(token)) {
@@ -181,18 +181,33 @@ inline std::string negate_flag(const std::string& flag) {
     return "";
 }
 
-// Remove every occurrence of `flag` (and its value tokens, if any) from a
-// custom args string. Unlike append_runtime_arg_defaults (which only skips
-// adding a default when the flag is already present), this actively deletes
-// an existing occurrence -- see llamacpp_server.cpp's pinned-model handling
-// in resolve_runtime_options() for why that distinction matters.
+// Remove every occurrence of `flag` from a custom args string, preserving the
+// relative order of all other flags
 inline std::string remove_custom_arg(const std::string& args, const std::string& flag) {
     if (args.empty()) return args;
     auto tokens = parse_custom_args(args, true);
     if (!custom_args_has_flag(tokens, flag)) return args;
-    auto map = build_custom_args_map(tokens);
-    map.erase(flag);
-    return map_to_args_string(map);
+
+    std::vector<std::string> kept;
+    bool skipping = false;
+    for (const auto& token : tokens) {
+        bool is_flag_token = !token.empty() && token[0] == '-' && !is_negative_number(token);
+        if (is_flag_token) {
+            std::string this_flag = token.substr(0, token.find('='));
+            skipping = (this_flag == flag);
+            if (skipping) continue;
+        } else if (skipping) {
+            continue;
+        }
+        kept.push_back(token);
+    }
+
+    std::string result;
+    for (size_t i = 0; i < kept.size(); ++i) {
+        if (i > 0) result += " ";
+        result += kept[i];
+    }
+    return result;
 }
 
 inline CustomArgsMap merge_args_maps(

@@ -828,7 +828,8 @@ void Router::load_model(const std::string& model_name,
         }
     }
     options.set_option("pinned", peeked_pinned);
-    RecipeOptions effective_options = resolve_effective_options(model_info, options);
+    RecipeOptions requested_options;
+    RecipeOptions effective_options = resolve_effective_options(model_info, options, &requested_options);
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1052,6 +1053,7 @@ void Router::load_model(const std::string& model_name,
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_requested_options(requested_options);
         new_server->set_ctx_size_auto(ctx_size_auto);
         new_server->set_residency_class(requested_residency_class);
         new_server->set_pinned(final_pinned);
@@ -1161,6 +1163,7 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_requested_options(requested_options);
             retry_server->set_ctx_size_auto(ctx_size_auto);
             retry_server->set_residency_class(requested_residency_class);
             retry_server->set_pinned(final_pinned);
@@ -1426,7 +1429,8 @@ bool Router::is_model_loaded(const std::string& model_name) const {
 }
 
 RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
-                                                const RecipeOptions& request_options) const {
+                                                const RecipeOptions& request_options,
+                                                RecipeOptions* pre_hook_options) const {
     const std::string backend_option = model_info.recipe + "_backend";
 
     RecipeOptions tentative = request_options.inherit(model_info.recipe_options.inherit(
@@ -1485,6 +1489,8 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
         // effective layer is also used as replayable load input.
         effective.set_option(key, resolved_args);
     }
+
+    if (pre_hook_options) *pre_hook_options = effective;
 
     if (const auto* ops = backends::ops_for(model_info.recipe)) {
         ops->resolve_runtime_options(model_info, effective);
@@ -2994,7 +3000,11 @@ void Router::set_model_pinned(const std::string& model_name, bool pinned) {
         }
         canonical_model_name = server->get_model_name();
         model_info = model_manager_->get_model_info(canonical_model_name);
-        reload_options = server->get_recipe_options();
+        // Rebase on the pre-backend-hook request snapshot, not get_recipe_options()
+        // (already baked): otherwise an explicit --sleep-idle-seconds stripped by a
+        // prior pin is permanently lost and unpin can only regenerate the recipe
+        // default instead of restoring the user's original value.
+        reload_options = server->get_requested_options();
         reload_options.set_option("pinned", pinned);
         RecipeOptions new_effective = resolve_effective_options(model_info, reload_options);
         json old_resolved = server->get_recipe_options().to_resolved_json();
