@@ -336,6 +336,102 @@ static void test_inline_component_type_regression_pair() {
     }
 }
 
+// routing.momentum: an opt-in block validated like any other numeric/bool
+// leaf (validate_score_bound's sibling for the (0,1] coefficient range).
+// Absent-block => struct defaults; present-block requires `enabled` and
+// bounds-checks `attack`/`release`.
+static void test_momentum_parsing() {
+    json base = fixture("l1_keywords.json");
+
+    // Absent momentum block => defaults, zero behavior change.
+    {
+        RoutePolicy policy = lemon::parse_route_policy_collection(base);
+        check("momentum omitted => disabled by default", !policy.momentum.enabled);
+        check("momentum omitted => attack defaults to 1.0", policy.momentum.attack == 1.0);
+        check("momentum omitted => release defaults to 0.3", policy.momentum.release == 0.3);
+    }
+
+    // Full block, valid.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"attack", 0.5}, {"release", 0.25}};
+        RoutePolicy policy = lemon::parse_route_policy_collection(doc);
+        check("momentum enabled parses", policy.momentum.enabled);
+        check("momentum attack parses", policy.momentum.attack == 0.5);
+        check("momentum release parses", policy.momentum.release == 0.25);
+    }
+
+    // enabled:true with coefficients omitted => struct defaults still apply.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}};
+        RoutePolicy policy = lemon::parse_route_policy_collection(doc);
+        check("momentum coefficients omitted => attack default 1.0",
+              policy.momentum.enabled && policy.momentum.attack == 1.0);
+        check("momentum coefficients omitted => release default 0.3",
+              policy.momentum.release == 0.3);
+    }
+
+    // Boundary: 1.0 accepted for both.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"attack", 1.0}, {"release", 1.0}};
+        check("momentum boundary 1.0 accepted for attack/release", parses_ok(doc, {}));
+    }
+
+    // enabled missing once the block is authored at all.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"attack", 0.5}};
+        check("momentum missing enabled rejected",
+              throws_with(doc, "routing.momentum is missing required key 'enabled'"));
+    }
+
+    // enabled not a boolean.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", "yes"}};
+        check("momentum non-boolean enabled rejected",
+              throws_with(doc, "routing.momentum.enabled must be a boolean"));
+    }
+
+    // attack/release non-numeric.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"attack", "fast"}};
+        check("momentum non-numeric attack rejected",
+              throws_with(doc, "routing.momentum.attack must be numeric"));
+    }
+
+    // attack/release out of (0, 1].
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"attack", 0.0}};
+        check("momentum attack=0 rejected (exclusive lower bound)",
+              throws_with(doc, "routing.momentum.attack must be in (0, 1]"));
+    }
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"attack", -0.5}};
+        check("momentum negative attack rejected",
+              throws_with(doc, "routing.momentum.attack must be in (0, 1]"));
+    }
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"release", 1.5}};
+        check("momentum release>1 rejected",
+              throws_with(doc, "routing.momentum.release must be in (0, 1]"));
+    }
+
+    // Unknown key inside the momentum block.
+    {
+        json doc = base;
+        doc["routing"]["momentum"] = json{{"enabled", true}, {"switch_margin", 0.1}};
+        check("momentum unknown key rejected",
+              throws_with(doc, "routing.momentum contains unknown key 'switch_margin'"));
+    }
+}
+
 static void test_schema_parser_key_parity() {
     json schema = load_json_file(ROUTING_SCHEMA_FILE);
     check_keys("root keys match schema",
@@ -359,6 +455,9 @@ static void test_schema_parser_key_parity() {
     check_keys("metadata keys match schema",
                lemon::routing_metadata_match_keys(),
                schema_property_keys(schema["$defs"]["metadata_match"]["properties"]));
+    check_keys("momentum keys match schema",
+               lemon::routing_momentum_keys(),
+               schema_property_keys(schema["$defs"]["momentum"]["properties"]));
 }
 
 // collect_policy_helper_models is the residency seam: it must return exactly the
@@ -408,6 +507,7 @@ int main() {
     test_router_sugar_desugars_and_canonicalizes();
     test_classifier_capability_validation();
     test_inline_component_type_regression_pair();
+    test_momentum_parsing();
     test_schema_parser_key_parity();
     test_collect_policy_helper_models();
 

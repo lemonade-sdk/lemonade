@@ -46,6 +46,7 @@ const std::set<std::string>& routing_classifier_keys();
 const std::set<std::string>& routing_rule_keys();
 const std::set<std::string>& routing_match_expr_keys();
 const std::set<std::string>& routing_metadata_match_keys();
+const std::set<std::string>& routing_momentum_keys();
 
 // Parse a full collection.router document into engine-ready policy state.
 // Throws std::invalid_argument with a user-facing message on validation errors.

@@ -28,6 +28,8 @@ corpus reads as a checklist against the v1 semantics table in
 ```
 1/
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
+  l1_momentum_effective_chars/  # opt-in routing.momentum filters min_chars/max_chars per request history
+  l1_momentum_absent_is_noop/   # absent routing.momentum ⇒ raw last-turn length, unaffected by history
   l1_conditions_total_char_bounds/  # min_total_chars / max_total_chars over the whole request
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
@@ -100,6 +102,9 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | `max_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_char_bounds/max_chars-inclusive-boundary` |
 | `min_chars`/`max_chars` count bytes, not code points | `l1_conditions_char_bounds/max_chars-utf8-byte-count` |
 | length between the bounds satisfies neither rule ⇒ fall through to default | `l1_conditions_char_bounds/between-bounds-default` |
+| `routing.momentum` enabled — `min_chars` compares the momentum-filtered effective length, not the raw last turn | `l1_momentum_effective_chars/momentum-escalates-then-survives-short-followup` |
+| `routing.momentum` enabled — single turn, no history ⇒ effective length degenerates to raw `params.chars` | `l1_momentum_effective_chars/momentum-single-short-turn-falls-open` |
+| `routing.momentum` absent ⇒ raw last-turn length governs, unaffected by richer history being present | `l1_momentum_absent_is_noop/no-momentum-block-uses-raw-last-turn-despite-rich-history` |
 | `min_total_chars` — inclusive (`>=`), UTF-8 bytes over the whole request | `l1_conditions_total_char_bounds/min_total_chars-inclusive-boundary` |
 | `min_total_chars` — one byte short ⇒ no match | `l1_conditions_total_char_bounds/min_total_chars-below-boundary` |
 | `max_total_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_total_char_bounds/max_total_chars-inclusive-boundary` |
@@ -137,6 +142,7 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | trace emits condition `regex` | `l1_conditions_vocab/regex-trace` |
 | trace emits condition `min_chars` | `l1_conditions_char_bounds/min_chars-trace` |
 | trace emits condition `max_chars` | `l1_conditions_char_bounds/max_chars-trace` |
+| momentum active ⇒ `min_chars`/`max_chars` trace carries `rationale: "effective_chars=... raw_chars=..."` | `l1_momentum_effective_chars/momentum-escalates-then-survives-short-followup` |
 | trace emits condition `min_total_chars` | `l1_conditions_total_char_bounds/min_total_chars-trace` |
 | trace emits condition `max_total_chars` | `l1_conditions_total_char_bounds/max_total_chars-trace` |
 | trace emits condition `has_tools` | `l1_conditions_features/has_tools-trace` |

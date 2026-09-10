@@ -46,7 +46,8 @@
         "rules": {
           "type": "array",
           "items": { "$ref": "#/$defs/rule" }
-        }
+        },
+        "momentum": { "$ref": "#/$defs/momentum" }
       },
       "allOf": [
         { "anyOf": [{ "required": ["router"] }, { "required": ["rules"] }] },
@@ -184,12 +185,12 @@
           "minLength": 1
         },
         "min_chars": {
-          "description": "Inclusive lower bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points). Token-based length is a future min_tokens, never a redefinition of this one.",
+          "description": "Inclusive lower bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points). Token-based length is a future min_tokens, never a redefinition of this one. When the opt-in routing.momentum block sets enabled:true, this condition compares against the momentum-filtered effective length (see $defs/momentum) instead of the raw last-turn length; the unit and inclusive-bound comparator are unchanged.",
           "type": "integer",
           "minimum": 0
         },
         "max_chars": {
-          "description": "Inclusive upper bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points).",
+          "description": "Inclusive upper bound on input length. Frozen v1 unit: UTF-8 bytes (not Unicode code points). When the opt-in routing.momentum block sets enabled:true, this condition compares against the momentum-filtered effective length (see $defs/momentum) instead of the raw last-turn length; the unit and inclusive-bound comparator are unchanged.",
           "type": "integer",
           "minimum": 0
         },
@@ -239,6 +240,29 @@
         { "required": ["any"] },
         { "required": ["exists"] }
       ],
+      "additionalProperties": false
+    },
+    "momentum": {
+      "description": "Opt-in, request-scoped momentum filter for min_chars/max_chars. Computed fresh per request from that request's own message history (no server-side session state): an asymmetric exponential filter over the UTF-8 byte length of every user turn, replacing the raw last-turn length wherever a min_chars/max_chars condition evaluates. Absent, or enabled:false, is behavior-identical to a policy without this block. attack=release=1.0 degenerates exactly to the raw last-turn length.",
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "attack": {
+          "description": "Weight applied when a turn's length rises to or above the running effective length. Default 1.0 (instant escalation). Must be in (0, 1].",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 1.0
+        },
+        "release": {
+          "description": "Weight applied when a turn's length falls below the running effective length. Default 0.3 (a short follow-up decays the effective length by only 30% toward it). Must be in (0, 1].",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "default": 0.3
+        }
+      },
       "additionalProperties": false
     }
   }
