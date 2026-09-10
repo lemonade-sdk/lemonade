@@ -462,6 +462,9 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     } else {
         nlohmann::json model_data;
         model_data["model_name"] = config.model;
+        if (config.model_source_explicit) {
+            model_data["source"] = config.model_source;
+        }
         res = client.pull_model(model_data, "", /*upgrade=*/true);
     }
 

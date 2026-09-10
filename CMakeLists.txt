@@ -1234,10 +1234,18 @@ elseif(UNIX)
     if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(lemonade-server-core PRIVATE
             ${CMAKE_DL_LIBS}
-            drm_amdgpu
         )
 
         if(PkgConfig_FOUND)
+            pkg_check_modules(LIBDRM QUIET libdrm_amdgpu)
+            if(LIBDRM_FOUND)
+                target_include_directories(lemonade-server-core PUBLIC ${LIBDRM_INCLUDE_DIRS})
+                target_link_directories(lemonade-server-core PUBLIC ${LIBDRM_LIBRARY_DIRS})
+                target_link_libraries(lemonade-server-core PUBLIC ${LIBDRM_LIBRARIES})
+                message(STATUS "libdrm_amdgpu found")
+            else()
+                message(FATAL_ERROR "libdrm_amdgpu not found - required for lemonade-server-core!")
+            endif()
             pkg_check_modules(LIBCAP QUIET libcap)
             if(LIBCAP_FOUND)
                 target_include_directories(lemonade-server-core PUBLIC ${LIBCAP_INCLUDE_DIRS})
@@ -2943,6 +2951,19 @@ if(BUILD_TESTING AND EXISTS "${_AUTO_TUNE_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(AutoTuneTest CI OFF COMMAND test_auto_tune)
+endif()
+
+set(_GPU_MEMORY_SELECTION_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_gpu_memory_selection.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_GPU_MEMORY_SELECTION_TEST_SRC}")
+    add_executable(test_gpu_memory_selection test/cpp/test_gpu_memory_selection.cpp)
+    target_include_directories(test_gpu_memory_selection PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+    )
+    target_link_libraries(test_gpu_memory_selection PRIVATE nlohmann_json::nlohmann_json)
+    include(CTest)
+    add_cpp_ci_test(GpuMemorySelectionTest CI ON COMMAND test_gpu_memory_selection)
 endif()
 
 set(_TELEMETRY_HELPERS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_telemetry_helpers.cpp")

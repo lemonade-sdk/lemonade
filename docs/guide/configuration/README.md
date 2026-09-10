@@ -46,6 +46,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_evict": false,
+  "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
@@ -206,6 +208,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `log_max_files` | int | 5 | Max number of rotated log backup files to retain (.1 through .N); legacy oversized files are rotated into .1 and pruned over cycles |
 | `global_timeout` | int | 600 | Timeout in seconds for HTTP, inference, and readiness checks |
 | `max_loaded_models` | int | 1 | Max models per type slot. Use -1 for unlimited |
+| `auto_evict` | bool | false | Enable dynamic VRAM management based on idle time and global GPU memory pressure. Can be overridden per model. |
+| `auto_evict_threshold_pct` | number | 0.90 | Global VRAM fraction at which pressure eviction is evaluated. Must be greater than 0 and at most 1.0; `0.90` means 90%. |
 | `broadcast` | bool | true | Enable or disable UDP broadcasting for server discovery |
 | `extra_models_dir` | string | "" | Secondary directory recursively scanned for GGUF model files. Empty disables extra discovery; existing paths must be readable by `lemond`. Top-level `chat`, `embeddings`, and `reranking` directories select how models run, see [Model Management](../../embeddable/models.md) |
 | `models_dir` | string | "auto" | Directory for cached model files. `"auto"` follows `HF_HUB_CACHE` / `HF_HOME` / platform default |
@@ -221,6 +225,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
 | `enable_dgpu_gtt` | bool | false | Include GTT for hardware-based model filtering |
 | `rocm_channel` | string | "stable" | ROCm backend channel: "stable" (default) or "nightly". See [llama.cpp Backend](./llamacpp.md) for details |
 | `rocm_install_method` | string | "auto" | How to install the bundled ROCm runtime: "auto" (pip wheels, tarball fallback), "wheel" (wheels only), or "tarball" (no Python/pip). See [llama.cpp Backend](./llamacpp.md#choosing-the-rocm-install-method) for details |
+
+FLM manages its own model storage, so it does not persist a registry source with each model. An FLM pull follows the current `default_model_source` unless that request supplies an explicit `--source`; changing the default therefore changes the registry used by later FLM pulls and upgrades.
 
 Both `models_dir` and `extra_models_dir` can be changed at runtime through `POST /internal/set`. Existing `extra_models_dir` paths are preflighted as directories and must be enumerable by the `lemond` process. Nonexistent paths are accepted so the directory watcher can observe them if they are created later.
 
