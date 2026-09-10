@@ -250,6 +250,7 @@ public:
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void completion_stream(const std::string& request_body, httplib::DataSink& sink);
     void responses_stream(const std::string& request_body, httplib::DataSink& sink);
+    void validate_chat_request(const std::string& model_name, const json& request) const;
 
     json get_stats() const;
 
