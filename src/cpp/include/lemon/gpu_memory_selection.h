@@ -124,16 +124,27 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
         auto target = gpu_indices_for_target(device, "ROCm");
         if (target.targets_vendor && !target.valid) return {};
         if (!target.indices.empty()) {
+            // ROCm numbers devices by runtime ordinal (ascending KFD node number on
+            // Linux, reported as GPUInfo::index). Platforms that cannot supply a stable
+            // ordinal (index == -1, e.g. Windows) fall back to iGPU-then-dGPU
+            // enumeration order.
+            const bool have_ordinals = std::any_of(
+                devices.begin(), devices.end(),
+                [](const GPUInfo* gpu) { return gpu->index >= 0; });
             std::vector<GpuMemoryPool> pools;
-            // llama.cpp numbers ROCm devices by HSA-agent order. SystemInfo currently
-            // exposes the iGPU followed by dGPUs, which is the order used here until it
-            // carries a runtime ordinal for each AMD device.
             for (int index : target.indices) {
-                if (index >= static_cast<int>(devices.size())) continue;
-                const auto& gpu = *devices[index];
-                pools.push_back(pool_for(gpu, "AMD ROCm" + std::to_string(index),
+                const GPUInfo* gpu = nullptr;
+                if (have_ordinals) {
+                    for (const auto* candidate : devices) {
+                        if (candidate->index == index) { gpu = candidate; break; }
+                    }
+                } else if (index < static_cast<int>(devices.size())) {
+                    gpu = devices[index];
+                }
+                if (!gpu) continue;
+                pools.push_back(pool_for(*gpu, "AMD ROCm" + std::to_string(index),
                                          GpuMemoryVendor::Amd,
-                                         &gpu == &amd_igpu));
+                                         gpu == &amd_igpu));
             }
             return most_constrained(pools);
         }
@@ -221,6 +232,54 @@ inline GpuMemoryPool select_gpu_memory_pool(GpuMemoryVendor vendor,
     pool = select_nvidia(false);
     if (pool.total_gb > 0) return pool;
     return select_metal();
+}
+
+/// Count GPUs with usable VRAM, restricted to `vendor` (or across all vendors when
+/// `vendor` is Any). Used to decide whether an unscoped or ambiguous device selection
+/// is actually a problem — a single-GPU host has nothing else the ctx_size estimate
+/// could be scoped to, so no warning is warranted there.
+inline int count_gpu_candidates(GpuMemoryVendor vendor,
+                                 const GPUInfo& amd_igpu,
+                                 const std::vector<GPUInfo>& amd_dgpus,
+                                 const std::vector<GPUInfo>& nvidia_gpus,
+                                 const GPUInfo& apple) {
+    int count = 0;
+    if (vendor == GpuMemoryVendor::Any || vendor == GpuMemoryVendor::Amd) {
+        if (amd_igpu.available && amd_igpu.vram_gb > 0) count++;
+        for (const auto& gpu : amd_dgpus)
+            if (gpu.available && gpu.vram_gb > 0) count++;
+    }
+    if (vendor == GpuMemoryVendor::Any || vendor == GpuMemoryVendor::Nvidia) {
+        for (const auto& gpu : nvidia_gpus)
+            if (gpu.available && gpu.vram_gb > 0) count++;
+    }
+    if (vendor == GpuMemoryVendor::Any || vendor == GpuMemoryVendor::Metal) {
+        if (apple.available && apple.vram_gb > 0) count++;
+    }
+    return count;
+}
+
+enum class CtxScopeWarning { None, Unscoped, Ambiguous };
+
+struct CtxMemoryScope {
+    bool is_gpu = false;
+    // True when `device` named a specific ordinal (e.g. "ROCm1"/"CUDA0"), so the
+    // headroom estimate is unambiguously scoped to one physical GPU.
+    bool per_device = false;
+    // True when a backend/device string identified a GPU vendor at all (even without
+    // an ordinal), e.g. "--llamacpp-backend rocm" with no explicit "ROCm<N>".
+    bool device_named = false;
+    // True when no device was named and more than one GPU is reachable, so the
+    // "most constrained" pool picked below may not be the one the caller meant.
+    bool ambiguous = false;
+    int reachable_gpu_count = 0;
+};
+
+inline CtxScopeWarning classify_ctx_scope(const CtxMemoryScope& scope) {
+    if (scope.is_gpu && !scope.per_device && scope.device_named && scope.reachable_gpu_count > 1)
+        return CtxScopeWarning::Unscoped;
+    if (scope.ambiguous) return CtxScopeWarning::Ambiguous;
+    return CtxScopeWarning::None;
 }
 
 } // namespace lemon

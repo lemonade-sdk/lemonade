@@ -1,4 +1,5 @@
 #include "lemon/system_info.h"
+#include "lemon/nvidia_smi_parse.h"
 #include "system_info_utils.h"
 #include "lemon/runtime_config.h"
 #include "lemon/version.h"
@@ -2369,16 +2370,6 @@ std::unique_ptr<SystemInfo> create_system_info() {
 // NVIDIA detection helper
 // ============================================================================
 
-struct NvidiaSmiGpuInfo {
-    int index = -1;
-    std::string uuid;          // e.g. "GPU-..."
-    std::string name;
-    std::string compute_cap;   // e.g. "8.6"
-    std::string driver_version;
-    double vram_gb = 0.0;
-    double vram_used_gb = -1.0;
-};
-
 // Query nvidia-smi for all GPUs. Returns one entry per GPU or an empty vector
 // if nvidia-smi is not available (e.g. drivers not installed).
 // Uses: nvidia-smi --query-gpu=index,uuid,name,compute_cap,driver_version,memory.total,memory.used
@@ -2413,65 +2404,12 @@ static std::vector<NvidiaSmiGpuInfo> query_nvidia_smi() {
     if (output.empty()) return result;
 #endif
 
-    auto trim = [](std::string s) -> std::string {
-        size_t start = s.find_first_not_of(" \t\r\n");
-        size_t end   = s.find_last_not_of(" \t\r\n");
-        return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
-    };
-
     std::istringstream ss(output);
     std::string line;
     while (std::getline(ss, line)) {
-        line = trim(line);
-        if (line.empty()) continue;
-
-        // The four fields after name cannot contain commas, while GPU names can.
-        // Splitting those fields from the right preserves names containing commas.
-        std::string remaining = line;
-        std::vector<std::string> tail;
-        for (int i = 0; i < 4; i++) {
-            size_t pos = remaining.rfind(", ");
-            if (pos == std::string::npos) break;
-            tail.insert(tail.begin(), trim(remaining.substr(pos + 2)));
-            remaining = remaining.substr(0, pos);
-        }
-        if (tail.size() != 4) continue;
-
-        NvidiaSmiGpuInfo info;
-        size_t first_comma = remaining.find(", ");
-        size_t second_comma = first_comma == std::string::npos
-            ? std::string::npos
-            : remaining.find(", ", first_comma + 2);
-
-        if (first_comma != std::string::npos && second_comma != std::string::npos) {
-            try {
-                info.index = std::stoi(trim(remaining.substr(0, first_comma)));
-            } catch (...) {
-                info.index = static_cast<int>(result.size());
-            }
-            info.uuid = trim(remaining.substr(first_comma + 2, second_comma - first_comma - 2));
-            info.name = trim(remaining.substr(second_comma + 2));
-        } else if (first_comma != std::string::npos) {
-            try {
-                info.index = std::stoi(trim(remaining.substr(0, first_comma)));
-            } catch (...) {
-                info.index = static_cast<int>(result.size());
-            }
-            info.name = trim(remaining.substr(first_comma + 2));
-        } else {
-            info.index = static_cast<int>(result.size());
-            info.name = trim(remaining);
-        }
-        info.compute_cap    = tail[0];
-        info.driver_version = tail[1];
-        try {
-            double mem_mb = std::stod(tail[2]);
-            info.vram_gb = mem_mb / 1024.0;
-        } catch (...) {}
-        try {
-            double used_mb = std::stod(tail[3]);
-            info.vram_used_gb = used_mb / 1024.0;
-        } catch (...) {}
+        if (nvidia_smi_trim(line).empty()) continue;
+        NvidiaSmiGpuInfo info = parse_nvidia_smi_line(line, static_cast<int>(result.size()));
+        if (info.compute_cap.empty()) continue;  // Unparseable row (tail fields absent).
         result.push_back(info);
     }
     return result;
@@ -3460,10 +3398,30 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         return gpus;
     }
 
+    // ROCm assigns device ordinals by ascending KFD node number, so "ROCm1" is the
+    // second GPU node, not the second directory entry. fs::directory_iterator yields
+    // an unspecified order (on ext4 it is hash order), which would otherwise make the
+    // ordinal — and every per-device memory reading keyed off it — point at the wrong
+    // card.
+    std::vector<std::pair<long, fs::path>> kfd_nodes;
     for (const auto& node_entry : fs::directory_iterator(kfd_path)) {
         if (!node_entry.is_directory()) continue;
+        try {
+            kfd_nodes.emplace_back(std::stol(node_entry.path().filename().string()),
+                                   node_entry.path());
+        } catch (...) {
+            continue;  // Not a numbered topology node.
+        }
+    }
+    std::sort(kfd_nodes.begin(), kfd_nodes.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
 
-        std::string node_path = node_entry.path().string();
+    // Counts every GPU agent, including ones filtered out of this call's result, so
+    // the ordinal still matches ROCm's on hosts where an iGPU precedes a dGPU.
+    int gpu_ordinal = 0;
+
+    for (const auto& [node_number, node_entry] : kfd_nodes) {
+        std::string node_path = node_entry.string();
         std::string properties_file = node_path + "/properties";
 
         if (!fs::exists(properties_file)) continue;
@@ -3494,12 +3452,15 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
         if (!is_gpu || drm_render_minor.empty() || drm_render_minor == "-1")
             continue;
 
+        const int ordinal = gpu_ordinal++;
+
         bool is_integrated = get_amd_is_igpu(drm_render_minor);
         if ((gpu_type == "integrated" && !is_integrated) || (gpu_type == "discrete" && is_integrated)) continue;
 
         GPUInfo gpu;
         gpu.name = gfx_target_version;
         gpu.available = true;
+        gpu.index = ordinal;
 
         // Get VRAM and GTT for GPUs
         gpu.vram_gb = get_amd_vram(drm_render_minor);
