@@ -10,6 +10,7 @@ const hasProject = args.some(arg => arg.startsWith('--project') || arg === '-p')
 const hasHelp = args.some(arg => arg === '--help' || arg === '-h' || arg === 'help');
 
 const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 if (hasProject || hasHelp) {
   const result = spawnSync(npxCommand, ['playwright', 'test', ...args], {
@@ -23,30 +24,63 @@ if (hasProject || hasHelp) {
   process.exit(result.status ?? 1);
 }
 
-console.log('Running accessibility (a11y) tests...');
-const a11yResult = spawnSync(npxCommand, ['playwright', 'test', '--project=a11y', ...args], {
+let failed = false;
+
+console.log('Running UI regression tests...');
+const regressionResult = spawnSync(npmCommand, ['run', 'test:ui-regressions'], {
   stdio: 'inherit',
   shell: false,
 });
+
+if (regressionResult.error || regressionResult.status !== 0) {
+  if (regressionResult.error) {
+    console.error(
+      'Failed to start UI regression tests:',
+      regressionResult.error.message || regressionResult.error,
+    );
+  }
+
+  failed = true;
+}
+
+console.log('Running accessibility (a11y) tests...');
+const a11yResult = spawnSync(
+  npxCommand,
+  ['playwright', 'test', '--project=a11y', ...args],
+  {
+    stdio: 'inherit',
+    shell: false,
+  },
+);
 
 if (a11yResult.error || a11yResult.status !== 0) {
   if (a11yResult.error) {
-    console.error('Failed to start accessibility tests:', a11yResult.error.message || a11yResult.error);
+    console.error(
+      'Failed to start accessibility tests:',
+      a11yResult.error.message || a11yResult.error,
+    );
   }
-  process.exit(a11yResult.status ?? 1);
+  failed = true;
 }
 
 console.log('Running functional tests...');
-const functionalResult = spawnSync(npxCommand, ['playwright', 'test', '--project=functional', ...args], {
-  stdio: 'inherit',
-  shell: false,
-});
+const functionalResult = spawnSync(
+  npxCommand,
+  ['playwright', 'test', '--project=functional', ...args],
+  {
+    stdio: 'inherit',
+    shell: false,
+  },
+);
 
 if (functionalResult.error || functionalResult.status !== 0) {
   if (functionalResult.error) {
-    console.error('Failed to start functional tests:', functionalResult.error.message || functionalResult.error);
+    console.error(
+      'Failed to start functional tests:',
+      functionalResult.error.message || functionalResult.error,
+    );
   }
-  process.exit(functionalResult.status ?? 1);
+  failed = true;
 }
 
-process.exit(0);
+process.exit(failed ? 1 : 0);

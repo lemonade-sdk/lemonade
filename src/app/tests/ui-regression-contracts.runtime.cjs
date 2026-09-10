@@ -37,21 +37,117 @@ for (const [key, filename] of Object.entries(files)) {
 // JSX text and JSX attribute strings are not JavaScript string literals: a `\uXXXX`
 // sequence there reaches the user verbatim instead of the character it names.
 const jsxEscape = /\\(?:u\{[0-9a-fA-F]+\}|u[0-9a-fA-F]{4}|x[0-9a-fA-F]{2})/;
+
+// Em dashes used as prose punctuation in UI copy are disallowed. A standalone
+// em dash remains valid as an unavailable-value placeholder.
+const proseEmDash = /[\p{L}\p{N}]\s*—\s*[\p{L}\p{N}]/u;
+
+assert.match(
+  'Model tuning details are unavailable — for this model.',
+  proseEmDash,
+  'proseEmDash must detect sentence-style em dashes',
+);
+assert.doesNotMatch(
+  '—',
+  proseEmDash,
+  'proseEmDash must allow standalone unavailable-value placeholders',
+);
+
 const collectTsx = dir => fs.readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
   const full = path.join(dir, entry.name);
   if (entry.isDirectory()) return collectTsx(full);
   return entry.isFile() && full.endsWith('.tsx') ? [full] : [];
 });
 
+const isFunctionBoundary = node => (
+  ts.isArrowFunction(node)
+  || ts.isFunctionExpression(node)
+  || ts.isFunctionDeclaration(node)
+  || ts.isMethodDeclaration(node)
+  || ts.isGetAccessorDeclaration(node)
+  || ts.isSetAccessorDeclaration(node)
+);
+
 for (const filename of collectTsx(path.join(root, 'src'))) {
-  const sourceFile = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
-  const visit = node => {
-    if (ts.isJsxText(node) || (ts.isStringLiteral(node) && node.parent && ts.isJsxAttribute(node.parent))) {
-      const found = node.getText(sourceFile).match(jsxEscape);
-      if (found) {
-        const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-        assert.fail(`${path.relative(root, filename)}:${line + 1} renders "${found[0]}" literally; write the character itself`);
+  const sourceFile = ts.createSourceFile(
+    filename,
+    fs.readFileSync(filename, 'utf8'),
+    ts.ScriptTarget.ES2022,
+    true,
+    ts.ScriptKind.TSX,
+  );
+
+  const failAtNode = (node, message) => {
+    const { line } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+    assert.fail(`${path.relative(root, filename)}:${line + 1} ${message}`);
+  };
+
+  const checkUiCopy = (node, text) => {
+    if (proseEmDash.test(text)) {
+      failAtNode(node, 'contains an em dash used as UI prose punctuation; use normal punctuation instead');
+    }
+  };
+
+  // Only consider strings/templates that are syntactically part of a JSX
+  // expression. Stop at function boundaries so implementation strings in
+  // helpers, callbacks, prompts, logs, and request payloads are not treated as
+  // rendered UI copy.
+  const isDirectlyRenderedJsxExpression = node => {
+    let current = node.parent;
+
+    while (current) {
+      if (ts.isJsxExpression(current)) {
+        return true;
       }
+      if (isFunctionBoundary(current)) {
+        return false;
+      }
+      current = current.parent;
+    }
+    return false;
+  };
+
+  const visit = node => {
+    if (ts.isJsxText(node)) {
+      const text = node.getText(sourceFile);
+      const found = text.match(jsxEscape);
+
+      if (found) {
+        failAtNode(node, `renders "${found[0]}" literally; write the character itself`);
+      }
+      checkUiCopy(node, text);
+    }
+    if (ts.isStringLiteral(node)) {
+      const isJsxAttribute = node.parent && ts.isJsxAttribute(node.parent);
+
+      if (isJsxAttribute) {
+        const found = node.getText(sourceFile).match(jsxEscape);
+
+        if (found) {
+          failAtNode(node, `renders "${found[0]}" literally; write the character itself`);
+        }
+        checkUiCopy(node, node.text);
+      } else if (isDirectlyRenderedJsxExpression(node)) {
+        checkUiCopy(node, node.text);
+      }
+    }
+    if (
+      ts.isNoSubstitutionTemplateLiteral(node)
+      && isDirectlyRenderedJsxExpression(node)
+    ) {
+      checkUiCopy(node, node.text);
+    }
+    if (
+      ts.isTemplateExpression(node)
+      && isDirectlyRenderedJsxExpression(node)
+    ) {
+      // Expressions are represented by a letter so prose punctuation around
+      // interpolated values is still detected, e.g. `${name} — unavailable`.
+      const text = [
+        node.head.text,
+        ...node.templateSpans.flatMap(span => ['x', span.literal.text]),
+      ].join('');
+      checkUiCopy(node, text);
     }
     ts.forEachChild(node, visit);
   };
