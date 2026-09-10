@@ -1258,12 +1258,6 @@ class LLMTests(ServerTestBase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("cache_tokens", data)
-        # Documented limitation, not a bug: entering sleep destroys the slot's
-        # KV state without saving it, and waking recreates llama-server's RAM
-        # prompt cache empty, so wake always re-prefills from scratch
-        # regardless of --parallel. If a future llama-server change preserves
-        # the prompt cache across sleep, update this assertion deliberately
-        # rather than letting it silently start passing.
         self.assertEqual(
             data["cache_tokens"],
             0,

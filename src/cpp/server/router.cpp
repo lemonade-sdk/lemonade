@@ -811,9 +811,6 @@ void Router::load_model(const std::string& model_name,
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
 
-    // resolve_effective_options() below drives arg-baking (e.g. llama.cpp's
-    // --sleep-idle-seconds), so it needs to see the real pin decision. The
-    // peek lock is released before the real load_mutex_ lock a few lines down.
     bool peeked_pinned;
     if (pinned.has_value()) {
         peeked_pinned = pinned.value();
@@ -3000,10 +2997,6 @@ void Router::set_model_pinned(const std::string& model_name, bool pinned) {
         }
         canonical_model_name = server->get_model_name();
         model_info = model_manager_->get_model_info(canonical_model_name);
-        // Rebase on the pre-backend-hook request snapshot, not get_recipe_options()
-        // (already baked): otherwise an explicit --sleep-idle-seconds stripped by a
-        // prior pin is permanently lost and unpin can only regenerate the recipe
-        // default instead of restoring the user's original value.
         reload_options = server->get_requested_options();
         reload_options.set_option("pinned", pinned);
         RecipeOptions new_effective = resolve_effective_options(model_info, reload_options);
@@ -3012,15 +3005,11 @@ void Router::set_model_pinned(const std::string& model_name, bool pinned) {
         old_resolved.erase("pinned");
         new_resolved.erase("pinned");
         if (old_resolved == new_resolved) {
-            // The pin change doesn't alter any baked launch args (e.g. no
-            // auto_evict downsize timer in play) -- a plain in-memory flip
-            // is sufficient, no subprocess restart needed.
             server->set_pinned(pinned);
             return;
         }
         load_purpose = load_purpose_for_residency_class(server->get_residency_class());
     }
-    // load_model() acquires load_mutex_ itself -- must not hold it here.
     load_model(canonical_model_name, model_info, reload_options, /*do_not_upgrade=*/true,
                /*allow_reload_on_option_change=*/true, pinned, load_purpose);
 }

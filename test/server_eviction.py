@@ -175,13 +175,7 @@ class EvictionTests(ServerTestBase):
         self._simulate_vram_pressure(IDLE_EVALUATION_PCT, timeout=timeout)
 
     def _wait_for_downsized(self, model_name, timeout=DOWNSIZE_WAIT_TIMEOUT):
-        """Poll the idle evaluation until the backend actually confirms sleep.
-
-        downsize() ground-truths against the backend's own /props before
-        reporting success, so a model only flips to "downsized" once
-        llama-server's independent --sleep-idle-seconds timer has actually
-        fired - not the instant Lemonade's own idle clock elapses.
-        """
+        """Poll the idle evaluation until the backend actually confirms sleep."""
         deadline = time.time() + timeout
         info = None
         while time.time() < deadline:
@@ -236,10 +230,6 @@ class EvictionTests(ServerTestBase):
         self.assertIsNotNone(info)
         self.assertEqual(info.get("status"), "ready")
 
-        # downsize() ground-truths against the backend's own /props, so this
-        # polls rather than asserting after a single evaluation: llama-server's
-        # own --sleep-idle-seconds timer (clamped to a minimum of 1s) must
-        # actually fire before the model is confirmed asleep.
         info_after = self._wait_for_downsized(ENDPOINT_TEST_MODEL)
         self.assertIsNotNone(info_after)
         self.assertEqual(info_after.get("status"), "downsized")
