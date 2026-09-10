@@ -70,12 +70,14 @@ recover what the binary throws away.
   `political_view`, `education_level`, `employment_status`, `age`, `language`,
   `blood_type`, `occupation`, `biometric_identifier`). Most detector models
   have no class for that second group at all.
-- Raw rows carry `spans` with `start` / `end` / `label` / `text`. **The builder
-  discards the offsets** and keeps only the comma-joined type list per document,
-  so only document-level multi-label scoring is possible today. Preserving the
-  offsets is the prerequisite for any future span-level or character-level F1
-  (§5.5).
-- **Re-fetching the dataset would not recover usable gold offsets.** The raw
+- Raw rows carry `spans` with `start` / `end` / `label` / `text`. The builder
+  **used to discard the offsets**, keeping only the comma-joined type list per
+  document, which is why everything before §5.6 is document-level. It now
+  preserves them (`normalize_text_with_map`), and `annotate_gold_spans.py`
+  back-fills them onto corpora built before the change — the 20k corpus carries
+  `pii_spans` today (§5.5).
+- **Re-fetching the dataset alone would not have recovered usable gold
+  offsets**, which is why the fix was a builder change. The raw
   `start`/`end` index into the *original* text, and the builder edits that text
   twice before any model sees it: `normalize_text()` collapses every whitespace
   run to a single space, then `wrap_in_message()` prepends one of 8 random
@@ -86,7 +88,10 @@ recover what the binary throws away.
   at 5+ positions), and the builder's own `surviving_spans` check is exactly
   that substring search — sound for "is it present", useless for "where". The
   fix is an index map through the whitespace collapse plus `len(prefix)`, i.e. a
-  builder change, not a re-download.
+  builder change, not a re-download. That is what
+  `normalize_text_with_map()` + `remap_span()` do, and `annotate_gold_spans.py`
+  applies them to an already-sampled corpus by matching each case back to its
+  source row on normalized text (§5.5).
 - Documents are short: p50 ≈ 744 chars, p99 ≈ 3,259, max 7,191 (**1,737 tokens**
   measured with the pplx tokenizer). See §7 for why this settles the
   context-length question.
@@ -100,10 +105,14 @@ despite the builder being asked for thousands.
 
 Everything downstream follows from this:
 
-- **Precision, FP-rate and F-beta are statistically empty** across every run in
-  this series. The negative arm is n=1. This holds for *document-level* scoring;
-  character-level precision would be partially measurable on positive documents
-  alone (§5.5), though bounded by PII density rather than a true FP-rate.
+- **Precision, FP-rate and F-beta are statistically empty** across every
+  *document-level* run in this series. The negative arm is n=1. Character-level
+  precision is measurable on positive documents alone and is now measured
+  (§5.6), but it is bounded by PII density rather than being a true FP-rate: on
+  this corpus PII is **14.58%** of non-whitespace prompt characters, so a model
+  flagging every character scores char precision 0.1458 and char F1 0.2544
+  rather than 0. It narrows the hole; it does not close it, and it does not
+  retire the benign-arm work (§9.1).
 - **A model that flagged every single document would score identically to a
   precise one** on every metric reported.
 - Only **recall / leak rate** carries information.
@@ -168,6 +177,28 @@ python test/eval/pii_pplx_onnx_eval.py --corpus-dir test/conformance/routing/1/l
 **Always pass `--verbose`.** A non-verbose log records only failures, which
 makes it impossible to distinguish "passed" from "not yet run" — it breaks both
 `--resume-from` and all of the re-scoring in §5.
+
+Character-level scoring (§5.6), which needs a corpus carrying `pii_spans`:
+
+```bash
+# one-time: back-fill gold offsets onto an existing corpus
+python test/eval/annotate_gold_spans.py --corpus-dir test/conformance/routing/1/l2_pii_nemotron_20k
+
+# score the detectors - SEQUENTIALLY, see trap 19
+for m in mmbert pplx privacy-filter; do
+    python test/eval/pii_char_f1_eval.py --model $m --verbose --intra-op-threads 16
+done
+
+# re-score offline, no inference: by label, by span length, by decision rule
+python test/eval/pii_char_f1_report.py --by-label
+python test/eval/pii_char_f1_report.py --by-length
+python test/eval/pii_char_f1_report.py --rule all
+```
+
+`pii_char_f1_eval.py` has `--resume-from <run>.spans.jsonl`, and unlike the
+resume path that produced trap 13 it **replays the recorded spans rather than
+reconstructing tallies**, so every metric in a resumed summary sits on the same
+denominator. Verified: a resumed run reproduces a clean one to 4 decimals.
 
 ### 4.1 perplexity-ai/pplx-pii-masking needs its own script
 
@@ -480,12 +511,21 @@ model have gold sets lying *entirely* in a coverage hole. **Taxonomy gaps hurt
 category coverage, not leak rate** — the document-level leak rates remain the
 right routing metric; §5.1 explains *why* they differ.
 
-### 5.5 Character-level F1: not possible from these logs, and worth building
+### 5.5 Character-level F1: the design, and why the old logs could not support it
 
-**Status: designed, not implemented.** Nothing in §6 is character-scored. This
-section records why the existing logs cannot support it, what it would take, and
-why it is the highest-value analysis left — so the next person does not
-re-derive it.
+**Status: implemented.** The corpus now carries gold offsets and the three ONNX
+detectors are character-scored; **§5.6 holds the results**. This section keeps
+the design rationale, because every choice in it is still load-bearing and the
+next person adding a model needs to know why the metric is shaped this way.
+
+What changed, in three pieces:
+
+| Piece | What it does |
+|---|---|
+| `build_nemotron_corpus.py` | `normalize_text_with_map()` / `remap_span()` — new corpora carry `pii_spans` |
+| `annotate_gold_spans.py` | back-fills `pii_spans` onto corpora **already built and already benchmarked**, so the 20k corpus keeps its case names and every document-level row stays comparable |
+| `pii_char_f1_eval.py` | runs a detector, scores characters, and **writes every predicted span to disk** |
+| `pii_char_f1_report.py` | re-scores those span files offline — by label, by span length, by decision rule |
 
 #### Why the logs cannot support it
 
@@ -606,10 +646,196 @@ already queued in §9.6 — the rest is new compute, not work already planned.
 They emit a routing decision and never a span. Those rows stay document-level
 permanently; that is a property of the method, not a gap to fill.
 
-Suggested Phase 1, which is cheap: make the builder change, then re-score
-**pplx only** on a ~500-case slice — pplx already computes `start`/`end` and just
-discards them, so that slice is minutes, not hours. If the character numbers
-separate the models more than the leak rates do, spend the 15 hours.
+That cost is now paid once and only once, because `pii_char_f1_eval.py` writes
+every predicted span to `<run>.spans.jsonl`. **Recording the spans is the fix
+for the thing that made this expensive** — no earlier run in the series wrote
+down *where* a model fired, only which label names it emitted, so every new
+question meant a new pass over 20,001 documents. Per-label scoring, a different
+threshold, a span-length breakdown and span-exact as a cross-check now all read
+that file. `pii_char_f1_report.py` is that reader, and it runs against a live
+run's partial file too.
+
+#### Recovering the gold offsets without resampling the corpus
+
+The builder change alone would have forced a rebuild, and a rebuild resamples:
+a fresh corpus is a different document set, so every document-level number ever
+measured against `l2_pii_nemotron_20k` would stop being comparable to the
+character numbers sitting beside it. `annotate_gold_spans.py` avoids that. It
+matches each existing case back to its source row **by normalized text**, then
+applies the index map and the resolved prefix length to that row's raw offsets.
+
+Result on the 20k corpus: **20,001 / 20,001 cases matched, 170,974 gold spans
+written, 0 dropped, 0 failing the offset check.** Gold PII is 2,376,455 of
+16,304,802 non-whitespace prompt characters — a **PII density of 0.1458**,
+which is the number §5.5 needed and had only estimated (§2.1's "~0.24" came
+from one document).
+
+Density is quoted on the **non-whitespace** denominator because that is what
+the metric uses on both sides. Dividing whitespace-excluded gold by
+whitespace-inclusive prompt length gives 0.1252 and understates the
+flag-everything floor; the first version of these scripts did exactly that.
+
+Two things that check the recovery rather than assume it:
+
+- **Every remapped span is verified against the prompt it now indexes into**,
+  not just produced. `content[start:end]` must equal the span's own text after
+  the same whitespace collapse.
+- **That comparison is case-insensitive, and that is a correction, not a
+  loosened check.** The dataset's `text` field is a canonicalized copy of the
+  entity while `start`/`end` point at the document's true casing —
+  `'compliance officer'` vs `Compliance Officer`, `'male'` vs `Male`,
+  `'ekaterina.ivanov@kreditexpress.ru'` vs `...@kreditExpress.ru`. 1,418 of
+  170,974 spans differ that way and **zero differ in any other way**. A
+  case-sensitive check silently discards 1,418 correctly located spans; the
+  first run of the annotator did exactly that before the mismatches were
+  classified rather than counted.
+
+### 5.6 Character-level results
+
+**The pipeline reproduces every known document-level number before any
+character number is quoted from it.** That gate matters more than the character
+figures themselves, because the whole apparatus is new: a new corpus
+annotation, a new inference path, a new scorer. If it had disagreed with §6 by
+a single case, the character numbers would be measuring the harness.
+
+| Check | §6 / §6.4 says | This pipeline |
+|---|---|---|
+| mmBERT leaks, argmax rule | 25 / 20000 | **25** |
+| mmBERT leaks, `min_score` 0.5 | 49 / 20000 | **49** |
+| argmax leaks ⊆ `min_score` leaks | 25/25 contained | **0 violations** |
+| threshold-only leaks | 24 | **24** |
+| mmBERT on the one benign case | flagged (FP=1) | **FP=1** |
+| documents truncated | none (§7) | **0** |
+
+Reached independently: this scorer shares no code with `pii_ner_eval.py` or the
+router, and it runs **both** rules over the same ONNX graph in the same
+process. §6.4 argued the 0.12% → 0.24% gap was the decision rule and not the
+backend by a containment check across two different runs; here the backend is
+held literally constant and the same gap appears, which is as direct as that
+claim can be made.
+
+#### The headline table
+
+Label-agnostic character F1 on `l2_pii_nemotron_20k`, whitespace excluded from
+both sides, each model under its own primary rule.
+
+| Model | Rule | char P | char R | **char F1** | macro F1 | doc leak | Runtime |
+|---|---|---:|---:|---:|---:|---:|---:|
+| **privacy-filter** (OpenMed ml-v2) | argmax | 0.9769 | 0.9359 | **0.9559** | 0.9568 | 0.00% | *in flight* |
+| **pplx-pii-masking** | viterbi | 0.9725 | 0.7330 | **0.8360** | 0.8379 | 0.795% (159) | 2.27 hr |
+| **mmBERT32K-PII** | argmax | 0.9202 | 0.6842 | **0.7849** | 0.8045 | 0.125% (25) | 0.40 hr |
+| *flag-everything strawman* | — | *0.1458* | *1.0000* | *0.2544* | — | *0.00%* | — |
+
+privacy-filter's row is from **15,838 of 20,001 cases** and is marked *in
+flight*; its figures moved by <0.002 between 1% and 79% coverage, but it is not
+a number of record until the run finishes. The corpus is shuffled, so a prefix
+is a random sample rather than a biased slice.
+
+**This is the ranking document-level scoring could not produce.** Those three
+models sit at 0.00%, 0.125% and 0.795% document leak — a spread of under one
+percentage point, all of it inside the noise of "essentially perfect" — and
+they spread across **0.16 of character F1**. The ordering is not even the same:
+mmBERT leaks 6x fewer documents than pplx and is the *worse* model by
+characters, because it fires *somewhere* on almost every document while
+covering far less of what is actually there.
+
+Every char precision is 0.92-0.98, well clear of the 0.1458 strawman. **That
+is the first precision measurement in this series that means anything** (§2.1),
+and it says none of the three over-tags.
+
+#### The other decision-rule finding: pplx's own decoder costs it 75 documents
+
+| pplx rule | char P | char R | char F1 | doc leak |
+|---|---:|---:|---:|---:|
+| argmax | 0.9627 | 0.7328 | 0.8322 | **0.42% (84)** |
+| `min_score` 0.5 | 0.9666 | 0.7190 | 0.8246 | 0.445% (89) |
+| viterbi (shipped) | 0.9725 | 0.7330 | **0.8360** | **0.795% (159)** |
+
+**The constrained BIOES Viterbi is stricter than argmax, not merely better.**
+It nearly doubles the leak rate — 84 documents to 159 — because a valid BIOES
+path suppresses isolated `I-` / `E-` predictions that argmax happily emits, and
+those isolated firings are exactly the marginal detections a router still wants
+to act on. In exchange it buys precision (0.9627 → 0.9725) and a slightly
+better char F1.
+
+This is new and it is not what §4.2 or §6.2 measured. Those held the decoder
+fixed on both sides and varied the backend, correctly, to prove the ONNX export
+was decision-identical to safetensors. Nobody had varied the decoder. **For
+routing, pplx is better served by argmax than by its own decoder; for masking,
+the reverse.** Do not assume a constrained decoder is a free improvement.
+
+#### Per-label character recall, and what §5.1 could not see
+
+`pii_char_f1_report.py --by-label` scores each gold label over the characters
+carrying it. Unlike §5.1 this needs **no interlingua** — a prediction either
+covers those characters or it does not — so `pii_taxonomy.py`'s editorial
+judgment (§8.7) is not in the loop, and there is no lenient-vs-strict question
+to settle (§5.2). Selected rows, sorted by gold character support:
+
+| Gold label | gold chars | mmbert | pplx | privacy-filter\* |
+|---|---:|---:|---:|---:|
+| url | 401,181 | 47.6% | 78.6% | 99.1% |
+| email | 261,331 | 91.7% | 99.7% | 99.5% |
+| company_name | 189,208 | 58.3% | **1.2%** | 84.0% |
+| date | 147,817 | 89.7% | 76.0% | 92.8% |
+| occupation | 135,450 | **3.7%** | **1.4%** | 57.0% |
+| first_name | 99,871 | 86.0% | 99.1% | 98.4% |
+| http_cookie | 80,175 | 36.6% | 78.3% | 98.5% |
+| last_name | 78,681 | 95.3% | 98.9% | 98.6% |
+| phone_number | 58,429 | 98.9% | 99.9% | 99.9% |
+| api_key | 42,602 | 70.1% | 99.8% | 97.2% |
+| credit_debit_card | 39,246 | 99.7% | 99.8% | 100.0% |
+| **time** | 38,949 | **60.6%** | **46.7%** | **75.2%** |
+| city | 28,884 | 73.3% | 63.2% | 95.1% |
+| education_level | 26,415 | **0.5%** | **2.7%** | 75.6% |
+| county | 25,617 | 43.0% | 45.2% | 94.1% |
+| state | 24,575 | 38.9% | 48.5% | 92.9% |
+| country | 24,298 | **23.3%** | **28.4%** | 97.5% |
+
+\* privacy-filter at 79% coverage; see the note above.
+
+Three readings that the document-level view could not reach:
+
+- **A coverage hole is not a clean zero, and that matters.** §5.1 reports
+  `no class` for pplx on ORG_COMPANY and OCCUPATION_EMPLOYMENT — a declared
+  gap, scored as neither hit nor miss. In characters those come out at **1.2%**
+  and **1.4%**, not 0%: pplx does occasionally cover a company name or a job
+  title, incidentally, via `other_pii` or by swallowing it inside an adjacent
+  span. The gap is real and the honest number is "essentially nothing", but
+  `no class` and 1.2% are different claims and only one of them is measured.
+
+- **Geographic granularity is where the two smaller models actually break.**
+  `country` 23.3% / 28.4%, `state` 38.9% / 48.5%, `county` 43.0% / 45.2% for
+  mmBERT and pplx, against 92.9-97.5% for privacy-filter. §5.1 folds all of
+  these into one `ADDRESS_LOCATION` row (91.3% / 74.7%) where the collapse is
+  invisible, because a model that finds the street address scores the category
+  while missing the country entirely.
+
+- **`time` is a shared blind spot nobody had flagged**: 60.6% / 46.7% / 75.2%,
+  the weakest row on which *all three* models are simultaneously poor, on
+  38,949 gold characters. §5.1's `DATE_TIME` row reads 99.2% / 84.8% / 97.4%,
+  because `date` is easy and dominates the category. Splitting them is a
+  character-level result and a real finding: **times are much harder than
+  dates for every detector measured.**
+
+`--by-length` adds one more: recall falls off at both ends for mmBERT and pplx
+(short entities to subword fragmentation, 40+ char entities to partial
+coverage) while privacy-filter stays above 90% across every bucket.
+
+#### What the document-level table could not see
+
+**`min_score` is nearly free for routing and expensive for anything else.**
+On mmBERT the shipped 0.5 threshold moves the document leak rate 0.12% → 0.24%
+— two negligible numbers, and §6.4's tuning curve reads as though the choice
+barely matters. In characters the same threshold costs **char recall 0.6842 →
+0.4849 and char F1 0.7849 → 0.6419**. Half the missing PII characters are
+sub-threshold. A router only has to notice one entity, so it never pays that
+bill; a redaction or masking path pays all of it. The two use cases want
+different thresholds and the document-level table cannot show that.
+
+Note the direction of the precision/recall trade, too: `min_score` *raises*
+char precision (0.9202 → 0.9494) while collapsing recall. It is a strictly
+more conservative rule in exactly the way the containment predicts.
 
 ## 6. Consolidated results
 
@@ -747,6 +973,11 @@ tally. If you resume any run in this series, check that the secondary
 denominators match the primary ones before quoting.
 
 ### 6.3 What the leak-rate column cannot tell you
+
+**Since §5.6 exists, the first answer is "read §5.6".** Character F1 ranks the
+three ONNX detectors that this column cannot separate, and it supplies the
+precision number this column structurally cannot.
+
 
 Repeating §2.1 because this table is what circulates: **with one benign case,
 the precision side is unmeasured.** A model that flagged every document would
@@ -960,6 +1191,31 @@ histories, pasted documents — not for these results.
     by `min_score` over max-aggregated softmax, which at 0.5 is *strictly
     stricter*. The mmBERT rows' 2x gap was entirely this, with the backend
     contributing exactly zero. §6.4.
+15. **Concluding from a document-level delta that a decision rule "barely
+    matters".** mmBERT's `min_score` 0.5 moves the leak rate 0.12% → 0.24%, two
+    negligible-looking numbers. The same threshold moves **char recall 0.6842 →
+    0.4849**. A router needs to notice one entity per document and never pays
+    that bill; a masking path pays all of it. §5.6.
+16. **Assuming a constrained decoder is a free improvement.** pplx's own BIOES
+    Viterbi *nearly doubles* its document leak rate against plain argmax (159
+    vs 84) because valid-path constraints suppress isolated `I-`/`E-` firings.
+    It buys precision and costs recall — a trade, not an upgrade. §5.6.
+17. **Verifying recovered gold spans case-sensitively.** Nemotron's `text`
+    field is a canonicalized copy of the entity while `start`/`end` point at the
+    document's true casing, so 1,418 of 170,974 spans differ in case and *zero*
+    differ any other way. A case-sensitive check silently discards 1,418
+    correctly located spans and looks like a 0.8% offset bug. Classify the
+    mismatches before trusting the count. §5.5.
+18. **Dividing whitespace-excluded gold by whitespace-inclusive text.** The
+    character metric drops whitespace from both sides, so the PII-density floor
+    has to use the same denominator: 0.1458, not the 0.1252 that the mixed
+    basis gives. The strawman a model must beat gets quietly easier otherwise.
+19. **Benchmarking several detectors in parallel on one box.** Three ONNX
+    processes at 10 intra-op threads each on **16 physical cores** is 2x
+    oversubscription, and throughput collapsed ~8x — pplx fell from 2.1 to 0.27
+    cases/s, turning a 7hr sequential plan into a 20hr one. Run detectors
+    sequentially at full thread count. Any runtime figure from a parallel run
+    measures scheduler contention, not the model.
 
 ## 9. Open work
 
@@ -968,14 +1224,14 @@ Roughly in order of value:
 1. **Build a benign arm** (§2.1). Without it, half of every confusion matrix in
    this series is decorative, and it changes the meaning of every existing row
    retroactively. Do this before benchmarking more models.
-2. **Preserve span offsets in the corpus, then build character-level F1**
-   (§5.5 has the full design, the tier structure and a worked example). Cheap at
-   build time — an index map through the whitespace collapse plus `len(prefix)`;
-   a re-download does *not* suffice (§2). This is the highest-value item after
-   the benign arm: it needs no taxonomy, it measures precision without a benign
-   arm, it separates "wrong label" from "wrong location", and it settles lenient
-   vs strict (§5.2) on evidence rather than convention. Start with the pplx
-   500-case slice in §5.5 before committing ~10-15 hr of re-inference.
+2. ~~**Preserve span offsets, then build character-level F1.**~~ **Done** for
+   the three ONNX detectors — §5.5 for the method, §5.6 for the results. The
+   corpus carries `pii_spans`, every predicted span is on disk, and
+   `pii_char_f1_report.py` re-scores without re-inference. What remains under
+   this heading is **tier 3 of §5.5**: cross-schema per-label character F1, and
+   character scoring for the models not yet covered (GLiNER, OpenMed v1,
+   OpenAI/privacy-filter, mmBERT safetensors). Those are now cheap to *score*
+   and still cost a re-inference pass each to *collect*.
 3. **Review `pii_taxonomy.py`'s mappings** (§8.7).
 4. **Commit the policy JSONs that back table rows.** **Done for the pplx
    router row** (§6.5): `l2_pii_onnx_pplx_masking/policy_local_default.json` is
@@ -1035,6 +1291,9 @@ Roughly in order of value:
 | `pii_min_score_curve.py` | Turns that sweep into the `min_score` tuning curve — arithmetic, no re-inference |
 | `pii_taxonomy.py` | Canonical 24-category interlingua + per-model mappings |
 | `pii_category_recall.py` | Re-scores existing logs per category; `--strict`, `--doc-level` |
+| `annotate_gold_spans.py` | Back-fills verified gold span offsets (`pii_spans`) onto an already-built corpus, matching each case to its source row by normalized text |
+| `pii_char_f1_eval.py` | Character-level scoring for the three ONNX detectors; three decision rules in one pass; **writes every predicted span to `<run>.spans.jsonl`** |
+| `pii_char_f1_report.py` | Re-scores those span files offline — `--by-label`, `--by-length`, `--rule`; works on a run still in flight |
 
 Generated reports, alongside the runs they derive from:
 
