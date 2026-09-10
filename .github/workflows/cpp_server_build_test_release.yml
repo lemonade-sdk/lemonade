@@ -644,7 +644,7 @@ jobs:
           set -e
           dnf install -y rpm-build
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -711,7 +711,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -799,7 +799,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -856,7 +856,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -908,7 +908,7 @@ jobs:
       - name: Install CMake if not available
         uses: ./.github/actions/install-cmake-windows
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -955,7 +955,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
