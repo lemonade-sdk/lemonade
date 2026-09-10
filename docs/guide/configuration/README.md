@@ -502,12 +502,14 @@ The `allowed_origins` setting (in `config.json` or configured via `lemonade conf
   - In `config.json`: `"allowed_origins": "https://app.lemonade.dev,http://localhost:3000"`
   - Via CLI: `lemonade config set allowed_origins="https://app.lemonade.dev,http://localhost:3000"`
 - **Format**: A comma-separated list of complete origins including the scheme and optional port (e.g., `https://app.lemonade.dev,http://localhost:3000`).
+  - **Wildcard Ports**: Specify `:*` to match any port on a configured host (e.g., `http://192.168.1.50:*`, `http://*.local:*`, `https://[::1]:*`), useful for local development and homelab environments where frontend dev servers run across varying ports.
+  - **Wildcard Domains**: Specify `*.domain` to match subdomains (e.g., `http://*.local:*` or `https://*.example.com`). Subdomain matching strictly enforces a dot boundary so `notexample.com` will not match `*.example.com`.
   > [!WARNING]
   > Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
-- **Wildcard (`*`)**: Setting `allowed_origins` to `*` allows any origin to connect.
-- **Security Implications of `*`**:
+- **Wildcards (`*`, `http://*:*`)**: Setting `allowed_origins` to `*` or using universal wildcards like `http://*:*` allows any origin to connect.
+- **Security Implications of Wildcards**:
   > [!WARNING]
-  > Using `allowed_origins=*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
+  > Using `allowed_origins=*` or `http://*:*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
 - **Local/Loopback, Desktop & Same-Origin Access (Zero-Configuration)**:
   - **Loopback & Subdomains**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) are permitted automatically.
   - **Native Desktop Apps**: Native desktop application schemes (`lemonade://`, `file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for client connections.
