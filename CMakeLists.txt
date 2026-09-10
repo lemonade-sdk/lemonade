@@ -2833,6 +2833,23 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COLLECTION_VALIDATION_TEST_SRC}")
     add_cpp_ci_test(ModelManagerCollectionValidationTest CI ON COMMAND test_model_manager_collection_validation)
 endif()
 
+# Cost/latency hints must survive user-model registration: they travel in
+# ModelInfo::extras, so a key missing from USER_DEFINED_MODEL_PROPS is dropped
+# silently and the router prices the model as free.
+set(_MODEL_MANAGER_COST_PROPS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_model_manager_cost_props.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_MODEL_MANAGER_COST_PROPS_TEST_SRC}")
+    add_executable(test_model_manager_cost_props
+        test/cpp/test_model_manager_cost_props.cpp
+    )
+    target_link_libraries(test_model_manager_cost_props PRIVATE lemonade-server-core)
+    add_dependencies(test_model_manager_cost_props copy_resources)
+
+    include(CTest)
+    add_cpp_ci_test(ModelManagerCostPropsTest CI ON COMMAND test_model_manager_cost_props)
+endif()
+
 set(_EXTRA_MODEL_DISCOVERY_TEST_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_extra_model_discovery.cpp"
 )
