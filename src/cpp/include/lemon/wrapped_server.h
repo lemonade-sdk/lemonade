@@ -398,8 +398,7 @@ public:
     }
 
     // Backend's own /props endpoint, verbatim (an error-shaped response for
-    // backends that don't expose one). Ground truth for state the backend
-    // manages on its own outside of Lemonade's model state, e.g. is_sleeping.
+    // backends that don't expose one). See LlamaCppServer::downsize().
     json get_backend_props() { return forward_get_request("/props"); }
 
     // recipe_options_ holds the ctx_size the backend was started with, so the
