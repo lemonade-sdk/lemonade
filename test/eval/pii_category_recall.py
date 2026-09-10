@@ -484,7 +484,7 @@ def report(results, support_counts, min_support) -> None:
     )
 
     names = [r["label"] for r in results]
-    width = max(len(n) for n in names) + 2
+    width = max(max(len(n) for n in names) + 2, 12)
 
     print()
     print("PER-CATEGORY RECALL")

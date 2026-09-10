@@ -115,6 +115,10 @@ Detector models (no Lemonade server needed):
 python test/eval/pii_ner_eval.py    --corpus-dir test/conformance/routing/1/l2_pii_nemotron_20k --verbose
 python test/eval/pii_gliner_eval.py --corpus-dir test/conformance/routing/1/l2_pii_nemotron_20k --verbose
 python test/eval/pii_pplx_eval.py   --corpus-dir test/conformance/routing/1/l2_pii_nemotron_20k --verbose
+
+# ONNX variant: export once, then score it and diff against the safetensors run
+python test/eval/pplx_pii_masking2onnx.py
+python test/eval/pii_pplx_onnx_eval.py --corpus-dir test/conformance/routing/1/l2_pii_nemotron_20k --verbose     --parity-against test/conformance/routing/1/l2_pii_nemotron_20k/runs/pplx_f1f90a53823f5df0a1344c1e137d9fffdaab54d6_20260908-173941.log
 ```
 
 **Always pass `--verbose`.** A non-verbose log records only failures, which
@@ -148,6 +152,41 @@ The model card's own example shows the same thing — three correct spans at
 `sensitivity=0.027`. Routing on the sensitivity head would leak ~91% of PII.
 `pii_pplx_eval.py` scores the span head as primary and tallies sensitivity
 separately, never mixing them.
+
+### 4.2 The pplx ONNX export is decision-identical, and that took work to be true
+
+`pii_pplx_onnx_eval.py` scores the ONNX export from `pplx_pii_masking2onnx.py`.
+It is the only ONNX row in this table whose equivalence to its safetensors
+counterpart was actually *measured* rather than assumed (§6.2).
+
+**The graph deliberately stops at raw per-token logits — the constrained BIOES
+Viterbi is not baked in.** Scoring ONNX by argmax while the safetensors run was
+scored by Viterbi would confound a backend difference with a decoder difference
+and make any delta uninterpretable. So the ONNX scorer imports the
+**checkpoint's own `ViterbiDecoder`** out of its `trust_remote_code` module and
+feeds it the ONNX logits, constructing it from `config.viterbi_b_bias` /
+`viterbi_e_bias` exactly as `PiiMaskingModel.__init__` does — with **no weights
+loaded**, since that decoder's entire state is the 37-label list plus two bias
+scalars. Tokenization, truncation, chunking and the log format are byte-equivalent
+to `pii_pplx_eval.py`, so the two runs differ in exactly one variable.
+
+Two things that cost time here and will cost it again:
+
+- **The export dies on Windows *after* succeeding.** `torch.onnx`'s own progress
+  printer emits `U+2705` on a successful graph capture; a cp1252 stdout can't
+  encode it, so the export raises `UnicodeEncodeError` with the graph already
+  built. It reads like an export bug and is a console-encoding one. Both
+  `pplx_pii_masking2onnx.py` and the eval scripts now reconfigure stdout to
+  UTF-8 — do not remove that.
+- **Do not export from `perplexity-ai/pplx-pii-masking-vllm-tmp`.** That repo
+  repacks the same weights as a stock `Qwen3ForTokenClassification` with a
+  top-level `"is_causal": false`, which stock transformers **does not read**
+  (huggingface/transformers#39554). It would load with correct tensor shapes,
+  look self-consistent, and be silently **causal instead of bidirectional**. The
+  original repo's vendored `modeling_pplx_qwen3.py` flips
+  `layer.self_attn.is_causal` per layer *and* rebuilds the mask via
+  `or_mask_function=bidirectional_mask_function(...)`. Same shape of trap as
+  the gpt-oss reinterpretation in `privacy_filter_ml_v2_onnx_repro.md`.
 
 ## 5. Coverage-aware per-category scoring
 
@@ -242,6 +281,60 @@ Key readings:
   WEB_URL (82.6%) and CREDENTIAL_SECRET (63.4%), and cannot express 12 of the 24
   canonical categories — 11 of which this corpus actually exercises, the most
   of any model.
+
+**The pplx ONNX export is omitted from the table above because it is identical
+to the `pplx` column in every cell** — verified, not assumed: both scorings were
+regenerated from the two runs' logs and the per-category result objects compare
+equal under lenient *and* strict credit. Adding a duplicate column would widen
+the table for no information. The ONNX run does appear in
+`category_recall_{lenient,strict}.{txt,json}` as `pplx#2`, so the raw reports
+still carry it.
+
+### 5.1.1 pplx per-category profile, lenient vs strict
+
+Both modes for the one model where the difference is most severe. **These figures
+hold for the safetensors and ONNX runs alike.** Support is the number of gold
+documents exercising that canonical category; the categories pplx cannot express
+are listed below the table rather than carried as `no class` rows.
+
+| Category | support | lenient | strict | Δ |
+|---|---:|---:|---:|---:|
+| PERSON_NAME | 9621 | 99.5% | 99.5% | — |
+| CONTACT_EMAIL | 8535 | 99.7% | 99.7% | — |
+| CONTACT_PHONE | 4914 | 99.0% | 99.0% | — |
+| FINANCIAL_ACCOUNT | 5408 | 98.7% | 98.7% | — |
+| DATE_TIME | 11214 | 84.8% | 84.8% | — |
+| WEB_URL | 6652 | 82.6% | 82.6% | — |
+| ADDRESS_LOCATION | 7438 | 74.7% | 74.7% | — |
+| CREDENTIAL_SECRET | 3567 | 63.4% | 63.4% | — |
+| DATE_OF_BIRTH | 3230 | 99.8% | **63.9%** | −35.9 |
+| GOV_ID | 2412 | 98.0% | **71.1%** | −26.9 |
+| MEDICAL | 3763 | 93.0% | **60.1%** | −32.9 |
+| INTERNAL_ID | 5076 | 96.5% | **55.1%** | −41.4 |
+
+Not expressible by pplx's 9 categories (coverage holes, not scores):
+`ACCOUNT_HANDLE`, `AGE`, `BELIEF_POLITICAL`, `BIOMETRIC`, `EDUCATION`,
+`GENDER_SEXUALITY`, `NETWORK_ID`, `OCCUPATION_EMPLOYMENT`, `ORG_COMPANY`,
+`RACE_ETHNICITY_LANGUAGE`, `VEHICLE` — 11 of the 24 canonical categories, every
+one exercised by this corpus, the widest gap of any model measured. (A 12th,
+`PHYSICAL_ATTRIBUTE`, is also outside pplx's taxonomy but has zero support here,
+so it costs nothing on this corpus.)
+
+**The four categories that collapse are exactly the four sharing one emitted
+label.** pplx's single `account_number` expands to
+`{FINANCIAL_ACCOUNT, GOV_ID, INTERNAL_ID, MEDICAL}`, and `private_date` covers
+both `DATE_TIME` and `DATE_OF_BIRTH`. Under lenient credit one emitted
+`account_number` satisfies an SSN, an MRN and a customer ID in the same
+document; under strict matching it can satisfy only one, and the other two
+become misses. The eight unchanged rows are categories pplx maps
+one-to-one — their numbers are credit-scheme independent and are the ones to
+quote when the scheme is not stated.
+
+This is a **granularity** result, not an accuracy one: pplx genuinely found
+*something* at those positions in ~98% of cases. Whether that counts depends on
+whether your downstream use needs to know *which* identifier it was. For
+routing (local vs cloud) lenient is the right lens. For masking or redaction
+policy that treats an SSN differently from a customer ID, strict is.
 
 ### 5.2 Strict mode changes who looks good
 
@@ -362,6 +455,7 @@ columns do not survive a markdown table.
 | GLiNER (nvidia/gliner-PII) | 20k | 0.005% (1/20000) | 99.995% | resumed; partial | `gliner_gliner-PII_...-211156` |
 | OpenAI/privacy-filter | 20k | 5.31% (1062/20000) | 94.69% | resumed; partial | `ner_privacy-filter_...-224152` |
 | **perplexity-ai/pplx-pii-masking** | 20k | **0.80% (159/20000)** | **99.20%** | **2.55hr** | `pplx_f1f90a53..._20260908-173941` |
+| **pplx-pii-masking (ONNX/onnxruntime)** | 20k | **0.80% (159/20000)** | **99.20%** | 2.17hr (split run — see §6.2) | `pplx_onnx_20260908-214405` |
 
 Routing / model-eval split, where the router logs report one:
 
@@ -372,8 +466,12 @@ Routing / model-eval split, where the router logs report one:
 | mmBERT32K (ONNX) | 7.19hr | 4.60hr | 2.59hr |
 | OpenMed v2 (ONNX) | 8.12hr | 7.05hr | 1.06hr |
 
-All runs are CPU. pplx is fp32 on 16 threads, single clean pass over all
-20,001 cases with no resume.
+All runs are CPU. pplx safetensors is fp32 on 16 threads, single clean pass over
+all 20,001 cases with no resume. **The pplx ONNX runtime is not a usable
+comparison** — that run was interrupted by a machine restart at 4,433 cases and
+resumed, and onnxruntime ran at its default thread count while torch used all
+16. Quote the 2.55hr safetensors figure; re-run uninterrupted with
+`--intra-op-threads` pinned if a real backend-vs-backend timing is wanted.
 
 `Rationale behind routing` (99.5% / 59.4% / 18.30% for the three LLMs) and the
 `Prompt misses` / `Genuine misses` split are **not recoverable from the logs** —
@@ -429,7 +527,40 @@ direct ONNX eval `onnx_privacy-filter-ml-v2_20260819-215329.log` stalled at
 sound: it comes from the completed *router* run
 (`pf_router_full20k_stdout_20260819`, 0/20000, `errors: 0`).
 
-### 6.2 What the leak-rate column cannot tell you
+### 6.2 The ONNX export is decision-identical to safetensors (measured)
+
+The only ONNX row here whose equivalence was verified rather than assumed.
+`pii_pplx_onnx_eval.py --parity-against <safetensors log>` diffs the two runs
+case by case; the block lands in the run's JSON summary.
+
+| Check | Result |
+|---|---|
+| Confusion matrix | **19841 / 159 / 1 / 0 — identical, both runs** |
+| has_pii decision agreement | **20,001 / 20,001 (100.0000%)** |
+| Routing decision flips | **0** |
+| Exact label-set agreement | **20,001 / 20,001 (100.0000%)** |
+| The 159 missed documents | **the same 159 case names**, set difference empty both ways |
+| Per-category recall, lenient + strict | identical in every cell (§5.1.1) |
+| max \|Δsensitivity\| | 0.0010 — *is* the log's 3dp rounding floor, i.e. below resolution |
+| Logit max-abs-diff, canned sample | 1.5e-5 (logits), 2e-6 (sensitivity) |
+| Logit max-abs-diff, real 806-char corpus doc | 1.0e-5 (logits), 0.0 (sensitivity) |
+
+Identical counts alone would not prove this — they can hide compensating errors.
+The same-159-case-names check is what closes that gap.
+
+Note `RESULT: FAIL` in both logs: it is the scripts' convention for `FN != 0`,
+not a failed run.
+
+**One caveat on how this number was produced.** The ONNX run was interrupted and
+resumed, and `--resume-from` initially restored only the *primary* counts — so
+the run first reported a sensitivity-head recall of 0.0929 scoped to the 15,568
+post-resume cases while every primary metric covered all 20,001. Two
+denominators in one summary. Recomputed over the full corpus both backends give
+**0.09160** with 1,832 documents flagged, and the resume path now rebuilds that
+tally. If you resume any run in this series, check that the secondary
+denominators match the primary ones before quoting.
+
+### 6.3 What the leak-rate column cannot tell you
 
 Repeating §2.1 because this table is what circulates: **with one benign case,
 the precision side is unmeasured.** A model that flagged every document would
@@ -485,6 +616,18 @@ histories, pasted documents — not for these results.
 7. **Grepping `[FAIL][FN]` against a routing log.** Returns zero, looks perfect,
    is wrong. §3.1.
 8. **Running without `--verbose`.** Destroys resume and all re-scoring. §4.
+9. **Scoring an ONNX export by argmax when its safetensors run used a span
+   decoder.** The pplx graph stops at raw logits on purpose; an argmax
+   comparison measures decoder-vs-decoder, not backend-vs-backend, and the
+   delta means nothing. Reuse the checkpoint's own decoder. §4.2.
+10. **Exporting pplx from the `-vllm-tmp` repacking.** Its top-level
+    `"is_causal": false` is a key stock transformers never reads, so the export
+    is silently *causal* instead of bidirectional while looking entirely
+    self-consistent. §4.2.
+11. **Assuming an interrupted run's resumed summary is whole.** `--resume-from`
+    reconstructs tallies from the log; a metric it forgets to restore ends up
+    reported over a different denominator than the rest of the summary. This
+    happened to pplx-ONNX's sensitivity head (15,568 vs 20,001). §6.2.
 
 ## 9. Open work
 
@@ -501,9 +644,17 @@ Roughly in order of value:
    inverted (§6.1) and rested on n=20 with zero benign cases. As corrected they
    leak 90-100%, which — if it survives a real run — is a finding worth stating
    deliberately rather than a cell to quietly fix.
-5. Re-run OpenMed v2 and the ONNX variants with `--verbose` on the 20k corpus if
-   per-category numbers are wanted for the rows currently backed only by routing
-   logs.
+5. Re-run OpenMed v2 and the remaining ONNX variants with `--verbose` on the 20k
+   corpus if per-category numbers are wanted for the rows currently backed only
+   by routing logs. **Done for pplx** (§6.2): its ONNX row comes from a direct
+   verbose eval, not a router log, which is why it is the only ONNX row with
+   per-category numbers and a measured parity claim. mmBERT-ONNX and
+   OpenMed-v2-ONNX still rest on router logs — and note mmBERT-ONNX's 0.24% vs
+   its safetensors 0.12% is currently an *unexplained* 2x gap that a parity diff
+   like §6.2's would settle.
+6. **Re-time the pplx ONNX row on an uninterrupted run** with
+   `--intra-op-threads` pinned. The current 2.17hr is a resumed,
+   default-threaded run and is not comparable to the 2.55hr torch figure (§6).
 
 ## 10. Files
 
@@ -513,6 +664,11 @@ Roughly in order of value:
 | `pii_ner_eval.py` | Standard HF token-classification models (mmBERT, OpenMed) |
 | `pii_gliner_eval.py` | GLiNER zero-shot (labels supplied at inference) |
 | `pii_pplx_eval.py` | `perplexity-ai/pplx-pii-masking` (custom arch, dual heads) |
+| `pii_pplx_onnx_eval.py` | Same model via onnxruntime + the checkpoint's real Viterbi; `--parity-against` diffs a safetensors run case by case |
+| `pplx_pii_masking2onnx.py` | Exports pplx-pii-masking to ONNX (two named outputs, no decoder baked in) |
+| `compare_pii_onnx_vs_safetensors.py` | Single-text logit-level ONNX vs safetensors diff, for pplx and privacy-filter-ml-v2 |
+| `setup_pplx_pii_masking_onnx.py` | Places the export beside the HF snapshot + writes `manifest.json` for Lemonade's ort-server |
+| `generate_pplx_pii_masking_onnx_policy.py` | Emits the router policy for the registered ONNX model |
 | `pii_routing_eval.py` | Full router replay — regex, LLM-as-router, ONNX classifier policies |
 | `pii_taxonomy.py` | Canonical 24-category interlingua + per-model mappings |
 | `pii_category_recall.py` | Re-scores existing logs per category; `--strict`, `--doc-level` |

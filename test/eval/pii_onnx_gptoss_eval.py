@@ -179,6 +179,8 @@ def detect_entity_types(
     (non-special) token. Special tokens are excluded via the tokenizer's own
     special_tokens_mask, same approach pii_ner_eval.py uses.
     """
+    import numpy as np
+
     encoded = tokenizer(
         text,
         return_tensors="np",
@@ -188,13 +190,21 @@ def detect_entity_types(
     )
     special_mask = encoded.pop("special_tokens_mask")[0]
 
-    (logits,) = session.run(
-        None,
-        {
-            "input_ids": encoded["input_ids"],
-            "attention_mask": encoded["attention_mask"],
-        },
-    )
+    # Cast to the dtype each graph input actually declares. Tokenizers differ
+    # here - this checkpoint's returns int32 while the exported graph's inputs
+    # are int64 - and onnxruntime rejects the mismatch outright rather than
+    # promoting, so the cast can't be left to chance across models.
+    input_dtypes = {i.name: i.type for i in session.get_inputs()}
+    feed = {}
+    for input_name in ("input_ids", "attention_mask"):
+        array = encoded[input_name]
+        if input_dtypes.get(input_name) == "tensor(int64)":
+            array = array.astype(np.int64)
+        elif input_dtypes.get(input_name) == "tensor(int32)":
+            array = array.astype(np.int32)
+        feed[input_name] = array
+
+    (logits,) = session.run(None, feed)
     predictions = logits[0].argmax(axis=-1).tolist()
 
     types: set[str] = set()
@@ -299,7 +309,11 @@ def evaluate(args: argparse.Namespace) -> None:
         else:
             log_dir = Path(args.log_dir) if args.log_dir else corpus_dir / "runs"
             log_dir.mkdir(parents=True, exist_ok=True)
-            run_id = f"onnx_privacy-filter-ml-v2_{time.strftime('%Y%m%d-%H%M%S')}"
+            # Name the run after the graph actually being evaluated. This
+            # script is parameterized by --model-dir/--repo-id, so a fixed
+            # slug here silently mislabels every other model's log.
+            model_slug = Path(args.model_dir).name.replace("-onnx", "")
+            run_id = f"onnx_{model_slug}_{time.strftime('%Y%m%d-%H%M%S')}"
             log_path = log_dir / f"{run_id}.log"
             json_path = log_dir / f"{run_id}.json"
             log_file_handle = log_path.open("w", encoding="utf-8", buffering=1)

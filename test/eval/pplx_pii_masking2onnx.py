@@ -57,6 +57,17 @@ import onnxruntime as ort
 import torch
 from transformers import AutoModel, AutoTokenizer
 
+# torch.onnx's own progress printer emits U+2705 on a successful graph
+# capture. On Windows the default cp1252 stdout can't encode it and the
+# export dies *after* the graph is already captured, so the failure looks
+# like an export bug rather than a console-encoding one. Same reconfigure
+# the eval scripts in this directory carry.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 REPO_ID = "perplexity-ai/pplx-pii-masking"
 ONNX_OUTPUT_DIR = os.path.join(
     os.path.expanduser("~"),
