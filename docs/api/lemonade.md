@@ -1436,7 +1436,7 @@ curl http://localhost:13305/v1/docs
   "docs": [
     {
       "id": "api/README",
-      "title": "Lemonade Server API Spec",
+      "title": "Lemonade Endpoints Spec",
       "url": "/v1/docs/api/README",
       "bytes": 1272
     },
