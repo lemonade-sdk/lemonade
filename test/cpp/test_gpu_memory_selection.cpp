@@ -1,5 +1,7 @@
 #include <lemon/gpu_memory_selection.h>
+#include <lemon/nvidia_smi_parse.h>
 
+#include <cmath>
 #include <cstdio>
 
 using namespace lemon;
@@ -160,6 +162,90 @@ int main() {
     auto automatic = select_gpu_memory_pool(
         GpuMemoryVendor::Any, unavailable, amd, nvidia, unavailable);
     check(automatic.total_gb == 4.0, "ambiguous target preserves fallback order");
+
+    // ROCm assigns ordinals by ascending KFD node number, which need not match
+    // SystemInfo's iGPU-then-dGPU enumeration order. A host where the dGPU has the
+    // lower KFD node (ordinal 0) and the iGPU the higher one (ordinal 1) must select
+    // by GPUInfo::index, not by vector position.
+    GPUInfo ordinal_igpu = gpu(2.0, 0.5, /*index=*/1);
+    ordinal_igpu.virtual_gb = 6.0;
+    ordinal_igpu.virtual_used_gb = 1.5;
+    std::vector<GPUInfo> ordinal_dgpu{gpu(16.0, 3.0, /*index=*/0)};
+    auto rocm0_by_ordinal = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "ROCm0"), ordinal_igpu, ordinal_dgpu,
+        nvidia, unavailable, "ROCm0");
+    check(rocm0_by_ordinal.total_gb == 16.0 && rocm0_by_ordinal.label == "AMD ROCm0",
+          "ROCm0 selects the KFD-ordinal-0 device even when it is not first in "
+          "enumeration order");
+    auto rocm1_by_ordinal = select_gpu_memory_pool(
+        gpu_memory_vendor_for_target("system", "ROCm1"), ordinal_igpu, ordinal_dgpu,
+        nvidia, unavailable, "ROCm1");
+    check(rocm1_by_ordinal.total_gb == 2.0 + 6.0 && rocm1_by_ordinal.label == "AMD ROCm1",
+          "ROCm1 selects the KFD-ordinal-1 iGPU even when it is enumerated first");
+
+    // --- nvidia-smi CSV row parsing ---
+
+    auto well_formed = parse_nvidia_smi_line(
+        "0, GPU-1234, NVIDIA GeForce RTX 4090, 8.9, 550.54.15, 24564, 1024", 7);
+    check(well_formed.index == 0 && well_formed.uuid == "GPU-1234" &&
+              well_formed.name == "NVIDIA GeForce RTX 4090" &&
+              well_formed.compute_cap == "8.9" &&
+              std::abs(well_formed.vram_gb - 24564.0 / 1024.0) < 1e-6 &&
+              std::abs(well_formed.vram_used_gb - 1024.0 / 1024.0) < 1e-6,
+          "well-formed nvidia-smi row parses all fields");
+
+    auto comma_in_name = parse_nvidia_smi_line(
+        "1, GPU-5678, NVIDIA T400, 4GB, 7.5, 528.02, 4096, 512", 7);
+    check(comma_in_name.name == "NVIDIA T400, 4GB" && comma_in_name.compute_cap == "7.5",
+          "comma embedded in GPU name does not break field splitting");
+
+    auto not_supported_used = parse_nvidia_smi_line(
+        "0, GPU-aaaa, Tesla T4, 7.5, 470.199.02, 16384, [Not Supported]", 0);
+    check(not_supported_used.vram_used_gb < 0.0,
+          "[Not Supported] memory.used falls back to the -1 sentinel");
+
+    auto truncated = parse_nvidia_smi_line("0, GPU-aaaa, Tesla T4", 3);
+    check(truncated.compute_cap.empty(),
+          "truncated row (missing trailing fields) is rejected");
+
+    auto empty_row = parse_nvidia_smi_line("   ", 2);
+    check(empty_row.compute_cap.empty() && empty_row.name.empty(),
+          "empty row is rejected");
+
+    auto unparseable_index = parse_nvidia_smi_line(
+        "n/a, GPU-bbbb, Some GPU, 8.6, 550.00, 8192, 256", 5);
+    check(unparseable_index.index == 5,
+          "unparseable index field falls back to the caller-supplied ordinal");
+
+    // --- ctx-size scope-warning classification ---
+
+    CtxMemoryScope single_gpu_scope;
+    single_gpu_scope.is_gpu = true;
+    single_gpu_scope.device_named = true;
+    single_gpu_scope.reachable_gpu_count = 1;
+    check(classify_ctx_scope(single_gpu_scope) == CtxScopeWarning::None,
+          "single-GPU host stays silent even when unscoped");
+
+    CtxMemoryScope unscoped_scope;
+    unscoped_scope.is_gpu = true;
+    unscoped_scope.device_named = true;
+    unscoped_scope.per_device = false;
+    unscoped_scope.reachable_gpu_count = 2;
+    check(classify_ctx_scope(unscoped_scope) == CtxScopeWarning::Unscoped,
+          "vendor named without an ordinal on a multi-GPU host is Unscoped");
+
+    CtxMemoryScope per_device_scope = unscoped_scope;
+    per_device_scope.per_device = true;
+    check(classify_ctx_scope(per_device_scope) == CtxScopeWarning::None,
+          "an explicit ordinal on a multi-GPU host is fully scoped");
+
+    CtxMemoryScope ambiguous_scope;
+    ambiguous_scope.is_gpu = true;
+    ambiguous_scope.device_named = false;
+    ambiguous_scope.reachable_gpu_count = 2;
+    ambiguous_scope.ambiguous = true;
+    check(classify_ctx_scope(ambiguous_scope) == CtxScopeWarning::Ambiguous,
+          "no device named on a multi-GPU host is Ambiguous");
 
     return failures == 0 ? 0 : 1;
 }
