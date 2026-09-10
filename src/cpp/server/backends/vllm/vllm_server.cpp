@@ -277,11 +277,29 @@ static void cleanup_vllm_rocm_shim_dir(fs::path& shim_dir) {
     shim_dir.clear();
 }
 
+// Map the public "rocm" backend to its channel key ("rocm-stable"/"rocm-nightly") via the global rocm_channel toggle.
+// Anything else passes through unchanged. Mirrors resolve_llamacpp_backend().
+static std::string resolve_vllm_rocm_backend(const std::string& backend) {
+    if (backend == "rocm") {
+        // Map "rocm" to the appropriate channel based on config
+        std::string channel = "stable";
+        if (auto* cfg = RuntimeConfig::global()) {
+            channel = cfg->rocm_channel_for_recipe("vllm");
+        }
+        return "rocm-" + channel;
+    }
+    return backend;
+}
+
+static bool is_vllm_rocm_backend(const std::string& backend) {
+    return backend == "rocm-stable" || backend == "rocm-nightly";
+}
+
 static void configure_vllm_rocm_env(
     const std::string& backend,
     std::vector<std::pair<std::string, std::string>>& env_vars,
     fs::path& shim_dir) {
-    if (backend != "rocm") {
+    if (!is_vllm_rocm_backend(resolve_vllm_rocm_backend(backend))) {
         return;
     }
 
@@ -297,7 +315,8 @@ static void configure_vllm_rocm_env(
 InstallParams VLLMServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
 
-    if (backend == "rocm") {
+    const std::string resolved_backend = resolve_vllm_rocm_backend(backend);
+    if (is_vllm_rocm_backend(resolved_backend)) {
         params.repo = "lemonade-sdk/vllm-rocm";
         std::string target_arch =
             SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
@@ -308,9 +327,12 @@ InstallParams VLLMServer::get_install_params(const std::string& backend, const s
         }
 #ifdef __linux__
         // The per-arch override replaces ONLY the builtin default base, so an explicit
-        // vllm.rocm_bin pin is not silently clobbered on an MI300X host.
-        std::string arch_override = SystemInfo::vllm_rocm_version_override(target_arch);
-        std::string default_pin = BackendUtils::get_backend_version("vllm", "rocm");
+        // vllm.rocm_bin pin is not silently clobbered on a CDNA host.
+        // CDNA publishes its own vLLM/ROCm line per channel, so the override is resolved for the active channel.
+        // RDNA families have no override and keep the resolved default base.
+        std::string arch_override =
+            SystemInfo::vllm_rocm_version_override(target_arch, resolved_backend);
+        std::string default_pin = BackendUtils::get_backend_version("vllm", resolved_backend);
         const bool on_builtin_default = version.empty() || version == default_pin;
         const std::string& effective_version =
             (!arch_override.empty() && on_builtin_default) ? arch_override : version;
