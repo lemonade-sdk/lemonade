@@ -69,6 +69,12 @@ Lead it with §6.4, not with a feature tour of the policy schema:
   mismatches and 0 has_pii flips across 13,708 shared cases.
 - There is **no threshold at which the two rules agree**. 0.30 matching argmax's
   *count* (25) is a coincidence — the sets overlap only 21/25.
+- **And the containment has a price the document-level rows hide.** The same two
+  rules scored over characters read 0.7849 vs 0.6419 char F1 — the shipped
+  threshold discards 29% of the PII characters mmBERT can find. That is the
+  payoff of putting Router B after the detector results *and* after §7's
+  character turn: the reader arrives already holding the metric that makes the
+  point land.
 
 That is a concrete, falsifiable answer to "how is the router different from a
 base argmax," and it is far better than a schema walkthrough. The schema
@@ -88,11 +94,11 @@ detail *after* that, at about a third of the length.
 | 4 | Candidate models | What exists open source; the axis that matters | have |
 | 5 | The dataset | Nemotron-PII; **state the zero-benign fact here** | have |
 | 6 | Baselines | Regex → embeddings → LLM-as-router; the size paradox | have |
-| 7 | Encoder detectors | Leak table, then the turn to per-category | have |
+| 7 | Encoder detectors | Leak table, then **the turn to character F1** | have |
 | 8 | ONNX | Two traps + the parity proof | have (pplx only) |
-| 9 | **Router B — how it decides** | `min_score` vs argmax; routing results; the curve | have |
+| 9 | **Router B — how it decides** | `min_score` vs argmax **in characters**; routing results; the curve | have |
 | 10 | Cost of the gate | ms/prompt for the classifier | **missing — E3** |
-| 11 | Limitations | Benign arm, char F1, taxonomy, GLiNER asterisk | have |
+| 11 | Limitations | Benign arm, char-F1 coverage, taxonomy, GLiNER asterisk | have |
 | 12 | What we'd ship | A recommendation with numbers | write |
 
 ### §1 The problem
@@ -268,6 +274,34 @@ Also flag in the table's caption: the 7.19hr / 8.12hr figures are **router E2E**
 classification over the same 20,001 cases is ~28 min. Readers will otherwise
 conclude the gate costs hours.
 
+**Then make the turn — and make it with characters, not per-category recall.**
+The table above is the setup for the post's best moment: every model in it is
+"essentially perfect", the top six sit inside one percentage point, and the
+column cannot rank them. Follow it immediately with E2's result (§5.6 of the
+benchmarking doc):
+
+| Model | char P | char R | **char F1** | doc leak |
+|---|---:|---:|---:|---:|
+| OpenMed privacy-filter-ml-v2 | 0.9769 | 0.9359 | **0.9559** | 0.00% |
+| pplx-pii-masking | 0.9725 | 0.7330 | **0.8360** | 0.795% |
+| mmBERT32K-PII | 0.9202 | 0.6842 | **0.7849** | 0.125% |
+| *flag everything* | *0.1458* | *1.0000* | *0.2544* | *0.00%* |
+
+**The ordering inverts.** mmBERT leaks 6x fewer documents than pplx and is the
+worse detector by characters — it fires *somewhere* on nearly every document
+while covering much less of what is actually in it. One table, and the reader
+understands why document-level scoring was not enough without being lectured
+about it.
+
+This also **replaces E9's strawman** with a measured one: the *flag everything*
+row is a real number now (0.2544), not a rhetorical device, and every model
+clears it by a wide margin.
+
+Then per-label character recall for the blind spots — `time` at 60.6 / 46.7 /
+75.2% across all three, `country` at 23.3 / 28.4% for the two smaller models —
+and note that this view needs **no taxonomy mapping at all**, which retires the
+lenient-vs-strict caveat for these three rows.
+
 **Then make the turn.** Four models are bunched between 0.00% and 0.24% and the
 leak rate has stopped discriminating. Two moves recover the signal:
 
@@ -376,12 +410,39 @@ curve.
    line: **special tokens are excluded from the max, and this was measured** —
    including them puts all 49 known leaks above 0.5 because this model's `<bos>`
    always fires a label.
-4. **The schema, briefly.** Policy is data, not code: first-match-wins rule
+4. **What the rule actually costs — in characters.** This is the strongest
+   addition E2 makes to this section, because it reverses the reader's takeaway
+   from step 3. At document level the two rules differ by 0.12 percentage
+   points and the honest summary is "the threshold barely matters." Score the
+   same two rules on the same ONNX graph in the same process, over characters:
+
+   | mmBERT rule | char P | char R | char F1 | doc leak |
+   |---|---:|---:|---:|---:|
+   | argmax | 0.9202 | 0.6842 | **0.7849** | 0.125% |
+   | `min_score` 0.5 | 0.9494 | 0.4849 | **0.6419** | 0.245% |
+
+   **The shipped threshold throws away 29% of the PII characters mmBERT can
+   find.** A router only has to notice one entity per document, so it never
+   pays that bill — which is exactly why the document-level view says the
+   choice is cheap. A masking or redaction path pays all of it.
+
+   The same shape appears on pplx from the other direction: its own constrained
+   BIOES Viterbi decoder **nearly doubles** its document leak rate against
+   plain argmax (159 vs 84) while buying precision (0.9627 → 0.9725). A
+   constrained decoder is a trade, not a free upgrade.
+
+   **The generalizable claim, and a good candidate for the post's closing
+   line: route with the loose rule, mask with the strict one.** Same weights,
+   same graph, two jobs, two thresholds. Note also that this is a *cleaner*
+   proof than step 3's: there the backend was held constant across two runs by
+   argument, here both rules run over one graph in one process.
+
+5. **The schema, briefly.** Policy is data, not code: first-match-wins rule
    resolution, fail-open default, `on_error: "match_false"`, band tests
    (`min_score`/`max_score`), cheap conditions (keywords, char bounds, metadata)
    evaluated before model-backed ones. Point at `docs/dev/router-policy.md`
    rather than reproducing the schema.
-5. **The curve** (mmBERT ONNX):
+6. **The curve** (mmBERT ONNX):
 
    | `min_score` | leaks | recall | vs argmax |
    |---|---|---|---|
@@ -410,26 +471,45 @@ question a systems audience asks and the post is weak without it.
 
 ### §11 Limitations
 
-Short, because §5 already conceded the big one. Cover: the benign arm; character
-F1 is designed but not implemented; `pii_taxonomy.py`'s mappings are **editorial
-judgment and should be reviewed, not assumed** (two were wrong on the first pass
-and one produced a fake "0.2% biometric failure" for OpenMed that was purely a
-bad mapping); the GLiNER asterisk; **no language field in this corpus** (§4 of
-this plan).
+Short, because §5 already conceded the big one. Cover:
+
+- **The benign arm.** Still the load-bearing gap. Character precision (§7)
+  narrows it — an over-tagging model is now penalized on positive documents —
+  but it is bounded by PII density, not a true FP-rate, and it says nothing
+  about behavior on benign traffic. E1 remains outstanding.
+- **Character F1 covers three models, not eight.** The LLM routers and embedding
+  classifiers emit a decision and never a span, so they are document-level
+  permanently — a property of the method, not a gap. GLiNER, OpenMed v1,
+  OpenAI/privacy-filter and mmBERT-safetensors simply have not been run yet.
+- **`pii_taxonomy.py`'s mappings are editorial judgment and should be reviewed,
+  not assumed** — two were wrong on the first pass and one produced a fake "0.2%
+  biometric failure" for OpenMed that was purely a bad mapping. Worth adding
+  that character-level per-label recall **needs none of it**, which is part of
+  why it is the better diagnostic.
+- **The GLiNER asterisk.**
+- **No language field in this corpus** (§4 of this plan).
 
 ### §12 What we'd ship
 
-A recommendation with numbers, not a shrug. Roughly: an ONNX encoder detector at
-`min_score` 0.5 in front of a local/cloud split — pplx-ONNX if the parity
-evidence and per-category profile matter most, OpenMed-v2 if raw leak rate does
-(pending E6 giving it the same treatment pplx got). State what the gate costs
-(E3) and what it does not measure (over-routing).
+A recommendation with numbers, not a shrug. **E2 sharpens this considerably:**
+
+- **OpenMed privacy-filter-ml-v2 is the recommendation**, and now for a reason
+  beyond a 0% leak rate that four models tie on: it wins character F1 by 0.12
+  (0.9559 vs 0.8360), holds >90% recall in every span-length bucket, and is the
+  only one of the three without a catastrophic per-label hole. The cost is size
+  — a 5.6 GB fp32 graph, ~3x slower per document than mmBERT.
+- **Match the decision rule to the job.** Both E2 decoder findings point the
+  same way: `min_score` 0.5 costs mmBERT char recall 0.6842 → 0.4849 while
+  barely moving document leak, and pplx's own Viterbi decoder nearly doubles its
+  leak rate against argmax while buying precision. **Route with the loose rule,
+  mask with the strict one.** Most posts never separate these two jobs.
+- State what the gate costs (E3) and what it does not measure (over-routing).
 
 ---
 
 ## 3. Reframings from `pii_benchmarking.md`
 
-Three places where the source doc's framing is right for an internal record and
+Four places where the source doc's framing is right for an internal record and
 wrong for a post.
 
 **(a) "The metric is a binary" — apology to justification.** Covered in §1.1.
@@ -450,23 +530,37 @@ of a separate topic.
 it is a paragraph inside §5.3. In the post it is a subsection with the enrichment
 table, the two-failure-modes reading, and the verbatim rationale quote.
 
+**(d) Character F1 is a caveat internally and the post's central turn.** In the
+benchmarking doc §5.6 sits where it belongs for a record: after the
+document-level results, as the more careful re-measurement. In the post it is
+not a footnote to §7 — it is the moment §7 exists for. The leak-rate table is
+built so the reader notices that eight models are all "essentially perfect" and
+the column cannot rank them; the character table then ranks them and **inverts
+the order**. Deliver it as a turn, not as an appendix, and do not soften the
+leak-rate table beforehand to make the turn less surprising.
+
 ---
 
 ## 4. Claims the post must not make
 
-- **No character-level F1 results.** Status is *designed, not implemented*.
-  Zero character numbers of record exist. The only ones that exist at all are the
-  single-document `nemotron-pii-15485` figures (pplx 0.524, mmBERT 0.625), whose
-  gold spans were **reconstructed by substring search with inferred boundaries**
-  because the builder discarded the real offsets. The source doc explicitly marks
-  them "illustrative of the method, not results of record." Publishing them would
-  be the exact failure its traps list is about. See E2 for what unlocks this.
-  - The *method* can still be previewed as forward-looking: the
-    character-alignment diagram for case 15485 (both models blind to 49 of 76
-    gold PII chars while scoring a perfect document-level PASS) is a strong
-    figure. Label it a worked illustration and give it no numbers in the results
-    tables.
-- **No precision, F1, FPR or specificity number, for any model.** n_benign = 1.
+- **~~No character-level F1 results.~~ E2 is done — see §5.6 of the benchmarking
+  doc.** Character F1 on the full 20,001-case corpus is now a number of record
+  for the three ONNX detectors, and the post should lead §7 with it. Two
+  standing constraints remain:
+  - **The single-document `nemotron-pii-15485` figures (pplx 0.524, mmBERT
+    0.625) are still not results of record.** Their gold spans were
+    reconstructed by substring search with inferred boundaries. The real
+    corpus-wide numbers superseded them; use those. The case-15485
+    *alignment diagram* remains a good explanatory figure — label it a worked
+    illustration and never mix its numbers into a results table.
+  - **Character F1 is undefined for the LLM routers and the embedding
+    classifiers.** They emit a decision, never a span. Those rows stay
+    document-level permanently; say so once rather than leaving a blank cell.
+- **No document-level *precision*, FPR or specificity number, for any model.**
+  n_benign = 1. **Character precision is now measurable and measured**
+  (0.92-0.98 across the three detectors, against a 0.1458 flag-everything
+  floor) — but it is bounded by PII density, not a true FP-rate, and it says
+  nothing about behavior on benign traffic. E1 is still the load-bearing gap.
 - **No multilingual claim.** There is no language field in this corpus and
   Nemotron-PII is English. The multilingual models (mmBERT, OpenMed-multilingual)
   have **no measured multilingual advantage here.** One sentence in §11; do not
@@ -501,6 +595,9 @@ table, the two-failure-modes reading, and the verbatim rationale quote.
 | ONNX parity table | §8 | §6.2 | have |
 | argmax-vs-`min_score` rule diagram | §9 | §6.4 | to draw |
 | `min_score` curve + caveat, one figure | §9 | `min_score_curve.json` | have |
+| **Character-F1 headline table (3 detectors)** | **§7** | **§5.6** | **have** |
+| **Per-label character-recall table** | **§7** | `pii_char_f1_report.py --by-label` | **have** |
+| **pplx viterbi-vs-argmax decoder table** | **§8/§9** | **§5.6** | **have** |
 | Character-alignment illustration (case 15485) | §4/§11 | §5.5 | have, label clearly |
 | False-negative gallery | §7 or §11 | run logs | E10 |
 | Latency table | §10 | — | **E3** |
@@ -542,7 +639,55 @@ first pass rather than producing unnatural text.
 **Do this in the same builder change as E2** — both need spans preserved
 through `normalize_text()` and the prompt prefix.
 
-#### E2. Preserve span offsets, then character F1 (Phase 1 only)
+#### E2. Preserve span offsets, then character F1 — **DONE**
+
+**Result: it separates the models far more than the leak rates do, so the
+answer to the doc's own "if it separates them, spend the 15 hours" is yes.**
+Full 20,001-case runs, not the 500-case Phase 1 slice — the slice was skipped
+once mmBERT came in at 24 minutes.
+
+| Model | char P | char R | **char F1** | doc leak |
+|---|---:|---:|---:|---:|
+| privacy-filter (OpenMed ml-v2) | 0.9769 | 0.9359 | **0.9559** | 0.00% |
+| pplx-pii-masking | 0.9725 | 0.7330 | **0.8360** | 0.795% |
+| mmBERT32K-PII | 0.9202 | 0.6842 | **0.7849** | 0.125% |
+| *flag-everything strawman* | *0.1458* | *1.0000* | *0.2544* | *0.00%* |
+
+Three models inside one percentage point of document leak spread across **0.16
+of character F1**, and the ordering inverts: mmBERT leaks 6x fewer documents
+than pplx and is the worse detector by characters. That single fact is the
+strongest argument in the post for why the metric had to change, and it is a
+better version of the E9 strawman than E9 was going to be.
+
+**What the post gains, beyond the table:**
+
+1. **A real precision number.** 0.92-0.98 against a 0.1458 floor. §5's honesty
+   concession gets a partial answer instead of a pure apology.
+2. **Two decision-rule findings that document scoring hides.** mmBERT's shipped
+   `min_score` 0.5 costs char recall 0.6842 → 0.4849 while moving document leak
+   only 0.12% → 0.24%. pplx's own Viterbi decoder *nearly doubles* its leak rate
+   against plain argmax (159 vs 84) while buying precision. Both are the same
+   shape: **route with the loose rule, mask with the strict one** — and the post
+   can say that with numbers.
+3. **Per-label recall with no taxonomy in the loop**, which kills the
+   lenient-vs-strict caveat (§5.2) for these three models. New findings: `time`
+   is a shared blind spot (60.6/46.7/75.2) that §5.1's `DATE_TIME` row hides
+   behind easy dates; geographic granularity (`country` 23.3%/28.4%) is where
+   the two smaller models actually break, invisible inside `ADDRESS_LOCATION`.
+4. **A validation gate worth one sentence in §8.** The new pipeline reproduces
+   every known document-level number exactly — mmBERT 25 and 49 leaks, the 24
+   threshold-only cases, pplx's 159 — from code sharing nothing with the
+   original scorers. It is the strongest reproducibility claim the post has.
+
+**Cost, actual:** ~3.5 hr of CPU for the three full runs, plus the builder
+change. Not the 10-15 hr estimated, because only three models were in scope and
+the corpus never needed rebuilding — `annotate_gold_spans.py` back-fills
+offsets onto the existing corpus, so every document-level row stays comparable.
+
+<details>
+<summary>Original plan (kept for the design rationale)</summary>
+
+#### E2 (original). Preserve span offsets, then character F1 (Phase 1 only)
 
 **Unlocks:** a character-F1 section at all; the only way to rank four models
 currently bunched at 0.00–0.24% leak; separates "wrong label" from "wrong
@@ -574,6 +719,8 @@ near-zero for correct detections.
 Undefined for LLM routers and embedding classifiers — they emit a decision, never
 a span. Those rows stay document-level permanently; a property of the method, not
 a gap.
+
+</details>
 
 #### E3. Measure what the gate costs per prompt
 
@@ -658,7 +805,7 @@ whole model set for free. Likely the best value-per-minute item in this file.
 | # | Experiment | Cost | Unlocks | Tier |
 |---|---|---|---|---|
 | E1 | Benign arm (2k hard negatives) | builder + 4 runs | precision, FPR, over-route | 1 |
-| E2 | Span offsets + char F1 Phase 1 | builder + minutes | char-F1 section | 1 |
+| ~~E2~~ | ~~Span offsets + char F1~~ **DONE** | ~3.5 hr actual | char-F1 §7, real precision, 2 decoder findings | ~~1~~ |
 | E3 | Per-prompt gate latency | short | §10 | 1 |
 | E4 | Re-time pplx ONNX pinned | ~2.5hr | runtime comparison | 2 |
 | E5 | Embedding classifiers on 20k | low | a defensible §6(a) | 2 |

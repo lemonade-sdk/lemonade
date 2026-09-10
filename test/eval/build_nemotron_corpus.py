@@ -11,6 +11,9 @@ Each case matches the existing conformance schema:
   {
     "name": str,
     "pii_category": str,        # comma-joined entity types, or "none"
+    "pii_spans": [              # gold spans, offsets into request content
+      {"start": int, "end": int, "label": str, "text": str}
+    ],
     "note": str,
     "request": {
       "model": str,
@@ -142,6 +145,84 @@ def normalize_text(text: str, max_chars: int) -> str:
     return text
 
 
+def normalize_text_with_map(text: str, max_chars: int) -> tuple[str, list[int]]:
+    r"""normalize_text() plus `orig_to_new[i]` — where original character i
+    landed in the result, or -1 if it was dropped.
+
+    Character-level scoring needs the gold `start`/`end` offsets, and those
+    index into the *raw* dataset text. Every edit between the raw text and the
+    prompt a model actually sees has to be tracked or the offsets silently
+    point at the wrong characters: the whitespace collapse shifts them by an
+    amount that depends on how much whitespace preceded them, and
+    wrap_in_message() then shifts everything again by the prefix length.
+    Re-finding a span by substring search is not a fallback — gold strings
+    repeat within a document, so the search is sound for "is it present" and
+    useless for "where".
+
+    The whitespace runs are located with the same regex normalize_text() uses
+    rather than str.isspace(), which disagrees with `\s` on a handful of
+    codepoints.
+    """
+    pieces: list[str] = []
+    orig_to_new = [-1] * len(text)
+    cursor = 0
+    for match in _WHITESPACE_RE.finditer(text):
+        run_start, run_end = match.span()
+        for i in range(cursor, run_start):
+            pieces.append(text[i])
+            orig_to_new[i] = len(pieces) - 1
+        pieces.append(" ")
+        collapsed_to = len(pieces) - 1
+        for i in range(run_start, run_end):
+            orig_to_new[i] = collapsed_to
+        cursor = run_end
+    for i in range(cursor, len(text)):
+        pieces.append(text[i])
+        orig_to_new[i] = len(pieces) - 1
+
+    collapsed = "".join(pieces)
+    stripped = collapsed.strip()
+    shift = len(collapsed) - len(collapsed.lstrip())
+    limit = len(stripped)
+
+    if max_chars > 0 and len(stripped) > max_chars:
+        stripped = stripped[:max_chars].rsplit(" ", 1)[0] + " …"
+        # The trailing "…" is synthetic, so nothing may map into it.
+        limit = len(stripped) - 2
+
+    for i, new_i in enumerate(orig_to_new):
+        if new_i < 0:
+            continue
+        shifted = new_i - shift
+        orig_to_new[i] = shifted if 0 <= shifted < limit else -1
+
+    return stripped, orig_to_new
+
+
+def remap_span(span: dict, orig_to_new: list[int], offset: int) -> dict | None:
+    """A raw dataset span rewritten to index into the final prompt string.
+
+    Returns None when the whole span was dropped (truncated away, or every
+    character of it collapsed out).
+    """
+    try:
+        start = int(span["start"])
+        end = int(span["end"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    start = max(0, start)
+    end = min(len(orig_to_new), end)
+    kept = [orig_to_new[i] for i in range(start, end) if orig_to_new[i] >= 0]
+    if not kept:
+        return None
+    return {
+        "start": min(kept) + offset,
+        "end": max(kept) + 1 + offset,
+        "label": str(span.get("label", "")).strip(),
+        "text": str(span.get("text", "")),
+    }
+
+
 def parse_spans(raw) -> list[dict]:
     """Nemotron-PII's `spans` column round-trips through parquet as a Python
     repr string (single-quoted, e.g. "[{'start': 0, ..., 'label': 'x'}]" or
@@ -186,10 +267,10 @@ PROMPT_PREFIXES = [
 ]
 
 
-def wrap_in_message(text: str, rng: random.Random) -> dict:
+def wrap_in_message(text: str, rng: random.Random) -> tuple[dict, int]:
     prefix = rng.choice(PROMPT_PREFIXES)
     content = prefix + text if prefix else text
-    return {
+    return ({
         # pii_routing_eval.py's chat_completion() always overwrites this with
         # whatever --policy's model_name actually is before sending the
         # request, so the corpus is reusable across any policy. Left as an
@@ -198,7 +279,7 @@ def wrap_in_message(text: str, rng: random.Random) -> dict:
         # it for the value actually used at request time.
         "model": "REPLACED_AT_EVAL_TIME",
         "messages": [{"role": "user", "content": content}],
-    }
+    }, len(prefix))
 
 
 # ---------------------------------------------------------------------------
@@ -290,8 +371,10 @@ def build_corpus(args: argparse.Namespace) -> None:
     domain_counter: Counter = Counter()
 
     truncated_to_benign = 0
+    span_offsets_lost = 0
+    span_offsets_mismatched = 0
     for i, row in enumerate(selected_pii):
-        text = normalize_text(row["text"], args.max_chars)
+        text, orig_to_new = normalize_text_with_map(row["text"], args.max_chars)
         spans = parse_spans(row.get("spans"))
 
         # normalize_text() may truncate the document to --max-chars, but spans
@@ -316,6 +399,23 @@ def build_corpus(args: argparse.Namespace) -> None:
         type_counter.update(types)
         domain_counter[domain] += 1
 
+        request, prefix_len = wrap_in_message(text, rng)
+        remapped_spans = [
+            remapped
+            for span in surviving_spans
+            if (remapped := remap_span(span, orig_to_new, prefix_len)) is not None
+        ]
+        span_offsets_lost += len(surviving_spans) - len(remapped_spans)
+        content = request["messages"][0]["content"]
+        for remapped in remapped_spans:
+            # Case-insensitive on purpose: the dataset's `text` field is a
+            # canonicalized copy of the entity while start/end point at the
+            # document's true casing, so ~0.8% of spans differ only in case.
+            if content[remapped["start"] : remapped["end"]].casefold() != (
+                normalize_text(remapped["text"], 0).casefold()
+            ):
+                span_offsets_mismatched += 1
+
         if not surviving_spans:
             # With truncation on (--max-chars > 0), this usually means every
             # entity fell past the cutoff. With truncation off (the default),
@@ -335,7 +435,8 @@ def build_corpus(args: argparse.Namespace) -> None:
                 "pii_category": "none",
                 "note": f"Nemotron-PII {args.split} split. domain={domain} doc_type={doc_type} "
                 f"entities={len(spans)} ({survival_note})",
-                "request": wrap_in_message(text, rng),
+                "request": request,
+                "pii_spans": [],
                 "decision": {
                     "version": "1",
                     "route_to": args.cloud_model,
@@ -355,7 +456,8 @@ def build_corpus(args: argparse.Namespace) -> None:
                 "pii_category": ",".join(types) if types else "unknown",
                 "note": f"Nemotron-PII {args.split} split. domain={domain} doc_type={doc_type} "
                 f"entities={survival_note}",
-                "request": wrap_in_message(text, rng),
+                "request": request,
+                "pii_spans": remapped_spans,
                 "decision": {
                     "version": "1",
                     "route_to": args.privacy_model,
@@ -368,6 +470,7 @@ def build_corpus(args: argparse.Namespace) -> None:
 
     for i, row in enumerate(selected_benign):
         text = normalize_text(row["text"], args.max_chars)
+        request, _ = wrap_in_message(text, rng)
         domain = row.get("domain", "unknown")
         doc_type = row.get("document_type", "unknown")
 
@@ -377,7 +480,8 @@ def build_corpus(args: argparse.Namespace) -> None:
             "name": f"nemotron-benign-{i:05d}",
             "pii_category": "none",
             "note": f"Nemotron-PII {args.split} split, no spans. domain={domain} doc_type={doc_type}",
-            "request": wrap_in_message(text, rng),
+            "request": request,
+            "pii_spans": [],
             "decision": {
                 "version": "1",
                 "route_to": args.cloud_model,
@@ -405,6 +509,9 @@ def build_corpus(args: argparse.Namespace) -> None:
         "n_pii": len(selected_pii),
         "n_benign": len(selected_benign),
         "n_pii_relabeled_benign_due_to_truncation": truncated_to_benign,
+        "n_gold_spans": sum(len(c.get("pii_spans", [])) for c in cases),
+        "n_gold_spans_dropped_in_remap": span_offsets_lost,
+        "n_gold_spans_offset_mismatch": span_offsets_mismatched,
         "total": len(cases),
         "privacy_model": args.privacy_model,
         "cloud_model": args.cloud_model,
