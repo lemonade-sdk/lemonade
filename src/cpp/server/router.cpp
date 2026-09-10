@@ -811,17 +811,9 @@ void Router::load_model(const std::string& model_name,
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
 
-    // Seed a best-effort "pinned" hint before resolving effective options, so
-    // backends (e.g. llama.cpp's resolve_runtime_options()) can see the real
-    // pin decision when baking launch args such as --sleep-idle-seconds. This
-    // mirrors the authoritative final_pinned computation below, but must run
-    // here since resolve_effective_options() is what drives arg-baking. A
-    // short-lived peek lock is used only to read the existing server's live
-    // pin state; it is released before the real load_mutex_ lock is taken
-    // below, so there is no reentrancy or deadlock risk. (resolve_effective_options()
-    // is also called from server.cpp's resolve_context_length() and the
-    // /v1/models/{id}/options display endpoint, neither of which launches a
-    // subprocess, so they don't need this hint.)
+    // resolve_effective_options() below drives arg-baking (e.g. llama.cpp's
+    // --sleep-idle-seconds), so it needs to see the real pin decision. The
+    // peek lock is released before the real load_mutex_ lock a few lines down.
     bool peeked_pinned;
     if (pinned.has_value()) {
         peeked_pinned = pinned.value();

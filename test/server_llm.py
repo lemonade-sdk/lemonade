@@ -1200,14 +1200,12 @@ class LLMTests(ServerTestBase):
     def test_023c_downsize_sleep_wakes_transparently(self):
         """A model downsized via --sleep-idle-seconds still serves the next
         request transparently (no error, no manual reload), but does not
-        cache-restore the prompt -- see docs/dev/llamacpp-runtime-defaults.md
-        for why waking from sleep always starts with an empty RAM prompt
-        cache.
+        cache-restore the prompt: waking from sleep always starts with an
+        empty RAM prompt cache.
 
         This does NOT verify VRAM is actually released -- there is no in-band
-        signal for GPU memory in these APIs (see "Verifying VRAM is actually
-        released" in docs/dev/llamacpp-runtime-defaults.md, which documents
-        that check as a manual, out-of-band measurement instead)."""
+        signal for GPU memory in these APIs, so that check is a manual,
+        out-of-band measurement instead."""
         requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
         client = self.get_openai_client()

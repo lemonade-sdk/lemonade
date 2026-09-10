@@ -95,7 +95,7 @@ A background monitor samples global VRAM usage (NVIDIA via `nvidia-smi`, AMD via
 
 **Tiered degradation.** Idle models degrade in two stages rather than a binary loaded/unloaded:
 
-1. **Soft idle (downsize):** after `downsize_idle_timeout` seconds idle, the KV cache/context is cleared to free dynamic memory while base weights stay resident. The next request transparently restores it.
+1. **Soft idle (downsize):** after `downsize_idle_timeout` seconds idle, the KV cache/context is cleared to free dynamic memory while base weights stay resident. The next request transparently restores it. On the llama.cpp backend, downsize instead puts the whole `llama-server` process to sleep (`--sleep-idle-seconds`), releasing its full VRAM allocation; the next request wakes it with a cold re-prefill
 2. **Hard idle / pressure (evict):** after `evict_idle_timeout` seconds idle, or under VRAM pressure, the model is fully unloaded (VRAM released; the weights file stays in the OS page cache for a fast reload).
 
 **Load-time-weighted scoring.** Under pressure, the engine evicts by:
@@ -122,7 +122,7 @@ These can be set per model on `/api/v1/load` (or globally where noted):
 
 ## Model Pinning
 
-To prevent frequently used models from being auto-evicted by the LRU policy, you can "pin" them in memory. Pinned models are excluded from the eviction candidate search.
+To prevent frequently used models from being auto-evicted by the LRU policy, you can "pin" them in memory. Pinned models are excluded from the eviction candidate search. On the llama.cpp backend, pinning also guarantees the backend's own `--sleep-idle-seconds` timer is never armed, so a pinned model can't put itself to sleep independently of Lemonade's eviction engine.
 
 ### Pinning Behavior
 

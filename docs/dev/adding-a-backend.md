@@ -161,6 +161,7 @@ Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-com
 | Custom per-model fields without editing `ModelInfo` | read `model_info.extra<T>("my_field", fallback)` (populated from unknown `server_models.json` keys) |
 | Models supplied at runtime, not from `server_models.json` | set `dynamic_models = true` and provide them in the class (see cloud's `discover_models()`) |
 | Per-create setup before load (ryzenai `set_model_path`) | do it in `create()` |
+| Downsize eligibility is fixed at launch, not config-driven (llama.cpp bakes `--sleep-idle-seconds` into launch args) | override `WrappedServer::downsize_effective_for_this_instance()` / `effective_downsize_idle_timeout_sec()` |
 
 ## The simplest end-to-end example
 

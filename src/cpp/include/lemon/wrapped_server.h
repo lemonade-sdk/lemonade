@@ -460,28 +460,24 @@ public:
         return true;
     }
 
-    // Restore the model from a downsized state
-    virtual void restore() {
-        // No-op by default
-    }
+    // Restore the model from a downsized state. No-op by default is safe:
+    // the caller flips state_ to READY right after this returns, but for a
+    // backend that self-wakes on its next request (llama.cpp waking a
+    // sleeping subprocess), the forwarded request itself blocks until the
+    // backend is actually ready, so the optimistic state flip can't race a
+    // request into a still-sleeping backend.
+    virtual void restore() {}
 
-    // Whether downsize() will do something real for *this already-running*
-    // instance, independent of whatever the live auto_evict config says right
-    // now. Most backends implement downsize() as fully config-driven -- no
-    // state is fixed at process launch -- so the default just mirrors the
-    // live config value passed in. llama.cpp overrides this because
-    // --sleep-idle-seconds is baked into launch args and toggling auto_evict
-    // at runtime (/internal/set, or a recipe update) cannot add or remove a
-    // flag from an already-running subprocess.
+    // Default mirrors the live auto_evict config. llama.cpp overrides this
+    // since --sleep-idle-seconds is baked into launch args and can't be
+    // added/removed from an already-running subprocess by a config toggle.
     virtual bool downsize_effective_for_this_instance(bool auto_evict_config) const {
         return auto_evict_config;
     }
 
-    // The downsize idle timeout actually in effect for this instance, in
-    // seconds, or -1 if the caller should keep using the recipe/global
-    // downsize_idle_timeout value instead. Only consulted when
-    // downsize_effective_for_this_instance() is true. Default: no launch-time
-    // override. See LlamaCppServer::load() for a backend that needs one.
+    // -1 means "use the recipe/global downsize_idle_timeout"; only consulted
+    // when downsize_effective_for_this_instance() is true. See
+    // LlamaCppServer::load() for a backend that overrides this.
     virtual long effective_downsize_idle_timeout_sec() const {
         return -1;
     }
