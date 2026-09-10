@@ -16,6 +16,7 @@
 
 #include <lemon/utils/aixlog.hpp>
 
+#include "lemon/api_docs.h"
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
 #include "lemon/utils/json_utils.h"
@@ -390,6 +391,8 @@ json McpServer::handle_tools_call(const json& params, const json& id) {
             result = tool_omni(arguments);
         } else if (tool_name == "lemonade_list_models") {
             result = tool_list_models(arguments);
+        } else if (tool_name == "lemonade_docs") {
+            result = tool_docs(arguments);
         } else {
             // Per MCP spec, unknown-tool errors are isError=true results, not JSON-RPC errors.
             result = {
@@ -1312,7 +1315,72 @@ json McpServer::tools_descriptor() {
                 }},
             }},
         },
+        {
+            {"name", "lemonade_docs"},
+            {"description",
+             "Read this server's own API reference. Call with no arguments to "
+             "list the pages it ships, then pass `page` (an `id` from that "
+             "list) to read one as markdown. The docs are bundled with the "
+             "server, so they describe the version actually running and work "
+             "offline. Use this before hand-writing requests against Lemonade "
+             "endpoints."},
+            {"inputSchema", {
+                {"type", "object"},
+                {"properties", {
+                    {"page", {{"type", "string"},
+                              {"description", "Optional. Page id from the listing, e.g. 'api/lemonade'. Omit to list."}}},
+                }},
+            }},
+        },
     });
+}
+
+json McpServer::tool_docs(const json& arguments) {
+    const std::string docs_dir = utils::get_resource_path("resources/docs");
+    const std::string page = arguments.value("page", std::string());
+
+    if (!page.empty()) {
+        std::string content;
+        if (!read_api_doc(docs_dir, page, content)) {
+            return {
+                {"content", json::array({text_content_block(
+                    "Unknown documentation page: " + page +
+                    ". Call lemonade_docs with no arguments to list what this server ships.")})},
+                {"isError", true},
+            };
+        }
+        return {
+            {"content", json::array({text_content_block(content)})},
+            {"isError", false},
+        };
+    }
+
+    json pages = json::array();
+    for (const ApiDoc& doc : list_api_docs(docs_dir)) {
+        pages.push_back({{"id", doc.id}, {"title", doc.title}, {"bytes", doc.bytes}});
+    }
+
+    if (pages.empty()) {
+        return {
+            {"content", json::array({text_content_block(
+                "This server has no bundled documentation installed.")})},
+            {"isError", false},
+        };
+    }
+
+    const std::string summary =
+        "Lemonade Server " LEMON_VERSION_STRING " ships " +
+        std::to_string(pages.size()) +
+        " documentation pages. Call lemonade_docs again with `page` set to one of the "
+        "listed ids to read it.";
+
+    return {
+        {"content", json::array({
+            text_content_block(summary),
+            text_content_block(json({{"pages", pages}}).dump()),
+        })},
+        {"isError", false},
+    };
 }
 
 json McpServer::make_error_response(const json& id, int code, const std::string& message) {
