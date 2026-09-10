@@ -112,21 +112,22 @@ interface EffectiveSettingsModalProps {
   mcpServerIds: string[];
   fallbackCtxSize?: number;
   loadedModel?: LoadedModel | null;
-  isModelLoaded: boolean;
   onReload: () => Promise<void>;
   onLoad: () => Promise<void>;
 }
 
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
-  open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, isModelLoaded, onReload, onLoad,
+  open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, onReload, onLoad,
 }) => {
   const argsField = backendArgsFieldForRecipe(recipe);
   const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
 
   const [serverModelOptions, setServerModelOptions] = useState<ModelOptions | null>(null);
   const [runtimeModel, setRuntimeModel] = useState<LoadedModel | null>(loadedModel || null);
+  const [runtimeStateModelName, setRuntimeStateModelName] = useState<string | null>(null);
   const [launchCommand, setLaunchCommand] = useState<string[] | null>(loadedModel?.launch_command || null);
-  const [loading, setLoading] = useState(false);
+  const [configurationLoading, setConfigurationLoading] = useState(false);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [unlocked, setUnlocked] = useState(false);
@@ -142,8 +143,24 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   });
   const [loadedContextSize, setLoadedContextSize] = useState<number | null>(null);
   const [resolvingContextSize, setResolvingContextSize] = useState(false);
+  const configurationRequestRef = useRef(0);
+  const runtimeRequestRef = useRef(0);
+  const draftRevisionRef = useRef(0);
+  const loadedModelRef = useRef<LoadedModel | null>(loadedModel || null);
+  const healthFailedRef = useRef(false);
 
   const hasOverride = !!getSessionArgsOverride(modelName);
+  const runtimeStatePending = runtimeLoading || runtimeStateModelName !== modelName;
+  const isRuntimeModelLoaded = !runtimeStatePending && !!runtimeModel;
+  const loading = configurationLoading || runtimeStatePending;
+
+  useEffect(() => {
+    loadedModelRef.current = loadedModel || null;
+    if (healthFailedRef.current) {
+      setRuntimeModel(loadedModel || null);
+      setLaunchCommand(loadedModel?.launch_command || null);
+    }
+  }, [loadedModel]);
 
   const resolved = useMemo(() => {
     if (!modelInfo || !open) return null;
@@ -154,34 +171,48 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
   }, [modelName, modelInfo, fallbackCtxSize, open]);
 
-  const loadEffective = useCallback(async () => {
+  const loadConfiguration = useCallback(async (replaceDraft: boolean) => {
     if (!modelName) return;
-    setLoading(true);
-    setError(null);
-    const [healthResult, optionsResult] = await Promise.allSettled([
-      api.health(),
-      api.getModelOptions(modelName),
-    ]);
-
-    if (optionsResult.status === 'fulfilled') {
-      setServerModelOptions(optionsResult.value);
-      const committed = argsField ? optionsResult.value.effective?.[argsField] : undefined;
-      setDraft(typeof committed === 'string' ? committed : '');
-    } else {
+    const request = ++configurationRequestRef.current;
+    const draftRevision = draftRevisionRef.current;
+    setConfigurationLoading(true);
+    try {
+      const options = await api.getModelOptions(modelName);
+      if (request !== configurationRequestRef.current) return;
+      setServerModelOptions(options);
+      if (replaceDraft && draftRevision === draftRevisionRef.current) {
+        const sessionArgs = getSessionArgsOverride(modelName)?.args;
+        const committed = sessionArgs ?? (argsField ? options.effective?.[argsField] : undefined);
+        setDraft(typeof committed === 'string' ? committed : '');
+      }
+    } catch {
+      if (request !== configurationRequestRef.current) return;
       setServerModelOptions(null);
-      const committed = argsField ? loadedModel?.recipe_options?.[argsField] : undefined;
-      setDraft(typeof committed === 'string' ? committed : '');
+      if (replaceDraft && draftRevision === draftRevisionRef.current) {
+        const sessionArgs = getSessionArgsOverride(modelName)?.args;
+        const committed = sessionArgs ?? (argsField ? loadedModelRef.current?.recipe_options?.[argsField] : undefined);
+        setDraft(typeof committed === 'string' ? committed : '');
+      }
+    } finally {
+      if (request === configurationRequestRef.current) setConfigurationLoading(false);
     }
+  }, [modelName, argsField]);
 
-    if (healthResult.status === 'rejected') {
-      setRuntimeModel(null);
-      setLaunchCommand(null);
-      setError(friendlyErrorMessage(healthResult.reason));
-    } else {
+  const refreshRuntime = useCallback(async () => {
+    if (!modelName) return;
+    const request = ++runtimeRequestRef.current;
+    setRuntimeLoading(true);
+    setRuntimeStateModelName(null);
+    setError(null);
+    try {
+      const health = await api.health();
+      if (request !== runtimeRequestRef.current) return;
       const target = modelName.trim().toLowerCase();
-      const running = healthResult.value.all_models_loaded.find(
+      const running = health.all_models_loaded.find(
         model => model.model_name.trim().toLowerCase() === target,
       ) || null;
+      healthFailedRef.current = false;
+      setRuntimeStateModelName(modelName);
       setRuntimeModel(running);
       setLaunchCommand(running?.launch_command || null);
       if (!running) {
@@ -189,16 +220,28 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       } else if (!running.launch_command?.length) {
         setError('The server did not report a launch command for this loaded model.');
       }
+    } catch (healthError) {
+      if (request !== runtimeRequestRef.current) return;
+      healthFailedRef.current = true;
+      const fallbackModel = loadedModelRef.current;
+      setRuntimeStateModelName(modelName);
+      setRuntimeModel(fallbackModel);
+      setLaunchCommand(fallbackModel?.launch_command || null);
+      setError(friendlyErrorMessage(healthError));
+    } finally {
+      if (request === runtimeRequestRef.current) setRuntimeLoading(false);
     }
-
-    setLoading(false);
-  }, [modelName, argsField, loadedModel]);
+  }, [modelName]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      configurationRequestRef.current += 1;
+      return;
+    }
+    draftRevisionRef.current = 0;
     setUnlocked(false);
     setNotice(null);
-    loadEffective();
+    void loadConfiguration(true);
     const savedSampling = loadModelTuning(modelName)?.sampling || {};
     setSamplingDraft({
       temperature: savedSampling.temperature === undefined ? '' : String(savedSampling.temperature),
@@ -207,10 +250,18 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       min_p: savedSampling.min_p === undefined ? '' : String(savedSampling.min_p),
       repeat_penalty: savedSampling.repeat_penalty === undefined ? '' : String(savedSampling.repeat_penalty),
     });
-  }, [open, loadEffective]);
+  }, [open, modelName, loadConfiguration]);
 
   useEffect(() => {
-    if (!open || !loadedModel) {
+    if (!open) {
+      runtimeRequestRef.current += 1;
+      return;
+    }
+    void refreshRuntime();
+  }, [open, modelName, refreshRuntime]);
+
+  useEffect(() => {
+    if (!open || !runtimeModel) {
       setLoadedContextSize(null);
       setResolvingContextSize(false);
       return;
@@ -224,7 +275,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       settled = true;
       setResolvingContextSize(false);
     }, 5000);
-    void api.loadedModelContextSize(loadedModel).then(contextSize => {
+    void api.loadedModelContextSize(runtimeModel).then(contextSize => {
       if (cancelled || settled) return;
       settled = true;
       window.clearTimeout(timeout);
@@ -235,7 +286,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [open, loadedModel]);
+  }, [open, runtimeModel]);
 
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -260,7 +311,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     };
     try {
       setSessionArgsOverride(modelName, recipe, draft.trim());
-      if (isModelLoaded) {
+      if (isRuntimeModelLoaded) {
         try {
           await onReload();
         } catch (reloadErr) {
@@ -276,30 +327,36 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     } catch (err) {
       setNotice(friendlyErrorMessage(err));
     } finally {
-      await loadEffective();
+      await Promise.all([
+        loadConfiguration(true),
+        refreshRuntime(),
+      ]);
       setBusy(false);
     }
-  }, [argsField, modelName, recipe, draft, isModelLoaded, onReload, onLoad, loadEffective]);
+  }, [argsField, modelName, recipe, draft, isRuntimeModelLoaded, onReload, onLoad, loadConfiguration, refreshRuntime]);
 
   const resetOverride = useCallback(async () => {
     setBusy(true);
     setNotice(null);
     try {
       clearSessionArgsOverride(modelName);
-      if (isModelLoaded) {
+      if (isRuntimeModelLoaded) {
         await onReload();
         setNotice('Cleared the session override and reloaded with resolved settings.');
       } else {
         setNotice('Cleared the session override.');
       }
-      await loadEffective();
+      await Promise.all([
+        loadConfiguration(true),
+        refreshRuntime(),
+      ]);
       setUnlocked(false);
     } catch (err) {
       setNotice(friendlyErrorMessage(err));
     } finally {
       setBusy(false);
     }
-  }, [modelName, isModelLoaded, onReload, loadEffective]);
+  }, [modelName, isRuntimeModelLoaded, onReload, loadConfiguration, refreshRuntime]);
 
   const serverContextRaw = serverModelOptions?.effective?.ctx_size;
   const resolvedContextRaw = serverContextRaw ?? resolved?.tuning.recipe_options?.ctx_size;
@@ -311,7 +368,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       if (runtimeContext !== null) {
         return { value: `${runtimeContext.toLocaleString()} (auto)`, source: 'Runtime' };
       }
-      if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
+      if (runtimeModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
       return { value: 'Auto', source: 'Configuration' };
     }
 
@@ -332,9 +389,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       };
     }
 
-    if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
+    if (runtimeModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
     return { value: 'Unavailable', source: 'Configuration' };
-  }, [autoContextSizeEnabled, loadedContextSize, loadedModel, resolved, resolvedContextRaw, resolvingContextSize, serverModelOptions]);
+  }, [autoContextSizeEnabled, loadedContextSize, runtimeModel, resolved, resolvedContextRaw, resolvingContextSize, serverModelOptions]);
 
   const sourceRows = useMemo<SourceRow[]>(() => {
     if (!resolved && !serverModelOptions) return [];
@@ -540,20 +597,24 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                   <textarea
                     className="textarea effective-settings__textarea"
                     value={draft}
+                    disabled={busy}
                     spellCheck={false}
                     placeholder="--threads 8 --flash-attn on"
-                    onChange={e => setDraft(e.target.value)}
+                    onChange={e => {
+                      draftRevisionRef.current += 1;
+                      setDraft(e.target.value);
+                    }}
                     rows={3}
                   />
                   <p className="effective-settings__hint">
                     These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.
                   </p>
                   <div className="effective-settings__actions">
-                    <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy}>
-                      {busy ? 'Applying…' : (isModelLoaded ? 'Apply & reload' : 'Apply for next load')}
+                    <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy || runtimeStatePending}>
+                      {busy ? 'Applying…' : (runtimeStatePending ? 'Resolving…' : (isRuntimeModelLoaded ? 'Apply & reload' : 'Apply for next load'))}
                     </WorkspaceActionButton>
                     {hasOverride && (
-                      <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy}>
+                      <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy || runtimeStatePending}>
                         Reset override
                       </WorkspaceActionButton>
                     )}
@@ -563,7 +624,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               {!unlocked && hasOverride && (
                 <div className="effective-settings__actions">
                   <span className="effective-settings__override-flag"><Icon name="alert" size={12} /> A session override is active.</span>
-                  <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy}>
+                  <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy || runtimeStatePending}>
                     Reset override
                   </WorkspaceActionButton>
                 </div>

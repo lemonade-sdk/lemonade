@@ -1199,6 +1199,10 @@ const ChatView: React.FC<ChatViewProps> = ({
     return loadedSnapshot || snapshotFromName(currentModel, loadedModels);
   }, [currentLoadedModel, currentCustomModelInfo, currentKnownModelInfo, currentModel, loadedModels]);
   const currentCapability = currentModelSnapshot?.capability || 'unknown';
+  const currentEffectiveSettingsModelInfo = currentKnownModelInfo || currentCustomModelInfo;
+  const canShowEffectiveSettings = !!currentModel
+    && currentCapability !== 'image'
+    && !isCollectionModel(currentEffectiveSettingsModelInfo);
   // A collection deploys as chat; its Omni surface comes from the recipe.
   const currentIsOmniCollection = snapshotIdentity(currentModelSnapshot) === 'omni';
   const currentDefaultModel = lemonadeDefaultModel(currentModel);
@@ -3754,7 +3758,7 @@ ${finalText}`
               )}
             </div>
           )}
-          {currentModel && currentCapability !== 'image' && (
+          {canShowEffectiveSettings && (
             <button
               type="button"
               className="composer__tools-toggle composer__effective-settings"
@@ -3774,19 +3778,18 @@ ${finalText}`
             <Icon name="logs" size={13} /> Logs
           </button>
         </div>
-        {currentModel && effectiveSettingsOpen && (
+        {canShowEffectiveSettings && effectiveSettingsOpen && (
           <Suspense fallback={null}>
             <EffectiveSettingsModal
               open={effectiveSettingsOpen}
               onClose={() => setEffectiveSettingsOpen(false)}
               modelName={currentModel}
-              modelInfo={currentKnownModelInfo || currentCustomModelInfo || null}
+              modelInfo={currentEffectiveSettingsModelInfo || null}
               recipe={currentRecipe}
               mcpEnabled={useMcp}
               mcpServerIds={selectedMcpServerIds}
               fallbackCtxSize={serverDefaultCtxSize}
               loadedModel={currentLoadedModel}
-              isModelLoaded={!!currentLoadedModel}
               onReload={async () => {
                 const api = await getApiClient();
                 await api.reloadModel(currentModel, undefined, currentKnownModelInfo || currentCustomModelInfo || null);

@@ -77,13 +77,13 @@ assert.doesNotMatch(styles, /\.titlebar--chat\s+\.titlebar__nav/);
 assert.match(chatSource, /api\.getDefaultContextSize\(\)/);
 assert.match(chatSource, /fallbackCtxSize=\{serverDefaultCtxSize\}/);
 assert.match(effectiveSource, /positiveContextSize\(loadedContextSize\)/);
-assert.match(effectiveSource, /positiveContextSize\(effective\?\.options\?\.ctx_size\)/);
+assert.match(effectiveSource, /positiveContextSize\(serverModelOptions\?\.resolved_ctx_size\)/);
 assert.match(effectiveSource, /positiveContextSize\(resolvedContextRaw\)/);
 assert.match(effectiveSource, /\{contextSetting\.value\}/);
 assert.doesNotMatch(effectiveSource, /'Not loaded'/);
 
 const runtimePosition = effectiveSource.indexOf('positiveContextSize(loadedContextSize)');
-const serverPosition = effectiveSource.indexOf('positiveContextSize(effective?.options?.ctx_size)');
+const serverPosition = effectiveSource.indexOf('positiveContextSize(serverModelOptions?.resolved_ctx_size)');
 const localPosition = effectiveSource.indexOf('positiveContextSize(resolvedContextRaw)');
 assert.ok(runtimePosition >= 0 && runtimePosition < serverPosition && serverPosition < localPosition,
   'context resolution priority must remain runtime, server-effective, then local configuration');
