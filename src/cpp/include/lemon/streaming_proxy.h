@@ -55,7 +55,8 @@ public:
         std::function<void(const TelemetryData&)> on_complete = nullptr,
         long timeout_seconds = 300,
         std::function<void()> on_chunk = nullptr,
-        long heartbeat_interval_ms = 1000
+        long heartbeat_interval_ms = 1000,
+        bool normalize_chat_roles = false
     );
 
     static void forward_byte_stream(

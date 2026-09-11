@@ -822,6 +822,7 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
     try {
 
         if (sse) {
+            const bool is_chat_completion = (endpoint.find("chat/completions") != std::string::npos);
             // Use StreamingProxy to forward the SSE stream with telemetry callback
             // Use INFERENCE_TIMEOUT_SECONDS (0 = infinite) as chat completions can take a long time
             StreamingProxy::forward_sse_stream(url, request_body, sink,
@@ -831,7 +832,9 @@ void WrappedServer::forward_streaming_request(const std::string& endpoint,
                     }
                 },
                 timeout_seconds,
-                mark_stream_progress
+                mark_stream_progress,
+                1000,
+                is_chat_completion
             );
         } else {
             StreamingProxy::forward_byte_stream(url, request_body, sink, timeout_seconds,
