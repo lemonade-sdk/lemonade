@@ -80,6 +80,8 @@ nav:
   - Development:
     - Overview: dev/README.md
     - Philosophy: dev/philosophy.md
+    - AI Content Policy: dev/ai-content-policy.md
+    - Spec Driven Development Policy: dev/spec-driven-dev.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md

@@ -70,6 +70,26 @@
       "arch": "gfx1151",
       "tracked": true,
       "notes": "Upstream ggml-org baseline. Used as performance reference for fork comparisons."
+    },
+    {
+      "fork_id": "llamacpp-hrx",
+      "label": "llama.cpp HRX (ROCm/ggml-staging-automation)",
+      "recipe": "llamacpp-hrx",
+      "config_section": "hrx",
+      "backend": "hrx",
+      "install_as": "hrx",
+      "repo": "ROCm/ggml-staging-automation",
+      "version_source": "github_latest",
+      "version_fallback": "hrx-b59",
+      "binary_url_windows": "",
+      "binary_url_linux": "https://github.com/ROCm/ggml-staging-automation/releases/download/{version}/llama-{version}-bin-manylinux-hrx-x64.tar.gz",
+      "binary_exe_windows": "",
+      "binary_exe_linux": "llama-server",
+      "runner_os": "linux",
+      "arch": "gfx1151",
+      "experimental": true,
+      "tracked": true,
+      "notes": "Experimental HRX backend. Linux gfx1151 only. Auto-discovers all 'llamacpp-hrx' models from server_models.json; add an optional model_filter to pin a subset."
     }
   ]
 }
