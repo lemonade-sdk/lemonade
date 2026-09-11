@@ -56,6 +56,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Adds a backend for an existing modality (LLM, image, audio, TTS) | The existing modality suite (`test/server_llm.py`, `test/server_sd.py`, ...): register the backend in `test/utils/capabilities.py` and `test/utils/test_models.py` so `--wrapped-server` / `--backend` cover it, and add a CI matrix row exercising it. See [adding a backend](./adding-a-backend.md). |
 | Adds a backend with a new modality (new endpoints) | New `test/server_<modality>.py` modeled on `test/server_sd.py`; register it in `test/utils/capabilities.py` and `test/utils/test_models.py`; wire it into both the Windows and Linux test blocks of `cpp_server_build_test_release.yml` |
 | Changes LLM inference (llamacpp, RyzenAI, FLM, vLLM) | `test/server_llm.py`, run per backend with `--wrapped-server` / `--backend` |
+| Touches tool calling (request forwarding, tool_calls parsing, streaming deltas, or the Anthropic/Ollama/Responses translations of them) | `test/server_tool_calling.py`, run per backend with `--wrapped-server` / `--backend`; uses each backend's `tool_calling` test model from `test/utils/capabilities.py` |
 | Touches the Ollama-compatible API | `test/test_ollama.py` |
 | Touches the Anthropic-compatible API | `test/test_ollama.py` (despite the name, this suite owns both the Ollama- and Anthropic-compatible API tests) |
 | Touches the MCP gateway | `test/server_mcp.py` |
