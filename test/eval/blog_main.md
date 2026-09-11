@@ -205,17 +205,17 @@ The 9B model leaks *more than twice* what the 0.8B model leaks. Looking at which
 
 | Category | support | Qwen3.5-9B | Qwen3.5-2B | Qwen3.5-0.8B |
 | --- | --- | --- | --- | --- |
-| WEB_URL | 893 | **1.92x** | 1.81x | **1.97x** |
-| ORG_COMPANY | 672 | **1.65x** | 1.22x | 1.68x |
-| ADDRESS_LOCATION | 991 | **1.52x** | 1.29x | 0.82x |
-| NETWORK_ID | 310 | 0.47x | 0.98x | **2.04x** |
-| CREDENTIAL_SECRET | 469 | 0.21x | 0.59x | 1.05x |
-| DATE_OF_BIRTH | 312 | **0.00x** | **0.00x** | 0.11x |
-| PERSON_NAME | 1,213 | 0.11x | 0.33x | 0.35x |
+| WEB_URL | 6652 | **1.92x** | 1.81x | **1.97x** |
+| ORG_COMPANY | 5444 | **1.65x** | 1.22x | 1.68x |
+| ADDRESS_LOCATION | 7438 | **1.52x** | 1.29x | 0.82x |
+| NETWORK_ID | 2536 | 0.47x | 0.98x | **2.04x** |
+| CREDENTIAL_SECRET | 3568 | 0.21x | 0.59x | 1.05x |
+| DATE_OF_BIRTH | 3230 | **0.00x** | **0.00x** | 0.11x |
+| PERSON_NAME | 9628 | 0.11x | 0.33x | 0.35x |
 
 (Enrichment = `P(missed | doc has category) / overall miss rate`; above 1.0
 means that category is over-represented among the documents a model let
-through. Because only 8 of 2,500 documents contain a single canonical
+through. Because only 81 of 20000 documents contain a single canonical
 category, a missed document is usually missed for around seven categories at
 once, so per-category attribution here is about which categories co-occur with
 a miss, not a clean per-entity recall number.)
