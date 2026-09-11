@@ -158,14 +158,12 @@ Before reaching for a dedicated detector, we tried the three things most people 
 | embeddinggemma-300m | 95% (19,000 / 20,000) | ~1.5 s |
 | Qwen3-Embedding-0.6B | 95% (19,000 / 20,000) | ~3.0 s |
 | Qwen3-Embedding-4B | 90% (18,000 / 20,000) | ~20 s |
-| LLM Qwen3.5-9B† | 0.98% (196 / 20,000) | ~8.8 s |
-| LLM Qwen3.5-2B† | 0.86% (171 / 20,000) | ~4.2 s |
-| LLM Qwen3.5-0.8B† | 1.25% (250 / 20,000) | ~3.2 s |
-| LLM Qwen3.5-0.8B on NPU (FastFlowLM)† | same model, timed on a 40-document slice | ~2.5 s |
+| LLM Qwen3.5-9B | 1.10% (220 / 20,000) | ~8.8 s |
+| LLM Qwen3.5-2B | 0.97% (194 / 20,000) | ~4.2 s |
+| LLM Qwen3.5-0.8B | 1.41% (282 / 20,000) | ~3.2 s |
+| LLM Qwen3.5-0.8B on NPU (FastFlowLM) | same model, timed on a 40-document slice | ~2.5 s |
 
 \* Regex only catches PII with a fixed shape (SSN, email, card number, IP, date). Names, addresses, occupations, and record numbers have no pattern to match, so 18.7% of documents pass through untouched, and every pattern you add only fits this corpus, not the next one.
-
-† LLM rows are scored on the PII categories the routing prompt names (SSNs, bank account numbers, email addresses, dates of birth, names with compensation). A document whose only PII falls outside that list isn't counted against the model, because the prompt never asked it to look there; the LLM section below shows the prompt and why that matters.
 
 Per-prompt times are end to end: the router makes its decision and the routed model answers, in one round trip. Classification alone is much cheaper, and we come back to that below.
 
@@ -218,45 +216,35 @@ The embedding step itself is cheap (about 32 ms per document for embeddinggemma,
 
 The obvious next move after regex and embeddings is to just ask a language model. Hand it the prompt, tell it what counts as sensitive, and let it pick the route. Lemonade's router supports this directly with `"router": {"type": "llm"}`, so we ran the corpus through three sizes of Qwen3.5: 0.8B, 2B and 9B. Going in, we assumed the leak rate would fall steadily as the model got bigger, and that the 0.8B would be the one we'd apologize for.
 
-It didn't work out that way. On the categories the routing prompt describes, all three sizes land within half a percentage point of each other: the 2B leaked 0.86% (171 of 20,000), the 9B 0.98% (196), and the 0.8B 1.25% (250). Roughly one document in a hundred, at every size. The 9B isn't meaningfully better than the 2B, and the 0.8B gives up about a third of a point against the best of them. That's a small price for a model that fits in under a gigabyte, and it's the number to hold onto for the timing discussion below.
+It didn't work out that way. All three sizes land within half a percentage point of each other: the 2B leaked 0.97% (194 of 20,000), the 9B 1.10% (220), and the 0.8B 1.41% (282). Roughly one document in a hundred, at every size. The 9B isn't meaningfully better than the 2B, and the 0.8B gives up under half a point against the best of them. That's a small price for a model that fits in under a gigabyte, and it's the number to hold onto for the timing discussion below.
 
-**Where the misses land.** To see what each size gets wrong, we looked at which PII categories show up disproportionately in the documents it let through. Each cell is an enrichment ratio: how often a document containing that category was missed, divided by the model's overall miss rate. 2.0x means documents with that category were missed twice as often as average; 0.0x means the model never let one through. One caveat: almost every Nemotron document carries several categories (only 81 of 20,000 carry just one), so a single miss counts against every category in that document. The ratios say which categories keep company with a miss, not how well each entity type is detected on its own.
-
-| Category | support | Qwen3.5-9B | Qwen3.5-2B | Qwen3.5-0.8B |
-| --- | --- | --- | --- | --- |
-| WEB_URL | 6652 | **1.92x** | 1.81x | **1.97x** |
-| ORG_COMPANY | 5444 | **1.65x** | 1.22x | 1.68x |
-| ADDRESS_LOCATION | 7438 | **1.52x** | 1.29x | 0.82x |
-| NETWORK_ID | 2536 | 0.47x | 0.98x | **2.04x** |
-| CREDENTIAL_SECRET | 3568 | 0.21x | 0.59x | 1.05x |
-| DATE_OF_BIRTH | 3230 | **0.00x** | **0.00x** | 0.11x |
-| PERSON_NAME | 9628 | 0.11x | 0.33x | 0.35x |
-
-Two things stand out. First, the bottom rows: dates of birth and person names sit near zero at every size. When the PII is the kind a person would name first, the LLMs catch it. Second, the categories where misses pile up (URLs, company names, addresses) are the same for every size, and they are the categories the prompt never mentions, which brings us to the prompt. The one genuine capability gap is the 0.8B on network IDs and credential strings: MAC addresses, API keys, cookies. At 2.04x it misses those twice as often as its own average, and the larger models don't. A small model simply doesn't read a hex string as something to protect.
-
-**The prompt is the job description.** Every decision in these runs came from one routing prompt, committed at `test/conformance/routing/1/l2_pii_regex/policy_llm.json` as the `"router": {"type": "llm", ...}` prompt field:
+**The prompt is the job description.** Every decision in these runs came from one routing prompt, committed at `test/conformance/routing/1/l2_pii_regex/policy_llm.json` as the `"router": {"type": "llm", ...}` prompt field. We wrote it to spell out every category the corpus labels, grouped the way a person would group them, so that a miss is a miss and not a gap in the instructions:
 
 > "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.
 >
 >
-> Use Qwen3.5-0.8B-GGUF (local, private) when:
+> Use Qwen3.5-0.8B-GGUF (local, private) when the request contains personally identifiable information (PII) or sensitive personal attributes, including any of the following:
 >
-> - The request contains personally identifiable information (PII), such as names with salaries, Social Security numbers (SSNs), bank account numbers, email addresses, compensation data, equity details, or dates of birth.
-> - Data privacy is paramount: anything that should never leave the local machine.
+> - Names and identity: first or last names, user names, dates of birth, age, gender, race or ethnicity, sexuality, religious beliefs, political views, language, blood type, biometric identifiers.
+> - Contact and location: email addresses, phone or fax numbers, street addresses, cities, counties, states, postcodes, countries, coordinates, URLs.
+> - Employment and finance: company names, occupation, employment status, education level, employee IDs, customer IDs, salaries or compensation data, equity details, bank account numbers, bank routing numbers, SWIFT/BIC codes, credit or debit card numbers, CVVs, PINs, tax IDs.
+> - Government and health: Social Security numbers (SSNs), national IDs, certificate or license numbers, medical record numbers, health plan beneficiary numbers.
+> - Devices and credentials: IPv4 or IPv6 addresses, MAC addresses, device identifiers, vehicle identifiers, license plates, API keys, passwords, HTTP cookies, unique IDs.
+> - Dates and times attached to any of the above.
 >
 > Use fireworks.kimi-k2p6 (cloud, powerful) for all other requests.
 >
 > If the request is ambiguous, default to Qwen3.5-0.8B-GGUF. When in doubt, prioritize privacy over capability."
 >
 
-That prompt is written the way a person writes one: a short "such as" list of the things that come to mind first. The models treated that list as the whole job, and the bigger the model, the more literally it read it. A document whose only PII is a URL, a company name and a street address doesn't match anything on the list, so the model sends it to the cloud, and by the prompt's own definition it is right to. That's why the leak rates above are scored on the categories the prompt names: a miss on something the prompt never asked for says more about the prompt than the model. The lever for those is the prompt, not the parameter count.
+**Where the misses land.** Most of the leaked documents are what we'd call genuine misses: the document carried a name alongside a salary, an SSN, an account number, a date of birth, the kind of PII a person would name first, and the model read it and still sent it to the cloud. Those run at 0.86% for the 2B (171 documents), 0.98% for the 9B (196) and 1.25% for the 0.8B (250). The remainder, a few dozen documents per model, are the borderline ones: the only identifiers in the document are a URL, a company name and a city, all on the list, but the kind of thing the model plainly weighed as not sensitive enough to keep local. The one capability gap that separates the sizes is the 0.8B on network IDs and credential strings: MAC addresses, API keys, cookies. It lets those through about twice as often as its own average, and the larger models don't. A small model simply doesn't read a hex string as something to protect.
 
 **How the models explain themselves.** The router records a free-text rationale alongside a decision whenever the model offers one, and here the sizes really do differ: the 9B gave a reason 99.5% of the time, the 2B 59.4%, the 0.8B just 18.3%. Here is the 9B on a document labeled `company_name, education_level, occupation, sexuality, url`:
 
 > "The request contains no personal information"
 >
 
-Against the prompt's list, that is a defensible reading, and the 9B says so out loud. It narrates nearly every decision, including the ones we'd call wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. If you need decisions you can review after the fact, that is what the bigger model buys you. It is not buying you accuracy. (Rationale rates are taken from the run logs as recorded; no log field lets us recompute them after the fact.)
+That's a wrong call, four of those five labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. If you need decisions you can review after the fact, that is what the bigger model buys you. It is not buying you accuracy. (Rationale rates are taken from the run logs as recorded; no log field lets us recompute them after the fact.)
 
 **The catch is time.** Every one of these numbers costs seconds per prompt: about 3.2 s for the 0.8B, 4.2 s for the 2B and 8.8 s for the 9B end to end, because the router has to read the whole document, decide, and then in most cases answer the request as well. Since accuracy is flat across sizes, the smallest model is the obvious pick, and that opens a door the larger ones can't use: the NPU. FastFlowLM ships a [Qwen3.5-0.8B build for the Ryzen AI NPU](https://fastflowlm.com/docs/models/qwen/#-model-card-qwen35-08b), and it registers in Lemonade as `qwen3.5-0.8b-FLM`. We pointed the same routing policy at it (`test/conformance/routing/1/l2_pii_regex/policy_llm_flm.json`) and ran the same 40 documents through both builds on the same machine. The NPU build made its routing decision in a median 1.99 s against 3.06 s for the llama.cpp build, and finished the whole request in 2.45 s against 3.09 s, while leaving the CPU and GPU free for whatever model answers. That's a timing slice, not an accuracy run, but it's the configuration we'd reach for if the answer to "which LLM should route" has to be an LLM: the smallest one, on the accelerator that's otherwise idle.
 
@@ -570,6 +558,6 @@ Most of what belongs here has already been conceded in the body of the post rath
 
 **Match the decision rule to the job, not just the model to the job.** Both decoder findings above point the same direction: `min_score` 0.5 costs mmBERT 0.68 → 0.48 character recall while barely moving its document leak rate, and pplx's own Viterbi decoder nearly doubles its leak rate against plain argmax while buying back precision. **Route with the loose rule, mask with the strict one**. Most write-ups about this kind of gate never separate those two jobs, and the gap between them is where most of the surprising results in this post came from.
 
-**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** An LLM router does well at every size we tried, and the 0.8B on the NPU is the one to pick if you want one, but its per-prompt cost is seconds, not milliseconds, and its recall is bounded by how completely the prompt describes what to catch. The embedding classifier leaked 90-100% on a quick reference set and 90-95% on one built to match the corpus, and the threshold sweep showed why: cosine similarity scores the topic of a document, not whether it carries an identifier, so a benign document and a sensitive one on the same subject land in the same place. No reference set fixes that. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
+**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** An LLM router does well at every size we tried, and the 0.8B on the NPU is the one to pick if you want one, but its per-prompt cost is seconds, not milliseconds, and it still leaks about one document in a hundred with every category spelled out in the prompt. The embedding classifier leaked 90-100% on a quick reference set and 90-95% on one built to match the corpus, and the threshold sweep showed why: cosine similarity scores the topic of a document, not whether it carries an identifier, so a benign document and a sensitive one on the same subject land in the same place. No reference set fixes that. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
 
 And say plainly what's still missing rather than imply it's solved: an over-routing number, and a per-prompt, per-backend latency figure under concurrent load. Both are next.
