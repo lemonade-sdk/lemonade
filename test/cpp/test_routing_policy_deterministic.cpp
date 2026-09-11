@@ -1,12 +1,14 @@
 // Unit tests for the Lemonade Router deterministic leaf conditions (#2380).
 //
 // Covers keywords_any/keywords_all, regex, min_chars/max_chars,
-// min_total_chars/max_total_chars, has_tools/
-// has_images, and metadata against the frozen v1 semantics in
-// route_policy.schema.json: case-insensitive (ASCII) substring, ECMAScript
-// regex, inclusive UTF-8-byte length bounds, and metadata equals/any/exists
-// (scalar vs comma-encoded list, missing-key => exists:false). Also exercises
-// malformed-config rejection and the registry's multi-key implicit-all wiring.
+// min_total_chars/max_total_chars, min_turns/max_turns, has_tools/has_images,
+// and metadata against the frozen v1 semantics in route_policy.schema.json:
+// case-insensitive (ASCII) substring, ECMAScript regex, inclusive
+// UTF-8-byte length bounds, conversation-depth bounds, and metadata
+// equals/any/exists/gte/lte (scalar vs comma-encoded list, missing-key =>
+// exists:false, non-numeric value => gte/lte never match). Also exercises
+// malformed-config rejection and the registry's multi-key implicit-all
+// wiring.
 //
 // Compile (standalone):
 //   g++ -std=c++17 -I src/cpp/include -I build/_deps/json-src/include \
@@ -15,7 +17,9 @@
 
 #include "lemon/routing_policy.h"
 
+#include <cmath>
 #include <cstdio>
+#include <locale>
 #include <map>
 #include <memory>
 #include <string>
@@ -138,6 +142,15 @@ void test_chars_utf8_bytes() {
     check("max_chars counts UTF-8 bytes (<=4 false)", !eval_leaf("max_chars", 4, req));
 }
 
+void test_turns() {
+    RouteContext req = make_request("hi");
+    req.params.turn_count = 3;
+    check("min_turns inclusive lower boundary", eval_leaf("min_turns", 3, req));
+    check("min_turns below threshold", !eval_leaf("min_turns", 4, req));
+    check("max_turns inclusive upper boundary", eval_leaf("max_turns", 3, req));
+    check("max_turns above threshold", !eval_leaf("max_turns", 2, req));
+}
+
 void test_total_chars() {
     RouteContext req = make_request("12345");  // routing input: 5 bytes
     req.params.total_chars = 20;               // whole conversation: 20 bytes
@@ -239,6 +252,90 @@ void test_metadata_exists() {
           !eval_leaf("metadata", json{{"key", "consent"}, {"exists", true}}, blank));
 }
 
+void test_metadata_gte_lte() {
+    RouteContext req = make_request("x");
+    req.metadata["tool_error_streak"] = "3";
+    check("metadata gte below-or-equal threshold matches",
+          eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"gte", 2}}, req));
+    check("metadata gte exact boundary matches",
+          eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"gte", 3}}, req));
+    check("metadata gte above value does not match",
+          !eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"gte", 4}}, req));
+    check("metadata lte exact boundary matches",
+          eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"lte", 3}}, req));
+    check("metadata lte below value does not match",
+          !eval_leaf("metadata", json{{"key", "tool_error_streak"}, {"lte", 2}}, req));
+
+    RouteContext whitespace = make_request("x");
+    whitespace.metadata["n"] = " 5 ";  // surrounding whitespace tolerated
+    check("metadata gte tolerates surrounding whitespace",
+          eval_leaf("metadata", json{{"key", "n"}, {"gte", 5}}, whitespace));
+
+    RouteContext non_numeric = make_request("x");
+    non_numeric.metadata["n"] = "abc";
+    check("metadata gte non-numeric value never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, non_numeric));
+
+    RouteContext partial = make_request("x");
+    partial.metadata["n"] = "3abc";  // not entirely numeric
+    check("metadata gte partially-numeric value never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, partial));
+
+    RouteContext absent = make_request("x");
+    check("metadata gte missing key never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, absent));
+
+    // Deliberately narrower than strtod: no hex float, no comma-decoding
+    // (unlike equals/any's token-set split), no "inf"/"nan" text forms.
+    RouteContext hex = make_request("x");
+    hex.metadata["n"] = "0x10";
+    check("metadata gte hex-float text never matches (not silently 16)",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, hex));
+
+    RouteContext comma_list = make_request("x");
+    comma_list.metadata["n"] = "3,5";
+    check("metadata gte comma-list value never matches (no comma-decoding)",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, comma_list));
+
+    RouteContext inf_text = make_request("x");
+    inf_text.metadata["n"] = "inf";
+    check("metadata gte 'inf' text form never matches",
+          !eval_leaf("metadata", json{{"key", "n"}, {"gte", 0}}, inf_text));
+
+    RouteContext scientific = make_request("x");
+    scientific.metadata["n"] = "3e1";  // 30 -- exponent form is still a real number
+    check("metadata gte accepts scientific notation",
+          eval_leaf("metadata", json{{"key", "n"}, {"gte", 30}}, scientific));
+}
+
+// A synthetic comma-decimal facet, built in-process rather than relying on an
+// OS locale package (availability varies by CI image) — sufficient to prove
+// the parser doesn't consult the ambient locale for its decimal point.
+struct CommaDecimalPunct : std::numpunct<char> {
+protected:
+    char do_decimal_point() const override { return ','; }
+};
+
+// Regression: parse_metadata_number must parse "3.5" as 3.5 regardless of the
+// process's global C++ locale. Under a comma-decimal locale, "." is a stray
+// character rather than a separator to any locale-aware parser (istringstream
+// extraction included, unless explicitly imbued with the classic locale) — a
+// naive parse would silently truncate "3.5" to 3.0 instead of parsing the
+// full value or rejecting it outright.
+void test_metadata_gte_lte_locale_independence() {
+    const std::locale previous = std::locale::global(
+        std::locale(std::locale::classic(), new CommaDecimalPunct));
+    RouteContext req = make_request("x");
+    req.metadata["n"] = "3.5";
+    check("metadata gte parses the full value under a comma-decimal global "
+          "locale (not truncated to 3)",
+          eval_leaf("metadata", json{{"key", "n"}, {"gte", 3.5}}, req));
+    check("metadata lte parses the full value under a comma-decimal global "
+          "locale (not truncated to 3, which would wrongly satisfy lte:3)",
+          !eval_leaf("metadata", json{{"key", "n"}, {"lte", 3}}, req));
+    std::locale::global(previous);
+}
+
 void test_rejections() {
     check("empty keywords_any rejected", throws_invalid("keywords_any", json::array()));
     check("empty keywords_all rejected", throws_invalid("keywords_all", json::array()));
@@ -250,6 +347,8 @@ void test_rejections() {
     check("non-string regex rejected", throws_invalid("regex", 5));
     check("negative min_chars rejected", throws_invalid("min_chars", -1));
     check("non-integer max_chars rejected", throws_invalid("max_chars", 1.5));
+    check("negative min_turns rejected", throws_invalid("min_turns", -1));
+    check("non-integer max_turns rejected", throws_invalid("max_turns", 1.5));
     check("negative min_total_chars rejected", throws_invalid("min_total_chars", -1));
     check("non-integer max_total_chars rejected", throws_invalid("max_total_chars", 1.5));
     check("non-numeric min_total_chars rejected", throws_invalid("min_total_chars", "4000"));
@@ -261,12 +360,18 @@ void test_rejections() {
     check("metadata two comparators rejected",
           throws_invalid("metadata",
                          json{{"key", "k"}, {"equals", "a"}, {"exists", true}}));
+    check("metadata gte + lte together rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"gte", 1}, {"lte", 2}}));
     check("metadata empty any rejected",
           throws_invalid("metadata", json{{"key", "k"}, {"any", json::array()}}));
     check("metadata empty key rejected",
           throws_invalid("metadata", json{{"key", ""}, {"exists", true}}));
     check("metadata empty any item rejected",
           throws_invalid("metadata", json{{"key", "k"}, {"any", json::array({""})}}));
+    check("metadata non-numeric gte rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"gte", "not-a-number"}}));
+    check("metadata NaN gte rejected",
+          throws_invalid("metadata", json{{"key", "k"}, {"gte", std::nan("")}}));
 }
 
 void test_regex_redos_rejected() {
@@ -361,6 +466,7 @@ int main() {
     test_regex_input_cap();
     test_chars();
     test_chars_utf8_bytes();
+    test_turns();
     test_total_chars();
     test_total_chars_utf8_bytes();
     test_total_chars_independent_of_input_chars();
@@ -368,6 +474,8 @@ int main() {
     test_metadata_equals();
     test_metadata_any();
     test_metadata_exists();
+    test_metadata_gte_lte();
+    test_metadata_gte_lte_locale_independence();
     test_rejections();
     test_regex_redos_rejected();
     test_trace_emitted();
