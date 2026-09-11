@@ -37,6 +37,39 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+  source-tarball:
+    name: Build Source Tarball
+    if: startsWith(github.ref, 'refs/heads/release-v') || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get Lemonade version
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Create source tarball
+        env:
+          LEMONADE_VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive_root="lemonade-${LEMONADE_VERSION}"
+          python3 tools/source_archive.py --version "$LEMONADE_VERSION"
+          archived_version=$(tar -xOf "lemonade-${LEMONADE_VERSION}.tar.gz" "$archive_root/.version")
+          test "$archived_version" = "$LEMONADE_VERSION"
+
+      - name: Upload source tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-source-tarball
+          path: lemonade-${{ steps.get_version.outputs.version }}.tar.gz
+          retention-days: 30
+
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
@@ -644,7 +677,7 @@ jobs:
           set -e
           dnf install -y rpm-build
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -711,7 +744,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -799,7 +832,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -856,7 +889,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -908,7 +941,7 @@ jobs:
       - name: Install CMake if not available
         uses: ./.github/actions/install-cmake-windows
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -955,7 +988,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -2701,6 +2734,7 @@ jobs:
       - test-embeddable-posix
       - test-embeddable-macos
       - test-embeddable-windows
+      - source-tarball
     if: startsWith(github.ref, 'refs/tags/v')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
@@ -2772,8 +2806,17 @@ jobs:
           name: lemonade-embeddable-macos
           path: .
 
+      - name: Download Lemonade source tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-source-tarball
+          path: .
+
       - name: Verify release artifacts
+        env:
+          SOURCE_VERSION: ${{ needs.source-tarball.outputs.version }}
         run: |
+          test "$SOURCE_VERSION" = "$LEMONADE_VERSION"
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
@@ -2786,6 +2829,7 @@ jobs:
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
+          ls -lh lemonade-${LEMONADE_VERSION}.tar.gz
 
       - name: Generate release notes
         id: release-notes
@@ -2812,4 +2856,5 @@ jobs:
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
+            lemonade-${{ env.LEMONADE_VERSION }}.tar.gz
           fail_on_unmatched_files: true

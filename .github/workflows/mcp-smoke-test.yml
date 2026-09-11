@@ -20,6 +20,7 @@ on:
       - "CMakeLists.txt"
       - "CMakePresets.json"
       - "setup.sh"
+      - "tools/version.py"
       - "test/server_mcp_smoke.py"
       - "test/server_mcp.py"
       - ".github/workflows/mcp-smoke-test.yml"
@@ -134,6 +135,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Stamp version
+        run: |
+          VERSION=$(python3 tools/version.py)
+          printf '%s\n' "$VERSION" > .version
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

@@ -54,6 +54,11 @@ jobs:
             git checkout "refs/tags/${{ inputs.tag }}"
           fi
 
+      - name: Stamp version
+        run: |
+          VERSION=$(python3 tools/version.py)
+          printf '%s\n' "$VERSION" > .version
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
