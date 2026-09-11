@@ -457,42 +457,163 @@ The PII gate above is one rule in a policy that can hold several. Everything mea
 
 **1. Private-banking advisor copilot (`finance_wealth_advisor.json`).** Advisors ask two very different kinds of questions in the same chat window: "what's the outlook for European banks" and "move 10% of the Hendersons' portfolio into bonds." The policy sends the first kind to `fireworks.kimi-k2p6` by default and fences the second three ways: a regex fast-path for IBANs, card numbers and SSNs; then OpenMed privacy-filter-ml-v2 on a 20-category financial-and-identity subset (`BANKACCOUNT`, `IBAN`, `BIC`, `CVV`, `PIN`, three crypto-address types, names, DOB, credentials); then an `embeddinggemma-300m` semantic classifier for *client-account-ops* that catches "summarize this client's KYC file" even when no identifier survives detection, all routed to a local `Qwen3.5-9B-GGUF`. The embedding step is used here for what the sweep earlier showed it is actually good at, topic, not identifier presence. The detector runs `on_error: match_true`: for a bank, "couldn't check" means stay local.
 
-```text
-structured-identifier-regex  IBAN | Visa/MC/Amex | SSN                    -> Qwen3.5-9B-GGUF
-client-pii-onnx              privacy-filter-ml-v2, 80 BIOES leaves        -> Qwen3.5-9B-GGUF
-client-account-ops           embeddinggemma, min_score 0.6                -> Qwen3.5-9B-GGUF
-pasted-statements            min_chars 6000                               -> Qwen3.5-9B-GGUF
-default                      market research, product explainers          -> fireworks.kimi-k2p6
+```json
+{
+  "model_name": "user.WealthAdvisor-Router",
+  "recipe": "collection.router",
+  "routing": {
+    "candidates": ["Qwen3.5-9B-GGUF", "fireworks.kimi-k2p6"],
+    "default_model": "fireworks.kimi-k2p6",                      // market research -> cloud
+    "classifiers": [
+      { "id": "pf-v2", "type": "classifier", "model": "user.privacy-filter-ml-v2-onnx",
+        "labels": ["S-IBAN", "S-BANKACCOUNT", "S-CVV", "S-PIN", /* ...213 more BIOES labels */],
+        "on_error": "match_true" },                                // can't check -> stay local
+      { "id": "advisor-intent", "type": "semantic_similarity",
+        "model": "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0",
+        "reference_phrases": {
+          "client-account-ops": ["move 10% of this client's portfolio from equities into bonds", /* ...5 more */],
+          "market-research":    ["what is the outlook for European bank stocks this quarter",  /* ...4 more */] } }
+    ],
+    "rules": [
+      { "id": "structured-identifier-regex",
+        "match": { "any": [ { "regex": "\\b[A-Z]{2}\\d{2}[A-Z0-9]{11,30}\\b" },   // IBAN
+                            { "regex": "\\b\\d{3}-\\d{2}-\\d{4}\\b" },            // SSN
+                            /* ...3 card-brand regexes */ ] },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "client-pii-onnx",
+        "match": { "any": [ { "classifier": "pf-v2", "label": "S-IBAN",        "min_score": 0.5 },
+                            { "classifier": "pf-v2", "label": "S-BANKACCOUNT", "min_score": 0.5 },
+                            { "classifier": "pf-v2", "label": "S-CVV",         "min_score": 0.5 },
+                            /* ...77 more: BIC, PIN, crypto addresses, names, DOB, credentials */ ] },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "client-account-ops",
+        "match": { "classifier": "advisor-intent", "label": "client-account-ops", "min_score": 0.6 },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "pasted-statements", "match": { "min_chars": 6000 }, "route_to": "Qwen3.5-9B-GGUF" }
+    ]
+  }
+}
 ```
 
 **2. Litigation-desk assistant (`legal_litigation_desk.json`).** Legal traffic breaks the naive "any PERSON or ORGANIZATION -> local" rule, because published case law is *made of* party names; fencing on those would route every citation lookup local. So this policy deliberately runs mmBERT32K-PII (86 ms, and a 32k-token window that fits a whole filing) only on the contact-and-identity labels (`STREET_ADDRESS`, `PHONE_NUMBER`, `EMAIL_ADDRESS`, `US_SSN`, `US_DRIVER_LICENSE`, `IBAN_CODE`, `IP_ADDRESS`, ...), and hands the "is this about a live matter" question to a local `Qwen3.5-2B-GGUF` acting as a PRIVILEGED/PUBLIC judge with `default_label: PRIVILEGED` and `on_error: match_true`, so a judge failure fails closed. A `metadata` rule lets the document-management system pre-tag a request with `matter_status: under-seal` and short-circuit everything else, and anything over 20,000 characters or carrying DMS tools (discovery dumps) stays on the local 9B regardless. Public statutory research and boilerplate drafting fall through to the cloud.
 
-```text
-matter-flagged-privileged    metadata matter_status in {privileged, under-seal, protective-order}  -> Qwen3.5-9B-GGUF
-contact-and-identity-onnx    mmBERT32K-PII, 18 BIO leaves (no PERSON/ORG)                         -> Qwen3.5-9B-GGUF
-privileged-strategy-llm      Qwen3.5-2B judge, PRIVILEGED                                          -> Qwen3.5-9B-GGUF
-bulk-discovery               min_chars 20000 | has_tools                                           -> Qwen3.5-9B-GGUF
-default                      statutes, published case law, citation format                        -> fireworks.kimi-k2p6
+```json
+{
+  "model_name": "user.LitigationDesk-Router",
+  "recipe": "collection.router",
+  "routing": {
+    "candidates": ["Qwen3.5-9B-GGUF", "fireworks.kimi-k2p6"],
+    "default_model": "fireworks.kimi-k2p6",                      // public legal research -> cloud
+    "classifiers": [
+      { "id": "pii-mmbert", "type": "classifier", "model": "user.mmbert32k-pii-onnx",
+        "labels": ["B-STREET_ADDRESS", "B-US_SSN", "B-PERSON", /* ...32 more BIO labels */],
+        "on_error": "match_true" },
+      { "id": "privilege-judge", "type": "llm", "model": "Qwen3.5-2B-GGUF",
+        "prompt": "You assess whether a request from a lawyer at a litigation firm touches privileged or confidential matter information. A request is PRIVILEGED when it involves attorney work product, litigation strategy, settlement positions ... A request is PUBLIC when it concerns general legal research: statutes, published case law, citation formatting ...",
+        "labels": ["PRIVILEGED", "PUBLIC"], "default_label": "PRIVILEGED",
+        "on_error": "match_true" }                                 // judge failure fails closed
+    ],
+    "rules": [
+      { "id": "matter-flagged-privileged",
+        "match": { "metadata": { "key": "matter_status", "any": ["privileged", "under-seal", "protective-order"] } },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "contact-and-identity-onnx",                         // deliberately no PERSON / ORGANIZATION
+        "match": { "any": [ { "classifier": "pii-mmbert", "label": "B-STREET_ADDRESS",     "min_score": 0.5 },
+                            { "classifier": "pii-mmbert", "label": "B-US_SSN",             "min_score": 0.5 },
+                            { "classifier": "pii-mmbert", "label": "B-US_DRIVER_LICENSE",  "min_score": 0.5 },
+                            /* ...15 more: phone, email, IBAN, credit card, IP, zip */ ] },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "privileged-strategy-llm",
+        "match": { "classifier": "privilege-judge", "label": "PRIVILEGED", "min_score": 0.5 },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "bulk-discovery",
+        "match": { "any": [ { "min_chars": 20000 }, { "has_tools": true } ] },
+        "route_to": "Qwen3.5-9B-GGUF" }
+    ]
+  }
+}
 ```
 
 **3. Internal engineering assistant (`coding_dev_assistant.json`).** Developers paste whatever is in their clipboard, and what is in a developer's clipboard is frequently a credential. This is the one policy with three tiers: a regex fast-path for AWS/GitHub/Slack token shapes, PEM private-key headers, JWTs, `key = "..."` assignments, RFC 1918 addresses and `.internal`/`.corp` hostnames, followed by pplx-pii-masking on its `secret`, `private_url`, `account_number`, `private_email` and `private_person` labels (the model was trained on web text, where secrets and internal URLs are exactly the noise it learned to mask), both routing to a local `Qwen3.5-9B-GGUF` that is still competent enough to fix the code it just kept in-house. Agentic sessions (`has_tools`) and whole-file pastes over 12,000 characters go to the cloud, and a local `Qwen3.5-2B-GGUF` acting as an ARCHITECTURE/ROUTINE judge escalates design and multi-service refactor questions there too. Everything else, syntax, error messages, one-liners, is answered by that same 2B as `default_model`: the bulk of a dev assistant's traffic never needs to leave the laptop or wait on a bigger model.
 
-```text
-credential-regex-fastpath    AKIA..., ghp_..., xoxb-..., PEM, JWT, key="...", 10.x/192.168.x, *.internal -> Qwen3.5-9B-GGUF
-secrets-onnx                 pplx-pii-masking, 20 BIOES leaves                                          -> Qwen3.5-9B-GGUF
-agentic-or-whole-file        has_tools | min_chars 12000                                                -> fireworks.kimi-k2p6
-architecture-llm             Qwen3.5-2B judge, ARCHITECTURE                                             -> fireworks.kimi-k2p6
-default                      syntax, error messages, one-liners                                         -> Qwen3.5-2B-GGUF
+```json
+{
+  "model_name": "user.DevAssist-Router",
+  "recipe": "collection.router",
+  "routing": {
+    "candidates": ["Qwen3.5-2B-GGUF", "Qwen3.5-9B-GGUF", "fireworks.kimi-k2p6"],
+    "default_model": "Qwen3.5-2B-GGUF",                          // routine questions -> small local
+    "classifiers": [
+      { "id": "secrets-pplx", "type": "classifier", "model": "user.pplx-pii-masking-onnx",
+        "labels": ["S-secret", "S-private_url", "S-account_number", /* ...34 more BIOES labels */],
+        "on_error": "match_true" },
+      { "id": "task-shape", "type": "llm", "model": "Qwen3.5-2B-GGUF",
+        "prompt": "You assess the shape of a software engineering request. A request is ARCHITECTURE when it asks for system or API design, a multi-file or multi-service refactor, a migration plan ... A request is ROUTINE when it asks about syntax, a single function or small snippet, the meaning of an error message ...",
+        "labels": ["ARCHITECTURE", "ROUTINE"], "default_label": "ROUTINE" }
+    ],
+    "rules": [
+      { "id": "credential-regex-fastpath",
+        "match": { "any": [ { "regex": "\\bAKIA[0-9A-Z]{16}\\b" },                       // AWS access key
+                            { "regex": "\\bgh[pousr]_[A-Za-z0-9]{36,}\\b" },             // GitHub token
+                            { "regex": "-----BEGIN [A-Z ]*PRIVATE KEY-----" },           // PEM
+                            { "regex": "\\b[a-z0-9.-]+\\.(internal|corp|intranet)\\b" }, // internal hosts
+                            /* ...4 more: Slack, JWT, key="...", RFC 1918 */ ] },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "secrets-onnx",
+        "match": { "any": [ { "classifier": "secrets-pplx", "label": "S-secret",         "min_score": 0.5 },
+                            { "classifier": "secrets-pplx", "label": "S-private_url",    "min_score": 0.5 },
+                            { "classifier": "secrets-pplx", "label": "S-account_number", "min_score": 0.5 },
+                            /* ...17 more: B/I/E variants, private_email, private_person */ ] },
+        "route_to": "Qwen3.5-9B-GGUF" },
+      { "id": "agentic-or-whole-file",
+        "match": { "any": [ { "has_tools": true }, { "min_chars": 12000 } ] },
+        "route_to": "fireworks.kimi-k2p6" },
+      { "id": "architecture-llm",
+        "match": { "classifier": "task-shape", "label": "ARCHITECTURE", "min_score": 0.5 },
+        "route_to": "fireworks.kimi-k2p6" }
+    ]
+  }
+}
 ```
 
 **4. Auto-insurance claims intake (`insurance_claims_intake.json`).** A first-notice-of-loss chatbot gets two audiences: prospective customers asking how deductibles work, and policyholders who were rear-ended an hour ago and are typing in whatever language they think in. The first rule is `has_images: true` -> local, because a photo of a crumpled bumper carries a license plate, a house number and often a face, and the image itself should never be uploaded to a third party. Then a VIN regex (17 characters, no I/O/Q) and a claim/policy-number pattern, then OpenMed privacy-filter-ml-v2, chosen here as much for its 16-language coverage as its F1, on a claims-shaped label subset that includes `VIN`, `VRM` (plates), `GPSCOORDINATES`, `IMEI` (telematics dongles), `AGE` and `HEIGHT` (injury descriptions) alongside the usual names, DOB and contact fields. A final `embeddinggemma-300m` *active-claim* rule keeps accident narratives local even when every identifier is missing ("a tree fell on my parked car last night"), while generic policy education falls through to the cloud on a fast `Qwen3.5-9B-NoThinking` / `fireworks.kimi-k2p6` split.
 
-```text
-damage-photos-stay-local     has_images                                   -> Qwen3.5-9B-NoThinking
-vin-or-claim-number-regex    17-char VIN | CLM-/POL-######                 -> Qwen3.5-9B-NoThinking
-claimant-pii-onnx            privacy-filter-ml-v2, 80 BIOES leaves        -> Qwen3.5-9B-NoThinking
-active-claim-semantic        embeddinggemma, min_score 0.6                -> Qwen3.5-9B-NoThinking
-default                      coverage explainers, how-deductibles-work    -> fireworks.kimi-k2p6
+```json
+{
+  "model_name": "user.ClaimsIntake-Router",
+  "recipe": "collection.router",
+  "routing": {
+    "candidates": ["Qwen3.5-9B-NoThinking", "fireworks.kimi-k2p6"],
+    "default_model": "fireworks.kimi-k2p6",                      // coverage explainers -> cloud
+    "classifiers": [
+      { "id": "pf-v2", "type": "classifier", "model": "user.privacy-filter-ml-v2-onnx",
+        "labels": ["S-VIN", "S-VRM", "S-GPSCOORDINATES", "S-IMEI", /* ...213 more BIOES labels */],
+        "on_error": "match_true" },
+      { "id": "claim-stage", "type": "semantic_similarity",
+        "model": "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0",
+        "reference_phrases": {
+          "active-claim":     ["I was rear-ended on the highway yesterday and my bumper is crushed", /* ...5 more */],
+          "policy-education": ["what is the difference between collision and comprehensive coverage", /* ...4 more */] } }
+    ],
+    "rules": [
+      { "id": "damage-photos-stay-local", "match": { "has_images": true }, "route_to": "Qwen3.5-9B-NoThinking" },
+      { "id": "vin-or-claim-number-regex",
+        "match": { "any": [ { "regex": "\\b[A-HJ-NPR-Z0-9]{17}\\b" },        // VIN: 17 chars, no I/O/Q
+                            { "regex": "\\b(CLM|POL)-?\\d{6,10}\\b" } ] },
+        "route_to": "Qwen3.5-9B-NoThinking" },
+      { "id": "claimant-pii-onnx",
+        "match": { "any": [ { "classifier": "pf-v2", "label": "S-VIN",            "min_score": 0.5 },
+                            { "classifier": "pf-v2", "label": "S-VRM",            "min_score": 0.5 },
+                            { "classifier": "pf-v2", "label": "S-GPSCOORDINATES", "min_score": 0.5 },
+                            { "classifier": "pf-v2", "label": "S-IMEI",           "min_score": 0.5 },
+                            /* ...76 more: AGE, HEIGHT, names, DOB, phone, email, address, SSN, bank */ ] },
+        "route_to": "Qwen3.5-9B-NoThinking" },
+      { "id": "active-claim-semantic",
+        "match": { "classifier": "claim-stage", "label": "active-claim", "min_score": 0.6 },
+        "route_to": "Qwen3.5-9B-NoThinking" }
+    ]
+  }
+}
 ```
 
 Two caveats carry over from the rest of the post. The `metadata` rule in the legal policy is honored by the server but not yet editable in the desktop Hybrid Router editor, so that policy is JSON-only for now. And none of the four has been through the 20,000-case harness: their ONNX rules inherit the leak-rate and character-F1 numbers above, but the semantic and LLM-judge rules inherit the caveats too, in particular the missing benign arm, which is why every one of them puts the model-backed judgment *after* the deterministic and ONNX rules rather than in front of them.
