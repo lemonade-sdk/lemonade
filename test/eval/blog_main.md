@@ -146,37 +146,23 @@ All 55 gold labels are represented in the 20k-sentence corpus, but their coverag
 
 Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 characters, and the maximum is 7,191 characters (1,737 tokens). No document is truncated for any model in this comparison, so differences in context-window size cannot explain the differences in benchmark results.
 
-The axis worth paying attention to isn't parameter count or raw accuracy - it's
-**label-space coverage**. `pplx-pii-masking` expresses 9 categories total and
-can't represent 11 of the 24 canonical categories our corpus exercises, the
-widest coverage gap of anything we tested — and yet it leaks only 0.80% of
-documents. Coverage and document-level leak rate are close to independent here:
-a narrow taxonomy costs you *category attribution*, not necessarily *leak rate*,
-because most documents that need flagging carry multiple PII types and only one
-needs to fire. Keep that in mind for the results below — it's the reason the
-document-level leak table looks so flat across very differently-shaped models,
-and it's why we eventually turn to character-level scoring to actually
-discriminate between them.
-
 ---
 
 ## Baselines: regex, embeddings, and the LLM-as-router size paradox
 
-All on the 2,500-case corpus:
+##
 
-| Baseline | Leak rate |
-| --- | --- |
-| Regex | 18.7% (467/2,500) |
-| embeddinggemma-300m (semantic similarity) | 100% (20/20)\* |
-| Qwen3-Embedding-0.6B | 90% (18/20)\* |
-| Qwen3-Embedding-4B | 90% (18/20)\* |
-| LLM Qwen3.5-9B | 6.16% (154/2,500) |
-| LLM Qwen3.5-2B | 3.28% (82/2,500) |
-| LLM Qwen3.5-0.8B | 2.84% (71/2,500) |
+| Baseline | Leak rate | Prompt misses | Genuine misses | Per prompt [s] |
+| --- | --- | --- | --- | --- |
+| Regex | 18.7% (467/2,500)* |  |  | <1 ms |
+| embeddinggemma-300m  | 95% (19,000 / 20,000) |  |  | ~1.5 s |
+| Qwen3-Embedding-0.6B | 90% (18,000 / 20,000) |  |  | ~3.0 s |
+| Qwen3-Embedding-4B | 90% (18,000 / 20,000) |  |  | ~20 s |
+| LLM Qwen3.5-9B | 6.16% (1,232 / 20,000) | 1,036 (84%) | 196 (16%) | ~8.8 s |
+| LLM Qwen3.5-2B | 3.28% (656 / 20,000) | 485 (74%) | 171 (26%) | ~4.2 s |
+| LLM Qwen3.5-0.8B | 2.84% (568 / 20,000) | 318 (56%) | 250 (44%) | ~3.2 s |
 
-\* These three rows are n=20, zero benign cases, and should be read as a
-directional pilot rather than a settled result — worth re-running at scale
-before leaning on them. (Leak rate is reported alone here rather than alongside recall, for the same reason as the dataset section above: on this pure-positive corpus recall is just `1 − leak rate`, so a second column would say nothing new.)
+* Regex is limited to 2500 on a selected set of keywords to avoid overfitting
 
 ### Semantic similarity is the wrong tool for this job
 
@@ -257,6 +243,31 @@ The 0.8B's misses concentrate instead in **technical identifiers** — it simply
 >
 
 The same instructions, the same corpus, and the router logs record whether that decision came with a free-text rationale at all: **99.5% of the 9B's decisions carried a logged rationale, versus 59.4% for the 2B and just 18.3% for the 0.8B.** (Reproduced here on trust from the run logs rather than independently re-verified — no log field lets us recompute it after the fact.) That tracks the qualitative pattern above almost exactly: the 9B's misses read like *reasoned-through* mistakes because it is narrating a justification for nearly every decision it makes, including the wrong ones — "the request contains no personal information" is a rationale, just an incorrect one. The 0.8B, by contrast, mostly just routes, silently, four times out of five; its misses look like blind spots rather than bad reasoning because there usually isn't any reasoning being logged to inspect. **Judgment errors and capability errors want opposite fixes**: tighter policy and prompt constraints for the 9B (it has the information, and is talking itself out of using it), a strictly bigger model or a dedicated encoder (see below) for the 0.8B (it isn't finding the information to reason about in the first place). Neither problem goes away by scaling in the direction that seems intuitive.
+
+---
+
+## Candidate models
+
+We
+
+| Model | Params | Label space | Context | Architecture |
+| --- | --- | --- | --- | --- |
+| mmBERT32K-PII | ~300M | 35 BIOES labels (Presidio-style) | 32k tokens | encoder, `ModernBertForTokenClassification` |
+| OpenMed privacy-filter | ~1.4B MoE (50M active) | coarse categories | 128k tokens | `openai_privacy_filter` |
+| OpenMed privacy-filter-multilingual (v2) | ~1.4B MoE (50M active) | coarse categories, expanded | 128k tokens | `openai_privacy_filter` |
+| perplexity `pplx-pii-masking` | ~600M | 9 categories, 37 BIOES labels + dual sensitivity head | 4k tokens | custom Qwen3 encoder with span head + sensitivity head, constrained Viterbi decoder |
+| GLiNER (`nvidia/gliner-PII`) | — | zero-shot, label names supplied at inference | — | span extractor |
+| OpenAI/privacy-filter | — | 8 coarse categories | — | encoder, BIOES |
+
+**mmBERT32K-PII** is a ModernBERT-based encoder token-classifier fine-tuned for the 35-label BIOES PII taxonomy we use for our own scoring, at a 32k-token context window — the largest of anything in this comparison, and multilingual-capable, though we don't exercise that capability here (see the dataset section above).
+
+**nvidia/gliner-PII** (model card) is a span-based, non-generative extractor built on the GLiNER large-v2.1 architecture (~570M parameters), trained on roughly 100K synthetic records generated via NVIDIA's NeMo Data Designer across 50+ industry personas and 55+ entity types, including usernames, emails, phone numbers, SSNs, and financial, medical, and legal identifiers. Because it inherits GLiNER's zero-shot design, entity labels are supplied as input at inference time rather than baked into a fixed output head. NVIDIA reports strict F1 of 0.70 on Argilla PII, 0.64 on AI4Privacy, and 0.87 on a Nemotron-PII benchmark at a 0.3 confidence threshold.
+
+**OpenMed/privacy-filter-multilingual** and its **v2** successor (v1, v2) are both token classifiers built on a 1.4B-parameter mixture-of-experts base — OpenAI's `privacy_filter` architecture, 50M active parameters per token across 128 experts with top-4 routing — extended from that base model's original 8 coarse categories to 54 fine-grained categories across 16 languages via a BIOES scheme (217 output classes total). v1 was fully fine-tuned on a language-balanced mix of AI4Privacy's `pii-masking-200k`, `pii-masking-400k`, and `open-pii-masking-500k`; v2 keeps the same label space and backbone but adds Nemotron- and Gretel-derived synthetic PII data to that training mix.
+
+**perplexity-ai/pplx-pii-masking** (model card) pairs a ~600M-parameter bidirectional Qwen3 encoder with two heads: a token-classification head over 9 PII categories, decoded with a constrained Viterbi pass rather than greedy argmax, and a separate document-level sensitivity head trained on pooled representations. It's the newest and most narrowly-scoped model in this comparison — the model card doesn't publish training-data details or accuracy numbers.
+
+The axis worth paying attention to across this table isn't parameter count or raw accuracy - it's **label-space coverage**. pplx-pii-masking's 9 categories can't represent 11 of the 24 canonical categories our corpus exercises, the widest coverage gap of anything we tested — and yet it leaks only 0.80% of documents. Coverage and document-level leak rate are close to independent here: a narrow taxonomy costs you *category attribution*, not necessarily *leak rate*, because most documents that need flagging carry multiple PII types and only one needs to fire. Keep that in mind for the results below — it's the reason the document-level leak table looks so flat across very differently-shaped models, and it's why we eventually turn to character-level scoring to actually discriminate between them.
 
 ---
 
