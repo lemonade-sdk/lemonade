@@ -516,7 +516,8 @@ Set allowed origins as a comma-separated list of complete origins including sche
 
 - **Wildcard Ports (`:*`)**: Specify `:*` to match any port on a configured host (e.g. `http://192.168.1.50:*`, `http://*.local:*`, `https://[::1]:*`), useful for homelab setups or frontend development servers running across varying ports.
 - **Wildcard Subdomains (`*.domain`)**: Specify `*.domain` to match subdomains (e.g. `https://*.example.com` or `http://*.local:*`). Subdomain matching strictly enforces a dot boundary so `notexample.com` will not match `*.example.com`.
-- **Universal Wildcards (`*`, `http://*:*`)**: Setting `allowed_origins` to `*` or `http://*:*` allows any origin to connect.
+- **Universal Wildcard (`*`)**: Setting `allowed_origins` to `*` allows any origin across all schemes to connect.
+- **Scheme-Specific Wildcards (`http://*:*`)**: Setting `allowed_origins` to a wildcard pattern with an explicit scheme (such as `http://*:*`) matches any host and port for that scheme, but does not permit other schemes like HTTPS.
 
 > **Warning:** The `LEMONADE_ALLOWED_ORIGINS` environment variable is **deprecated** and will be removed in a future release.
 >
@@ -547,7 +548,7 @@ You must explicitly configure `allowed_origins` for:
 > **Warning:**
 >
 > - **Plain HTTP Origins**: Allowing a non-local plain-HTTP origin (e.g., `http://app.example.com`) is vulnerable to on-path modification (man-in-the-middle) and interception. It is highly recommended to use HTTPS (`https://`) for all remote/non-local allowed origins.
-> - **Wildcard Security Risks**: Using `allowed_origins=*` or `http://*:*` permits any website running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
+> - **Wildcard Security Risks**: Using wildcard origins like `*` or `http://*:*` permits matching websites running in a user's browser to make requests to your local Lemonade server. In particular, if `LEMONADE_API_KEY` is not configured, this exposes the server to unauthenticated remote access and cross-origin attacks from malicious websites. Use wildcards only for development or in secure, isolated environments.
 
 ## Model Synchronization & Auto-Updates
 
