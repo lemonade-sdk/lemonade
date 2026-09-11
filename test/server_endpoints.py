@@ -6403,70 +6403,66 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_3way_")
         self._write_stub_gguf(extra_dir, bare)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            pull_response = requests.post(
+                f"{self.base_url}/pull",
+                json={
+                    "model_name": user_canonical,
+                    "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
+                    "recipe": "llamacpp",
+                    "stream": False,
+                },
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(pull_response.status_code, 200)
+
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
+
+            self.assertIn(bare, ids, "Winner emits bare id")
+            self.assertIn(f"extra.{bare}", ids, "Imported source under canonical id")
+            self.assertIn(f"builtin.{bare}", ids, "Built-in under canonical id")
+            self.assertNotIn(
+                user_canonical,
+                ids,
+                "Winning user.* not also emitted under canonical id",
+            )
+
+            bare_resp = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            user_resp = requests.get(
+                f"{self.base_url}/models/{user_canonical}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            extra_resp = requests.get(
+                f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            builtin_resp = requests.get(
+                f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+
+            self.assertEqual(bare_resp["checkpoint"], user_resp["checkpoint"])
+            self.assertNotEqual(extra_resp["checkpoint"], bare_resp["checkpoint"])
+            self.assertNotEqual(builtin_resp["checkpoint"], bare_resp["checkpoint"])
+            self.assertNotEqual(extra_resp["checkpoint"], builtin_resp["checkpoint"])
+
+            print(
+                f"[OK] three-way collision: bare/{bare}, extra.{bare}, builtin.{bare}"
+            )
+        finally:
             try:
-                pull_response = requests.post(
-                    f"{self.base_url}/pull",
-                    json={
-                        "model_name": user_canonical,
-                        "checkpoint": USER_MODEL_MAIN_CHECKPOINT,
-                        "recipe": "llamacpp",
-                        "stream": False,
-                    },
-                    timeout=TIMEOUT_MODEL_OPERATION,
+                requests.post(
+                    f"{self.base_url}/delete",
+                    json={"model_name": user_canonical},
+                    timeout=TIMEOUT_DEFAULT,
                 )
-                self.assertEqual(pull_response.status_code, 200)
-
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                ids = {m["id"] for m in models_response.json()["data"]}
-
-                self.assertIn(bare, ids, "Winner emits bare id")
-                self.assertIn(
-                    f"extra.{bare}", ids, "Imported source under canonical id"
-                )
-                self.assertIn(f"builtin.{bare}", ids, "Built-in under canonical id")
-                self.assertNotIn(
-                    user_canonical,
-                    ids,
-                    "Winning user.* not also emitted under canonical id",
-                )
-
-                bare_resp = requests.get(
-                    f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-                ).json()
-                user_resp = requests.get(
-                    f"{self.base_url}/models/{user_canonical}", timeout=TIMEOUT_DEFAULT
-                ).json()
-                extra_resp = requests.get(
-                    f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
-                ).json()
-                builtin_resp = requests.get(
-                    f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
-                ).json()
-
-                self.assertEqual(bare_resp["checkpoint"], user_resp["checkpoint"])
-                self.assertNotEqual(extra_resp["checkpoint"], bare_resp["checkpoint"])
-                self.assertNotEqual(builtin_resp["checkpoint"], bare_resp["checkpoint"])
-                self.assertNotEqual(
-                    extra_resp["checkpoint"], builtin_resp["checkpoint"]
-                )
-
-                print(
-                    f"[OK] three-way collision: bare/{bare}, extra.{bare}, builtin.{bare}"
-                )
-            finally:
-                try:
-                    requests.post(
-                        f"{self.base_url}/delete",
-                        json={"model_name": user_canonical},
-                        timeout=TIMEOUT_DEFAULT,
-                    )
-                except Exception:
-                    pass
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            except Exception:
+                pass
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021h_naming_spec_extra_shadows_builtin(self):
         """Naming spec: extra.* + built-in (no user.*); extra wins precedence."""
@@ -6474,44 +6470,42 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shadow_")
         self._write_stub_gguf(extra_dir, bare)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                ids = {m["id"] for m in models_response.json()["data"]}
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
 
-                self.assertIn(
-                    bare, ids, "extra wins precedence over builtin; emits bare id"
-                )
-                self.assertIn(
-                    f"builtin.{bare}", ids, "shadowed builtin under canonical id"
-                )
-                self.assertNotIn(
-                    f"extra.{bare}",
-                    ids,
-                    "winning extra.* not also emitted under canonical id",
-                )
+            self.assertIn(
+                bare, ids, "extra wins precedence over builtin; emits bare id"
+            )
+            self.assertIn(f"builtin.{bare}", ids, "shadowed builtin under canonical id")
+            self.assertNotIn(
+                f"extra.{bare}",
+                ids,
+                "winning extra.* not also emitted under canonical id",
+            )
 
-                bare_resp = requests.get(
-                    f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-                ).json()
-                extra_resp = requests.get(
-                    f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
-                ).json()
-                builtin_resp = requests.get(
-                    f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
-                ).json()
+            bare_resp = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            extra_resp = requests.get(
+                f"{self.base_url}/models/extra.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
+            builtin_resp = requests.get(
+                f"{self.base_url}/models/builtin.{bare}", timeout=TIMEOUT_DEFAULT
+            ).json()
 
-                self.assertEqual(bare_resp["checkpoint"], extra_resp["checkpoint"])
-                self.assertNotEqual(bare_resp["checkpoint"], builtin_resp["checkpoint"])
+            self.assertEqual(bare_resp["checkpoint"], extra_resp["checkpoint"])
+            self.assertNotEqual(bare_resp["checkpoint"], builtin_resp["checkpoint"])
 
-                print(
-                    f"[OK] extra shadows built-in: bare/{bare} -> extra, builtin.{bare} -> built-in"
-                )
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print(
+                f"[OK] extra shadows built-in: bare/{bare} -> extra, builtin.{bare} -> built-in"
+            )
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021i_extra_root_gguf_emits_stem_name(self):
         """Root-level extra_models_dir GGUF files emit the filename stem."""
@@ -6519,30 +6513,30 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_root_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                ids = {m["id"] for m in models_response.json()["data"]}
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {m["id"] for m in models_response.json()["data"]}
 
-                self.assertIn(bare, ids)
-                self.assertNotIn(f"{bare}.gguf", ids)
+            self.assertIn(bare, ids)
+            self.assertNotIn(f"{bare}.gguf", ids)
 
-                bare_resp = requests.get(
-                    f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(bare_resp.status_code, 200)
-                self.assertEqual(bare_resp.json()["id"], bare)
-                self.assertEqual(
-                    bare_resp.json()["checkpoint"],
-                    os.path.join(extra_dir, f"{bare}.gguf"),
-                )
+            bare_resp = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(bare_resp.status_code, 200)
+            self.assertEqual(bare_resp.json()["id"], bare)
+            self.assertEqual(
+                bare_resp.json()["checkpoint"],
+                os.path.join(extra_dir, f"{bare}.gguf"),
+            )
 
-                print(f"[OK] root GGUF emits stem: {bare}")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print(f"[OK] root GGUF emits stem: {bare}")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021t_extra_subdir_multiple_quantization_variants_emit_separate_models(
         self,
@@ -6559,62 +6553,60 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(q8_file)
         self._write_stub_gguf_file(mmproj_file)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                models_by_id = {
-                    model["id"]: model for model in models_response.json()["data"]
-                }
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
 
-                # The model list shows the real choices in the folder.
-                self.assertIn("Qwen3.6-35B-A3B-Q4_K_M", models_by_id)
-                self.assertIn("Qwen3.6-35B-A3B-Q8_0", models_by_id)
+            # The model list shows the real choices in the folder.
+            self.assertIn("Qwen3.6-35B-A3B-Q4_K_M", models_by_id)
+            self.assertIn("Qwen3.6-35B-A3B-Q8_0", models_by_id)
 
-                # The old folder name still works in requests, but is not listed as
-                # another model.
-                self.assertNotIn(folder_name, models_by_id)
-                legacy_response = requests.get(
-                    f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(legacy_response.status_code, 200)
-                self.assertEqual(legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M")
-                self.assertEqual(legacy_response.json()["checkpoint"], q4_file)
+            # The old folder name still works in requests, but is not listed as
+            # another model.
+            self.assertNotIn(folder_name, models_by_id)
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M")
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_file)
 
-                canonical_legacy_response = requests.get(
-                    f"{self.base_url}/models/extra.{folder_name}",
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(canonical_legacy_response.status_code, 200)
-                self.assertEqual(
-                    canonical_legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M"
-                )
-                self.assertEqual(
-                    canonical_legacy_response.json()["checkpoint"], q4_file
-                )
+            canonical_legacy_response = requests.get(
+                f"{self.base_url}/models/extra.{folder_name}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(canonical_legacy_response.status_code, 200)
+            self.assertEqual(
+                canonical_legacy_response.json()["id"], "Qwen3.6-35B-A3B-Q4_K_M"
+            )
+            self.assertEqual(canonical_legacy_response.json()["checkpoint"], q4_file)
 
-                self.assertNotIn("mmproj-Qwen3.6-35B-A3B-BF16", models_by_id)
+            self.assertNotIn("mmproj-Qwen3.6-35B-A3B-BF16", models_by_id)
 
-                self.assertEqual(
-                    models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoint"], q4_file
-                )
-                self.assertEqual(
-                    models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoint"], q8_file
-                )
-                self.assertEqual(
-                    models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoints"]["mmproj"],
-                    os.path.basename(mmproj_file),
-                )
-                self.assertEqual(
-                    models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoints"]["mmproj"],
-                    os.path.basename(mmproj_file),
-                )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoint"], q4_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoint"], q8_file
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q4_K_M"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
+            self.assertEqual(
+                models_by_id["Qwen3.6-35B-A3B-Q8_0"]["checkpoints"]["mmproj"],
+                os.path.basename(mmproj_file),
+            )
 
-                print("[OK] split extra folder lists variants and accepts folder name")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] split extra folder lists variants and accepts folder name")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021x_extra_split_folder_alias_shadows_builtin_without_visible_duplicate(
         self,
@@ -6628,44 +6620,44 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(q4_file)
         self._write_stub_gguf_file(q8_file)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                ids = {model["id"] for model in models_response.json()["data"]}
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            ids = {model["id"] for model in models_response.json()["data"]}
 
-                self.assertIn("Local-Compat-Q4_K_M", ids)
-                self.assertIn("Local-Compat-Q8_0", ids)
-                self.assertIn(f"builtin.{bare}", ids)
-                self.assertNotIn(
-                    bare,
-                    ids,
-                    "bare folder alias should not be emitted as a duplicate model",
-                )
+            self.assertIn("Local-Compat-Q4_K_M", ids)
+            self.assertIn("Local-Compat-Q8_0", ids)
+            self.assertIn(f"builtin.{bare}", ids)
+            self.assertNotIn(
+                bare,
+                ids,
+                "bare folder alias should not be emitted as a duplicate model",
+            )
 
-                alias_response = requests.get(
-                    f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(alias_response.status_code, 200)
-                self.assertEqual(alias_response.json()["id"], "Local-Compat-Q4_K_M")
-                self.assertEqual(alias_response.json()["checkpoint"], q4_file)
+            alias_response = requests.get(
+                f"{self.base_url}/models/{bare}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(alias_response.status_code, 200)
+            self.assertEqual(alias_response.json()["id"], "Local-Compat-Q4_K_M")
+            self.assertEqual(alias_response.json()["checkpoint"], q4_file)
 
-                builtin_response = requests.get(
-                    f"{self.base_url}/models/builtin.{bare}",
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(builtin_response.status_code, 200)
-                self.assertEqual(builtin_response.json()["id"], f"builtin.{bare}")
-                self.assertNotEqual(builtin_response.json()["checkpoint"], q4_file)
-                self.assertNotEqual(builtin_response.json()["checkpoint"], q8_file)
+            builtin_response = requests.get(
+                f"{self.base_url}/models/builtin.{bare}",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(builtin_response.status_code, 200)
+            self.assertEqual(builtin_response.json()["id"], f"builtin.{bare}")
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q4_file)
+            self.assertNotEqual(builtin_response.json()["checkpoint"], q8_file)
 
-                print(
-                    "[OK] split extra folder name is chosen over builtin without duplicate model"
-                )
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print(
+                "[OK] split extra folder name is chosen over builtin without duplicate model"
+            )
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021u_extra_subdir_sharded_models_remain_grouped(self):
         """extra_models_dir folders with sharded GGUFs remain grouped as one model."""
@@ -6677,27 +6669,27 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(shard1)
         self._write_stub_gguf_file(shard2)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                models_by_id = {
-                    model["id"]: model for model in models_response.json()["data"]
-                }
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
 
-                # Shards should not be listed as standalone models.
-                self.assertNotIn("Llama-3-70B-Instruct-00001-of-00002", models_by_id)
-                self.assertNotIn("Llama-3-70B-Instruct-00002-of-00002", models_by_id)
+            # Shards should not be listed as standalone models.
+            self.assertNotIn("Llama-3-70B-Instruct-00001-of-00002", models_by_id)
+            self.assertNotIn("Llama-3-70B-Instruct-00002-of-00002", models_by_id)
 
-                self.assertIn(folder_name, models_by_id)
-                # One sharded model stays grouped under the folder name.
-                self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
+            self.assertIn(folder_name, models_by_id)
+            # One sharded model stays grouped under the folder name.
+            self.assertEqual(models_by_id[folder_name]["checkpoint"], model_dir)
 
-                print("[OK] extra subdir sharded models remain grouped")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] extra subdir sharded models remain grouped")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
         """Issue #2972: a sharded model reports the whole family's size, while
@@ -6719,42 +6711,42 @@ class EndpointTests(ServerTestBase):
         expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
         shard1_only_gb = shard1_bytes / (1024**3)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                models_by_id = {
-                    model["id"]: model for model in models_response.json()["data"]
-                }
-                self.assertIn(folder_name, models_by_id)
-                self.assertAlmostEqual(
-                    models_by_id[folder_name]["size"],
-                    expected_gb,
-                    places=2,
-                    msg="model size must cover every shard, not just the resolved one",
-                )
-                self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
+            self.assertIn(folder_name, models_by_id)
+            self.assertAlmostEqual(
+                models_by_id[folder_name]["size"],
+                expected_gb,
+                places=2,
+                msg="model size must cover every shard, not just the resolved one",
+            )
+            self.assertGreater(models_by_id[folder_name]["size"], shard1_only_gb)
 
-                files_response = requests.get(
-                    f"{self.base_url}/models/{folder_name}/files",
-                    timeout=TIMEOUT_DEFAULT,
-                )
-                self.assertEqual(files_response.status_code, 200)
-                files = files_response.json()["files"]
-                main_files = [f for f in files if f["role"] == "main"]
-                self.assertEqual(len(main_files), 1)
-                self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
-                self.assertEqual(
-                    main_files[0]["size_bytes"],
-                    shard1_bytes,
-                    "/files must report the individual file size, not the shard total",
-                )
+            files_response = requests.get(
+                f"{self.base_url}/models/{folder_name}/files",
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(files_response.status_code, 200)
+            files = files_response.json()["files"]
+            main_files = [f for f in files if f["role"] == "main"]
+            self.assertEqual(len(main_files), 1)
+            self.assertEqual(main_files[0]["name"], os.path.basename(shard1))
+            self.assertEqual(
+                main_files[0]["size_bytes"],
+                shard1_bytes,
+                "/files must report the individual file size, not the shard total",
+            )
 
-                print("[OK] sharded size sums shards while /files stays per-file")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] sharded size sums shards while /files stays per-file")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
         """A folder with multiple sharded variants lists one model per variant."""
@@ -6776,44 +6768,44 @@ class EndpointTests(ServerTestBase):
         for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
             self._write_stub_gguf_file(shard)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                models_by_id = {
-                    model["id"]: model for model in models_response.json()["data"]
-                }
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
 
-                self.assertIn("Mixtral-8x7B-Instruct-Q4_K_M", models_by_id)
-                self.assertIn("Mixtral-8x7B-Instruct-Q8_0", models_by_id)
-                self.assertNotIn(folder_name, models_by_id)
-                self.assertNotIn(
-                    "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002", models_by_id
-                )
+            self.assertIn("Mixtral-8x7B-Instruct-Q4_K_M", models_by_id)
+            self.assertIn("Mixtral-8x7B-Instruct-Q8_0", models_by_id)
+            self.assertNotIn(folder_name, models_by_id)
+            self.assertNotIn(
+                "Mixtral-8x7B-Instruct-Q4_K_M-00001-of-00002", models_by_id
+            )
 
-                self.assertEqual(
-                    models_by_id["Mixtral-8x7B-Instruct-Q4_K_M"]["checkpoint"],
-                    q4_shard1,
-                )
-                self.assertEqual(
-                    models_by_id["Mixtral-8x7B-Instruct-Q8_0"]["checkpoint"],
-                    q8_shard1,
-                )
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q4_K_M"]["checkpoint"],
+                q4_shard1,
+            )
+            self.assertEqual(
+                models_by_id["Mixtral-8x7B-Instruct-Q8_0"]["checkpoint"],
+                q8_shard1,
+            )
 
-                legacy_response = requests.get(
-                    f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(legacy_response.status_code, 200)
-                self.assertEqual(
-                    legacy_response.json()["id"], "Mixtral-8x7B-Instruct-Q4_K_M"
-                )
-                self.assertEqual(legacy_response.json()["checkpoint"], q4_shard1)
+            legacy_response = requests.get(
+                f"{self.base_url}/models/{folder_name}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy_response.status_code, 200)
+            self.assertEqual(
+                legacy_response.json()["id"], "Mixtral-8x7B-Instruct-Q4_K_M"
+            )
+            self.assertEqual(legacy_response.json()["checkpoint"], q4_shard1)
 
-                print("[OK] extra folder with multiple sharded variants lists variants")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] extra folder with multiple sharded variants lists variants")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021w_extra_subdir_multiple_mmproj_files_choose_first_alphabetically(self):
         """A folder with multiple mmproj files chooses the first name alphabetically."""
@@ -6827,25 +6819,25 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(second_mmproj)
         self._write_stub_gguf_file(first_mmproj)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                models_by_id = {
-                    model["id"]: model for model in models_response.json()["data"]
-                }
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
 
-                self.assertIn(folder_name, models_by_id)
-                self.assertEqual(
-                    models_by_id[folder_name]["checkpoints"]["mmproj"],
-                    os.path.basename(first_mmproj),
-                )
+            self.assertIn(folder_name, models_by_id)
+            self.assertEqual(
+                models_by_id[folder_name]["checkpoints"]["mmproj"],
+                os.path.basename(first_mmproj),
+            )
 
-                print("[OK] extra folder with multiple mmproj files chooses first name")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] extra folder with multiple mmproj files chooses first name")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
         """Two folders holding the same variant filenames keep every model."""
@@ -6857,27 +6849,27 @@ class EndpointTests(ServerTestBase):
                 self._write_stub_gguf_file(path)
                 expected.append(path)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                found = {
-                    model["id"]: model["checkpoint"]
-                    for model in models_response.json()["data"]
-                    if model.get("checkpoint") in expected
-                }
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            found = {
+                model["id"]: model["checkpoint"]
+                for model in models_response.json()["data"]
+                if model.get("checkpoint") in expected
+            }
 
-                # Four files, four models: no folder may overwrite another's entry.
-                self.assertEqual(
-                    len(found), len(expected), f"expected 4 models, got {found}"
-                )
-                self.assertEqual(sorted(found.values()), sorted(expected))
+            # Four files, four models: no folder may overwrite another's entry.
+            self.assertEqual(
+                len(found), len(expected), f"expected 4 models, got {found}"
+            )
+            self.assertEqual(sorted(found.values()), sorted(expected))
 
-                print("[OK] identical filenames in two extra folders stay distinct")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] identical filenames in two extra folders stay distinct")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
         """An -imatrix file beside the plain one is a second model, not a shard."""
@@ -6888,27 +6880,27 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(plain)
         self._write_stub_gguf_file(imatrix)
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                models_response = requests.get(
-                    f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-                )
-                self.assertEqual(models_response.status_code, 200)
-                models_by_id = {
-                    model["id"]: model for model in models_response.json()["data"]
-                }
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models_by_id = {
+                model["id"]: model for model in models_response.json()["data"]
+            }
 
-                # Sharing a quant token is not enough to make them one sharded model.
-                self.assertIn("Model-Q4_K_M", models_by_id)
-                self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
-                self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
-                self.assertEqual(
-                    models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
-                )
+            # Sharing a quant token is not enough to make them one sharded model.
+            self.assertIn("Model-Q4_K_M", models_by_id)
+            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
+            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
+            self.assertEqual(
+                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+            )
 
-                print("[OK] same-quant non-shard files remain separate models")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print("[OK] same-quant non-shard files remain separate models")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
@@ -6917,28 +6909,24 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
-        with scoped_server_config(extra_models_dir=extra_dir):
-            try:
-                # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
-                payload = {
-                    "model": bare,
-                    "messages": [{"role": "user", "content": "hi"}],
-                }
-                resp = requests.post(
-                    f"http://localhost:{PORT}/v1/chat/completions",
-                    json=payload,
-                    timeout=TIMEOUT_DEFAULT,
-                )
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
+        try:
+            # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
+            payload = {"model": bare, "messages": [{"role": "user", "content": "hi"}]}
+            resp = requests.post(
+                f"http://localhost:{PORT}/v1/chat/completions",
+                json=payload,
+                timeout=TIMEOUT_DEFAULT,
+            )
 
-                self.assertEqual(resp.status_code, 500)
-                self.assertIn(
-                    "Failed to load model",
-                    resp.json().get("error", {}).get("message", ""),
-                )
+            self.assertEqual(resp.status_code, 500)
+            self.assertIn(
+                "Failed to load model", resp.json().get("error", {}).get("message", "")
+            )
 
-                print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
-            finally:
-                shutil.rmtree(extra_dir, ignore_errors=True)
+            print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
+        finally:
+            shutil.rmtree(extra_dir, ignore_errors=True)
 
     def _get_test_backend(self):
         """Get a lightweight test backend based on platform."""

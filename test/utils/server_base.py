@@ -581,6 +581,12 @@ class ServerTestBase(unittest.TestCase):
         """No server lifecycle management needed."""
         super().tearDownClass()
 
+    def enterContext(self, cm):
+        """Backport of unittest.TestCase.enterContext, which needs Python 3.11."""
+        result = cm.__enter__()
+        self.addCleanup(cm.__exit__, None, None, None)
+        return result
+
     def setUp(self):
         """Set up for each test."""
         print(f"\n=== Starting test: {self._testMethodName} ===")
