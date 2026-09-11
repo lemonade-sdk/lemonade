@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
 
+"""Compute the Lemonade version string from git state.
+
+The version is derived, in priority order, from:
+
+1. A ``.version`` file at the repo root (overrides everything; used by source
+   archives that are built outside a git checkout).
+2. A release tag ``vYYYY.WW.N`` pointing at HEAD.
+3. A ``release-vYYYY.WW`` branch, in which case the patch number ``N`` is the
+   number of commits since the branch point (or the last release tag).
+4. Otherwise a development version ``YYYY.WW.0~<count>.<hash>`` for the upcoming
+   release week.
+
+Usage::
+
+    # Print the computed version for the current checkout
+    python tools/version.py
+
+    # Import and reuse in other tooling
+    from tools.version import get_version
+    version = get_version(repo_root)
+"""
+
 import datetime
 import os
 import re

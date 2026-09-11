@@ -1,5 +1,20 @@
 #!/usr/bin/env python3
 
+"""Create a version-stamped source tarball from the git HEAD.
+
+Produces ``lemonade-<version>.tar.gz`` containing a clean ``git archive`` export
+with a ``.version`` file added at the root so builds made from the tarball (i.e.
+outside a git checkout) still report the correct version.
+
+Usage::
+
+    # Write lemonade-<version>.tar.gz to the current directory
+    python tools/source_archive.py
+
+    # Choose an output directory and/or pin the version explicitly
+    python tools/source_archive.py --output-dir dist --version 2026.38.0
+"""
+
 import argparse
 import gzip
 import io
