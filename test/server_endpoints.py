@@ -376,6 +376,175 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
+    def test_000c_registered_model_query_contract(self):
+        """Canonical /models discovery is queryable without MCP or GUI heuristics."""
+        suffix = uuid.uuid4().hex[:8]
+        model_a = f"user.DiscoveryCase-{suffix}-Alpha"
+        model_b = f"user.DiscoveryCase-{suffix}-Beta"
+        router_name = f"user.DiscoveryRouter-{suffix}"
+        registered = [model_a, model_b, router_name]
+
+        def register(payload):
+            response = requests.post(
+                f"{self.base_url}/models/register",
+                json=payload,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            return response.json()["model_name"]
+
+        try:
+            public_a = register(
+                {
+                    "model_name": model_a,
+                    "recipe": "llamacpp",
+                    "checkpoint": f"example/discovery-{suffix}-alpha:Q4_K_M",
+                    "labels": ["chat", "foundation", "alpha-token"],
+                }
+            )
+            public_b = register(
+                {
+                    "model_name": model_b,
+                    "recipe": "llamacpp",
+                    "checkpoint": f"example/discovery-{suffix}-beta:Q4_K_M",
+                    "labels": ["chat", "foundation", "beta-token"],
+                }
+            )
+
+            # Search is case-insensitive AND-over-whitespace tokens and includes
+            # public id/checkpoint/recipe/labels.
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={"show_all": "true", "query": "FOUNDATION alpha-token"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            body = response.json()
+            self.assertEqual(body["matching_total"], 1)
+            self.assertEqual([m["id"] for m in body["data"]], [public_a])
+            self.assertEqual(body["data"][0]["capability"], "chat")
+            self.assertIn("chat", body["data"][0]["capabilities"])
+
+            # downloaded=false is an independent predicate over registered models.
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={
+                    "show_all": "true",
+                    "query": f"DiscoveryCase-{suffix}",
+                    "capability": "chat",
+                    "downloaded": "false",
+                    "limit": "1",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            first = response.json()
+            self.assertEqual(first["matching_total"], 2)
+            self.assertEqual(len(first["data"]), 1)
+            self.assertIsInstance(first["next_cursor"], str)
+
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={
+                    "show_all": "true",
+                    "query": f"DiscoveryCase-{suffix}",
+                    "capability": "chat",
+                    "downloaded": "false",
+                    "limit": "1",
+                    "cursor": first["next_cursor"],
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            second = response.json()
+            self.assertEqual(response.status_code, 200, response.text)
+            self.assertEqual(second["matching_total"], 2)
+            self.assertEqual(len(second["data"]), 1)
+            self.assertIsNone(second["next_cursor"])
+            self.assertEqual(
+                {first["data"][0]["id"], second["data"][0]["id"]},
+                {public_a, public_b},
+            )
+
+            # The existing default remains downloaded-only; explicit false is the
+            # canonical way to ask for registered-but-not-downloaded models.
+            default_ids = {
+                m["id"]
+                for m in requests.get(
+                    f"{self.base_url}/models", timeout=TIMEOUT_DEFAULT
+                ).json()["data"]
+            }
+            self.assertNotIn(public_a, default_ids)
+            self.assertNotIn(public_b, default_ids)
+
+            # A virtual router remains a registered/queryable model. Its
+            # downloaded state is derived from components, not own weight files.
+            public_router = register(
+                {
+                    "model_name": router_name,
+                    "recipe": "collection.router",
+                    "version": "1",
+                    "components": [ENDPOINT_TEST_MODEL],
+                    "routing": {
+                        "candidates": [ENDPOINT_TEST_MODEL],
+                        "default_model": ENDPOINT_TEST_MODEL,
+                        "rules": [
+                            {
+                                "id": "discovery-fixture",
+                                "match": {
+                                    "keywords_any": ["__never_discovery_fixture__"]
+                                },
+                                "route_to": ENDPOINT_TEST_MODEL,
+                            }
+                        ],
+                    },
+                }
+            )
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={
+                    "show_all": "true",
+                    "query": f"DiscoveryRouter-{suffix}",
+                    "capability": "router",
+                    "downloaded": "true",
+                },
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            router_body = response.json()
+            self.assertEqual(router_body["matching_total"], 1)
+            self.assertEqual(router_body["data"][0]["id"], public_router)
+            self.assertEqual(router_body["data"][0]["capability"], "router")
+
+            # Invalid cursors fail explicitly rather than silently restarting a page.
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={"show_all": "true", "cursor": "not-a-cursor", "limit": "1"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+
+            # Unknown canonical predicates are client errors, not empty success.
+            response = requests.get(
+                f"{self.base_url}/models",
+                params={"show_all": "true", "capability": "imgae"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(response.status_code, 400, response.text)
+            self.assertEqual(
+                response.json().get("error"),
+                "Unknown model capability: imgae",
+            )
+        finally:
+            for model_name in reversed(registered):
+                try:
+                    requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": model_name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                except Exception:
+                    pass
+
     def test_001_live_endpoint(self):
         """Test the /live endpoint for load balancer health checks."""
         response = requests.get(
