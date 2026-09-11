@@ -22,6 +22,10 @@ inline void check(bool cond, const char* desc) {
     }
 }
 
+inline void check(bool cond, const std::string& desc) {
+    check(cond, desc.c_str());
+}
+
 inline void reset_counts() {
     passed = 0;
     failures = 0;
