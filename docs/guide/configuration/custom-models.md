@@ -347,6 +347,18 @@ When an alias is specified in any API request (e.g., `/v1/chat/completions`, `/v
 
 Every registered alias is exposed as an independent model entry in `/v1/models`, `/v1/models/{id}`, and `lemonade list`. Alias entries set `id` to the alias name while sharing the target model's recipe, downloaded status, and backend configuration.
 
+#### Alias Mapping in `/metrics`
+
+`/metrics` emits one `lemonade_model_alias_info{alias,model_name}` sample per registered alias, present whether or not the target model has been loaded. Alias chains collapse to the final target, and unresolvable or cyclic aliases are omitted so `/metrics` never advertises a mapping the inference APIs would refuse to follow.
+
+Model series stay labeled with the canonical `model_name` only — they are not duplicated under the alias — so cumulative counters remain single-counted. Join the mapping onto them to query by alias:
+
+```promql
+lemonade_model_loaded * on(model_name) group_right lemonade_model_alias_info
+```
+
+The `lemonade_model_*` series are built from the Router's snapshot of models it has observed, so a model that has not been loaded in the current process has no series for the mapping to join onto. The `lemonade_model_alias_info` sample is present either way, so an alias that resolves but joins to nothing indicates a target that is not currently tracked, while an absent sample indicates the alias is not registered.
+
 ### Five reference cases
 
 | Sources                                         | `/v1/models` ids                                      | Resolution                                                                 |
