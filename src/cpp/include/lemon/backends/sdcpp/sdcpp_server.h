@@ -14,7 +14,7 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer {
+class SDServer : public WrappedServer, public IImageServer, public IVideoServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -41,6 +41,7 @@ public:
     json image_generations(const json& request) override;
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
+    json video_generations(const json& request) override;
 
     // ESRGAN upscaling via sd-cli subprocess.
     //
