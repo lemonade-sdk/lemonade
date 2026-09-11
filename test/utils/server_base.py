@@ -228,10 +228,15 @@ def get_model_options(model_name, port=PORT):
 
 @contextlib.contextmanager
 def scoped_server_config(*restore_keys, port=PORT, **settings):
-    """Apply runtime server settings for the block, then restore them.
+    """Set server config for the block, then put the previous values back.
 
-    Snapshots and restores whole top-level keys, so nested settings restore the
-    entire parent object. Bare key names snapshot without changing anything.
+    Keyword arguments are applied on entry, e.g. ``max_loaded_models=2``.
+    Positional names are not changed on entry, only saved and put back, for
+    tests that write those keys themselves, e.g. ``"auto_evict"``.
+
+    Saving and restoring works on whole top-level keys: passing
+    ``telemetry={"enabled": False}`` saves the entire ``telemetry`` object
+    and puts all of it back.
     """
     response = requests.get(
         f"http://localhost:{port}/internal/config",
