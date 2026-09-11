@@ -528,7 +528,7 @@ Set allowed origins as a comma-separated list of complete origins including sche
 
 By default, without configuring `allowed_origins`, Lemonade automatically permits:
 
-- **Loopback & Subdomains**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`) are permitted automatically.
+- **Loopback Origins**: Loopback addresses (`localhost`, `127.0.0.1`, `[::1]`, and `tauri.localhost`) are permitted automatically.
 - **Native Desktop Apps**: Native desktop application schemes (`lemonade://`, `file://`, `app://.`, `vscode-webview://`, `jan://`, etc.) are permitted for client connections.
 - **Same-Origin LAN & mDNS Web App Access**: Direct browser requests to Lemonade's built-in web interface over active network interfaces (e.g. `http://192.168.1.50:13305/app`, `http://100.100.x.x:13305/app`) and local mDNS hostnames (`http://<hostname>.local:13305/app`) are dynamically permitted without manual configuration because they are same-origin to the server's own interfaces.
 
