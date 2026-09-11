@@ -48,7 +48,7 @@ CPU-only jobs should target GitHub-hosted runners when possible.
 
 ### Architecture label
 
-GitHub registers every self-hosted runner with an architecture label (`X64`, `ARM64`, or `ARM`) alongside its OS label (`Linux`, `Windows`, `macOS`). **Every self-hosted `runs-on` list must include one of these architecture labels.** The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is `[self-hosted, Linux, ARM64, cuda, lemon-prod]`), so a job that only asks for `[self-hosted, Linux, lemon-prod]` can be scheduled onto either and fail with a binary or package built for the other architecture. Capability labels such as `vulkan` or `rocm` do not imply an architecture, so the label is required even when a capability label narrows the pool today. Write `X64` for the AMD Ryzen AI and Strix Halo rigs and `ARM64` for ARM machines; this applies to Windows lists too, so that an ARM64 Windows runner can be added without re-auditing every workflow.
+GitHub registers every self-hosted runner with an architecture label (`X64`, `ARM64`, or `ARM`) alongside its OS label (`Linux`, `Windows`, `macOS`). **Every self-hosted `runs-on` list must include one of these architecture labels.** The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is `[self-hosted, Linux, ARM64, cuda, lemon-prod]`), so a job that only asks for `[self-hosted, Linux, lemon-prod]` can be scheduled onto either and fail with a binary or package built for the other architecture.
 
 ### Hardware labels
 
@@ -71,8 +71,6 @@ Capability and hardware labels must be present on each runner for the workflow t
 | Ryzen AI 300-series laptop (NPU + Vulkan iGPU + ROCm iGPU) | `lemon-prod`, `xdna2`, `vulkan`, `rocm` |
 | Strix Halo | `lemon-prod`, `xdna2`, `rocm`, `stx-halo` |
 | DGX Spark (ARM64 + CUDA) | `lemon-prod`, `cuda` |
-
-GitHub adds the OS and architecture labels (`Linux`/`Windows`, `X64`/`ARM64`) itself when the runner registers; do not add them by hand.
 
 ## New Runner Setup
 
