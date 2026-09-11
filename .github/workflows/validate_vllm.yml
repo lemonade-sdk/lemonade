@@ -114,7 +114,20 @@ jobs:
     name: Validate vllm (rocm)
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
-    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    # TRIAL BRANCH ONLY -- do not merge this line to main.
+    #
+    # Retargets just this job at the AMD Ryzen DevLab DISPATCH ephemeral pool so
+    # the run can be compared against the lemon-prod static runner. Same silicon
+    # (Strix Halo, gfx1151), ROCm 7.2.1, Ubuntu 24.04. A runner is built for this
+    # job alone and destroyed when it finishes.
+    #
+    # 'devlab-dispatch' is the opt-in token: nothing reaches that pool without
+    # it, which is why their hosts carrying 'strix-halo' has never pulled one of
+    # your jobs in by accident.
+    #
+    # Original line, to restore:
+    #   runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
     steps:
       - uses: actions/checkout@v5
         with:
