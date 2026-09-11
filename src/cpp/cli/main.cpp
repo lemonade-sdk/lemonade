@@ -12,6 +12,7 @@
 #include <lemon_cli/agent_launcher.h>
 #include <lemon_cli/opencode_profile.h>
 #include <lemon_cli/pi_profile.h>
+#include <lemon_cli/junie_profile.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/path_utils.h>
 #include <lemon/utils/network_beacon.h>
@@ -66,7 +67,8 @@ static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex",
     "opencode",
-    "pi"
+    "pi",
+    "junie"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -664,6 +666,21 @@ static std::vector<lemon_cli::AgentModelEntry> fetch_llm_models_for_sync(
 
 static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
                                          const CliConfig& config) {
+    // Junie does not use a single config file with a providers map like
+    // opencode/pi. Instead it reads a standalone custom model profile from
+    // ~/.junie/models/lemonade.json, so it gets its own sync path.
+    if (config.agent == "junie") {
+        const std::string config_api_key = config.api_key.empty() ? "lemonade" : config.api_key;
+        const std::string base_url =
+            lemon_tray::build_agent_server_base_url(config.host, config.port) + "/v1/chat/completions";
+        std::string error_message;
+        if (!lemon_cli::sync_junie_model_file(base_url, config_api_key, config.model, error_message)) {
+            std::cerr << "Warning: Failed to sync junie config: " << error_message << std::endl;
+            std::cerr << "Continuing with launch anyway..." << std::endl;
+        }
+        return;
+    }
+
     constexpr int default_context_window = 40960;
     std::vector<lemon_cli::AgentModelEntry> models =
         fetch_llm_models_for_sync(client, default_context_window);

@@ -103,6 +103,7 @@ nav:
     - CodeGPT: integrations/codeGPT.md
     - Continue: integrations/continue.md
     - Interviewer: integrations/interviewer.md
+    - Junie: integrations/junie.md
     - LangChain: integrations/langchain.md
     - Lemon Zest: integrations/lemon-zest.md
     - Mindcraft: integrations/mindcraft.md

@@ -251,6 +251,36 @@ void configure_pi_agent(const std::string& model,
         "  npm i -g @earendil-works/pi-coding-agent";
 }
 
+void configure_junie_agent(const std::string& api_key,
+                           AgentConfig& config) {
+    const std::string resolved_api_key = api_key.empty() ? kDefaultAgentApiKey : api_key;
+
+#ifdef _WIN32
+    config.binary_name = "junie.exe";
+    config.binary_alternatives = {"junie.cmd", "junie"};
+#else
+    config.binary_name = "junie";
+    config.binary_alternatives = {};
+#endif
+    config.fallback_paths = {
+        "~/.local/bin/junie",
+        "/usr/local/bin/junie"
+    };
+
+    config.env_vars = {
+        {"LEMONADE_API_KEY", resolved_api_key}
+    };
+    // The model is carried by the custom:lemonade profile file written during
+    // config sync, so the launch args just select it.
+    config.extra_args = {
+        "--model", "custom:lemonade"
+    };
+    config.install_instructions =
+        "Install Junie CLI:\n"
+        "  curl -fsSL https://junie.jetbrains.com/install.sh | bash\n"
+        "See https://junie.jetbrains.com/ for details.";
+}
+
 } // namespace
 
 std::string build_agent_server_base_url(const std::string& host, int port) {
@@ -261,7 +291,7 @@ std::string build_agent_server_base_url(const std::string& host, int port) {
 }
 
 bool agent_needs_config_sync(const std::string& agent) {
-    return agent == "opencode" || agent == "pi";
+    return agent == "opencode" || agent == "pi" || agent == "junie";
 }
 
 bool build_agent_config(const std::string& agent,
@@ -294,7 +324,12 @@ bool build_agent_config(const std::string& agent,
         return true;
     }
 
-    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi.";
+    if (agent == "junie") {
+        configure_junie_agent(api_key, config);
+        return true;
+    }
+
+    error_message = "Unsupported agent: " + agent + ". Supported agents: claude, codex, opencode, pi, junie.";
     return false;
 }
 

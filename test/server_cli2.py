@@ -1950,6 +1950,72 @@ sys.exit(0)
 
             self.assertEqual(cfg.get("$schema"), "https://opencode.ai/config.json")
 
+    def test_122_launch_junie_with_fake_binary(self):
+        """Launch should execute fake junie binary with --model custom:lemonade."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(
+                os.path.exists(capture_path),
+                "Fake junie binary was not executed",
+            )
+
+            with open(capture_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+
+            argv = payload["argv"]
+            self.assertIn("--model", argv)
+            model_idx = argv.index("--model") + 1
+            self.assertEqual(argv[model_idx], "custom:lemonade")
+
+    def test_123_launch_junie_creates_model_profile(self):
+        """Launch junie should create ~/.junie/models/lemonade.json for the local server."""
+        if IS_WINDOWS:
+            self.skipTest(WINDOWS_LAUNCH_STUB_SKIP_REASON)
+
+        with tempfile.TemporaryDirectory(prefix="lemonade-launch-stub-") as temp_dir:
+            capture_path = os.path.join(temp_dir, "junie_capture_cfg.json")
+            self._write_fake_agent(temp_dir, "junie", capture_path)
+            env = self._build_stubbed_agent_env(temp_dir)
+
+            result = run_cli_command(
+                ["launch", "junie", "--model", ENDPOINT_TEST_MODEL],
+                timeout=TIMEOUT_DEFAULT,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0)
+
+            profile_path = os.path.join(temp_dir, ".junie", "models", "lemonade.json")
+            self.assertTrue(
+                os.path.exists(profile_path),
+                f"lemonade.json not created at {profile_path}",
+            )
+
+            with open(profile_path, "r", encoding="utf-8") as f:
+                profile = json.load(f)
+
+            self.assertEqual(profile["id"], ENDPOINT_TEST_MODEL)
+            self.assertEqual(profile["apiType"], "OpenAICompletion")
+            self.assertTrue(profile["baseUrl"].endswith("/v1/chat/completions"))
+            # Mirrors lemonade api key in use; LEMONADE_API_KEY env wins.
+            self.assertEqual(
+                profile.get("apiKey"),
+                os.environ.get("LEMONADE_API_KEY", "lemonade"),
+            )
+
     # =============================================================================
     # Unload Tests
     # =============================================================================
