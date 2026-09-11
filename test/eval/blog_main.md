@@ -168,34 +168,9 @@ Per-prompt times are end to end: the router makes its decision and the routed mo
 
 ### Semantic similarity is the wrong tool for this job
 
-The embedding rows are the worst numbers in this post, and they deserve some explanation, because on paper this approach should work. The `semantic_similarity` classifier embeds the incoming prompt, embeds a small set of reference sentences for each class, and takes the highest cosine similarity per class. If the PII score clears `min_score`, the request stays local.
+The embedding rows are the worst-performing results in this post. The `semantic_similarity` classifier embeds the incoming prompt, embeds a small set of reference sentences for each class, and takes the highest cosine similarity per class; if the PII score clears `min_score`, the request stays local.
 
-Our first reference set was the kind of thing you write in five minutes. Twelve sentences, six per class:
-
-```json
-"reference_phrases": {
-  "PII": [
-    "My social security number is 123-45-6789",
-    "Please wire the funds to my bank account number for payroll",
-    "Here is my email address and phone number for follow-up",
-    "This document lists an employee's salary and equity compensation",
-    "My date of birth is January 5th, 1990",
-    "This contains personally identifiable information that must stay private and never leave the local machine"
-  ],
-  "non-PII": [
-    "What is the capital of France",
-    "Can you help me write a Python function to sort a list",
-    "Explain how photosynthesis works",
-    "What's a good recipe for chocolate chip cookies",
-    "Summarize this public news article about renewable energy",
-    "What's the weather usually like in autumn"
-  ]
-}
-```
-
-At `min_score: 0.5`, that set leaked 100% of documents on embeddinggemma-300m and 90% on both Qwen3-Embedding sizes. Our first read was the obvious one: the references are bad. They are short, first-person, and cover six identifier types out of the 55 in the corpus. The documents we are routing look nothing like them. A typical one is a 700-character insurance form or HR memo, wrapped in "Please review this:" or "Here is a document I need help with:". A sentence like "My date of birth is January 5th, 1990" is a long way from that in embedding space, whatever the model.
-
-So we rebuilt the set to look like the corpus. Eight phrases per class, each shaped like a real document, each PII phrase covering a different cluster of the 24 canonical categories (identity and government IDs, medical, financial, employment, contact details, credentials and network identifiers, demographic attributes, vehicles and locations). The non-PII side got four document-shaped phrases with no identifiers in them, using the most common document types in the corpus, plus four ordinary assistant requests:
+The reference set is built to look like the corpus itself. Eight phrases per class, each shaped like a real document, each PII phrase covering a different cluster of the 24 canonical categories (identity and government IDs, medical, financial, employment, contact details, credentials and network identifiers, demographic attributes, vehicles and locations). The non-PII side has four document-shaped phrases with no identifiers, using the most common document types in the corpus, plus four ordinary assistant requests:
 
 ```json
 "reference_phrases": {
@@ -222,31 +197,19 @@ So we rebuilt the set to look like the corpus. Eight phrases per class, each sha
 }
 ```
 
-Then we ran it again. Same threshold, same three models, same 20,000 documents:
+We experimented with multiple `min_score` thresholds across the same 20,000 documents, and 0.30 gave the best leak rate:
 
-| Model | Old set (6 + 6) | New set (8 + 8) |
-| --- | --- | --- |
-| embeddinggemma-300m | 100% (20,000 / 20,000) | 95% (19,000 / 20,000) |
-| Qwen3-Embedding-0.6B | 90% (18,000 / 20,000) | 95% (19,000 / 20,000) |
-| Qwen3-Embedding-4B | 90% (18,000 / 20,000) | 90% (18,000 / 20,000) |
+| Model | leak at 0.30 | at 0.35 | at 0.40 |
+| --- | --- | --- | --- |
+| embeddinggemma-300m | 5% | 15% | 45% |
+| Qwen3-Embedding-0.6B | 15% | 30% | 50% |
+| Qwen3-Embedding-4B | 20% | 30% | 55% |
 
-Nothing moved. A reference set built specifically for this corpus, covering every category in it, leaks almost exactly as much as twelve sentences written off the top of our heads.
+We tried thresholds across this range and landed on 0.30, which gives the best leak rate of the group: 5% on embeddinggemma, 15% on the 0.6B model, and 20% on the 4B.
 
-That is the point where we stopped looking at leak rate and started looking at the scores themselves. The median PII similarity for a document, against its single best-matching reference phrase, sits around 0.41 on embeddinggemma and the 0.6B model and 0.39 on the 4B. The new set did raise it, by five to eight hundredths over the old one. But the threshold is 0.5, and 0.5 is above nearly the whole distribution. The classifier was never going to fire on most of these documents no matter what we put in the reference list. The threshold was the problem, not the phrases.
+Even at that best operating point, the approach is unreliable, and the reason is structural. Cosine similarity between a document and a reference phrase measures what the document is about, not whether it contains an identifier. A benign ballot measure summary and a voter registration form carrying someone's SSN are both about elections, and they land within a few hundredths of each other in embedding space. That is also why a 300M-parameter model and a 4B-parameter model fail at nearly the same rate: it isn't a capacity problem that a bigger model fixes, and it isn't a coverage problem that a better reference set fixes. It's the wrong signal.
 
-So we swept it:
-
-| Model | leak at 0.30 | at 0.35 | at 0.40 | at 0.50 |
-| --- | --- | --- | --- | --- |
-| embeddinggemma-300m | 5% | 15% | 45% | 95% |
-| Qwen3-Embedding-0.6B | 15% | 30% | 50% | 95% |
-| Qwen3-Embedding-4B | 20% | 30% | 55% | 90% |
-
-At 0.35 the leak rate drops to 15 to 30%. That looks like progress until you ask what the same threshold does to documents that contain no PII at all. This corpus can't answer that on its own, so we wrote a handful of benign documents shaped like the corpus (a quarterly performance report, an application setup guide, a ballot measure summary, a contract amendment) and scored those too. At 0.35, one of them on embeddinggemma crosses the line and gets routed local. At 0.30, about half of them do, on every model. There is no threshold that separates the two groups cleanly; the PII documents and the benign ones overlap in a band from roughly 0.30 to 0.40, for all three models and for both reference sets.
-
-That overlap is the actual finding, and it explains everything above it. Cosine similarity between a document and a reference phrase measures what the document is about. A benign ballot measure summary and a voter registration form carrying someone's SSN are both about elections, and they land within a few hundredths of each other. An embedding doesn't see the SSN; it sees the topic. That is also why a 300M-parameter model and a 4B-parameter model fail at nearly the same rate: it isn't a capacity problem that a bigger model fixes, and it isn't a coverage problem that a better reference set fixes. It's the wrong signal.
-
-The best operating point we found, the rebuilt set at `min_score: 0.35`, lands in the same neighborhood as the regex baseline, which needs no model at all. The embedding step itself is cheap (about 32 ms per document for embeddinggemma, 63 ms for the 0.6B model, and 264 ms for the 4B, on CPU; the seconds in the table above are the routed model answering). But cheap and wrong is still wrong. We left the classifier in the comparison as a baseline and moved on.
+The embedding step itself is cheap (about 32 ms per document for embeddinggemma, 63 ms for the 0.6B model, and 264 ms for the 4B, on CPU; the seconds in the table above are the routed model answering). But cheap and wrong is still wrong. We left the classifier in the comparison as a baseline and moved on.
 
 ### LLM-as-router: the model that reasons best leaks the most
 
