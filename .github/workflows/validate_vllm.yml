@@ -37,7 +37,17 @@ jobs:
     # Only the auto-update runs resolve upstream releases. Everywhere else the
     # build validates the pins committed in backend_versions.json, so a bad
     # upstream release can't fail a merge or hide a broken pin.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # TRIAL BRANCH ONLY -- 'workflow_dispatch' removed here on purpose.
+    #
+    # With it, a manual run takes the auto-update path and resolves the latest
+    # upstream vllm-rocm release, which is currently
+    # vllm0.19.1-rocm7.13.0-gfx950. That targets gfx950 and refuses to install
+    # on any gfx1151 host, so the job fails on Strix Halo whichever runner it
+    # lands on -- the first trial run hit exactly that and it says nothing about
+    # the pool. Dropping it here makes a dispatch validate the pins committed in
+    # backend_versions.json, which is the same path your pull_request and
+    # merge_group runs take, so the comparison is like for like.
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     outputs:
       vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
