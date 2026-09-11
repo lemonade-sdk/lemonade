@@ -228,15 +228,20 @@ def get_model_options(model_name, port=PORT):
 
 @contextlib.contextmanager
 def scoped_server_config(*restore_keys, port=PORT, **settings):
-    """Set server config for the block, then put the previous values back.
+    """Change server settings inside a with block; they are undone when it ends.
 
-    Keyword arguments are applied on entry, e.g. ``max_loaded_models=2``.
-    Positional names are not changed on entry, only saved and put back, for
-    tests that write those keys themselves, e.g. ``"auto_evict"``.
+        with scoped_server_config(max_loaded_models=2):
+            ...  # the server allows 2 loaded models here
+        # back to whatever it was before
 
-    Saving and restoring works on whole top-level keys: passing
-    ``telemetry={"enabled": False}`` saves the entire ``telemetry`` object
-    and puts all of it back.
+    Name a key without a value when your tests will set it themselves:
+
+        with scoped_server_config("auto_evict"):
+            ...  # set auto_evict however you like in here
+        # auto_evict is back to its original value
+
+    Undo is per top-level key, so after ``telemetry={"enabled": False}`` the
+    whole ``telemetry`` section is back as it was, not just ``enabled``.
     """
     response = requests.get(
         f"http://localhost:{port}/internal/config",
