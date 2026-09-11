@@ -59,8 +59,8 @@ CAPABILITIES = {
                 "embeddings": True,
                 "embeddings_batch": True,
                 "reranking": True,
-                "tool_calls": False,
-                "tool_calls_streaming": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
                 "multi_model": True,
                 "stop_parameter": True,
                 "echo_parameter": False,
@@ -71,6 +71,7 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
+                "tool_calling": "Qwen3-4B-Instruct-2507-GGUF",
                 "embedding": "nomic-embed-text-v2-moe-GGUF",
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
             },
@@ -135,7 +136,8 @@ CAPABILITIES = {
                 "static_max_context_window": True,
             },
             "test_models": {
-                "llm": "gemma4-it-e2b-FLM",
+                "llm": "llama3.2-1b-FLM",
+                "tool_calling": "qwen3-it-4b-FLM",
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
@@ -400,6 +402,9 @@ def get_test_model(
     # Fall back to generic model type
     if model_type in test_models:
         return test_models[model_type]
+
+    if model_type == "tool_calling":
+        return get_test_model("llm", wrapped_server, backend, modality)
 
     raise ValueError(
         f"No test model found for type '{model_type}' with wrapped_server='{wrapped_server}', backend='{backend}'"

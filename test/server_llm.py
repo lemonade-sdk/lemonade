@@ -510,7 +510,7 @@ class LLMTests(ServerTestBase):
     def test_012_chat_completions_with_tool_calls(self):
         """Test chat completions with tool calls."""
         client = self.get_openai_client()
-        model = self.get_test_model("llm")
+        model = self.get_test_model("tool_calling")
 
         completion = client.chat.completions.create(
             model=model,
@@ -532,7 +532,7 @@ class LLMTests(ServerTestBase):
     def test_013_chat_completions_with_tool_calls_streaming(self):
         """Test streaming chat completions with tool calls."""
         client = self.get_openai_client()
-        model = self.get_test_model("llm")
+        model = self.get_test_model("tool_calling")
 
         stream = client.chat.completions.create(
             model=model,
