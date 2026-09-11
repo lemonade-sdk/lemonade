@@ -1413,7 +1413,7 @@ json SystemInfo::build_recipes_info(const json& devices) {
                         std::string detected_compute_cap;
                         for (const auto& gpu : devices["nvidia_gpu"]) {
                             if (!gpu.value("available", false)) continue;
-                            std::string cc = gpu.value("compute_capability", "");
+                            std::string cc = system_info_detail::extract_compute_capability(gpu);
                             if (!cc.empty()) {
                                 detected_compute_cap = cc;
                                 break;
