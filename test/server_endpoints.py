@@ -40,6 +40,7 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
+    scoped_server_config,
     _auth_headers,
 )
 from utils.test_models import (
@@ -6358,25 +6359,6 @@ class EndpointTests(ServerTestBase):
             except Exception:
                 pass
 
-    def _set_extra_models_dir(self, value):
-        """Swap extra_models_dir via /internal/set; returns the prior value."""
-        prior = (
-            requests.get(
-                f"http://localhost:{PORT}/internal/config", timeout=TIMEOUT_DEFAULT
-            )
-            .json()
-            .get("extra_models_dir", "")
-        )
-        response = requests.post(
-            f"http://localhost:{PORT}/internal/set",
-            json={"extra_models_dir": value},
-            timeout=TIMEOUT_DEFAULT,
-        )
-        self.assertEqual(
-            response.status_code, 200, f"/internal/set failed: {response.text}"
-        )
-        return prior
-
     def _write_stub_gguf(self, directory, bare_name):
         """Drop a stub GGUF in a subdir so extras discovery emits extra.<bare_name>."""
         import struct
@@ -6421,7 +6403,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_3way_")
         self._write_stub_gguf(extra_dir, bare)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             pull_response = requests.post(
                 f"{self.base_url}/pull",
@@ -6480,7 +6462,6 @@ class EndpointTests(ServerTestBase):
                 )
             except Exception:
                 pass
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021h_naming_spec_extra_shadows_builtin(self):
@@ -6489,7 +6470,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shadow_")
         self._write_stub_gguf(extra_dir, bare)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6524,7 +6505,6 @@ class EndpointTests(ServerTestBase):
                 f"[OK] extra shadows built-in: bare/{bare} -> extra, builtin.{bare} -> built-in"
             )
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021i_extra_root_gguf_emits_stem_name(self):
@@ -6533,7 +6513,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_root_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6556,7 +6536,6 @@ class EndpointTests(ServerTestBase):
 
             print(f"[OK] root GGUF emits stem: {bare}")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021t_extra_subdir_multiple_quantization_variants_emit_separate_models(
@@ -6574,7 +6553,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(q8_file)
         self._write_stub_gguf_file(mmproj_file)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6627,7 +6606,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] split extra folder lists variants and accepts folder name")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021x_extra_split_folder_alias_shadows_builtin_without_visible_duplicate(
@@ -6642,7 +6620,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(q4_file)
         self._write_stub_gguf_file(q8_file)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6679,7 +6657,6 @@ class EndpointTests(ServerTestBase):
                 "[OK] split extra folder name is chosen over builtin without duplicate model"
             )
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021u_extra_subdir_sharded_models_remain_grouped(self):
@@ -6692,7 +6669,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(shard1)
         self._write_stub_gguf_file(shard2)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6712,7 +6689,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] extra subdir sharded models remain grouped")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021ub_extra_subdir_sharded_size_sums_shards_but_files_stay_per_file(self):
@@ -6735,7 +6711,7 @@ class EndpointTests(ServerTestBase):
         expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
         shard1_only_gb = shard1_bytes / (1024**3)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6770,7 +6746,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] sharded size sums shards while /files stays per-file")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021v_extra_subdir_multiple_sharded_quantizations_split_by_variant(self):
@@ -6793,7 +6768,7 @@ class EndpointTests(ServerTestBase):
         for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
             self._write_stub_gguf_file(shard)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6830,7 +6805,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] extra folder with multiple sharded variants lists variants")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021w_extra_subdir_multiple_mmproj_files_choose_first_alphabetically(self):
@@ -6845,7 +6819,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(second_mmproj)
         self._write_stub_gguf_file(first_mmproj)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6863,7 +6837,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] extra folder with multiple mmproj files chooses first name")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
@@ -6876,7 +6849,7 @@ class EndpointTests(ServerTestBase):
                 self._write_stub_gguf_file(path)
                 expected.append(path)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6896,7 +6869,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] identical filenames in two extra folders stay distinct")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
@@ -6908,7 +6880,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(plain)
         self._write_stub_gguf_file(imatrix)
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             models_response = requests.get(
                 f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6928,7 +6900,6 @@ class EndpointTests(ServerTestBase):
 
             print("[OK] same-quant non-shard files remain separate models")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021r_openai_chat_extra_models_precedence(self):
@@ -6938,7 +6909,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
-        prior_dir = self._set_extra_models_dir(extra_dir)
+        self.enterContext(scoped_server_config(extra_models_dir=extra_dir))
         try:
             # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
             payload = {"model": bare, "messages": [{"role": "user", "content": "hi"}]}
@@ -6955,7 +6926,6 @@ class EndpointTests(ServerTestBase):
 
             print(f"[OK] OpenAI API correctly resolves local shadowing for: {bare}")
         finally:
-            self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def _get_test_backend(self):
@@ -7711,22 +7681,7 @@ class EndpointTests(ServerTestBase):
         config_url = f"http://localhost:{PORT}/internal/config"
         set_url = f"http://localhost:{PORT}/internal/set"
 
-        prior = (
-            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
-            .json()
-            .get("telemetry", {})
-            .get("trust_incoming_trace_context", False)
-        )
-        try:
-            # Enable, then confirm it reads back as True.
-            resp = requests.post(
-                set_url,
-                json={"telemetry": {"trust_incoming_trace_context": True}},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(
-                resp.status_code, 200, f"/internal/set failed: {resp.text}"
-            )
+        with scoped_server_config(telemetry={"trust_incoming_trace_context": True}):
             read_back = (
                 requests.get(config_url, timeout=TIMEOUT_DEFAULT)
                 .json()
@@ -7746,27 +7701,20 @@ class EndpointTests(ServerTestBase):
                 400,
                 f"expected 400 for non-boolean value, got {bad.status_code}: {bad.text}",
             )
-        finally:
-            requests.post(
-                set_url,
-                json={"telemetry": {"trust_incoming_trace_context": bool(prior)}},
-                timeout=TIMEOUT_DEFAULT,
-            )
 
     def test_051_default_model_source_policy(self):
         """default_model_source validates and drives source-less variant lookups."""
         config_url = f"http://localhost:{PORT}/internal/config"
         set_url = f"http://localhost:{PORT}/internal/set"
 
-        prior = (
+        shipped = (
             requests.get(config_url, timeout=TIMEOUT_DEFAULT)
             .json()
             .get("default_model_source", "huggingface")
         )
-        try:
-            # Ships defaulting to Hugging Face.
-            self.assertIn(prior, ("huggingface", "modelscope"))
+        self.assertIn(shipped, ("huggingface", "modelscope"))
 
+        with scoped_server_config(default_model_source="modelscope"):
             # An unsupported registry name is rejected by config validation.
             bad = requests.post(
                 set_url,
@@ -7776,14 +7724,6 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(bad.status_code, 400, bad.text)
 
             # Switching the policy round-trips.
-            resp = requests.post(
-                set_url,
-                json={"default_model_source": "modelscope"},
-                timeout=TIMEOUT_DEFAULT,
-            )
-            self.assertEqual(
-                resp.status_code, 200, f"/internal/set failed: {resp.text}"
-            )
             read_back = (
                 requests.get(config_url, timeout=TIMEOUT_DEFAULT)
                 .json()
@@ -7828,24 +7768,10 @@ class EndpointTests(ServerTestBase):
             )
             self.assertEqual(url_lookup.status_code, 404, url_lookup.text)
             self.assertIn("Hugging Face", url_lookup.text)
-        finally:
-            requests.post(
-                set_url,
-                json={"default_model_source": prior},
-                timeout=TIMEOUT_DEFAULT,
-            )
 
     def test_052_default_source_pull_persistence(self):
         """A source-less /pull persists the configured default as the model's
         registry provenance; an explicit source is recorded verbatim."""
-        config_url = f"http://localhost:{PORT}/internal/config"
-        set_url = f"http://localhost:{PORT}/internal/set"
-
-        prior = (
-            requests.get(config_url, timeout=TIMEOUT_DEFAULT)
-            .json()
-            .get("default_model_source", "huggingface")
-        )
         default_name = f"user.DefaultSource-{uuid.uuid4().hex[:8]}"
         explicit_name = f"user.ExplicitSource-{uuid.uuid4().hex[:8]}"
 
@@ -7855,14 +7781,19 @@ class EndpointTests(ServerTestBase):
             ).json()
             return info.get("registry_source") or info.get("source")
 
-        try:
-            # Force the shipped default so the source-less pull resolves to a
-            # registry that actually hosts the tiny test checkpoint.
-            requests.post(
-                set_url,
-                json={"default_model_source": "huggingface"},
-                timeout=TIMEOUT_DEFAULT,
-            )
+        # Force the shipped default so the source-less pull resolves to a
+        # registry that actually hosts the tiny test checkpoint.
+        with scoped_server_config(
+            default_model_source="huggingface"
+        ), contextlib.ExitStack() as cleanup:
+            for name in (default_name, explicit_name):
+                cleanup.callback(
+                    lambda name=name: requests.post(
+                        f"{self.base_url}/delete",
+                        json={"model_name": name},
+                        timeout=TIMEOUT_DEFAULT,
+                    )
+                )
 
             # Source-less pull: persisted provenance is the configured default.
             resp = requests.post(
@@ -7894,21 +7825,6 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(persisted_source(explicit_name), "huggingface")
 
             print("[OK] source-less /pull persists default_model_source provenance")
-        finally:
-            for name in (default_name, explicit_name):
-                try:
-                    requests.post(
-                        f"{self.base_url}/delete",
-                        json={"model_name": name},
-                        timeout=TIMEOUT_DEFAULT,
-                    )
-                except Exception:
-                    pass
-            requests.post(
-                set_url,
-                json={"default_model_source": prior},
-                timeout=TIMEOUT_DEFAULT,
-            )
 
     def test_053_pull_source_url_conflict_returns_400(self):
         """A provider URL that contradicts an explicit source/registry_source is

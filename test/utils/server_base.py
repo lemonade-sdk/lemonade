@@ -227,6 +227,29 @@ def get_model_options(model_name, port=PORT):
 
 
 @contextlib.contextmanager
+def scoped_server_config(port=PORT, **settings):
+    """Apply server settings inside a with block and put the old values back after.
+
+    with scoped_server_config(max_loaded_models=2):
+        ...
+    """
+    response = requests.get(
+        f"http://localhost:{port}/internal/config",
+        headers=_auth_headers(),
+        timeout=TIMEOUT_DEFAULT,
+    )
+    response.raise_for_status()
+    current = response.json()
+    saved = {key: current[key] for key in settings if key in current}
+    set_server_config(settings, port=port)
+    try:
+        yield
+    finally:
+        if saved:
+            set_server_config(saved, port=port)
+
+
+@contextlib.contextmanager
 def model_recipe_options(model_name, port=PORT, **options):
     """Apply recipe options to one model for the duration of the block.
 
@@ -557,6 +580,12 @@ class ServerTestBase(unittest.TestCase):
     def tearDownClass(cls):
         """No server lifecycle management needed."""
         super().tearDownClass()
+
+    def enterContext(self, cm):
+        """Backport of unittest.TestCase.enterContext, which needs Python 3.11."""
+        result = cm.__enter__()
+        self.addCleanup(cm.__exit__, None, None, None)
+        return result
 
     def setUp(self):
         """Set up for each test."""
