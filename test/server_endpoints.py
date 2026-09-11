@@ -40,7 +40,7 @@ from utils.server_base import (
     run_server_tests,
     OpenAI,
     pull_model_with_retry,
-    server_config,
+    scoped_server_config,
     _auth_headers,
 )
 from utils.test_models import (
@@ -6403,7 +6403,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_3way_")
         self._write_stub_gguf(extra_dir, bare)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 pull_response = requests.post(
                     f"{self.base_url}/pull",
@@ -6474,7 +6474,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_shadow_")
         self._write_stub_gguf(extra_dir, bare)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6519,7 +6519,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_root_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6559,7 +6559,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(q8_file)
         self._write_stub_gguf_file(mmproj_file)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6628,7 +6628,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(q4_file)
         self._write_stub_gguf_file(q8_file)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6677,7 +6677,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(shard1)
         self._write_stub_gguf_file(shard2)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6719,7 +6719,7 @@ class EndpointTests(ServerTestBase):
         expected_gb = (shard1_bytes + shard2_bytes) / (1024**3)
         shard1_only_gb = shard1_bytes / (1024**3)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6776,7 +6776,7 @@ class EndpointTests(ServerTestBase):
         for shard in [q4_shard1, q4_shard2, q8_shard1, q8_shard2]:
             self._write_stub_gguf_file(shard)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6827,7 +6827,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(second_mmproj)
         self._write_stub_gguf_file(first_mmproj)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6857,7 +6857,7 @@ class EndpointTests(ServerTestBase):
                 self._write_stub_gguf_file(path)
                 expected.append(path)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6888,7 +6888,7 @@ class EndpointTests(ServerTestBase):
         self._write_stub_gguf_file(plain)
         self._write_stub_gguf_file(imatrix)
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 models_response = requests.get(
                     f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
@@ -6917,7 +6917,7 @@ class EndpointTests(ServerTestBase):
         extra_dir = tempfile.mkdtemp(prefix="lemon_extra_regression_")
         self._write_root_stub_gguf(extra_dir, f"{bare}.gguf")
 
-        with server_config(extra_models_dir=extra_dir):
+        with scoped_server_config(extra_models_dir=extra_dir):
             try:
                 # 500 (Failed to load) proves it resolved to our local stub instead of the real built-in.
                 payload = {
@@ -7693,7 +7693,7 @@ class EndpointTests(ServerTestBase):
         config_url = f"http://localhost:{PORT}/internal/config"
         set_url = f"http://localhost:{PORT}/internal/set"
 
-        with server_config(telemetry={"trust_incoming_trace_context": True}):
+        with scoped_server_config(telemetry={"trust_incoming_trace_context": True}):
             read_back = (
                 requests.get(config_url, timeout=TIMEOUT_DEFAULT)
                 .json()
@@ -7726,7 +7726,7 @@ class EndpointTests(ServerTestBase):
         )
         self.assertIn(shipped, ("huggingface", "modelscope"))
 
-        with server_config(default_model_source="modelscope"):
+        with scoped_server_config(default_model_source="modelscope"):
             # An unsupported registry name is rejected by config validation.
             bad = requests.post(
                 set_url,
@@ -7795,7 +7795,7 @@ class EndpointTests(ServerTestBase):
 
         # Force the shipped default so the source-less pull resolves to a
         # registry that actually hosts the tiny test checkpoint.
-        with server_config(
+        with scoped_server_config(
             default_model_source="huggingface"
         ), contextlib.ExitStack() as cleanup:
             for name in (default_name, explicit_name):

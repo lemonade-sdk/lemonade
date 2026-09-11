@@ -227,7 +227,7 @@ def get_model_options(model_name, port=PORT):
 
 
 @contextlib.contextmanager
-def server_config(*restore_keys, port=PORT, **settings):
+def scoped_server_config(*restore_keys, port=PORT, **settings):
     """Apply runtime server settings for the block, then restore them.
 
     Snapshots and restores whole top-level keys, so nested settings restore the
@@ -247,7 +247,6 @@ def server_config(*restore_keys, port=PORT, **settings):
     try:
         yield
     finally:
-        unload_all_models(port=port)
         if saved:
             set_server_config(saved, port=port)
 

@@ -31,7 +31,7 @@ from utils.server_base import (  # noqa: E402
     ServerTestBase,
     _auth_headers,
     run_server_tests,
-    server_config,
+    scoped_server_config,
 )
 from utils.test_models import (  # noqa: E402
     ENDPOINT_TEST_MODEL,
@@ -283,7 +283,7 @@ class TelemetryTestBase(ServerTestBase):
     def setUpClass(cls):
         super().setUpClass()
 
-        cls.enter_class_context(server_config("telemetry"))
+        cls.enter_class_context(scoped_server_config("telemetry"))
 
         cls.mock_port = find_free_port()
         cls.mock_server = MockOTLPServer(("127.0.0.1", cls.mock_port), MockOTLPHandler)

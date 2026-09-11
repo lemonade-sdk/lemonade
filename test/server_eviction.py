@@ -7,7 +7,8 @@ from utils.server_base import (
     ServerTestBase,
     pull_model_with_retry,
     run_server_tests,
-    server_config,
+    scoped_server_config,
+    unload_all_models,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -47,8 +48,11 @@ class EvictionTests(ServerTestBase):
         super().setUpClass()
 
         cls.enter_class_context(
-            server_config("auto_evict", "auto_evict_threshold_pct", "max_loaded_models")
+            scoped_server_config(
+                "auto_evict", "auto_evict_threshold_pct", "max_loaded_models"
+            )
         )
+        cls.addClassCleanup(unload_all_models)
 
         models_response = requests.get(
             f"http://localhost:{PORT}/api/v1/models",
