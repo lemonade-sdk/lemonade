@@ -23,6 +23,12 @@ assert.doesNotMatch(chatSource, /isModelLoaded=\{!!currentLoadedModel\}/,
 
 assert.match(effectiveSource, /health\.all_models_loaded\.find/,
   'effective settings must resolve the running model from health');
+assert.match(effectiveSource, /api\.systemInfo\(\)/,
+  'effective settings must load server recipe metadata');
+assert.match(effectiveSource, /backendArgsFieldForRecipe\(recipe, systemInfo\)/,
+  'backend args must resolve their option name from server recipe metadata');
+assert.match(effectiveSource, /backendSupportsArgs\(recipe, systemInfo\)/,
+  'backend args support must use server recipe metadata');
 assert.match(effectiveSource, /formatCommand\(launchCommand\)/,
   'effective settings must render the server-reported launch command');
 assert.match(effectiveSource, /Launch command unavailable because this model is not currently loaded\./,

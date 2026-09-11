@@ -119,9 +119,7 @@ interface EffectiveSettingsModalProps {
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, onReload, onLoad,
 }) => {
-  const argsField = backendArgsFieldForRecipe(recipe);
-  const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
-
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [serverModelOptions, setServerModelOptions] = useState<ModelOptions | null>(null);
   const [runtimeModel, setRuntimeModel] = useState<LoadedModel | null>(loadedModel || null);
   const [runtimeStateModelName, setRuntimeStateModelName] = useState<string | null>(null);
@@ -149,6 +147,8 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   const loadedModelRef = useRef<LoadedModel | null>(loadedModel || null);
   const healthFailedRef = useRef(false);
 
+  const argsField = backendArgsFieldForRecipe(recipe, systemInfo);
+  const canEditArgs = backendSupportsArgs(recipe, systemInfo) && !!argsField;
   const hasOverride = !!getSessionArgsOverride(modelName);
   const runtimeStatePending = runtimeLoading || runtimeStateModelName !== modelName;
   const isRuntimeModelLoaded = !runtimeStatePending && !!runtimeModel;
@@ -170,6 +170,21 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       return null;
     }
   }, [modelName, modelInfo, fallbackCtxSize, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void api.systemInfo()
+      .then(info => {
+        if (!cancelled) setSystemInfo(info);
+      })
+      .catch(() => {
+        if (!cancelled) setSystemInfo(api.systemInfoData);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const loadConfiguration = useCallback(async (replaceDraft: boolean) => {
     if (!modelName) return;
