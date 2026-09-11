@@ -810,7 +810,23 @@ void Router::load_model(const std::string& model_name,
     const std::string canonical_model_name = resolve_model_name(model_name);
     const ResidencyClass requested_residency_class =
         residency_class_for_load_purpose(load_purpose);
-    RecipeOptions effective_options = resolve_effective_options(model_info, options);
+
+    bool peeked_pinned;
+    if (pinned.has_value()) {
+        peeked_pinned = pinned.value();
+    } else {
+        std::lock_guard<std::mutex> peek_lock(load_mutex_);
+        WrappedServer* existing_peek = find_server_by_model_name(canonical_model_name);
+        if (existing_peek) {
+            peeked_pinned = existing_peek->is_pinned();
+        } else {
+            const json peeked_pinned_value = options.get_option("pinned");
+            peeked_pinned = peeked_pinned_value.is_boolean() && peeked_pinned_value.get<bool>();
+        }
+    }
+    options.set_option("pinned", peeked_pinned);
+    RecipeOptions requested_options;
+    RecipeOptions effective_options = resolve_effective_options(model_info, options, &requested_options);
 
     // LOAD SERIALIZATION STRATEGY (from spec: point #2 in Additional Considerations)
     std::unique_lock<std::mutex> lock(load_mutex_);
@@ -1034,6 +1050,7 @@ void Router::load_model(const std::string& model_name,
 
         // Set model metadata
         new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_requested_options(requested_options);
         new_server->set_ctx_size_auto(ctx_size_auto);
         new_server->set_residency_class(requested_residency_class);
         new_server->set_pinned(final_pinned);
@@ -1143,6 +1160,7 @@ void Router::load_model(const std::string& model_name,
             // Create new server for retry
             std::unique_ptr<WrappedServer> retry_server = create_backend_server(model_info);
             retry_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+            retry_server->set_requested_options(requested_options);
             retry_server->set_ctx_size_auto(ctx_size_auto);
             retry_server->set_residency_class(requested_residency_class);
             retry_server->set_pinned(final_pinned);
@@ -1408,7 +1426,8 @@ bool Router::is_model_loaded(const std::string& model_name) const {
 }
 
 RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
-                                                const RecipeOptions& request_options) const {
+                                                const RecipeOptions& request_options,
+                                                RecipeOptions* pre_hook_options) const {
     const std::string backend_option = model_info.recipe + "_backend";
 
     RecipeOptions tentative = request_options.inherit(model_info.recipe_options.inherit(
@@ -1467,6 +1486,8 @@ RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
         // effective layer is also used as replayable load input.
         effective.set_option(key, resolved_args);
     }
+
+    if (pre_hook_options) *pre_hook_options = effective;
 
     if (const auto* ops = backends::ops_for(model_info.recipe)) {
         ops->resolve_runtime_options(model_info, effective);
@@ -2960,13 +2981,61 @@ json Router::get_pinned_helper_counts() const {
 }
 
 void Router::set_model_pinned(const std::string& model_name, bool pinned) {
-    std::unique_lock<std::mutex> lock(load_mutex_);
-    wait_for_slot_clearance(lock);
-    WrappedServer* server = find_server_by_model_name(model_name);
-    if (!server) {
-        throw std::runtime_error("Model not loaded: " + model_name);
+    std::string canonical_model_name;
+    ModelInfo model_info;
+    RecipeOptions reload_options;
+    LoadPurpose load_purpose;
+    {
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
+        WrappedServer* server = find_server_by_model_name(model_name);
+        if (!server) {
+            throw std::runtime_error("Model not loaded: " + model_name);
+        }
+        if (server->is_pinned() == pinned) {
+            return;
+        }
+        canonical_model_name = server->get_model_name();
+        model_info = model_manager_->get_model_info(canonical_model_name);
+        reload_options = server->get_requested_options();
+        reload_options.set_option("pinned", pinned);
+        RecipeOptions new_effective = resolve_effective_options(model_info, reload_options);
+        json old_resolved = server->get_recipe_options().to_resolved_json();
+        json new_resolved = new_effective.to_resolved_json();
+        old_resolved.erase("pinned");
+        new_resolved.erase("pinned");
+        if (old_resolved == new_resolved) {
+            server->set_pinned(pinned);
+            return;
+        }
+        load_purpose = load_purpose_for_residency_class(server->get_residency_class());
     }
-    server->set_pinned(pinned);
+    load_model(canonical_model_name, model_info, reload_options, /*do_not_upgrade=*/true,
+               /*allow_reload_on_option_change=*/true, pinned, load_purpose);
+}
+
+json Router::get_backend_props(const std::string& model_name) {
+    WrappedServer* server = nullptr;
+    {
+        std::unique_lock<std::mutex> lock(load_mutex_);
+        wait_for_slot_clearance(lock);
+        server = find_server_by_model_name(model_name);
+        if (!server) {
+            throw std::runtime_error("Model not loaded: " + model_name);
+        }
+        if (!server->acquire_for_inference()) {
+            throw std::runtime_error("Model not loaded: " + model_name);
+        }
+    } // Lock released here
+
+    try {
+        json props = server->get_backend_props();
+        server->release_inference();
+        return props;
+    } catch (...) {
+        server->release_inference();
+        throw;
+    }
 }
 
 } // namespace lemon

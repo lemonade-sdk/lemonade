@@ -113,8 +113,19 @@ static bool is_dflash_draft_checkpoint(std::string checkpoint) {
 
 static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
                                                  const std::string& custom_args,
-                                                 bool merge_args) {
-    if (!merge_args) return custom_args;
+                                                 bool merge_args,
+                                                 long sleep_idle_seconds = -1) {
+    // Applied even when merge_args=false so opting out of other runtime
+    // defaults doesn't also disable auto_evict's downsize behavior.
+    std::string args = custom_args;
+    if (sleep_idle_seconds >= 0) {
+        args = append_runtime_arg_defaults(
+            args,
+            {{"--sleep-idle-seconds " + std::to_string(std::max(1L, sleep_idle_seconds)),
+              "--sleep-idle-seconds"}});
+    }
+
+    if (!merge_args) return args;
 
     std::vector<RuntimeArgDefault> defaults;
 
@@ -139,7 +150,21 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
     // ctx_size the context a request actually gets.
     defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
 
-    return append_runtime_arg_defaults(custom_args, defaults);
+    return append_runtime_arg_defaults(args, defaults);
+}
+
+static long parse_sleep_idle_seconds_arg(const std::string& args) {
+    const auto tokens = parse_custom_args(args);
+    const auto map = build_custom_args_map(tokens);
+    auto it = map.find("--sleep-idle-seconds");
+    if (it == map.end() || it->second.empty() || it->second.back().empty()) {
+        return -1;
+    }
+    try {
+        return std::stol(it->second.back().front());
+    } catch (const std::exception&) {
+        return -1;
+    }
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -285,6 +310,9 @@ void LlamaCppServer::load(const std::string& model_name,
     std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
     std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
     std::string llamacpp_args = options.get_option("llamacpp_args");
+
+    sleep_idle_seconds_effective_ = parse_sleep_idle_seconds_arg(llamacpp_args);
+    sleep_idle_enabled_ = sleep_idle_seconds_effective_ >= 1;
 
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 
@@ -599,24 +627,35 @@ void LlamaCppServer::unload() {
 }
 
 bool LlamaCppServer::downsize() {
-    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
-    try {
-        json slots = get_slots();
-        if (slots.is_array()) {
-            for (const auto& slot : slots) {
-                if (slot.contains("id") && slot["id"].is_number()) {
-                    int id = slot["id"].get<int>();
-                    slots_action(id, "erase", json::object());
-                }
-            }
-        } else if (slots.contains("id")) {
-            slots_action(slots["id"].get<int>(), "erase", json::object());
-        }
+    // Real work happens at launch via --sleep-idle-seconds (slot erase alone
+    // never releases VRAM). This just verifies (or reports N/A) the result.
+    if (!sleep_idle_enabled_) {
+        LOG(INFO, "LlamaCpp") << "Downsize delegated to llama-server's --sleep-idle-seconds, "
+                                 "but this instance was launched without it; nothing to verify."
+                              << std::endl;
         return true;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
-        return false;
     }
+
+    const json props = forward_get_request("/props");
+    const bool is_sleeping = props.value("is_sleeping", false);
+    LOG(INFO, "LlamaCpp") << "Downsize check via /props: is_sleeping=" << is_sleeping
+                          << std::endl;
+    return is_sleeping;
+}
+
+bool LlamaCppServer::downsize_effective_for_this_instance(bool /*auto_evict_config*/) const {
+    return sleep_idle_enabled_;
+}
+
+long LlamaCppServer::effective_downsize_idle_timeout_sec() const {
+    // -1 (disabled) unless sleep_idle_enabled_
+    return sleep_idle_enabled_ ? sleep_idle_seconds_effective_ : -1;
+}
+
+void LlamaCppServer::send_self_sleep_keepalive() {
+    if (!sleep_idle_enabled_) return;
+    forward_request("/v1/completions", json{{"prompt", " "}, {"max_tokens", 1}});
+    LOG(DEBUG, "LlamaCpp") << "Sent self-sleep keepalive to " << get_model_name() << std::endl;
 }
 
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
@@ -738,6 +777,24 @@ std::string system_llamacpp_version() {
     return "unknown";
 }
 
+// Numeric build tag embedded in a "bNNNN" version string
+long parse_llamacpp_build_number(const std::string& version) {
+    if (version.size() < 2 || version[0] != 'b') return -1;
+    try {
+        return std::stol(version.substr(1));
+    } catch (const std::exception&) {
+        return -1;
+    }
+}
+
+// --sleep-idle-seconds landed in llama.cpp build b7492
+constexpr long kMinSleepIdleSecondsBuild = 7492;
+
+bool system_llamacpp_supports_sleep_idle_seconds() {
+    static const bool supported =
+        parse_llamacpp_build_number(system_llamacpp_version()) >= kMinSleepIdleSecondsBuild;
+    return supported;
+}
 
 bool is_ggml_hip_plugin_available() {
 #ifdef __linux__
@@ -789,11 +846,37 @@ public:
         const bool merge_args =
             merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
         const json custom_args_value = options.get_option("llamacpp_args");
-        const std::string custom_args =
+        std::string custom_args =
             custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
+
+        const json auto_evict_value = options.get_option("auto_evict");
+        const bool auto_evict = auto_evict_value.is_boolean()
+                                     ? auto_evict_value.get<bool>()
+                                     : RuntimeConfig::global()->auto_evict();
+        const json pinned_value = options.get_option("pinned");
+        const bool pinned = pinned_value.is_boolean() && pinned_value.get<bool>();
+        // A pinned model must never sleep on its own; strip any
+        // --sleep-idle-seconds already in custom_args
+        if (pinned) {
+            custom_args = utils::remove_custom_arg(custom_args, "--sleep-idle-seconds");
+        }
+        long sleep_idle_seconds = -1;
+        if (auto_evict && !pinned) {
+            const json downsize_timeout_value = options.get_option("downsize_idle_timeout");
+            sleep_idle_seconds = downsize_timeout_value.is_number()
+                                      ? static_cast<long>(downsize_timeout_value.get<double>())
+                                      : kDefaultDownsizeIdleTimeoutSec;
+
+            const std::string backend =
+                resolve_llamacpp_backend(options.get_option("llamacpp_backend"));
+            if (backend == "system" && !system_llamacpp_supports_sleep_idle_seconds()) {
+                sleep_idle_seconds = -1;
+            }
+        }
+
         options.set_option(
             "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
+            resolve_llamacpp_runtime_args(info, custom_args, merge_args, sleep_idle_seconds));
     }
 
     void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {

@@ -68,6 +68,7 @@ CAPABILITIES = {
                 "slots": True,
                 "tokenize": True,
                 "static_max_context_window": True,
+                "sleep_idle_downsize": True,
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",

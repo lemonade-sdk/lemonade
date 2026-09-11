@@ -14,6 +14,7 @@ using lemon::utils::custom_args_has_flag;
 using lemon::utils::map_to_args_string;
 using lemon::utils::merge_args_maps;
 using lemon::utils::parse_custom_args;
+using lemon::utils::remove_custom_arg;
 
 using ArgMap = lemon::utils::CustomArgsMap;
 
@@ -67,6 +68,17 @@ static bool expect_has_flag(const char* name, const std::string& input,
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) {
         std::printf("  got:  %d\n  want: %d\n", actual, expected);
+    }
+    return ok;
+}
+
+static bool expect_remove(const char* name, const std::string& input,
+                          const std::string& flag, const std::string& expected) {
+    std::string actual = remove_custom_arg(input, flag);
+    bool ok = (actual == expected);
+    std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
+    if (!ok) {
+        std::printf("  got:  \"%s\"\n  want: \"%s\"\n", actual.c_str(), expected.c_str());
     }
     return ok;
 }
@@ -159,6 +171,32 @@ int main() {
     failures += !expect_has_flag(
         "missing alias does not match",
         "--threads 8", "--mmap", false);
+
+    // remove_custom_arg must preserve the relative order of surviving flags
+    failures += !expect_remove(
+        "removed flag mid-string preserves surrounding order",
+        "-c 4096 --sleep-idle-seconds 3 --no-mmap", "--sleep-idle-seconds",
+        "-c 4096 --no-mmap");
+    failures += !expect_remove(
+        "removed flag at start preserves trailing order",
+        "--sleep-idle-seconds 3 --threads 8 -c 4096", "--sleep-idle-seconds",
+        "--threads 8 -c 4096");
+    failures += !expect_remove(
+        "removed flag at end preserves leading order",
+        "--threads 8 -c 4096 --sleep-idle-seconds 3", "--sleep-idle-seconds",
+        "--threads 8 -c 4096");
+    failures += !expect_remove(
+        "flag not present returns input unchanged",
+        "--threads 8 -c 4096", "--sleep-idle-seconds",
+        "--threads 8 -c 4096");
+    failures += !expect_remove(
+        "binary flag (no value) removed cleanly",
+        "--threads 8 --no-mmap -c 4096", "--no-mmap",
+        "--threads 8 -c 4096");
+    failures += !expect_remove(
+        "equals form removed cleanly",
+        "--threads 8 --sleep-idle-seconds=3 -c 4096", "--sleep-idle-seconds",
+        "--threads 8 -c 4096");
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

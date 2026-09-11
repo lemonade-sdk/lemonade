@@ -23,7 +23,7 @@ static const json& common_defaults() {
         // Auto-eviction options (apply to every recipe)
         {"auto_evict", nullptr},          // nullptr means fallback to global config
         {"evict_idle_timeout", 300},      // Default hard idle timeout (5 mins)
-        {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
+        {"downsize_idle_timeout", kDefaultDownsizeIdleTimeoutSec},  // Default soft idle timeout (1 min)
         {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
         {"pinned", false},
         {"auto_update", nullptr},

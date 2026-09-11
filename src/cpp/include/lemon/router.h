@@ -160,7 +160,8 @@ public:
     // ctx_size may still be the -1 auto sentinel; the concrete value is only
     // resolved inside load_model, once eviction has freed memory.
     RecipeOptions resolve_effective_options(const ModelInfo& model_info,
-                                            const RecipeOptions& request_options) const;
+                                            const RecipeOptions& request_options,
+                                            RecipeOptions* pre_hook_options = nullptr) const;
 
     // Apply request intent to an already-live process without reloading it.
     // Returns false when the requested model is not currently live.
@@ -204,6 +205,8 @@ public:
 
     // Pin or unpin a model
     void set_model_pinned(const std::string& model_name, bool pinned);
+
+    json get_backend_props(const std::string& model_name);
 
     bool is_model_loaded() const;
 

@@ -30,6 +30,12 @@ public:
     // Downsize the model on soft idle
     bool downsize() override;
 
+    bool downsize_effective_for_this_instance(bool auto_evict_config) const override;
+
+    long effective_downsize_idle_timeout_sec() const override;
+
+    void send_self_sleep_keepalive() override;
+
     // ICompletionServer implementation
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
@@ -60,6 +66,10 @@ private:
     // in the OpenAI `model` field. Rewrite it to the client-facing model id so
     // responses don't leak absolute filesystem paths (and usernames).
     json normalize_response_model(json response, const json& request) const;
+
+    // downsize() uses sleep_idle_enabled_ to decide whether there's anything to verify via /props.
+    long sleep_idle_seconds_effective_ = -1;
+    bool sleep_idle_enabled_ = false;
 };
 
 namespace llamacpp {

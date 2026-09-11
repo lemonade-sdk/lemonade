@@ -56,101 +56,181 @@ void EvictionEngine::evaluation_loop() {
     }
 }
 
+std::vector<WrappedServer*> EvictionEngine::collect_exclusive_session_keepalive_candidates() {
+    std::vector<WrappedServer*> candidates;
+    auto now = std::chrono::steady_clock::now();
+
+    for (auto& server_ptr : router_->loaded_servers_) {
+        WrappedServer* server = server_ptr.get();
+        if (!server) continue;
+        if (server->is_pinned()) continue;
+
+        // Already sleeping before the exclusive session started -- don't wake it.
+        if (server->get_state() == ModelState::DOWNSIZED) continue;
+
+        bool auto_evict = RuntimeConfig::global()->auto_evict();
+        auto recipe_opts = server->get_recipe_options().to_json();
+        if (recipe_opts.contains("auto_evict") && recipe_opts["auto_evict"].is_boolean()) {
+            auto_evict = recipe_opts["auto_evict"].get<bool>();
+        }
+        if (!server->downsize_effective_for_this_instance(auto_evict)) continue;
+
+        long downsize_timeout_sec = kDefaultDownsizeIdleTimeoutSec;
+        if (recipe_opts.contains("downsize_idle_timeout") && recipe_opts["downsize_idle_timeout"].is_number()) {
+            downsize_timeout_sec = static_cast<long>(recipe_opts["downsize_idle_timeout"].get<double>());
+        }
+        long downsize_override_sec = server->effective_downsize_idle_timeout_sec();
+        if (downsize_override_sec >= 0) {
+            downsize_timeout_sec = downsize_override_sec;
+        }
+        if (downsize_timeout_sec <= 0) continue;
+
+        // Reference the more recent of the last real access and the last
+        // synthetic keepalive
+        uint64_t id = server->get_instance_id();
+        auto reference = server->get_last_access_time();
+        auto last_sent_it = last_keepalive_sent_.find(id);
+        if (last_sent_it != last_keepalive_sent_.end() && last_sent_it->second > reference) {
+            reference = last_sent_it->second;
+        }
+
+        auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - reference).count();
+        long half_timeout_ms = (downsize_timeout_sec * 1000) / 2;
+        if (idle_ms < half_timeout_ms) continue;
+
+        if (!server->acquire_for_inference()) continue;
+
+        last_keepalive_sent_[id] = now;
+        candidates.push_back(server);
+    }
+
+    return candidates;
+}
+
 void EvictionEngine::evaluate_servers(double current_vram_pct) {
     std::string model_to_evict;
     std::vector<std::string> models_to_downsize;
+    std::vector<WrappedServer*> keepalive_candidates;
 
     {
         std::lock_guard<std::mutex> lock(router_->load_mutex_);
 
         // An exclusive job session owns model residency; auto-eviction and
-        // downsizing would yank models out from under its next step.
-        if (router_->exclusive_active_) return;
+        // downsizing would yank models out from under its next step. The
+        // session can still run long enough for a backend's own idle-sleep
+        // timer to fire though (e.g. llama-server's --sleep-idle-seconds),
+        // so run a narrower keepalive pass instead of doing nothing.
+        if (router_->exclusive_active_) {
+            keepalive_candidates = collect_exclusive_session_keepalive_candidates();
+        } else {
 
-        auto now = std::chrono::steady_clock::now();
-        double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
-        bool pressure_evict = (current_vram_pct >= threshold);
+            auto now = std::chrono::steady_clock::now();
+            double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
+            bool pressure_evict = (current_vram_pct >= threshold);
 
-        WrappedServer* best_candidate_for_eviction = nullptr;
-        double highest_eviction_score = -1.0;
+            WrappedServer* best_candidate_for_eviction = nullptr;
+            double highest_eviction_score = -1.0;
 
-        for (auto& server_ptr : router_->loaded_servers_) {
-            WrappedServer* server = server_ptr.get();
-            if (!server) continue;
+            for (auto& server_ptr : router_->loaded_servers_) {
+                WrappedServer* server = server_ptr.get();
+                if (!server) continue;
 
-            // Pinned models must never be auto-evicted or downsized
-            if (server->is_pinned()) continue;
+                // Pinned models must never be auto-evicted or downsized
+                if (server->is_pinned()) continue;
 
-            // Check auto_evict config
-            bool auto_evict = RuntimeConfig::global()->auto_evict();
-            auto recipe_opts = server->get_recipe_options().to_json();
-            if (recipe_opts.contains("auto_evict") && recipe_opts["auto_evict"].is_boolean()) {
-                auto_evict = recipe_opts["auto_evict"].get<bool>();
-            }
+                // Check auto_evict config
+                bool auto_evict = RuntimeConfig::global()->auto_evict();
+                auto recipe_opts = server->get_recipe_options().to_json();
+                if (recipe_opts.contains("auto_evict") && recipe_opts["auto_evict"].is_boolean()) {
+                    auto_evict = recipe_opts["auto_evict"].get<bool>();
+                }
 
-            if (!auto_evict) continue;
+                // See WrappedServer::downsize_effective_for_this_instance() -- decoupled
+                // from the live auto_evict value above on purpose.
+                bool downsize_eligible = server->downsize_effective_for_this_instance(auto_evict);
 
-            long evict_timeout_sec = 300;
-            long downsize_timeout_sec = 60;
-            double weight_factor = 1.0;
+                if (!auto_evict && !downsize_eligible) continue;
 
-            if (recipe_opts.contains("evict_idle_timeout") && recipe_opts["evict_idle_timeout"].is_number_integer()) {
-                evict_timeout_sec = recipe_opts["evict_idle_timeout"].get<long>();
-            }
-            if (recipe_opts.contains("downsize_idle_timeout") && recipe_opts["downsize_idle_timeout"].is_number_integer()) {
-                downsize_timeout_sec = recipe_opts["downsize_idle_timeout"].get<long>();
-            }
-            if (recipe_opts.contains("evict_weight_factor") && recipe_opts["evict_weight_factor"].is_number()) {
-                weight_factor = recipe_opts["evict_weight_factor"].get<double>();
-            }
-            if (weight_factor <= 0.0) {
-                weight_factor = 1.0;  // guard against divide-by-zero / non-positive config
-            }
+                long evict_timeout_sec = 300;
+                long downsize_timeout_sec = kDefaultDownsizeIdleTimeoutSec;
+                double weight_factor = 1.0;
 
-            auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - server->get_last_access_time()).count();
-            long load_duration_ms = server->get_load_duration_ms() > 0 ? server->get_load_duration_ms() : 1000;
+                if (recipe_opts.contains("evict_idle_timeout") && recipe_opts["evict_idle_timeout"].is_number()) {
+                    evict_timeout_sec = static_cast<long>(recipe_opts["evict_idle_timeout"].get<double>());
+                }
+                if (recipe_opts.contains("downsize_idle_timeout") && recipe_opts["downsize_idle_timeout"].is_number()) {
+                    downsize_timeout_sec = static_cast<long>(recipe_opts["downsize_idle_timeout"].get<double>());
+                }
+                if (recipe_opts.contains("evict_weight_factor") && recipe_opts["evict_weight_factor"].is_number()) {
+                    weight_factor = recipe_opts["evict_weight_factor"].get<double>();
+                }
+                if (weight_factor <= 0.0) {
+                    weight_factor = 1.0;  // guard against divide-by-zero / non-positive config
+                }
 
-            // Higher score => more disposable. Fast-loading models score high (cheap
-            // to reload) and are evicted first; slow/expensive loads are protected.
-            // A larger evict_weight_factor further protects a model from eviction.
-            //   eviction_score = idle_time_ms / (load_duration_ms * weight_factor)
-            double eviction_score =
-                static_cast<double>(idle_ms) / (static_cast<double>(load_duration_ms) * weight_factor);
+                // A backend-reported override takes precedence over the requested
+                // downsize_idle_timeout -- see WrappedServer::effective_downsize_idle_timeout_sec().
+                long downsize_override_sec = server->effective_downsize_idle_timeout_sec();
+                if (downsize_override_sec >= 0) {
+                    downsize_timeout_sec = downsize_override_sec;
+                }
 
-            ModelState state = server->get_state();
+                auto idle_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - server->get_last_access_time()).count();
+                long load_duration_ms = server->get_load_duration_ms() > 0 ? server->get_load_duration_ms() : 1000;
 
-            // 1. Time-based hard idle eviction
-            if (idle_ms >= evict_timeout_sec * 1000 && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
-                LOG(INFO) << "Model " << server->get_model_name() << " reached evict idle timeout (" << evict_timeout_sec << "s). Evicting." << std::endl;
-                server->set_state(ModelState::EVICTING);
-                best_candidate_for_eviction = server;
-                pressure_evict = true;
-                break;
-            }
+                // Higher score => more disposable. Fast-loading models score high (cheap
+                // to reload) and are evicted first; slow/expensive loads are protected.
+                // A larger evict_weight_factor further protects a model from eviction.
+                //   eviction_score = idle_time_ms / (load_duration_ms * weight_factor)
+                double eviction_score =
+                    static_cast<double>(idle_ms) / (static_cast<double>(load_duration_ms) * weight_factor);
 
-            // 2. Time-based soft idle (downsize) - collect the candidate only. The
-            // model is not claimed here; try_begin_downsize() below atomically
-            // re-checks that it is still idle and transitions it to DOWNSIZING.
-            if (idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {
-                LOG(INFO) << "Model " << server->get_model_name() << " reached downsize idle timeout (" << downsize_timeout_sec << "s). Marking for downsize." << std::endl;
-                models_to_downsize.push_back(server->get_model_name());
-            }
+                ModelState state = server->get_state();
 
-            // 3. VRAM Pressure tracking
-            if (pressure_evict && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
-                if (eviction_score > highest_eviction_score) {
-                    highest_eviction_score = eviction_score;
+                // 1. Time-based hard idle eviction. Stays purely live-auto_evict-driven:
+                // turning auto_evict off must still stop Lemonade from unloading the
+                // process outright, regardless of downsize_eligible.
+                if (auto_evict && idle_ms >= evict_timeout_sec * 1000 && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
+                    LOG(INFO) << "Model " << server->get_model_name() << " reached evict idle timeout (" << evict_timeout_sec << "s). Evicting." << std::endl;
+                    server->set_state(ModelState::EVICTING);
                     best_candidate_for_eviction = server;
+                    pressure_evict = true;
+                    break;
+                }
+
+                // 2. Time-based soft idle (downsize) - collect the candidate only. The
+                // model is not claimed here; try_begin_downsize() below atomically
+                // re-checks that it is still idle and transitions it to DOWNSIZING.
+                // Gated on downsize_eligible (not auto_evict) so this tracks what's
+                // actually baked into the running instance, not the live config.
+                if (downsize_eligible && idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {
+                    LOG(INFO) << "Model " << server->get_model_name() << " reached downsize idle timeout (" << downsize_timeout_sec << "s). Marking for downsize." << std::endl;
+                    models_to_downsize.push_back(server->get_model_name());
+                }
+
+                // 3. VRAM Pressure tracking. Stays purely live-auto_evict-driven, same
+                // reasoning as step 1.
+                if (auto_evict && pressure_evict && state != ModelState::EVICTING && state != ModelState::UNLOADED && state != ModelState::IN_USE) {
+                    if (eviction_score > highest_eviction_score) {
+                        highest_eviction_score = eviction_score;
+                        best_candidate_for_eviction = server;
+                    }
                 }
             }
-        }
 
-        if (pressure_evict && best_candidate_for_eviction) {
-            model_to_evict = best_candidate_for_eviction->get_model_name();
-            best_candidate_for_eviction->set_state(ModelState::EVICTING);
-            LOG(INFO) << "Eviction Engine unloading model: " << model_to_evict << " due to score/pressure/idle." << std::endl;
+            if (pressure_evict && best_candidate_for_eviction) {
+                model_to_evict = best_candidate_for_eviction->get_model_name();
+                best_candidate_for_eviction->set_state(ModelState::EVICTING);
+                LOG(INFO) << "Eviction Engine unloading model: " << model_to_evict << " due to score/pressure/idle." << std::endl;
+            }
         }
     } // release lock
+
+    // Send keepalives outside the lock, same reasoning as the downsize loop below
+    for (WrappedServer* server : keepalive_candidates) {
+        server->send_self_sleep_keepalive();
+        server->release_inference();
+    }
 
     // Perform downsizes outside the lock so they don't block the router. Each
     // downsize is an owned maintenance operation: try_begin_downsize() (under the

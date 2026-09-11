@@ -397,6 +397,19 @@ public:
         return recipe_options_;
     }
 
+    // Merged request options as they stood before the backend's
+    // resolve_runtime_options() hook ran
+    void set_requested_options(const RecipeOptions& requested_options) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        requested_options_ = requested_options;
+    }
+    RecipeOptions get_requested_options() const {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        return requested_options_;
+    }
+
+    json get_backend_props() { return forward_get_request("/props"); }
+
     // recipe_options_ holds the ctx_size the backend was started with, so the
     // -1 that asked for it is gone by the time anyone reads it back. Keep that
     // request so a later load spelling -1 can be recognized as the same load.
@@ -455,10 +468,19 @@ public:
         return true;
     }
 
-    // Restore the model from a downsized state
-    virtual void restore() {
-        // No-op by default
+    // No-op by default.
+    virtual void restore() {}
+
+    virtual bool downsize_effective_for_this_instance(bool auto_evict_config) const {
+        return auto_evict_config;
     }
+
+    virtual long effective_downsize_idle_timeout_sec() const {
+        return -1;
+    }
+
+    // No-op by default
+    virtual void send_self_sleep_keepalive() {}
 
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
@@ -647,6 +669,7 @@ protected:
     DeviceType device_type_ = DEVICE_NONE;
     std::chrono::steady_clock::time_point last_access_time_;
     RecipeOptions recipe_options_;
+    RecipeOptions requested_options_;
     bool ctx_size_auto_ = false;
 
     // Busy state tracking (for safe eviction)

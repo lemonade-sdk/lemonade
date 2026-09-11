@@ -9,6 +9,10 @@ namespace lemon {
 
 using json = nlohmann::json;
 
+/// Default soft-idle timeout before a loaded model is downsized to
+/// free VRAM while its subprocess stays warm.
+constexpr long kDefaultDownsizeIdleTimeoutSec = 60;
+
 class RecipeOptions {
 public:
     RecipeOptions() {};
