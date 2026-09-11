@@ -209,6 +209,11 @@ public:
 
     bool is_model_loaded(const std::string& model_name) const;
 
+    // Resolved runtime context window of a live model (the ctx_size the load
+    // actually applied, auto-tuned or explicit). nullopt when the model isn't
+    // live or its backend has no ctx_size option (e.g. cloud).
+    std::optional<int64_t> get_loaded_ctx_size(const std::string& model_name) const;
+
     RecipeOptions get_model_recipe_options(const std::string& model_name) const;
 
     ModelType get_model_type(const std::string& model_name = "") const;

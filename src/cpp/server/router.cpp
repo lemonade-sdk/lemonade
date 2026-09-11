@@ -1407,6 +1407,19 @@ bool Router::is_model_loaded(const std::string& model_name) const {
     return server != nullptr && server->is_backend_alive();
 }
 
+std::optional<int64_t> Router::get_loaded_ctx_size(const std::string& model_name) const {
+    std::lock_guard<std::mutex> lock(load_mutex_);
+    auto* server = find_server_by_model_name(resolve_model_name(model_name));
+    if (server == nullptr || !server->is_backend_alive()) {
+        return std::nullopt;
+    }
+    const json ctx = server->get_recipe_options().get_option("ctx_size");
+    if (ctx.is_number_integer() && ctx.get<int64_t>() > 0) {
+        return ctx.get<int64_t>();
+    }
+    return std::nullopt;
+}
+
 RecipeOptions Router::resolve_effective_options(const ModelInfo& model_info,
                                                 const RecipeOptions& request_options) const {
     const std::string backend_option = model_info.recipe + "_backend";

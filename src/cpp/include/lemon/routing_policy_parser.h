@@ -41,6 +41,7 @@ struct RoutingPolicyParseOptions {
 // schema vocabulary cannot drift silently.
 const std::set<std::string>& routing_policy_root_keys();
 const std::set<std::string>& routing_block_keys();
+const std::set<std::string>& routing_capacity_keys();
 const std::set<std::string>& routing_router_keys();
 const std::set<std::string>& routing_classifier_keys();
 const std::set<std::string>& routing_rule_keys();

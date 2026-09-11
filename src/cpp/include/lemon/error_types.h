@@ -77,6 +77,21 @@ public:
               ErrorType::ROUTER_RESIDENCY_CONFLICT) {}
 };
 
+// No router-collection candidate (nor the default) has a context window large
+// enough for the request. Serialized as the same 400 +
+// code=context_length_exceeded shape clients already handle from backend
+// rejections (see create_backend_error_response in wrapped_server.cpp).
+class ContextWindowExceededException : public LemonException {
+public:
+    ContextWindowExceededException(const std::string& message, json trace = json::array())
+        : LemonException(message, "invalid_request_error"), trace_(std::move(trace)) {}
+
+    const json& trace() const { return trace_; }
+
+private:
+    json trace_;
+};
+
 class BackendException : public LemonException {
 public:
     BackendException(const std::string& backend, const std::string& message, int status_code = 0)
