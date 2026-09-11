@@ -45,8 +45,8 @@ def git(*args, cwd):
     return result.stdout.strip()
 
 
-def exact_release_tag(repo):
-    tags = git("tag", "--points-at", "HEAD", cwd=repo).splitlines()
+def exact_release_tag(repo, head="HEAD"):
+    tags = git("tag", "--points-at", head, cwd=repo).splitlines()
     matches = [tag for tag in tags if RELEASE_TAG_PATTERN.fullmatch(tag)]
     if not matches:
         return None
@@ -67,13 +67,13 @@ def current_branch(repo):
     return ""
 
 
-def commits_after(repo, revision):
-    return int(git("rev-list", "--count", f"{revision}..HEAD", cwd=repo))
+def commits_after(repo, revision, head="HEAD"):
+    return int(git("rev-list", "--count", f"{revision}..{head}", cwd=repo))
 
 
-def release_commit_number(repo, year, week):
+def release_commit_number(repo, year, week, head="HEAD"):
     tag_prefix = f"v{year}.{week}."
-    tags = git("tag", "--merged", "HEAD", "--list", f"{tag_prefix}*", cwd=repo)
+    tags = git("tag", "--merged", head, "--list", f"{tag_prefix}*", cwd=repo)
     numbered_tags = []
     for tag in tags.splitlines():
         match = RELEASE_TAG_PATTERN.fullmatch(tag)
@@ -82,12 +82,12 @@ def release_commit_number(repo, year, week):
 
     if numbered_tags:
         number, tag = max(numbered_tags)
-        return number + commits_after(repo, tag)
+        return number + commits_after(repo, tag, head)
 
     for main_ref in ("origin/main", "main"):
         try:
-            merge_base = git("merge-base", "HEAD", main_ref, cwd=repo)
-            return commits_after(repo, merge_base)
+            merge_base = git("merge-base", head, main_ref, cwd=repo)
+            return commits_after(repo, merge_base, head)
         except subprocess.CalledProcessError:
             continue
 
@@ -106,36 +106,40 @@ def upcoming_release_week(now):
     return iso_date.year, iso_date.week
 
 
-def generated_version(repo, now):
-    tag_version = exact_release_tag(repo)
+def generated_version(repo, now, branch=None, head="HEAD"):
+    tag_version = exact_release_tag(repo, head)
     if tag_version:
         return tag_version
 
-    branch = current_branch(repo)
+    if branch is None:
+        branch = current_branch(repo)
     release_match = RELEASE_BRANCH_PATTERN.fullmatch(branch)
     if release_match:
         year = int(release_match.group(1))
         week = int(release_match.group(2))
-        number = release_commit_number(repo, year, week)
+        number = release_commit_number(repo, year, week, head)
         return f"{year}.{week}.{number}"
 
     year, week = upcoming_release_week(now)
-    commit_count = git("rev-list", "--count", "HEAD", cwd=repo)
-    commit_hash = git("rev-parse", "--short=8", "HEAD", cwd=repo)
+    commit_count = git("rev-list", "--count", head, cwd=repo)
+    commit_hash = git("rev-parse", "--short=8", head, cwd=repo)
     return f"{year}.{week}.0~{commit_count}.{commit_hash}"
 
 
-def get_version(repo, now=None):
-    override = repo / ".version"
-    if override.is_file():
-        version = override.read_text(encoding="utf-8").strip()
-        if not version:
-            raise RuntimeError(f"{override} is empty")
-        return version
+def get_version(repo, now=None, branch=None, head="HEAD"):
+    if head == "HEAD" and branch is None:
+        override = repo / ".version"
+        if override.is_file():
+            version = override.read_text(encoding="utf-8").strip()
+            if not version:
+                raise RuntimeError(f"{override} is empty")
+            return version
 
     if now is None:
         now = datetime.datetime.now(datetime.timezone.utc)
-    return generated_version(repo, now.astimezone(datetime.timezone.utc))
+    return generated_version(
+        repo, now.astimezone(datetime.timezone.utc), branch=branch, head=head
+    )
 
 
 def main():
