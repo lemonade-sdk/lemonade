@@ -30,6 +30,8 @@ import threading
 from utils.server_base import (
     ServerTestBase,
     run_server_tests,
+    scoped_server_config,
+    unload_all_models,
     OpenAI,
     AsyncOpenAI,
     httpx,
@@ -62,12 +64,9 @@ class LLMTests(ServerTestBase):
     features not supported by the current wrapped server.
     """
 
-    # Enable multi-model support (2 of each type) — translated to /internal/set
-    additional_server_args = ["--max-loaded-models", "2"]
-
     @classmethod
     def setUpClass(cls):
-        """Verify server and apply multi-model config."""
+        """Verify the server is reachable."""
         super().setUpClass()
 
     @skip_if_unsupported("static_max_context_window")
@@ -892,41 +891,43 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_019_multi_model_load(self):
         """Test loading multiple models simultaneously."""
-        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+        with scoped_server_config(max_loaded_models=2):
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
-        model1 = self.get_test_model("llm")
-        model2 = MULTI_MODEL_SECONDARY
+            model1 = self.get_test_model("llm")
+            model2 = MULTI_MODEL_SECONDARY
 
-        # Load first model
-        response = requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model1},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+            # Load first model
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": model1},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        # Load second model
-        response = requests.post(
-            f"{self.base_url}/load",
-            json={"model_name": model2},
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-        self.assertEqual(response.status_code, 200)
+            # Load second model
+            response = requests.post(
+                f"{self.base_url}/load",
+                json={"model_name": model2},
+                timeout=TIMEOUT_MODEL_OPERATION,
+            )
+            self.assertEqual(response.status_code, 200)
 
-        # Check health shows both models loaded
-        health_response = requests.get(
-            f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
-        )
-        self.assertEqual(health_response.status_code, 200)
-        health_data = health_response.json()
+            # Check health shows both models loaded
+            health_response = requests.get(
+                f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(health_response.status_code, 200)
+            health_data = health_response.json()
 
-        self.assertIn("all_models_loaded", health_data)
-        self.assertEqual(len(health_data["all_models_loaded"]), 2)
+            self.assertIn("all_models_loaded", health_data)
+            self.assertEqual(len(health_data["all_models_loaded"]), 2)
 
-        # Verify both models are present
-        model_names = {m["model_name"] for m in health_data["all_models_loaded"]}
-        self.assertIn(model1, model_names)
-        self.assertIn(model2, model_names)
+            # Verify both models are present
+            model_names = {m["model_name"] for m in health_data["all_models_loaded"]}
+            self.assertIn(model1, model_names)
+            self.assertIn(model2, model_names)
+            unload_all_models()
 
     @skip_if_unsupported("multi_model")
     def test_020_multi_model_unload_specific(self):
@@ -956,55 +957,57 @@ class LLMTests(ServerTestBase):
     @skip_if_unsupported("multi_model")
     def test_021_lru_eviction(self):
         """Test LRU eviction when loading a third model with max_loaded_models=2."""
-        requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
+        with scoped_server_config(max_loaded_models=2):
+            requests.post(f"{self.base_url}/unload", json={}, timeout=TIMEOUT_DEFAULT)
 
-        model1 = self.get_test_model("llm")
-        model2 = MULTI_MODEL_SECONDARY
-        model3 = MULTI_MODEL_TERTIARY
+            model1 = self.get_test_model("llm")
+            model2 = MULTI_MODEL_SECONDARY
+            model3 = MULTI_MODEL_TERTIARY
 
-        def load_model(model_name):
-            response = requests.post(
-                f"{self.base_url}/load",
-                json={"model_name": model_name},
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
+            def load_model(model_name):
+                response = requests.post(
+                    f"{self.base_url}/load",
+                    json={"model_name": model_name},
+                    timeout=TIMEOUT_MODEL_OPERATION,
+                )
+                response.raise_for_status()
+                return response
+
+            # Load first two models (fills the limit)
+            load_model(model1)
+            time.sleep(1)
+            load_model(model2)
+            time.sleep(1)
+
+            # Verify both are loaded
+            response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
             response.raise_for_status()
-            return response
+            data = response.json()
+            self.assertEqual(len(data["all_models_loaded"]), 2)
 
-        # Load first two models (fills the limit)
-        load_model(model1)
-        time.sleep(1)
-        load_model(model2)
-        time.sleep(1)
+            # Touch model2 again to make it more recent than model1.
+            #
+            # Use /load instead of inference here: this test validates LRU bookkeeping,
+            # not backend generation. Re-loading an already loaded model updates the
+            # router access time without depending on model-specific inference behavior.
+            load_model(model2)
+            time.sleep(1)
 
-        # Verify both are loaded
-        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        data = response.json()
-        self.assertEqual(len(data["all_models_loaded"]), 2)
+            # Load third model (should evict model1 as it's LRU)
+            load_model(model3)
+            time.sleep(1)
 
-        # Touch model2 again to make it more recent than model1.
-        #
-        # Use /load instead of inference here: this test validates LRU bookkeeping,
-        # not backend generation. Re-loading an already loaded model updates the
-        # router access time without depending on model-specific inference behavior.
-        load_model(model2)
-        time.sleep(1)
+            # Verify only 2 models loaded and model1 was evicted
+            response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
+            response.raise_for_status()
+            data = response.json()
+            self.assertEqual(len(data["all_models_loaded"]), 2)
 
-        # Load third model (should evict model1 as it's LRU)
-        load_model(model3)
-        time.sleep(1)
-
-        # Verify only 2 models loaded and model1 was evicted
-        response = requests.get(f"{self.base_url}/health", timeout=TIMEOUT_DEFAULT)
-        response.raise_for_status()
-        data = response.json()
-        self.assertEqual(len(data["all_models_loaded"]), 2)
-
-        model_names = {m["model_name"] for m in data["all_models_loaded"]}
-        self.assertIn(model2, model_names)
-        self.assertIn(model3, model_names)
-        self.assertNotIn(model1, model_names)
+            model_names = {m["model_name"] for m in data["all_models_loaded"]}
+            self.assertIn(model2, model_names)
+            self.assertIn(model3, model_names)
+            self.assertNotIn(model1, model_names)
+            unload_all_models()
 
     @skip_if_unsupported("multi_model")
     def test_022_unload_all_models(self):
