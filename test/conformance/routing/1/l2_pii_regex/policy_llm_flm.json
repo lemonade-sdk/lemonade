@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "model_name": "user.HR-Admin-Teach-FLM",
+  "recipe": "collection.router",
+  "components": [
+    "Qwen3.5-9B-GGUF",
+    "qwen3.5-0.8b-FLM"
+  ],
+  "routing": {
+    "candidates": [
+      "qwen3.5-0.8b-FLM",
+      "Qwen3.5-9B-GGUF"
+    ],
+    "default_model": "qwen3.5-0.8b-FLM",
+    "router": {
+      "type": "llm",
+      "model": "qwen3.5-0.8b-FLM",
+      "prompt": "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.\n\nUse qwen3.5-0.8b-FLM (local, private) when:\n- The request contains personally identifiable information (PII), such as names with salaries, Social Security numbers (SSNs), bank account numbers, email addresses, compensation data, equity details, or dates of birth.\n- Data privacy is paramount — anything that should never leave the local machine.\n\nUse Qwen3.5-9B-GGUF (cloud, powerful) for all other requests.\n\nIf the request is ambiguous, default to qwen3.5-0.8b-FLM. When in doubt, prioritize privacy over capability."
+    }
+  }
+}

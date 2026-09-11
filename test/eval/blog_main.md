@@ -150,23 +150,27 @@ Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 char
 
 ## Baselines: regex, embeddings, and the LLM-as-router size paradox
 
-##
+Before reaching for a dedicated detector, we tried the three things most people would try first: a handful of regular expressions, an embedding model comparing each prompt to some reference sentences, and a small LLM asked to make the call itself. All on the same 20,000 documents.
 
-| Baseline | Leak rate | Prompt misses | Genuine misses | Per prompt [s] |
+| Baseline | Leak rate | Prompt misses | Genuine misses | Per prompt |
 | --- | --- | --- | --- | --- |
-| Regex | 18.7% (467/2,500)* |  |  | <1 ms |
-| embeddinggemma-300m  | 95% (19,000 / 20,000) |  |  | ~1.5 s |
-| Qwen3-Embedding-0.6B | 90% (18,000 / 20,000) |  |  | ~3.0 s |
+| Regex* | 18.7% (3,736 / 20,000) |  |  | <1 ms |
+| embeddinggemma-300m | 95% (19,000 / 20,000) |  |  | ~1.5 s |
+| Qwen3-Embedding-0.6B | 95% (19,000 / 20,000) |  |  | ~3.0 s |
 | Qwen3-Embedding-4B | 90% (18,000 / 20,000) |  |  | ~20 s |
 | LLM Qwen3.5-9B | 6.16% (1,232 / 20,000) | 1,036 (84%) | 196 (16%) | ~8.8 s |
 | LLM Qwen3.5-2B | 3.28% (656 / 20,000) | 485 (74%) | 171 (26%) | ~4.2 s |
 | LLM Qwen3.5-0.8B | 2.84% (568 / 20,000) | 318 (56%) | 250 (44%) | ~3.2 s |
 
-* Regex is limited to 2500 on a selected set of keywords to avoid overfitting
+\* Regex only catches PII with a fixed shape (SSN, email, card number, IP, date). Names, addresses, occupations, and record numbers have no pattern to match, so 18.7% of documents pass through untouched, and every pattern you add only fits this corpus, not the next one.
+
+Per-prompt times are end to end: the router makes its decision and the routed model answers, in one round trip. Classification alone is much cheaper, and we come back to that below.
 
 ### Semantic similarity is the wrong tool for this job
 
-The embedding classifiers were the worst-performing configurations in the whole comparison, at any scale we tried them at. The `semantic_similarity` classifier works by embedding the incoming prompt and comparing it against a small set of hand-written reference sentences per class, then taking a cosine-similarity threshold. Here's the entire reference set behind the 2.5k-corpus rows above: twelve sentences, six per class, committed at `test/conformance/routing/1/l2_pii_embedding/policy.json`:
+The embedding rows are the worst numbers in this post, and they deserve some explanation, because on paper this approach should work. The `semantic_similarity` classifier embeds the incoming prompt, embeds a small set of reference sentences for each class, and takes the highest cosine similarity per class. If the PII score clears `min_score`, the request stays local.
+
+Our first reference set was the kind of thing you write in five minutes. Twelve sentences, six per class:
 
 ```json
 "reference_phrases": {
@@ -189,15 +193,60 @@ The embedding classifiers were the worst-performing configurations in the whole 
 }
 ```
 
-At `min_score: 0.5` against those twelve sentences, all three embedding models (embeddinggemma-300m and both Qwen3-Embedding sizes) leaked 90-100% of the 20-case pilot. To make that failure concrete at a scale closer to real traffic: **this is the same measured leak rate, scaled, not a new 500-case run**. If that rate held over 500 sensitive prompts instead of 20, it would look like this:
+At `min_score: 0.5`, that set leaked 100% of documents on embeddinggemma-300m and 90% on both Qwen3-Embedding sizes. Our first read was the obvious one: the references are bad. They are short, first-person, and cover six identifier types out of the 55 in the corpus. The documents we are routing look nothing like them. A typical one is a 700-character insurance form or HR memo, wrapped in "Please review this:" or "Here is a document I need help with:". A sentence like "My date of birth is January 5th, 1990" is a long way from that in embedding space, whatever the model.
 
-| Model | Leak rate (measured, n=20) | Same rate, scaled to 500 prompts |
+So we rebuilt the set to look like the corpus. Eight phrases per class, each shaped like a real document, each PII phrase covering a different cluster of the 24 canonical categories (identity and government IDs, medical, financial, employment, contact details, credentials and network identifiers, demographic attributes, vehicles and locations). The non-PII side got four document-shaped phrases with no identifiers in them, using the most common document types in the corpus, plus four ordinary assistant requests:
+
+```json
+"reference_phrases": {
+  "PII": [
+    "Please review this: **Claim Form** Full Name: Luis Ramirez - SSN: 567-79-5939 - Date of Birth: 15 July 1984 - Age: 40 - Street Address: 1420 Pine St, Seattle, WA 98101 - County: King County",
+    "Here is a document I need help with: **Health Insurance Enrollment Form** Patient: Maria Chen, Medical Record Number BH-00028745, Health Plan Beneficiary Number AET-5577-3489-12, Blood Type O+, Immunization Record attached",
+    "Can you help me with the following? Payment Information: Card Number 4111 1111 1111 1111, CVV 382, Account Number 88213467, Bank Routing Number 021000021, SWIFT/BIC CHASUS33, Tax ID 12-3456789",
+    "I have a question about this content: **Employee Record** Employee ID EMP-20471, Occupation: construction manager, Employment Status: full-time, Annual Salary $92,000, Education Level: Bachelor's degree, Manager: Sarah Okafor at Momentus HR",
+    "Take a look at this and give me your thoughts: Contact the customer at j.ramirez@example.com or (206) 555-0142, fax (206) 555-0199, username jramirez88, customer ID CUST-448213, profile at https://portal.example.com/users/jramirez88",
+    "What do you make of this? **Temporary Password Notification** Login: jramirez88 Password: Tmp!9482xQ API key sk-4f9a2c8e7b1d, device IP 192.168.4.27, MAC address 3C:5A:B4:11:9F:02, session cookie sid=a81f0c2e",
+    "Please review this: **Voter Registration Form** Applicant: Luis Ramirez, Gender: male, Race/Ethnicity: Hispanic, Religious Belief: Catholic, Political Affiliation: independent, Sexual Orientation: gay, Primary Language: Spanish",
+    "I need assistance with the text below. Incident Report filed 2024-07-15 at 14:32 by driver Luis Ramirez, License Plate WA-7GHK221, VIN 1HGCM82633A004352, location coordinate 47.6069, -122.3321, Certificate/License Number DL-4482913"
+  ],
+  "non-PII": [
+    "Please review this: **Customer Service Policy** Our support team responds to all inquiries within two business days. Escalations follow the tiered process described in section 3, and all agents complete annual training.",
+    "Here is a document I need help with: **User Guide** To configure the application, open Settings, select Network, and enter the server address provided by your administrator. Restart the service to apply changes.",
+    "I have a question about this content: **Investment Strategy** The portfolio targets a 60/40 allocation between equities and fixed income, rebalanced quarterly, with a focus on diversified index funds and low expense ratios.",
+    "Take a look at this and give me your thoughts: **Risk Management Plan** Identified risks are scored by likelihood and impact, reviewed monthly by the steering committee, and tracked in the risk register with assigned mitigation owners.",
+    "Can you help me write a Python function that sorts a list of dictionaries by a key",
+    "Explain how photosynthesis works and why leaves are green",
+    "Summarize the main arguments in this public article about renewable energy policy",
+    "What is a good recipe for chocolate chip cookies for a group of twelve"
+  ]
+}
+```
+
+Then we ran it again. Same threshold, same three models, same 20,000 documents:
+
+| Model | Old set (6 + 6) | New set (8 + 8) |
 | --- | --- | --- |
-| embeddinggemma-300m | 100% (20/20) | ~500 / 500 leaked |
-| Qwen3-Embedding-0.6B | 90% (18/20) | ~450 / 500 leaked |
-| Qwen3-Embedding-4B | 90% (18/20) | ~450 / 500 leaked |
+| embeddinggemma-300m | 100% (20,000 / 20,000) | 95% (19,000 / 20,000) |
+| Qwen3-Embedding-0.6B | 90% (18,000 / 20,000) | 95% (19,000 / 20,000) |
+| Qwen3-Embedding-4B | 90% (18,000 / 20,000) | 90% (18,000 / 20,000) |
 
-That's the headline: at production scale, a twelve-sentence reference set would wave through nearly every sensitive prompt that doesn't happen to resemble one of the six PII exemplars almost word-for-word. And the fact that a 300M-parameter model and a 4B-parameter model fail at nearly the same rate is itself informative: this isn't a capacity problem that a bigger embedding model fixes. The six reference sentences cover a handful of identifiers (SSN, bank transfer, email/phone, salary, DOB, a generic "this is PII" sentence) out of the corpus's 55 gold labels and 24 canonical categories; there's nothing in the reference set that resembles "my MRN is...", "the SWIFT/BIC for the wire is...", or a sentence carrying a religious or political attribute, so a prompt phrased around any of those sits closer to the non-PII centroid regardless of embedding model. **This is a generalizability failure of the reference set, not of any particular model**. What this approach needs isn't a bigger embedding model, it's a reference set built from (and validated against) the actual dataset's category range, which is exactly the kind of expansion this 20-case pilot is too small to prove out either way.
+Nothing moved. A reference set built specifically for this corpus, covering every category in it, leaks almost exactly as much as twelve sentences written off the top of our heads.
+
+That is the point where we stopped looking at leak rate and started looking at the scores themselves. The median PII similarity for a document, against its single best-matching reference phrase, sits around 0.41 on embeddinggemma and the 0.6B model and 0.39 on the 4B. The new set did raise it, by five to eight hundredths over the old one. But the threshold is 0.5, and 0.5 is above nearly the whole distribution. The classifier was never going to fire on most of these documents no matter what we put in the reference list. The threshold was the problem, not the phrases.
+
+So we swept it:
+
+| Model | leak at 0.30 | at 0.35 | at 0.40 | at 0.50 |
+| --- | --- | --- | --- | --- |
+| embeddinggemma-300m | 5% | 15% | 45% | 95% |
+| Qwen3-Embedding-0.6B | 15% | 30% | 50% | 95% |
+| Qwen3-Embedding-4B | 20% | 30% | 55% | 90% |
+
+At 0.35 the leak rate drops to 15 to 30%. That looks like progress until you ask what the same threshold does to documents that contain no PII at all. This corpus can't answer that on its own, so we wrote a handful of benign documents shaped like the corpus (a quarterly performance report, an application setup guide, a ballot measure summary, a contract amendment) and scored those too. At 0.35, one of them on embeddinggemma crosses the line and gets routed local. At 0.30, about half of them do, on every model. There is no threshold that separates the two groups cleanly; the PII documents and the benign ones overlap in a band from roughly 0.30 to 0.40, for all three models and for both reference sets.
+
+That overlap is the actual finding, and it explains everything above it. Cosine similarity between a document and a reference phrase measures what the document is about. A benign ballot measure summary and a voter registration form carrying someone's SSN are both about elections, and they land within a few hundredths of each other. An embedding doesn't see the SSN; it sees the topic. That is also why a 300M-parameter model and a 4B-parameter model fail at nearly the same rate: it isn't a capacity problem that a bigger model fixes, and it isn't a coverage problem that a better reference set fixes. It's the wrong signal.
+
+The best operating point we found, the rebuilt set at `min_score: 0.35`, lands in the same neighborhood as the regex baseline, which needs no model at all. The embedding step itself is cheap (about 32 ms per document for embeddinggemma, 63 ms for the 0.6B model, and 264 ms for the 4B, on CPU; the seconds in the table above are the routed model answering). But cheap and wrong is still wrong. We left the classifier in the comparison as a baseline and moved on.
 
 ### LLM-as-router: the model that reasons best leaks the most
 
@@ -219,7 +268,7 @@ It went the other way. The 0.8B leaked 2.84% (568 of 20,000), the 2B leaked 3.28
 
 Read down the 9B column and a pattern appears. Its misses cluster around URLs, company names and addresses: information that is identifying in context, but that a capable model can talk itself out of treating as personal. The things a person would immediately call PII, dates of birth, names, account numbers, it almost never misses. The 0.8B is the mirror image. It holds up fine on the judgment calls and instead leaks on network IDs and credential strings, the technical identifiers a small model simply doesn't recognize as sensitive.
 
-**The prompt is most of the story.** Every decision in these runs came from one routing prompt, committed at `test/conformance/routing/1/l2_pii_regex/policy_llm.json` as the `"router": {"type": "llm", ...}` prompt field:
+**The prompt is most of the story.** Every decision in these runs came from one routing prompt, the same for all three models:
 
 > "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.
 >
@@ -456,7 +505,7 @@ Same caveat as everywhere else in this post applies here too: the 70 recovered d
 
 ## Example policies for real deployments
 
-Putting the models above into policies you could actually run. All three are committed under `test/conformance/routing/1/`.
+Putting the models above into policies you could actually run.
 
 **1. SaaS deployment with a cloud tier (`l2_pii_onnx_pplx_masking/policy.json`).** Most requests should get the better cloud model; anything carrying PII should stay on a local model instead.
 
@@ -522,13 +571,13 @@ That's the number that actually answers "what does the gate cost": tens to hundr
 
 | Model | Corpus | End-to-end total | Per prompt |
 | --- | --- | --- | --- |
-| Regex | 2,500 | sub-millisecond per prompt | **<1 ms** |
-| embeddinggemma-300m | 20 | 29 s | **~1.5 s** |
-| Qwen3-Embedding-0.6B | 20 | 59 s | **~3.0 s** |
-| Qwen3-Embedding-4B | 20 | 6.8 min | **~20.4 s** |
-| LLM Qwen3.5-0.8B | 2,500 | 2.21 hr | **~3.2 s** |
-| LLM Qwen3.5-2B | 2,500 | 2.90 hr | **~4.2 s** |
-| LLM Qwen3.5-9B | 2,500 | ~6 hr (unverified) | **~8.6 s** |
+| Regex | 20,000 | sub-millisecond per prompt | **<1 ms** |
+| embeddinggemma-300m | 20,000 | ~8.1 hr | **~1.5 s** |
+| Qwen3-Embedding-0.6B | 20,000 | ~16.4 hr | **~3.0 s** |
+| Qwen3-Embedding-4B | 20,000 | ~113 hr | **~20.4 s** |
+| LLM Qwen3.5-0.8B | 20,000 | ~17.7 hr | **~3.2 s** |
+| LLM Qwen3.5-2B | 20,000 | ~23.2 hr | **~4.2 s** |
+| LLM Qwen3.5-9B | 20,000 | ~49 hr | **~8.8 s** |
 
 **The gap between the two halves of that comparison is three to four orders of magnitude.** An ONNX classifier answers in tens to hundreds of milliseconds; an LLM router-and-answer round-trip costs single-digit *seconds* per prompt even at the smallest size tested, and climbs with model size in the same direction leak rate paradoxically doesn't (the 9B is both the slowest and, per the size-paradox section above, the least accurate of the three). That's the practical argument for the whole rest of this post: an LLM judge is a useful ceiling-finder for what's detectable in principle, but a dedicated ONNX encoder is the thing you'd actually wire into a production gate, because it adds classification latency that's genuinely negligible next to the cost of the request it's gating.
 
@@ -544,7 +593,7 @@ Most of what belongs here has already been conceded in the body of the post rath
 - **Character F1 covers three models, not eight.** The LLM routers and embedding classifiers emit a decision, never a span; they're document-level *by construction*, not by an oversight. GLiNER, OpenMed v1, OpenAI/privacy-filter, and mmBERT-safetensors simply haven't had this run yet.
 - **The category-mapping taxonomy behind the lenient/strict tables is editorial judgment, and it should be reviewed rather than assumed.** Two mappings were wrong on a first pass during this work, and one produced a fabricated "0.2% biometric failure" for OpenMed that turned out to be a bad mapping, not a model failure. Character-level per-label recall needs none of this mapping, which is part of why it's the more trustworthy diagnostic.
 - **The GLiNER numbers throughout this post are a calibration reference, not a competing result**: it was handed the gold label vocabulary at inference time.
-- **The embedding pilot is n=20, zero benign, and not re-run at scale.** The 500-prompt table above is an explicit illustration of a measured percentage, not a new experiment. It should be treated as a hypothesis to re-run with a larger, dataset-informed reference set, not a settled number.
+- **The embedding threshold sweep has no real benign arm either.** The handful of hand-written benign documents we scored against the lowered thresholds is enough to show the overlap exists, not to measure a false-positive rate. The 0.30 to 0.40 band where PII and benign documents collide is the finding; the exact width of it on real traffic is not something this corpus can tell us.
 - **No language field exists in this corpus.** Every claim in this post is English-only; nothing here measures a multilingual advantage for the multilingual-capable models.
 - **The per-prompt, per-backend latency picture is incomplete.** We have solid batch-classification timings (above); we don't yet have p50/p95 under concurrent load, broken out by CPU/GPU/NPU.
 
@@ -556,6 +605,6 @@ Most of what belongs here has already been conceded in the body of the post rath
 
 **Match the decision rule to the job, not just the model to the job.** Both decoder findings above point the same direction: `min_score` 0.5 costs mmBERT 0.68 → 0.48 character recall while barely moving its document leak rate, and pplx's own Viterbi decoder nearly doubles its leak rate against plain argmax while buying back precision. **Route with the loose rule, mask with the strict one**. Most write-ups about this kind of gate never separate those two jobs, and the gap between them is where most of the surprising results in this post came from.
 
-**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** The size paradox and the justification-rate gap say an LLM router's failures are hard to predict from model size alone, and its per-prompt cost is seconds, not milliseconds. The embedding classifier's 90-100% leak rate on twelve hand-picked reference sentences says that approach needs real investment in the reference set (sampled from and validated against the actual traffic distribution) before it's usable at all. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
+**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** The size paradox and the justification-rate gap say an LLM router's failures are hard to predict from model size alone, and its per-prompt cost is seconds, not milliseconds. The embedding classifier leaked 90-100% on a quick reference set and 90-95% on one built to match the corpus, and the threshold sweep showed why: cosine similarity scores the topic of a document, not whether it carries an identifier, so a benign document and a sensitive one on the same subject land in the same place. No reference set fixes that. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
 
 And say plainly what's still missing rather than imply it's solved: an over-routing number, and a per-prompt, per-backend latency figure under concurrent load. Both are next.
