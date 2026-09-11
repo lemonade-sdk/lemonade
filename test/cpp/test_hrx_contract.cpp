@@ -47,11 +47,11 @@ void check_launch_contract() {
         "--jinja",
         "--metrics",
         "--threads", "7",
-        "--no-mmap",
+        "--load-mode", "none",
         "--parallel", "1",
     };
     const auto argv = hrx::build_server_argv(
-        "/models/qualified.gguf", 32768, 14123, "--threads 7 --no-mmap");
+        "/models/qualified.gguf", 32768, 14123, "--threads 7 --load-mode none");
     check("HRX builds the complete managed argv with a benign custom tail",
           argv == expected_argv);
 
