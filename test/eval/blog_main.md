@@ -142,7 +142,7 @@ All 55 gold labels are represented in the 20k-sentence corpus, but their coverag
 | unique_id | direct identifier | 364 | 1.8% |
 | tax_id | direct identifier | 242 | 1.2% |
 
-(Counts are documents containing at least one span of that label — most documents carry several labels at once, so columns don't sum to 20,000.)
+(Counts are documents containing at least one span of that label; most documents carry several labels at once, so columns don't sum to 20,000.)
 
 Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 characters, and the maximum is 7,191 characters (1,737 tokens). No document is truncated for any model in this comparison, so differences in context-window size cannot explain the differences in benchmark results.
 
@@ -166,7 +166,7 @@ Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 char
 
 ### Semantic similarity is the wrong tool for this job
 
-The embedding classifiers were the worst-performing configurations in the whole comparison, at any scale we tried them at. The `semantic_similarity` classifier works by embedding the incoming prompt and comparing it against a small set of hand-written reference sentences per class, then taking a cosine-similarity threshold. Here's the entire reference set behind the 2.5k-corpus rows above — twelve sentences, six per class, committed at `test/conformance/routing/1/l2_pii_embedding/policy.json`:
+The embedding classifiers were the worst-performing configurations in the whole comparison, at any scale we tried them at. The `semantic_similarity` classifier works by embedding the incoming prompt and comparing it against a small set of hand-written reference sentences per class, then taking a cosine-similarity threshold. Here's the entire reference set behind the 2.5k-corpus rows above: twelve sentences, six per class, committed at `test/conformance/routing/1/l2_pii_embedding/policy.json`:
 
 ```json
 "reference_phrases": {
@@ -189,7 +189,7 @@ The embedding classifiers were the worst-performing configurations in the whole 
 }
 ```
 
-At `min_score: 0.5` against those twelve sentences, all three embedding models (embeddinggemma-300m and both Qwen3-Embedding sizes) leaked 90-100% of the 20-case pilot. To make that failure concrete at a scale closer to real traffic: **this is the same measured leak rate, scaled — not a new 500-case run** — but if that rate held over 500 sensitive prompts instead of 20, it would look like this:
+At `min_score: 0.5` against those twelve sentences, all three embedding models (embeddinggemma-300m and both Qwen3-Embedding sizes) leaked 90-100% of the 20-case pilot. To make that failure concrete at a scale closer to real traffic: **this is the same measured leak rate, scaled, not a new 500-case run**. If that rate held over 500 sensitive prompts instead of 20, it would look like this:
 
 | Model | Leak rate (measured, n=20) | Same rate, scaled to 500 prompts |
 | --- | --- | --- |
@@ -197,11 +197,15 @@ At `min_score: 0.5` against those twelve sentences, all three embedding models (
 | Qwen3-Embedding-0.6B | 90% (18/20) | ~450 / 500 leaked |
 | Qwen3-Embedding-4B | 90% (18/20) | ~450 / 500 leaked |
 
-That's the headline: at production scale, a twelve-sentence reference set would wave through nearly every sensitive prompt that doesn't happen to resemble one of the six PII exemplars almost word-for-word. And the fact that a 300M-parameter model and a 4B-parameter model fail at nearly the same rate is itself informative — this isn't a capacity problem that a bigger embedding model fixes. The six reference sentences cover a handful of identifiers (SSN, bank transfer, email/phone, salary, DOB, a generic "this is PII" sentence) out of the corpus's 55 gold labels and 24 canonical categories; there's nothing in the reference set that resembles "my MRN is...", "the SWIFT/BIC for the wire is...", or a sentence carrying a religious or political attribute, so a prompt phrased around any of those sits closer to the non-PII centroid regardless of embedding model. **This is a generalizability failure of the reference set, not of any particular model** — what this approach needs isn't a bigger embedding model, it's a reference set built from (and validated against) the actual dataset's category range, which is exactly the kind of expansion this 20-case pilot is too small to prove out either way.
+That's the headline: at production scale, a twelve-sentence reference set would wave through nearly every sensitive prompt that doesn't happen to resemble one of the six PII exemplars almost word-for-word. And the fact that a 300M-parameter model and a 4B-parameter model fail at nearly the same rate is itself informative: this isn't a capacity problem that a bigger embedding model fixes. The six reference sentences cover a handful of identifiers (SSN, bank transfer, email/phone, salary, DOB, a generic "this is PII" sentence) out of the corpus's 55 gold labels and 24 canonical categories; there's nothing in the reference set that resembles "my MRN is...", "the SWIFT/BIC for the wire is...", or a sentence carrying a religious or political attribute, so a prompt phrased around any of those sits closer to the non-PII centroid regardless of embedding model. **This is a generalizability failure of the reference set, not of any particular model**. What this approach needs isn't a bigger embedding model, it's a reference set built from (and validated against) the actual dataset's category range, which is exactly the kind of expansion this 20-case pilot is too small to prove out either way.
 
-### The size paradox is the more interesting finding
+### LLM-as-router: the model that reasons best leaks the most
 
-The 9B model leaks *more than twice* what the 0.8B model leaks. Looking at which categories each model's misses concentrate in explains why:
+The obvious next move after regex and embeddings is to just ask a language model. Hand it the prompt, tell it what counts as sensitive, and let it pick the route. Lemonade's router supports this directly with `"router": {"type": "llm"}`, so we ran the corpus through three sizes of Qwen3.5: 0.8B, 2B and 9B. Going in, we assumed leak rate would fall as the model got bigger.
+
+It went the other way. The 0.8B leaked 2.84% (568 of 20,000), the 2B leaked 3.28% (656), and the 9B leaked 6.16% (1,232), more than twice the smallest model. Every step up in size made routing worse, and slower: the 9B costs close to nine seconds per prompt, because the policy asks it to pick the route and then, most of the time, answer the request as well.
+
+**Where the misses land.** To see what was going wrong we looked at which PII categories show up disproportionately in the documents each model let through. The table reports an enrichment ratio per category: how often a document containing that category was missed, divided by the model's overall miss rate. 2.0x means documents with that category were missed twice as often as average; 0.0x means the model never let one through. One caveat before reading it: almost every Nemotron document carries several categories (only 81 of 20,000 carry just one), so a single miss counts against every category in that document. The ratios tell you which categories keep company with a miss, not how well each entity type is detected on its own.
 
 | Category | support | Qwen3.5-9B | Qwen3.5-2B | Qwen3.5-0.8B |
 | --- | --- | --- | --- | --- |
@@ -213,21 +217,9 @@ The 9B model leaks *more than twice* what the 0.8B model leaks. Looking at which
 | DATE_OF_BIRTH | 3230 | **0.00x** | **0.00x** | 0.11x |
 | PERSON_NAME | 9628 | 0.11x | 0.33x | 0.35x |
 
-(Enrichment = `P(missed | doc has category) / overall miss rate`; above 1.0
-means that category is over-represented among the documents a model let
-through. Because only 81 of 20000 documents contain a single canonical
-category, a missed document is usually missed for around seven categories at
-once, so per-category attribution here is about which categories co-occur with
-a miss, not a clean per-entity recall number.)
+Read down the 9B column and a pattern appears. Its misses cluster around URLs, company names and addresses: information that is identifying in context, but that a capable model can talk itself out of treating as personal. The things a person would immediately call PII, dates of birth, names, account numbers, it almost never misses. The 0.8B is the mirror image. It holds up fine on the judgment calls and instead leaks on network IDs and credential strings, the technical identifiers a small model simply doesn't recognize as sensitive.
 
-The 9B's misses concentrate in **judgment** categories — URLs, company names, addresses, demographic attributes. It reasons its way *out* of flagging them. Here's the actual logged rationale on a document labeled `company_name, education_level, occupation, sexuality, url`:
-
-> "The request contains no personal information"
->
-
-The 0.8B's misses concentrate instead in **technical identifiers** — it simply doesn't recognize a network ID or credential string as sensitive at all.
-
-**The two models don't just miss differently — they explain themselves differently, or don't explain themselves at all.** Every routing decision in these runs is made by prompting the model with the same instructions (the full text, committed at `test/conformance/routing/1/l2_pii_regex/policy_llm.json`, as the `"router": {"type": "llm", ...}` prompt field):
+**The prompt is most of the story.** Every decision in these runs came from one routing prompt, committed at `test/conformance/routing/1/l2_pii_regex/policy_llm.json` as the `"router": {"type": "llm", ...}` prompt field:
 
 > "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.
 >
@@ -235,14 +227,25 @@ The 0.8B's misses concentrate instead in **technical identifiers** — it simply
 > Use Qwen3.5-0.8B-GGUF (local, private) when:
 >
 > - The request contains personally identifiable information (PII), such as names with salaries, Social Security numbers (SSNs), bank account numbers, email addresses, compensation data, equity details, or dates of birth.
-> - Data privacy is paramount — anything that should never leave the local machine.
+> - Data privacy is paramount: anything that should never leave the local machine.
 >
 > Use fireworks.kimi-k2p6 (cloud, powerful) for all other requests.
 >
 > If the request is ambiguous, default to Qwen3.5-0.8B-GGUF. When in doubt, prioritize privacy over capability."
 >
 
-The same instructions, the same corpus, and the router logs record whether that decision came with a free-text rationale at all: **99.5% of the 9B's decisions carried a logged rationale, versus 59.4% for the 2B and just 18.3% for the 0.8B.** (Reproduced here on trust from the run logs rather than independently re-verified — no log field lets us recompute it after the fact.) That tracks the qualitative pattern above almost exactly: the 9B's misses read like *reasoned-through* mistakes because it is narrating a justification for nearly every decision it makes, including the wrong ones — "the request contains no personal information" is a rationale, just an incorrect one. The 0.8B, by contrast, mostly just routes, silently, four times out of five; its misses look like blind spots rather than bad reasoning because there usually isn't any reasoning being logged to inspect. **Judgment errors and capability errors want opposite fixes**: tighter policy and prompt constraints for the 9B (it has the information, and is talking itself out of using it), a strictly bigger model or a dedicated encoder (see below) for the 0.8B (it isn't finding the information to reason about in the first place). Neither problem goes away by scaling in the direction that seems intuitive.
+Look at what that prompt actually names: names with salaries, SSNs, bank account numbers, email addresses, compensation, equity, dates of birth. Nothing about URLs, company names, street addresses, MAC addresses or API keys. So we split each model's leaks into two piles. A *prompt miss* is a document whose PII falls entirely outside what the prompt lists; the model was never told to look for it. A *genuine miss* is a document that contains something the prompt spells out, and the model sent it to the cloud anyway.
+
+That split is the "Prompt misses" and "Genuine misses" columns in the baseline table, and it changes the story. For the 9B, 84% of its leaks (1,036 of 1,232) are prompt misses. It followed the instructions it was given; the instructions were incomplete. Only 196 documents are cases where it saw an SSN or a date of birth and still let the prompt through. The 0.8B has fewer leaks overall, but a much larger share of them, 44% (250 of 568), are genuine. It isn't reading the prompt too literally. It is missing things the prompt explicitly told it to catch.
+
+The logged rationales say the same thing from another angle. The router records a free-text reason alongside a decision whenever the model offers one, and the 9B offered one 99.5% of the time, the 2B 59.4%, the 0.8B just 18.3%. Here is the 9B's rationale on a document labeled `company_name, education_level, occupation, sexuality, url`:
+
+> "The request contains no personal information"
+>
+
+That is a reasoned answer, and a wrong one. The 9B narrates its way through nearly every decision, including the bad ones, which is why its misses read like judgment errors. The 0.8B mostly just routes, silently, four times out of five, and its misses look like blind spots because there is usually no reasoning in the log to inspect. (We took the rationale rates from the run logs as recorded; no log field lets us recompute them after the fact.)
+
+Two different failure modes, and they want opposite fixes. The 9B has the information and is talking itself out of using it, so the lever is the prompt: enumerate the categories and tighten the policy. The 0.8B isn't finding the information in the first place, so no amount of prompt engineering helps; it needs a bigger model or, as the rest of this post argues, a dedicated encoder that was trained to find PII rather than asked to. Either way, the lesson from the LLM baseline is that "just ask a bigger model" is not a plan. It was the slowest option we tested and, on this prompt, the leakiest.
 
 ---
 
@@ -256,18 +259,18 @@ We
 | OpenMed privacy-filter | ~1.4B MoE (50M active) | coarse categories | 128k tokens | `openai_privacy_filter` |
 | OpenMed privacy-filter-multilingual (v2) | ~1.4B MoE (50M active) | coarse categories, expanded | 128k tokens | `openai_privacy_filter` |
 | perplexity `pplx-pii-masking` | ~600M | 9 categories, 37 BIOES labels + dual sensitivity head | 4k tokens | custom Qwen3 encoder with span head + sensitivity head, constrained Viterbi decoder |
-| GLiNER (`nvidia/gliner-PII`) | — | zero-shot, label names supplied at inference | — | span extractor |
-| OpenAI/privacy-filter | — | 8 coarse categories | — | encoder, BIOES |
+| GLiNER (`nvidia/gliner-PII`) | n/a | zero-shot, label names supplied at inference | n/a | span extractor |
+| OpenAI/privacy-filter | n/a | 8 coarse categories | n/a | encoder, BIOES |
 
-**mmBERT32K-PII** is a ModernBERT-based encoder token-classifier fine-tuned for the 35-label BIOES PII taxonomy we use for our own scoring, at a 32k-token context window — the largest of anything in this comparison, and multilingual-capable, though we don't exercise that capability here (see the dataset section above).
+**mmBERT32K-PII** is a ModernBERT-based encoder token-classifier fine-tuned for the 35-label BIOES PII taxonomy we use for our own scoring, at a 32k-token context window, the largest of anything in this comparison, and multilingual-capable, though we don't exercise that capability here (see the dataset section above).
 
 **nvidia/gliner-PII** (model card) is a span-based, non-generative extractor built on the GLiNER large-v2.1 architecture (~570M parameters), trained on roughly 100K synthetic records generated via NVIDIA's NeMo Data Designer across 50+ industry personas and 55+ entity types, including usernames, emails, phone numbers, SSNs, and financial, medical, and legal identifiers. Because it inherits GLiNER's zero-shot design, entity labels are supplied as input at inference time rather than baked into a fixed output head. NVIDIA reports strict F1 of 0.70 on Argilla PII, 0.64 on AI4Privacy, and 0.87 on a Nemotron-PII benchmark at a 0.3 confidence threshold.
 
-**OpenMed/privacy-filter-multilingual** and its **v2** successor (v1, v2) are both token classifiers built on a 1.4B-parameter mixture-of-experts base — OpenAI's `privacy_filter` architecture, 50M active parameters per token across 128 experts with top-4 routing — extended from that base model's original 8 coarse categories to 54 fine-grained categories across 16 languages via a BIOES scheme (217 output classes total). v1 was fully fine-tuned on a language-balanced mix of AI4Privacy's `pii-masking-200k`, `pii-masking-400k`, and `open-pii-masking-500k`; v2 keeps the same label space and backbone but adds Nemotron- and Gretel-derived synthetic PII data to that training mix.
+**OpenMed/privacy-filter-multilingual** and its **v2** successor (v1, v2) are both token classifiers built on a 1.4B-parameter mixture-of-experts base (OpenAI's `privacy_filter` architecture, 50M active parameters per token across 128 experts with top-4 routing), extended from that base model's original 8 coarse categories to 54 fine-grained categories across 16 languages via a BIOES scheme (217 output classes total). v1 was fully fine-tuned on a language-balanced mix of AI4Privacy's `pii-masking-200k`, `pii-masking-400k`, and `open-pii-masking-500k`; v2 keeps the same label space and backbone but adds Nemotron- and Gretel-derived synthetic PII data to that training mix.
 
-**perplexity-ai/pplx-pii-masking** (model card) pairs a ~600M-parameter bidirectional Qwen3 encoder with two heads: a token-classification head over 9 PII categories, decoded with a constrained Viterbi pass rather than greedy argmax, and a separate document-level sensitivity head trained on pooled representations. It's the newest and most narrowly-scoped model in this comparison — the model card doesn't publish training-data details or accuracy numbers.
+**perplexity-ai/pplx-pii-masking** (model card) pairs a ~600M-parameter bidirectional Qwen3 encoder with two heads: a token-classification head over 9 PII categories, decoded with a constrained Viterbi pass rather than greedy argmax, and a separate document-level sensitivity head trained on pooled representations. It's the newest and most narrowly-scoped model in this comparison; the model card doesn't publish training-data details or accuracy numbers.
 
-The axis worth paying attention to across this table isn't parameter count or raw accuracy - it's **label-space coverage**. pplx-pii-masking's 9 categories can't represent 11 of the 24 canonical categories our corpus exercises, the widest coverage gap of anything we tested — and yet it leaks only 0.80% of documents. Coverage and document-level leak rate are close to independent here: a narrow taxonomy costs you *category attribution*, not necessarily *leak rate*, because most documents that need flagging carry multiple PII types and only one needs to fire. Keep that in mind for the results below — it's the reason the document-level leak table looks so flat across very differently-shaped models, and it's why we eventually turn to character-level scoring to actually discriminate between them.
+The axis worth paying attention to across this table isn't parameter count or raw accuracy - it's **label-space coverage**. pplx-pii-masking's 9 categories can't represent 11 of the 24 canonical categories our corpus exercises, the widest coverage gap of anything we tested, and yet it leaks only 0.80% of documents. Coverage and document-level leak rate are close to independent here: a narrow taxonomy costs you *category attribution*, not necessarily *leak rate*, because most documents that need flagging carry multiple PII types and only one needs to fire. Keep that in mind for the results below: it's the reason the document-level leak table looks so flat across very differently-shaped models, and it's why we eventually turn to character-level scoring to actually discriminate between them.
 
 ---
 
@@ -288,15 +291,15 @@ The main results, all on the full 20,000-case corpus, CPU only:
 
 \* GLiNER needs an asterisk everywhere it appears: our eval script extracts the 55 gold label names straight out of the corpus and hands them to the model at inference time. It's told exactly what to look for, in the dataset's own words. It's a calibration reference here, not a fair competitor.
 
-(As in the baselines table above, this table drops the Recall column entirely — with zero benign cases in this corpus, recall is arithmetically `1 − leak rate`, so a second column would just restate the first. Runtimes for these same runs are in the Timings section below, reported per-classification rather than as an end-to-end router round-trip.)
+(As in the baselines table above, this table drops the Recall column entirely: with zero benign cases in this corpus, recall is arithmetically `1 − leak rate`, so a second column would just restate the first. Runtimes for these same runs are in the Timings section below, reported per-classification rather than as an end-to-end router round-trip.)
 
-**Now for the turn.** Every model in that table is "essentially perfect," the top six sit inside one percentage point of each other, and document-level leak rate has run out of ability to rank them. Scoring the same runs at the character level changes the picture completely — but first, what "character level" actually means.
+**Now for the turn.** Every model in that table is "essentially perfect," the top six sit inside one percentage point of each other, and document-level leak rate has run out of ability to rank them. Scoring the same runs at the character level changes the picture completely. But first, what "character level" actually means.
 
 ### What character F1 is, with an example
 
-Every metric so far has asked one question per document: *did the model flag anything at all?* That question can't tell "found the SSN, missed everything else" apart from "found everything." Character-level scoring asks a finer question: *for every individual character in the document, did the model correctly mark it as PII or not?* A predicted span and a gold span both collapse to a set of character indices, and precision/recall/F1 are computed over those sets — union all predicted spans, union all gold spans, then ordinary set arithmetic. Crucially, **the label attached to a span never enters the arithmetic**: `account_number` vs `medical_record_number` vs `BANKACCOUNT` are irrelevant if the two spans cover the same characters, which is what lets this metric compare models with completely different label vocabularies without a taxonomy mapping.
+Every metric so far has asked one question per document: *did the model flag anything at all?* That question can't tell "found the SSN, missed everything else" apart from "found everything." Character-level scoring asks a finer question: *for every individual character in the document, did the model correctly mark it as PII or not?* A predicted span and a gold span both collapse to a set of character indices, and precision/recall/F1 are computed over those sets: union all predicted spans, union all gold spans, then ordinary set arithmetic. Crucially, **the label attached to a span never enters the arithmetic**: `account_number` vs `medical_record_number` vs `BANKACCOUNT` are irrelevant if the two spans cover the same characters, which is what lets this metric compare models with completely different label vocabularies without a taxonomy mapping.
 
-Here's a real case (`nemotron-pii-15485`) that makes the idea concrete. It's 317 characters, 76 of them gold PII (24% of the document), and **every model in this comparison scores a clean document-level pass on it** — a perfect "detected PII somewhere" result that hides everything below:
+Here's a real case (`nemotron-pii-15485`) that makes the idea concrete. It's 317 characters, 76 of them gold PII (24% of the document), and **every model in this comparison scores a clean document-level pass on it**, a perfect "detected PII somewhere" result that hides everything below:
 
 ```
 txt  My medical record number is BH-00028745. Are you currently employed? Yes, I a
@@ -316,7 +319,7 @@ mmb  ...........................................................................
 | pplx | 2 | 27 | 27 | 1.000 | 0.355 | **0.524** |
 | mmBERT | 18 | 36 | 35 | 0.972 | 0.461 | **0.625** |
 
-Both models are blind to 49 of the document's 76 gold PII characters — `employed full-time` and `medical health services manager` never get flagged by either — while both scored a perfect document-level "TP" on this case. That gap between "the document-level table says done" and "63% of the actual PII characters are still exposed" is the entire argument for character scoring, and it's why we ran it across all 20,001 cases for the three ONNX-served detectors.
+Both models are blind to 49 of the document's 76 gold PII characters (`employed full-time` and `medical health services manager` never get flagged by either), while both scored a perfect document-level "TP" on this case. That gap between "the document-level table says done" and "63% of the actual PII characters are still exposed" is the entire argument for character scoring, and it's why we ran it across all 20,001 cases for the three ONNX-served detectors.
 
 ### The full comparison, and the ordering inversion
 
@@ -327,16 +330,16 @@ Both models are blind to 49 of the document's 76 gold PII characters — `employ
 | mmBERT32K-PII | 0.9202 | 0.6842 | **0.7849** | 0.125% |
 | *flag everything (strawman)* | *0.1458* | *1.0000* | *0.2544* | *0.00%* |
 
-**The ordering inverts.** mmBERT leaks six times fewer *documents* than pplx, and is the *worse* detector by characters — it tends to fire somewhere on nearly every document while covering a much smaller fraction of what's actually in it. Two categories make that concrete rather than abstract: on `time` (a shared blind spot across all three models), mmBERT covers only 60.6% of gold characters and pplx only 46.7% — both mediocre, but pplx is worse here, matching its lower overall recall. On `gender`, though, the pattern flips hard: mmBERT covers a mere **1.0%** of gold gender characters (it has a demographic class and still barely uses it), while pplx — which has **no gender label at all** — covers **73.7%** of the same characters anyway, entirely through its `other_pii` catch-all label. mmBERT wins the document-level leaderboard on this corpus; pplx wins character coverage on categories it doesn't even claim to model. That single table is the whole argument for why document-level scoring alone isn't enough: three models a leak-rate column says are all "basically done" turn out to be 0.16 of character F1 apart, and the model that looks best at the document level is not the model that actually covers the most PII. **The per-label breakdown below is where that "no class" vs. "no coverage" distinction gets sorted out for every category, not just these two.**
+**The ordering inverts.** mmBERT leaks six times fewer *documents* than pplx, and is the *worse* detector by characters: it tends to fire somewhere on nearly every document while covering a much smaller fraction of what's actually in it. Two categories make that concrete rather than abstract: on `time` (a shared blind spot across all three models), mmBERT covers only 60.6% of gold characters and pplx only 46.7%, both mediocre, but pplx is worse here, matching its lower overall recall. On `gender`, though, the pattern flips hard: mmBERT covers a mere **1.0%** of gold gender characters (it has a demographic class and still barely uses it), while pplx, which has **no gender label at all**, covers **73.7%** of the same characters anyway, entirely through its `other_pii` catch-all label. mmBERT wins the document-level leaderboard on this corpus; pplx wins character coverage on categories it doesn't even claim to model. That single table is the whole argument for why document-level scoring alone isn't enough: three models a leak-rate column says are all "basically done" turn out to be 0.16 of character F1 apart, and the model that looks best at the document level is not the model that actually covers the most PII. **The per-label breakdown below is where that "no class" vs. "no coverage" distinction gets sorted out for every category, not just these two.**
 
-Character scoring also gives a genuine precision number for the first time in this post: **0.92–0.98 across the three detectors**, against that 0.1458 floor. That doesn't fix the missing benign arm (it's still bounded by how PII-dense the positive documents are, not a true false-positive rate), but it's a partial answer where before there was none.
+Character scoring also gives a genuine precision number for the first time in this post: **0.92 to 0.98 across the three detectors**, against that 0.1458 floor. That doesn't fix the missing benign arm (it's still bounded by how PII-dense the positive documents are, not a true false-positive rate), but it's a partial answer where before there was none.
 
-**Per-label character recall needs no taxonomy mapping at all**, so it retires the lenient-vs-strict ambiguity below for these three models specifically. The most important correction it produces: pplx has no dedicated class for gender, sexuality, or religion — and yet covers **73.7%, 69.0%, and 65.8%** of those categories' characters respectively, entirely through its `other_pii` catch-all label. "The model has no class for this" and "the model doesn't find this" are genuinely different claims, and only character-level scoring can tell them apart — which, for a routing decision where the label name is irrelevant and only coverage matters, is exactly the question that matters. pplx's *real* holes read near zero instead: `company_name` at 1.2%, `occupation` at 1.4%. Shared blind spots across all three models: `time` (60.6% / 46.7% / 74.5%) and, for the two smaller models, `country` (23.3% / 28.4%).
+**Per-label character recall needs no taxonomy mapping at all**, so it retires the lenient-vs-strict ambiguity below for these three models specifically. The most important correction it produces: pplx has no dedicated class for gender, sexuality, or religion, and yet covers **73.7%, 69.0%, and 65.8%** of those categories' characters respectively, entirely through its `other_pii` catch-all label. "The model has no class for this" and "the model doesn't find this" are genuinely different claims, and only character-level scoring can tell them apart. For a routing decision, where the label name is irrelevant and only coverage matters, that is exactly the question that matters. pplx's *real* holes read near zero instead: `company_name` at 1.2%, `occupation` at 1.4%. Shared blind spots across all three models: `time` (60.6% / 46.7% / 74.5%) and, for the two smaller models, `country` (23.3% / 28.4%).
 
 Two more things worth carrying from the per-category (not per-character) view:
 
-- **mmBERT's demographic gap is a genuine model failure, not a taxonomy gap.** It *has* Presidio's `NRP` class and still only fires it on 5.0% (race/ethnicity/language) and 5.2% (belief/political) of documents that need it. pplx and OpenMed score zero on the same categories for the opposite reason — they have no such class at all. Those are two completely different situations that a bare "missed category" column would conflate.
-- **BIOMETRIC (1,958 docs) and EDUCATION (1,416 docs) are total blind spots** across all four production detectors — only GLiNER covers them, and only because it was told to look for them by name.
+- **mmBERT's demographic gap is a genuine model failure, not a taxonomy gap.** It *has* Presidio's `NRP` class and still only fires it on 5.0% (race/ethnicity/language) and 5.2% (belief/political) of documents that need it. pplx and OpenMed score zero on the same categories for the opposite reason: they have no such class at all. Those are two completely different situations that a bare "missed category" column would conflate.
+- **BIOMETRIC (1,958 docs) and EDUCATION (1,416 docs) are total blind spots** across all four production detectors; only GLiNER covers them, and only because it was told to look for them by name.
 - **OpenMed v1 → v2 was a real jump**: ORG_COMPANY 13.4% → 93.1%, GENDER 53.1% → 95.7%, CREDENTIAL_SECRET 79% → 98%, DATE_TIME 80.4% → 97.4%. The remaining weak spot in v2 is OCCUPATION_EMPLOYMENT at 52.5%.
 
 Finally, lenient versus strict credit matters for anything that isn't a 1-to-1 category mapping. pplx's single `account_number` label, for example, expands under our taxonomy to four canonical categories at once:
@@ -348,23 +351,23 @@ Finally, lenient versus strict credit matters for anything that isn't a 1-to-1 c
 | MEDICAL | 93.0% | 60.1% | −32.9 |
 | INTERNAL_ID | 96.5% | 55.1% | −41.4 |
 
-OpenMed v2 is essentially unchanged under strict scoring; pplx and the OpenAI privacy filter collapse. This is a **granularity** result, not an accuracy one — pplx genuinely found something at those character positions roughly 98% of the time, it just can't tell you which of four related categories it was. For a routing decision, where the only question is "is there PII here at all," lenient is the right lens. For a masking or redaction policy that has to treat an SSN differently from a customer account ID, strict is. That distinction connects straight back to the routing decision at the top of this post.
+OpenMed v2 is essentially unchanged under strict scoring; pplx and the OpenAI privacy filter collapse. This is a **granularity** result, not an accuracy one: pplx genuinely found something at those character positions roughly 98% of the time, it just can't tell you which of four related categories it was. For a routing decision, where the only question is "is there PII here at all," lenient is the right lens. For a masking or redaction policy that has to treat an SSN differently from a customer account ID, strict is. That distinction connects straight back to the routing decision at the top of this post.
 
 ---
 
 ## From safetensors to ONNX
 
-The router's classifier path runs on `onnxruntime` — no torch dependency in the serving process, CPU-friendly, single artifact. Getting there for mmBERT and pplx surfaced enough detail worth walking through, because the export is more than "call `torch.onnx.export` and ship the file."
+The router's classifier path runs on `onnxruntime`: no torch dependency in the serving process, CPU-friendly, single artifact. Getting there for mmBERT and pplx surfaced enough detail worth walking through, because the export is more than "call `torch.onnx.export` and ship the file."
 
-**What the export actually has to preserve.** pplx's checkpoint is not a stock `AutoModelForTokenClassification` — it's a custom `PiiMaskingModel` (`trust_remote_code=True`) exposing `model.predict(text) -> (spans, sensitivity)` rather than a plain `.logits` tensor, with two heads sharing one Qwen3 encoder backbone: a 37-tag BIOES token-classification head, and a document-level sensitivity scalar trained on a pooled representation. **The two heads disagree, badly** — routing on the sensitivity head at its default 0.5 threshold gets 9.16% recall against the span head's 99.20%, because the model card's own worked example shows three correctly-found spans scored at `sensitivity=0.027`. So the very first design decision in the export is which head to keep: the graph exports **only the span head's raw per-token logits**, and the sensitivity head is carried along but never used for routing.
+**What the export actually has to preserve.** pplx's checkpoint is not a stock `AutoModelForTokenClassification`. It's a custom `PiiMaskingModel` (`trust_remote_code=True`) exposing `model.predict(text) -> (spans, sensitivity)` rather than a plain `.logits` tensor, with two heads sharing one Qwen3 encoder backbone: a 37-tag BIOES token-classification head, and a document-level sensitivity scalar trained on a pooled representation. **The two heads disagree, badly**: routing on the sensitivity head at its default 0.5 threshold gets 9.16% recall against the span head's 99.20%, because the model card's own worked example shows three correctly-found spans scored at `sensitivity=0.027`. So the very first design decision in the export is which head to keep: the graph exports **only the span head's raw per-token logits**, and the sensitivity head is carried along but never used for routing.
 
-**The graph deliberately stops at logits — the decoder isn't baked in.** pplx's own constrained BIOES Viterbi decoder lives in Python, not in the graph, so the ONNX artifact hands back raw per-token scores and expects the caller to decode them. That matters for evaluation: scoring the ONNX run by plain argmax while the safetensors run was scored by Viterbi would silently confound a *backend* difference with a *decoder* difference and make any gap between the two runs uninterpretable. So the ONNX eval script imports the checkpoint's own `ViterbiDecoder` class straight out of its `trust_remote_code` module and feeds it the ONNX logits directly — constructing it from `config.viterbi_b_bias` / `viterbi_e_bias` exactly as `PiiMaskingModel.__init__` does, with **no weights loaded**, since the decoder's entire state is the 37-label list plus two bias scalars. Tokenization, chunking, and truncation are kept byte-equivalent to the safetensors eval script. That leaves exactly one variable different between the two runs — the backend — and none of the parity comparison below is contaminated by a decoding-rule change.
+**The graph deliberately stops at logits; the decoder isn't baked in.** pplx's own constrained BIOES Viterbi decoder lives in Python, not in the graph, so the ONNX artifact hands back raw per-token scores and expects the caller to decode them. That matters for evaluation: scoring the ONNX run by plain argmax while the safetensors run was scored by Viterbi would silently confound a *backend* difference with a *decoder* difference and make any gap between the two runs uninterpretable. So the ONNX eval script imports the checkpoint's own `ViterbiDecoder` class straight out of its `trust_remote_code` module and feeds it the ONNX logits directly, constructing it from `config.viterbi_b_bias` / `viterbi_e_bias` exactly as `PiiMaskingModel.__init__` does, with **no weights loaded**, since the decoder's entire state is the 37-label list plus two bias scalars. Tokenization, chunking, and truncation are kept byte-equivalent to the safetensors eval script. That leaves exactly one variable different between the two runs, the backend, and none of the parity comparison below is contaminated by a decoding-rule change.
 
 Two implementation traps cost real time getting there, and are worth publishing so another team doesn't lose a day to them:
 
-**Trap 1: the export can die on Windows *after* it already succeeded.** `torch.onnx`'s progress printer emits a Unicode checkmark (U+2705); a cp1252 console can't encode it, so the export raises `UnicodeEncodeError` with the graph already fully built and correct. It reads like an export bug. It's a console-encoding bug — reconfigure stdout to UTF-8 before exporting, and don't remove that once it's in place.
+**Trap 1: the export can die on Windows *after* it already succeeded.** `torch.onnx`'s progress printer emits a Unicode checkmark (U+2705); a cp1252 console can't encode it, so the export raises `UnicodeEncodeError` with the graph already fully built and correct. It reads like an export bug. It's a console-encoding bug: reconfigure stdout to UTF-8 before exporting, and don't remove that once it's in place.
 
-**Trap 2: don't export pplx from a repackaged checkpoint that quietly changes its causality.** One community repack of the pplx checkpoint carries the same weights repacked as a stock `Qwen3ForTokenClassification`, with a top-level `"is_causal": false` field — a key stock `transformers` doesn't actually read (huggingface/transformers#39554). It loads with correct tensor shapes, produces plausible-looking output, passes a self-consistency check, and is **silently causal instead of bidirectional**. The original repository's vendored `modeling_pplx_qwen3.py` explicitly flips `is_causal` per layer and rebuilds the attention mask bidirectionally via `bidirectional_mask_function(...)` — logic the repack drops entirely. Full detail on the analogous failure for OpenMed's model (a similar "wrong architecture class silently loads" trap) is in `privacy_filter_ml_v2_onnx_repro.md`.
+**Trap 2: don't export pplx from a repackaged checkpoint that quietly changes its causality.** One community repack of the pplx checkpoint carries the same weights repacked as a stock `Qwen3ForTokenClassification`, with a top-level `"is_causal": false` field, a key stock `transformers` doesn't actually read (huggingface/transformers#39554). It loads with correct tensor shapes, produces plausible-looking output, passes a self-consistency check, and is **silently causal instead of bidirectional**. The original repository's vendored `modeling_pplx_qwen3.py` explicitly flips `is_causal` per layer and rebuilds the attention mask bidirectionally via `bidirectional_mask_function(...)`, logic the repack drops entirely. Full detail on the analogous failure for OpenMed's model (a similar "wrong architecture class silently loads" trap) is in `privacy_filter_ml_v2_onnx_repro.md`.
 
 The generalizable lesson from trap 2: **a conversion can be self-consistent and still wrong.** Equivalence has to be measured, not assumed from a clean load and sane-looking numbers.
 
@@ -372,7 +375,7 @@ The parity result, over the full 20,001-case corpus:
 
 | Check | Result |
 | --- | --- |
-| Confusion matrix | 19,841 / 159 / 1 / 0 — identical, both runs |
+| Confusion matrix | 19,841 / 159 / 1 / 0, identical in both runs |
 | `has_pii` decision agreement | **20,001 / 20,001 (100.0000%)** |
 | Routing decision flips | **0** |
 | Exact label-set agreement | 20,001 / 20,001 (100.0000%) |
@@ -380,7 +383,7 @@ The parity result, over the full 20,001-case corpus:
 | Per-category recall, lenient + strict | identical in every cell |
 | Logit max-abs-diff (a real 806-char document) | 1.0e-5 |
 
-The row that actually proves this rather than just suggesting it is the same-case-names check. Identical *counts* alone wouldn't rule out compensating errors — a model could miss a different 159 documents in each run and still report the same aggregate numbers. Matching the exact set of missed case names closes that gap. **We verified this decision-identical for pplx specifically — this has not been repeated for mmBERT-ONNX or OpenMed-v2-ONNX**, which still rest on router logs rather than a direct parity diff. We're not claiming a blanket "conversion never loses anything" here; we're claiming one specific, measured case, and flagging the other two as open work.
+The row that actually proves this rather than just suggesting it is the same-case-names check. Identical *counts* alone wouldn't rule out compensating errors: a model could miss a different 159 documents in each run and still report the same aggregate numbers. Matching the exact set of missed case names closes that gap. **We verified this decision-identical for pplx specifically; this has not been repeated for mmBERT-ONNX or OpenMed-v2-ONNX**, which still rest on router logs rather than a direct parity diff. We're not claiming a blanket "conversion never loses anything" here; we're claiming one specific, measured case, and flagging the other two as open work.
 
 ---
 
@@ -395,9 +398,9 @@ The explanation is two different decision rules, not two different backends:
 | offline eval script | argmax per token; document flagged if any non-special token's argmax label isn't `O` |
 | the router | softmax per token → take the max score over all tokens, per label → fire if any non-`O` label clears `min_score` |
 
-Here's the mathematical fact that makes this a proof rather than a hunch: a per-token softmax over 35 labels sums to exactly 1. So a label scoring above 0.5 at a given token *is, by definition*, that token's argmax — there's no room for two labels to both clear 0.5. That means **`min_score >= 0.5` is strictly stricter than argmax; it's a containment, not an independently tunable rule.**
+Here's the mathematical fact that makes this a proof rather than a hunch: a per-token softmax over 35 labels sums to exactly 1. So a label scoring above 0.5 at a given token *is, by definition*, that token's argmax; there's no room for two labels to both clear 0.5. That means **`min_score >= 0.5` is strictly stricter than argmax; it's a containment, not an independently tunable rule.**
 
-We measured that containment rather than just arguing it: the router's 49 leaks are a strict superset of the 25 argmax leaks (25/25 contained, 0 violations), the extra 24 are threshold-only, and re-running both rules against a shared argmax threshold across all 20,001 cases found 0 entity-set mismatches and 0 `has_pii` flips. The shipped `min_score` of 0.5 brackets to `(0.4963, 0.5043]` from the run itself. One more detail worth a sentence: special tokens (like `<bos>`) are excluded from the router's max-over-tokens — this model's `<bos>` token always fires a label on its own, and including it would push all 49 known leaks above 0.5 for the wrong reason.
+We measured that containment rather than just arguing it: the router's 49 leaks are a strict superset of the 25 argmax leaks (25/25 contained, 0 violations), the extra 24 are threshold-only, and re-running both rules against a shared argmax threshold across all 20,001 cases found 0 entity-set mismatches and 0 `has_pii` flips. The shipped `min_score` of 0.5 brackets to `(0.4963, 0.5043]` from the run itself. One more detail worth a sentence: special tokens (like `<bos>`) are excluded from the router's max-over-tokens: this model's `<bos>` token always fires a label on its own, and including it would push all 49 known leaks above 0.5 for the wrong reason.
 
 **What that rule actually costs, measured in characters, reverses the takeaway.** At the document level the two rules differ by 0.12 percentage points, and the honest one-line summary would be "the threshold barely matters." Scoring the same two rules on the same graph, in the same process, over characters instead:
 
@@ -406,13 +409,13 @@ We measured that containment rather than just arguing it: the router's 49 leaks 
 | argmax | 0.9202 | 0.6842 | **0.7849** | 0.125% |
 | `min_score` 0.5 | 0.9494 | 0.4849 | **0.6419** | 0.245% |
 
-**The shipped threshold throws away 29% of the PII characters mmBERT can find.** A router only needs to notice *one* entity anywhere in a document to make the right routing call, so it never pays that bill — which is exactly why the document-level number makes the threshold look nearly free. A masking or redaction pipeline pays all of it, on every document.
+**The shipped threshold throws away 29% of the PII characters mmBERT can find.** A router only needs to notice *one* entity anywhere in a document to make the right routing call, so it never pays that bill, which is exactly why the document-level number makes the threshold look nearly free. A masking or redaction pipeline pays all of it, on every document.
 
 The same shape shows up on pplx from the opposite direction: its own constrained BIOES Viterbi decoder nearly *doubles* its document leak rate against plain argmax (159 vs. 84 leaks) while buying back precision (0.9627 → 0.9725). A constrained decoder is a trade, not a free upgrade.
 
-And the size of that bill is wildly model-dependent — a 30x spread: char recall costs privacy-filter (OpenMed v2) about −0.7 percentage points, pplx about −1.4pp, and mmBERT a full **−19.9pp**. The tuning curve two paragraphs down was measured on mmBERT — the model where the threshold matters the most. **A threshold doesn't port between checkpoints.**
+And the size of that bill is wildly model-dependent, a 30x spread: char recall costs privacy-filter (OpenMed v2) about −0.7 percentage points, pplx about −1.4pp, and mmBERT a full **−19.9pp**. The tuning curve two paragraphs down was measured on mmBERT, the model where the threshold matters the most. **A threshold doesn't port between checkpoints.**
 
-Put together, the closing thesis for this section is: **route with the loose rule, mask with the strict one.** Same weights, same graph, two different jobs, two different thresholds — and it's a cleaner proof than the containment result above, because here both rules ran over one graph in one process, with nothing held constant "by argument."
+Put together, the closing thesis for this section is: **route with the loose rule, mask with the strict one.** Same weights, same graph, two different jobs, two different thresholds, and it's a cleaner proof than the containment result above, because here both rules ran over one graph in one process, with nothing held constant "by argument."
 
 **The schema, briefly** (full reference at `docs/dev/router-policy.md`): policy is data, evaluated first-match-wins; the default candidate is the fail-open path; classifier errors default to `match_false` unless configured otherwise; band tests (`min_score`/`max_score`) gate on a classifier's per-label score; and cheap conditions (keyword matches, character-length bounds, metadata) are meant to be checked before anything model-backed, for latency reasons.
 
@@ -425,11 +428,11 @@ Put together, the closing thesis for this section is: **route with the loose rul
 | 0.50 (shipped) | 49 | 99.755% | +24 |
 | 0.70 | 119 | 99.405% | +94 |
 
-**This curve only means something with its caveat attached, in the same breath.** With exactly one benign case in the whole corpus, lowering `min_score` shows no measurable cost *here* — the curve is one-sided and is **not tuning advice** on its own. It's also not as much free headroom as it looks: of the 24 threshold-only leaks recovered by lowering the bar, the sub-threshold signal sits on a category the document doesn't actually contain in 13 of the 24 cases. Those are accidental catches. For a binary route, an accidental catch still routes correctly — but that same kind of spurious firing is precisely what would cost precision on benign traffic, which is the one thing this corpus can't measure at all.
+**This curve only means something with its caveat attached, in the same breath.** With exactly one benign case in the whole corpus, lowering `min_score` shows no measurable cost *here*; the curve is one-sided and is **not tuning advice** on its own. It's also not as much free headroom as it looks: of the 24 threshold-only leaks recovered by lowering the bar, the sub-threshold signal sits on a category the document doesn't actually contain in 13 of the 24 cases. Those are accidental catches. For a binary route, an accidental catch still routes correctly, but that same kind of spurious firing is precisely what would cost precision on benign traffic, which is the one thing this corpus can't measure at all.
 
-### The same gate helps pplx — in the opposite direction from mmBERT
+### The same gate helps pplx, in the opposite direction from mmBERT
 
-Reading the mmBERT result alone invites the wrong conclusion — "the router costs recall." At the same `min_score: 0.5`, pplx shows the opposite, by more than mmBERT lost:
+Reading the mmBERT result alone invites the wrong conclusion: "the router costs recall." At the same `min_score: 0.5`, pplx shows the opposite, by more than mmBERT lost:
 
 | Path | Decision rule | Leaks | Recall |
 | --- | --- | --- | --- |
@@ -438,16 +441,16 @@ Reading the mmBERT result alone invites the wrong conclusion — "the router cos
 
 The nesting is strict and one-directional here: 89 documents flagged by both, 0 flagged only by the router, **70 flagged only by Viterbi's stricter offline decoding**. The router recovered 70 documents the model's own decoder missed, and regressed none, across 20,001 cases with 0 HTTP/parse errors.
 
-The mechanism is the whole point. mmBERT's offline baseline is argmax, which fires on any single winning token regardless of how weak that win is — so a 0.5 gate can only ever subtract from it. pplx's offline baseline is Viterbi, which demands a *coherent* BIOES span (a proper `B → I → E` sequence) and therefore suppresses a confident but isolated token by design. Viterbi is the right rule for masking, where you need well-formed spans to redact cleanly — and the wrong rule for a binary gate, where the only question is whether evidence exists anywhere in the document. The router's max-over-tokens keeps exactly what Viterbi is designed to throw away.
+The mechanism is the whole point. mmBERT's offline baseline is argmax, which fires on any single winning token regardless of how weak that win is, so a 0.5 gate can only ever subtract from it. pplx's offline baseline is Viterbi, which demands a *coherent* BIOES span (a proper `B → I → E` sequence) and therefore suppresses a confident but isolated token by design. Viterbi is the right rule for masking, where you need well-formed spans to redact cleanly, and the wrong rule for a binary gate, where the only question is whether evidence exists anywhere in the document. The router's max-over-tokens keeps exactly what Viterbi is designed to throw away.
 
-So the defensible claim isn't "the router is stricter" or "the router is better" — it's model-dependent, and the honest version is:
+So the defensible claim isn't "the router is stricter" or "the router is better". It's model-dependent, and the honest version is:
 
-> The router's rule is stricter than argmax and looser than a constrained Viterbi decoder. Which direction that moves recall depends entirely on what the model's own native decoder does — for a routing gate, the model's own decoder is not automatically the right baseline to compare against.
+> The router's rule is stricter than argmax and looser than a constrained Viterbi decoder. Which direction that moves recall depends entirely on what the model's own native decoder does; for a routing gate, the model's own decoder is not automatically the right baseline to compare against.
 >
 
-Same caveat as everywhere else in this post applies here too: the 70 recovered documents are free only because this corpus can't charge for false positives — the router's extra sensitivity also flagged the single benign case in the whole run that the Viterbi-decoded offline path had left alone. One case doesn't decide anything on its own, but it points the right way, and we're not publishing "70 leaks recovered" without that caveat sitting right next to it.
+Same caveat as everywhere else in this post applies here too: the 70 recovered documents are free only because this corpus can't charge for false positives: the router's extra sensitivity also flagged the single benign case in the whole run that the Viterbi-decoded offline path had left alone. One case doesn't decide anything on its own, but it points the right way, and we're not publishing "70 leaks recovered" without that caveat sitting right next to it.
 
-(Provenance, for reproducibility: serving pplx through the router required adding `"pii_masking"` to the backend's `supported_model_types()` allowlist — a claim purely about input convention, since pplx's graph only declares `input_ids`/`attention_mask` and its tokenizer adds no BOS/EOS. This run used `policy_local_default.json`, identical to the committed `policy.json` except the non-PII path routes to a local `Qwen3.5-9B-GGUF` instead of a cloud model — matching how the mmBERT and OpenMed router rows were produced, and meaning no document in this run was ever sent to a cloud provider.)
+(Provenance, for reproducibility: serving pplx through the router required adding `"pii_masking"` to the backend's `supported_model_types()` allowlist, a claim purely about input convention, since pplx's graph only declares `input_ids`/`attention_mask` and its tokenizer adds no BOS/EOS. This run used `policy_local_default.json`, identical to the committed `policy.json` except the non-PII path routes to a local `Qwen3.5-9B-GGUF` instead of a cloud model, matching how the mmBERT and OpenMed router rows were produced, and meaning no document in this run was ever sent to a cloud provider.)
 
 ---
 
@@ -473,9 +476,9 @@ Putting the models above into policies you could actually run. All three are com
 }
 ```
 
-**2. Fully local / air-gapped deployment (`l2_pii_onnx_pplx_masking/policy_local_default.json`).** Identical schema, but `default_model` is a local `Qwen3.5-9B-GGUF` instead of a cloud model — no network dependency at all, no API key, nothing ever leaves the machine regardless of the PII decision. This is the policy behind the 89-leak / 99.555%-recall result above, and it's the one to reach for if "no cloud calls, period" is itself the requirement rather than PII specifically.
+**2. Fully local / air-gapped deployment (`l2_pii_onnx_pplx_masking/policy_local_default.json`).** Identical schema, but `default_model` is a local `Qwen3.5-9B-GGUF` instead of a cloud model: no network dependency at all, no API key, nothing ever leaves the machine regardless of the PII decision. This is the policy behind the 89-leak / 99.555%-recall result above, and it's the one to reach for if "no cloud calls, period" is itself the requirement rather than PII specifically.
 
-**3. The naive baseline, for comparison (`l2_pii_regex/policy.json`).** No model at all — 11 regex leaves (SSN, generic 9-digit, email, phone, four credit-card-brand prefixes, IPv4, two date formats) `any`-matched against a cloud/local split identical in shape to policy 1:
+**3. The naive baseline, for comparison (`l2_pii_regex/policy.json`).** No model at all, just 11 regex leaves (SSN, generic 9-digit, email, phone, four credit-card-brand prefixes, IPv4, two date formats) `any`-matched against a cloud/local split identical in shape to policy 1:
 
 ```json
 {
@@ -494,17 +497,17 @@ Putting the models above into policies you could actually run. All three are com
 }
 ```
 
-Zero model dependency, sub-millisecond, and the 18.7% leak rate that opened this post. It's the right choice only when a model-backed classifier genuinely isn't available — everything above it in this post exists because that leak rate is too high for anything that has to hold up under real traffic.
+Zero model dependency, sub-millisecond, and the 18.7% leak rate that opened this post. It's the right choice only when a model-backed classifier genuinely isn't available; everything above it in this post exists because that leak rate is too high for anything that has to hold up under real traffic.
 
-A policy this shape generalizes past "local vs. cloud LLM," too — the same classifier could gate access to a `responses`/tool-use path, an image generation request, or a document upload, anywhere Lemonade's router sits in front of more than one destination and one of them shouldn't see sensitive input.
+A policy this shape generalizes past "local vs. cloud LLM," too: the same classifier could gate access to a `responses`/tool-use path, an image generation request, or a document upload, anywhere Lemonade's router sits in front of more than one destination and one of them shouldn't see sensitive input.
 
 ---
 
 ## Timings, and what the gate actually costs
 
-Every runtime number in this post so far has been mixed together with something else — a router round-trip that includes HTTP overhead and the routed model actually answering, or a resumed run with an inconsistent thread count. Untangling that matters because the systems question that actually gets asked isn't "how long did the whole 20,000-case benchmark take" — it's "what does turning this gate on add to a single request."
+Every runtime number in this post so far has been mixed together with something else: a router round-trip that includes HTTP overhead and the routed model actually answering, or a resumed run with an inconsistent thread count. Untangling that matters because the systems question that actually gets asked isn't "how long did the whole 20,000-case benchmark take"; it's "what does turning this gate on add to a single request."
 
-**ONNX classifiers, timed as classification only** — a single CPU pass over all 20,001 cases, no router, no HTTP, nothing else running on the box:
+**ONNX classifiers, timed as classification only**: a single CPU pass over all 20,001 cases, no router, no HTTP, nothing else running on the box:
 
 | Model | Rule | Total (20,001 docs) | Per document |
 | --- | --- | --- | --- |
@@ -513,9 +516,9 @@ Every runtime number in this post so far has been mixed together with something 
 | pplx-pii-masking | raw forward pass only, no decode | ~28 min | **~84 ms** |
 | OpenMed privacy-filter-ml-v2 | argmax | 3.29 hr | **~592 ms** |
 
-That's the number that actually answers "what does the gate cost": tens to hundreds of milliseconds per request, on CPU, for any of the three ONNX detectors — cheap enough that it's a rounding error against almost any downstream generation call.
+That's the number that actually answers "what does the gate cost": tens to hundreds of milliseconds per request, on CPU, for any of the three ONNX detectors, cheap enough that it's a rounding error against almost any downstream generation call.
 
-**LLM-as-router, by contrast, is not cheap at any size**, because the number below is never "classification alone" — the router policy asks the LLM both to decide the route *and*, in the common case, to then actually answer the request:
+**LLM-as-router, by contrast, is not cheap at any size**, because the number below is never "classification alone": the router policy asks the LLM both to decide the route *and*, in the common case, to then actually answer the request:
 
 | Model | Corpus | End-to-end total | Per prompt |
 | --- | --- | --- | --- |
@@ -529,7 +532,7 @@ That's the number that actually answers "what does the gate cost": tens to hundr
 
 **The gap between the two halves of that comparison is three to four orders of magnitude.** An ONNX classifier answers in tens to hundreds of milliseconds; an LLM router-and-answer round-trip costs single-digit *seconds* per prompt even at the smallest size tested, and climbs with model size in the same direction leak rate paradoxically doesn't (the 9B is both the slowest and, per the size-paradox section above, the least accurate of the three). That's the practical argument for the whole rest of this post: an LLM judge is a useful ceiling-finder for what's detectable in principle, but a dedicated ONNX encoder is the thing you'd actually wire into a production gate, because it adds classification latency that's genuinely negligible next to the cost of the request it's gating.
 
-What we still don't have is a clean p50/p95 *inline* latency measurement broken out by backend (CPU/GPU/NPU) for a single live request under load, as opposed to a batch pass over 20,001 offline cases — that's the next thing to instrument, not something to estimate from the numbers above.
+What we still don't have is a clean p50/p95 *inline* latency measurement broken out by backend (CPU/GPU/NPU) for a single live request under load, as opposed to a batch pass over 20,001 offline cases. That's the next thing to instrument, not something to estimate from the numbers above.
 
 ---
 
@@ -537,11 +540,11 @@ What we still don't have is a clean p50/p95 *inline* latency measurement broken 
 
 Most of what belongs here has already been conceded in the body of the post rather than saved for the end, but to have it all in one place:
 
-- **The missing benign arm is still the load-bearing gap.** Character precision narrows it a little — an over-tagging model is now penalized on positive documents — but it's bounded by PII density in the corpus, not a true false-positive rate, and it says nothing about how any of these models behave on genuinely benign traffic. Building a real negative arm (Nemotron documents with every PII span swapped for generic non-identifying text, so ground truth is PII-free by construction) is the highest-value thing left to do here.
-- **Character F1 covers three models, not eight.** The LLM routers and embedding classifiers emit a decision, never a span — they're document-level *by construction*, not by an oversight. GLiNER, OpenMed v1, OpenAI/privacy-filter, and mmBERT-safetensors simply haven't had this run yet.
+- **The missing benign arm is still the load-bearing gap.** Character precision narrows it a little (an over-tagging model is now penalized on positive documents), but it's bounded by PII density in the corpus, not a true false-positive rate, and it says nothing about how any of these models behave on genuinely benign traffic. Building a real negative arm (Nemotron documents with every PII span swapped for generic non-identifying text, so ground truth is PII-free by construction) is the highest-value thing left to do here.
+- **Character F1 covers three models, not eight.** The LLM routers and embedding classifiers emit a decision, never a span; they're document-level *by construction*, not by an oversight. GLiNER, OpenMed v1, OpenAI/privacy-filter, and mmBERT-safetensors simply haven't had this run yet.
 - **The category-mapping taxonomy behind the lenient/strict tables is editorial judgment, and it should be reviewed rather than assumed.** Two mappings were wrong on a first pass during this work, and one produced a fabricated "0.2% biometric failure" for OpenMed that turned out to be a bad mapping, not a model failure. Character-level per-label recall needs none of this mapping, which is part of why it's the more trustworthy diagnostic.
-- **The GLiNER numbers throughout this post are a calibration reference, not a competing result** — it was handed the gold label vocabulary at inference time.
-- **The embedding pilot is n=20, zero benign, and not re-run at scale.** The 500-prompt table above is an explicit illustration of a measured percentage, not a new experiment — it should be treated as a hypothesis to re-run with a larger, dataset-informed reference set, not a settled number.
+- **The GLiNER numbers throughout this post are a calibration reference, not a competing result**: it was handed the gold label vocabulary at inference time.
+- **The embedding pilot is n=20, zero benign, and not re-run at scale.** The 500-prompt table above is an explicit illustration of a measured percentage, not a new experiment. It should be treated as a hypothesis to re-run with a larger, dataset-informed reference set, not a settled number.
 - **No language field exists in this corpus.** Every claim in this post is English-only; nothing here measures a multilingual advantage for the multilingual-capable models.
 - **The per-prompt, per-backend latency picture is incomplete.** We have solid batch-classification timings (above); we don't yet have p50/p95 under concurrent load, broken out by CPU/GPU/NPU.
 
@@ -549,10 +552,10 @@ Most of what belongs here has already been conceded in the body of the post rath
 
 ## What we'd ship
 
-**OpenMed privacy-filter-ml-v2 is the recommendation**, and the reason goes past its 0% document leak rate, which three other models effectively tie — it wins character F1 by 0.12 over the next best (0.9563 vs. 0.8360), never drops below roughly 92% recall in any span-length bucket, and has no catastrophic per-label hole the way the other two do — its weakest category is `time` at 74.5%, where the other two sit at 60.6% and 46.7%. The cost is size: a 5.6 GB fp32 graph, ~592 ms per document versus mmBERT's ~86 ms over the same corpus — roughly **7x slower per document**, though both are still negligible next to any LLM generation call downstream. Whether that trade is worth it depends on your latency budget.
+**OpenMed privacy-filter-ml-v2 is the recommendation**, and the reason goes past its 0% document leak rate, which three other models effectively tie: it wins character F1 by 0.12 over the next best (0.9563 vs. 0.8360), never drops below roughly 92% recall in any span-length bucket, and has no catastrophic per-label hole the way the other two do; its weakest category is `time` at 74.5%, where the other two sit at 60.6% and 46.7%. The cost is size: a 5.6 GB fp32 graph, ~592 ms per document versus mmBERT's ~86 ms over the same corpus, roughly **7x slower per document**, though both are still negligible next to any LLM generation call downstream. Whether that trade is worth it depends on your latency budget.
 
-**Match the decision rule to the job, not just the model to the job.** Both decoder findings above point the same direction: `min_score` 0.5 costs mmBERT 0.68 → 0.48 character recall while barely moving its document leak rate, and pplx's own Viterbi decoder nearly doubles its leak rate against plain argmax while buying back precision. **Route with the loose rule, mask with the strict one** — most write-ups about this kind of gate never separate those two jobs, and the gap between them is where most of the surprising results in this post came from.
+**Match the decision rule to the job, not just the model to the job.** Both decoder findings above point the same direction: `min_score` 0.5 costs mmBERT 0.68 → 0.48 character recall while barely moving its document leak rate, and pplx's own Viterbi decoder nearly doubles its leak rate against plain argmax while buying back precision. **Route with the loose rule, mask with the strict one**. Most write-ups about this kind of gate never separate those two jobs, and the gap between them is where most of the surprising results in this post came from.
 
-**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** The size paradox and the justification-rate gap say an LLM router's failures are hard to predict from model size alone, and its per-prompt cost is seconds, not milliseconds. The embedding classifier's 90-100% leak rate on twelve hand-picked reference sentences says that approach needs real investment in the reference set — sampled from and validated against the actual traffic distribution — before it's usable at all. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
+**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** The size paradox and the justification-rate gap say an LLM router's failures are hard to predict from model size alone, and its per-prompt cost is seconds, not milliseconds. The embedding classifier's 90-100% leak rate on twelve hand-picked reference sentences says that approach needs real investment in the reference set (sampled from and validated against the actual traffic distribution) before it's usable at all. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
 
 And say plainly what's still missing rather than imply it's solved: an over-routing number, and a per-prompt, per-backend latency figure under concurrent load. Both are next.
