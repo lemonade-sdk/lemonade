@@ -72,51 +72,17 @@ Here's a trimmed version of the policy:
 
 The router-policy docs and the lemonade-router-builder skill let you iterate on rules without touching the server itself.
 
-## Candidate models
+## The Experiment
 
-We
-
-| Model | Params | Label space | Context | Architecture |
-| --- | --- | --- | --- | --- |
-| mmBERT32K-PII | ~300M | 35 BIOES labels (Presidio-style) | 32k tokens | encoder, `ModernBertForTokenClassification` |
-| OpenMed privacy-filter | ~1.4B MoE (50M active) | coarse categories | 128k tokens | `openai_privacy_filter` |
-| OpenMed privacy-filter-multilingual (v2) | ~1.4B MoE (50M active) | coarse categories, expanded | 128k tokens | `openai_privacy_filter` |
-| perplexity `pplx-pii-masking` | ~600M | 9 categories, 37 BIOES labels + dual sensitivity head | 4k tokens | custom Qwen3 encoder with span head + sensitivity head, constrained Viterbi decoder |
-| GLiNER (`nvidia/gliner-PII`) | — | zero-shot, label names supplied at inference | — | span extractor |
-| OpenAI/privacy-filter | — | 8 coarse categories | — | encoder, BIOES |
-
-**mmBERT32K-PII** is a ModernBERT-based encoder token-classifier fine-tuned for the 35-label BIOES PII taxonomy we use for our own scoring, at a 32k-token context window — the largest of anything in this comparison, and multilingual-capable, though we don't exercise that capability here (see the dataset section below).
-
-**nvidia/gliner-PII** (model card) is a span-based, non-generative extractor built on the GLiNER large-v2.1 architecture (~570M parameters), trained on roughly 100K synthetic records generated via NVIDIA's NeMo Data Designer across 50+ industry personas and 55+ entity types, including usernames, emails, phone numbers, SSNs, and financial, medical, and legal identifiers. Because it inherits GLiNER's zero-shot design, entity labels are supplied as input at inference time rather than baked into a fixed output head. NVIDIA reports strict F1 of 0.70 on Argilla PII, 0.64 on AI4Privacy, and 0.87 on a Nemotron-PII benchmark at a 0.3 confidence threshold.
-
-**OpenMed/privacy-filter-multilingual** and its **v2** successor (v1, v2) are both token classifiers built on a 1.4B-parameter mixture-of-experts base — OpenAI's `privacy_filter` architecture, 50M active parameters per token across 128 experts with top-4 routing — extended from that base model's original 8 coarse categories to 54 fine-grained categories across 16 languages via a BIOES scheme (217 output classes total). v1 was fully fine-tuned on a language-balanced mix of AI4Privacy's `pii-masking-200k`, `pii-masking-400k`, and `open-pii-masking-500k`; v2 keeps the same label space and backbone but adds Nemotron- and Gretel-derived synthetic PII data to that training mix.
-
-**perplexity-ai/pplx-pii-masking** (model card) pairs a ~600M-parameter bidirectional Qwen3 encoder with two heads: a token-classification head over 9 PII categories, decoded with a constrained Viterbi pass rather than greedy argmax, and a separate document-level sensitivity head trained on pooled representations. It's the newest and most narrowly-scoped model in this comparison — the model card doesn't publish training-data details or accuracy numbers, and its 9-category taxonomy is the tightest of anything we test, a gap that matters a lot for the coverage results below.
-
----
+The rest of this post worked through empirically: the dataset we scored everything against, the cheap approaches (regex, embeddings, an LLM asked to route), the dedicated detector models, the safetensors-to-ONNX conversion that got them into the router in the first place, and a decision-rule detail, argmax vs. a score threshold vs. a constrained decoder that turned out to matter more than which model we picked.
 
 ## The dataset
 
-All numbers in this post come from `nvidia/Nemotron-PII` (test split), sampled
-into two corpora that are **not comparable to each other**:
+All numbers in this post come from `nvidia/Nemotron-PII` (test split). We sampled 20,000 sentences from the split for benchmarking, targeting English-language text only.
 
-- `l2_pii_nemotron:` 2,500 cases, used for the LLM-as-router baselines.
-- `l2_pii_nemotron_20k:` 20,000 cases, used for the encoder-detector runs.
+The corpus contains 55 distinct gold labels: roughly 35 direct identifiers (SSNs, email addresses, phone numbers, account numbers, etc.), plus about 12 quasi-identifiers and sensitive attributes, including gender, race, sexuality, religion, political affiliation, education, employment, age, language, blood type, occupation, and biometric descriptors. Most of the detector models evaluated below have no output class for this second group, which is important when interpreting the per-category results later on.
 
-Wherever a number from one corpus sits next to a number from the other in this
-post, treat them as two independent samples, not a controlled comparison.
-
-We only target the English language in this post. mmBERT and OpenMed-multilingual are both multilingual-capable models, but **nothing in this post measures a multilingual advantage** — we simply didn't test one.
-
-The corpus carries 55 distinct gold labels, roughly 35 direct identifiers (SSNs,
-emails, phone numbers, account numbers) plus about 12 quasi-identifiers and
-sensitive attributes: gender, race, sexuality, religion, political affiliation,
-education, employment, age, language, blood type, occupation, biometric
-descriptors. **Most of the detector models below have no output class at all
-for that second group**, which matters a lot for the per-category results
-further down.
-
-All 55 gold labels appear in the 20k corpus, and coverage is heavily skewed: the top 6 labels (name/date/email/URL/company) each show up in a quarter to nearly half of all documents, while the bottom dozen — device IDs, national IDs, tax IDs — appear in under 2% of documents each.
+All 55 gold labels are represented in the 20k-sentence corpus, but their coverage is highly skewed. The top six labels (name, date, email, URL, company, etc.) each appear in roughly a quarter to nearly half of all documents, while the bottom dozen including device IDs, national IDs, and tax IDs appear in fewer than 2% of documents each.
 
 | Label | Group | Docs containing (of 20,000) | % of corpus |
 | --- | --- | --- | --- |
@@ -178,10 +144,7 @@ All 55 gold labels appear in the 20k corpus, and coverage is heavily skewed: the
 
 (Counts are documents containing at least one span of that label — most documents carry several labels at once, so columns don't sum to 20,000.)
 
-Documents are short: p50 ~744 characters, p99 ~3,259, max 7,191 characters
-(1,737 tokens). Zero documents truncate for any model in this comparison, so the
-32k/128k/4k context-window spread between mmBERT, OpenMed, and pplx could not
-have been what separated their results. The longest document is 42% of pplx's 4,096-token cap, so the mmBERT-32k / OpenMed-128k / pplx-4k comparison is apples-to-apples here: none of them ever gets to use context past ~1.7k tokens.
+Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 characters, and the maximum is 7,191 characters (1,737 tokens). No document is truncated for any model in this comparison, so differences in context-window size cannot explain the differences in benchmark results.
 
 The axis worth paying attention to isn't parameter count or raw accuracy - it's
 **label-space coverage**. `pplx-pii-masking` expresses 9 categories total and
@@ -194,14 +157,6 @@ needs to fire. Keep that in mind for the results below — it's the reason the
 document-level leak table looks so flat across very differently-shaped models,
 and it's why we eventually turn to character-level scoring to actually
 discriminate between them.
-
-**One concession we want to make plainly, up front, rather than bury in a limitations section at the end:** a scan of all 30,000 test rows across both corpora found **zero** documents with no PII at all. Nemotron-PII is a pure-positive generation dataset. The consequences are blunt:
-
-- Document-level precision, false-positive rate, and F-beta are **statistically empty** for every model in this post — there's no denominator.
-- A model that flagged every single document, with zero discrimination, would score identically to a genuinely precise one on every document-level metric reported here.
-- Only recall / leak rate carries real information at the document level (and since recall = 1 − leak rate exactly on a pure-positive corpus, the two numbers are redundant — which is also why the tables below report leak rate alone rather than both).
-
-We'll partially repair this with character-level precision later (an over-tagging model does get penalized there, because it starts marking characters inside documents that *are* positive but where it's wrong about *which* characters). But that's bounded by how PII-dense the corpus is, not a true measure of false-positive behavior on benign traffic — and building an actual benign arm remains the single biggest gap in what's measured here.
 
 ---
 
