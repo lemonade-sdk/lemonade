@@ -7,6 +7,7 @@ from utils.server_base import (
     ServerTestBase,
     pull_model_with_retry,
     run_server_tests,
+    server_config,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -31,7 +32,6 @@ class EvictionTests(ServerTestBase):
     """Tests for dynamic VRAM eviction engine."""
 
     _model_pulled = False
-    _runtime_config_before_suite = None
     _model2_pulled = False
     # Reuse the small LRU test model that server_endpoints.py already pulls in
     # the same hosted-Linux job instead of downloading/loading Phi-4-mini here.
@@ -46,23 +46,9 @@ class EvictionTests(ServerTestBase):
     def setUpClass(cls):
         super().setUpClass()
 
-        response = requests.get(
-            f"http://localhost:{PORT}/internal/config",
-            headers=cls._admin_headers(),
-            timeout=TIMEOUT_DEFAULT,
+        cls.enter_class_context(
+            server_config("auto_evict", "auto_evict_threshold_pct", "max_loaded_models")
         )
-        response.raise_for_status()
-        config = response.json()
-        cls._runtime_config_before_suite = {
-            key: config[key]
-            for key in (
-                "auto_evict",
-                "auto_evict_threshold_pct",
-                "max_loaded_models",
-            )
-            if key in config
-        }
-        cls.addClassCleanup(cls._restore_runtime_state)
 
         models_response = requests.get(
             f"http://localhost:{PORT}/api/v1/models",
@@ -94,26 +80,6 @@ class EvictionTests(ServerTestBase):
                 print(f"\n[SETUP] Ensuring {cls.MODEL2} is pulled...")
                 pull_model_with_retry(cls.MODEL2)
             cls._model2_pulled = True
-
-    @classmethod
-    def _restore_runtime_state(cls):
-        headers = cls._admin_headers()
-
-        requests.post(
-            f"http://localhost:{PORT}/api/v1/unload",
-            json={},
-            headers=headers,
-            timeout=TIMEOUT_DEFAULT,
-        )
-
-        if cls._runtime_config_before_suite:
-            response = requests.post(
-                f"http://localhost:{PORT}/internal/set",
-                json=cls._runtime_config_before_suite,
-                headers=headers,
-                timeout=TIMEOUT_DEFAULT,
-            )
-            response.raise_for_status()
 
     def setUp(self):
         super().setUp()
