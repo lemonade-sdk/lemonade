@@ -283,8 +283,6 @@ class TelemetryTestBase(ServerTestBase):
     def setUpClass(cls):
         super().setUpClass()
 
-        # /internal/set persists to config.json, so the pre-test telemetry
-        # settings have to be captured and restored rather than just disabled.
         cls.enter_class_context(server_config("telemetry"))
 
         cls.mock_port = find_free_port()

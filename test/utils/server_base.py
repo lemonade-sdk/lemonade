@@ -228,17 +228,10 @@ def get_model_options(model_name, port=PORT):
 
 @contextlib.contextmanager
 def server_config(*restore_keys, port=PORT, **settings):
-    """Apply runtime server settings for the duration of the block.
+    """Apply runtime server settings for the block, then restore them.
 
-    Snapshots the current value of every top-level key named in `restore_keys`
-    or `settings` from /internal/config, applies `settings`, and on exit unloads
-    all models and restores the snapshot. Nested settings such as
-    `telemetry={"enabled": False}` snapshot and restore the whole top-level
-    object. Several suites share one long-lived server, so a test that needs a
-    setting must set it itself and must not leave it behind.
-
-    Pass bare key names to snapshot and restore without changing anything now,
-    for suites whose tests each write the setting themselves.
+    Snapshots and restores whole top-level keys, so nested settings restore the
+    entire parent object. Bare key names snapshot without changing anything.
     """
     response = requests.get(
         f"http://localhost:{port}/internal/config",
@@ -593,7 +586,7 @@ class ServerTestBase(unittest.TestCase):
 
     @classmethod
     def enter_class_context(cls, context_manager):
-        """Enter a context manager for the life of the class (unittest 3.11+ has enterClassContext; CI runs 3.10)."""
+        """Backport of unittest's enterClassContext, which needs Python 3.11."""
         result = context_manager.__enter__()
         cls.addClassCleanup(context_manager.__exit__, None, None, None)
         return result
