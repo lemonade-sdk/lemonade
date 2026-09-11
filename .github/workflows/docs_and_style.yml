@@ -9,8 +9,43 @@ permissions:
   contents: read
 
 jobs:
+  classify-small-docs-pr:
+    name: Classify small docs PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/classify-small-docs-pr
+      - name: Classify changed files
+        id: classify
+        uses: ./.github/actions/classify-small-docs-pr
+        with:
+          max-files: "5"
+          # This document is generated from backend descriptors. An edit to it
+          # must still build lemond and verify that the generated copy matches.
+          force-full-ci-paths: docs/dev/backends-reference.md
+
+  full-ci-gate:
+    name: Full CI gate
+    needs: classify-small-docs-pr
+    if: >-
+      !cancelled() &&
+      (needs.classify-small-docs-pr.result != 'success' ||
+       needs.classify-small-docs-pr.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ needs.classify-small-docs-pr.outputs.reason }}"
+
 
   app-regression-tests:
+    needs: full-ci-gate
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-app-regression-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
@@ -33,6 +68,7 @@ jobs:
         run: node test/app/run-app-regression-tests.cjs
 
   backend-docs-drift:
+    needs: full-ci-gate
     # The backend reference doc (docs/dev/backends-reference.md) is generated from
     # the self-describing backend descriptors. Build lemond, regenerate, and fail
     # if the committed doc is stale — the same guarantee a lint provides.
