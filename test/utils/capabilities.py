@@ -135,7 +135,7 @@ CAPABILITIES = {
                 "static_max_context_window": True,
             },
             "test_models": {
-                "llm": "llama3.2-1b-FLM",
+                "llm": "gemma4-it-e2b-FLM",
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
