@@ -1,0 +1,261 @@
+{
+  "version": "1",
+  "model_name": "user.DevAssist-Router",
+  "recipe": "collection.router",
+  "components": [
+    "Qwen3.5-2B-GGUF",
+    "Qwen3.5-9B-GGUF",
+    "fireworks.kimi-k2p6",
+    "user.pplx-pii-masking-onnx"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-2B-GGUF",
+      "Qwen3.5-9B-GGUF",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "Qwen3.5-2B-GGUF",
+    "classifiers": [
+      {
+        "id": "secrets-pplx",
+        "type": "classifier",
+        "model": "user.pplx-pii-masking-onnx",
+        "labels": [
+          "O",
+          "B-private_person",
+          "I-private_person",
+          "E-private_person",
+          "S-private_person",
+          "B-private_email",
+          "I-private_email",
+          "E-private_email",
+          "S-private_email",
+          "B-private_phone",
+          "I-private_phone",
+          "E-private_phone",
+          "S-private_phone",
+          "B-private_address",
+          "I-private_address",
+          "E-private_address",
+          "S-private_address",
+          "B-private_url",
+          "I-private_url",
+          "E-private_url",
+          "S-private_url",
+          "B-private_date",
+          "I-private_date",
+          "E-private_date",
+          "S-private_date",
+          "B-account_number",
+          "I-account_number",
+          "E-account_number",
+          "S-account_number",
+          "B-secret",
+          "I-secret",
+          "E-secret",
+          "S-secret",
+          "B-other_pii",
+          "I-other_pii",
+          "E-other_pii",
+          "S-other_pii"
+        ],
+        "on_error": "match_true"
+      },
+      {
+        "id": "task-shape",
+        "type": "llm",
+        "model": "Qwen3.5-2B-GGUF",
+        "prompt": "You assess the shape of a software engineering request.\n\nA request is ARCHITECTURE when it asks for system or API design, a multi-file or multi-service refactor, a migration plan, a performance or concurrency investigation across components, a security review, or a trade-off analysis between approaches.\n\nA request is ROUTINE when it asks about syntax, a single function or small snippet, the meaning of an error message, a regular expression, a shell one-liner, a library's basic usage, or a quick explanation of a concept.",
+        "labels": [
+          "ARCHITECTURE",
+          "ROUTINE"
+        ],
+        "default_label": "ROUTINE",
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "credential-regex-fastpath",
+        "match": {
+          "any": [
+            {
+              "regex": "\\bAKIA[0-9A-Z]{16}\\b"
+            },
+            {
+              "regex": "\\bgh[pousr]_[A-Za-z0-9]{36,}\\b"
+            },
+            {
+              "regex": "\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b"
+            },
+            {
+              "regex": "-----BEGIN [A-Z ]*PRIVATE KEY-----"
+            },
+            {
+              "regex": "\\beyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\b"
+            },
+            {
+              "regex": "(api[_-]?key|API[_-]?KEY|secret|SECRET|password|PASSWORD|token|TOKEN)\\s*[:=]\\s*['\"][^'\"]{8,}['\"]"
+            },
+            {
+              "regex": "\\b(10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}|192\\.168\\.\\d{1,3}\\.\\d{1,3}|172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3})\\b"
+            },
+            {
+              "regex": "\\b[a-z0-9.-]+\\.(internal|corp|intranet)\\b"
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "credential-or-internal-host",
+          "data_class": "secret"
+        }
+      },
+      {
+        "id": "secrets-onnx",
+        "match": {
+          "any": [
+            {
+              "classifier": "secrets-pplx",
+              "label": "B-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "I-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "E-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "S-private_person",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "B-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "I-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "E-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "S-private_email",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "B-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "I-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "E-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "S-private_url",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "B-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "I-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "E-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "S-account_number",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "B-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "I-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "E-secret",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "secrets-pplx",
+              "label": "S-secret",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "secret-or-identifier-detected",
+          "data_class": "secret",
+          "classifier": "onnx"
+        }
+      },
+      {
+        "id": "agentic-or-whole-file",
+        "match": {
+          "any": [
+            {
+              "has_tools": true
+            },
+            {
+              "min_chars": 12000
+            }
+          ]
+        },
+        "route_to": "fireworks.kimi-k2p6",
+        "outputs": {
+          "reason": "agentic-session-or-large-paste",
+          "tier": "cloud"
+        }
+      },
+      {
+        "id": "architecture-llm",
+        "match": {
+          "classifier": "task-shape",
+          "label": "ARCHITECTURE",
+          "min_score": 0.5
+        },
+        "route_to": "fireworks.kimi-k2p6",
+        "outputs": {
+          "reason": "llm-judged-architecture",
+          "tier": "cloud",
+          "classifier": "llm"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,736 @@
+{
+  "version": "1",
+  "model_name": "user.WealthAdvisor-Router",
+  "recipe": "collection.router",
+  "components": [
+    "Qwen3.5-9B-GGUF",
+    "fireworks.kimi-k2p6",
+    "user.privacy-filter-ml-v2-onnx",
+    "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-9B-GGUF",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pf-v2",
+        "type": "classifier",
+        "model": "user.privacy-filter-ml-v2-onnx",
+        "labels": [
+          "O",
+          "B-ACCOUNTNAME",
+          "I-ACCOUNTNAME",
+          "E-ACCOUNTNAME",
+          "S-ACCOUNTNAME",
+          "B-AGE",
+          "I-AGE",
+          "E-AGE",
+          "S-AGE",
+          "B-AMOUNT",
+          "I-AMOUNT",
+          "E-AMOUNT",
+          "S-AMOUNT",
+          "B-BANKACCOUNT",
+          "I-BANKACCOUNT",
+          "E-BANKACCOUNT",
+          "S-BANKACCOUNT",
+          "B-BIC",
+          "I-BIC",
+          "E-BIC",
+          "S-BIC",
+          "B-BITCOINADDRESS",
+          "I-BITCOINADDRESS",
+          "E-BITCOINADDRESS",
+          "S-BITCOINADDRESS",
+          "B-BUILDINGNUMBER",
+          "I-BUILDINGNUMBER",
+          "E-BUILDINGNUMBER",
+          "S-BUILDINGNUMBER",
+          "B-CITY",
+          "I-CITY",
+          "E-CITY",
+          "S-CITY",
+          "B-COUNTY",
+          "I-COUNTY",
+          "E-COUNTY",
+          "S-COUNTY",
+          "B-CREDITCARD",
+          "I-CREDITCARD",
+          "E-CREDITCARD",
+          "S-CREDITCARD",
+          "B-CREDITCARDISSUER",
+          "I-CREDITCARDISSUER",
+          "E-CREDITCARDISSUER",
+          "S-CREDITCARDISSUER",
+          "B-CURRENCY",
+          "I-CURRENCY",
+          "E-CURRENCY",
+          "S-CURRENCY",
+          "B-CURRENCYCODE",
+          "I-CURRENCYCODE",
+          "E-CURRENCYCODE",
+          "S-CURRENCYCODE",
+          "B-CURRENCYNAME",
+          "I-CURRENCYNAME",
+          "E-CURRENCYNAME",
+          "S-CURRENCYNAME",
+          "B-CURRENCYSYMBOL",
+          "I-CURRENCYSYMBOL",
+          "E-CURRENCYSYMBOL",
+          "S-CURRENCYSYMBOL",
+          "B-CVV",
+          "I-CVV",
+          "E-CVV",
+          "S-CVV",
+          "B-DATE",
+          "I-DATE",
+          "E-DATE",
+          "S-DATE",
+          "B-DATEOFBIRTH",
+          "I-DATEOFBIRTH",
+          "E-DATEOFBIRTH",
+          "S-DATEOFBIRTH",
+          "B-EMAIL",
+          "I-EMAIL",
+          "E-EMAIL",
+          "S-EMAIL",
+          "B-ETHEREUMADDRESS",
+          "I-ETHEREUMADDRESS",
+          "E-ETHEREUMADDRESS",
+          "S-ETHEREUMADDRESS",
+          "B-EYECOLOR",
+          "I-EYECOLOR",
+          "E-EYECOLOR",
+          "S-EYECOLOR",
+          "B-FIRSTNAME",
+          "I-FIRSTNAME",
+          "E-FIRSTNAME",
+          "S-FIRSTNAME",
+          "B-GENDER",
+          "I-GENDER",
+          "E-GENDER",
+          "S-GENDER",
+          "B-GPSCOORDINATES",
+          "I-GPSCOORDINATES",
+          "E-GPSCOORDINATES",
+          "S-GPSCOORDINATES",
+          "B-HEIGHT",
+          "I-HEIGHT",
+          "E-HEIGHT",
+          "S-HEIGHT",
+          "B-IBAN",
+          "I-IBAN",
+          "E-IBAN",
+          "S-IBAN",
+          "B-IMEI",
+          "I-IMEI",
+          "E-IMEI",
+          "S-IMEI",
+          "B-IPADDRESS",
+          "I-IPADDRESS",
+          "E-IPADDRESS",
+          "S-IPADDRESS",
+          "B-JOBDEPARTMENT",
+          "I-JOBDEPARTMENT",
+          "E-JOBDEPARTMENT",
+          "S-JOBDEPARTMENT",
+          "B-JOBTITLE",
+          "I-JOBTITLE",
+          "E-JOBTITLE",
+          "S-JOBTITLE",
+          "B-LASTNAME",
+          "I-LASTNAME",
+          "E-LASTNAME",
+          "S-LASTNAME",
+          "B-LITECOINADDRESS",
+          "I-LITECOINADDRESS",
+          "E-LITECOINADDRESS",
+          "S-LITECOINADDRESS",
+          "B-MACADDRESS",
+          "I-MACADDRESS",
+          "E-MACADDRESS",
+          "S-MACADDRESS",
+          "B-MASKEDNUMBER",
+          "I-MASKEDNUMBER",
+          "E-MASKEDNUMBER",
+          "S-MASKEDNUMBER",
+          "B-MIDDLENAME",
+          "I-MIDDLENAME",
+          "E-MIDDLENAME",
+          "S-MIDDLENAME",
+          "B-OCCUPATION",
+          "I-OCCUPATION",
+          "E-OCCUPATION",
+          "S-OCCUPATION",
+          "B-ORDINALDIRECTION",
+          "I-ORDINALDIRECTION",
+          "E-ORDINALDIRECTION",
+          "S-ORDINALDIRECTION",
+          "B-ORGANIZATION",
+          "I-ORGANIZATION",
+          "E-ORGANIZATION",
+          "S-ORGANIZATION",
+          "B-PASSWORD",
+          "I-PASSWORD",
+          "E-PASSWORD",
+          "S-PASSWORD",
+          "B-PHONE",
+          "I-PHONE",
+          "E-PHONE",
+          "S-PHONE",
+          "B-PIN",
+          "I-PIN",
+          "E-PIN",
+          "S-PIN",
+          "B-PREFIX",
+          "I-PREFIX",
+          "E-PREFIX",
+          "S-PREFIX",
+          "B-SECONDARYADDRESS",
+          "I-SECONDARYADDRESS",
+          "E-SECONDARYADDRESS",
+          "S-SECONDARYADDRESS",
+          "B-SEX",
+          "I-SEX",
+          "E-SEX",
+          "S-SEX",
+          "B-SSN",
+          "I-SSN",
+          "E-SSN",
+          "S-SSN",
+          "B-STATE",
+          "I-STATE",
+          "E-STATE",
+          "S-STATE",
+          "B-STREET",
+          "I-STREET",
+          "E-STREET",
+          "S-STREET",
+          "B-TIME",
+          "I-TIME",
+          "E-TIME",
+          "S-TIME",
+          "B-URL",
+          "I-URL",
+          "E-URL",
+          "S-URL",
+          "B-USERAGENT",
+          "I-USERAGENT",
+          "E-USERAGENT",
+          "S-USERAGENT",
+          "B-USERNAME",
+          "I-USERNAME",
+          "E-USERNAME",
+          "S-USERNAME",
+          "B-VIN",
+          "I-VIN",
+          "E-VIN",
+          "S-VIN",
+          "B-VRM",
+          "I-VRM",
+          "E-VRM",
+          "S-VRM",
+          "B-ZIPCODE",
+          "I-ZIPCODE",
+          "E-ZIPCODE",
+          "S-ZIPCODE"
+        ],
+        "on_error": "match_true"
+      },
+      {
+        "id": "advisor-intent",
+        "type": "semantic_similarity",
+        "model": "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0",
+        "reference_phrases": {
+          "client-account-ops": [
+            "move 10% of this client's portfolio from equities into bonds",
+            "draft the quarterly review letter for the Hendersons",
+            "why did the wire transfer to her brokerage account bounce",
+            "summarize this client's KYC file before tomorrow's meeting",
+            "what's the unrealized gain on his Vanguard position",
+            "schedule the RMD withdrawal for this account"
+          ],
+          "market-research": [
+            "what is the outlook for European bank stocks this quarter",
+            "explain how the yield curve inversion affects duration risk",
+            "compare the expense ratios of broad-market index ETFs",
+            "summarize the Fed's latest rate decision",
+            "what are the tax rules for a backdoor Roth conversion"
+          ]
+        },
+        "default_label": "market-research",
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "structured-identifier-regex",
+        "match": {
+          "any": [
+            {
+              "regex": "\\b[A-Z]{2}\\d{2}[A-Z0-9]{11,30}\\b"
+            },
+            {
+              "regex": "\\b4\\d{3}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b"
+            },
+            {
+              "regex": "\\b5[1-5]\\d{2}[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{4}\\b"
+            },
+            {
+              "regex": "\\b3[47]\\d{2}[ -]?\\d{6}[ -]?\\d{5}\\b"
+            },
+            {
+              "regex": "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "structured-financial-identifier",
+          "data_class": "sensitive"
+        }
+      },
+      {
+        "id": "client-pii-onnx",
+        "match": {
+          "any": [
+            {
+              "classifier": "pf-v2",
+              "label": "B-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-ACCOUNTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-BIC",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-BITCOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-CREDITCARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-CVV",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-ETHEREUMADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-LITECOINADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-PASSWORD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-PIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-USERNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-USERNAME",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "client-pii-detected",
+          "data_class": "sensitive",
+          "classifier": "onnx"
+        }
+      },
+      {
+        "id": "client-account-ops",
+        "match": {
+          "classifier": "advisor-intent",
+          "label": "client-account-ops",
+          "min_score": 0.6
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "client-specific-request",
+          "data_class": "sensitive",
+          "classifier": "semantic_similarity"
+        }
+      },
+      {
+        "id": "pasted-statements",
+        "match": {
+          "min_chars": 6000
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "bulk-document-paste",
+          "tier": "local"
+        }
+      }
+    ]
+  }
+}

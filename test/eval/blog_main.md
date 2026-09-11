@@ -153,9 +153,9 @@ Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 char
 | Baseline | Leak rate | Per prompt |
 | --- | --- | --- |
 | Regex | 18.7% (467/2,500)* | <1 ms |
-| embeddinggemma-300m  | 95% (19,000 / 20,000) | ~1.5 s |
-| Qwen3-Embedding-0.6B | 95% (19,000 / 20,000) | ~3.0 s |
-| Qwen3-Embedding-4B | 90% (18,000 / 20,000) | ~20 s |
+| embeddinggemma-300m  | 5% (1,000 / 20,000)** | ~1.5 s |
+| Qwen3-Embedding-0.6B | 15% (3,000 / 20,000)** | ~3.0 s |
+| Qwen3-Embedding-4B | 20% (4,000 / 20,000)** | ~20 s |
 | LLM Qwen3.5-9B | 1.10% (220 / 20,000) | ~8.8 s |
 | LLM Qwen3.5-2B | 0.97% (194 / 20,000) | ~4.2 s |
 | LLM Qwen3.5-0.8B | 1.41% (282 / 20,000) | ~3.2 s |
@@ -163,11 +163,13 @@ Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 char
 
 * Regex is limited to a selected set of keywords with fixed patterns, such as SSNs, email addresses, card numbers, IP addresses, etc. Therefore, we limited the regex benchmark to 2,500 records.
 
+** At `min_score: 0.30`, the best threshold we found. The leak rate is misleading on its own; see the semantic similarity section for what the same threshold does to documents with no PII.
+
 Per-prompt times are end to end: the router makes its decision and the routed model answers, in one round trip. Classification alone is much cheaper, and we come back to that below.
 
 ### Semantic similarity is the wrong tool for this job
 
-The embedding rows are the worst-performing results in this post. The `semantic_similarity` classifier embeds the incoming prompt, embeds a small set of reference sentences for each class, and takes the highest cosine similarity per class; if the PII score clears `min_score`, the request stays local.
+The `semantic_similarity` classifier embeds the incoming prompt, embeds a small set of reference sentences for each class, and takes the highest cosine similarity per class; if the PII score clears `min_score`, the request stays local. On paper this should work well for a corpus this homogeneous, and at the right threshold the leak rate looks respectable. The problem only shows up once you also score documents that contain no PII, which is something this experiment did and the others in this post did not.
 
 The reference set is built to look like the corpus itself. Eight phrases per class, each shaped like a real document, each PII phrase covering a different cluster of the 24 canonical categories (identity and government IDs, medical, financial, employment, contact details, credentials and network identifiers, demographic attributes, vehicles and locations). The non-PII side has four document-shaped phrases with no identifiers, using the most common document types in the corpus, plus four ordinary assistant requests:
 
@@ -196,7 +198,7 @@ The reference set is built to look like the corpus itself. Eight phrases per cla
 }
 ```
 
-We experimented with multiple `min_score` thresholds across the same 20,000 documents, and 0.30 gave the best leak rate:
+We swept `min_score` across the same 20,000 documents:
 
 | Model | leak at 0.30 | at 0.35 | at 0.40 | at 0.50 |
 | --- | --- | --- | --- | --- |
@@ -204,11 +206,13 @@ We experimented with multiple `min_score` thresholds across the same 20,000 docu
 | Qwen3-Embedding-0.6B | 15% | 30% | 50% | 95% |
 | Qwen3-Embedding-4B | 20% | 30% | 55% | 90% |
 
-We tried thresholds across this range and landed on 0.30, which gives the best leak rate of the group: 5% on embeddinggemma, 15% on the 0.6B model, and 20% on the 4B.
+Read on its own, 0.30 looks like the answer: 5% on embeddinggemma, 15% on the 0.6B model, 20% on the 4B, better than regex and not far behind the LLM routers. That is the number in the summary table above.
 
-Even at that best operating point, the approach is unreliable, and the reason is structural. Cosine similarity between a document and a reference phrase measures what the document is about, not whether it contains an identifier. A benign ballot measure summary and a voter registration form carrying someone's SSN are both about elections, and they land within a few hundredths of each other in embedding space. That is also why a 300M-parameter model and a 4B-parameter model fail at nearly the same rate: it isn't a capacity problem that a bigger model fixes, and it isn't a coverage problem that a better reference set fixes. It's the wrong signal.
+But leak rate only counts documents that should have stayed local. The corpus has no benign documents, so it can't say what the same threshold does to traffic that should go to the cloud. For this classifier we wrote a handful of benign documents shaped like the corpus (a quarterly performance report, an application setup guide, a ballot measure summary, a contract amendment) and scored those too. At 0.35, one of them on embeddinggemma crosses the line and gets routed local. At 0.30, about half of them do, on every model. The low leak rate at 0.30 is mostly the classifier keeping everything local, not the classifier telling the two groups apart. There is no threshold that separates them cleanly: the PII documents and the benign ones overlap in a band from roughly 0.30 to 0.40 on all three models.
 
-The embedding step itself is cheap (about 32 ms per document for embeddinggemma, 63 ms for the 0.6B model, and 264 ms for the 4B, on CPU; the seconds in the table above are the routed model answering). But cheap and wrong is still wrong. We left the classifier in the comparison as a baseline and moved on.
+None of the other experiments in this post had a benign arm (see Limitations), so this is the only place we can show that directly. It is worth being clear that it's a property of the signal rather than a quirk of the setup. Cosine similarity between a document and a reference phrase measures what the document is about, not whether it contains an identifier. A benign ballot measure summary and a voter registration form carrying someone's SSN are both about elections, and they land within a few hundredths of each other in embedding space. That is also why a 300M-parameter model and a 4B-parameter model fail at nearly the same rate: it isn't a capacity problem that a bigger model fixes, and it isn't a coverage problem that a better reference set fixes. It's the wrong signal.
+
+The embedding step itself is cheap (about 32 ms per document for embeddinggemma, 63 ms for the 0.6B model, and 264 ms for the 4B, on CPU; the seconds in the table above are the routed model answering). But cheap and unable to separate the two groups is still unusable as a gate. We left the classifier in the comparison as a baseline and moved on.
 
 ### LLMs as the router: good at every size, slow at every size
 
@@ -425,11 +429,11 @@ What we still don't have is a clean p50/p95 *inline* latency measurement broken 
 
 Most of what belongs here has already been conceded in the body of the post rather than saved for the end, but to have it all in one place:
 
-- **The missing benign arm is still the load-bearing gap.** Character precision narrows it a little (an over-tagging model is now penalized on positive documents), but it's bounded by PII density in the corpus, not a true false-positive rate, and it says nothing about how any of these models behave on genuinely benign traffic. Building a real negative arm (Nemotron documents with every PII span swapped for generic non-identifying text, so ground truth is PII-free by construction) is the highest-value thing left to do here.
+- **The missing benign arm is still the load-bearing gap.** Character precision narrows it a little (an over-tagging model is now penalized on positive documents), but it's bounded by PII density in the corpus, not a true false-positive rate, and it says nothing about how any of these models behave on genuinely benign traffic. The one exception is the embedding sweep, where a handful of hand-written benign documents was enough to expose the overlap; nothing comparable exists yet for the ONNX detectors or the LLM routers. Building a real negative arm (Nemotron documents with every PII span swapped for generic non-identifying text, so ground truth is PII-free by construction) is the highest-value thing left to do here.
 - **Character F1 covers three models, not eight.** The LLM routers and embedding classifiers emit a decision, never a span; they're document-level *by construction*, not by an oversight. GLiNER, OpenMed v1, OpenAI/privacy-filter, and mmBERT-safetensors simply haven't had this run yet.
 - **The category-mapping taxonomy behind the lenient/strict tables is editorial judgment, and it should be reviewed rather than assumed.** Two mappings were wrong on a first pass during this work, and one produced a fabricated "0.2% biometric failure" for OpenMed that turned out to be a bad mapping, not a model failure. Character-level per-label recall needs none of this mapping, which is part of why it's the more trustworthy diagnostic.
 - **The GLiNER numbers throughout this post are a calibration reference, not a competing result**: it was handed the gold label vocabulary at inference time.
-- **The embedding pilot is n=20, zero benign, and not re-run at scale.** The 500-prompt table above is an explicit illustration of a measured percentage, not a new experiment; it should be treated as a hypothesis to re-run with a larger, dataset-informed reference set, not a settled number.
+- **The embedding benign check is a handful of hand-written documents, not a negative arm.** It was enough to show that PII and benign documents overlap in score, but the leak and over-routing numbers at each threshold should be re-run against a real benign corpus before being treated as settled.
 - **No language field exists in this corpus.** Every claim in this post is English-only; nothing here measures a multilingual advantage for the multilingual-capable models.
 - **The per-prompt, per-backend latency picture is incomplete.** We have solid batch-classification timings (above); we don't yet have p50/p95 under concurrent load, broken out by CPU/GPU/NPU.
 
@@ -441,6 +445,54 @@ Most of what belongs here has already been conceded in the body of the post rath
 
 **Match the decision rule to the job, not just the model to the job.** The router's `min_score` gate doesn't reproduce each model's own decoder: it costs mmBERT character recall while barely moving its document leak rate, and it recovers recall for pplx relative to that model's own stricter Viterbi decode. **Route with the loose rule, mask with the strict one**: most write-ups about this kind of gate never separate those two jobs, and the gap between them is where most of the surprising results in this post came from.
 
-**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** The size paradox and the justification-rate gap say an LLM router's failures are hard to predict from model size alone, and its per-prompt cost is seconds, not milliseconds. The embedding classifier's 90-100% leak rate on twelve hand-picked reference sentences says that approach needs real investment in the reference set (sampled from and validated against the actual traffic distribution) before it's usable at all. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
+**Don't reach for an LLM judge or an embedding-similarity gate as the production path.** The size paradox and the justification-rate gap say an LLM router's failures are hard to predict from model size alone, and its per-prompt cost is seconds, not milliseconds. The embedding classifier's 5% leak rate at `min_score: 0.30` looks fine until you score benign documents at the same threshold and watch half of them get routed local too; no threshold separates the two groups, because cosine similarity measures topic, not the presence of an identifier. Both are useful as baselines and ceiling-finders; neither is what we'd wire into a live gate today.
 
 And say plainly what's still missing rather than imply it's solved: an over-routing number, and a per-prompt, per-backend latency figure under concurrent load. Both are next.
+
+---
+
+## Four routers you could ship tomorrow
+
+The PII gate above is one rule in a policy that can hold several. Everything measured in this post, an ONNX detector for identifiers, a regex fast-path for structured tokens, an embedding classifier for *topic*, and a small local LLM as a judge for the fuzzy residual, composes inside a single `collection.router` policy, and the interesting deployments use more than one of them at once. Below are four worked policies, one per industry, each authored with the `lemonade-router-builder` skill and passed through its offline validator. All four are committed under `test/eval/use_cases/` and register with a single `POST /api/v1/pull`. The recurring pattern: cheap deterministic rules first, the ONNX detector second, model-backed judgment last, and the cloud model as `default_model` only where the residual traffic is genuinely public.
+
+**1. Private-banking advisor copilot (`finance_wealth_advisor.json`).** Advisors ask two very different kinds of questions in the same chat window: "what's the outlook for European banks" and "move 10% of the Hendersons' portfolio into bonds." The policy sends the first kind to `fireworks.kimi-k2p6` by default and fences the second three ways: a regex fast-path for IBANs, card numbers and SSNs; then OpenMed privacy-filter-ml-v2 on a 20-category financial-and-identity subset (`BANKACCOUNT`, `IBAN`, `BIC`, `CVV`, `PIN`, three crypto-address types, names, DOB, credentials); then an `embeddinggemma-300m` semantic classifier for *client-account-ops* that catches "summarize this client's KYC file" even when no identifier survives detection, all routed to a local `Qwen3.5-9B-GGUF`. The embedding step is used here for what the sweep earlier showed it is actually good at, topic, not identifier presence. The detector runs `on_error: match_true`: for a bank, "couldn't check" means stay local.
+
+```text
+structured-identifier-regex  IBAN | Visa/MC/Amex | SSN                    -> Qwen3.5-9B-GGUF
+client-pii-onnx              privacy-filter-ml-v2, 80 BIOES leaves        -> Qwen3.5-9B-GGUF
+client-account-ops           embeddinggemma, min_score 0.6                -> Qwen3.5-9B-GGUF
+pasted-statements            min_chars 6000                               -> Qwen3.5-9B-GGUF
+default                      market research, product explainers          -> fireworks.kimi-k2p6
+```
+
+**2. Litigation-desk assistant (`legal_litigation_desk.json`).** Legal traffic breaks the naive "any PERSON or ORGANIZATION -> local" rule, because published case law is *made of* party names; fencing on those would route every citation lookup local. So this policy deliberately runs mmBERT32K-PII (86 ms, and a 32k-token window that fits a whole filing) only on the contact-and-identity labels (`STREET_ADDRESS`, `PHONE_NUMBER`, `EMAIL_ADDRESS`, `US_SSN`, `US_DRIVER_LICENSE`, `IBAN_CODE`, `IP_ADDRESS`, ...), and hands the "is this about a live matter" question to a local `Qwen3.5-2B-GGUF` acting as a PRIVILEGED/PUBLIC judge with `default_label: PRIVILEGED` and `on_error: match_true`, so a judge failure fails closed. A `metadata` rule lets the document-management system pre-tag a request with `matter_status: under-seal` and short-circuit everything else, and anything over 20,000 characters or carrying DMS tools (discovery dumps) stays on the local 9B regardless. Public statutory research and boilerplate drafting fall through to the cloud.
+
+```text
+matter-flagged-privileged    metadata matter_status in {privileged, under-seal, protective-order}  -> Qwen3.5-9B-GGUF
+contact-and-identity-onnx    mmBERT32K-PII, 18 BIO leaves (no PERSON/ORG)                         -> Qwen3.5-9B-GGUF
+privileged-strategy-llm      Qwen3.5-2B judge, PRIVILEGED                                          -> Qwen3.5-9B-GGUF
+bulk-discovery               min_chars 20000 | has_tools                                           -> Qwen3.5-9B-GGUF
+default                      statutes, published case law, citation format                        -> fireworks.kimi-k2p6
+```
+
+**3. Internal engineering assistant (`coding_dev_assistant.json`).** Developers paste whatever is in their clipboard, and what is in a developer's clipboard is frequently a credential. This is the one policy with three tiers: a regex fast-path for AWS/GitHub/Slack token shapes, PEM private-key headers, JWTs, `key = "..."` assignments, RFC 1918 addresses and `.internal`/`.corp` hostnames, followed by pplx-pii-masking on its `secret`, `private_url`, `account_number`, `private_email` and `private_person` labels (the model was trained on web text, where secrets and internal URLs are exactly the noise it learned to mask), both routing to a local `Qwen3.5-9B-GGUF` that is still competent enough to fix the code it just kept in-house. Agentic sessions (`has_tools`) and whole-file pastes over 12,000 characters go to the cloud, and a local `Qwen3.5-2B-GGUF` acting as an ARCHITECTURE/ROUTINE judge escalates design and multi-service refactor questions there too. Everything else, syntax, error messages, one-liners, is answered by that same 2B as `default_model`: the bulk of a dev assistant's traffic never needs to leave the laptop or wait on a bigger model.
+
+```text
+credential-regex-fastpath    AKIA..., ghp_..., xoxb-..., PEM, JWT, key="...", 10.x/192.168.x, *.internal -> Qwen3.5-9B-GGUF
+secrets-onnx                 pplx-pii-masking, 20 BIOES leaves                                          -> Qwen3.5-9B-GGUF
+agentic-or-whole-file        has_tools | min_chars 12000                                                -> fireworks.kimi-k2p6
+architecture-llm             Qwen3.5-2B judge, ARCHITECTURE                                             -> fireworks.kimi-k2p6
+default                      syntax, error messages, one-liners                                         -> Qwen3.5-2B-GGUF
+```
+
+**4. Auto-insurance claims intake (`insurance_claims_intake.json`).** A first-notice-of-loss chatbot gets two audiences: prospective customers asking how deductibles work, and policyholders who were rear-ended an hour ago and are typing in whatever language they think in. The first rule is `has_images: true` -> local, because a photo of a crumpled bumper carries a license plate, a house number and often a face, and the image itself should never be uploaded to a third party. Then a VIN regex (17 characters, no I/O/Q) and a claim/policy-number pattern, then OpenMed privacy-filter-ml-v2, chosen here as much for its 16-language coverage as its F1, on a claims-shaped label subset that includes `VIN`, `VRM` (plates), `GPSCOORDINATES`, `IMEI` (telematics dongles), `AGE` and `HEIGHT` (injury descriptions) alongside the usual names, DOB and contact fields. A final `embeddinggemma-300m` *active-claim* rule keeps accident narratives local even when every identifier is missing ("a tree fell on my parked car last night"), while generic policy education falls through to the cloud on a fast `Qwen3.5-9B-NoThinking` / `fireworks.kimi-k2p6` split.
+
+```text
+damage-photos-stay-local     has_images                                   -> Qwen3.5-9B-NoThinking
+vin-or-claim-number-regex    17-char VIN | CLM-/POL-######                 -> Qwen3.5-9B-NoThinking
+claimant-pii-onnx            privacy-filter-ml-v2, 80 BIOES leaves        -> Qwen3.5-9B-NoThinking
+active-claim-semantic        embeddinggemma, min_score 0.6                -> Qwen3.5-9B-NoThinking
+default                      coverage explainers, how-deductibles-work    -> fireworks.kimi-k2p6
+```
+
+Two caveats carry over from the rest of the post. The `metadata` rule in the legal policy is honored by the server but not yet editable in the desktop Hybrid Router editor, so that policy is JSON-only for now. And none of the four has been through the 20,000-case harness: their ONNX rules inherit the leak-rate and character-F1 numbers above, but the semantic and LLM-judge rules inherit the caveats too, in particular the missing benign arm, which is why every one of them puts the model-backed judgment *after* the deterministic and ONNX rules rather than in front of them.

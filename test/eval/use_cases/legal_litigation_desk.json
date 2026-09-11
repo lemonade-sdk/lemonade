@@ -1,0 +1,230 @@
+{
+  "version": "1",
+  "model_name": "user.LitigationDesk-Router",
+  "recipe": "collection.router",
+  "components": [
+    "Qwen3.5-9B-GGUF",
+    "fireworks.kimi-k2p6",
+    "user.mmbert32k-pii-onnx",
+    "Qwen3.5-2B-GGUF"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-9B-GGUF",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pii-mmbert",
+        "type": "classifier",
+        "model": "user.mmbert32k-pii-onnx",
+        "labels": [
+          "O",
+          "B-AGE",
+          "I-AGE",
+          "B-CREDIT_CARD",
+          "I-CREDIT_CARD",
+          "B-DATE_TIME",
+          "I-DATE_TIME",
+          "B-DOMAIN_NAME",
+          "I-DOMAIN_NAME",
+          "B-EMAIL_ADDRESS",
+          "I-EMAIL_ADDRESS",
+          "B-GPE",
+          "I-GPE",
+          "B-IBAN_CODE",
+          "I-IBAN_CODE",
+          "B-IP_ADDRESS",
+          "I-IP_ADDRESS",
+          "B-NRP",
+          "I-NRP",
+          "B-ORGANIZATION",
+          "I-ORGANIZATION",
+          "B-PERSON",
+          "I-PERSON",
+          "B-PHONE_NUMBER",
+          "I-PHONE_NUMBER",
+          "B-STREET_ADDRESS",
+          "I-STREET_ADDRESS",
+          "B-TITLE",
+          "I-TITLE",
+          "B-US_DRIVER_LICENSE",
+          "I-US_DRIVER_LICENSE",
+          "B-US_SSN",
+          "I-US_SSN",
+          "B-ZIP_CODE",
+          "I-ZIP_CODE"
+        ],
+        "on_error": "match_true"
+      },
+      {
+        "id": "privilege-judge",
+        "type": "llm",
+        "model": "Qwen3.5-2B-GGUF",
+        "prompt": "You assess whether a request from a lawyer at a litigation firm touches privileged or confidential matter information.\n\nA request is PRIVILEGED when it involves attorney work product, litigation strategy, settlement positions or authority, internal assessments of a case's strengths and weaknesses, communications with or about a specific client, deposition or witness preparation, discovery material, or anything about an ongoing or anticipated matter the firm is handling.\n\nA request is PUBLIC when it concerns general legal research: statutes, published case law, citation formatting, jurisdictional rules, procedural deadlines in the abstract, or drafting boilerplate clauses with no client-specific facts.",
+        "labels": [
+          "PRIVILEGED",
+          "PUBLIC"
+        ],
+        "default_label": "PRIVILEGED",
+        "on_error": "match_true"
+      }
+    ],
+    "rules": [
+      {
+        "id": "matter-flagged-privileged",
+        "match": {
+          "metadata": {
+            "key": "matter_status",
+            "any": [
+              "privileged",
+              "under-seal",
+              "protective-order"
+            ]
+          }
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "matter-metadata",
+          "data_class": "privileged"
+        }
+      },
+      {
+        "id": "contact-and-identity-onnx",
+        "match": {
+          "any": [
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-CREDIT_CARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-CREDIT_CARD",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-EMAIL_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-EMAIL_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-IBAN_CODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-IBAN_CODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-IP_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-IP_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-PHONE_NUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-PHONE_NUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-STREET_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-STREET_ADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-US_DRIVER_LICENSE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-US_DRIVER_LICENSE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-US_SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-US_SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "B-ZIP_CODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pii-mmbert",
+              "label": "I-ZIP_CODE",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "identity-pii-detected",
+          "data_class": "confidential",
+          "classifier": "onnx"
+        }
+      },
+      {
+        "id": "privileged-strategy-llm",
+        "match": {
+          "classifier": "privilege-judge",
+          "label": "PRIVILEGED",
+          "min_score": 0.5
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "llm-judged-privileged",
+          "data_class": "privileged",
+          "classifier": "llm"
+        }
+      },
+      {
+        "id": "bulk-discovery",
+        "match": {
+          "any": [
+            {
+              "min_chars": 20000
+            },
+            {
+              "has_tools": true
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-GGUF",
+        "outputs": {
+          "reason": "discovery-volume-or-dms-tools",
+          "tier": "local"
+        }
+      }
+    ]
+  }
+}

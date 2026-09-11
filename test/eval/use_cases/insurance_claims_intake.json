@@ -1,0 +1,727 @@
+{
+  "version": "1",
+  "model_name": "user.ClaimsIntake-Router",
+  "recipe": "collection.router",
+  "components": [
+    "Qwen3.5-9B-NoThinking",
+    "fireworks.kimi-k2p6",
+    "user.privacy-filter-ml-v2-onnx",
+    "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0"
+  ],
+  "routing": {
+    "candidates": [
+      "Qwen3.5-9B-NoThinking",
+      "fireworks.kimi-k2p6"
+    ],
+    "default_model": "fireworks.kimi-k2p6",
+    "classifiers": [
+      {
+        "id": "pf-v2",
+        "type": "classifier",
+        "model": "user.privacy-filter-ml-v2-onnx",
+        "labels": [
+          "O",
+          "B-ACCOUNTNAME",
+          "I-ACCOUNTNAME",
+          "E-ACCOUNTNAME",
+          "S-ACCOUNTNAME",
+          "B-AGE",
+          "I-AGE",
+          "E-AGE",
+          "S-AGE",
+          "B-AMOUNT",
+          "I-AMOUNT",
+          "E-AMOUNT",
+          "S-AMOUNT",
+          "B-BANKACCOUNT",
+          "I-BANKACCOUNT",
+          "E-BANKACCOUNT",
+          "S-BANKACCOUNT",
+          "B-BIC",
+          "I-BIC",
+          "E-BIC",
+          "S-BIC",
+          "B-BITCOINADDRESS",
+          "I-BITCOINADDRESS",
+          "E-BITCOINADDRESS",
+          "S-BITCOINADDRESS",
+          "B-BUILDINGNUMBER",
+          "I-BUILDINGNUMBER",
+          "E-BUILDINGNUMBER",
+          "S-BUILDINGNUMBER",
+          "B-CITY",
+          "I-CITY",
+          "E-CITY",
+          "S-CITY",
+          "B-COUNTY",
+          "I-COUNTY",
+          "E-COUNTY",
+          "S-COUNTY",
+          "B-CREDITCARD",
+          "I-CREDITCARD",
+          "E-CREDITCARD",
+          "S-CREDITCARD",
+          "B-CREDITCARDISSUER",
+          "I-CREDITCARDISSUER",
+          "E-CREDITCARDISSUER",
+          "S-CREDITCARDISSUER",
+          "B-CURRENCY",
+          "I-CURRENCY",
+          "E-CURRENCY",
+          "S-CURRENCY",
+          "B-CURRENCYCODE",
+          "I-CURRENCYCODE",
+          "E-CURRENCYCODE",
+          "S-CURRENCYCODE",
+          "B-CURRENCYNAME",
+          "I-CURRENCYNAME",
+          "E-CURRENCYNAME",
+          "S-CURRENCYNAME",
+          "B-CURRENCYSYMBOL",
+          "I-CURRENCYSYMBOL",
+          "E-CURRENCYSYMBOL",
+          "S-CURRENCYSYMBOL",
+          "B-CVV",
+          "I-CVV",
+          "E-CVV",
+          "S-CVV",
+          "B-DATE",
+          "I-DATE",
+          "E-DATE",
+          "S-DATE",
+          "B-DATEOFBIRTH",
+          "I-DATEOFBIRTH",
+          "E-DATEOFBIRTH",
+          "S-DATEOFBIRTH",
+          "B-EMAIL",
+          "I-EMAIL",
+          "E-EMAIL",
+          "S-EMAIL",
+          "B-ETHEREUMADDRESS",
+          "I-ETHEREUMADDRESS",
+          "E-ETHEREUMADDRESS",
+          "S-ETHEREUMADDRESS",
+          "B-EYECOLOR",
+          "I-EYECOLOR",
+          "E-EYECOLOR",
+          "S-EYECOLOR",
+          "B-FIRSTNAME",
+          "I-FIRSTNAME",
+          "E-FIRSTNAME",
+          "S-FIRSTNAME",
+          "B-GENDER",
+          "I-GENDER",
+          "E-GENDER",
+          "S-GENDER",
+          "B-GPSCOORDINATES",
+          "I-GPSCOORDINATES",
+          "E-GPSCOORDINATES",
+          "S-GPSCOORDINATES",
+          "B-HEIGHT",
+          "I-HEIGHT",
+          "E-HEIGHT",
+          "S-HEIGHT",
+          "B-IBAN",
+          "I-IBAN",
+          "E-IBAN",
+          "S-IBAN",
+          "B-IMEI",
+          "I-IMEI",
+          "E-IMEI",
+          "S-IMEI",
+          "B-IPADDRESS",
+          "I-IPADDRESS",
+          "E-IPADDRESS",
+          "S-IPADDRESS",
+          "B-JOBDEPARTMENT",
+          "I-JOBDEPARTMENT",
+          "E-JOBDEPARTMENT",
+          "S-JOBDEPARTMENT",
+          "B-JOBTITLE",
+          "I-JOBTITLE",
+          "E-JOBTITLE",
+          "S-JOBTITLE",
+          "B-LASTNAME",
+          "I-LASTNAME",
+          "E-LASTNAME",
+          "S-LASTNAME",
+          "B-LITECOINADDRESS",
+          "I-LITECOINADDRESS",
+          "E-LITECOINADDRESS",
+          "S-LITECOINADDRESS",
+          "B-MACADDRESS",
+          "I-MACADDRESS",
+          "E-MACADDRESS",
+          "S-MACADDRESS",
+          "B-MASKEDNUMBER",
+          "I-MASKEDNUMBER",
+          "E-MASKEDNUMBER",
+          "S-MASKEDNUMBER",
+          "B-MIDDLENAME",
+          "I-MIDDLENAME",
+          "E-MIDDLENAME",
+          "S-MIDDLENAME",
+          "B-OCCUPATION",
+          "I-OCCUPATION",
+          "E-OCCUPATION",
+          "S-OCCUPATION",
+          "B-ORDINALDIRECTION",
+          "I-ORDINALDIRECTION",
+          "E-ORDINALDIRECTION",
+          "S-ORDINALDIRECTION",
+          "B-ORGANIZATION",
+          "I-ORGANIZATION",
+          "E-ORGANIZATION",
+          "S-ORGANIZATION",
+          "B-PASSWORD",
+          "I-PASSWORD",
+          "E-PASSWORD",
+          "S-PASSWORD",
+          "B-PHONE",
+          "I-PHONE",
+          "E-PHONE",
+          "S-PHONE",
+          "B-PIN",
+          "I-PIN",
+          "E-PIN",
+          "S-PIN",
+          "B-PREFIX",
+          "I-PREFIX",
+          "E-PREFIX",
+          "S-PREFIX",
+          "B-SECONDARYADDRESS",
+          "I-SECONDARYADDRESS",
+          "E-SECONDARYADDRESS",
+          "S-SECONDARYADDRESS",
+          "B-SEX",
+          "I-SEX",
+          "E-SEX",
+          "S-SEX",
+          "B-SSN",
+          "I-SSN",
+          "E-SSN",
+          "S-SSN",
+          "B-STATE",
+          "I-STATE",
+          "E-STATE",
+          "S-STATE",
+          "B-STREET",
+          "I-STREET",
+          "E-STREET",
+          "S-STREET",
+          "B-TIME",
+          "I-TIME",
+          "E-TIME",
+          "S-TIME",
+          "B-URL",
+          "I-URL",
+          "E-URL",
+          "S-URL",
+          "B-USERAGENT",
+          "I-USERAGENT",
+          "E-USERAGENT",
+          "S-USERAGENT",
+          "B-USERNAME",
+          "I-USERNAME",
+          "E-USERNAME",
+          "S-USERNAME",
+          "B-VIN",
+          "I-VIN",
+          "E-VIN",
+          "S-VIN",
+          "B-VRM",
+          "I-VRM",
+          "E-VRM",
+          "S-VRM",
+          "B-ZIPCODE",
+          "I-ZIPCODE",
+          "E-ZIPCODE",
+          "S-ZIPCODE"
+        ],
+        "on_error": "match_true"
+      },
+      {
+        "id": "claim-stage",
+        "type": "semantic_similarity",
+        "model": "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0",
+        "reference_phrases": {
+          "active-claim": [
+            "I was rear-ended on the highway yesterday and my bumper is crushed",
+            "the other driver left before I could get their details",
+            "my adjuster hasn't called back about the estimate",
+            "here are the photos of the damage to my car",
+            "a tree fell on my parked car during the storm last night",
+            "I need to add my daughter's injury from the crash to the claim"
+          ],
+          "policy-education": [
+            "what is the difference between collision and comprehensive coverage",
+            "how does a deductible work",
+            "does liability insurance cover a rental car",
+            "what is gap insurance and do I need it",
+            "how do no-fault states handle accident claims"
+          ]
+        },
+        "default_label": "policy-education",
+        "on_error": "match_false"
+      }
+    ],
+    "rules": [
+      {
+        "id": "damage-photos-stay-local",
+        "match": {
+          "has_images": true
+        },
+        "route_to": "Qwen3.5-9B-NoThinking",
+        "outputs": {
+          "reason": "image-attachment",
+          "data_class": "claimant"
+        }
+      },
+      {
+        "id": "vin-or-claim-number-regex",
+        "match": {
+          "any": [
+            {
+              "regex": "\\b[A-HJ-NPR-Z0-9]{17}\\b"
+            },
+            {
+              "regex": "\\b(CLM|POL)-?\\d{6,10}\\b"
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-NoThinking",
+        "outputs": {
+          "reason": "vehicle-or-policy-identifier",
+          "data_class": "claimant"
+        }
+      },
+      {
+        "id": "claimant-pii-onnx",
+        "match": {
+          "any": [
+            {
+              "classifier": "pf-v2",
+              "label": "B-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-AGE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-BANKACCOUNT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-BUILDINGNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-DATEOFBIRTH",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-EMAIL",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-FIRSTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-GPSCOORDINATES",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-HEIGHT",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-IBAN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-IMEI",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-LASTNAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-MASKEDNUMBER",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-MIDDLENAME",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-PHONE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-SECONDARYADDRESS",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-SSN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-STREET",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-VIN",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-VRM",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "B-ZIPCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "I-ZIPCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "E-ZIPCODE",
+              "min_score": 0.5
+            },
+            {
+              "classifier": "pf-v2",
+              "label": "S-ZIPCODE",
+              "min_score": 0.5
+            }
+          ]
+        },
+        "route_to": "Qwen3.5-9B-NoThinking",
+        "outputs": {
+          "reason": "claimant-pii-detected",
+          "data_class": "claimant",
+          "classifier": "onnx"
+        }
+      },
+      {
+        "id": "active-claim-semantic",
+        "match": {
+          "classifier": "claim-stage",
+          "label": "active-claim",
+          "min_score": 0.6
+        },
+        "route_to": "Qwen3.5-9B-NoThinking",
+        "outputs": {
+          "reason": "claim-narrative",
+          "data_class": "claimant",
+          "classifier": "semantic_similarity"
+        }
+      }
+    ]
+  }
+}
