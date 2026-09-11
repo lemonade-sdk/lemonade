@@ -162,6 +162,34 @@ then steps 2–4 with the matching `--corpus-dir` / `--policy`. For the NPU row
 use `--local-model qwen3.5-0.8b-FLM` (needs the FastFlowLM backend installed
 and the model pulled).
 
+## Adding a benign arm (over-route rate)
+
+Nemotron-PII is pure-positive, so the runs above report over-route as `0 / 0`
+and a router that sends *everything* local scores a perfect 0% leak rate.
+The 0.8B does exactly that with the current prompt: 0 / 500 leaks on the PII
+arm, then 500 / 500 benign prompts also routed local, with rationales that say
+"no PII detected; default to Qwen3.5-0.8B-GGUF". The 2B on the same 1,000
+cases: 20.6% leak / 76.6% over-route, and 70% of its leaks *name the PII* and
+still pick the cloud ("the powerful cloud model for sensitive data handling").
+Quote a leak rate only next to an over-route rate.
+
+`test/eval/build_benign_corpus.py` builds the missing negative arm from
+human-written prompts (`HuggingFaceH4/no_robots`, `databricks-dolly-15k`),
+filtered against the *prompt's* definition of PII (dates, cities, companies,
+occupations and URLs count) by regex + OpenMed privacy-filter-v2 + mmBERT.
+Mix it with the PII arm from step 1 so one run yields both rates:
+
+```bash
+python test/eval/build_benign_corpus.py --output-dir /tmp/run_qwen0.8b_mixed   --n-benign 500 --mix-pii-corpus /tmp/run_qwen0.8b/cases.jsonl --n-pii 500   --privacy-model Qwen3.5-0.8B-GGUF --cloud-model fireworks.kimi-k2p6
+cp /tmp/run_qwen0.8b/policy_llm_Qwen3.5-0.8B-GGUF.json /tmp/run_qwen0.8b_mixed/
+python test/eval/pii_routing_eval.py --corpus-dir /tmp/run_qwen0.8b_mixed   --policy policy_llm_Qwen3.5-0.8B-GGUF.json --verbose --timeout 300   --log-dir /tmp/run_qwen0.8b_mixed/runs
+```
+
+Needs `pip install datasets transformers torch onnxruntime` and ~10 min of
+CPU for the detector pass. The benign prompts are short (median ~140 chars)
+against document-length PII cases; a router keying off length alone would
+look good here, which is what a domain-matched Tier-B arm would catch.
+
 ## Things that have gone wrong before
 
 - **Log dialects.** In this eval's logs `[FAIL][TP]` means *leaked to cloud*;

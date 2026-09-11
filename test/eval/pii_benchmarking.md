@@ -117,8 +117,9 @@ Everything downstream follows from this:
   precise one** on every metric reported.
 - Only **recall / leak rate** carries information.
 
-A real negative arm has to be *constructed*, not sampled. The two viable
-sources, neither of which is built yet:
+A real negative arm has to be *constructed*, not sampled. Two viable
+sources. The second is now built (§2.2), with a scope restriction that follows
+directly from the circularity point below; the first is not:
 
 1. **Nemotron hard negatives** — take Nemotron documents and substitute every
    PII span with generic non-identifying text. Ground truth is PII-free *by
@@ -129,9 +130,84 @@ sources, neither of which is built yet:
 2. **Real prompts** (dolly / ultrachat) — operationally realistic, but they have
    no gold negative labels. **Filtering them PII-free with a detector is
    circular**: it deletes exactly the documents models flag, driving measured FP
-   toward zero artificially.
+   toward zero artificially. That circularity is specific to the models that
+   did the filtering: an arm filtered by OpenMed-v2 and mmBERT says nothing
+   about OpenMed-v2's or mmBERT's precision, but it is a legitimate negative set
+   for a *different* model family — the LLM routers — whose over-routing it
+   turned out to measure at 77–100% (§6.6), so it is not trivially easy.
 
-Until one exists, do not quote a precision number from these runs.
+For the detector rows that still holds: **do not quote a precision number for
+mmBERT, OpenMed or pplx from these runs.** The LLM-router rows now have a
+measured over-route rate — §6.6.
+
+### 2.2 The Tier-A benign arm: `l2_benign_tier_a`
+
+Built 2026-09-11 by `build_benign_corpus.py`, committed at
+`test/conformance/routing/1/l2_benign_tier_a/` (500 cases, 308 KB; the funnel
+below is in its `stats.json`).
+
+**Sources.** Human-written user prompts, first user turn only:
+
+| Dataset | Categories kept | Categories dropped (paste a document) | Kept |
+|---|---|---|---|
+| `HuggingFaceH4/no_robots` (train, 9,500) | Generation, Brainstorm, Open QA, Chat, Rewrite, Classify, Coding | Summarize, Closed QA, Extract | 379 |
+| `databricks/databricks-dolly-15k` (15,011) | open_qa, general_qa, brainstorming, creative_writing, classification (+`context` when present) | closed_qa, information_extraction, summarization | 121 |
+
+Final mix: Generation 246, Brainstorm 68+26, classification 40+10, Open QA
+22+15, general_qa 20, creative_writing 20, Rewrite 14, Chat 12, Coding 7.
+
+**What "benign" means here.** Clean against the *router prompt's* definition
+of PII, not a classic-identifier one. The blog prompt lists dates, times,
+cities, states, countries, company names, occupations and URLs alongside SSNs
+and emails, so a prompt mentioning "Paris" or "in 1969" is not a valid
+negative — the router is *correct* to keep it local. A candidate is kept only
+if all three of these are silent, in this order:
+
+1. **Regex** — emails, URLs and bare domains, IPv4/IPv6, MAC, phone-shaped
+   digit runs, SSN, card numbers, `@handles`, numeric / ISO / month-name dates,
+   bare years (`1500`–`2099`, so "write 2000 words" is rejected — deliberate),
+   clock times, any 6+ digit run, key-like tokens (24+ mixed alphanumerics).
+2. **OpenMed/privacy-filter-multilingual-v2** (the ONNX export Lemonade
+   serves), all 54 labels except `AMOUNT`, `CURRENCY*`, `ORDINALDIRECTION`
+   which the prompt does not treat as PII.
+3. **mmBERT32k-PII** — adds `GPE` (countries) and `NRP` (nationality /
+   religion / politics), both absent from OpenMed's label set.
+
+**Funnel** (seed 42, first 3,042 shuffled candidates scanned until 500
+survived): 1,668 rejected for length (< 80 chars), 80 by regex (`year` 57,
+`date_month` 23), 736 by OpenMed (`FIRSTNAME` 397, `LASTNAME` 154, `STATE`
+147, `CITY` 129, `AGE` 123, `STREET` 75, `ORGANIZATION` 62, `OCCUPATION` 35),
+58 by mmBERT after OpenMed passed (`DATE_TIME` 21, `ORGANIZATION` 20, `GPE`
+18). One in six candidates survives; names are the dominant reason real
+prompts fail. The filter is deliberately over-strict — a false rejection costs
+nothing, a false acceptance poisons the arm.
+
+**Envelope and ground truth.** Each prompt is wrapped by the same
+`wrap_in_message()` and the same 8 random `PROMPT_PREFIXES` as the Nemotron
+cases, so the prefix is not a tell between arms. `pii_category: "none"`,
+`pii_spans: []`, `decision.route_to` = the cloud candidate
+(`fireworks.kimi-k2p6`), `default_used: true`. `pii_routing_eval.py` scores
+it unchanged; `infer_local_model_from_corpus()` ignores benign cases, so mixing
+it into a rewritten PII corpus does not trip the ground-truth banner.
+
+**Known softness.**
+
+- **Length.** Median 143 chars before the prefix (max 3,315) against Nemotron's
+  p50 ≈ 744. A router keying on length alone would look good on this arm. The
+  domain-matched hard negatives of source (1) above are the control for that and
+  remain unbuilt.
+- **Brand names as platform references** ("promote my business without using
+  Facebook") pass both detectors. Under the prompt's literal "company names"
+  a router that keeps those local is defensible; there are few of them.
+- **Circular for the three detector rows** (§2.1). Do not use it to quote an
+  FP rate for OpenMed, mmBERT or pplx.
+
+**Reuse.** Every router model must see the *identical* 500 cases:
+`build_benign_corpus.py --reuse-benign l2_benign_tier_a/cases.jsonl
+--mix-pii-corpus <run_dir>/cases.jsonl --n-pii 500` copies them verbatim and
+shuffles in the first 500 PII cases of a `prepare_llm_router_run.py` run dir,
+skipping the 10-minute detector pass. `test/eval/llm_router_runbook.md`
+carries the end-to-end commands.
 
 ## 3. Corpora and where runs live
 
@@ -139,6 +215,7 @@ Until one exists, do not quote a precision number from these runs.
 |---|---|---|
 | `l2_pii_nemotron` | 2,500 PII + 1 benign | LLM-as-router runs |
 | `l2_pii_nemotron_20k` | 20,000 PII + 1 benign | detector model runs |
+| `l2_benign_tier_a` | 500 benign, 0 PII | LLM-as-router runs, mixed 1:1 with the first 500 of `l2_pii_nemotron_20k` (§2.2, §6.6) |
 
 Logs land in `<corpus>/runs/`. The two corpora are different samples, so
 **absolute rates are not comparable across them**; the normalized per-category
@@ -923,6 +1000,11 @@ columns do not survive a markdown table.
 | **pplx-pii-masking (ONNX/onnxruntime)** | 20k | **0.80% (159/20000)** | **99.20%** | 2.17hr (split run — see §6.2) | `pplx_onnx_20260908-214405` |
 | **pplx-pii-masking (ONNX/Lemonade router)** | 20k | **0.45% (89/20000)** | **99.56%** | 1.83s/case (split run — see §6.5) | `policy_local_default_20260909-213259` |
 
+The three `LLM Qwen3.5-*` rows above are the **August prompt on the 2.5k
+corpus** and have no benign arm. The same three models under the current
+(blog) prompt, on 500 PII + 500 benign, are in §6.6 and are not comparable to
+these rows — the prompt changed (§8.22).
+
 Routing / model-eval split, where the router logs report one:
 
 | Model | E2E | Routing | Routed-model eval |
@@ -1174,6 +1256,78 @@ cannot price**.
   Per-case timings use `time.perf_counter()` and are sound: **1.83s/case E2E,
   68.3% routing, 31.7% routed model.** Quote those, never the total.
 
+### 6.6 LLM routers under the blog prompt, with a benign arm (2026-09-11)
+
+The first rows in this series with a measured over-route rate. Same 1,000
+cases for every model: the first 500 of `l2_pii_nemotron_20k` (route_to
+rewritten to the router model by `prepare_llm_router_run.py`) plus the 500
+cases of `l2_benign_tier_a` (§2.2), shuffled with seed 42. Policy: the blog
+prompt from `l2_pii_regex/policy_llm.json` with only the two model names
+substituted; cloud candidate `fireworks.kimi-k2p6` — a real, distinctly named
+model (standing in a second local Qwen for the cloud was the 2026-09-11 mistake
+recorded in the runbook). One HTTP round trip per case, `max_tokens=1`,
+`route_trace=true`. Logs in `l2_benign_tier_a/runs/`.
+
+| | Qwen3.5-0.8B | Qwen3.5-2B | Qwen3.5-9B |
+|---|---|---|---|
+| PII → local (TP) | 500 / 500 | 397 / 500 | *running* |
+| **PII → cloud (leak)** | **0 / 500 — 0.0%** | **103 / 500 — 20.6%** | |
+| benign → cloud (TN) | 0 / 500 | 117 / 500 | |
+| **benign → local (over-route)** | **500 / 500 — 100%** | **383 / 500 — 76.6%** | |
+| Precision / Recall | 0.500 / 1.000 | 0.509 / 0.794 | |
+| **F2** | 0.833 | 0.714 | |
+| E2E per case avg / **median** / max | 1.71 / **1.65** / 3.47 s | 1.84 / **1.76** / 6.70 s | ~6.3 s median (smoke) |
+| HTTP errors / LLM fallbacks | 0 / 0 | 0 / 0 | |
+| Source log | `policy_llm_Qwen3.5-0.8B-GGUF_20260911-123822` | `policy_llm_Qwen3.5-2B-GGUF_20260911-135251` | |
+
+All router inference on the local GPU; the 2B's 220 cloud round-trips report
+no model-side split, so its routing/model breakdown covers 780 cases.
+
+**The 0.8B is not routing.** 0 leaks and 0 correct cloud routes: it chose the
+local candidate 1,000 times out of 1,000. Its rationales say so — of the 488
+over-routes that carried one, **~82% state the prompt has no PII and route
+local anyway** ("No PII, sensitive attributes, or tools; default to
+Qwen3.5-0.8B-GGUF"), ~12% hallucinate PII from ordinary first-person text
+("PII: 'my boss', 'my shift'", "'I just broke my leg'", "$50 million"), ~6%
+reason about capability. It has read "if ambiguous, default to local / when in
+doubt prioritize privacy" as unconditional. On the PII-only corpus this scores
+a perfect leak rate, which is trap §8.20. The 2.84% (71/2,500) in the §6 table
+came from the shorter August prompt, under which the same model *did* route to
+the cloud; the prompt change flipped it to always-local, and 0/500 against an
+expected ~7 at that rate is not noise (p ≈ 0.001).
+
+**The 2B routes, and gets the mapping backwards.** It uses both candidates but
+leaks one PII document in five while still over-routing three in four benign
+ones, so its F2 is *below* the 0.8B's degenerate score. Of its 103 leaks:
+
+- **70% name the PII and choose the cloud anyway.** 45 say
+  `fireworks.kimi-k2p6` outright; most of the rest read "…email address
+  (cristynichols@icloud.com), which triggers the use of the powerful cloud
+  model for sensitive data handling." It has inverted the rule — *sensitive →
+  needs the powerful model*. This is not a detection failure.
+- 23% say the document has no PII — genuine misses, typically documents whose
+  only PII is a URL, company name or location.
+- 1 is self-contradictory (rationale names the local model, decision is cloud).
+
+Per-category leak rate for the 2B (leaked ÷ documents carrying the category,
+support ≥ 15): `political_view` 45%, `api_key` 42%, `http_cookie` 41%,
+`company_name` 38%, `url` 37%, `coordinate` 33%, `state` 32%, `country` 30%,
+`city` 29% … `first_name` 11%, `medical_record_number` 11%, `last_name` 8%,
+`date_of_birth` 4.6%, **`ssn` 0%**. Classic identifiers are protected; the
+leaks concentrate in the prompt's broad categories and in credentials inside
+technical documents. Its over-routes are the 0.8B's failure at a lower rate:
+95% of 383 say "no PII" and route local regardless.
+
+**Run-to-run noise.** The router samples. Of the 15 smoke-test cases re-scored
+in the 2B's full run, 2 changed verdict (`nemotron-pii-18597` PASS → leak,
+`benign-dolly-00132` PASS → over-route). Single-run rates on 500 carry a few
+points of noise; do not quote 20.6% as though the decimal were stable (§8.21).
+
+**What the table does not settle.** The benign arm is short-prompt (§2.2); the
+2B's 117 correct cloud routes could be length-keyed. A domain-matched Tier-B
+arm — Nemotron documents with the PII substituted out — is the control, and
+is still open (§9.1).
+
 ## 7. Context length is a non-issue on this corpus
 
 The longest document is **1,737 tokens** — 42% of pplx's 4,096 cap. **Zero
@@ -1271,14 +1425,38 @@ histories, pasted documents — not for these results.
     cases/s, turning a 7hr sequential plan into a 20hr one. Run detectors
     sequentially at full thread count. Any runtime figure from a parallel run
     measures scheduler contention, not the model.
+20. **Quoting a leak rate whose over-route rate is `0 / 0`.** Qwen3.5-0.8B
+    scored 0/500 leaks under the blog prompt and it looked like the best row in
+    the series. It had routed every one of the 500 PII cases *and* every one of
+    500 benign prompts to the local model; the rationales said "no PII detected;
+    default to local". A pure-positive corpus cannot distinguish a perfect
+    router from one that never chooses the cloud. Any 0% on this corpus needs a
+    benign-arm number beside it before it means anything. §6.6.
+21. **Treating a single LLM-router run as deterministic.** The router call
+    samples. 2 of 15 smoke-test cases flipped verdict when re-scored inside the
+    2B's full run — one PII document from routed-local to leaked, one benign
+    prompt from cloud to local. Rates on 500 cases move by a few points between
+    runs; a leak count is not reproducible to the document. §6.6.
+22. **Comparing LLM-router rows across prompts.** The August 2.5k rows in §6
+    used a shorter prompt listing a handful of categories; the blog prompt lists
+    ~40. Under the old prompt the 0.8B leaked 2.84%; under the new one it never
+    routes to the cloud at all. Same model, same corpus family, opposite
+    behaviour — the prompt is part of the model under test, and every row in a
+    comparison must share it verbatim. `prepare_llm_router_run.py` substitutes
+    only the two model names for that reason.
 
 ## 9. Open work
 
 Roughly in order of value:
 
-1. **Build a benign arm** (§2.1). Without it, half of every confusion matrix in
-   this series is decorative, and it changes the meaning of every existing row
-   retroactively. Do this before benchmarking more models.
+1. **Build a benign arm** (§2.1). **Tier A done** (§2.2): 500 real prompts,
+   detector-filtered, valid for the LLM-router rows and already load-bearing
+   there (§6.6 — it turned a 0% leak rate into a 100% over-route rate). Still
+   open: (a) the **Tier-B hard negatives** — Nemotron documents with the PII
+   spans substituted out, domain- and length-matched, ground truth by
+   construction — which is the only arm that can charge the *detector* rows
+   for false positives without circularity, and the control for the length
+   confound in Tier A; (b) re-scoring the §6 detector rows against it.
 2. ~~**Preserve span offsets, then build character-level F1.**~~ **Done** for
    the three ONNX detectors — §5.5 for the method, §5.6 for the results. The
    corpus carries `pii_spans`, every predicted span is on disk, and
@@ -1333,6 +1511,9 @@ Roughly in order of value:
 | File | Purpose |
 |---|---|
 | `build_nemotron_corpus.py` | Samples Nemotron-PII into `cases.jsonl` + `stats.json` |
+| `build_benign_corpus.py` | Builds the Tier-A benign arm from `no_robots` + Dolly through regex + OpenMed-v2 + mmBERT (§2.2); `--reuse-benign` copies an existing arm verbatim, `--mix-pii-corpus` shuffles in a PII arm |
+| `prepare_llm_router_run.py` | Per-router-model run dir: rewrites `route_to` in a PII corpus and derives the policy from the blog prompt with only the model names substituted |
+| `llm_router_runbook.md` | End-to-end commands for the LLM-as-router rows, the three header checks, and the failures that produced wrong runs |
 | `pii_ner_eval.py` | Standard HF token-classification models (mmBERT, OpenMed) |
 | `pii_gliner_eval.py` | GLiNER zero-shot (labels supplied at inference) |
 | `pii_pplx_eval.py` | `perplexity-ai/pplx-pii-masking` (custom arch, dual heads) |

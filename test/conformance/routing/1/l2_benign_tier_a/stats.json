@@ -1,0 +1,131 @@
+{
+  "sources": {
+    "no_robots": [
+      "Brainstorm",
+      "Chat",
+      "Classify",
+      "Coding",
+      "Generation",
+      "Open QA",
+      "Rewrite"
+    ],
+    "dolly": [
+      "brainstorming",
+      "classification",
+      "creative_writing",
+      "general_qa",
+      "open_qa"
+    ]
+  },
+  "seed": 42,
+  "n_benign": 500,
+  "total": 500,
+  "cloud_model": "fireworks.kimi-k2p6",
+  "min_chars": 80,
+  "max_chars": 6000,
+  "benign_by_source": {
+    "dolly": 121,
+    "no_robots": 379
+  },
+  "benign_by_category": {
+    "no_robots/Generation": 246,
+    "no_robots/Brainstorm": 68,
+    "dolly/classification": 40,
+    "dolly/brainstorming": 26,
+    "no_robots/Open": 22,
+    "dolly/creative_writing": 20,
+    "dolly/general_qa": 20,
+    "dolly/open_qa": 15,
+    "no_robots/Rewrite": 14,
+    "no_robots/Chat": 12,
+    "no_robots/Classify": 10,
+    "no_robots/Coding": 7
+  },
+  "benign_chars_incl_prefix": {
+    "min": 80,
+    "median": 173,
+    "max": 3353
+  },
+  "built": "2026-09-11",
+  "detectors": [
+    "lemonade-sdk/openmed-privacy-filter-multilingual-v2-onnx",
+    "llm-semantic-router/mmbert32k-pii-detector-merged"
+  ],
+  "funnel": {
+    "loaded": 19221,
+    "length_ok": 1374,
+    "regex_ok": 1294,
+    "openmed_ok": 558,
+    "mmbert_ok": 500
+  },
+  "rejected_by": {
+    "length": 1668,
+    "openmed": 736,
+    "regex": 80,
+    "mmbert": 58
+  },
+  "reject_labels": {
+    "regex": {
+      "year": 57,
+      "date_month": 23,
+      "time": 5,
+      "domain": 5,
+      "phone": 4,
+      "digit_run": 3,
+      "url": 3,
+      "date_numeric": 2,
+      "handle": 2,
+      "email": 1,
+      "key_like": 1
+    },
+    "openmed": {
+      "FIRSTNAME": 397,
+      "LASTNAME": 154,
+      "STATE": 147,
+      "CITY": 129,
+      "AGE": 123,
+      "STREET": 75,
+      "ORGANIZATION": 62,
+      "OCCUPATION": 35,
+      "EYECOLOR": 29,
+      "USERNAME": 23,
+      "COUNTY": 21,
+      "MIDDLENAME": 21,
+      "MASKEDNUMBER": 20,
+      "GENDER": 16,
+      "JOBDEPARTMENT": 14,
+      "SEX": 11,
+      "PREFIX": 10,
+      "TIME": 10,
+      "BUILDINGNUMBER": 9,
+      "CVV": 5,
+      "DATE": 4,
+      "HEIGHT": 3,
+      "BIC": 2,
+      "ZIPCODE": 2,
+      "CREDITCARDISSUER": 1,
+      "VRM": 1,
+      "EMAIL": 1,
+      "DATEOFBIRTH": 1
+    },
+    "mmbert": {
+      "DATE_TIME": 21,
+      "ORGANIZATION": 20,
+      "GPE": 18,
+      "PERSON": 6,
+      "AGE": 5,
+      "STREET_ADDRESS": 4,
+      "ZIP_CODE": 3,
+      "PHONE_NUMBER": 2,
+      "IBAN_CODE": 2,
+      "NRP": 2,
+      "CREDIT_CARD": 1,
+      "DOMAIN_NAME": 1
+    }
+  },
+  "benign_chars_excl_prefix": {
+    "min": 80,
+    "median": 143,
+    "max": 3315
+  }
+}
