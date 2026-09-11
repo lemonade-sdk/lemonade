@@ -446,26 +446,26 @@ jobs:
           - backend: vulkan
             runner: >-
               ${{ fromJSON(needs.build.outputs.lite == 'true'
-              && '["self-hosted","Windows","stx-halo","vulkan","lemon-prod"]'
-              || '["self-hosted","Windows","128gb","vulkan","lemon-prod"]') }}
+              && '["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]'
+              || '["self-hosted","Windows","X64","128gb","vulkan","lemon-prod"]') }}
           - backend: rocm
             channel: stable
             runner: >-
               ${{ fromJSON(needs.build.outputs.lite == 'true'
-              && '["self-hosted","Windows","stx-halo","rocm","lemon-prod"]'
-              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
+              && '["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]'
+              || '["self-hosted","Windows","X64","128gb","rocm","lemon-prod"]') }}
           - backend: rocm
             channel: nightly
             runner: >-
               ${{ fromJSON(needs.build.outputs.lite == 'true'
-              && '["self-hosted","Windows","stx-halo","rocm","lemon-prod"]'
-              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
+              && '["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]'
+              || '["self-hosted","Windows","X64","128gb","rocm","lemon-prod"]') }}
           # CUDA validation is prepared but intentionally disabled until an
           # NVIDIA self-hosted runner is available. To enable it, uncomment this
           # matrix entry.
           #
           # - backend: cuda
-          #   runner: [self-hosted, Windows, 128gb, cuda]
+          #   runner: [self-hosted, Windows, X64, 128gb, cuda]
     steps:
       - name: Capture Vulkan runner configuration
         if: matrix.backend == 'vulkan'

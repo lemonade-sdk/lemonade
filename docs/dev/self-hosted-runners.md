@@ -21,7 +21,7 @@ You can read about all this here: [GitHub: About self-hosted runners](https://do
 
 ## Runner Labels
 
-Workflows target self-hosted runners by the labels the runner carries. We use two kinds of labels:
+Workflows target self-hosted runners by the labels the runner carries. We use three kinds of labels, plus the architecture label GitHub applies automatically:
 
 ### Pool membership label
 
@@ -42,9 +42,13 @@ These describe *what a runner can do*. A workflow should request only the capabi
 | `cuda` | Runner can execute CUDA GPU workloads | TBD |
 | `xdna2` | Runner has a Ryzen AI 300/400 series NPU | `ryzenai` backend, `flm` (FastFlowLM) backend |
 
-A job that exercises more than one backend should request all the labels it needs (e.g., `[Windows, vulkan, rocm, lemon-prod]` for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry *every* label in the `runs-on` list.
+A job that exercises more than one backend should request all the labels it needs (e.g., `[Windows, X64, vulkan, rocm, lemon-prod]` for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry *every* label in the `runs-on` list.
 
 CPU-only jobs should target GitHub-hosted runners when possible.
+
+### Architecture label
+
+GitHub registers every self-hosted runner with an architecture label (`X64`, `ARM64`, or `ARM`) alongside its OS label (`Linux`, `Windows`, `macOS`). **Every self-hosted `runs-on` list must include one of these architecture labels.** The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is `[self-hosted, Linux, ARM64, cuda, lemon-prod]`), so a job that only asks for `[self-hosted, Linux, lemon-prod]` can be scheduled onto either and fail with a binary or package built for the other architecture.
 
 ### Hardware labels
 
@@ -66,6 +70,7 @@ Capability and hardware labels must be present on each runner for the workflow t
 |----------|-----------------|
 | Ryzen AI 300-series laptop (NPU + Vulkan iGPU + ROCm iGPU) | `lemon-prod`, `xdna2`, `vulkan`, `rocm` |
 | Strix Halo | `lemon-prod`, `xdna2`, `rocm`, `stx-halo` |
+| DGX Spark (ARM64 + CUDA) | `lemon-prod`, `cuda` |
 
 ## New Runner Setup
 
@@ -164,7 +169,8 @@ Here are some general guidelines to observe when creating or modifying workflows
 - Place a 🌩️ emoji in the name of all of your self-host workflows, so that PR reviewers can see at a glance which workflows are using self-hosted resources.
     - Example: `name: Test Lemonade on NPU and Hybrid with OGA environment 🌩️`
 - Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include `on: pull request:` in your workflow until after a reviewer has signed off.
-- **Always include `lemon-prod`** in every *production* self-hosted `runs-on` list (see [Pool membership label](#pool-membership-label)). For example, `runs-on: [Windows, xdna2, lemon-prod]` for NPU work, `runs-on: [Linux, vulkan, rocm, lemon-prod]` for a job that exercises both GPU backends. CPU-only self-hosted jobs use `[self-hosted, Windows, lemon-prod]` / `[self-hosted, Linux, lemon-prod]`, but prefer GitHub-hosted runners (`windows-latest`, `ubuntu-latest`) for CPU-only work when possible. Special-purpose runners with their own dedicated labels (e.g. `[self-hosted, linux, repo-manager]`) are the exception and should not include `lemon-prod`.
+- **Always include `lemon-prod`** in every *production* self-hosted `runs-on` list (see [Pool membership label](#pool-membership-label)). For example, `runs-on: [Windows, X64, xdna2, lemon-prod]` for NPU work, `runs-on: [Linux, X64, vulkan, rocm, lemon-prod]` for a job that exercises both GPU backends. CPU-only self-hosted jobs use `[self-hosted, Windows, X64, lemon-prod]` / `[self-hosted, Linux, X64, lemon-prod]`, but prefer GitHub-hosted runners (`windows-latest`, `ubuntu-latest`) for CPU-only work when possible. Special-purpose runners with their own dedicated labels (e.g. `[self-hosted, linux, X64, repo-manager]`) are the exception and should not include `lemon-prod`.
+- **Always include an architecture label** (`X64` or `ARM64`) in every self-hosted `runs-on` list, Windows included (see [Architecture label](#architecture-label)). Without it a job can land on a machine of the wrong architecture.
 - Be very considerate about installing software on to the runners:
     - Installing software into the CWD (e.g., a path of `.\`) is always ok, because that will end up in `C:\actions-runner\_work\REPO`, which is always wiped between tests.
     - Installing software into `AppData`, `Program Files`, etc. is not advisable because that software will persist across tests. See the [setup](#new-runner-setup) section to see which software is already expected on the system.
