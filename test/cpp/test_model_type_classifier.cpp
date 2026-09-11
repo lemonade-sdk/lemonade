@@ -13,6 +13,7 @@
 using lemon::ModelType;
 using lemon::find_deployment_mode;
 using lemon::get_model_type_from_labels;
+using lemon::infer_labels_from_name;
 using lemon::model_type_to_string;
 
 struct Case {
@@ -25,6 +26,13 @@ struct DeclaredCase {
     const char* name;
     std::vector<std::string> labels;
     bool expect_declared;
+};
+
+struct InferCase {
+    const char* name;
+    std::string model_name;
+    std::string checkpoint;
+    std::vector<std::string> expected;
 };
 
 int main() {
@@ -123,7 +131,34 @@ int main() {
         if (!ok) ++failures;
     }
 
-    const size_t total = cases.size() + declared_cases.size();
+    const std::vector<InferCase> infer_cases = {
+        {"embed in name", "zembed-1-Q4_K_M-GGUF", "", {"embeddings"}},
+        {"embed in checkpoint", "my-model", "Abiray/zembed-1-Q4_K_M-GGUF:Q4_K_M", {"embeddings"}},
+        {"case insensitive", "NOMIC-EMBED-TEXT", "", {"embeddings"}},
+        {"checkpoint only (no name)", "", "org/some-embed-model-GGUF:Q4_K_S", {"embeddings"}},
+
+        {"rerank in name", "my-reranker-v2", "", {"reranking"}},
+        {"rerank in checkpoint", "custom-model", "org/my-reranker-v2:Q8_0", {"reranking"}},
+
+        {"embed and rerank together", "embed-rerank-model", "", {"embeddings", "reranking"}},
+
+        {"plain LLM", "Qwen3-4B", "Qwen/Qwen3-4B-GGUF:Q4_K_M", {}},
+        {"partial overlap not matched", "remember-bot", "", {}},
+        {"empty inputs", "", "", {}},
+    };
+
+    for (const auto& c : infer_cases) {
+        const auto actual = infer_labels_from_name(c.model_name, c.checkpoint);
+        const bool ok = (actual == c.expected);
+        if (!ok) {
+            std::printf("[FAIL] infer: %s\n", c.name);
+            ++failures;
+        } else {
+            std::printf("[PASS] infer: %s\n", c.name);
+        }
+    }
+
+    const size_t total = cases.size() + declared_cases.size() + infer_cases.size();
     std::printf("\n%d/%zu cases passed\n", static_cast<int>(total - failures), total);
     return failures == 0 ? 0 : 1;
 }
