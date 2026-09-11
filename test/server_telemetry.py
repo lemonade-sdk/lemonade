@@ -31,7 +31,6 @@ from utils.server_base import (  # noqa: E402
     ServerTestBase,
     _auth_headers,
     run_server_tests,
-    scoped_server_config,
 )
 from utils.test_models import (  # noqa: E402
     ENDPOINT_TEST_MODEL,
@@ -279,11 +278,22 @@ class TelemetryTestBase(ServerTestBase):
 
     _pull_base_model = False
 
+    _telemetry_snapshot = None
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
 
-        cls.enter_class_context(scoped_server_config("telemetry"))
+        # /internal/set persists to config.json, so the pre-test telemetry
+        # settings have to be captured and restored rather than just disabled.
+        # /internal/config reports the defaults-merged config, so the snapshot
+        # covers every key these tests write.
+        try:
+            res = cls._auth_get(f"http://localhost:{PORT}/internal/config")
+            if res.status_code == 200:
+                cls._telemetry_snapshot = res.json().get("telemetry")
+        except Exception:
+            pass
 
         cls.mock_port = find_free_port()
         cls.mock_server = MockOTLPServer(("127.0.0.1", cls.mock_port), MockOTLPHandler)
@@ -303,6 +313,21 @@ class TelemetryTestBase(ServerTestBase):
 
     @classmethod
     def tearDownClass(cls):
+        try:
+            restored = False
+            if cls._telemetry_snapshot:
+                res = cls._auth_post(
+                    f"http://localhost:{PORT}/internal/set",
+                    {"telemetry": cls._telemetry_snapshot},
+                )
+                restored = res.status_code == 200
+            if not restored:
+                cls._auth_post(
+                    f"http://localhost:{PORT}/internal/set",
+                    {"telemetry": {"enabled": False}},
+                )
+        except Exception:
+            pass
         cls.mock_server.shutdown()
         cls.mock_server.server_close()
         cls.mock_thread.join()

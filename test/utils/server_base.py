@@ -227,21 +227,11 @@ def get_model_options(model_name, port=PORT):
 
 
 @contextlib.contextmanager
-def scoped_server_config(*restore_keys, port=PORT, **settings):
-    """Change server settings inside a with block; they are undone when it ends.
+def scoped_server_config(port=PORT, **settings):
+    """Apply server settings inside a with block and put the old values back after.
 
-        with scoped_server_config(max_loaded_models=2):
-            ...  # the server allows 2 loaded models here
-        # back to whatever it was before
-
-    Name a key without a value when your tests will set it themselves:
-
-        with scoped_server_config("auto_evict"):
-            ...  # set auto_evict however you like in here
-        # auto_evict is back to its original value
-
-    Undo is per top-level key, so after ``telemetry={"enabled": False}`` the
-    whole ``telemetry`` section is back as it was, not just ``enabled``.
+    with scoped_server_config(max_loaded_models=2):
+        ...
     """
     response = requests.get(
         f"http://localhost:{port}/internal/config",
@@ -250,10 +240,8 @@ def scoped_server_config(*restore_keys, port=PORT, **settings):
     )
     response.raise_for_status()
     current = response.json()
-    keys = set(restore_keys) | set(settings)
-    saved = {key: current[key] for key in keys if key in current}
-    if settings:
-        set_server_config(settings, port=port)
+    saved = {key: current[key] for key in settings if key in current}
+    set_server_config(settings, port=port)
     try:
         yield
     finally:
@@ -592,13 +580,6 @@ class ServerTestBase(unittest.TestCase):
     def tearDownClass(cls):
         """No server lifecycle management needed."""
         super().tearDownClass()
-
-    @classmethod
-    def enter_class_context(cls, context_manager):
-        """Backport of unittest's enterClassContext, which needs Python 3.11."""
-        result = context_manager.__enter__()
-        cls.addClassCleanup(context_manager.__exit__, None, None, None)
-        return result
 
     def setUp(self):
         """Set up for each test."""
