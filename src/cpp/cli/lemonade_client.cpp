@@ -1390,13 +1390,17 @@ int LemonadeClient::list_recipes(bool show_all) const {
     }
 }
 
-int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force) {
+int LemonadeClient::install_backend(const std::string& recipe, const std::string& backend, bool force,
+                                    const std::string& arch) {
     std::cout << "Installing backend: " << recipe << ":" << backend << std::endl;
 
     try {
         json request_body = {{"recipe", recipe}, {"backend", backend}};
         request_body["stream"] = true;
         request_body["force"] = force;
+        if (!arch.empty()) {
+            request_body["arch"] = arch;
+        }
         std::string body = request_body.dump();
 
         StreamingRequestState state;
