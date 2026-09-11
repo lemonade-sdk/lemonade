@@ -120,6 +120,9 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
   if (!isObject(model)) return null;
   const modelName = String(model.model_name || model.name || '').trim();
   if (!modelName) return null;
+  const launchCommand = Array.isArray(model.launch_command)
+    ? model.launch_command.filter((value): value is string => typeof value === 'string')
+    : [];
   return {
     model_name: modelName,
     checkpoint: String(model.checkpoint || ''),
@@ -134,6 +137,7 @@ function normalizeLoadedModel(model: unknown): LoadedModel | null {
     input_modalities: Array.isArray(model.input_modalities) ? model.input_modalities.filter((value): value is string => typeof value === 'string') : undefined,
     output_modalities: Array.isArray(model.output_modalities) ? model.output_modalities.filter((value): value is string => typeof value === 'string') : undefined,
     recipe_options: isObject(model.recipe_options) ? model.recipe_options : undefined,
+    launch_command: launchCommand.length > 0 ? launchCommand : undefined,
     pinned: typeof model.pinned === 'boolean' ? model.pinned : undefined,
   };
 }
@@ -227,6 +231,7 @@ export interface LoadedModel {
   input_modalities?: string[];
   output_modalities?: string[];
   recipe_options?: Record<string, unknown>;
+  launch_command?: string[];
   pinned?: boolean;
 }
 
@@ -239,15 +244,6 @@ export interface ModelOptions {
   defaults: Record<string, unknown>;
   resolved_ctx_size: number;
   load_command: string;
-}
-
-export interface EffectiveLoadCommand {
-  model_name: string;
-  recipe: string;
-  backend: string;
-  options: Record<string, unknown>;
-  args: string[];
-  ctx_size_auto_resolved?: boolean;
 }
 
 export interface ModelInfo {
@@ -1432,13 +1428,6 @@ class LemonadeAPI {
     const result = await this._json('/api/v1/load', { method: 'POST', body });
     this._notifyModelsChanged();
     return result;
-  }
-
-  async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
-    void modelName;
-    void recipeOptions;
-    void modelInfo;
-    throw new Error('Effective Settings is temporarily unavailable while GUI3 is synchronized with the current server API.');
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {

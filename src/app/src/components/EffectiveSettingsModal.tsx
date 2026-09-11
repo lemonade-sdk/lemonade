@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api, { type ModelInfo, type ModelOptions, type EffectiveLoadCommand, type LoadedModel, friendlyErrorMessage } from '../api';
+import api, { type ModelInfo, type ModelOptions, type LoadedModel, friendlyErrorMessage } from '../api';
 import {
   type RecipeOptions,
   type SamplingParams,
@@ -91,9 +91,8 @@ function shellQuote(token: string): string {
   return `'${token.replace(/'/g, `'\\''`)}'`;
 }
 
-function formatCommand(modelName: string, args: string[]): string {
-  const parts = ['lemonade', 'load', shellQuote(modelName), ...args.map(shellQuote)];
-  return parts.join(' ');
+function formatCommand(command: string[]): string {
+  return command.map(shellQuote).join(' ');
 }
 
 interface SourceRow {
@@ -113,26 +112,24 @@ interface EffectiveSettingsModalProps {
   mcpServerIds: string[];
   fallbackCtxSize?: number;
   loadedModel?: LoadedModel | null;
-  isModelLoaded: boolean;
   onReload: () => Promise<void>;
   onLoad: () => Promise<void>;
 }
 
 const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
-  open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, isModelLoaded, onReload, onLoad,
+  open, onClose, modelName, modelInfo, recipe, mcpEnabled, mcpServerIds, fallbackCtxSize, loadedModel, onReload, onLoad,
 }) => {
-  const argsField = backendArgsFieldForRecipe(recipe);
-  const canEditArgs = backendSupportsArgs(recipe) && !!argsField;
-
-  const [effective, setEffective] = useState<EffectiveLoadCommand | null>(null);
+  const [systemInfo, setSystemInfo] = useState<Record<string, unknown> | null>(() => api.systemInfoData);
   const [serverModelOptions, setServerModelOptions] = useState<ModelOptions | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [runtimeModel, setRuntimeModel] = useState<LoadedModel | null>(loadedModel || null);
+  const [runtimeStateModelName, setRuntimeStateModelName] = useState<string | null>(null);
+  const [launchCommand, setLaunchCommand] = useState<string[] | null>(loadedModel?.launch_command || null);
+  const [configurationLoading, setConfigurationLoading] = useState(false);
+  const [runtimeLoading, setRuntimeLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [unlocked, setUnlocked] = useState(false);
   const [draft, setDraft] = useState('');
-  const [preview, setPreview] = useState<EffectiveLoadCommand | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [samplingDraft, setSamplingDraft] = useState<Record<keyof SamplingParams, string>>({
@@ -144,8 +141,26 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
   });
   const [loadedContextSize, setLoadedContextSize] = useState<number | null>(null);
   const [resolvingContextSize, setResolvingContextSize] = useState(false);
+  const configurationRequestRef = useRef(0);
+  const runtimeRequestRef = useRef(0);
+  const draftRevisionRef = useRef(0);
+  const loadedModelRef = useRef<LoadedModel | null>(loadedModel || null);
+  const healthFailedRef = useRef(false);
 
+  const argsField = backendArgsFieldForRecipe(recipe, systemInfo);
+  const canEditArgs = backendSupportsArgs(recipe, systemInfo) && !!argsField;
   const hasOverride = !!getSessionArgsOverride(modelName);
+  const runtimeStatePending = runtimeLoading || runtimeStateModelName !== modelName;
+  const isRuntimeModelLoaded = !runtimeStatePending && !!runtimeModel;
+  const loading = configurationLoading || runtimeStatePending;
+
+  useEffect(() => {
+    loadedModelRef.current = loadedModel || null;
+    if (healthFailedRef.current) {
+      setRuntimeModel(loadedModel || null);
+      setLaunchCommand(loadedModel?.launch_command || null);
+    }
+  }, [loadedModel]);
 
   const resolved = useMemo(() => {
     if (!modelInfo || !open) return null;
@@ -156,38 +171,92 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     }
   }, [modelName, modelInfo, fallbackCtxSize, open]);
 
-  const loadEffective = useCallback(async () => {
-    if (!modelName) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.effectiveLoadCommand(modelName, undefined, modelInfo);
-      setEffective(result);
-      const committed = argsField ? result.options[argsField] : undefined;
-      setDraft(typeof committed === 'string' ? committed : '');
-      try {
-        setServerModelOptions(await api.getModelOptions(modelName));
-      } catch {
-        // The effective load command remains useful even if the auxiliary
-        // saved/default source breakdown cannot be fetched.
-        setServerModelOptions(null);
-      }
-    } catch (err) {
-      setError(friendlyErrorMessage(err));
-      setEffective(null);
-      setServerModelOptions(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [modelName, modelInfo, argsField]);
-
   useEffect(() => {
     if (!open) return;
+    let cancelled = false;
+    void api.systemInfo()
+      .then(info => {
+        if (!cancelled) setSystemInfo(info);
+      })
+      .catch(() => {
+        if (!cancelled) setSystemInfo(api.systemInfoData);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const loadConfiguration = useCallback(async (replaceDraft: boolean) => {
+    if (!modelName) return;
+    const request = ++configurationRequestRef.current;
+    const draftRevision = draftRevisionRef.current;
+    setConfigurationLoading(true);
+    try {
+      const options = await api.getModelOptions(modelName);
+      if (request !== configurationRequestRef.current) return;
+      setServerModelOptions(options);
+      if (replaceDraft && draftRevision === draftRevisionRef.current) {
+        const sessionArgs = getSessionArgsOverride(modelName)?.args;
+        const committed = sessionArgs ?? (argsField ? options.effective?.[argsField] : undefined);
+        setDraft(typeof committed === 'string' ? committed : '');
+      }
+    } catch {
+      if (request !== configurationRequestRef.current) return;
+      setServerModelOptions(null);
+      if (replaceDraft && draftRevision === draftRevisionRef.current) {
+        const sessionArgs = getSessionArgsOverride(modelName)?.args;
+        const committed = sessionArgs ?? (argsField ? loadedModelRef.current?.recipe_options?.[argsField] : undefined);
+        setDraft(typeof committed === 'string' ? committed : '');
+      }
+    } finally {
+      if (request === configurationRequestRef.current) setConfigurationLoading(false);
+    }
+  }, [modelName, argsField]);
+
+  const refreshRuntime = useCallback(async () => {
+    if (!modelName) return;
+    const request = ++runtimeRequestRef.current;
+    setRuntimeLoading(true);
+    setRuntimeStateModelName(null);
+    setError(null);
+    try {
+      const health = await api.health();
+      if (request !== runtimeRequestRef.current) return;
+      const target = modelName.trim().toLowerCase();
+      const running = health.all_models_loaded.find(
+        model => model.model_name.trim().toLowerCase() === target,
+      ) || null;
+      healthFailedRef.current = false;
+      setRuntimeStateModelName(modelName);
+      setRuntimeModel(running);
+      setLaunchCommand(running?.launch_command || null);
+      if (!running) {
+        setError('Launch command unavailable because this model is not currently loaded.');
+      } else if (!running.launch_command?.length) {
+        setError('The server did not report a launch command for this loaded model.');
+      }
+    } catch (healthError) {
+      if (request !== runtimeRequestRef.current) return;
+      healthFailedRef.current = true;
+      const fallbackModel = loadedModelRef.current;
+      setRuntimeStateModelName(modelName);
+      setRuntimeModel(fallbackModel);
+      setLaunchCommand(fallbackModel?.launch_command || null);
+      setError(friendlyErrorMessage(healthError));
+    } finally {
+      if (request === runtimeRequestRef.current) setRuntimeLoading(false);
+    }
+  }, [modelName]);
+
+  useEffect(() => {
+    if (!open) {
+      configurationRequestRef.current += 1;
+      return;
+    }
+    draftRevisionRef.current = 0;
     setUnlocked(false);
     setNotice(null);
-    setPreview(null);
-    setPreviewError(null);
-    loadEffective();
+    void loadConfiguration(true);
     const savedSampling = loadModelTuning(modelName)?.sampling || {};
     setSamplingDraft({
       temperature: savedSampling.temperature === undefined ? '' : String(savedSampling.temperature),
@@ -196,10 +265,18 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       min_p: savedSampling.min_p === undefined ? '' : String(savedSampling.min_p),
       repeat_penalty: savedSampling.repeat_penalty === undefined ? '' : String(savedSampling.repeat_penalty),
     });
-  }, [open, loadEffective]);
+  }, [open, modelName, loadConfiguration]);
 
   useEffect(() => {
-    if (!open || !loadedModel) {
+    if (!open) {
+      runtimeRequestRef.current += 1;
+      return;
+    }
+    void refreshRuntime();
+  }, [open, modelName, refreshRuntime]);
+
+  useEffect(() => {
+    if (!open || !runtimeModel) {
       setLoadedContextSize(null);
       setResolvingContextSize(false);
       return;
@@ -213,7 +290,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       settled = true;
       setResolvingContextSize(false);
     }, 5000);
-    void api.loadedModelContextSize(loadedModel).then(contextSize => {
+    void api.loadedModelContextSize(runtimeModel).then(contextSize => {
       if (cancelled || settled) return;
       settled = true;
       window.clearTimeout(timeout);
@@ -224,22 +301,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [open, loadedModel]);
-
-  useEffect(() => {
-    if (!open || !unlocked || !argsField) { setPreview(null); return; }
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      setPreviewError(null);
-      try {
-        const result = await api.effectiveLoadCommand(modelName, { [argsField]: draft, merge_args: false }, modelInfo);
-        if (!cancelled) setPreview(result);
-      } catch (err) {
-        if (!cancelled) { setPreview(null); setPreviewError(friendlyErrorMessage(err)); }
-      }
-    }, 350);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [open, unlocked, draft, argsField, modelName, modelInfo]);
+  }, [open, runtimeModel]);
 
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -264,7 +326,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     };
     try {
       setSessionArgsOverride(modelName, recipe, draft.trim());
-      if (isModelLoaded) {
+      if (isRuntimeModelLoaded) {
         try {
           await onReload();
         } catch (reloadErr) {
@@ -280,32 +342,38 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
     } catch (err) {
       setNotice(friendlyErrorMessage(err));
     } finally {
-      await loadEffective();
+      await Promise.all([
+        loadConfiguration(true),
+        refreshRuntime(),
+      ]);
       setBusy(false);
     }
-  }, [argsField, modelName, recipe, draft, isModelLoaded, onReload, onLoad, loadEffective]);
+  }, [argsField, modelName, recipe, draft, isRuntimeModelLoaded, onReload, onLoad, loadConfiguration, refreshRuntime]);
 
   const resetOverride = useCallback(async () => {
     setBusy(true);
     setNotice(null);
     try {
       clearSessionArgsOverride(modelName);
-      if (isModelLoaded) {
+      if (isRuntimeModelLoaded) {
         await onReload();
         setNotice('Cleared the session override and reloaded with resolved settings.');
       } else {
         setNotice('Cleared the session override.');
       }
-      await loadEffective();
+      await Promise.all([
+        loadConfiguration(true),
+        refreshRuntime(),
+      ]);
       setUnlocked(false);
     } catch (err) {
       setNotice(friendlyErrorMessage(err));
     } finally {
       setBusy(false);
     }
-  }, [modelName, isModelLoaded, onReload, loadEffective]);
+  }, [modelName, isRuntimeModelLoaded, onReload, loadConfiguration, refreshRuntime]);
 
-  const serverContextRaw = serverModelOptions?.effective?.ctx_size ?? effective?.options?.ctx_size;
+  const serverContextRaw = serverModelOptions?.effective?.ctx_size;
   const resolvedContextRaw = serverContextRaw ?? resolved?.tuning.recipe_options?.ctx_size;
   const autoContextSizeEnabled = isAutoContextSize(serverContextRaw);
 
@@ -315,7 +383,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       if (runtimeContext !== null) {
         return { value: `${runtimeContext.toLocaleString()} (auto)`, source: 'Runtime' };
       }
-      if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
+      if (runtimeModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
       return { value: 'Auto', source: 'Configuration' };
     }
 
@@ -323,7 +391,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       return { value: runtimeContext.toLocaleString(), source: 'Runtime' };
     }
 
-    const effectiveContext = positiveContextSize(effective?.options?.ctx_size);
+    const effectiveContext = positiveContextSize(serverModelOptions?.resolved_ctx_size);
     if (effectiveContext !== null) {
       return { value: effectiveContext.toLocaleString(), source: 'Effective load' };
     }
@@ -336,9 +404,9 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
       };
     }
 
-    if (loadedModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
+    if (runtimeModel && resolvingContextSize) return { value: 'Resolving…', source: 'Runtime' };
     return { value: 'Unavailable', source: 'Configuration' };
-  }, [autoContextSizeEnabled, effective, loadedContextSize, loadedModel, resolved, resolvedContextRaw, resolvingContextSize]);
+  }, [autoContextSizeEnabled, loadedContextSize, runtimeModel, resolved, resolvedContextRaw, resolvingContextSize, serverModelOptions]);
 
   const sourceRows = useMemo<SourceRow[]>(() => {
     if (!resolved && !serverModelOptions) return [];
@@ -394,8 +462,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
 
   if (!open) return null;
 
-  const previewArgs = preview?.args ?? effective?.args ?? [];
-  const backendLabel = effective?.backend || '—';
+  const backend = serverModelOptions?.effective?.[`${recipe}_backend`];
+  const backendLabel = (typeof backend === 'string' && backend)
+    || runtimeModel?.recipe
+    || recipe
+    || '—';
 
   const body = (
     <div className="inspect-modal-overlay effective-settings-overlay" onClick={onClose}>
@@ -431,7 +502,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title">Settings by source</h5>
             <p className="effective-settings__note">
               <Icon name="info" size={12} />
-              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is authoritative. It includes architecture and global defaults applied by the server that may not appear here.</span>
+              <span className="effective-settings__note-copy">These rows show known sources for individual settings. The <strong>Effective load command</strong> below is the authoritative command reported by the running server.</span>
             </p>
             <div className="effective-settings__rows">
               <div className="effective-settings__row">
@@ -520,11 +591,11 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
             <h5 className="effective-settings__section-title"><Icon name="terminal-square" size={14} /> Effective load command</h5>
             {loading && <p className="effective-settings__empty">Resolving…</p>}
             {error && <p className="effective-settings__error">{error}</p>}
-            {!loading && !error && (
+            {!loading && !error && launchCommand && (
               <>
-                <pre className="effective-settings__command"><code>{formatCommand(modelName, previewArgs)}</code></pre>
+                <pre className="effective-settings__command"><code>{formatCommand(launchCommand)}</code></pre>
                 <p className="effective-settings__note">
-                  <Icon name="info" size={12} /> Fixed launch flags (model path, port, chat template, metrics) are added by the server at load time and are not shown here.
+                  <Icon name="info" size={12} /> This is the exact command used to start the current backend process. Argument changes appear here after the model reloads.
                 </p>
               </>
             )}
@@ -541,21 +612,24 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
                   <textarea
                     className="textarea effective-settings__textarea"
                     value={draft}
+                    disabled={busy}
                     spellCheck={false}
                     placeholder="--threads 8 --flash-attn on"
-                    onChange={e => setDraft(e.target.value)}
+                    onChange={e => {
+                      draftRevisionRef.current += 1;
+                      setDraft(e.target.value);
+                    }}
                     rows={3}
                   />
                   <p className="effective-settings__hint">
                     These raw backend arguments replace the resolved ones for the next load of this model. Session-only - nothing is written to disk, and it resets when you reload the app.
                   </p>
-                  {previewError && <p className="effective-settings__error">{previewError}</p>}
                   <div className="effective-settings__actions">
-                    <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy}>
-                      {busy ? 'Applying…' : (isModelLoaded ? 'Apply & reload' : 'Apply for next load')}
+                    <WorkspaceActionButton appearance="primary" size="small" onClick={applyOverride} disabled={busy || runtimeStatePending}>
+                      {busy ? 'Applying…' : (runtimeStatePending ? 'Resolving…' : (isRuntimeModelLoaded ? 'Apply & reload' : 'Apply for next load'))}
                     </WorkspaceActionButton>
                     {hasOverride && (
-                      <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy}>
+                      <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy || runtimeStatePending}>
                         Reset override
                       </WorkspaceActionButton>
                     )}
@@ -565,7 +639,7 @@ const EffectiveSettingsModal: React.FC<EffectiveSettingsModalProps> = ({
               {!unlocked && hasOverride && (
                 <div className="effective-settings__actions">
                   <span className="effective-settings__override-flag"><Icon name="alert" size={12} /> A session override is active.</span>
-                  <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy}>
+                  <WorkspaceActionButton appearance="secondary" size="small" icon="rotate-ccw" onClick={resetOverride} disabled={busy || runtimeStatePending}>
                     Reset override
                   </WorkspaceActionButton>
                 </div>
