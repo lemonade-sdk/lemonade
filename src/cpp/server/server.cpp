@@ -26,6 +26,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/session_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/thinking_controls.h"
@@ -942,80 +943,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
-    auto trim = [](const std::string& str) -> std::string {
-        size_t s = str.find_first_not_of(" \t\r\n");
-        if (s == std::string::npos) return "";
-        size_t e = str.find_last_not_of(" \t\r\n");
-        return str.substr(s, e - s + 1);
-    };
-
-    std::string client_val;
-    if (config_) {
-        for (const auto& hdr : config_->telemetry_session_headers_client()) {
-            std::string cleaned_hdr = trim(hdr);
-            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
-                std::string val = trim(req.get_header_value(cleaned_hdr));
-                if (!val.empty()) {
-                    client_val = val;
-                    break;
-                }
-            }
-        }
-    }
-    if (client_val.empty()) {
-        static const char* kWellKnownClientHeaders[] = {
-            "x-opencode-client",
-            "x-client-id",
-            "x-client-name"
-        };
-        for (const char* hdr : kWellKnownClientHeaders) {
-            if (req.has_header(hdr)) {
-                std::string val = trim(req.get_header_value(hdr));
-                if (!val.empty()) {
-                    client_val = val;
-                    break;
-                }
-            }
-        }
+    session::SessionContext telemetry_session = config_
+        ? session::resolve_session_context(
+              req,
+              config_->telemetry_session_headers_id(),
+              config_->telemetry_session_headers_client())
+        : session::resolve_session_context(req, {}, {});
+    if (!telemetry_session.session_id.empty()) {
+        telemetry::g_incoming_client_id = telemetry_session.client_id;
+        telemetry::g_incoming_session_id = telemetry_session.session_id;
     }
 
-    std::string session_val;
-    if (config_) {
-        for (const auto& hdr : config_->telemetry_session_headers_id()) {
-            std::string cleaned_hdr = trim(hdr);
-            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
-                std::string val = trim(req.get_header_value(cleaned_hdr));
-                if (!val.empty()) {
-                    session_val = val;
-                    break;
-                }
-            }
-        }
-    }
-    if (session_val.empty()) {
-        static const char* kWellKnownSessionHeaders[] = {
-            "x-opencode-session",
-            "x-session-id",
-            "x-client-session-id",
-            "mcp-session-id",
-            "x-conversation-id",
-            "session-id"
-        };
-        for (const char* hdr : kWellKnownSessionHeaders) {
-            if (req.has_header(hdr)) {
-                std::string val = trim(req.get_header_value(hdr));
-                if (!val.empty()) {
-                    session_val = val;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!session_val.empty()) {
-        telemetry::g_incoming_client_id = client_val;
-        telemetry::g_incoming_session_id = session_val;
-    }
+    // Reset every request so a reused worker thread can't leak the prior
+    // caller's session to a cloud provider.
+    session::g_request_session = session::resolve_forwardable_session(req);
 
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
