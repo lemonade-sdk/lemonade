@@ -215,20 +215,23 @@ All 55 gold labels are represented in the 20k-sentence corpus, but their coverag
 
 Documents are short: the median (p50) is ~744 characters, the p99 is ~3,259 characters, and the maximum is 7,191 characters (1,737 tokens). No document is truncated for any model in this comparison, so differences in context-window size cannot explain the differences in benchmark results.
 
+### Benign records
+
+Nemotron-PII's test split is pure-positive, every one of the 20,000 sampled rows carries at least one PII span, so leak rate alone can't tell a router that's actually discriminating apart from one that just keeps everything local. To measure the other failure mode, over-routing, we built a separate 3000-case benign arm from two open instruction datasets: `HuggingFaceH4/no_robots` (Chat, Generation, Open QA, Brainstorm, Rewrite, Classify, and Coding turns) and `databricks/databricks-dolly-15k` (open_qa, general_qa, brainstorming, creative_writing, and classification instructions), excluding any category that pastes a source document into the prompt, since those are typically full of names and places. Each candidate had to clear a regex sweep and two independent PII detectors (OpenMed privacy-filter-multilingual-v2 and mmBERT32k) with zero hits before being accepted as benign, which is how 19,221 candidates were winnowed down to the 3000 cases used below.
+
 ---
 
 ## Baselines: regex, embeddings, and LLMs as the router
 
-| Baseline | Leak rate | Per prompt |
-| --- | --- | --- |
-| Regex | 18.7% (467/2,500)* | <1 ms |
-| embeddinggemma-300m  | 5% (1,000 / 20,000)** | ~32 ms |
-| Qwen3-Embedding-0.6B | 15% (3,000 / 20,000)** | ~63 ms |
-| Qwen3-Embedding-4B | 20% (4,000 / 20,000)** | ~264 ms |
-| LLM Qwen3.5-9B | 1.10% (220 / 20,000) | ~8.8 s |
-| LLM Qwen3.5-2B | 0.97% (194 / 20,000) | ~4.2 s |
-| LLM Qwen3.5-0.8B | 1.41% (282 / 20,000) | ~3.2 s |
-| LLM Qwen3.5-0.8B on NPU | 1.63% (326 / 20,000) | ~2.5 s |
+| Baseline | Leak rate | over-route | Per prompt |
+| --- | --- | --- | --- |
+| Regex | 18.7% (467/2,500)* | - | <1 ms |
+| embeddinggemma-300m  | 5% (1,000 / 20,000)** | - | ~32 ms |
+| Qwen3-Embedding-0.6B | 15% (3,000 / 20,000)** | - | ~63 ms |
+| Qwen3-Embedding-4B | 20% (4,000 / 20,000)** | - | ~264 ms |
+| LLM Qwen3.5-9B | 1.10% (220 / 20,000) | 3.6% (108/3,000) | ~8.8 s |
+| LLM Qwen3.5-2B | 9.4% (1,880 / 20,000) | 75.0% (2,250/3000) | ~4.2 s |
+| LLM Qwen3.5-0.8B | 1.41% (282 / 20,000) | 95.0% (2,850/3000) | ~3.2 s |
 
 * Regex is limited to a selected set of keywords with fixed patterns, such as SSNs, email addresses, card numbers, IP addresses, etc. Therefore, we limited the regex benchmark to 2,500 records.
 
@@ -283,7 +286,7 @@ The embedding step itself is cheap (about 32 ms per document for embeddinggemma,
 
 With regexes and embedding-based classifiers covered, we can now move on to a more complex setup that puts large language models at the center of the detection pipeline. Hand it the prompt, tell it what counts as sensitive, and let it pick the route. Lemonade's router supports this directly with `"router": {"type": "llm"}`, so we ran the corpus through three sizes of Qwen3.5: 0.8B, 2B and 9B. Going in, we assumed leak rate would fall as the model got bigger.
 
-It didn't work out that way. All three sizes land within half a percentage point of each other: the 2B leaked 0.97% (194 of 20,000), the 9B 1.10% (220), and the 0.8B 1.41% (282). Roughly one document in a hundred, at every size. The 9B isn't meaningfully better than the 2B, and the 0.8B gives up under half a point against the best of them. That's a small price for a model that fits in under a gigabyte, and it's the number to hold onto for the timing discussion below.
+Leak rate alone doesn't tell that story, and neither does over-route rate on its own - you need both. The 9B leaked 1.10% (220 of 20,000) and the 0.8B 1.41% (282). The 2B is the outlier, and not in the direction we expected: it leaked 9.4% (roughly 1,880 of 20,000), nearly an order of magnitude worse than the other two sizes. Pairing each leak rate with its result on the 3,000-case benign arm is what explains why: none of the three sizes gets both numbers right, and each gets it wrong for a different reason. The 0.8B's 1.41% leak rate looks respectable next to the 9B, but it comes from a model that treats almost any request as sensitive: on the benign arm it still sends 95.0% of ordinary requests (2,850 of 3,000) to the local model instead of the cloud, so a low leak rate here just means it refuses more than it discriminates. The 2B's rationale field routinely identifies the PII correctly - it will call out an SSN or a date of birth by name - and then writes the cloud model's name into the decision field anyway, a labeling failure rather than a detection failure: it separates PII from non-PII fine in its own reasoning but confuses which of the two candidate names is the private one when it commits to an answer, and the same confusion shows up in the benign arm, just inverted - 75.0% of ordinary requests (2,250 of 3,000) get sent to the local model instead of the cloud one. The 9B is the only one of the three that gets both sides right: it holds the 1.10% leak rate and adds a 3.6% over-route rate (108 of 3,000 benign requests wrongly kept local), the best combination by a wide margin, because it both discriminates PII from non-PII correctly and consistently names the model it means.
 
 **The prompt is the job description.** Every decision in these runs came from one routing prompt as the `"router": {"type": "llm", ...}` prompt field. We wrote it to spell out every category the corpus labels, grouped the way a person would group them, so that a miss is a miss and not a gap in the instructions:
 
@@ -304,16 +307,16 @@ It didn't work out that way. All three sizes land within half a percentage point
 > If the request is ambiguous, default to Qwen3.5-0.8B-GGUF. When in doubt, prioritize privacy over capability."
 >
 
-**Where the misses land.** Most of the leaked documents are what we'd call genuine misses: the document carried a name alongside a salary, an SSN, an account number, a date of birth, the kind of PII a person would name first, and the model read it and still sent it to the cloud. Those run at 0.86% for the 2B (171 documents), 0.98% for the 9B (196) and 1.25% for the 0.8B (250). The remainder, a few dozen documents per model, are the borderline ones: the only identifiers in the document are a URL, a company name and a city, all on the list, but the kind of thing the model plainly weighed as not sensitive enough to keep local. The one capability gap that separates the sizes is the 0.8B on network IDs and credential strings: MAC addresses, API keys, cookies. It lets those through about twice as often as its own average, and the larger models don't. A small model simply doesn't read a hex string as something to protect.
+**Where the misses land.** For the 9B and the 0.8B, most of the leaked documents are what we'd call genuine misses: the document carried a name alongside a salary, an SSN, an account number, a date of birth, the kind of PII a person would name first, and the model read it and still sent it to the cloud. Those run at 0.98% for the 9B (196 documents) and 1.25% for the 0.8B (250). The remainder are borderline cases: the only identifiers in the document are a URL, a company name and a city, all on the list, but the kind of thing the model plainly weighed as not sensitive enough to keep local. The 2B's leaks don't fit that pattern at all: the large majority of them are the naming-confusion failure described above, where the rationale correctly flags the PII and the decision field still names the cloud model. Genuine misses, of the same kind the 9B and 0.8B make, are a minority of the 2B's leaks.
 
 **How the models explain themselves.** The router records a free-text rationale alongside a decision whenever the model offers one, and here the sizes really do differ: the 9B gave a reason 99.5% of the time, the 2B 59.4%, the 0.8B just 18.3%. Here is the 9B on a document labeled `company_name, education_level, occupation, sexuality, url`:
 
 > "The request contains no personal information"
 >
 
-That's a wrong call, four of those five labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. If you need decisions you can review after the fact, that is what the bigger model buys you. It is not buying you accuracy.
+That's a wrong call, four of those five labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. The 2B sits in between at 59.4%, and its rationale is the thing that exposes its bug in the first place: read alongside the decision field, a 2B rationale that names the PII correctly next to a decision that routes to the cloud is the naming-confusion failure caught in the act. A high rationale rate makes a model's mistakes auditable; it doesn't make the model correct.
 
-**The catch is time.** Every one of these numbers costs seconds per prompt: about 3.2 s for the 0.8B, 4.2 s for the 2B and 8.8 s for the 9B end to end, because the router has to read the whole document, decide, and then in most cases answer the request as well. Since accuracy is flat across sizes, the smallest model is the obvious pick, and that opens a door the larger ones can't use: the NPU. FastFlowLM ships a Qwen3.5-0.8B build for the Ryzen AI NPU, and can be easily accessed through Lemonade Server using the `flm` backend. The NPU build made its routing decision in a median 1.99 s against 3.06 s for the llama.cpp build, and finished the whole request in 2.45 s against 3.09 s, while leaving the CPU and GPU free for whatever model answers.
+**The catch is time, and it's no longer the only variable.** Every one of these numbers costs seconds per prompt: about 3.2 s for the 0.8B, 4.2 s for the 2B and 8.8 s for the 9B end to end, because the router has to read the whole document, decide, and then in most cases answer the request as well. With the benign arm in the picture, the 2B is no longer in contention regardless of its latency - a labeling bug that drives both leak rate and over-route rate isn't something a faster model earns back. The real choice is between the 9B's 8.8 s for the best combined accuracy and the 0.8B's 3.2 s for a leak rate nearly as good bought at the cost of over-routing most benign traffic.
 
 ---
 
@@ -417,7 +420,8 @@ Putting the models above into policies you could actually run.
         "model": "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0",
         "reference_phrases": {
           "client-account-ops": ["move 10% of this client's portfolio from equities into bonds", /* ...5 more */],
-          "market-research":    ["what is the outlook for European bank stocks this quarter",  /* ...4 more */] } }
+          "market-research":    ["what is the outlook for European bank stocks this quarter",  /* ...4 more */] },
+        "default_label": "market-research" }
     ],
     "rules": [
       { "id": "structured-identifier-regex",
@@ -538,7 +542,8 @@ Putting the models above into policies you could actually run.
         "model": "embeddinggemma-300m-qat-q8_0-GGUF-Q8_0",
         "reference_phrases": {
           "active-claim":     ["I was rear-ended on the highway yesterday and my bumper is crushed", /* ...5 more */],
-          "policy-education": ["what is the difference between collision and comprehensive coverage", /* ...4 more */] } }
+          "policy-education": ["what is the difference between collision and comprehensive coverage", /* ...4 more */] },
+        "default_label": "policy-education" }
     ],
     "rules": [
       { "id": "damage-photos-stay-local", "match": { "has_images": true }, "route_to": "Qwen3.5-9B-NoThinking" },
