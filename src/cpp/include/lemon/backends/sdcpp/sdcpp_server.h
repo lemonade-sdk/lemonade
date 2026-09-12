@@ -14,7 +14,7 @@
 namespace lemon {
 namespace backends {
 
-class SDServer : public WrappedServer, public IImageServer {
+class SDServer : public WrappedServer, public IImageServer, public IUpscaleServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -42,13 +42,9 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    // ESRGAN upscaling via sd-cli subprocess.
-    //
-    // sd-server's HTTP API does not expose an upscaling endpoint, so we use the
-    // sd-cli binary's -M upscale mode as a subprocess.
-    static std::string upscale_via_cli(
+    std::string upscale(
         const std::string& b64_image,
-        const std::string& upscale_model_path);
+        const std::string& upscale_model_path) override;
 
 private:
     // Precedence and fall-through are documented in build_extra_args().

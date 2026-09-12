@@ -393,7 +393,7 @@ json TheNoiseServer::image_variations(const json& /* request */) {
     );
 }
 
-std::string TheNoiseServer::upscale_via_cli(
+std::string TheNoiseServer::upscale(
     const std::string& b64_image,
     const std::string& upscale_model_path) {
 
