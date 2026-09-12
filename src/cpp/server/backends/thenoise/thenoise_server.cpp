@@ -50,9 +50,7 @@ InstallParams TheNoiseServer::get_install_params(const std::string& backend, con
         throw std::runtime_error("TheNoise backend '" + backend + "' is not supported. Supported: rocm");
     }
 
-    // TheNoise publishes one portable bundle per GPU target (gfx1150 / gfx1151)
-    // under the same release tag. Pick the archive matching this host.
-    std::string target_arch = SystemInfo::get_rocm_arch();
+    std::string target_arch = SystemInfo::rocm_asset_family(SystemInfo::get_rocm_arch());
 
     InstallParams params;
     params.repo = "lemonade-sdk/thenoise";
@@ -381,15 +379,41 @@ json TheNoiseServer::image_generations(const json& request) {
     return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};
 }
 
-json TheNoiseServer::image_edits(const json& /* request */) {
-    return ErrorResponse::from_exception(
-        UnsupportedOperationException("Image editing", "thenoise (text-to-image only)")
-    );
+json TheNoiseServer::image_edits(const json& request) {
+    int n = request.value("n", 1);
+    if (n < 1) n = 1;
+
+    json data = json::array();
+    for (int i = 0; i < n; ++i) {
+        json body = build_request(request);
+        body["out"] = "json";
+
+        if (request.contains("image_data") && !request["image_data"].is_null()) {
+            body["image"] = request["image_data"];
+        }
+        body.erase("image_data");
+        body.erase("image_filename");
+
+        LOG(DEBUG, "TheNoise") << "Forwarding image edit to thenoise: " << body.dump(2) << std::endl;
+
+        json resp = forward_request("/edit", body);
+
+        if (!resp.contains("b64_json")) {
+            LOG(ERROR, "TheNoise") << "thenoise image edit failed: " << resp.dump() << std::endl;
+            return ErrorResponse::from_exception(
+                BackendException("thenoise", "image edit returned no b64_json: " + resp.dump())
+            );
+        }
+
+        data.push_back(resp);
+    }
+
+    return {{"created", static_cast<long long>(std::time(nullptr))}, {"data", data}};
 }
 
 json TheNoiseServer::image_variations(const json& /* request */) {
     return ErrorResponse::from_exception(
-        UnsupportedOperationException("Image variations", "thenoise (text-to-image only)")
+        UnsupportedOperationException("Image variations", "thenoise")
     );
 }
 
