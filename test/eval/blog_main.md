@@ -226,12 +226,12 @@ Nemotron-PII's test split is pure-positive, every one of the 20,000 sampled rows
 | Baseline | Leak rate | over-route | Per prompt |
 | --- | --- | --- | --- |
 | Regex | 18.7% (467/2,500)* | - | <1 ms |
-| embeddinggemma-300m  | 5% (1,000 / 20,000)** | - | ~32 ms |
+| embeddinggemma-300m | 5% (1,000 / 20,000)** | - | ~32 ms |
 | Qwen3-Embedding-0.6B | 15% (3,000 / 20,000)** | - | ~63 ms |
 | Qwen3-Embedding-4B | 20% (4,000 / 20,000)** | - | ~264 ms |
 | LLM Qwen3.5-9B | 1.10% (220 / 20,000) | 3.6% (108/3,000) | ~8.8 s |
-| LLM Qwen3.5-2B | 9.4% (1,880 / 20,000) | 75.0% (2,250/3000) | ~4.2 s |
-| LLM Qwen3.5-0.8B | 1.41% (282 / 20,000) | 95.0% (2,850/3000) | ~3.2 s |
+| LLM Qwen3.5-2B | 9.4% (1,880 / 20,000) | 75.0% (2,250/3,000) | ~4.2 s |
+| LLM Qwen3.5-0.8B | 1.41% (282 / 20,000) | 95.0% (2,850/3,000) | ~3.2 s |
 
 * Regex is limited to a selected set of keywords with fixed patterns, such as SSNs, email addresses, card numbers, IP addresses, etc. Therefore, we limited the regex benchmark to 2,500 records.
 
@@ -286,7 +286,9 @@ The embedding step itself is cheap (about 32 ms per document for embeddinggemma,
 
 With regexes and embedding-based classifiers covered, we can now move on to a more complex setup that puts large language models at the center of the detection pipeline. Hand it the prompt, tell it what counts as sensitive, and let it pick the route. Lemonade's router supports this directly with `"router": {"type": "llm"}`, so we ran the corpus through three sizes of Qwen3.5: 0.8B, 2B and 9B. Going in, we assumed leak rate would fall as the model got bigger.
 
-Leak rate alone doesn't tell that story, and neither does over-route rate on its own - you need both. The 9B leaked 1.10% (220 of 20,000) and the 0.8B 1.41% (282). The 2B is the outlier, and not in the direction we expected: it leaked 9.4% (roughly 1,880 of 20,000), nearly an order of magnitude worse than the other two sizes. Pairing each leak rate with its result on the 3,000-case benign arm is what explains why: none of the three sizes gets both numbers right, and each gets it wrong for a different reason. The 0.8B's 1.41% leak rate looks respectable next to the 9B, but it comes from a model that treats almost any request as sensitive: on the benign arm it still sends 95.0% of ordinary requests (2,850 of 3,000) to the local model instead of the cloud, so a low leak rate here just means it refuses more than it discriminates. The 2B's rationale field routinely identifies the PII correctly - it will call out an SSN or a date of birth by name - and then writes the cloud model's name into the decision field anyway, a labeling failure rather than a detection failure: it separates PII from non-PII fine in its own reasoning but confuses which of the two candidate names is the private one when it commits to an answer, and the same confusion shows up in the benign arm, just inverted - 75.0% of ordinary requests (2,250 of 3,000) get sent to the local model instead of the cloud one. The 9B is the only one of the three that gets both sides right: it holds the 1.10% leak rate and adds a 3.6% over-route rate (108 of 3,000 benign requests wrongly kept local), the best combination by a wide margin, because it both discriminates PII from non-PII correctly and consistently names the model it means.
+Leak rate alone doesn't tell that story, and neither does over-route rate on its own - you need both. The 9B leaked 1.10% (220 of 20,000) and the 0.8B 1.41% (282). The 2B is the outlier, and not in the direction we expected: it leaked 9.4% (roughly 1,880 of 20,000), nearly an order of magnitude worse than the other two sizes.
+
+Pairing each leak rate with its result on the 3,000-case benign arm is what explains why: none of the three sizes gets both numbers right, and each gets it wrong for a different reason. The 0.8B's 1.41% leak rate looks respectable next to the 9B, but it comes from a model that treats almost any request as sensitive: on the benign arm it still sends 95.0% of ordinary requests (2,850 of 3,000) to the local model instead of the cloud, so a low leak rate here just means it refuses more than it discriminates. The 2B's rationale field routinely identifies the PII correctly - it will call out an SSN or a date of birth and then writes the cloud model's name into the decision field anyway, a labeling failure rather than a detection failure. The same confusion shows up in the benign arm, 75.0% of ordinary requests (2,250 of 3,000) get sent to the local model instead of the cloud one. The 9B is the only one of the three that gets both sides right: it holds the 1.10% leak rate and adds a 3.6% over-route rate (108 of 3,000 benign requests wrongly kept local), the best combination by a wide margin, because it both discriminates PII from non-PII correctly and consistently names the model it means.
 
 **The prompt is the job description.** Every decision in these runs came from one routing prompt as the `"router": {"type": "llm", ...}` prompt field. We wrote it to spell out every category the corpus labels, grouped the way a person would group them, so that a miss is a miss and not a gap in the instructions:
 
@@ -307,16 +309,16 @@ Leak rate alone doesn't tell that story, and neither does over-route rate on its
 > If the request is ambiguous, default to Qwen3.5-0.8B-GGUF. When in doubt, prioritize privacy over capability."
 >
 
-**Where the misses land.** For the 9B and the 0.8B, most of the leaked documents are what we'd call genuine misses: the document carried a name alongside a salary, an SSN, an account number, a date of birth, the kind of PII a person would name first, and the model read it and still sent it to the cloud. Those run at 0.98% for the 9B (196 documents) and 1.25% for the 0.8B (250). The remainder are borderline cases: the only identifiers in the document are a URL, a company name and a city, all on the list, but the kind of thing the model plainly weighed as not sensitive enough to keep local. The 2B's leaks don't fit that pattern at all: the large majority of them are the naming-confusion failure described above, where the rationale correctly flags the PII and the decision field still names the cloud model. Genuine misses, of the same kind the 9B and 0.8B make, are a minority of the 2B's leaks.
+**Where the misses land.** For the 9B and the 0.8B, most of the leaked documents are what we'd call genuine misses: the document carried a name alongside a salary, an SSN, an account number, a date of birth, the kind of PII a person would name first, and the model read it and still sent it to the cloud. The remainder are borderline cases: the only identifiers in the document are a URL, a company name and a city, all on the list, but the kind of thing the model plainly weighed as not sensitive enough to keep local. The 2B's leaks don't fit that pattern at all: the large majority of them are the naming-confusion failure described above, where the rationale correctly flags the PII and the decision field still names the cloud model. Genuine misses, of the same kind the 9B and 0.8B make, are a minority of the 2B's leaks.
 
 **How the models explain themselves.** The router records a free-text rationale alongside a decision whenever the model offers one, and here the sizes really do differ: the 9B gave a reason 99.5% of the time, the 2B 59.4%, the 0.8B just 18.3%. Here is the 9B on a document labeled `company_name, education_level, occupation, sexuality, url`:
 
 > "The request contains no personal information"
 >
 
-That's a wrong call, four of those five labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. The 2B sits in between at 59.4%, and its rationale is the thing that exposes its bug in the first place: read alongside the decision field, a 2B rationale that names the PII correctly next to a decision that routes to the cloud is the naming-confusion failure caught in the act. A high rationale rate makes a model's mistakes auditable; it doesn't make the model correct.
+That's a wrong call, four of those five labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. The 2B sits in between at 59.4%, and its rationale is the thing that exposes its bug in the first place: read alongside the decision field, a 2B rationale that names the PII correctly next to a decision that routes to the cloud is the naming-confusion failure caught in the act.
 
-**The catch is time, and it's no longer the only variable.** Every one of these numbers costs seconds per prompt: about 3.2 s for the 0.8B, 4.2 s for the 2B and 8.8 s for the 9B end to end, because the router has to read the whole document, decide, and then in most cases answer the request as well. With the benign arm in the picture, the 2B is no longer in contention regardless of its latency - a labeling bug that drives both leak rate and over-route rate isn't something a faster model earns back. The real choice is between the 9B's 8.8 s for the best combined accuracy and the 0.8B's 3.2 s for a leak rate nearly as good bought at the cost of over-routing most benign traffic.
+**The catch is time.** Every one of these numbers costs seconds per prompt: about 3.2 s for the 0.8B, 4.2 s for the 2B and 8.8 s for the 9B end to end, because the router has to read the whole document, decide, and then in most cases answer the request as well. With the benign arm in the picture, the 2B is no longer in contention regardless of its latency. The real choice is between the 9B's 8.8 s for the best combined accuracy and the 0.8B's 3.2 s for a leak rate nearly as good bought at the cost of over-routing most benign traffic.
 
 ---
 
@@ -335,9 +337,11 @@ That's a wrong call, four of those five labels are on the list, but the 9B says 
 
 **nvidia/gliner-PII** takes a different approach from the fixed-label token classifiers: it is a span-based extractor built on the GLiNER large-v2.1 architecture, with roughly 570M parameters. Instead of having a fixed output head for a predefined set of PII classes, labels are supplied at inference time, making the model flexible when the set of entities being searched for changes. NVIDIA trained it on roughly 100K synthetic records generated with NeMo Data Designer across more than 50 industries and 55+ entity types, covering identifiers such as usernames, emails, phone numbers, SSNs, and financial, medical, and legal information. NVIDIA reports strict F1 scores of 0.70 on Argilla PII, 0.64 on AI4Privacy, and 0.87 on its Nemotron-PII benchmark at a 0.3 confidence threshold.
 
-**OpenMed/privacy-filter-multilingual** and its **v2** successor (v1, v2) are both token classifiers built on a 1.4B-parameter mixture-of-experts base (OpenAI's `privacy_filter` architecture, 50M active parameters per token across 128 experts with top-4 routing), extended from that base model's original 8 coarse categories to 54 fine-grained categories across 16 languages via a BIOES scheme (217 output classes total). v1 was fully fine-tuned on a language-balanced mix of AI4Privacy's `pii-masking-200k`, `pii-masking-400k`, and `open-pii-masking-500k`; v2 keeps the same label space and backbone but adds Nemotron- and Gretel-derived synthetic PII data to that training mix. It was converted from its original safetensors checkpoint to ONNX to be served through the router's `onnxruntime`-based classifier path.
+**OpenMed/privacy-filter-multilingual** and its **v2** successor (v1, v2) are both token classifiers built on a 1.4B-parameter mixture-of-experts base (OpenAI's `privacy_filter` architecture, 50M active parameters per token across 128 experts with top-4 routing), extended from that base model's original 8 coarse categories to 54 fine-grained categories across 16 languages via a BIOES scheme (217 output classes total). v1 was fully fine-tuned on a language-balanced mix of AI4Privacy's `pii-masking-200k`, `pii-masking-400k`, and `open-pii-masking-500k`; v2 keeps the same label space and backbone but adds Nemotron- and Gretel-derived synthetic PII data to that training mix. It was converted from its original safetensors checkpoint to **ONNX** to be served through the router's `onnxruntime`-based classifier path.
 
 **perplexity-ai/pplx-pii-masking** pairs a ~600M-parameter bidirectional Qwen3 encoder with two heads: a token-classification head over 9 PII categories, decoded with a constrained Viterbi pass rather than greedy argmax, and a separate document-level sensitivity head trained on pooled representations. It's the newest and most narrowly-scoped model in this comparison; the model card doesn't publish training-data details or accuracy numbers. It was likewise converted from safetensors to ONNX to be served through the router's `onnxruntime`-based classifier path.
+
+The router policies used to benchmark each of these three ONNX detectors are published alongside the conversions: pplx-pii-masking policy, OpenMed privacy-filter-multilingual-v2 policy, and mmbert32k policy.
 
 ## Encoder detectors: the leak-rate table, and the turn to character F1
 
@@ -565,11 +569,3 @@ Putting the models above into policies you could actually run.
   }
 }
 ```
-
----
-
-## Timings, and what the gate actually costs
-
----
-
-##
