@@ -136,16 +136,15 @@ Here's an example policy: cheap regex/keyword checks catch structured PII (SSNs,
     ]
   }
 }
-
 ```
 
-The [router-policy docs](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/router-policy.md) and the `lemonade-router-config` skill let you iterate on rules without touching the server itself.
+The router-policy docs and the lemonade-router-builder skill let you iterate on rules without touching the server itself.
 
 ## The Experiment
 
 The rest of this post works through the problem empirically. We start with the dataset everything is scored against, then try the cheap approaches (regex, embedding similarity, and an LLM asked to route), then the dedicated PII detector models. Along the way it becomes clear that document-level leak rate stops being a useful metric once the detectors get good, so we switch to character-level scoring to separate them. The post closes with four example policies built from what we learned.
 
-All timing numbers in this post were measured on a single machine built around an [AMD Ryzen AI Max+ 395](https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html) processor: 16 Zen 5 cores / 32 threads, an integrated [AMD Radeon 8060S](https://www.amd.com/en/blogs/2025/experience-unparalleled-performance-with-the-amd-ryzen.html) GPU (40 RDNA 3.5 compute units), an XDNA 2 NPU, and unified LPDDR5X memory shared across all three. The encoder detectors and embedding classifiers ran on the CPU; the LLM-as-router runs used the integrated GPU through Lemonade's llama.cpp backend.
+All timing numbers in this post were measured on a single machine built around an AMD Ryzen AI Max+ 395 processor: 16 Zen 5 cores / 32 threads, an integrated AMD Radeon 8060S GPU (40 RDNA 3.5 compute units), an XDNA 2 NPU, and unified LPDDR5X memory shared across all three. The encoder detectors and embedding classifiers ran on the CPU; the LLM-as-router runs used the integrated GPU through Lemonade's llama.cpp backend.
 
 ## The dataset
 
@@ -239,7 +238,7 @@ Nemotron-PII's test split is pure-positive, every one of the 20,000 sampled rows
 
 ** The leak rates are measured at the best threshold of `min_score: 0.30`
 
-Per-prompt times are the classification step alone: how long the router takes to decide where a request goes, before the routed model starts answering. The answer costs the same however the request was routed, so it isn't part of the comparison.
+Per-prompt times are the classification step alone: how long the router takes to decide where a request goes, before the routed model starts answering.
 
 ### Semantic similarity is the wrong tool for this job
 
@@ -284,7 +283,7 @@ Even at that best operating point, the approach is unreliable, and the reason is
 
 The classification step is cheap (about 32 ms per document for embeddinggemma, 63 ms for the 0.6B model, and 264 ms for the 4B, on CPU). But cheap and wrong is still wrong. We left the classifier in the comparison as a baseline and moved on.
 
-### LLMs as the router: leak rate isn't the whole story
+### LLMs as the router
 
 With regexes and embedding-based classifiers covered, we can now move on to a more complex setup that puts large language models at the center of the detection pipeline. Hand it the prompt, tell it what counts as sensitive, and let it pick the route. Lemonade's router supports this directly with `"router": {"type": "llm"}`, so we ran the corpus through three sizes of Qwen3.5: 0.8B, 2B and 9B. Going in, we assumed leak rate would fall as the model got bigger.
 
@@ -292,7 +291,7 @@ Leak rate alone doesn't tell that story, and neither does over-route rate on its
 
 Pairing each leak rate with its result on the 3,000-case benign arm is what explains why: none of the three sizes gets both numbers right, and each gets it wrong for a different reason. The 0.8B's 1.41% leak rate looks respectable next to the 9B, but it comes from a model that treats almost any request as sensitive: on the benign arm it still sends 95.0% of ordinary requests (2,850 of 3,000) to the local model instead of the cloud, so a low leak rate here just means it refuses more than it discriminates. The 2B's rationale field routinely identifies the PII correctly - it will call out an SSN or a date of birth and then writes the cloud model's name into the decision field anyway, a labeling failure rather than a detection failure. The same confusion shows up in the benign arm, 75.0% of ordinary requests (2,250 of 3,000) get sent to the local model instead of the cloud one. The 9B is the only one of the three that gets both sides right: it holds the 1.10% leak rate and adds a 3.6% over-route rate (108 of 3,000 benign requests wrongly kept local), the best combination by a wide margin, because it both discriminates PII from non-PII correctly and consistently names the model it means.
 
-**The prompt is the job description.** Every decision in these runs came from one routing prompt as the `"router": {"type": "llm", ...}` prompt field. The version below is the 0.8B's; for the 2B and 9B runs the only change was substituting that model's own name for `Qwen3.5-0.8B-GGUF` in the two places it appears, so every size was judged against the same instructions. We wrote it to spell out every category the corpus labels, grouped the way a person would group them, so that a miss is a miss and not a gap in the instructions:
+**The prompt is the job description.** Every decision in these runs came from one routing prompt as the `"router": {"type": "llm", ...}` prompt field. The version below is the 0.8B's; for the 2B and 9B runs the only change was substituting that model's own name for `Qwen3.5-0.8B-GGUF` in the two places it appears. We wrote it to spell out every category the corpus labels, grouped the way a person would group them, so that a miss is a miss and not a gap in the instructions:
 
 > "You are a routing assistant for an AI company. Your job is to choose which model should handle each request.
 >
@@ -382,8 +381,6 @@ Here's a real case (`nemotron-pii-15485`) that makes the idea concrete. It's 317
 pplx is blind to 49 of the document's 76 gold PII characters and mmBERT to 41 (`employed full-time` and `medical health services manager` are never flagged by either, apart from mmBERT clipping the word `services`), while both scored a perfect document-level "TP" on this case. That gap between "the document-level table says done" and "64% of the actual PII characters are still exposed" is the entire argument for character scoring.
 
 ### The full comparison, and the ordering inversion
-
-Character scores below are under each model's native decoding rule (argmax for OpenMed-v2 and mmBERT, the constrained Viterbi decoder for pplx); the document-leak column repeats the table above.
 
 | Model | char P | char R | **char F1** | doc leak |
 | --- | --- | --- | --- | --- |
@@ -580,7 +577,7 @@ We set out with a narrow question: can a router catch PII before a prompt leaves
 
 The cheap tools don't cut it on their own. Regex catches what it was written to catch and nothing else. Embedding similarity measures what a document is about, not whether it contains an identifier, and no threshold fixes that. An LLM can do the job, the 9B managed a 1.10% leak rate with only 3.6% over-routing, but it charges seconds per prompt for the privilege, and the smaller sizes either keep almost everything local (0.8B) or spot the PII correctly and then name the wrong model anyway (2B).
 
-Purpose-built token classifiers are the right tool for the detection step. OpenMed privacy-filter-multilingual-v2 leaked nothing across 20,000 documents and covered 94% of the PII characters in them. mmBERT and pplx are usable, and much smaller, but each has holes you need to know about before picking one, and those holes only show up once you score characters instead of documents.
+Purpose-built token classifiers are the right tool for the detection step. OpenMed privacy-filter-multilingual-v2 leaked nothing across 20,000 documents and covered 94% of the PII characters in them. mmBERT and pplx are usable, and much smaller, but each has gaps you need to know about before picking one, and those gaps only show up once you score characters instead of documents.
 
 Which is the other lesson: the metric matters as much as the model. Once every detector is under 1% document leak, "did it fire somewhere" stops telling them apart, and the character-level view doesn't just spread them out, it reorders them.
 
@@ -592,9 +589,6 @@ None of this has to be a single choice, either. The policies in the last section
 
 - Lemonade Server: https://github.com/lemonade-sdk/lemonade
 - Router policy reference (`collection.router`): https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/router-policy.md
-- Router policies used for the encoder rows: `test/conformance/routing/1/l2_pii_onnx_pplx_masking/policy.json`, `test/conformance/routing/1/l2_pii_onnx_privacy_filter/policy.json`, `test/conformance/routing/1/l2_pii_onnx_classifier/policy.json`
-- Full versions of the four example policies: `test/eval/use_cases/finance_wealth_advisor.json`, `legal_litigation_desk.json`, `coding_dev_assistant.json`, `insurance_claims_intake.json`
-- Evaluation scripts and runbook: `test/eval/` (`pii_routing_eval.py`, `pii_char_f1_eval.py`, `build_benign_corpus.py`, `llm_router_runbook.md`)
 
 **Datasets**
 
@@ -622,13 +616,10 @@ None of this has to be a single choice, either. The policies in the last section
 
 - Qwen3.5-0.8B (GGUF): https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF
 - Qwen3.5-2B (GGUF): https://huggingface.co/unsloth/Qwen3.5-2B-GGUF
-- Qwen3.5-9B (GGUF, also used as `Qwen3.5-9B-NoThinking`): https://huggingface.co/unsloth/Qwen3.5-9B-GGUF
+- Qwen3.5-9B (GGUF): https://huggingface.co/unsloth/Qwen3.5-9B-GGUF
 - Gemma 4 E4B (GGUF): https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF
 - Kimi K2.6 via Fireworks (`fireworks.kimi-k2p6`): https://fireworks.ai
 
 **Hardware**
 
 - AMD Ryzen AI Max+ 395 processor: https://www.amd.com/en/products/processors/laptop/ryzen/ai-300-series/amd-ryzen-ai-max-plus-395.html
-- AMD Ryzen AI Max+ 395 and Radeon 8060S overview: https://www.amd.com/en/blogs/2025/experience-unparalleled-performance-with-the-amd-ryzen.html
-- AMD Ryzen AI Max+ 395 generative AI performance (technical article): https://www.amd.com/en/developer/resources/technical-articles/2025/amd-ryzen-ai-max-395--a-leap-forward-in-generative-ai-performanc.html
-- LLM inference on Ryzen AI Max unified memory (ROCm blog): https://rocm.blogs.amd.com/artificial-intelligence/ryzen-uma-llm/README.html
