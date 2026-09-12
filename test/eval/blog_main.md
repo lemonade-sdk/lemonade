@@ -180,8 +180,8 @@ All 55 gold labels are represented in the 20k-sentence corpus, but their coverag
 | employment_status | quasi-identifier / sensitive | 1,917 | 9.6% |
 | bank_routing_number | direct identifier | 1,519 | 7.6% |
 | employee_id | direct identifier | 1,515 | 7.6% |
-| education_level | quasi-identifier / sensitive | 1,475 | 7.4% |
 | county | direct identifier | 1,423 | 7.1% |
+| education_level | quasi-identifier / sensitive | 1,416 | 7.1% |
 | age | quasi-identifier / sensitive | 1,390 | 7.0% |
 | race_ethnicity | quasi-identifier / sensitive | 1,357 | 6.8% |
 | ssn | direct identifier | 1,284 | 6.4% |
@@ -191,8 +191,8 @@ All 55 gold labels are represented in the 20k-sentence corpus, but their coverag
 | pin | direct identifier | 1,175 | 5.9% |
 | coordinate | direct identifier | 1,155 | 5.8% |
 | postcode | direct identifier | 1,099 | 5.5% |
-| swift_bic | direct identifier | 1,092 | 5.5% |
 | fax_number | direct identifier | 1,098 | 5.5% |
+| swift_bic | direct identifier | 1,092 | 5.5% |
 | ipv4 | direct identifier | 1,057 | 5.3% |
 | political_view | quasi-identifier / sensitive | 1,050 | 5.3% |
 | blood_type | quasi-identifier / sensitive | 1,039 | 5.2% |
@@ -206,8 +206,8 @@ All 55 gold labels are represented in the 20k-sentence corpus, but their coverag
 | certificate_license_number | direct identifier | 607 | 3.0% |
 | ipv6 | direct identifier | 580 | 2.9% |
 | sexuality | quasi-identifier / sensitive | 506 | 2.5% |
-| device_identifier | direct identifier | 391 | 2.0% |
 | national_id | direct identifier | 406 | 2.0% |
+| device_identifier | direct identifier | 391 | 2.0% |
 | unique_id | direct identifier | 364 | 1.8% |
 | tax_id | direct identifier | 242 | 1.2% |
 
@@ -316,7 +316,7 @@ Pairing each leak rate with its result on the 3,000-case benign arm is what expl
 > "The request contains no personal information"
 >
 
-That's a wrong call, four of those five labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. The 2B sits in between at 59.4%, and its rationale is the thing that exposes its bug in the first place: read alongside the decision field, a 2B rationale that names the PII correctly next to a decision that routes to the cloud is the naming-confusion failure caught in the act.
+That's a wrong call, all five of those labels are on the list, but the 9B says so out loud. It narrates nearly every decision, including the ones it gets wrong, which makes its logs easy to audit. The 0.8B mostly just routes, silently, four times out of five, so when it misses there is usually nothing in the log to inspect. The 2B sits in between at 59.4%, and its rationale is the thing that exposes its bug in the first place: read alongside the decision field, a 2B rationale that names the PII correctly next to a decision that routes to the cloud is the naming-confusion failure caught in the act.
 
 **The catch is time.** Every one of these numbers costs seconds per prompt: about 3.2 s for the 0.8B, 4.2 s for the 2B and 8.8 s for the 9B end to end, because the router has to read the whole document, decide, and then in most cases answer the request as well. With the benign arm in the picture, the 2B is no longer in contention regardless of its latency. The real choice is between the 9B's 8.8 s for the best combined accuracy and the 0.8B's 3.2 s for a leak rate nearly as good bought at the cost of over-routing most benign traffic.
 
