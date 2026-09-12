@@ -22,8 +22,15 @@ using json = nlohmann::json;
 class McpServer : public std::enable_shared_from_this<McpServer> {
 public:
     using EnsureLoadedFn = std::function<void(const std::string&)>;
+    // Aliases live in Server's AliasManager, which the gateway does not own.
+    // Injected rather than reached for, so a tool argument resolves the same
+    // way it does on the REST endpoints.
+    using ResolveAliasFn = std::function<std::string(const std::string&)>;
 
-    McpServer(Router* router, ModelManager* model_manager, EnsureLoadedFn ensure_loaded);
+    McpServer(Router* router,
+              ModelManager* model_manager,
+              EnsureLoadedFn ensure_loaded,
+              ResolveAliasFn resolve_alias = {});
     ~McpServer();
 
     // Must be called on a shared_ptr instance — handlers capture shared_from_this().
@@ -74,9 +81,12 @@ private:
                                          const std::string& name_hint);
     static json tools_descriptor();
 
+    std::string resolve_alias(const std::string& model_name) const;
+
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    ResolveAliasFn resolve_alias_;
 };
 
 }  // namespace lemon
