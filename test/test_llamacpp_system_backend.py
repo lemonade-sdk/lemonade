@@ -22,6 +22,8 @@ import time
 import stat
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import requests
 from utils.server_base import (
     _auth_headers,
@@ -35,6 +37,7 @@ from utils.test_models import (
     ENDPOINT_TEST_MODEL,
     TIMEOUT_DEFAULT,
     TIMEOUT_MODEL_OPERATION,
+    get_default_lemond_binary,
 )
 
 args = parse_args()  # Initialize global _config
@@ -191,54 +194,36 @@ def _wait_for_server_stop(port=PORT, timeout=30):
 
 def _get_lemond_binary():
     """Find the lemond binary in the same directory as the lemonade CLI."""
-    cli_binary = get_cli_binary()
-    if cli_binary:
-        build_dir = os.path.dirname(cli_binary)
-        name = "lemond.exe" if os.name == "nt" else "lemond"
-        candidate = os.path.join(build_dir, name)
-        if os.path.exists(candidate):
-            return candidate
-    return shutil.which("lemond") or "lemond"
+    bin_path = get_default_lemond_binary()
+    if bin_path and os.path.exists(bin_path):
+        return bin_path
+    candidates = ["LemonadeServer", "lemond"] if os.name == "nt" else ["lemond"]
+    for c in candidates:
+        which_path = shutil.which(c)
+        if which_path:
+            return which_path
+    return "lemond"
 
 
-def _pick_free_port():
-    """Return an unused TCP port assigned by the OS on the IPv4 loopback.
-
-    This suite owns one lemond instance. An OS-assigned port avoids colliding
-    with another test/server while retaining retry-on-startup-failure behavior.
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-    finally:
-        s.close()
+import contextlib
+from utils.server_fixture import (
+    allocate_free_port,
+    lemond_server,
+    make_clean_env,
+    wait_for_http_health,
+)
 
 
 def _stop_server():
-    """Stop the currently-running server via /internal/shutdown."""
-    try:
-        requests.post(
-            f"http://localhost:{PORT}/internal/shutdown",
-            headers=_auth_headers(),
-            timeout=5,
-        )
-        _wait_for_server_stop(PORT)
-    except Exception as e:
-        print(f"Warning: Failed to stop server: {e}")
+    """Stop the currently-running server via exit stack."""
+    stack = getattr(LlamaCppSystemBackendTests, "_server_exit_stack", None)
+    if stack:
+        stack.close()
+        LlamaCppSystemBackendTests._server_exit_stack = None
 
 
 def _server_healthy(port=PORT):
-    """True if lemond answers a health check on the port."""
-    try:
-        response = requests.get(
-            f"http://localhost:{port}/api/v1/health",
-            headers=_auth_headers(),
-            timeout=2,
-        )
-        return response.status_code == 200
-    except Exception:
-        return False
+    return wait_for_http_health(port, headers=_auth_headers(), timeout=2)
 
 
 def _start_server(wrapped_server=None, backend=None, config_updates=None):
@@ -247,60 +232,32 @@ def _start_server(wrapped_server=None, backend=None, config_updates=None):
 
     lemond_binary = _get_lemond_binary()
     cache_dir = LlamaCppSystemBackendTests.cache_dir
+    port = allocate_free_port()
+    PORT = port
 
-    # Redirect output to a log file rather than a PIPE: lemond runs with
-    # debug logging here, and an undrained PIPE can fill its buffer and block
-    # the process before it opens the port. The log is printed on failure.
-    log_path = os.path.join(tempfile.gettempdir(), "lemond_test.log")
-    last_log = ""
+    env = make_clean_env(cache_dir)
+    env["PATH"] = os.environ.get("PATH", "")
+    env["MOCK_LLAMA_REQUEST_PATH"] = os.environ.get("MOCK_LLAMA_REQUEST_PATH", "")
+    env["MOCK_LLAMA_CONTROL_PATH"] = os.environ.get("MOCK_LLAMA_CONTROL_PATH", "")
 
-    proc = None
-    started = False
-    max_attempts = 5
-    for _attempt in range(1, max_attempts + 1):
-        port = _pick_free_port()
-        PORT = port
-        cmd = [lemond_binary, cache_dir, "--port", str(port)]
-
-        with open(log_path, "w", encoding="utf-8") as log_file:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                env=os.environ.copy(),
+    stack = contextlib.ExitStack()
+    try:
+        stack.enter_context(
+            lemond_server(
+                port=port,
+                cache_dir=cache_dir,
+                env=env,
+                binary_path=lemond_binary,
+                wait_health=True,
+                health_headers=_auth_headers(),
+                health_timeout=30.0,
             )
+        )
+    except Exception:
+        stack.close()
+        raise
 
-        # Wait for this instance to become healthy, bailing early if it exits
-        # so we can retry on a fresh port.
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            if proc.poll() is not None:
-                break  # lemond exited early -> retry on a new port
-            if _server_healthy(port):
-                started = True
-                break
-            time.sleep(1)
-
-        if started:
-            break
-
-        # This attempt failed: clean up before retrying on a new port.
-        try:
-            if proc.poll() is None:
-                proc.kill()
-                proc.wait(timeout=10)
-        except Exception:
-            pass
-        try:
-            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                last_log = f.read()
-        except OSError:
-            last_log = ""
-
-    if not started:
-        print("=== lemond startup log (last attempt) ===")
-        print(last_log)
-        raise RuntimeError(f"lemond failed to start after {max_attempts} attempts")
+    LlamaCppSystemBackendTests._server_exit_stack = stack
 
     try:
         runtime_config = {}

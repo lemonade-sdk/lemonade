@@ -17,14 +17,21 @@ import subprocess
 import requests
 import unittest
 import concurrent.futures
+import contextlib
 
 # Add test/ to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from utils.server_base import (
     get_cli_binary,
     parse_args,
     pull_model_with_retry,
     run_server_tests,
+)
+from utils.server_fixture import (
+    allocate_free_port,
+    lemond_server,
+    wait_for_http_health,
 )
 from utils.test_models import (
     ENDPOINT_TEST_MODEL,
@@ -34,14 +41,7 @@ from utils.test_models import (
 
 args = parse_args()
 
-
-def find_free_port():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-    finally:
-        s.close()
+find_free_port = allocate_free_port
 
 
 MOCK_BIN_DIR = os.path.join(
@@ -212,28 +212,15 @@ class TestGpuHangRecovery(unittest.TestCase):
         self.session = requests.Session()
         self.session.trust_env = False
 
-        # Resolve build directory and lemond binary
-        name = "lemond.exe" if os.name == "nt" else "lemond"
-        cli_binary = get_cli_binary()
-        lemond_bin = None
-        if cli_binary:
-            if os.path.isabs(cli_binary):
-                build_dir = os.path.dirname(cli_binary)
-            else:
-                resolved_cli = shutil.which(cli_binary)
-                if resolved_cli:
-                    build_dir = os.path.dirname(resolved_cli)
-                else:
-                    build_dir = os.path.dirname(os.path.abspath(cli_binary))
-            candidate = os.path.join(build_dir, name)
-            if os.path.exists(candidate):
-                lemond_bin = candidate
-
+        lemond_bin = get_default_lemond_binary()
         if not lemond_bin or not os.path.exists(lemond_bin):
-            lemond_bin = shutil.which(name) or get_default_lemond_binary()
-            build_dir = (
-                os.path.dirname(os.path.abspath(lemond_bin)) if lemond_bin else "."
-            )
+            candidates = ["LemonadeServer", "lemond"] if os.name == "nt" else ["lemond"]
+            for c in candidates:
+                which_path = shutil.which(c)
+                if which_path:
+                    lemond_bin = which_path
+                    break
+        build_dir = os.path.dirname(os.path.abspath(lemond_bin)) if lemond_bin else "."
 
         cache_dir = os.path.join(build_dir, "test_cache")
         os.makedirs(cache_dir, exist_ok=True)
@@ -279,74 +266,34 @@ class TestGpuHangRecovery(unittest.TestCase):
         env["NO_PROXY"] = "127.0.0.1,localhost"
         env["no_proxy"] = "127.0.0.1,localhost"
 
+        self.exit_stack = contextlib.ExitStack()
         self.log_file_path = os.path.join(cache_dir, f"lemond_{self.port}.log")
-        self.log_file = open(self.log_file_path, "w")
-
-        print(f"Starting lemond on port {self.port}...")
-        self.lemond_proc = subprocess.Popen(
-            [
-                lemond_bin,
-                cache_dir,
-                "--port",
-                str(self.port),
-                "--host",
-                "127.0.0.1",
-                "--no-broadcast",
-            ],
-            env=env,
-            stdout=self.log_file,
-            stderr=subprocess.STDOUT,
-            text=True,
+        self.log_file = self.exit_stack.enter_context(
+            open(self.log_file_path, "w", encoding="utf-8")
         )
 
-        # Wait for lemond to be healthy (up to 60s for slow CI runners)
-        healthy = False
-        for _ in range(120):
-            try:
-                resp = self.session.get(f"{self.base_url}/api/v1/health", timeout=1)
-                if resp.status_code == 200:
-                    healthy = True
-                    break
-            except requests.RequestException:
-                pass
-            time.sleep(0.5)
-
-        if not healthy:
-            self.lemond_proc.terminate()
-            try:
-                self.lemond_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.lemond_proc.kill()
-            if getattr(self, "log_file", None):
-                try:
-                    self.log_file.flush()
-                    self.log_file.close()
-                    self.log_file = None
-                except Exception:
-                    pass
-            with open(self.log_file_path, "r") as f:
-                print("Lemond output:", f.read())
-            self.fail("lemond failed to start / respond to health check")
+        print(f"Starting lemond on port {self.port}...")
+        self.lemond_proc = self.exit_stack.enter_context(
+            lemond_server(
+                port=self.port,
+                cache_dir=cache_dir,
+                args=["--host", "127.0.0.1", "--no-broadcast"],
+                env=env,
+                binary_path=lemond_bin,
+                wait_health=True,
+                health_timeout=60.0,
+                stdout=self.log_file,
+                stderr=subprocess.STDOUT,
+            )
+        )
 
         # These tests time /load tightly to observe the reload, so the model has
         # to be in this server's cache before that clock starts.
         pull_model_with_retry(ENDPOINT_TEST_MODEL, port=self.port)
 
     def tearDown(self):
-        # Terminate lemond
-        if getattr(self, "lemond_proc", None):
-            self.lemond_proc.terminate()
-            try:
-                self.lemond_proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.lemond_proc.kill()
-                self.lemond_proc.wait()
-
-        if getattr(self, "log_file", None):
-            try:
-                self.log_file.close()
-            except Exception:
-                pass
+        if hasattr(self, "exit_stack"):
+            self.exit_stack.close()
 
         # Restore config.json backup
         if hasattr(self, "config_path"):
