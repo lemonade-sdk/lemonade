@@ -159,7 +159,7 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     lemond.exe ./
 
     REM Set the llama-server vulkan binary path
-    lemonade.exe config set llamacpp.vulkan_bin C:\path\to\bins
+    lemonade.exe config set "llamacpp.vulkan_bin=C:\path\to\llama-server.exe"
     ```
 
 === "Linux (bash)"
@@ -169,7 +169,140 @@ For example, to use your own Vulkan `llama-server` in place of Lemonade's:
     ./lemond ./
 
     # Set the llama-server vulkan binary path
-    ./lemonade config set llamacpp.vulkan_bin /path/to/bins
+    ./lemonade config set llamacpp.vulkan_bin=/path/to/llama-server
     ```
 
 See the `*_bin` settings in the [Configuration Guide](../guide/configuration/README.md) for the full set of customization options.
+
+### IFM K2-Horizon with a custom llama.cpp build
+
+K2-Horizon can use the existing `llamacpp` recipe with a build of IFM's
+[`model/K2Horizon` branch](https://github.com/MBZUAI-IFM/llama.cpp/tree/model/K2Horizon).
+No Lemonade source changes or managed-backend version updates are required.
+
+The following is a complete macOS source-build example. From the Lemonade
+source tree, check the dependencies and build the server and CLI:
+`setup.sh` recreates `build/`, so move any local artifacts there first.
+
+```bash
+./setup.sh
+cmake --preset default -DBUILD_WEB_APP=OFF -DBUILD_TESTING=OFF
+cmake --build --preset default --target lemond lemonade -j
+```
+
+If `setup.sh` reaches the pre-commit installation step and exits because the
+repository has `core.hooksPath` configured, that does not prevent the runtime
+build after all dependency checks have passed; continue with the CMake commands.
+This minimal build intentionally omits the desktop and web apps. The message
+"This build of Lemonade has been built without a desktop app or a web app" at
+the server root is expected and does not affect the REST API.
+
+To include the browser UI instead, configure with `BUILD_WEB_APP=ON`, build the
+`web-app` target, and restart `lemond`:
+
+```bash
+cmake --preset default -DBUILD_WEB_APP=ON -DBUILD_TESTING=OFF
+cmake --build --preset default --target lemond lemonade web-app -j
+```
+
+The UI is then available at the server root. A native desktop app has additional
+prerequisites; see the [application development guide](../dev/app.md).
+
+Build `llama-server` from the Lemonade source tree using the branch's
+[build instructions](https://github.com/MBZUAI-IFM/llama.cpp/blob/model/K2Horizon/docs/build.md)
+for your accelerator. For example, on macOS with Metal:
+
+```bash
+git clone --branch model/K2Horizon --single-branch https://github.com/MBZUAI-IFM/llama.cpp.git llama.cpp-ifm
+cmake -S llama.cpp-ifm -B llama.cpp-ifm/build -DGGML_METAL=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build llama.cpp-ifm/build --config Release --target llama-server -j
+```
+
+Start Lemonade on an explicit port in one terminal:
+
+```bash
+./build/lemond --port 13305
+```
+
+In a second terminal, select the matching backend and the **full executable
+path** (not its directory). Keep the build's shared libraries alongside the
+executable. Supplying `--port` makes the source-built CLI use the same server
+without relying on discovery.
+
+```bash
+./build/lemonade --port 13305 config set \
+  llamacpp.backend=metal \
+  "llamacpp.metal_bin=$(pwd)/llama.cpp-ifm/build/bin/llama-server"
+```
+
+For a Vulkan build on Windows or Linux, use `llamacpp.backend=vulkan` and
+`llamacpp.vulkan_bin` instead; Windows builds normally place `llama-server.exe`
+under `build/bin/Release`. The override applies to all models using that backend.
+Unload any already-loaded model before switching binaries.
+
+Register and download all non-Uno models supported by the IFM llama.cpp branch
+through the existing [custom-model CLI](../guide/configuration/custom-models.md):
+
+```bash
+./build/lemonade --port 13305 pull user.K2-Horizon-0.9B \
+  --recipe llamacpp \
+  --source huggingface \
+  --checkpoint main IFM/K2-Horizon-0.9B-GGUF:K2-Horizon-1B-BF16.gguf
+
+./build/lemonade --port 13305 pull user.K2-Horizon-3.7B \
+  --recipe llamacpp \
+  --source huggingface \
+  --checkpoint main IFM/K2-Horizon-3.7B-GGUF:K2-Horizon-4B-BF16.gguf
+
+./build/lemonade --port 13305 pull user.K2-Horizon-7B \
+  --recipe llamacpp \
+  --source huggingface \
+  --checkpoint main IFM/K2-Horizon-7B-GGUF:K2-Horizon-7B-BF16.gguf
+
+./build/lemonade --port 13305 pull user.K2-Horizon-32B \
+  --recipe llamacpp \
+  --source huggingface \
+  --checkpoint main IFM/K2-Horizon-32B-GGUF:K2-Horizon-32B-BF16.gguf
+
+./build/lemonade --port 13305 pull user.K2-Horizon-MoVA-36B-A4B \
+  --recipe llamacpp \
+  --source huggingface \
+  --checkpoint main IFM/K2-Horizon-MoVA-36B-A4B-GGUF:K2-Horizon-36B-BF16.gguf
+```
+
+These BF16 weights require approximately 175 GB of disk space in total. The
+maximum context windows come from the corresponding model cards and are also
+stored in the GGUF metadata:
+
+| Name | BF16 weight size | Maximum context |
+|---|---:|---:|
+| `user.K2-Horizon-0.9B` | 2.16 GB | 131,072 tokens (128K) |
+| `user.K2-Horizon-3.7B` | 10.13 GB | 524,288 tokens (512K) |
+| `user.K2-Horizon-7B` | 18.01 GB | 524,288 tokens (512K) |
+| `user.K2-Horizon-32B` | 69.57 GB | 524,288 tokens (512K) |
+| `user.K2-Horizon-MoVA-36B-A4B` | 74.92 GB | 524,288 tokens (512K) |
+
+The 375B model is intentionally not implemented in the IFM llama.cpp branch
+and cannot be used through this integration.
+
+The custom-model registration does not need a separate context-length option.
+Use `ctx_size` when loading to select the runtime context window. For example,
+load the 0.9B model at its full model-card limit:
+
+```bash
+curl http://localhost:13305/v1/load -H "Content-Type: application/json" \
+  -d '{"model_name":"user.K2-Horizon-0.9B","ctx_size":131072}'
+curl http://localhost:13305/v1/chat/completions -H "Content-Type: application/json" \
+  -d '{"model":"user.K2-Horizon-0.9B","messages":[{"role":"user","content":"What is 2 + 2?"}],"reasoning_effort":"high","max_tokens":1024}'
+```
+
+For any other model in the table, use its model name and `"ctx_size":524288`.
+These are model-supported maxima, not hardware recommendations. KV cache and
+compute buffers require substantial additional memory; choose a smaller
+`ctx_size` if the full window does not fit on the target system.
+
+These are custom models, not a claim of support in Lemonade's managed binaries.
+
+To return to Lemonade's managed Metal binary, unload the model and run
+`./build/lemonade --port 13305 config set llamacpp.metal_bin=builtin` (use the
+corresponding `*_bin` key for another backend).
