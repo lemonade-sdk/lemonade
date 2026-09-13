@@ -95,7 +95,7 @@ A background monitor samples global VRAM usage (NVIDIA via `nvidia-smi`, AMD via
 
 **Tiered degradation.** Idle models degrade in two stages rather than a binary loaded/unloaded:
 
-1. **Soft idle (downsize):** after `downsize_idle_timeout` seconds idle, the KV cache/context is cleared to free dynamic memory while base weights stay resident. The next request transparently restores it.
+1. **Soft idle (downsize):** after `downsize_idle_timeout` seconds idle, the backend is asked to release dynamic memory while base weights stay resident. What this frees is backend-specific; for llama.cpp it is a no-op that leaves the prompt cache intact. The next request transparently restores the model to `ready`.
 2. **Hard idle / pressure (evict):** after `evict_idle_timeout` seconds idle, or under VRAM pressure, the model is fully unloaded (VRAM released; the weights file stays in the OS page cache for a fast reload).
 
 **Load-time-weighted scoring.** Under pressure, the engine evicts by:
