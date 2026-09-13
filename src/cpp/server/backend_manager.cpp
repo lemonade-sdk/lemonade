@@ -956,6 +956,9 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
         if (!artifact.empty()) {
             result.release_url = artifact;
             result.version = backends::expected_image_digest(recipe, resolved_backend);
+            // The image reference stands in for a release asset's filename: it
+            // is the artifact name a user would recognize and search for.
+            result.download_filename = backends::image_pin(recipe, resolved_backend).tagged_ref();
             return result;
         }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything

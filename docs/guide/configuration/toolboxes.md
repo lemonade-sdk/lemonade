@@ -86,12 +86,31 @@ to right.
 ## DS4
 
 `ds4` runs the DeepSeek V4 family through antirez's DwarfStar4 engine, built from Donato's
-performance branch. The published models are 80 GB and larger, so DS4 always launches with
-`--ssd-streaming`: the experts are read from disk instead of being made fully resident, which is
-the only way they fit in a Strix Halo memory carveout.
+performance branch. The published models are 80 GB and larger, so Lemonade launches it with three
+settings a user would otherwise have to discover:
 
-Per-model context and prefill settings come from the upstream catalog and ride along as
-`recipe_options` on each model entry.
+| Flag | Why |
+|------|-----|
+| `--ssd-streaming` | Reads experts from disk instead of making them resident. The only way an 80 GB model fits. |
+| `--prefill-chunk 2048` | Chunks the prefill graph. Unchunked, a long prompt does not merely fail: it faults the GPU and takes the container with it. |
+| `--ssd-streaming-cache-experts <half the device pool>GB` | Caps the expert cache so a long prompt's prefill still has room. |
+
+That last one is the subtle one. ds4-server sizes its expert cache from the whole device arena,
+which on an APU is the GTT window, and then a long prompt's prefill asks for an expert span the
+arena can no longer satisfy because free memory has fallen under ds4's own 16 GiB reserve.
+Measured on a 61.3 GiB arena: ds4's own choice of a 40.9 GiB cache planned a 48.2 GiB footprint
+and died on a 2.6k-token prompt, while half the arena planned 37.4 GiB and answered it. Lemonade
+therefore caps the cache at half the pool it detects. The GB form of the flag also reserves two
+full prefill layers, which is the headroom that was missing.
+
+All three are ordinary defaults: ds4-server parses left to right, so anything you pass in
+`--ds4-args` wins.
+
+Per-model context and prefill settings from the upstream catalog ride along as `recipe_options`
+on each model entry.
+
+Expect single-digit tokens per second. The model is streaming from an SSD, and that is the trade
+being made to run an 80 GB mixture-of-experts at all.
 
 ## Halogen
 
@@ -107,16 +126,32 @@ It has two requirements the other backends do not:
   tokenizer are common, and the overlays and vision tower are small.
 
 The checkpoint itself does not have to fit in memory. Halogen maps it read-only and registers the
-mapping with the GPU rather than copying it, so what must fit is the KV pool: about 28 GB for one
-full native-context conversation, 35 GB for the default two. The server measures the budget at
-startup and lowers the pool itself when the configured one will not fit, so Lemonade deliberately
-leaves `HALOGEN_KV_POOL_POSITIONS` unset.
+mapping with the GPU rather than copying it. What must fit in the GPU's own pool is the KV pool,
+measured at 7.2 GiB for the 262144-position pool it settles on here; the 68 GiB of weights it
+locks are host RAM. The server measures that budget at startup and lowers the pool itself when the
+configured one will not fit, so Lemonade deliberately leaves `HALOGEN_KV_POOL_POSITIONS` unset.
+
+Measured on a 128 GB Strix Halo with the carve-out minimized: 96.5 GiB held in all, listening 92
+seconds after launch, and around 45 tokens per second, which is roughly three times what the
+llama.cpp toolbox variants reach on the same machine.
 
 One hardware note worth acting on: if your BIOS carves a fixed block of memory out for the iGPU,
 Halogen does not need it. It reaches the same unified memory through GTT either way, and the
 carve-out is taken before the kernel boots, so it comes straight out of the file cache the mapped
 checkpoint reads through. Setting the UMA frame buffer to Auto or its minimum is upstream's
 recommendation.
+
+## These are reasoning models
+
+Every model the ROCmFPX, DS4 and Halogen entries point at reasons before it answers. That is worth
+knowing because of how it interacts with `max_tokens`: the reasoning is spent out of the same
+budget, and it arrives as `reasoning_content` rather than `content`. Ask for 16 tokens and you can
+get an empty `content`, a populated `reasoning_content`, and `finish_reason: length`.
+
+This is ordinary behavior for a reasoning model rather than anything specific to these backends,
+but the models Lemonade ships for the other recipes mostly do not reason, so it is easy to meet
+here first. Give these models room, or turn reasoning off per request with
+`chat_template_kwargs: {"enable_thinking": false}` where the engine supports it.
 
 ## Model list
 
