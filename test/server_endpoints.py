@@ -2067,7 +2067,14 @@ class EndpointTests(ServerTestBase):
         class _FakeProvider(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 if self.path.rstrip("/").endswith("/models"):
-                    data = [{"id": uid, "object": "model"} for uid in upstream_ids]
+                    data = []
+                    for item in upstream_ids:
+                        if isinstance(item, dict):
+                            entry = dict(item)
+                            entry.setdefault("object", "model")
+                            data.append(entry)
+                        else:
+                            data.append({"id": item, "object": "model"})
                     payload = _json.dumps({"object": "list", "data": data}).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -2163,8 +2170,18 @@ class EndpointTests(ServerTestBase):
                 },
             }
 
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id],
+            [mock_model],
             chat_handler=chat_response,
         )
 
@@ -2221,16 +2238,53 @@ class EndpointTests(ServerTestBase):
             self.assertTrue(auth_data["auth_state"]["runtime_key_set"])
             self.assertEqual(auth_data["models_discovered"], 1)
 
-            # (4) /models now lists the discovered cloud model.
+            # (4) /models now lists the discovered cloud model with parsed limits.
             models = requests.get(
                 f"{self.base_url}/models",
                 timeout=TIMEOUT_DEFAULT,
             ).json()
-            ids = [m["id"] for m in models.get("data", [])]
-            self.assertIn(
-                public_name,
-                ids,
-                f"Discovered cloud model should appear in /models; got {ids}",
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
+            )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Discovered cloud model should appear in /models; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(cloud_entry.get("max_context_window"), 1310720)
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
+
+            # (4b) A full cache rebuild (triggered via /models?refresh=true) must
+            # not reset max_context_window or token limits on cloud models.
+            models_rebuilt = requests.get(
+                f"{self.base_url}/models?refresh=true",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            cloud_entry_rebuilt = next(
+                (
+                    m
+                    for m in models_rebuilt.get("data", [])
+                    if m.get("id") == public_name
+                ),
+                None,
+            )
+            self.assertIsNotNone(cloud_entry_rebuilt)
+            self.assertEqual(
+                cloud_entry_rebuilt.get("max_context_window"),
+                1310720,
+                "Full cache rebuild must preserve max_context_window on cloud models",
+            )
+            self.assertEqual(
+                cloud_entry_rebuilt.get("max_output_tokens"),
+                943718,
+                "Full cache rebuild must preserve max_output_tokens on cloud models",
+            )
+            self.assertEqual(
+                cloud_entry_rebuilt.get("max_completion_tokens"),
+                943718,
+                "Full cache rebuild must preserve max_completion_tokens on cloud models",
             )
 
             # (5) Round-trip chat completion through the mock.

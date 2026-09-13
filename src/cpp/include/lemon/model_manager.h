@@ -109,6 +109,7 @@ struct ModelInfo {
     // See streaming_working_set_gb() / filter_models_by_backend.
     double min_resident_gb = 0.0;
     int64_t max_context_window = 0;  // Static model-supported text context, when known
+    int64_t max_output_tokens = 0;    // Static model-supported completion/output token limit, when known
 
     // GGUF architecture metadata (populated for llamacpp models, used for auto ctx_size)
     GgufMetadata gguf;
