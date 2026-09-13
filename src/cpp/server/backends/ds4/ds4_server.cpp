@@ -21,7 +21,31 @@ namespace backends {
 
 namespace {
 constexpr const char* kVariant = "rocm";
+
+// ds4-server sizes its expert cache from the whole device arena, which on an
+// APU is the GTT window. That leaves too little for a long prompt's prefill:
+// the prefill asks for another multi-hundred-MiB expert span, the arena refuses
+// because free has fallen under ds4's own 16 GiB reserve, and the request dies.
+// Measured on a 61.3 GiB arena: ds4's own choice of a 40.9 GiB cache planned
+// 48.2 GiB and faulted on a 2.6k-token prompt, while half the arena planned
+// 37.4 GiB and answered it. Half is the default; --ds4-args overrides it.
+constexpr double kExpertCacheFraction = 0.5;
+
+// Largest memory pool the GPU can draw on, in GiB, or 0 when undetectable. An
+// integrated GPU's carve-out and its GTT window are both views of system RAM,
+// so the larger of the two is what it can actually address.
+double gpu_pool_gb() {
+    try {
+        auto sys_info = create_system_info();
+        const GPUInfo igpu = sys_info->get_amd_igpu_device();
+        if (igpu.available) {
+            return igpu.vram_gb > igpu.virtual_gb ? igpu.vram_gb : igpu.virtual_gb;
+        }
+    } catch (...) {
+    }
+    return 0.0;
 }
+}  // namespace
 
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
                      BackendManager* backend_manager)
@@ -90,6 +114,25 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     // --ssd-streaming-cache-experts) still wins since ds4-server parses
     // left-to-right.
     command.push_back("--ssd-streaming");
+
+    // Chunk the prefill graph. Without this a long prompt does not merely fail:
+    // it faults the GPU (HSA_STATUS_ERROR_MEMORY_FAULT in a quantize kernel) and
+    // takes the container with it, where chunked it returns a clean error.
+    command.push_back("--prefill-chunk");
+    command.push_back("2048");
+
+    const double pool_gb = gpu_pool_gb();
+    if (pool_gb > 0.0) {
+        const int cache_gb = static_cast<int>(pool_gb * kExpertCacheFraction);
+        if (cache_gb > 0) {
+            // The GB form also reserves two full prefill layers, which is the
+            // headroom the long-prompt path needs.
+            command.push_back("--ssd-streaming-cache-experts");
+            command.push_back(std::to_string(cache_gb) + "GB");
+            LOG(DEBUG, "DS4") << "Capping the expert cache at " << cache_gb
+                              << " GB of the " << pool_gb << " GB device pool" << std::endl;
+        }
+    }
 
     if (!ds4_args.empty()) {
         const std::string validation_error =

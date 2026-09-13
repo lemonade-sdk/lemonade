@@ -62,8 +62,15 @@ utils::ContainerImageRef image_pin(const std::string& recipe, const std::string&
     return image_pin(recipe, variant, SystemInfo::get_rocm_arch());
 }
 
+std::string short_digest(const std::string& digest) {
+    const std::string kPrefix = "sha256:";
+    const std::string hex =
+        digest.rfind(kPrefix, 0) == 0 ? digest.substr(kPrefix.size()) : digest;
+    return hex.size() > 12 ? hex.substr(0, 12) : hex;
+}
+
 std::string expected_image_digest(const std::string& recipe, const std::string& variant) {
-    return image_pin(recipe, variant).digest;
+    return short_digest(image_pin(recipe, variant).digest);
 }
 
 std::vector<ImagePin> all_image_pins() {

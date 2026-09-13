@@ -2697,70 +2697,6 @@
         "min_resident_gb": 16.0,
         "catalog_source": "ai-toolbox-cockpit"
     },
-    "Qwen3.8-Flash-Next-W4B-Halogen": {
-        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
-        "recipe": "halogen",
-        "suggested": true,
-        "labels": [
-            "chat",
-            "reasoning"
-        ],
-        "size": 126.57,
-        "min_resident_gb": 68.0,
-        "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
-        "halogen_tokenizer": "tokenizer",
-        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "catalog_source": "ai-toolbox-cockpit"
-    },
-    "Qwen3.8-Flash-Next-W4B-Speed-Halogen": {
-        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
-        "recipe": "halogen",
-        "suggested": false,
-        "labels": [
-            "chat",
-            "reasoning"
-        ],
-        "size": 126.47,
-        "min_resident_gb": 68.0,
-        "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
-        "halogen_tokenizer": "tokenizer",
-        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "catalog_source": "ai-toolbox-cockpit"
-    },
-    "Qwen3.8-Flash-Next-W4B-Vision-Halogen": {
-        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
-        "recipe": "halogen",
-        "suggested": false,
-        "labels": [
-            "chat",
-            "reasoning",
-            "vision"
-        ],
-        "size": 127.47,
-        "min_resident_gb": 68.0,
-        "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
-        "halogen_tokenizer": "tokenizer",
-        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "halogen_vision_tower": "qwen38-flash-next-vision.hgn",
-        "catalog_source": "ai-toolbox-cockpit"
-    },
-    "Qwen3.8-Flash-Next-W4B-Speed-Vision-Halogen": {
-        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
-        "recipe": "halogen",
-        "suggested": false,
-        "labels": [
-            "chat",
-            "reasoning",
-            "vision"
-        ],
-        "size": 127.37,
-        "min_resident_gb": 68.0,
-        "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
-        "halogen_tokenizer": "tokenizer",
-        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "halogen_vision_tower": "qwen38-flash-next-vision.hgn",
-        "catalog_source": "ai-toolbox-cockpit"
-    },
     "Qwen3.8-27B-ROCmFP4-FAST-Toolbox": {
         "checkpoint": "julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:Qwen3.8-27B-ROCmFP4-FAST.gguf",
         "recipe": "llamacpp-toolbox",
@@ -2834,5 +2770,69 @@
             "llamacpp-toolbox_backend": "rocmfpx"
         },
         "uploaded_by": "jcbtc"
+    },
+    "Qwen3.8-Flash-Next-Halogen": {
+        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
+        "recipe": "halogen",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 126.57,
+        "min_resident_gb": 8.0,
+        "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
+        "halogen_tokenizer": "tokenizer",
+        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
+        "catalog_source": "ai-toolbox-cockpit"
+    },
+    "Qwen3.8-Flash-Next-Speed-Halogen": {
+        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
+        "recipe": "halogen",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 126.47,
+        "min_resident_gb": 8.0,
+        "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
+        "halogen_tokenizer": "tokenizer",
+        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
+        "catalog_source": "ai-toolbox-cockpit"
+    },
+    "Qwen3.8-Flash-Next-Vision-Halogen": {
+        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
+        "recipe": "halogen",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 127.47,
+        "min_resident_gb": 8.0,
+        "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
+        "halogen_tokenizer": "tokenizer",
+        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
+        "halogen_vision_tower": "qwen38-flash-next-vision.hgn",
+        "catalog_source": "ai-toolbox-cockpit"
+    },
+    "Qwen3.8-Flash-Next-Speed-Vision-Halogen": {
+        "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
+        "recipe": "halogen",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 127.37,
+        "min_resident_gb": 8.0,
+        "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
+        "halogen_tokenizer": "tokenizer",
+        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
+        "halogen_vision_tower": "qwen38-flash-next-vision.hgn",
+        "catalog_source": "ai-toolbox-cockpit"
     }
 }

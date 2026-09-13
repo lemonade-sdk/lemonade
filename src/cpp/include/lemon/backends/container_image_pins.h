@@ -33,8 +33,15 @@ bool recipe_is_image_backed(const std::string& recipe);
 std::vector<ImagePin> all_image_pins();
 
 // The digest a variant is pinned to on this host, or "" when unpinned. This is
-// the "expected version" for the /system-info update-state machinery.
+// the "expected version" for the /system-info update-state machinery, so it is
+// shortened the same way resolve_version() shortens the installed one.
 std::string expected_image_digest(const std::string& recipe, const std::string& variant);
+
+// "sha256:6d181d74fb6b..." -> "6d181d74fb6b". A full digest is 71 characters and
+// overruns every column that shows a backend version next to a release tag like
+// "b10723"; twelve hex digits is what the engines themselves display. Pulls and
+// installed-digest comparisons always use the full value.
+std::string short_digest(const std::string& digest);
 
 // Human-readable registry page for a pin (Docker Hub or GHCR), or "".
 std::string registry_url(const utils::ContainerImageRef& ref);

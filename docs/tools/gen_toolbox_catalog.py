@@ -75,10 +75,10 @@ NAME_OVERRIDES = {
     "ds4-glm-5-3-flash-q2-gguf": "GLM-5.3-Flash-Q2-DS4",
     "ds4-glm-5-3-flash-q4-k-gguf": "GLM-5.3-Flash-Q4_K-DS4",
     "ds4-deepseek-v4-1-flash-q2-gguf": "DeepSeek-V4.1-Flash-Q2-DS4",
-    "qwen38-flash-next-w4b-quality": "Qwen3.8-Flash-Next-W4B-Halogen",
-    "qwen38-flash-next-w4b-speed": "Qwen3.8-Flash-Next-W4B-Speed-Halogen",
-    "qwen38-flash-next-w4b-quality-vision": "Qwen3.8-Flash-Next-W4B-Vision-Halogen",
-    "qwen38-flash-next-w4b-speed-vision": "Qwen3.8-Flash-Next-W4B-Speed-Vision-Halogen",
+    "qwen38-flash-next-w4b-quality": "Qwen3.8-Flash-Next-Halogen",
+    "qwen38-flash-next-w4b-speed": "Qwen3.8-Flash-Next-Speed-Halogen",
+    "qwen38-flash-next-w4b-quality-vision": "Qwen3.8-Flash-Next-Vision-Halogen",
+    "qwen38-flash-next-w4b-speed-vision": "Qwen3.8-Flash-Next-Speed-Vision-Halogen",
 }
 
 USER_AGENT = {"User-Agent": "lemonade-toolbox-catalog/1.0"}
@@ -326,14 +326,13 @@ def halogen_entries(models):
                     + (["vision"] if model.get("vision_tower") else []),
                 ),
                 ("size", total_gb),
-                # The checkpoint is mapped from disk rather than copied, so the
-                # 115 GiB file is not the memory requirement. What must be
-                # resident is the weights the engine keeps in the device pool:
-                # it measures 67.7 GiB for this bundle at startup and reports
-                # exactly that before refusing to run. Recorded as the floor so
-                # Lemonade's own size filter gives that answer up front instead
-                # of starting a container that dies in two seconds.
-                ("min_resident_gb", 68.0),
+                # min_resident_gb is what must fit in the GPU's own pool. For
+                # Halogen that is the KV pool, measured at 7.2 GiB for the
+                # 262144-position pool it settles on. The checkpoint is mapped
+                # from disk, and the 68 GiB of weights it locks are host RAM,
+                # which the engine gates itself at startup with a far more
+                # precise message than a size filter could give.
+                ("min_resident_gb", 8.0),
                 ("halogen_overlay", model["overlay"]),
                 ("halogen_tokenizer", model.get("tokenizer_dir", "tokenizer")),
                 # Recorded for provenance: Lemonade's downloader tracks the repo's

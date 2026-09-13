@@ -32,6 +32,15 @@ std::string fmt_vram(double val) {
     return fmt_double(val, 1);
 }
 
+// Time to first token is only known when the backend reports it (llama.cpp's
+// `timings.prompt_ms`, FLM's `usage.prefill_duration_ttft`). A backend that
+// reports neither leaves it at zero, and printing "0.0" reads as "instant"
+// rather than "not measured".
+std::string fmt_ttft(double val) {
+    if (val <= 0) return "n/a";
+    return fmt_double(val, 1);
+}
+
 std::string fmt_pct_change(double pct) {
     std::ostringstream oss;
     oss << (pct >= 0 ? "+" : "") << std::fixed << std::setprecision(1) << pct << "%";
@@ -121,9 +130,9 @@ static void print_scenario_row(const BenchScenarioResult& scenario, bool use_per
                   << std::endl;
     } else {
         std::cout << std::left << std::setw(widths.scenario_name) << name
-                  << std::setw(widths.ttft) << fmt_double(scenario.ttft_mean_ms())
-                  << " " << std::setw(widths.ttft) << fmt_double(ttft_1)
-                  << " " << std::setw(widths.ttft) << fmt_double(ttft_2)
+                  << std::setw(widths.ttft) << fmt_ttft(scenario.ttft_mean_ms())
+                  << " " << std::setw(widths.ttft) << fmt_ttft(ttft_1)
+                  << " " << std::setw(widths.ttft) << fmt_ttft(ttft_2)
                   << " " << std::setw(widths.tps) << fmt_double(scenario.tps_mean())
                   << " " << std::setw(widths.tps) << fmt_double(tps_1)
                   << " " << std::setw(widths.tps) << fmt_double(tps_2)

@@ -117,7 +117,7 @@ CAPABILITIES = {
             "backends": ["rocm"],
             "supports": {"chat_completions": True},
             "test_models": {
-                "llm": "Qwen3.8-Flash-Next-W4B-Halogen",
+                "llm": "Qwen3.8-Flash-Next-Halogen",
             },
         },
         "ryzenai": {

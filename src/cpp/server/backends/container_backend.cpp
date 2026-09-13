@@ -82,8 +82,8 @@ std::string ContainerBackendOps::resolve_version(const std::string& backend,
     // this variant's own pinned digest when it is present. Falling back to
     // whatever else that repository has locally is what makes an out-of-date
     // pull read as update_required rather than as installed.
-    if (runtime.has_image_digest(ref.repository, ref.digest)) return ref.digest;
-    return runtime.installed_digest(ref.repository);
+    if (runtime.has_image_digest(ref.repository, ref.digest)) return short_digest(ref.digest);
+    return short_digest(runtime.installed_digest(ref.repository));
 }
 
 std::optional<BackendOps::UnavailableState> ContainerBackendOps::classify_unavailable(
