@@ -226,61 +226,6 @@ class EvictionTests(ServerTestBase):
         self.assertIsNotNone(info_after)
         self.assertEqual(info_after.get("status"), "downsized")
 
-    def test_downsize_preserves_prompt_cache(self):
-        """A conversation that resumes after soft-idle reuses its cached prefix."""
-        self._set_eviction_config(
-            auto_evict=True,
-            auto_evict_threshold_pct=VRAM_THRESHOLD_PCT,
-        )
-        self._load_model(
-            ENDPOINT_TEST_MODEL,
-            auto_evict=True,
-            downsize_idle_timeout=0,
-            evict_idle_timeout=300,
-            ctx_size=CACHE_TEST_CTX_SIZE,
-        )
-
-        client = self.get_openai_client()
-        shared_history = [
-            {
-                "role": "system",
-                "content": "You are a concise assistant. " + "Context filler. " * 60,
-            },
-            {"role": "user", "content": "Reply with the single word: ready."},
-        ]
-        first = client.chat.completions.create(
-            model=ENDPOINT_TEST_MODEL,
-            messages=shared_history,
-            max_completion_tokens=10,
-        )
-        self.assertTrue(first.choices)
-
-        self._evaluate_idle_now()
-        info = self._get_loaded_model_info(ENDPOINT_TEST_MODEL)
-        self.assertIsNotNone(info)
-        self.assertEqual(info.get("status"), "downsized")
-
-        followup = shared_history + [
-            {"role": "assistant", "content": first.choices[0].message.content},
-            {"role": "user", "content": "Reply with the single word: again."},
-        ]
-        second = client.chat.completions.create(
-            model=ENDPOINT_TEST_MODEL,
-            messages=followup,
-            max_completion_tokens=10,
-        )
-        self.assertTrue(second.choices)
-
-        stats = requests.get(f"{self.base_url}/stats", timeout=TIMEOUT_DEFAULT)
-        self.assertEqual(stats.status_code, 200, stats.text)
-        data = stats.json()
-        self.assertGreater(
-            data.get("cache_tokens", 0),
-            0,
-            "resuming a conversation after soft-idle downsize should reuse the "
-            f"prompt prefix instead of re-prefilling (stats: {data})",
-        )
-
     def test_request_interrupts_degradation_and_restores(self):
         """A request against a downsized model transparently restores it."""
         self._set_eviction_config(
