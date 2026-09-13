@@ -3289,6 +3289,12 @@ if(BUILD_TESTING AND EXISTS "${_CLOUD_DISCOVERY_POLICY_TEST_SRC}")
     add_cpp_ci_test(CloudDiscoveryPolicyTest CI ON COMMAND test_cloud_discovery_policy)
 endif()
 
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_images.cpp")
+    add_executable(test_cloud_images test/cpp/test_cloud_images.cpp)
+    target_link_libraries(test_cloud_images PRIVATE lemonade-server-core)
+    add_cpp_ci_test(CloudImagesTest CI ON COMMAND test_cloud_images)
+endif()
+
 set(_SESSION_UTILS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_session_utils.cpp")
 if(BUILD_TESTING AND EXISTS "${_SESSION_UTILS_TEST_SRC}")
     add_executable(test_session_utils test/cpp/test_session_utils.cpp)
