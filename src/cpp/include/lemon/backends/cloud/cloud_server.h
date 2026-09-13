@@ -119,6 +119,10 @@ public:
     static std::string upstream_url(const std::string& base_url,
                                     const std::string& endpoint);
 
+    /// Parse context window and completion token limits from a provider's model
+    /// JSON entry. Returns {max_context_window, max_output_tokens}.
+    static std::pair<int64_t, int64_t> parse_cloud_limits(const nlohmann::json& m);
+
 private:
     struct ResolvedCreds {
         std::string api_key;
