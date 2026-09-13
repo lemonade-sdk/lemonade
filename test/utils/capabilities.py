@@ -83,6 +83,43 @@ CAPABILITIES = {
                 "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
             },
         },
+        # The forked toolbox images run the same llama-server, so they serve the
+        # same surface. The test model is a ROCmFPX conversion, which only this
+        # fork can read; nathanw takes ordinary GGUFs and is covered by hand.
+        "llamacpp-toolbox": {
+            "backends": ["rocmfpx"],
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "responses_api": True,
+                "tool_calls": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "slots": True,
+                "tokenize": True,
+                "static_max_context_window": True,
+            },
+            "test_models": {
+                "llm": "Qwen3.8-27B-ROCmFP4-FAST-Toolbox",
+            },
+        },
+        "ds4": {
+            "backends": ["rocm"],
+            "supports": {"chat_completions": True},
+            "test_models": {
+                "llm": "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4",
+            },
+        },
+        "halogen": {
+            "backends": ["rocm"],
+            "supports": {"chat_completions": True},
+            "test_models": {
+                "llm": "Qwen3.8-Flash-Next-W4B-Halogen",
+            },
+        },
         "ryzenai": {
             "backends": ["cpu", "hybrid", "npu"],
             "supports": {

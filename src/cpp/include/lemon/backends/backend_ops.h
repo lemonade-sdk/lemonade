@@ -116,6 +116,31 @@ public:
     // model. Default: false.
     virtual bool invalidates_cache_after_download() const { return false; }
 
+    // Install a backend variant whose artifact is not a GitHub release asset
+    // (e.g. an OCI image pulled by digest). Return true when this call fully
+    // handled the install; false to fall through to the standard GitHub path.
+    virtual bool install(const std::string& backend, bool force,
+                         DownloadProgressCallback progress) const {
+        (void)backend;
+        (void)force;
+        (void)progress;
+        return false;
+    }
+
+    // Counterpart to install(). Return true when handled; false to fall through
+    // to removing the managed install directory.
+    virtual bool uninstall(const std::string& backend) const {
+        (void)backend;
+        return false;
+    }
+
+    // Where the user can read about the artifact this variant installs. Default:
+    // "" — the caller builds the GitHub release URL from the install params.
+    virtual std::string artifact_url(const std::string& backend) const {
+        (void)backend;
+        return "";
+    }
+
     // Resolve a backend's installed version for a given backend variant. The
     // caller passes the version read from the on-disk version.txt (or "" if
     // absent); the default returns it unchanged.

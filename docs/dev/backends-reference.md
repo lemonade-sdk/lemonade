@@ -12,9 +12,11 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
+| `halogen` | Halogen Flash (experimental) | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
+| `llamacpp-toolbox` | Llama.cpp Toolbox (experimental) | yes | yes | nathanw, rocmfpx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
@@ -35,8 +37,9 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | cuda | linux, windows | nvidia_gpu |
 | `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `ds4` | rocm | linux | amd_gpu (gfx1151) |
+| `ds4` | rocm | linux | amd_gpu (gfx1151, gfx1201) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
+| `halogen` | rocm | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |
@@ -46,6 +49,8 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
 | `llamacpp-hrx` | hrx | linux | amd_gpu (gfx1100, gfx1151) |
+| `llamacpp-toolbox` | rocmfpx | linux | amd_gpu (gfx1151) |
+| `llamacpp-toolbox` | nathanw | linux | amd_gpu (gfx1151) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
@@ -121,6 +126,14 @@ the generator instead. Prose outside the markers is preserved. -->
 |--------|----------|------|---------|-------------|
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
+
+#### `llamacpp-toolbox` — Llama.cpp Toolbox (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `llamacpp-toolbox_backend` | `--llamacpp-toolbox` | BACKEND | "" | Toolbox image variant to run |
+| `toolbox_args` | `--toolbox-args` | ARGS | "" | Custom arguments to pass to the toolbox llama-server |
 
 #### `moonshine` — Moonshine
 

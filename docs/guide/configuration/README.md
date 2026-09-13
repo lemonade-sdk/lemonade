@@ -172,6 +172,10 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
+  "toolbox": {
+    "args": "",
+    "backend": "auto"
+  },
   "trellis": {
     "args": "",
     "backend": "auto",

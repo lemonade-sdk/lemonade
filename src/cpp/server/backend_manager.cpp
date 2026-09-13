@@ -1,7 +1,9 @@
 #include "lemon/backend_manager.h"
 #include "lemon/backend_version_policy.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/container_image_pins.h"
 #include "lemon/runtime_config.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/github_api.h"
@@ -583,6 +585,13 @@ void BackendManager::install_backend(const std::string& recipe, const std::strin
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
+    // Backends whose artifact is not a GitHub release asset (OCI toolbox images)
+    // install themselves. They own their own offline and already-installed
+    // handling because neither is expressed by a binary on disk.
+    if (backends::ops_for(recipe)->install(resolved_backend, force, progress_cb)) {
+        return;
+    }
+
     const std::string existing_backend_binary =
         installed_backend_binary_path(*spec, resolved_backend);
     const bool has_existing_backend = !existing_backend_binary.empty();
@@ -843,6 +852,10 @@ void BackendManager::uninstall_backend(const std::string& recipe, const std::str
         throw std::runtime_error("[BackendManager] Unknown recipe: " + recipe);
     }
 
+    if (backends::ops_for(recipe)->uninstall(resolved_backend)) {
+        return;
+    }
+
     std::string install_dir = backends::BackendUtils::get_install_directory(spec->recipe, resolved_backend);
 
     if (fs::exists(install_dir)) {
@@ -912,6 +925,10 @@ json BackendManager::get_all_backends_status() {
 std::string BackendManager::get_release_url(const std::string& recipe, const std::string& backend) {
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
+        const std::string artifact = backends::ops_for(recipe)->artifact_url(resolved_backend);
+        if (!artifact.empty()) {
+            return artifact;
+        }
         auto params = get_install_params(recipe, resolved_backend);
         return "https://github.com/" + params.repo + "/releases/tag/" + params.version;
     } catch (...) {
@@ -933,6 +950,14 @@ BackendManager::BackendEnrichment BackendManager::get_backend_enrichment(const s
     BackendEnrichment result;
     try {
         std::string resolved_backend = normalize_backend_name(recipe, backend);
+        // Image-backed recipes have no release asset: their artifact is a
+        // registry tag page and their version is the pinned digest.
+        const std::string artifact = backends::ops_for(recipe)->artifact_url(resolved_backend);
+        if (!artifact.empty()) {
+            result.release_url = artifact;
+            result.version = backends::expected_image_digest(recipe, resolved_backend);
+            return result;
+        }
         // All standard recipes (including ryzenai-llm): one get_install_params() call gives us everything
         auto params = get_install_params(recipe, resolved_backend);
         result.release_url = "https://github.com/" + params.repo + "/releases/tag/" + params.version;

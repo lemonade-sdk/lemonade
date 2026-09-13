@@ -1,6 +1,7 @@
 #include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
+#include "lemon/backends/llamacpp/llamacpp_ops.h"
 #include "lemon/backends/llamacpp/llamacpp_request.h"
 #include "llamacpp_system_utils.h"
 #include "lemon/backends/backend_registry.h"
@@ -99,47 +100,6 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
-}
-
-static bool is_dflash_draft_checkpoint(std::string checkpoint) {
-    std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    size_t separator = checkpoint.find_last_of("/:\\");
-    std::string filename = separator == std::string::npos
-                               ? checkpoint
-                               : checkpoint.substr(separator + 1);
-    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
-}
-
-static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
-                                                 const std::string& custom_args,
-                                                 bool merge_args) {
-    if (!merge_args) return custom_args;
-
-    std::vector<RuntimeArgDefault> defaults;
-
-    const std::string draft_checkpoint = model_info.checkpoint("draft");
-    const bool has_dflash_label =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") !=
-        model_info.labels.end();
-    const bool is_dflash_draft =
-        !draft_checkpoint.empty() && is_dflash_draft_checkpoint(draft_checkpoint);
-    const bool uses_mtp =
-        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") !=
-        model_info.labels.end();
-
-    if (is_dflash_draft && has_dflash_label) {
-        defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
-    } else if (uses_mtp) {
-        defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
-    }
-
-    // An auto slot count also enables the unified KV buffer, which advertises the
-    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
-    // ctx_size the context a request actually gets.
-    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
-
-    return append_runtime_arg_defaults(custom_args, defaults);
 }
 
 static std::string trim_version_prefix(const std::string& version) {
@@ -370,7 +330,7 @@ void LlamaCppServer::load(const std::string& model_name,
     const bool has_dflash_label =
         std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") != model_info.labels.end();
     const bool is_dflash_draft =
-        !draft_path.empty() && is_dflash_draft_checkpoint(model_info.checkpoint("draft"));
+        !draft_path.empty() && llamacpp::is_dflash_draft_checkpoint(model_info.checkpoint("draft"));
     const bool use_draft_checkpoint =
         !draft_path.empty() && (!is_dflash_draft || has_dflash_label);
 
@@ -700,7 +660,6 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<LlamaCppServer>(ctx);
 }
 
-namespace {
 std::string system_llamacpp_version() {
     std::string output;
     #ifdef _WIN32
@@ -781,125 +740,9 @@ bool is_ggml_hip_plugin_available() {
 }
 
 
-// llamacpp model-management behavior: GGUF metadata + capability labels.
-class LlamaCppOps : public BackendOps {
-public:
-    void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
-        const json merge_args_value = options.get_option("merge_args");
-        const bool merge_args =
-            merge_args_value.is_boolean() ? merge_args_value.get<bool>() : true;
-        const json custom_args_value = options.get_option("llamacpp_args");
-        const std::string custom_args =
-            custom_args_value.is_string() ? custom_args_value.get<std::string>() : "";
-        options.set_option(
-            "llamacpp_args",
-            resolve_llamacpp_runtime_args(info, custom_args, merge_args));
-    }
-
-    void populate_metadata(ModelInfo& info, const BackendOpsContext&) const override {
-        const std::string gguf_path = info.resolved_path();
-        if (gguf_path.size() < 5) {
-            return;
-        }
-        std::string ext = gguf_path.substr(gguf_path.size() - 5);
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext != ".gguf") {
-            return;
-        }
-        std::error_code ec;
-        if (!std::filesystem::exists(lemon::utils::path_from_utf8(gguf_path), ec)) {
-            return;
-        }
-        GgufMetadata meta;
-        if (!read_gguf_metadata(meta, gguf_path)) {
-            return;
-        }
-        info.max_context_window = meta.context_length;
-        info.gguf = std::move(meta);
-        // GGUF vision/tool metadata are LLM capabilities. Don't apply them to
-        // embedding/reranking models, or labels like tool-calling would
-        // reclassify the model away from its endpoint type.
-        if (info.type == ModelType::LLM) {
-            apply_gguf_capability_labels(info.labels, info.gguf.caps);
-        }
-    }
-
-    std::string resolve_checkpoint_path(const ModelInfo& info,
-                                        const CheckpointResolveContext& ctx) const override {
-        // The main checkpoint is a GGUF file (with sharding/variant resolution);
-        // auxiliary checkpoints (mmproj, …) use the shared default.
-        if (ctx.type == "main") {
-            return resolve_gguf_path(ctx.model_cache_path, ctx.variant);
-        }
-        return BackendOps::resolve_checkpoint_path(info, ctx);
-    }
-
-    std::string find_imported_checkpoint(const std::string& import_dir) const override {
-        // The primary artifact is the (non-mmproj) GGUF file.
-        return resolve_gguf_path(import_dir, "");
-    }
-
-    std::string validate_registration_checkpoint(const std::string& checkpoint) const override {
-        // A GGUF checkpoint must name its quant via CHECKPOINT:VARIANT.
-        std::string lower = checkpoint;
-        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-        if (lower.find("gguf") != std::string::npos &&
-            checkpoint.find(':') == std::string::npos) {
-            return "You are required to provide a 'variant' in the checkpoint field when "
-                   "registering a GGUF model. The variant is provided as CHECKPOINT:VARIANT. "
-                   "For example: Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:Q4_0 or "
-                   "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF:qwen2.5-coder-3b-instruct-q4_0.gguf";
-        }
-        return "";
-    }
-
-    std::string validate_checkpoint_file(const std::string& resolved_path) const override {
-        // A .gguf file in the cache must start with the GGUF magic, else it's a
-        // truncated/corrupt download and the model is not really present.
-        std::error_code ec;
-        std::filesystem::path p = lemon::utils::path_from_utf8(resolved_path);
-        if (std::filesystem::is_directory(p, ec)) {
-            return "";
-        }
-        std::string ext = resolved_path.size() >= 5 ? resolved_path.substr(resolved_path.size() - 5) : "";
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-        if (ext != ".gguf") {
-            return "";
-        }
-        std::ifstream in(p, std::ios::binary);
-        char magic[4] = {};
-        in.read(magic, sizeof(magic));
-        bool ok = in.gcount() == static_cast<std::streamsize>(sizeof(magic)) &&
-                  magic[0] == 'G' && magic[1] == 'G' && magic[2] == 'U' && magic[3] == 'F';
-        return ok ? "" : "Invalid GGUF cache file";
-    }
-
-    std::string resolve_version(const std::string& backend,
-                                const std::string& file_version) const override {
-        // The PATH-installed "system" llama-server has no version.txt; query it.
-        if (backend == "system") {
-            return system_llamacpp_version();
-        }
-        return file_version;
-    }
-
-    InstallCheck check_install(const std::string& backend, bool binary_found) const override {
-        // The system llama-server also needs the ggml HIP plugin for ROCm GPU
-        // acceleration when an AMD GPU (KFD) is present.
-        if (binary_found && backend == "system") {
-#ifdef __linux__
-            if (std::filesystem::exists("/sys/class/kfd") && !is_ggml_hip_plugin_available()) {
-                return {false, "HIP plugin libggml-hip.so not installed"};
-            }
-#endif
-        }
-        return {binary_found, ""};
-    }
-};
-}  // namespace
 
 const BackendSpec* spec() { return make_spec<LlamaCppServer>(descriptor); }
-const BackendOps* ops() { return single_ops<LlamaCppOps>(); }
+const BackendOps* ops() { return single_ops<LlamaCppOps<>>(); }
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

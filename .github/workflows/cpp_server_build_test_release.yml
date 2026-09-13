@@ -1295,6 +1295,19 @@ jobs:
             extra_args: "--wrapped-server llamacpp-hrx"
             backends: "hrx"
             runner: [Linux, X64, rocm, stx-halo, lemon-prod]
+          # Linux only by construction: these recipes are hidden on Windows and
+          # macOS. The runner needs podman or docker; without one the backend
+          # reports action_required and the job fails on the first load.
+          #
+          # A --lite run: enough to prove the integration works. ds4 and halogen
+          # have no row at all, since their smallest published models are 81 GB
+          # and 121 GiB, which is not a merge-queue download. Both are verified
+          # by hand on Strix Halo hardware.
+          - name: llamacpp-toolbox
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp-toolbox --lite"
+            backends: "rocmfpx"
+            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
           - name: omni
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"

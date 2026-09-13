@@ -119,6 +119,13 @@ struct BackendDescriptor {
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
 
+    // True when the backend runs inside an OCI container image rather than a
+    // binary downloaded from a GitHub release. Its backend_versions.json entries
+    // are image pins (repository/tag/digest keyed by GPU arch) instead of release
+    // tags, and install, uninstall and version resolution route through the
+    // container layer (see container_backend_ops.h).
+    bool image_backed = false;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;

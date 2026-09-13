@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Container Prerequisites - Lemonade Server</title>
+  <link rel="icon" href="./assets/favicon.ico">
+  <link rel="stylesheet" href="assets/website-styles.css">
+</head>
+<body>
+  <div class="navbar-placeholder"></div>
+
+  <main class="main">
+    <div class="hero-section">
+      <div class="main-heading">
+        Container Prerequisites
+      </div>
+      <div class="subtitle">
+        What the toolbox backends need from your machine, and how to provide it
+      </div>
+    </div>
+
+    <div class="install-content">
+      <div class="install-section">
+        <h2>Why this page</h2>
+        <p>
+          Three Lemonade backends run inside OCI containers rather than as downloaded
+          binaries: <code>llamacpp-toolbox</code>, <code>ds4</code> and <code>halogen</code>.
+          They are prebuilt images that bundle a complete ROCm or Vulkan stack, which is what
+          makes them work on hardware where a plain binary would not.
+        </p>
+        <p>
+          Everything else about them is ordinary: Lemonade pulls, updates and removes the
+          images for you, and you pick models from the model list as usual. The one thing
+          Lemonade cannot install for you is the container runtime itself. If the backend
+          manager shows one of these backends as <strong>action required</strong>, the section
+          below matching its message tells you what to do.
+        </p>
+      </div>
+
+      <div class="install-section" id="no-container-runtime">
+        <h2>No container runtime</h2>
+        <p>
+          Lemonade found neither <code>podman</code> nor <code>docker</code> on your PATH.
+          Install one. Podman is preferred: it runs rootless by default, and it can pass your
+          own group membership into the container, which removes the most common cause of GPU
+          permission failures.
+        </p>
+
+        <div class="option-box option-primary">
+          <div class="option-header">
+            <span class="option-label">Podman</span>
+            <span class="option-tag recommended">Recommended</span>
+          </div>
+          <p>Install it from your distribution's repositories:</p>
+          <ul>
+            <li><strong>Ubuntu/Debian:</strong> <code>sudo apt update &amp;&amp; sudo apt install podman</code></li>
+            <li><strong>Fedora/RHEL:</strong> <code>sudo dnf install podman</code></li>
+            <li><strong>Arch Linux:</strong> <code>sudo pacman -S podman</code></li>
+            <li><strong>openSUSE:</strong> <code>sudo zypper install podman</code></li>
+          </ul>
+          <p class="option-note">
+            Rootless podman needs no group changes and no daemon. Nothing else to do.
+          </p>
+        </div>
+
+        <div class="option-box option-secondary">
+          <div class="option-header">
+            <span class="option-label">Docker</span>
+          </div>
+          <p>
+            Follow <a href="https://docs.docker.com/engine/install/" target="_blank">Docker's install
+            guide</a> for your distribution, then add yourself to the <code>docker</code> group so
+            you can reach the daemon without <code>sudo</code>:
+          </p>
+          <div class="code-block">
+            <code>sudo usermod -aG docker $USER</code>
+          </div>
+          <p class="option-note">
+            Log out and back in (or run <code>newgrp docker</code>) for the new group to take
+            effect, then restart Lemonade Server.
+          </p>
+        </div>
+      </div>
+
+      <div class="install-section" id="runtime-permissions">
+        <h2>Runtime installed but not usable</h2>
+        <p>
+          A container runtime is on your PATH, but it did not answer when Lemonade asked it for
+          its version. Almost always this is a permissions problem with the Docker daemon
+          socket, and it looks like this when you try it yourself:
+        </p>
+        <div class="code-block">
+          <code>permission denied while trying to connect to the Docker daemon socket</code>
+        </div>
+        <p>Add yourself to the <code>docker</code> group and start a new login session:</p>
+        <div class="code-block">
+          <code>sudo usermod -aG docker $USER &amp;&amp; newgrp docker</code>
+        </div>
+        <p>
+          Then confirm it works and restart Lemonade Server so it re-probes:
+        </p>
+        <div class="code-block">
+          <code>docker version</code>
+        </div>
+        <p>
+          If you would rather not grant daemon access, install podman instead and Lemonade will
+          prefer it automatically.
+        </p>
+      </div>
+
+      <div class="install-section" id="group-membership">
+        <h2>User cannot open the GPU device nodes</h2>
+        <p>
+          The GPU is passed into the container through <code>/dev/kfd</code> and
+          <code>/dev/dri</code>. Your user must be able to open them. Check your groups:
+        </p>
+        <div class="code-block">
+          <code>groups</code>
+        </div>
+        <p>
+          If <code>video</code> and <code>render</code> are missing, add them and start a new
+          login session:
+        </p>
+        <div class="code-block">
+          <code>sudo usermod -aG video,render $USER</code>
+        </div>
+        <p class="option-note">
+          A fresh terminal is not enough - group membership is picked up at login, so log out
+          and back in, then restart Lemonade Server.
+        </p>
+      </div>
+
+      <div class="install-section" id="rootless-keep-groups">
+        <h2>Rootless podman without keep-groups</h2>
+        <p>
+          Rootless podman maps your user into the container, but by default it does
+          <em>not</em> carry your supplementary groups across, so the container ends up unable
+          to open <code>/dev/kfd</code> even though you can. Lemonade passes
+          <code>--group-add keep-groups</code> for you, which fixes this.
+        </p>
+        <p>
+          That option needs the <code>crun</code> OCI runtime; it is the default on current
+          distributions but not on older ones. If a container fails with a permission error on
+          the device nodes, check which runtime podman is using:
+        </p>
+        <div class="code-block">
+          <code>podman info --format '{{.Host.OCIRuntime.Name}}'</code>
+        </div>
+        <p>If it reports <code>runc</code>, install <code>crun</code> and make it the default:</p>
+        <div class="code-block">
+          <code>sudo apt install crun   # or: sudo dnf install crun</code>
+        </div>
+        <p>
+          Then set <code>runtime = "crun"</code> under <code>[engine]</code> in
+          <code>~/.config/containers/containers.conf</code>.
+        </p>
+      </div>
+
+      <div class="install-section" id="kfd-missing">
+        <h2>/dev/kfd is missing</h2>
+        <p>
+          <code>/dev/kfd</code> is the AMD compute device node. Without it there is no GPU to
+          pass into the container at all. Check whether the kernel driver is loaded:
+        </p>
+        <div class="code-block">
+          <code>lsmod | grep amdgpu &amp;&amp; ls -l /dev/kfd</code>
+        </div>
+        <p>
+          If <code>amdgpu</code> is not loaded, your kernel was built without it or the GPU is
+          not supported by this kernel version. Update to a kernel that supports your GPU - for
+          Strix Halo (gfx1151), see the
+          <a href="gfx1151_linux.html">kernel requirements page</a>, which also covers the CWSR
+          fix that every ROCm backend on that GPU needs.
+        </p>
+      </div>
+
+      <div class="install-section" id="render-node-missing">
+        <h2>/dev/dri is missing</h2>
+        <p>
+          The render node under <code>/dev/dri</code> is how the Vulkan toolbox variants reach
+          the GPU. Check that it exists:
+        </p>
+        <div class="code-block">
+          <code>ls -l /dev/dri/</code>
+        </div>
+        <p>
+          You should see at least one <code>renderD*</code> entry. If the directory is empty or
+          absent, the graphics driver is not loaded; this is the same kernel-side problem as the
+          section above.
+        </p>
+      </div>
+
+      <div class="install-section" id="gtt-parameters">
+        <h2>Not enough GPU memory for large models</h2>
+        <p>
+          On Strix Halo the GPU shares system memory, and how much of it the GPU may use is set
+          at boot. Out of the box the limit is roughly half your RAM, which is not enough for
+          the largest toolbox models. Check the current limit:
+        </p>
+        <div class="code-block">
+          <code>cat /sys/module/ttm/parameters/pages_limit</code>
+        </div>
+        <p>
+          That value is in 4 KiB pages, so multiply by 4096 for bytes. To raise it, add these
+          kernel parameters to your bootloader configuration and reboot - the example allows
+          about 96 GiB of GTT:
+        </p>
+        <div class="code-block">
+          <code>amdgpu.gttsize=98304 ttm.pages_limit=25165824</code>
+        </div>
+        <p class="option-note">
+          This is not a container requirement: it applies to any GPU backend on this hardware.
+          Lemonade hides models it calculates cannot fit, so raising the limit also makes more
+          of the model list visible.
+        </p>
+
+        <h3>Check the BIOS carve-out too</h3>
+        <p>
+          Many Strix Halo systems let the firmware reserve a fixed block of memory for the iGPU
+          (a "UMA frame buffer" or "dedicated graphics memory" setting). That block is taken
+          before the kernel boots, so it never shows up as missing: the machine simply reports
+          itself smaller. Compare what the OS sees against what you installed:
+        </p>
+        <div class="code-block">
+          <code>grep MemTotal /proc/meminfo</code>
+        </div>
+        <p>
+          A 128 GB machine reporting about 61 GB has roughly 64 GB carved out. For these backends
+          that is usually the wrong trade: they reach the same unified memory through GTT whether
+          the carve-out is large or small, and the reserved block comes straight out of the file
+          cache that large mapped checkpoints read through. Setting the option back to Auto or its
+          minimum (about 512 MiB) is what the Halogen authors recommend, and it costs the GPU
+          nothing as long as GTT is sized as above.
+        </p>
+      </div>
+
+      <div class="install-section" id="halogen-kernel">
+        <h2>Kernel too old for Halogen</h2>
+        <p>
+          The <code>halogen</code> backend needs Linux <strong>7.0 or newer</strong>, which is
+          ahead of what most distributions ship today. Check your kernel:
+        </p>
+        <div class="code-block">
+          <code>uname -r</code>
+        </div>
+        <p>
+          If it is older than 7.0, there is no workaround: Halogen's memory path depends on
+          kernel support that is not backported. Wait for your distribution to ship a 7.x
+          kernel, or use one of the <code>llamacpp-toolbox</code> variants in the meantime -
+          they run on the same GPU with no kernel floor beyond the CWSR fix.
+        </p>
+        <p class="option-note">
+          Halogen also needs about 130 GB of free disk for its checkpoint bundle, and enough
+          GPU memory to hold it. See the GTT section above.
+        </p>
+      </div>
+
+      <div class="install-section">
+        <h2>Running Lemonade itself in a container</h2>
+        <p>
+          None of this works from inside Lemonade's own Docker image. The toolbox backends
+          launch sibling containers, which a container cannot do without privileges that the
+          Lemonade image deliberately does not request. Run Lemonade on the host to use them.
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <script src="assets/navbar.js"></script>
+
+  <style>
+    .install-content {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+
+    .install-section {
+      margin-bottom: 3rem;
+      scroll-margin-top: 6rem;
+    }
+
+    .install-section h2 {
+      color: #2c3e50;
+      border-bottom: 2px solid #e74c3c;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .install-section ul {
+      margin-left: 2rem;
+      line-height: 1.8;
+    }
+
+    .install-section p {
+      line-height: 1.6;
+      color: #555;
+      margin-bottom: 1rem;
+    }
+
+    .code-block {
+      background: #2c3e50;
+      color: #ecf0f1;
+      padding: 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+      font-family: 'Courier New', monospace;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      color: #ecf0f1;
+      background: none;
+      padding: 0;
+    }
+
+    .option-box {
+      padding: 1.5rem;
+      border-radius: 8px;
+      margin-bottom: 2rem;
+    }
+
+    .option-primary {
+      background: linear-gradient(135deg, #fef5e7, #fdebd0);
+      border: 2px solid #f39c12;
+    }
+
+    .option-secondary {
+      background: #f8f9fa;
+      border: 2px solid #bdc3c7;
+    }
+
+    .option-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .option-label {
+      font-weight: bold;
+      font-size: 1.1rem;
+      color: #2c3e50;
+    }
+
+    .option-tag {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .option-tag.recommended {
+      background: #27ae60;
+      color: white;
+    }
+
+    .option-box h3 {
+      margin: 0 0 0.75rem 0;
+      color: #2c3e50;
+    }
+
+    .option-note {
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      color: #666;
+      font-style: italic;
+    }
+
+    @media (max-width: 768px) {
+      .install-content {
+        padding: 0 1rem;
+      }
+    }
+  </style>
+</body>
+</html>

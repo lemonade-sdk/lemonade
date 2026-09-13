@@ -3,6 +3,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/container_backend.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
@@ -18,41 +19,8 @@ using namespace lemon::utils;
 namespace lemon {
 namespace backends {
 
-// Upstream ds4 publishes no binaries, no releases and no tags, so ROCm builds
-// come from lemonade-sdk/ds4-rocm, which builds a pinned upstream commit and
-// bundles the ROCm runtime.
-InstallParams Ds4Server::get_install_params(const std::string& backend, const std::string& version) {
-    if (backend != "rocm") {
-        throw std::runtime_error("ds4 backend '" + backend +
-                                 "' is not supported. Supported: rocm");
-    }
-
-    // One archive per GPU target under a single release tag, named so it is
-    // derivable from the tag alone. Check the architecture is one we publish
-    // before building a name from it: model filtering normally keeps
-    // unsupported hosts away, but the install path does not depend on that
-    // having run, and an unchecked arch resolves to an asset that 404s.
-    const std::string current_os = get_current_os();
-    if (!ds4::publishes_for_os(current_os)) {
-        throw std::runtime_error(
-            "ds4 backend 'rocm' publishes no build for " + current_os + "; Linux only");
-    }
-
-    const std::string target_arch = SystemInfo::get_rocm_arch();
-    if (target_arch.empty()) {
-        throw std::runtime_error(
-            "ds4 backend 'rocm' requires a ROCm GPU, but no ROCm architecture was detected");
-    }
-    if (!SystemInfo::backend_supports_arch("ds4", "rocm", target_arch)) {
-        throw std::runtime_error(
-            "ds4 backend 'rocm' publishes no build for " + target_arch +
-            "; only gfx1151 is validated upstream");
-    }
-
-    InstallParams params;
-    params.repo = "lemonade-sdk/ds4-rocm";
-    params.filename = "ds4-" + version + "-linux-rocm-" + target_arch + "-x64.tar.gz";
-    return params;
+namespace {
+constexpr const char* kVariant = "rocm";
 }
 
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
@@ -66,7 +34,7 @@ Ds4Server::~Ds4Server() {
 
 void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                      const RecipeOptions& options, bool do_not_upgrade) {
-    (void)do_not_upgrade;  // install_backend() is a no-op once the pin is present
+    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned digest is present
 
     std::string ds4_args = options.get_option("ds4_args");
     int ctx_size = options.get_option("ctx_size");
@@ -86,36 +54,42 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                                  "' (checkpoint: " + model_info.checkpoint() + ")");
     }
 
-    // rocm is the only published variant, so there is no backend option to
-    // read; ds4_args cannot select one either (see reserved_custom_arg_flags).
-    const std::string backend = "rocm";
     device_type_ = DEVICE_GPU;
-
-    backend_manager_->install_backend(ds4::spec()->recipe, backend);
-    const std::string executable = BackendUtils::get_backend_binary_path(*ds4::spec(), backend);
+    backend_manager_->install_backend(ds4::descriptor.recipe, kVariant);
 
     port_ = choose_port();
+    clear_stale_container(ds4::descriptor.recipe, kVariant);
 
-    std::vector<std::string> args;
-    args.push_back("-m");
-    args.push_back(gguf_path);
-    args.push_back("--host");
-    args.push_back("127.0.0.1");
-    args.push_back("--port");
-    args.push_back(std::to_string(port_));
+    ContainerLaunchRequest request;
+    request.recipe = ds4::descriptor.recipe;
+    request.variant = kVariant;
+    request.profile_id = "ds4-rocm";
+    // A model registered by absolute path can live outside the HF cache, so
+    // mount its directory too.
+    request.extra_mounts.push_back(fs::path(gguf_path).parent_path().string());
+    ContainerLaunchPlan plan = plan_container_launch(request, port_);
+
+    std::vector<std::string> command;
+    command.push_back("ds4-server");
+    command.push_back("-m");
+    command.push_back(plan.container_path(gguf_path));
+    command.push_back("--host");
+    command.push_back("0.0.0.0");  // reachable from the published loopback port only
+    command.push_back("--port");
+    command.push_back(std::to_string(port_));
     if (ctx_size > 0) {
-        args.push_back("-c");
-        args.push_back(std::to_string(ctx_size));
+        command.push_back("--ctx");
+        command.push_back(std::to_string(ctx_size));
     }
 
     // ds4-server defaults to full residency, which maps the entire model into
-    // the ROCm arena. The only published ds4 model is an 81 GB DeepSeek V4 MoE,
-    // and the only supported device (gfx1151) tops out around a 64 GB VRAM
-    // carveout with a smaller usable arena, so full residency always OOMs
-    // mid-load. Stream experts from disk instead; a user-supplied later flag
-    // (e.g. --ssd-streaming-cache-experts) still wins since ds4-server parses
+    // the ROCm arena. The published ds4 models are 80 GB+ DeepSeek V4 MoEs, and
+    // the supported devices top out around a 64 GB VRAM carveout with a smaller
+    // usable arena, so full residency always OOMs mid-load. Stream experts from
+    // disk instead; a user-supplied later flag (e.g.
+    // --ssd-streaming-cache-experts) still wins since ds4-server parses
     // left-to-right.
-    args.push_back("--ssd-streaming");
+    command.push_back("--ssd-streaming");
 
     if (!ds4_args.empty()) {
         const std::string validation_error =
@@ -125,43 +99,35 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         }
         LOG(DEBUG, "DS4") << "Adding custom arguments: " << ds4_args << std::endl;
         std::vector<std::string> custom_args = parse_custom_args(ds4_args);
-        args.insert(args.end(), custom_args.begin(), custom_args.end());
+        command.insert(command.end(), custom_args.begin(), custom_args.end());
     }
 
-    // The managed bundle ships its own ROCm runtime next to the binary, which
-    // has no RPATH. Without this the loader falls back to a system ROCm install
-    // — working by accident on a developer box and failing on the clean hosts
-    // the bundle exists to support.
-    std::vector<std::pair<std::string, std::string>> env_vars;
-    const std::string exe_dir = fs::path(executable).parent_path().string();
-    std::string ld_path = exe_dir;
-    if (const char* existing = std::getenv("LD_LIBRARY_PATH")) {
-        ld_path += std::string(":") + existing;
-    }
-    env_vars.push_back({"LD_LIBRARY_PATH", ld_path});
+    plan.set_command(std::move(command));
+    const std::vector<std::string> engine_args = plan.engine_args();
 
-    LOG(INFO, "DS4") << "Starting ds4-server (" << executable << ") for " << gguf_path
-                     << " on port " << port_ << std::endl;
+    LOG(INFO, "DS4") << "Starting " << plan.image().tagged_ref() << " as "
+                     << plan.container_name() << " for " << gguf_path << " on port " << port_
+                     << std::endl;
 
-    bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
-    set_process_handle(
-        ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
-        executable, args);
+    const bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
+    set_process_handle(ProcessManager::start_process(plan.engine_executable(), engine_args, "",
+                                                     inherit_output, true, {}),
+                       plan.engine_executable(), engine_args);
 
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
     // cheapest always-on route and doubles as the watchdog probe.
     if (!wait_for_ready("/v1/models", HttpClient::get_default_timeout())) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
+        unload();
         throw std::runtime_error("ds4-server failed to start within timeout");
     }
 }
 
 void Ds4Server::unload() {
     stop_backend_watchdog();
+
+    stop_container_for(ds4::descriptor.recipe, kVariant);
+
     const ProcessHandle handle = consume_process_handle_for_cleanup();
     if (has_process_handle(handle)) {
         LOG(INFO, "DS4") << "Stopping ds4-server" << std::endl;
@@ -181,6 +147,36 @@ json Ds4Server::responses(const json& request) {
     return forward_request("/v1/responses", request);
 }
 
+std::string Ds4Ops::remove_legacy_binary_install() {
+    // Pre-container DS4 unpacked lemonade-sdk/ds4-rocm here.
+    const std::string install_dir =
+        BackendUtils::get_install_directory(ds4::descriptor.recipe, kVariant);
+    std::error_code ec;
+    if (!fs::exists(install_dir, ec)) {
+        return "";
+    }
+    fs::remove_all(install_dir, ec);
+    if (ec) {
+        LOG(WARNING, "DS4") << "Could not remove the superseded ds4-server binary at "
+                            << install_dir << ": " << ec.message() << std::endl;
+        return "";
+    }
+    LOG(INFO, "DS4") << "Removed the superseded ds4-server binary install at " << install_dir
+                     << "; DS4 now runs from a container image" << std::endl;
+    return install_dir;
+}
+
+bool Ds4Ops::install(const std::string& backend, bool force,
+                     DownloadProgressCallback progress) const {
+    remove_legacy_binary_install();
+    return ContainerBackendOps::install(backend, force, progress);
+}
+
+bool Ds4Ops::uninstall(const std::string& backend) const {
+    remove_legacy_binary_install();
+    return ContainerBackendOps::uninstall(backend);
+}
+
 namespace ds4 {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
@@ -188,11 +184,12 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
 }
 
 const BackendSpec* spec() {
-    return make_spec<Ds4Server>(descriptor);
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary, nullptr, false);
+    return &kSpec;
 }
 
 const BackendOps* ops() {
-    return default_backend_ops();
+    return single_ops<Ds4Ops>();
 }
 
 }  // namespace ds4

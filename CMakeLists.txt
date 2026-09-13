@@ -164,6 +164,8 @@ set(LEMON_BACKENDS
     "vllm|vllm"
     "thenoise|thenoise"
     "ds4|ds4"
+    "llamacpp-toolbox|toolbox"
+    "halogen|halogen"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -1002,6 +1004,7 @@ set(SOURCES_CORE
     src/cpp/server/log_stream.cpp
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
+    src/cpp/server/utils/container_runtime.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -1068,6 +1071,8 @@ set(LEMON_BACKEND_DESCRIPTOR_SOURCES
 set(LEMON_BACKEND_FACTORY_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/backend_ops.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/container_backend.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/container_image_pins.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server/backends/hf_cache_util.cpp)
 foreach(_backend_entry ${LEMON_BACKENDS})
     string(REPLACE "|" ";" _backend_parts "${_backend_entry}")
@@ -3234,14 +3239,23 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
 endif()
 
-# ds4 install params: upstream ds4 ships no binaries, so assets come from
-# lemonade-sdk/ds4-rocm and the filename must be derivable from the pinned tag
-# plus the detected ISA. Only gfx1151 is validated upstream.
-set(_DS4_INSTALL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_ds4_install_params.cpp")
-if(BUILD_TESTING AND EXISTS "${_DS4_INSTALL_TEST_SRC}")
-    add_executable(test_ds4_install_params test/cpp/test_ds4_install_params.cpp)
-    target_link_libraries(test_ds4_install_params PRIVATE lemonade-server-core)
-    add_cpp_ci_test(Ds4InstallParamsTest CI ON COMMAND test_ds4_install_params)
+# container runtime layer: argv construction, HF-cache path rewriting, container
+# naming and the managed-prefix sweep. Runs against an injected fake engine, so
+# it needs no podman/docker on the machine.
+set(_CONTAINER_RUNTIME_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_runtime.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONTAINER_RUNTIME_TEST_SRC}")
+    add_executable(test_container_runtime test/cpp/test_container_runtime.cpp)
+    target_link_libraries(test_container_runtime PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ContainerRuntimeTest CI ON COMMAND test_container_runtime)
+endif()
+
+# Image-backed recipes: every variant in a descriptor's support rows must have a
+# committed digest pin for each arch it claims, and nothing else may declare one.
+set(_TOOLBOX_PINS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_toolbox_image_pins.cpp")
+if(BUILD_TESTING AND EXISTS "${_TOOLBOX_PINS_TEST_SRC}")
+    add_executable(test_toolbox_image_pins test/cpp/test_toolbox_image_pins.cpp)
+    target_link_libraries(test_toolbox_image_pins PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ToolboxImagePinsTest CI ON COMMAND test_toolbox_image_pins)
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

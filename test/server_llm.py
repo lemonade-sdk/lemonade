@@ -57,6 +57,16 @@ from utils.test_models import (
 
 
 class LLMTests(ServerTestBase):
+    # --lite keeps just enough to prove the backend is wired up and generating:
+    # the model reports its metadata, and it answers both non-streaming and
+    # streaming chat. Everything else is the same llama-server surface already
+    # covered by the llamacpp recipe.
+    LITE_TESTS = {
+        "test_000_model_info_includes_max_context_window",
+        "test_001_chat_completions_non_streaming",
+        "test_002_chat_completions_streaming",
+    }
+
     """
     Tests for LLM inference, embeddings, and reranking.
 

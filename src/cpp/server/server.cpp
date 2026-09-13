@@ -17,6 +17,8 @@
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/container_backend.h"
+#include "lemon/backends/container_image_pins.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -398,6 +400,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
+
+    // No-op without a container runtime. See ContainerRuntime::sweep_containers.
+    backends::sweep_managed_containers();
 
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
@@ -8099,6 +8104,30 @@ void Server::handle_install_dry_run(const httplib::Request& req, httplib::Respon
 
         if (!requested_arch.empty()) {
             SystemInfo::set_rocm_arch_override(requested_arch);
+        }
+
+        // Image-backed recipes have no release asset to resolve. Report the pin
+        // they would install instead of failing with a missing-version error
+        // that reads like a broken registry. The equivalent staleness check for
+        // them is `gen_toolbox_catalog.py pins --check`.
+        if (backends::recipe_is_image_backed(recipe)) {
+            const auto pin = backends::image_pin(recipe, backend);
+            SystemInfo::set_rocm_arch_override("");
+            nlohmann::json response = {
+                {"recipe", recipe},
+                {"backend", backend},
+                {"kind", "oci_image"},
+                {"image", pin.valid() ? pin.pinned_ref() : ""},
+                {"tag", pin.tag},
+                {"registry_url", backends::registry_url(pin)},
+            };
+            if (!pin.valid()) {
+                res.status = 404;
+                response["error"] = "No image is pinned for " + recipe + ":" + backend +
+                                    " on this architecture";
+            }
+            res.set_content(response.dump(), "application/json");
+            return;
         }
 
         auto params = backend_manager_->get_install_params(recipe, backend);

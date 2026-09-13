@@ -57,6 +57,7 @@ _config = {
     "backend": None,
     "modality": None,
     "offline": False,
+    "lite": False,
     "additional_server_args": [],
 }
 
@@ -86,6 +87,13 @@ def parse_args(additional_args=None, modality=None):
         help="Run tests in offline mode",
     )
     parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Smoke test only: run the handful of cases that prove the integration "
+        "works, and skip the rest. Intended for backends whose models are too "
+        "large to justify the full suite in CI.",
+    )
+    parser.add_argument(
         "--cli-binary",
         type=str,
         default=get_default_cli_binary(),
@@ -108,6 +116,7 @@ def parse_args(additional_args=None, modality=None):
 
     # Update global config
     _config["cli_binary"] = args.cli_binary
+    _config["lite"] = args.lite
     _config["wrapped_server"] = args.wrapped_server
     _config["backend"] = args.backend
     _config["modality"] = modality
@@ -124,6 +133,11 @@ def parse_args(additional_args=None, modality=None):
 def get_config():
     """Get the current test configuration."""
     return _config.copy()
+
+
+def lite_mode() -> bool:
+    """True when --lite was passed: run smoke cases only."""
+    return bool(_config.get("lite"))
 
 
 def get_cli_binary():
@@ -397,6 +411,14 @@ def _build_runtime_config(additional_server_args=None):
         config["trellis"] = {"backend": backend}
     elif wrapped_server == "openmoss" and backend:
         config["openmoss"] = {"backend": backend}
+    # The toolbox recipe's config section is "toolbox", not its recipe name.
+    elif wrapped_server == "llamacpp-toolbox" and backend:
+        # Every ROCmFPX model published is a reasoning model, so with the small
+        # token budgets these tests use the whole budget lands in
+        # `reasoning_content` and `content` comes back empty. That is correct
+        # model behavior, not a server bug, so reasoning is turned off for the
+        # run rather than weakening the assertions.
+        config["toolbox"] = {"backend": backend, "args": "--reasoning off"}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))
@@ -558,8 +580,14 @@ class ServerTestBase(unittest.TestCase):
         """No server lifecycle management needed."""
         super().tearDownClass()
 
+    # Cases a --lite run keeps. A subclass overrides this with the names that
+    # prove its integration works end to end.
+    LITE_TESTS: set = set()
+
     def setUp(self):
         """Set up for each test."""
+        if lite_mode() and self._testMethodName not in self.LITE_TESTS:
+            self.skipTest("--lite: not a smoke test")
         print(f"\n=== Starting test: {self._testMethodName} ===")
 
         self.base_url = f"http://localhost:{PORT}/api/v1"

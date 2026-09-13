@@ -19,6 +19,16 @@ To build from source, see the [development](../../dev/README.md) guide.
     sudo snap install lemonade-server
     ```
 
+## Optional: container runtime
+
+The `llamacpp-toolbox`, `ds4` and `halogen` backends run inside OCI container images, so they need
+podman (preferred) or docker on the host. Nothing else does. See
+[Container Toolbox Backends](../configuration/toolboxes.md).
+
+```
+sudo apt install podman
+```
+
 ## Step 2: Choose your frontend
 
 === "Web UI"

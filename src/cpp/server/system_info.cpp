@@ -10,6 +10,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_registry.h"
+#include "lemon/backends/container_image_pins.h"
 #include "lemon/recipe_backend_def.h"
 #include <filesystem>
 #include <fstream>
@@ -801,6 +802,13 @@ static std::string get_expected_backend_version(const std::string& recipe, const
 
     if (!backend_versions.contains(recipe)) {
         return "";
+    }
+
+    // Image-backed recipes pin a repository/tag/digest per GPU arch rather than a
+    // release tag. The digest is the expected "version", so the shared
+    // update-state machinery compares it against the digest actually pulled.
+    if (backends::recipe_is_image_backed(recipe)) {
+        return backends::expected_image_digest(recipe, backend);
     }
 
     // sd-cpp and llamacpp expose a single "rocm" backend but store per-channel

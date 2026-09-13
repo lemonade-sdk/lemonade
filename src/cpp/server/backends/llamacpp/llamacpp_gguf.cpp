@@ -6,6 +6,8 @@
 #include <map>
 #include <vector>
 #include "lemon/backends/hf_cache_util.h"
+#include "lemon/model_manager.h"
+#include "lemon/utils/recipe_arg_resolver.h"
 #include "lemon/hf_variants.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
@@ -245,6 +247,47 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
     }
 
     return resolved_path;
+}
+
+bool is_dflash_draft_checkpoint(const std::string& checkpoint_in) {
+    std::string checkpoint = checkpoint_in;
+    std::transform(checkpoint.begin(), checkpoint.end(), checkpoint.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    size_t separator = checkpoint.find_last_of("/:\\");
+    std::string filename = separator == std::string::npos
+                               ? checkpoint
+                               : checkpoint.substr(separator + 1);
+    return filename.rfind("dflash-", 0) == 0 || filename == "dflash.gguf";
+}
+
+std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
+                                          const std::string& custom_args, bool merge_args) {
+    if (!merge_args) return custom_args;
+
+    std::vector<lemon::utils::RuntimeArgDefault> defaults;
+
+    const std::string draft_checkpoint = model_info.checkpoint("draft");
+    const bool has_dflash_label =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "dflash") !=
+        model_info.labels.end();
+    const bool is_dflash_draft =
+        !draft_checkpoint.empty() && is_dflash_draft_checkpoint(draft_checkpoint);
+    const bool uses_mtp =
+        std::find(model_info.labels.begin(), model_info.labels.end(), "mtp") !=
+        model_info.labels.end();
+
+    if (is_dflash_draft && has_dflash_label) {
+        defaults.push_back({"--spec-type draft-dflash", "--spec-type"});
+    } else if (uses_mtp) {
+        defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
+    }
+
+    // An auto slot count also enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
+    // ctx_size the context a request actually gets.
+    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
+    return lemon::utils::append_runtime_arg_defaults(custom_args, defaults);
 }
 
 } // namespace llamacpp

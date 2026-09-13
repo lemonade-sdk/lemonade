@@ -443,6 +443,20 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--ds4-args ARGS` | Custom arguments to pass to ds4-server | `""` |
 
+#### Llama.cpp Toolbox (experimental) (`llamacpp-toolbox` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+| `--llamacpp-toolbox BACKEND` | Toolbox image variant to run | Auto-detected |
+| `--toolbox-args ARGS` | Custom arguments to pass to the toolbox llama-server | `""` |
+
+#### Halogen Flash (experimental) (`halogen` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |

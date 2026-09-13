@@ -14,13 +14,6 @@ namespace ds4 {
 // and proxying, rebinding the host exposes the backend, swapping the model
 // desynchronises the router, and the backend-selection flags would run the
 // child on a different device than the one Lemonade is tracking.
-// True if ds4-rocm publishes a build for `os`. SystemInfo::backend_supports_arch
-// validates the device constraints and arch gates but not the support row's
-// supported_os, and the direct backend-install endpoint does not go through
-// model filtering, so an unsupported OS would otherwise resolve an asset that
-// does not exist.
-inline bool publishes_for_os(const std::string& os);
-
 inline const std::set<std::string>& reserved_custom_arg_flags() {
     static const std::set<std::string> flags = {
         "-m", "--model",
@@ -33,9 +26,9 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 
 // The ds4 backend descriptor (plain data). DS4 (DwarfStar) is antirez's
 // self-contained DeepSeek V4 inference engine with an OpenAI-compatible HTTP
-// server (ds4-server). Upstream publishes no binaries, releases or tags, so
-// builds come from lemonade-sdk/ds4-rocm, which compiles a pinned upstream
-// commit and bundles the ROCm runtime alongside it.
+// server (ds4-server). Upstream publishes no binaries, releases or tags; the
+// engine ships as a container toolbox built from Donato Capitella's performance
+// branch, which also covers gfx1201 (Radeon AI PRO R9700).
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "ds4",
     /*display_name*/    "DwarfStar4 (experimental)",
@@ -51,14 +44,15 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to ds4-server", "DS4 Options"},
     },
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "Prebuilt ds4 for AMD Strix Halo"},
+        {"rocm", {"linux"}, {{"amd_gpu", {"gfx1151", "gfx1201"}}},
+         "AMD Strix Halo and Radeon AI PRO R9700"},
     },
     /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "",
-    /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels
+    /*rocm_channels*/   {},  // single rocm image per arch, no stable/nightly channels
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ true,
     /*version_policy*/  VersionPolicy::Exact,
@@ -68,16 +62,8 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ true,
+    /*image_backed*/    true,
 };
-
-inline bool publishes_for_os(const std::string& os) {
-    for (const auto& row : descriptor.support) {
-        if (row.backend == "rocm") {
-            return row.supported_os.count(os) > 0;
-        }
-    }
-    return false;
-}
 
 }  // namespace ds4
 }  // namespace backends

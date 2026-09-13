@@ -43,11 +43,6 @@
           "trellis-cuda-windows-x64.zip": "sha256:47b87271f8b644a8e50767f6d58d5baf597e1aa6bb46b809a5e5d5b0ac741b29"
         }
       },
-      "lemonade-sdk/ds4-rocm": {
-        "b0001": {
-          "ds4-b0001-linux-rocm-gfx1151-x64.tar.gz": "sha256:e63b7c9428fd10de75b3f69164eccd564a8e7261c2f9087cd8bec2b4b19a8ad1"
-        }
-      },
       "ROCm/ggml-staging-automation": {
         "hrx-b69": {
           "llama-hrx-b69-bin-manylinux-hrx-x64.tar.gz": "sha256:e82b6bc6ec896afcf32dfa99e75ecaffa9b0470ac35c3ae8939f05c5cfb8a87c"
@@ -81,7 +76,23 @@
     "metal": "master-843-462d675"
   },
   "ds4": {
-    "rocm": "b0001"
+    "comment": "DS4 now ships as a container toolbox built from Donato's perf branch, replacing the lemonade-sdk/ds4-rocm binary. gfx1201 rides the older rocm-7.14 line, which is the newest tag published for it.",
+    "rocm": {
+      "gfx1151": {
+        "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
+        "tag": "rocm-10.0",
+        "digest": "sha256:6d181d74fb6b1e4b64fb3ba1974052299e975e5c5722b8ade9dc1e7b120f38fe",
+        "channel": "stable",
+        "compressed_bytes": 1404887954
+      },
+      "gfx1201": {
+        "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
+        "tag": "gfx1201-rocm-7.14",
+        "digest": "sha256:548f085ff16efb7000d822cef1a658c72d1cdb784ea5d1abeaed4eb3eeb28301",
+        "channel": "stable",
+        "compressed_bytes": 722731830
+      }
+    }
   },
   "therock": {
     "version": "7.14.0",
@@ -205,6 +216,39 @@
     "vulkan": "v0.3.0",
     "rocm-stable": "v0.3.0",
     "cuda": "v0.3.0"
+  },
+  "llamacpp-toolbox": {
+    "comment": "Forked llama.cpp toolbox images from kyuz0/amd-strix-halo-toolboxes. Only the forks stock llama.cpp cannot substitute for: ROCmFPX weight formats, and Nathan W's Vulkan performance build. Both are gfx1151-only upstream. `tag` is documentation only: `digest` is what gets pulled, so an upstream retag cannot change what a Lemonade release runs. Bumped by .github/workflows/toolbox_image_refresh.yml.",
+    "rocmfpx": {
+      "gfx1151": {
+        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+        "tag": "rocm-10.0-rocmfpx",
+        "digest": "sha256:02da5f5c60202bade700a1e2c032ad367fc2b524ef0b2ac60a8ff55611a88054",
+        "channel": "experimental",
+        "compressed_bytes": 1389977330
+      }
+    },
+    "nathanw": {
+      "gfx1151": {
+        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+        "tag": "vulkan-radv-performance",
+        "digest": "sha256:42630818d084f3fa712a06a8fd2259338361e52f1c36720cb3b75639686bac03",
+        "channel": "experimental",
+        "compressed_bytes": 606169183
+      }
+    }
+  },
+  "halogen": {
+    "comment": "Peonist's closed-source Halogen Flash engine. Not one of Donato's images; his cockpit pins an older release, so this tracks Peonist's own registry.",
+    "rocm": {
+      "gfx1151": {
+        "repository": "ghcr.io/peonist-ai/halogen-flash-server",
+        "tag": "0.6.2",
+        "digest": "sha256:25478f5fd4cf8a900b36c26363c30455946d283af1cbf804541adeccd34488e9",
+        "channel": "experimental",
+        "compressed_bytes": 908263424
+      }
+    }
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

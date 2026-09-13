@@ -3793,14 +3793,18 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         // Because we have mixed types this just makes every device_type an array.
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
-        // Expand this later to accommodate mixed pools
-        MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
-        if (dev_type == "amd_igpu")
-            dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
-        if (enable_dgpu_gtt)
-            dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
-
         for (const auto& dev : dev_list) {
+            // Expand this later to accommodate mixed pools
+            MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
+            // An integrated GPU has no memory of its own: its firmware carve-out
+            // and its GTT window are both views of system RAM, and either one
+            // alone understates what it can address. The device type is reported
+            // as "amd_gpu" with an `integrated` flag, so this reads the flag.
+            if (dev.value("integrated", false))
+                dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
+            if (enable_dgpu_gtt)
+                dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
+
             curr_mem_pool_gb = get_max_memory_of_device(dev, dev_mem_alloc_behavior);
             largest_mem_pool_gb = largest_mem_pool_gb < curr_mem_pool_gb ? curr_mem_pool_gb : largest_mem_pool_gb;
         }
