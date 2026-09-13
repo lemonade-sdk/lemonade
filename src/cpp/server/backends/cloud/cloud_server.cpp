@@ -129,10 +129,6 @@ bool is_image_model(const json& m) {
         return false;
     }
 
-    // Chat-shaped multimodal APIs do not implement OpenAI images/generations.
-    if (m.contains("kind") || m.contains("architecture")) {
-        return false;
-    }
     if (m.contains("type") && m["type"].is_string()) {
         return m["type"] == "image" || m["type"] == "image-generation"
             || m["type"] == "text-to-image";
@@ -145,6 +141,17 @@ bool is_image_model(const json& m) {
             }
         }
         return false;
+    }
+    // These catalog shapes use chat APIs unless an image endpoint is explicit.
+    if (m.contains("kind") && m["kind"] == "FLUMINA_BASE_MODEL") {
+        return false;
+    }
+    if (m.contains("architecture") && m["architecture"].is_object()) {
+        const auto& arch = m["architecture"];
+        if (arch.contains("modality") && arch["modality"].is_string()
+            && arch["modality"].get<std::string>().find("->") != std::string::npos) {
+            return false;
+        }
     }
     if (m.contains("supports_chat") && m["supports_chat"] == true) {
         return false;
@@ -1058,7 +1065,8 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
 
     for (const auto& m : *model_array) {
         const bool image_model = is_image_model(m);
-        if (!image_model && !is_chat_model(m)) {
+        if ((image_model && wire_format != "openai")
+            || (!image_model && !is_chat_model(m))) {
             continue;
         }
         std::string upstream_id = m["id"].get<std::string>();

@@ -32,6 +32,16 @@ int main() {
         {{"id", "plain-chat"}},
         {{"id", "named-image"}, {"type", "image"}},
         {{"id", "image-endpoint"}, {"capabilities", {"images.generations"}}},
+        {{"id", "image-kind"}, {"type", "image"}, {"kind", "MODEL"}},
+        {{"id", "image-architecture"}, {"type", "image"},
+         {"architecture", {{"modality", "text->image"}}}},
+        {{"id", "endpoint-kind"}, {"capabilities", {"images.generations"}}, {"kind", "MODEL"}},
+        {{"id", "endpoint-architecture"}, {"capabilities", {"images.generations"}},
+         {"architecture", {{"family", "diffusion"}}}},
+        {{"id", "Flux-extra-kind"}, {"kind", "MODEL"}},
+        {{"id", "Flux-extra-architecture"}, {"architecture", {{"family", "diffusion"}}}},
+        {{"id", "image-and-chat"}, {"type", "image"}, {"supports_chat", true}},
+        {{"id", "Flux-chat-shaped"}, {"architecture", {{"modality", "text->image"}}}},
         {{"id", "Flux-chat"}, {"type", "chat"}},
         {{"id", "Flux-vision"}, {"supports_chat", true}},
         {{"id", "Flux-edit"}, {"kind", "FLUMINA_BASE_MODEL"}, {"supports_chat", true}},
@@ -76,8 +86,10 @@ int main() {
             return m.checkpoint() == id;
         });
     };
-    check(models.size() == 8, "discover only supported chat and image models");
-    for (const auto* id : {"Flux-2-Klein-9B-GGUF", "SD-Turbo", "named-image", "image-endpoint"}) {
+    check(models.size() == 15, "discover only supported chat and image models");
+    for (const auto* id : {"Flux-2-Klein-9B-GGUF", "SD-Turbo", "named-image", "image-endpoint",
+                           "image-kind", "image-architecture", "endpoint-kind", "endpoint-architecture",
+                           "Flux-extra-kind", "Flux-extra-architecture", "image-and-chat"}) {
         const auto it = find(id);
         check(it != models.end() && it->type == lemon::ModelType::IMAGE
               && it->labels == std::vector<std::string>({"cloud", "image"}), id);
@@ -87,8 +99,18 @@ int main() {
         check(it != models.end() && it->type == lemon::ModelType::LLM, id);
     }
     check(find("Sora-video") == models.end() && find("BGE-Embedding") == models.end()
-          && find("Flux-edit") == models.end() && find("multimodal") == models.end(),
+          && find("Flux-edit") == models.end() && find("multimodal") == models.end()
+          && find("Flux-chat-shaped") == models.end(),
           "unsupported output formats are not advertised as images or chat");
+
+    const auto anthropic_models = CloudServer::discover_models(
+        "image-test", "test-cloud-image-key", base, true, {}, "anthropic");
+    check(anthropic_models.size() == 4, "Anthropic discovery excludes every image model");
+    for (const auto* id : {"plain-chat", "Flux-chat", "Flux-vision", "vision-chat"}) {
+        check(std::any_of(anthropic_models.begin(), anthropic_models.end(), [&](const auto& model) {
+            return model.checkpoint() == id && model.type == lemon::ModelType::LLM;
+        }), "Anthropic discovery retains supported chat models");
+    }
 
     lemon::CloudProviderRegistry registry;
     registry.install("image-test", base);
