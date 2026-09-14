@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "model_name": "user.Conditions-TotalCharBounds",
+  "recipe": "collection.router",
+  "components": ["local", "cloud"],
+  "routing": {
+    "candidates": ["local", "cloud"],
+    "default_model": "local",
+    "rules": [
+      { "id": "min_total_chars-rule",
+        "match": { "min_total_chars": 40 },
+        "route_to": "cloud" },
+      { "id": "min_chars-rule",
+        "match": { "min_chars": 40 },
+        "route_to": "cloud" },
+      { "id": "max_total_chars-rule",
+        "match": { "max_total_chars": 6 },
+        "route_to": "cloud" }
+    ]
+  }
+}

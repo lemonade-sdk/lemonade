@@ -61,6 +61,29 @@ lemonade cloud install acme \
 
 Both settings persist per provider in `config.json` and apply to discovery and every forwarded request. `lemonade cloud list` prints the header when either value isn't the default. They are sticky: a later `cloud install` for the same provider that omits these flags keeps the configured header rather than reverting to `Authorization: Bearer`.
 
+### Providers that speak the Anthropic Messages format
+
+Some providers serve their models over the Anthropic Messages wire format rather than OpenAI chat completions. Register those with `--wire-format anthropic`:
+
+```bash
+lemonade cloud install acme \
+  --base-url https://gateway.example.com/v1 \
+  --wire-format anthropic \
+  --auth-header-name x-api-key \
+  --auth-header-prefix ""
+```
+
+The wire format and the auth header are independent settings, but usually go together: the Anthropic API authenticates with `x-api-key`, so leaving the header at its default returns `401`. Omit the auth flags only for a gateway that fronts the Anthropic format behind bearer auth.
+
+Every request to an `anthropic` provider, discovery included, carries `anthropic-version: 2023-06-01` unless the client sends its own. `anthropic-beta` is forwarded from the client, so SDK feature opt-ins reach the provider.
+
+Discovery is unchanged — `GET <base_url>/models`, which these providers serve in the OpenAI envelope. Inference differs:
+
+- **`POST /v1/messages`** relays to `<base_url>/messages` byte-for-byte, rewriting only the `model` field. Nothing is converted, so thinking blocks, tool use, cache control, and future Anthropic fields pass through intact. Streaming relays the upstream SSE unmodified. `retry-after`, `request-id`, and `anthropic-ratelimit-*` response headers are relayed back. A non-streaming request reports the upstream status code directly; with `stream: true` the response has already begun by the time upstream's status is known, so an upstream error arrives as an SSE `error` event on a `200` and the status code carries no signal.
+- **`POST /v1/chat/completions` and `POST /v1/completions`** are refused, since the provider does not serve the OpenAI shape. A non-streaming request gets `400` pointing at `/v1/messages`; a `stream: true` request gets the same message as an SSE error frame on a `200`, because the response has already begun by the time the body is written.
+
+Relayed requests take no router slot — there is no local model to load — so they do not appear in `/v1/stats`.
+
 ## Using cloud models
 
 Cloud-discovered models use a dot-namespaced name: `<provider>.<upstream-id>`. For example, after installing Fireworks you'll see entries like:
@@ -89,6 +112,16 @@ curl -X POST http://localhost:13305/v1/chat/completions \
 ```
 
 No special headers, no per-request credentials — `lemond` resolves the key from its registry and forwards the request transparently.
+
+## Session continuity headers
+
+Some providers key their prompt cache on a per-session identifier the client supplies as an HTTP header (for example, OpenCode sends `x-opencode-session`). When a request carries a well-known session header, Lemonade relays it upstream **verbatim** — the same header name that arrived is re-sent with the resolved value — so the provider can maintain cache continuity across the Lemonade hop:
+
+- If the client sends `x-opencode-session`, the provider receives `x-opencode-session`.
+- If the client sends `x-session-id`, the provider receives `x-session-id`.
+- Requests with no recognized session header are forwarded unchanged.
+
+The relay uses the built-in well-known session header allowlist only (`x-opencode-session`, `x-session-id`, `x-client-session-id`, `mcp-session-id`, `x-conversation-id`, `session-id`). Headers you configure for telemetry correlation via `telemetry.session.headers.id` are **not** sent to external providers, so internal identifiers never leave your network. Discovery (`GET <base_url>/models`) never carries a session header, since it is an administrative catalog query rather than inference.
 
 ## Authentication precedence
 
@@ -128,6 +161,8 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | `POST /v1/cloud/auth` returns 409 | Env var is set for that provider. Unset it or use the env-var value going forward. |
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
 | Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
+| Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. With `stream: true` this arrives as an SSE error frame on a `200`, not a `400`. |
+| An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. With `stream: true` on `/v1/messages` the `401` appears as an SSE `error` event on a `200`, so check the event body rather than the status code. |
 
 For a structured view of every installed provider's auth state and discovered model count, hit `GET /v1/system-info` — the `cloud.providers[]` block reports `env_var_set`, `runtime_key_set`, and `models_discovered` per provider.
 

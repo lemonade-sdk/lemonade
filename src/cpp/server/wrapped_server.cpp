@@ -193,6 +193,17 @@ void WrappedServer::set_process_handle(ProcessHandle handle,
     launch_command_.insert(launch_command_.end(), args.begin(), args.end());
 }
 
+void WrappedServer::set_process_state(ProcessHandle handle, int port,
+                                      const std::string& executable,
+                                      const std::vector<std::string>& args) {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    process_handle_ = handle;
+    port_ = port;
+    launch_command_.clear();
+    launch_command_.push_back(executable);
+    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
+}
+
 std::vector<std::string> WrappedServer::get_launch_command() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
     return launch_command_;

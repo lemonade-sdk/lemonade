@@ -148,12 +148,18 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
     std::string effective_config_dir = config_dir.empty() ? utils::get_config_dir() : config_dir;
     fs::path config_path = utils::path_from_utf8(effective_config_dir) / "config.json";
 
-    if (!fs::exists(config_path)) {
-        return defaults;
-    }
+    const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
 
     json loaded = load_raw(effective_config_dir);
     if (loaded.empty()) {
+        if (env_origins && *env_origins != '\0') {
+            json new_cfg = json::object({{"allowed_origins", std::string(env_origins)}});
+            LOG(WARNING) << "Migrating deprecated LEMONADE_ALLOWED_ORIGINS environment variable to config.json (allowed_origins="
+                         << env_origins << "). The LEMONADE_ALLOWED_ORIGINS environment variable is deprecated and will be removed in a future release."
+                         << std::endl;
+            save(effective_config_dir, new_cfg);
+            return utils::JsonUtils::merge(defaults, new_cfg);
+        }
         return defaults;
     }
 
@@ -172,6 +178,29 @@ json ConfigFile::load(const std::string& cache_dir, const std::string& config_di
         LOG(INFO) << "Migrating config: no_broadcast=" << loaded["no_broadcast"]
                   << " -> broadcast=" << normalized_loaded["broadcast"] << std::endl;
         migrated = true;
+    }
+
+    if (env_origins && *env_origins != '\0') {
+        if (config_migrate_allowed_origins_env(normalized_loaded, env_origins)) {
+            LOG(WARNING) << "Migrating deprecated LEMONADE_ALLOWED_ORIGINS environment variable to config.json (allowed_origins="
+                         << env_origins << "). The LEMONADE_ALLOWED_ORIGINS environment variable is deprecated and will be removed in a future release."
+                         << std::endl;
+            migrated = true;
+        } else {
+            std::string config_origins = normalized_loaded.contains("allowed_origins") && normalized_loaded["allowed_origins"].is_string()
+                                             ? normalized_loaded["allowed_origins"].get<std::string>()
+                                             : "";
+            if (config_origins != env_origins) {
+                LOG(WARNING) << "The LEMONADE_ALLOWED_ORIGINS environment variable ('" << env_origins << "') conflicts with "
+                             << "the 'allowed_origins' setting in config.json ('" << config_origins << "') and takes precedence at runtime. "
+                             << "LEMONADE_ALLOWED_ORIGINS is deprecated; please unset or remove the environment variable to use your config.json setting."
+                             << std::endl;
+            } else {
+                LOG(WARNING) << "The LEMONADE_ALLOWED_ORIGINS environment variable is deprecated and will be removed in a future release. "
+                             << "Please unset or remove LEMONADE_ALLOWED_ORIGINS as 'allowed_origins' is already configured in config.json."
+                             << std::endl;
+            }
+        }
     }
 
     if (migrated) {

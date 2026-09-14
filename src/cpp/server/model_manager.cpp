@@ -114,7 +114,12 @@ static constexpr auto safe_dir_options = fs::directory_options::none;
 namespace lemon {
 
 // Properties which are defined by the user for model registration.
-static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{"checkpoints", "checkpoint", "recipe", "mmproj", "size", "image_defaults", "components", "recipe_options", "routing", "system_prompt", "version", "source", "registry_source", "auto_update"};
+static const std::vector<std::string> USER_DEFINED_MODEL_PROPS = std::vector<std::string>{
+    "checkpoints", "checkpoint", "recipe", "mmproj", "size",
+    "image_defaults", "audio_defaults", "components", "recipe_options",
+    "routing", "system_prompt", "version", "source", "registry_source",
+    "auto_update"
+};
 
 static std::string visible_extra_variant_name(const lemon::GgufVariant& variant) {
     std::string stem = fs::path(variant.primary_file).stem().string();
@@ -141,6 +146,23 @@ static constexpr size_t USER_MODEL_PREFIX_LEN = sizeof(USER_MODEL_PREFIX) - 1;
 static constexpr const char EXTRA_MODEL_PREFIX[] = "extra.";
 static constexpr const char EXTRA_MODEL_RECIPE[] = "llamacpp";
 static constexpr const char EXTRA_MODEL_SOURCE[] = "extra_models_dir";
+
+// Select the deployment mode from the top-level directory within extra_models_dir.
+static std::string extra_model_deployment_label(
+    const fs::path& model_path,
+    const fs::path& search_path) {
+    const fs::path relative_path = model_path.lexically_relative(search_path);
+    if (relative_path.empty()) return {};
+
+    const auto first_component = relative_path.begin();
+    if (first_component == relative_path.end()) return {};
+
+    const std::string category = first_component->string();
+    if (category == "chat") return "chat";
+    if (category == "embeddings") return "embeddings";
+    if (category == "reranking") return "reranking";
+    return {};
+}
 
 // Built-ins are keyed bare in models_cache_; user.* and extra.* keys already
 // include their canonical prefix. This helper returns the canonical ID for any
@@ -193,6 +215,20 @@ static std::string strip_user_model_prefix(const std::string& model_name) {
 
 static std::string effective_registry_source(const ModelInfo& info) {
     return remote_registry_source_name(parse_remote_registry_source(info.registry_source));
+}
+
+void ModelManager::set_default_model_source_provider(std::function<std::string()> provider) {
+    default_model_source_provider_ = std::move(provider);
+}
+
+RemoteRegistrySource ModelManager::download_source_for(const ModelInfo& info) const {
+    if (!info.registry_source.empty()) {
+        return parse_remote_registry_source(info.registry_source);
+    }
+    if (default_model_source_provider_) {
+        return parse_remote_registry_source(default_model_source_provider_());
+    }
+    return RemoteRegistrySource::HuggingFace;
 }
 
 static void parse_model_source_fields(ModelInfo& info, const json& model_json) {
@@ -390,7 +426,8 @@ static DeviceType device_type_for_recipe(const std::string& recipe) {
     return get_device_type_from_recipe(recipe);
 }
 
-// Build merged recipe options: image_defaults -> JSON recipe_options -> user-saved overrides.
+// Fold the model-level precedence layers (lowest → highest). The full ladder
+// is documented in SDServer::build_extra_args().
 // json_recipe_options: pre-extracted recipe_options for this model (from build_cache's
 // two-phase pattern). Pass a null json if the model JSON should be read directly instead.
 // saved_recipe_options_key: canonical ID (user.* / extra.* / builtin.*) under which the
@@ -400,36 +437,26 @@ static RecipeOptions build_recipe_options(const ModelInfo& info,
                                           const json& json_recipe_options,
                                           const std::string& saved_recipe_options_key,
                                           const json& saved_recipe_options) {
-    json base_options = json::object();
+    // Non-sd recipes pass an empty image_defaults layer.
+    json image_defaults = json::object();
 
-    // Layer 1: image_defaults as base
     if (info.image_defaults.has_defaults) {
-        base_options["steps"] = info.image_defaults.steps;
-        base_options["cfg_scale"] = info.image_defaults.cfg_scale;
-        base_options["width"] = info.image_defaults.width;
-        base_options["height"] = info.image_defaults.height;
+        image_defaults["steps"] = info.image_defaults.steps;
+        image_defaults["cfg_scale"] = info.image_defaults.cfg_scale;
+        image_defaults["width"] = info.image_defaults.width;
+        image_defaults["height"] = info.image_defaults.height;
         if (!info.image_defaults.sampling_method.empty())
-            base_options["sampling_method"] = info.image_defaults.sampling_method;
+            image_defaults["sampling_method"] = info.image_defaults.sampling_method;
         if (info.image_defaults.flow_shift > 0.0f)
-            base_options["flow_shift"] = info.image_defaults.flow_shift;
+            image_defaults["flow_shift"] = info.image_defaults.flow_shift;
     }
 
-    // Layer 2: JSON-level recipe_options override image_defaults (e.g. sdcpp_args)
-    if (!json_recipe_options.is_null() && json_recipe_options.is_object()) {
-        for (auto& [key, value] : json_recipe_options.items()) {
-            base_options[key] = value;
-        }
-    }
+    json user_saved = JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)
+                          ? saved_recipe_options[saved_recipe_options_key]
+                          : json(nullptr);
 
-    // Layer 3: User-saved recipe options override everything
-    if (JsonUtils::has_key(saved_recipe_options, saved_recipe_options_key)) {
-        auto saved = saved_recipe_options[saved_recipe_options_key];
-        for (auto& [key, value] : saved.items()) {
-            base_options[key] = value;
-        }
-    }
-
-    return RecipeOptions(info.recipe, base_options);
+    return RecipeOptions::merge_precedence_layers(
+        info.recipe, image_defaults, json_recipe_options, user_saved);
 }
 
 // Clean up orphaned HF cache blobs after deleting a symlink.
@@ -1145,6 +1172,10 @@ void ModelManager::set_extra_models_dir(const std::string& dir) {
     notify_models_changed();
 }
 
+ModelManager::~ModelManager() {
+    directory_watcher_.reset();
+}
+
 void ModelManager::start_directory_watcher() {
     directory_watcher_ = std::make_unique<DirectoryWatcher>(extra_models_dir_);
     directory_watcher_->set_callback([this]() {
@@ -1158,6 +1189,7 @@ void ModelManager::start_directory_watcher() {
     directory_watcher_->start();
 }
 
+// Apply the default only after discovery has checked for an explicit directory mode.
 ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     ModelInfo info;
     info.model_name = name;
@@ -1166,7 +1198,6 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     info.downloaded = true;
     info.source = EXTRA_MODEL_SOURCE;
     info.labels = {"custom"};
-    lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
     info.device = device_type_for_recipe(EXTRA_MODEL_RECIPE);
     return info;
 }
@@ -1177,10 +1208,11 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
                             const std::string& base_name,
                             const fs::path& folder,
-                            ModelInfo info) {
+                            ModelInfo info,
+                            const std::set<std::string>* reserved_ids = nullptr) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
     std::string id = prefix + base_name;
-    if (discovered.count(id)) {
+    if (discovered.count(id) || (reserved_ids && reserved_ids->count(id))) {
         const std::string qualified = folder.filename().string() + "-" + base_name;
         id = prefix + qualified;
         for (int n = 2; discovered.count(id); ++n) {
@@ -1191,6 +1223,15 @@ static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
     discovered.emplace(id, std::move(info));
 }
 
+static const std::set<std::string>& reserved_extra_model_ids() {
+    static const std::set<std::string> ids = {
+        std::string(EXTRA_MODEL_PREFIX) + "chat",
+        std::string(EXTRA_MODEL_PREFIX) + "embeddings",
+        std::string(EXTRA_MODEL_PREFIX) + "reranking",
+    };
+    return ids;
+}
+
 std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
     std::map<std::string, ModelInfo> discovered;
 
@@ -1199,7 +1240,10 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    const fs::path search_path = path_from_utf8(extra_models_dir_);
+    fs::path search_path = path_from_utf8(extra_models_dir_).lexically_normal();
+    if (!search_path.has_filename()) {
+        search_path = search_path.parent_path();
+    }
     std::error_code status_ec;
     const fs::file_status status = fs::status(search_path, status_ec);
     if (status_ec) {
@@ -1222,6 +1266,7 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     // Track which directories we've processed (for multimodal/multi-shard detection)
     std::map<fs::path, std::vector<fs::path>> dirs_with_gguf;  // directory -> list of gguf files
+    std::map<fs::path, std::vector<fs::path>> category_files;
     std::vector<fs::path> standalone_files;  // GGUF files not in subdirectories
 
     // Recursively find all .gguf files
@@ -1236,13 +1281,17 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             if (!gguf_reader_detail::ends_with_ignore_case(filename, ".gguf")) continue;
 
             fs::path parent_dir = entry.path().parent_path();
+            const std::string deployment_label =
+                extra_model_deployment_label(entry.path(), search_path);
+            const fs::path relative_parent = parent_dir.lexically_relative(search_path);
+            const bool directly_in_category =
+                !deployment_label.empty() && relative_parent == fs::path(deployment_label);
 
-            // Check if this file is directly in the search directory or in a subdirectory
             if (parent_dir == search_path) {
-                // Standalone file in the root of search directory
                 standalone_files.push_back(entry.path());
+            } else if (directly_in_category) {
+                category_files[parent_dir].push_back(entry.path());
             } else {
-                // File in a subdirectory - group by parent directory
                 dirs_with_gguf[parent_dir].push_back(entry.path());
             }
         }
@@ -1251,34 +1300,116 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    // Process standalone files (single-file models)
-    for (const auto& gguf_path : standalone_files) {
+    // Root files claim their short id first, so adding a reserved directory
+    // never renames an extra model that already exists.
+    std::sort(standalone_files.begin(), standalone_files.end(),
+              [](const fs::path& lhs, const fs::path& rhs) {
+                  return lhs.generic_string() < rhs.generic_string();
+              });
+
+    // A directory used to be listed as a single model named after itself.
+    // Reserving one splits it into separate models, so keep the old id resolving.
+    std::set<std::string> folder_ids_kept;
+    auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
+                                    const std::string& deployment_label,
+                                    const fs::path& mmproj_file = fs::path()) {
+        const fs::path& gguf_path = model_files.front();
         std::string filename = gguf_path.filename().string();
-
-        // Skip mmproj files - they're part of multimodal models
-        if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) continue;
-
-        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + gguf_path.stem().string();
+        std::string shard_base;
+        const bool sharded = model_files.size() > 1 &&
+            is_gguf_shard_filename(filename, &shard_base);
+        const std::string base_name = sharded ? shard_base : gguf_path.stem().string();
+        std::string model_name = std::string(EXTRA_MODEL_PREFIX) + base_name;
         ModelInfo info = init_extra_model_info(model_name);
         info.checkpoints["main"] = gguf_path.string();
         info.resolved_paths["main"] = gguf_path.string();
-        info.type = ModelType::LLM;
+        if (!deployment_label.empty()) {
+            add_label_once(info.labels, deployment_label);
+        }
+        lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
+        info.type = get_model_type_from_labels(info.labels);
 
-        // Calculate size in GB
-        try {
-            uintmax_t file_size = fs::file_size(gguf_path);
-            info.size = static_cast<double>(file_size) / (1024.0 * 1024.0 * 1024.0);
-        } catch (...) {
-            info.size = 0.0;
+        uintmax_t total_size = 0;
+        for (const auto& model_file : model_files) {
+            try {
+                total_size += fs::file_size(model_file);
+            } catch (...) {}
+        }
+        info.size = static_cast<double>(total_size) / (1024.0 * 1024.0 * 1024.0);
+
+        if (!mmproj_file.empty()) {
+            info.checkpoints["mmproj"] = mmproj_file.filename().string();
+            info.resolved_paths["mmproj"] = mmproj_file.string();
+            info.labels.push_back("vision");
         }
 
-        add_extra_model(discovered, gguf_path.stem().string(), gguf_path.parent_path(), std::move(info));
+        if (!deployment_label.empty() && folder_ids_kept.insert(deployment_label).second) {
+            info.input_aliases.push_back(deployment_label);
+            info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
+        }
+
+        add_extra_model(discovered, base_name, gguf_path.parent_path(),
+                        std::move(info), deployment_label.empty()
+                            ? nullptr
+                            : &reserved_extra_model_ids());
+    };
+
+    for (const auto& gguf_path : standalone_files) {
+        if (gguf_reader_detail::contains_ignore_case(
+                gguf_path.filename().string(), "mmproj")) continue;
+        add_standalone_model({gguf_path}, "");
+    }
+
+    for (auto& [category_path, files] : category_files) {
+        std::sort(files.begin(), files.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return lhs.generic_string() < rhs.generic_string();
+                  });
+        std::vector<fs::path> mmproj_files;
+        std::vector<std::vector<fs::path>> logical_models;
+        std::map<std::pair<std::string, int>, size_t> shard_groups;
+
+        for (const auto& file : files) {
+            const std::string filename = file.filename().string();
+            if (gguf_reader_detail::contains_ignore_case(filename, "mmproj")) {
+                mmproj_files.push_back(file);
+                continue;
+            }
+
+            std::string shard_base;
+            int shard_total = 0;
+            if (is_gguf_shard_filename(filename, &shard_base, &shard_total)) {
+                const auto key = std::make_pair(shard_base, shard_total);
+                auto [it, inserted] = shard_groups.emplace(key, logical_models.size());
+                if (inserted) logical_models.emplace_back();
+                logical_models[it->second].push_back(file);
+            } else {
+                logical_models.push_back({file});
+            }
+        }
+
+        std::sort(logical_models.begin(), logical_models.end(),
+                  [](const auto& lhs, const auto& rhs) {
+                      return lhs.front().generic_string() < rhs.front().generic_string();
+                  });
+
+        const std::string deployment_label = category_path.filename().string();
+        const fs::path direct_mmproj = logical_models.size() == 1 && !mmproj_files.empty()
+            ? mmproj_files.front()
+            : fs::path();
+        for (const auto& model_files : logical_models) {
+            add_standalone_model(model_files, deployment_label, direct_mmproj);
+        }
     }
 
     // Process directories (multimodal and multi-shard models)
-    for (const auto& [dir_path, gguf_files] : dirs_with_gguf) {
+    for (auto& [dir_path, gguf_files] : dirs_with_gguf) {
         if (gguf_files.empty()) continue;
-        discover_extra_models_in_directory(dir_path, gguf_files, discovered);
+        std::sort(gguf_files.begin(), gguf_files.end(),
+                  [](const fs::path& lhs, const fs::path& rhs) {
+                      return lhs.generic_string() < rhs.generic_string();
+                  });
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -1289,9 +1420,11 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 void ModelManager::discover_extra_models_in_directory(
     const fs::path& dir_path,
     const std::vector<fs::path>& gguf_files,
-    std::map<std::string, ModelInfo>& discovered) const {
+    std::map<std::string, ModelInfo>& discovered,
+    const fs::path& search_path) const {
 
     std::string dir_name = dir_path.filename().string();
+    const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
     double total_size = 0.0;
@@ -1365,11 +1498,16 @@ void ModelManager::discover_extra_models_in_directory(
             info.resolved_paths["main"] = path.string();
             info.size = static_cast<double>(v.size_bytes) / (1024.0 * 1024.0 * 1024.0);
 
+            if (!deployment_label.empty()) {
+                add_label_once(info.labels, deployment_label);
+            }
+
             if (!mmproj_file.empty()) {
                 info.checkpoints["mmproj"] = mmproj_file.filename().string();
                 info.resolved_paths["mmproj"] = mmproj_file.string();
                 info.labels.push_back("vision");
             }
+            lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
@@ -1378,7 +1516,10 @@ void ModelManager::discover_extra_models_in_directory(
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), dir_path, std::move(info));
+            add_extra_model(discovered, visible_extra_variant_name(v), dir_path,
+                            std::move(info), deployment_label.empty()
+                                ? nullptr
+                                : &reserved_extra_model_ids());
         }
     } else {
         // Keep the folder as one model when splitting would be ambiguous.
@@ -1388,13 +1529,21 @@ void ModelManager::discover_extra_models_in_directory(
         info.resolved_paths["main"] = main_model_path.string();
         info.size = total_size;
 
+        if (!deployment_label.empty()) {
+            add_label_once(info.labels, deployment_label);
+        }
+
         if (!mmproj_file.empty()) {
             info.checkpoints["mmproj"] = mmproj_file.filename().string();
             info.resolved_paths["mmproj"] = mmproj_file.string();
             info.labels.push_back("vision");
         }
+        lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
-        add_extra_model(discovered, dir_name, dir_path, std::move(info));
+        add_extra_model(discovered, dir_name, dir_path, std::move(info),
+                        deployment_label.empty()
+                            ? nullptr
+                            : &reserved_extra_model_ids());
     }
 }
 
@@ -2791,6 +2940,135 @@ void ModelManager::download_from_huggingface_engine(
     download_from_registry_engine(info, progress_callback);
 }
 
+// Every alias form rebuild_public_model_aliases_locked() computes -- bare
+// name (by source precedence), builtin.<X>, and ModelInfo::input_aliases --
+// as a pure function of an arbitrary model set, so it can also run against
+// the pre-filter set (#2748): a component's alias must resolve the same way
+// whether or not its model currently survives hardware filtering. See that
+// function's own doc comment for what each field means.
+struct ModelAliasMaps {
+    std::map<std::string, std::string> public_model_aliases;
+    std::map<std::string, std::string> canonical_public_names;
+};
+
+static ModelAliasMaps compute_model_alias_maps(const std::map<std::string, ModelInfo>& models) {
+    ModelAliasMaps result;
+
+    struct Entry {
+        std::string cache_key;
+        ModelSource source;
+    };
+    std::map<std::string, std::vector<Entry>> by_bare;
+
+    for (const auto& [cache_key, info] : models) {
+        ModelSource source;
+        std::string bare;
+        if (auto canon = parse_canonical_id(cache_key)) {
+            source = canon->source;
+            bare = canon->bare_name;
+        } else {
+            source = ModelSource::Builtin;
+            bare = cache_key;
+        }
+        by_bare[bare].push_back({cache_key, source});
+    }
+
+    for (auto& [bare, entries] : by_bare) {
+        std::sort(entries.begin(), entries.end(), [](const Entry& a, const Entry& b) {
+            return precedence_rank(a.source) < precedence_rank(b.source);
+        });
+
+        const Entry& winner = entries.front();
+        result.public_model_aliases[bare] = winner.cache_key;
+
+        const auto winner_it = models.find(winner.cache_key);
+        const bool winner_is_prefixed_collection =
+            winner.source != ModelSource::Builtin &&
+            winner_it != models.end() &&
+            is_model_collection_recipe(winner_it->second.recipe);
+        result.canonical_public_names[winner.cache_key] =
+            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
+
+        for (size_t i = 1; i < entries.size(); ++i) {
+            const Entry& shadowed = entries[i];
+            std::string canonical = canonical_id(shadowed.source, bare);
+            result.canonical_public_names[shadowed.cache_key] = canonical;
+            if (canonical != shadowed.cache_key) {
+                result.public_model_aliases[canonical] = shadowed.cache_key;
+            }
+        }
+    }
+
+    for (const auto& [cache_key, _info] : models) {
+        if (parse_canonical_id(cache_key)) continue;
+        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
+        result.public_model_aliases.try_emplace(canonical, cache_key);
+    }
+
+    auto source_for_cache_key = [](const std::string& cache_key) {
+        if (auto canon = parse_canonical_id(cache_key)) {
+            return canon->source;
+        }
+        return ModelSource::Builtin;
+    };
+
+    for (const auto& [cache_key, info] : models) {
+        for (const auto& alias : info.input_aliases) {
+            if (parse_canonical_id(alias)) {
+                if (models.find(alias) == models.end()) {
+                    result.public_model_aliases[alias] = cache_key;
+                }
+            } else {
+                auto existing = result.public_model_aliases.find(alias);
+                if (existing == result.public_model_aliases.end()) {
+                    result.public_model_aliases[alias] = cache_key;
+                    continue;
+                }
+
+                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
+                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
+                    result.canonical_public_names[existing->second] = builtin_canonical;
+                    result.public_model_aliases[builtin_canonical] = existing->second;
+                    result.public_model_aliases[alias] = cache_key;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+// Both routing-policy parse sites resolve a component the same way: alias
+// first, falling back to the name as authored; then a primary type lookup
+// with one fallback tier behind it. #2748 was that shape drifting between
+// them, so they are built from here rather than hand-written twice. Only the
+// tiers differ -- which model set each consults, and what the fallback is.
+struct RoutingResolutionTiers {
+    std::function<std::optional<std::string>(const std::string&)> alias;
+    std::function<std::optional<ModelType>(const std::string&)> type;
+    std::function<std::optional<ModelType>(const std::string&)> type_fallback;
+};
+
+static RoutingPolicyParseOptions make_routing_parse_options(RoutingResolutionTiers tiers) {
+    RoutingPolicyParseOptions options;
+    options.resolve_component =
+        [tiers](const std::string& name) -> std::optional<std::string> {
+        if (tiers.alias) {
+            if (auto resolved = tiers.alias(name)) return *resolved;
+        }
+        // An unresolvable name stays as authored so component-role validation
+        // can still report it by the name the author actually wrote.
+        return name;
+    };
+    options.get_model_type = [tiers](const std::string& name) -> std::optional<ModelType> {
+        if (tiers.type) {
+            if (auto type = tiers.type(name)) return type;
+        }
+        return tiers.type_fallback ? tiers.type_fallback(name) : std::nullopt;
+    };
+    return options;
+}
+
 void ModelManager::build_cache() {
     std::lock_guard<std::mutex> lock(models_cache_mutex_);
 
@@ -2823,6 +3101,7 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
         if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
@@ -2901,6 +3180,7 @@ void ModelManager::build_cache() {
             continue;
         }
         info.size = JsonUtils::get_or_default<double>(value, "size", 0.0);
+        info.min_resident_gb = JsonUtils::get_or_default<double>(value, "min_resident_gb", 0.0);
         info.cloud_provider = JsonUtils::get_or_default<std::string>(value, "cloud_provider", "");
         info.system_prompt = JsonUtils::get_or_default<std::string>(value, "system_prompt", "");
         if (value.contains("auto_update") && value["auto_update"].is_boolean()) {
@@ -3039,6 +3319,26 @@ void ModelManager::build_cache() {
         }
     }
 
+    // Pre-filter snapshots for the routing-policy resolver below (#2748); see
+    // compute_model_alias_maps() for why the alias needs the full algorithm
+    // rather than a plain bare-name map. Only router collections read them and
+    // the alias rebuild is O(n log n) over the whole registry, so a host with
+    // no router collection -- the common case, across ~15 build_cache() call
+    // sites -- pays nothing.
+    const bool needs_routing_snapshots =
+        std::any_of(all_models.begin(), all_models.end(), [](const auto& entry) {
+            return is_router_collection_recipe(entry.second.recipe);
+        });
+
+    std::map<std::string, ModelType> pre_filter_types;
+    std::map<std::string, std::string> pre_filter_aliases;
+    if (needs_routing_snapshots) {
+        for (const auto& [name, info] : all_models) {
+            pre_filter_types[name] = info.type;
+        }
+        pre_filter_aliases = compute_model_alias_maps(all_models).public_model_aliases;
+    }
+
     // Step 2: Filter by backend availability. This is the full-registry pass, so
     // it also refreshes the recipe availability side table used to hide backends
     // that have nothing runnable on this host.
@@ -3088,25 +3388,37 @@ void ModelManager::build_cache() {
 
     cache_valid_ = true;
 
-    // Parse each collection.router model's routing policy now, while the cache
-    // and its alias map are fully built and the lock is still held. The parser's
-    // component resolver needs only alias resolution, which is a direct lookup
-    // into public_model_aliases_ here - exactly what resolve_model_name() does,
-    // minus its own build_cache()+lock. Calling resolve_model_name() here would
-    // re-lock this non-recursive mutex and deadlock, so the lookup is inlined.
-    RoutingPolicyParseOptions policy_options;
-    policy_options.resolve_component =
-        [this](const std::string& name) -> std::optional<std::string> {
-        auto it = public_model_aliases_.find(name);
-        return it != public_model_aliases_.end() ? it->second : name;
-    };
-    // Direct lookup into the map already being built, same rationale as
-    // resolve_component above: models_cache_ is populated and the lock is
-    // still held, so this avoids re-entering get_model_info()'s own locking.
-    policy_options.get_model_type = [this](const std::string& name) -> std::optional<ModelType> {
-        auto it = models_cache_.find(name);
-        return it != models_cache_.end() ? std::optional<ModelType>(it->second.type) : std::nullopt;
-    };
+    // Parse each collection.router model's routing policy while the cache and
+    // alias map are built and the lock is held (avoids re-locking via
+    // resolve_model_name()/get_model_info()). pre_filter_aliases is computed
+    // over all_models, a strict superset of models_cache_, so it alone
+    // covers everything public_model_aliases_ would (#2748).
+    //
+    // Components only the pre-filter tier can resolve are unavailable on this
+    // host: a classifier bound to one takes its on_error path on every
+    // request. Recorded here, where that is known, and reported per collection
+    // below so the operator sees degraded routing instead of silence (#2748).
+    std::set<std::string> unavailable_components;
+
+    RoutingPolicyParseOptions policy_options = make_routing_parse_options({
+        [&pre_filter_aliases](const std::string& name) -> std::optional<std::string> {
+            auto it = pre_filter_aliases.find(name);
+            if (it == pre_filter_aliases.end()) return std::nullopt;
+            return it->second;
+        },
+        [this](const std::string& name) -> std::optional<ModelType> {
+            auto it = models_cache_.find(name);
+            if (it == models_cache_.end()) return std::nullopt;
+            return it->second.type;
+        },
+        [&pre_filter_types, &unavailable_components](
+            const std::string& name) -> std::optional<ModelType> {
+            auto it = pre_filter_types.find(name);
+            if (it == pre_filter_types.end()) return std::nullopt;
+            unavailable_components.insert(name);
+            return it->second;
+        },
+    });
     for (auto& [name, info] : models_cache_) {
         if (!is_router_collection_recipe(info.recipe)) {
             continue;
@@ -3122,12 +3434,27 @@ void ModelManager::build_cache() {
         if (routing_it != info.extras.end()) {
             doc["routing"] = routing_it->second;
         }
+        unavailable_components.clear();
         try {
             info.route_policy = std::make_shared<const RoutePolicy>(
                 parse_route_policy_collection(doc, policy_options));
         } catch (const std::exception& e) {
             LOG(WARNING, "ModelManager") << "Failed to parse routing policy for '"
                                          << name << "': " << e.what() << std::endl;
+        }
+        if (!unavailable_components.empty()) {
+            std::ostringstream joined;
+            bool first = true;
+            for (const auto& component : unavailable_components) {
+                if (!first) joined << ", ";
+                joined << component;
+                first = false;
+            }
+            LOG(WARNING, "ModelManager")
+                << "Routing policy for '" << name << "' references component(s) "
+                << "unavailable on this host: " << joined.str()
+                << ". Any classifier bound to them will fall back to its on_error "
+                << "result on every request." << std::endl;
         }
     }
 
@@ -3567,10 +3894,28 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
                            "Detected operating system: " + os_version + ".";
         }
 
-        // Filter out models that are too large for system RAM
-        // Heuristic: if model size > 80% of system RAM, filter it out
-        if (!filter_out && !user_controlled_model && system_ram_gb > 0.0 && info.size > 0.0) {
-            if (info.size > max_model_size_gb) {
+        // Filter out models too large to run on this machine.
+        if (!filter_out && !user_controlled_model && info.size > 0.0) {
+            const auto* desc = backends::descriptor_for(recipe);
+            if (desc && desc->streams_model_from_storage) {
+                // A streaming backend reads the model from disk on demand, so the
+                // full model need not fit in memory — only its resident working
+                // set, and only in the device's own pool. ROCm cannot address
+                // system RAM plus the iGPU carveout as one pool; it gets the
+                // larger of the pools (largest_mem_pool_gb), so that is the ceiling.
+                const double working_set = streaming_working_set_gb(info.min_resident_gb, info.size);
+                if (streaming_model_exceeds_pool(working_set, largest_mem_pool_gb)) {
+                    filter_out = true;
+                    size_filtered_recipes.insert(recipe);
+                    std::ostringstream oss;
+                    oss << std::fixed << std::setprecision(1);
+                    oss << "This model streams from disk but needs about " << working_set
+                        << " GB resident in GPU memory, and this device's largest memory "
+                        << "pool is only " << largest_mem_pool_gb << " GB.";
+                    filter_reason = oss.str();
+                }
+            } else if (system_ram_gb > 0.0 && info.size > max_model_size_gb) {
+                // Non-streaming: the whole model must fit (80% of system RAM).
                 filter_out = true;
                 size_filtered_recipes.insert(recipe);
                 std::ostringstream oss;
@@ -3632,6 +3977,15 @@ std::set<std::string> ModelManager::recipes_missing_all_models(
     return hidden;
 }
 
+double ModelManager::streaming_working_set_gb(double min_resident_gb, double size_gb) {
+    return min_resident_gb > 0.0 ? min_resident_gb : size_gb;
+}
+
+bool ModelManager::streaming_model_exceeds_pool(double working_set_gb, double pool_gb) {
+    // pool <= 0 means the device pool is unknown: don't hide on missing data.
+    return pool_gb > 0.0 && working_set_gb > pool_gb;
+}
+
 void ModelManager::set_cloud_registry(CloudProviderRegistry* registry) {
     cloud_registry_ = registry;
 }
@@ -3673,7 +4027,8 @@ size_t ModelManager::refresh_cloud_models(const std::string& provider) {
         models = backends::CloudServer::discover_models(
             provider, api_key, base_url,
             cloud_registry_->allow_insecure_http_for(provider),
-            cloud_registry_->auth_header_for(provider));
+            cloud_registry_->auth_header_for(provider),
+            cloud_registry_->wire_format_for(provider));
     } catch (const std::exception& e) {
         LOG(WARNING, "ModelManager") << "Cloud discovery threw for provider '"
                                       << provider << "': " << e.what() << std::endl;
@@ -4660,6 +5015,11 @@ void ModelManager::download_model(const std::string& model_name,
 
     auto model_info = get_model_info(model_name);
 
+    const std::string download_source = requested_registry_source(model_data);
+    if (!download_source.empty() && backend_self_manages_downloads(model_info.recipe)) {
+        model_info.registry_source = download_source;
+    }
+
     if (model_data.contains("recipe_options")) {
         // Merge import recipe_options on top of the already-merged options
         // (which include image_defaults + JSON recipe_options + user-saved).
@@ -5465,6 +5825,18 @@ void ModelManager::download_from_registry(const ModelInfo& info,
         }
     }
 
+    for (auto& [repo_id, files] : files_to_download) {
+        (void)repo_id;
+        std::set<std::string> seen;
+        std::vector<std::string> unique_files;
+        for (auto& filename : files) {
+            if (seen.insert(filename).second) {
+                unique_files.push_back(filename);
+            }
+        }
+        files = std::move(unique_files);
+    }
+
     int total_files = 0;
     LOG(INFO, "ModelManager") << "Identified files to download:" << std::endl;
     for (const auto& [repo_id, files] : files_to_download) {
@@ -6090,39 +6462,44 @@ std::optional<std::string> ModelManager::validate_collection_request(
         }
     }
     if (is_router_collection_recipe(model_data.value("recipe", std::string()))) {
-        RoutingPolicyParseOptions options;
-        options.resolve_component = [this](const std::string& name) -> std::optional<std::string> {
-            try {
-                return resolve_model_name(name);
-            } catch (...) {
-                // Inline collection imports may reference components that are
-                // defined in the same JSON but not registered yet. Keep those
-                // names stable so parser component-role validation can still
-                // compare them against the authored components array.
-                return name;
-            }
-        };
-        options.get_model_type = [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
-            try {
-                return get_model_info(name).type;
-            } catch (...) {
-                // Not registered yet - the name may match an inline `models[]`
-                // definition in this same request; derive its type from that
-                // definition's declared labels (absent labels default to LLM,
-                // same as everywhere else). Only nullopt if no definition
-                // exists at all - that's the "truly unknown" case.
+        // Same resolution shape as build_cache()'s, differing only in its
+        // tiers: this one resolves live and falls back to the request's own
+        // inline `models[]`, because an import validates names that are not
+        // registered yet. Unresolvable names are kept as authored by
+        // make_routing_parse_options, so component-role validation can still
+        // compare them against the authored components array.
+        RoutingPolicyParseOptions options = make_routing_parse_options({
+            [this](const std::string& name) -> std::optional<std::string> {
+                try {
+                    return resolve_model_name(name);
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this](const std::string& name) -> std::optional<ModelType> {
+                try {
+                    return get_model_info(name).type;
+                } catch (...) {
+                    return std::nullopt;
+                }
+            },
+            [this, &find_inline_def](const std::string& name) -> std::optional<ModelType> {
+                // Not registered - the name may match an inline `models[]`
+                // definition in this same request. Derive the type exactly as
+                // register_user_model() would once that definition is
+                // registered, so validation and runtime cannot disagree
+                // (absent labels default to LLM, same as everywhere else).
+                // nullopt only when no definition exists at all - the
+                // "truly unknown" case.
                 const json* def = find_inline_def(bare_component_name(name));
                 if (!def) {
                     return std::nullopt;
                 }
-                // Derive the type exactly as register_user_model() would once
-                // this inline definition is registered, so validation and
-                // runtime cannot disagree.
                 std::set<std::string> label_set = normalized_definition_labels(*def);
                 return get_model_type_from_labels(
                     std::vector<std::string>(label_set.begin(), label_set.end()));
-            }
-        };
+            },
+        });
         try {
             // Strip pull-protocol keys (stream, subscribe, do_not_upgrade, …)
             // that the client merges into the body but the policy parser does
@@ -6323,103 +6700,14 @@ std::set<std::string> ModelManager::recipes_with_all_models_filtered() {
 //       fetch, and chat (the bare name still resolves via public_model_aliases_)
 //     - shadowed cache keys → canonical-prefixed ID (user.X / extra.X / builtin.X)
 //
-// Precedence: Registered > Imported > Builtin.
+// Precedence: Registered > Imported > Builtin. The algorithm itself is
+// compute_model_alias_maps(), shared with build_cache()'s pre-filter
+// resolver snapshot (#2748); this just runs it against models_cache_ and
+// commits the result to member state.
 void ModelManager::rebuild_public_model_aliases_locked() {
-    public_model_aliases_.clear();
-    canonical_public_names_.clear();
-
-    struct Entry {
-        std::string cache_key;
-        ModelSource source;
-    };
-    std::map<std::string, std::vector<Entry>> by_bare;
-
-    for (const auto& [cache_key, info] : models_cache_) {
-        ModelSource source;
-        std::string bare;
-        if (auto canon = parse_canonical_id(cache_key)) {
-            source = canon->source;
-            bare = canon->bare_name;
-        } else {
-            // Unprefixed cache keys are built-ins (server_models.json).
-            source = ModelSource::Builtin;
-            bare = cache_key;
-        }
-        by_bare[bare].push_back({cache_key, source});
-    }
-
-    for (auto& [bare, entries] : by_bare) {
-        std::sort(entries.begin(), entries.end(),
-                  [](const Entry& a, const Entry& b) {
-                      return precedence_rank(a.source) < precedence_rank(b.source);
-                  });
-
-        const Entry& winner = entries.front();
-        public_model_aliases_[bare] = winner.cache_key;
-
-        // Collections registered under a prefixed namespace (user.* / extra.*)
-        // must list with their prefix so the id emitted by /v1/models matches the
-        // id used for registration, fetch, and chat. The bare name still resolves
-        // via the alias above, preserving dual-id (bare + prefixed) invocation.
-        const auto winner_it = models_cache_.find(winner.cache_key);
-        const bool winner_is_prefixed_collection =
-            winner.source != ModelSource::Builtin &&
-            winner_it != models_cache_.end() &&
-            is_model_collection_recipe(winner_it->second.recipe);
-        canonical_public_names_[winner.cache_key] =
-            winner_is_prefixed_collection ? canonical_id(winner.source, bare) : bare;
-
-        for (size_t i = 1; i < entries.size(); ++i) {
-            const Entry& shadowed = entries[i];
-            std::string canonical = canonical_id(shadowed.source, bare);
-            canonical_public_names_[shadowed.cache_key] = canonical;
-            if (canonical != shadowed.cache_key) {
-                public_model_aliases_[canonical] = shadowed.cache_key;
-            }
-        }
-    }
-
-    // Always accept builtin.<X> as an input alias for the bare cache key,
-    // even when no other source shadows the built-in.
-    for (const auto& [cache_key, _info] : models_cache_) {
-        if (parse_canonical_id(cache_key)) continue;
-        std::string canonical = canonical_id(ModelSource::Builtin, cache_key);
-        public_model_aliases_.try_emplace(canonical, cache_key);
-    }
-
-    // A split extra_models_dir folder should show only its variant models in
-    // /models. Keep the old folder name working for existing scripts, but only
-    // as an input alias. Do not let that alias replace a user model or another
-    // real extra model with the same name.
-    auto source_for_cache_key = [](const std::string& cache_key) {
-        if (auto canon = parse_canonical_id(cache_key)) {
-            return canon->source;
-        }
-        return ModelSource::Builtin;
-    };
-
-    for (const auto& [cache_key, info] : models_cache_) {
-        for (const auto& alias : info.input_aliases) {
-            if (parse_canonical_id(alias)) {
-                if (models_cache_.find(alias) == models_cache_.end()) {
-                    public_model_aliases_[alias] = cache_key;
-                }
-            } else {
-                auto existing = public_model_aliases_.find(alias);
-                if (existing == public_model_aliases_.end()) {
-                    public_model_aliases_[alias] = cache_key;
-                    continue;
-                }
-
-                if (source_for_cache_key(existing->second) == ModelSource::Builtin) {
-                    std::string builtin_canonical = canonical_id(ModelSource::Builtin, alias);
-                    canonical_public_names_[existing->second] = builtin_canonical;
-                    public_model_aliases_[builtin_canonical] = existing->second;
-                    public_model_aliases_[alias] = cache_key;
-                }
-            }
-        }
-    }
+    ModelAliasMaps computed = compute_model_alias_maps(models_cache_);
+    public_model_aliases_ = std::move(computed.public_model_aliases);
+    canonical_public_names_ = std::move(computed.canonical_public_names);
 }
 
 } // namespace lemon

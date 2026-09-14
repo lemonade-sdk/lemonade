@@ -39,6 +39,106 @@ std::string join_names(const lemon::GgufVariantSet& set) {
 int main() {
     TestResult result;
 
+    {
+        const nlohmann::json valid = {
+            {"pipeline_tag", "text-generation"},
+            {"gguf", {{"architecture", "llama"}, {"context_length", 4096}}},
+        };
+        result.expect("text GGUF metadata is accepted",
+                      lemon::llamacpp_gguf_incompatibility(valid, "huggingface").empty(),
+                      "known-good metadata was rejected");
+
+        const nlohmann::json newer_backend_architecture = {
+            {"pipeline_tag", "text-generation"},
+            {"gguf", {{"architecture", "bailingmoe3"}}},
+        };
+        result.expect("architecture supported by all shipped backends is accepted",
+                      lemon::llamacpp_gguf_incompatibility(
+                          newer_backend_architecture, "huggingface").empty(),
+                      "common architecture was rejected");
+    }
+
+    {
+        const nlohmann::json missing_architecture = {
+            {"gguf", {{"total", 12895570508ULL}, {"totalFileSize", 5544100160ULL}}},
+        };
+        const std::string error = lemon::llamacpp_gguf_incompatibility(
+            missing_architecture, "huggingface");
+        result.expect("GGUF metadata without architecture is rejected",
+                      error.find("architecture") != std::string::npos,
+                      "error was: " + error);
+    }
+
+    {
+        const nlohmann::json image = {
+            {"pipeline_tag", "text-to-image"},
+            {"gguf", {{"architecture", "qwen_image"}}},
+        };
+        const std::string error = lemon::llamacpp_gguf_incompatibility(
+            image, "huggingface");
+        result.expect("provider-declared image GGUF is rejected",
+                      error.find("different backend") != std::string::npos,
+                      "error was: " + error);
+    }
+
+    {
+        const nlohmann::json untagged_image = {
+            {"gguf", {{"architecture", "krea2"}, {"total", 1}}},
+        };
+        const std::string error = lemon::llamacpp_gguf_incompatibility(
+            untagged_image, "huggingface");
+        result.expect("unsupported GGUF architecture is rejected",
+                      error.find("krea2") != std::string::npos &&
+                          error.find("not supported") != std::string::npos,
+                      "error was: " + error);
+    }
+
+    {
+        const nlohmann::json malformed = {
+            {"gguf", {{"architecture", 7}, {"context_length", "4096"}}},
+        };
+        result.expect("malformed parsed architecture is rejected",
+                      !lemon::llamacpp_gguf_incompatibility(
+                           malformed, "huggingface").empty(),
+                      "malformed metadata was accepted");
+    }
+
+    {
+        const nlohmann::json blank_architecture = {
+            {"gguf", {{"architecture", " \t"}, {"context_length", 4096}}},
+        };
+        result.expect("blank parsed architecture is rejected",
+                      !lemon::llamacpp_gguf_incompatibility(
+                           blank_architecture, "huggingface").empty(),
+                      "blank architecture was accepted");
+
+        const nlohmann::json supported_without_context = {
+            {"gguf", {{"architecture", "llama"}}},
+        };
+        result.expect("supported architecture does not require heuristic metadata",
+                      lemon::llamacpp_gguf_incompatibility(
+                          supported_without_context, "huggingface").empty(),
+                      "supported architecture was rejected");
+    }
+
+    {
+        const nlohmann::json unavailable = {{"siblings", nlohmann::json::array()}};
+        result.expect("unavailable parsed metadata remains compatible",
+                      lemon::llamacpp_gguf_incompatibility(
+                          unavailable, "huggingface").empty(),
+                      "metadata-unaware mirrors must remain usable");
+        result.expect("ModelScope is unchanged",
+                      lemon::llamacpp_gguf_incompatibility(
+                          nlohmann::json{{"gguf", nlohmann::json::object()}},
+                          "modelscope").empty(),
+                      "Hugging Face metadata policy leaked into ModelScope");
+        result.expect("unknown registries are unchanged",
+                      lemon::llamacpp_gguf_incompatibility(
+                          nlohmann::json{{"gguf", nlohmann::json::object()}},
+                          "custom-registry").empty(),
+                      "Hugging Face metadata policy leaked into an unknown registry");
+    }
+
     // Regression for the review on PR #2107: when two files share a quant token
     // their names widen to the full file stem for uniqueness. Sorting used to
     // read that widened name, which is not a key in the quant priority table, so
@@ -161,13 +261,77 @@ int main() {
 
     {
         auto set = lemon::enumerate_gguf_variants({
-            "Gemma-Q4_K_M.gguf",
-            "mtp-Gemma.gguf",
+            "Model-Q4_K_M.gguf",
+            "mtp-Model.gguf",
         });
         result.expect("MTP companion is reported as a draft",
                       set.variants.size() == 1 && set.variants[0].name == "Q4_K_M" &&
-                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Gemma.gguf",
+                          set.draft_files.size() == 1 && set.draft_files[0] == "mtp-Model.gguf",
                       "got " + join_names(set));
+        result.expect("single draft is associated with the main variant",
+                      set.variants.size() == 1 && set.variants[0].draft_file == "mtp-Model.gguf",
+                      set.variants.empty() ? "no main variant" :
+                          "draft=" + set.variants[0].draft_file);
+    }
+
+    // Multiple MTP precisions are resolved generically. The main Q4_K_M has no
+    // exact sidecar tag, so nearest bit width selects Q4_0; Q8_0 matches exactly.
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Model-Q4_K_M.gguf",
+            "Model-Q8_0.gguf",
+            "mtp-Model-Q4_0.gguf",
+            "mtp-Model-Q8_0.gguf",
+        });
+        result.expect("Q4 target selects nearest-bit MTP companion",
+                      set.variants.size() == 2 && set.variants[0].quant == "Q4_K_M" &&
+                          set.variants[0].draft_file == "mtp-Model-Q4_0.gguf",
+                      set.variants.empty() ? "no variants" :
+                          "draft=" + set.variants[0].draft_file);
+        result.expect("Q8 target selects exact MTP companion",
+                      set.variants.size() == 2 && set.variants[1].quant == "Q8_0" &&
+                          set.variants[1].draft_file == "mtp-Model-Q8_0.gguf",
+                      set.variants.size() < 2 ? "missing Q8 variant" :
+                          "draft=" + set.variants[1].draft_file);
+    }
+
+    // A quant-named directory must not mask the draft file's own quant tag.
+    // Both drafts have the same directory depth; the deliberately earlier
+    // Q8 filename would win lexicographically if extraction read Q4_K_M from
+    // the parent directory instead of Q8_0 from the filename.
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "Q4_K_M/Model-Q4_K_M-00001-of-00002.gguf",
+            "Q4_K_M/Model-Q4_K_M-00002-of-00002.gguf",
+            "Q4_K_M/mtp-A-Model-Q8_0.gguf",
+            "Q4_K_M/mtp-Z-Model-Q4_0.gguf",
+        });
+        result.expect("draft quant comes from filename, not parent directory",
+                      set.variants.size() == 1 &&
+                          set.variants[0].draft_file == "Q4_K_M/mtp-Z-Model-Q4_0.gguf",
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
+        result.expect("draft association preserves repository-relative path",
+                      set.variants.size() == 1 &&
+                          set.variants[0].draft_file.find("Q4_K_M/") == 0,
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
+    }
+
+    // Without a quantized main there is no meaningful bit-distance comparison.
+    // Stable path ordering wins instead of silently choosing the smallest-bit
+    // draft (the old target_bits == 0 behavior).
+    {
+        auto set = lemon::enumerate_gguf_variants({
+            "model.gguf",
+            "mtp-A-Model-Q8_0.gguf",
+            "mtp-Z-Model-Q2_0.gguf",
+        });
+        result.expect("unquantized main does not prefer smallest-bit draft",
+                      set.variants.size() == 1 &&
+                          set.variants[0].draft_file == "mtp-A-Model-Q8_0.gguf",
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
     }
 
     {
@@ -179,6 +343,10 @@ int main() {
         result.expect("Multiple draft companions are all reported",
                       set.draft_files.size() == 2,
                       "draft count = " + std::to_string(set.draft_files.size()));
+        result.expect("different speculative mechanisms stay ambiguous",
+                      set.variants.size() == 1 && set.variants[0].draft_file.empty(),
+                      set.variants.empty() ? "no variant" :
+                          "draft=" + set.variants[0].draft_file);
     }
 
     {

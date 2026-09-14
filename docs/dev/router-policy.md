@@ -70,8 +70,25 @@ A `match` is a match-expression. Combine with the logical operators `any` (OR),
 | `keywords_any` / `keywords_all` | Case-insensitive substring match over the input. |
 | `regex` | ECMAScript regex over the input. |
 | `min_chars` / `max_chars` | Input length in UTF-8 bytes. |
-| `has_tools` / `has_images` | Boolean — request carries tools / images. |
+| `min_total_chars` / `max_total_chars` | Length of **all** text in the request, in UTF-8 bytes. |
+| `has_tools` / `has_images` | Boolean - request carries a non-empty `tools` array / image content parts. |
 | `metadata` | `{ key, equals \| any \| exists }` over the request's OpenAI `metadata`. |
+
+The text conditions above - `keywords_any` / `keywords_all`, `regex`, and the
+`chars` pair - see only the **routing input**: the last user message (or the
+`prompt` / `input` text). `total_chars` instead sums every text part the
+request carries - all roles of a chat `messages` array, all items of a
+Responses `input` array - so a rule can select on conversation size rather
+than the size of the latest turn:
+
+```json
+{ "id": "long-conversation", "match": { "min_total_chars": 60000 }, "route_to": "cloud-model" }
+```
+
+That rule fires on a long history even when the final message is `"go on"`,
+which `min_chars` would see as 5 bytes. Bounds are inclusive and counted in
+bytes; images and audio contribute nothing. Sizing a bound against a context
+window, estimate ~4 bytes per token.
 
 **Model-backed:**
 
@@ -146,6 +163,16 @@ and every entry's `model` must be one of `components`:
   request context and the label set, so the prompt just needs to say when to pick
   each label; a malformed reply fails open to `default_model`.
 
+  A `type: "llm"` classifier's judge never sees `has_tools`/`has_images`
+  (#2789) — not even when a sibling condition composes the deterministic leaf
+  in the *same* rule, as `risky-tool-calls-stay-local` does above; exposing
+  them there would feed the judge the very signal the rule already checks
+  deterministically, biasing the label from their mere presence. Write
+  `prompt` with an explicit criterion instead (as `risk` does above: "risk
+  for tool execution", not just "risk"), and compose the `has_tools`/
+  `has_images` leaf alongside the classifier when a request feature should
+  affect routing, exactly as shown above.
+
 > A `type: "llm"` classifier and the [`routing.router`](#llm-as-router-routingrouter)
 > block are the two LLM forms. `routing.router` picks the final candidate itself
 > and replaces rules entirely (it's shorthand for a single `llm` classifier whose
@@ -168,6 +195,24 @@ Then call it by name with a normal client:
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:13305/api/v1", api_key="lemonade")
 client.chat.completions.create(model="user.My-Router", messages=[...])
+```
+
+## Testing a policy before registering it
+
+[`POST /v1/routing/validate`](../api/lemonade.md#post-v1routingvalidate) evaluates a
+policy document against a prompt and returns the decision plus its full trace,
+without registering the policy or dispatching the user request to the selected
+candidate. Component names are accepted without resolving against the model
+registry, so a policy can be iterated on before its candidates are downloaded.
+The endpoint performs structural policy validation, but it does not run the
+registry-backed model-capability checks that registration performs. Model-backed
+routing conditions can still invoke classifier, embedding, or LLM helper models
+while the decision is evaluated.
+
+```bash
+curl -X POST http://localhost:13305/api/v1/routing/validate \
+     -H "Content-Type: application/json" \
+     -d '{"policy": {...}, "prompt": "please write a def to reverse a list"}'
 ```
 
 ## The decision on the response
@@ -240,3 +285,8 @@ The router `model` must be one of `components`. At request time the engine asks 
 to pick a candidate, and that desugars into the same first-match engine and
 `Decision`/trace as the rule form. `routing.router.type` must be `"llm"`, and the
 block is **mutually exclusive** with `routing.rules` and `routing.classifiers`.
+
+Unlike a `type: "llm"` classifier (which never receives `has_tools`/
+`has_images`, see above), the router always does: it's the sole decision
+mechanism here, so `prompt` can rely on them directly — e.g. "use Vision-GGUF
+when the request includes images."

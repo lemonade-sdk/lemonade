@@ -218,6 +218,84 @@ int main() {
                 "set_allow_insecure_http() on unknown provider -> false");
     }
 
+    {
+        r.check(CloudProviderRegistry::validate_wire_format("openai").empty(),
+                "validate_wire_format() accepts openai");
+        r.check(CloudProviderRegistry::validate_wire_format("anthropic").empty(),
+                "validate_wire_format() accepts anthropic");
+        r.check(!CloudProviderRegistry::validate_wire_format("ollama").empty(),
+                "validate_wire_format() rejects an unknown format");
+        r.check(!CloudProviderRegistry::validate_wire_format("").empty(),
+                "validate_wire_format() rejects an empty format");
+    }
+
+    {
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1");
+        r.check(registry.wire_format_for("acme") == "openai",
+                "wire_format defaults to openai");
+        r.check(registry.wire_format_for("not-installed") == "openai",
+                "wire_format_for() on unknown provider -> openai");
+        r.check(!registry.to_config_array()[0].contains("wire_format"),
+                "default wire_format is omitted from the serialized config");
+    }
+
+    {
+        CloudProviderRegistry::InstallOptions options;
+        options.wire_format = "anthropic";
+
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1", options);
+        r.check(!registry.install("acme", "https://gateway.example.com/v1", options),
+                "re-install with an identical wire_format -> reports no change");
+
+        CloudProviderRegistry reloaded;
+        reloaded.load_from_config(registry.to_config_array());
+        r.check(reloaded.wire_format_for("acme") == "anthropic",
+                "non-default wire_format round-trips through the config");
+    }
+
+    {
+        // Same clobbering case as the auth header, and worse in effect: a
+        // re-install that drops back to "openai" stops /v1/messages relaying
+        // and starts /v1/chat/completions forwarding an OpenAI-shaped body to
+        // a provider that doesn't serve one.
+        CloudProviderRegistry::InstallOptions options;
+        options.wire_format = "anthropic";
+        options.auth_header_name = "x-api-key";
+        options.auth_header_prefix = "";
+
+        CloudProviderRegistry registry;
+        registry.install("acme", "https://gateway.example.com/v1", options);
+
+        r.check(registry.install("acme", "https://gateway.example.com/v2"),
+                "re-install with only a new base_url -> reports a change");
+        r.check(registry.wire_format_for("acme") == "anthropic",
+                "re-install without wire_format -> anthropic preserved");
+        r.check(registry.base_url_for("acme") == "https://gateway.example.com/v2",
+                "re-install without wire_format -> base_url still updated");
+
+        CloudProviderRegistry::InstallOptions to_openai;
+        to_openai.wire_format = "openai";
+        r.check(registry.install("acme", "https://gateway.example.com/v2", to_openai),
+                "re-install with an explicit wire_format -> reports a change");
+        r.check(registry.wire_format_for("acme") == "openai",
+                "re-install with an explicit wire_format -> new value stored");
+    }
+
+    {
+        // An unrecognized persisted value would leave the provider
+        // undispatchable, so it must not survive a load.
+        json bad_array = json::array({
+            {{"name", "acme"}, {"base_url", "https://gateway.example.com/v1"},
+             {"wire_format", "ollama"}}
+        });
+        CloudProviderRegistry registry;
+        registry.load_from_config(bad_array);
+        r.check(registry.wire_format_for("acme") == "openai",
+                "invalid persisted wire_format falls back to openai");
+    }
+
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);
     return r.failed == 0 ? 0 : 1;
 }

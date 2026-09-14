@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -25,12 +26,14 @@ struct CPUInfo : DeviceInfo {
 };
 
 struct GPUInfo : DeviceInfo {
-    int index = -1;  // NVIDIA only: physical device index from nvidia-smi, when available
+    int index = -1;  // Physical device index, when available
     std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
+    double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
     double virtual_gb = 0.0;
+    double virtual_used_gb = -1.0;
 };
 
 struct NPUInfo : DeviceInfo {
@@ -159,7 +162,16 @@ public:
 
     // Global GPU memory pressure across all processes (used/total in [0,1]),
     // or -1.0 if no source is available. Used by the dynamic VRAM eviction engine.
+    // Folds every GPU in the machine into one worst-case number, so it must not be read
+    // as a measurement of any single device -- see get_rocm_device_memory().
     static double get_global_vram_usage_pct();
+
+    // Free and total bytes the ROCm runtime exposes for the GPU whose ISA is `arch`
+    // (e.g. "gfx1151"). False unless exactly one GPU matches and both values are
+    // readable.
+    static bool get_rocm_device_memory(const std::string& arch,
+                                       uint64_t& free_bytes,
+                                       uint64_t& total_bytes);
 };
 
 // Windows implementation
@@ -230,7 +242,8 @@ private:
     bool get_amd_is_igpu(const std::string& drm_render_minor);
 
 private:
-    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname);
+    double parse_memory_sysfs(const std::string& drm_render_minor, const std::string& fname,
+                              bool* success = nullptr);
 };
 
 // macOS implementation

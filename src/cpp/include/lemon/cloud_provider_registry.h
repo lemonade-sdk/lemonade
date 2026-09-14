@@ -38,12 +38,17 @@ public:
         // the previously hardcoded Authorization/Bearer behavior.
         std::string auth_header_name = "Authorization";
         std::string auth_header_prefix = "Bearer ";
+        // Request/response shape this provider speaks. "openai" (the default)
+        // is what CloudServer implements; "anthropic" providers are relayed
+        // from lemond's /v1/messages instead.
+        std::string wire_format = "openai";
 
         bool operator==(const Record& other) const {
             return name == other.name && base_url == other.base_url &&
                    allow_insecure_http == other.allow_insecure_http &&
                    auth_header_name == other.auth_header_name &&
-                   auth_header_prefix == other.auth_header_prefix;
+                   auth_header_prefix == other.auth_header_prefix &&
+                   wire_format == other.wire_format;
         }
     };
 
@@ -71,6 +76,7 @@ public:
         std::optional<bool> allow_insecure_http;
         std::optional<std::string> auth_header_name;
         std::optional<std::string> auth_header_prefix;
+        std::optional<std::string> wire_format;
     };
 
     // Idempotent. Adds the provider if absent, updates base_url if present.
@@ -110,6 +116,10 @@ public:
         std::string prefix = "Bearer ";
     };
     AuthHeader auth_header_for(const std::string& provider) const;
+
+    // Wire format for a provider. Returns "openai" for a provider that isn't
+    // installed, matching the default for records that predate this field.
+    std::string wire_format_for(const std::string& provider) const;
 
     // Resolves an API key for a provider:
     //   1. Returns the LEMONADE_<PROVIDER_UPPER>_API_KEY env var if set.
@@ -153,10 +163,7 @@ public:
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_auth_header_name(const std::string& name);
 
-    // Validates a candidate auth header value prefix. Empty is valid and
-    // meaningful (gateways that expect the bare key); only characters a header
-    // value cannot carry are rejected.
-    // Returns empty string on OK, a human-readable error message otherwise.
+    // Empty is valid and meaningful here: gateways that expect the bare key.
     static std::string validate_auth_header_prefix(const std::string& prefix);
 
     // Validates a candidate base URL: must be https:// or http://. Plain HTTP
@@ -165,6 +172,10 @@ public:
     // the transport tradeoff.
     // Returns empty string on OK, a human-readable error message otherwise.
     static std::string validate_base_url(const std::string& base_url);
+
+    // Only "openai" and "anthropic" are recognized; anything else would leave
+    // the provider undispatchable.
+    static std::string validate_wire_format(const std::string& wire_format);
 
     // Returns true for an http:// base URL, false for https:// or invalid input.
     static bool is_http_base_url(const std::string& base_url);

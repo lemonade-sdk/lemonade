@@ -562,7 +562,7 @@ void TrayUI::on_change_context_size(int new_ctx_size) {
     recipe_options_["ctx_size"] = new_ctx_size;
     nlohmann::json body;
     body["ctx_size"] = new_ctx_size;
-    http_post("/api/v1/params", body.dump());
+    http_post("/internal/set", body.dump());
     build_menu();
 
     std::string label = (new_ctx_size >= 1024)

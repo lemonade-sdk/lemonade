@@ -189,6 +189,7 @@ struct CliConfig {
     // current value instead of resetting it to the Authorization/Bearer default.
     std::optional<std::string> cloud_auth_header_name;
     std::optional<std::string> cloud_auth_header_prefix;
+    std::optional<std::string> cloud_wire_format;
 
     // Alias management options
     std::string alias_name;
@@ -461,6 +462,9 @@ static int handle_pull_command(lemonade::LemonadeClient& client, const CliConfig
     } else {
         nlohmann::json model_data;
         model_data["model_name"] = config.model;
+        if (config.model_source_explicit) {
+            model_data["source"] = config.model_source;
+        }
         res = client.pull_model(model_data, "", /*upgrade=*/true);
     }
 
@@ -1336,6 +1340,11 @@ int main(int argc, char* argv[]) {
         "Custom auth header value prefix; pass an empty string for gateways with no "
         "'Bearer ' prefix (default: 'Bearer ')")
         ->type_name("PREFIX");
+    cloud_install_cmd->add_option("--wire-format", config.cloud_wire_format,
+        "Request/response shape this provider speaks (default: openai). "
+        "'anthropic' providers are reachable via /v1/messages only.")
+        ->check(CLI::IsMember({"openai", "anthropic"}))
+        ->type_name("FORMAT");
 
     CLI::App* cloud_uninstall_cmd = cloud_cmd->add_subcommand("uninstall", "Remove a cloud provider")->group("Subcommands");
     cloud_uninstall_cmd->add_option("provider", config.cloud_provider, "Provider name")->required()->type_name("PROVIDER");
@@ -1566,18 +1575,7 @@ int main(int argc, char* argv[]) {
     // Execute command
     if (status_cmd->count() > 0) {
         if (config.json_output) {
-            // Verify the server is actually reachable before reporting its port.
-            // Without this check, we'd report the default port even when no server is running,
-            // which could cause callers to target the wrong process.
-            bool reachable = try_live_check(config.host, config.port, config.api_key, config.is_ssl, 500);
-            if (!reachable) {
-                std::cerr << "Server is not running" << std::endl;
-                return 1;
-            }
-            nlohmann::json out;
-            out["port"] = config.port;
-            std::cout << out.dump() << std::endl;
-            return 0;
+            return client.status_json(config.port);
         }
         return client.status(config.port);
     } else if (list_cmd->count() > 0) {
@@ -1634,7 +1632,8 @@ int main(int argc, char* argv[]) {
                                                   config.cloud_api_key,
                                                   config.cloud_allow_insecure_http,
                                                   config.cloud_auth_header_name,
-                                                  config.cloud_auth_header_prefix);
+                                                  config.cloud_auth_header_prefix,
+                                                  config.cloud_wire_format);
         }
         if (cloud_uninstall_cmd->count() > 0) {
             return client.uninstall_cloud_provider(config.cloud_provider);

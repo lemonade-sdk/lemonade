@@ -144,6 +144,25 @@ int main() {
         append_runtime_arg_defaults("--threads 4", runtime_defaults, false),
         "--threads 4");
 
+    const std::vector<RuntimeArgDefault> parallel_defaults = {
+        {"--parallel 1", "--parallel", {"-np"}},
+    };
+
+    failures += !expect_args(
+        "runtime default with no override becomes part of effective args",
+        append_runtime_arg_defaults("--threads 4", parallel_defaults),
+        "--threads 4 --parallel 1");
+
+    failures += !expect_args(
+        "explicit flag overrides runtime default",
+        append_runtime_arg_defaults("--parallel 4", parallel_defaults),
+        "--parallel 4");
+
+    failures += !expect_args(
+        "explicit alias overrides runtime default",
+        append_runtime_arg_defaults("-np 4", parallel_defaults),
+        "-np 4");
+
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }

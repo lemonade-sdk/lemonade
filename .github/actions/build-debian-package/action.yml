@@ -25,11 +25,24 @@ runs:
       shell: bash
       run: |
         set -e
-        if [ "${{ inputs.arch-only }}" = "true" ]; then
-          apt-get update && apt-get build-dep --arch-only . -y
-        else
-          apt-get update && apt-get build-dep . -y
-        fi
+        # The Ubuntu ports mirror occasionally serves a package index that
+        # is briefly out of sync with its pool (esp. on arm64 runners),
+        # causing 404s on individual .deb files. Retry a few times.
+        success=false
+        for i in 1 2 3; do
+          if [ "${{ inputs.arch-only }}" = "true" ]; then
+            cmd=(apt-get build-dep --arch-only . -y)
+          else
+            cmd=(apt-get build-dep . -y)
+          fi
+          if apt-get update && "${cmd[@]}"; then
+            success=true
+            break
+          fi
+          echo "apt-get failed (attempt $i/3), retrying..."
+          sleep 10
+        done
+        $success
 
     - name: Build Debian package
       id: build

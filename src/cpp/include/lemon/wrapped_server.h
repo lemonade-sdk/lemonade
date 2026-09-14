@@ -586,6 +586,12 @@ protected:
     void set_process_handle(ProcessHandle handle,
                             const std::string& executable,
                             const std::vector<std::string>& args);
+    // Publish the complete externally-observable child-process identity under
+    // one process_mutex_ critical section. Used by backends that choose a
+    // transient port before adopting the child (OpenMOSS process swaps).
+    void set_process_state(ProcessHandle handle, int port,
+                           const std::string& executable,
+                           const std::vector<std::string>& args);
     ProcessHandle consume_process_handle_for_cleanup();
 
     // Choose an available port

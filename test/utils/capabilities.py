@@ -59,8 +59,8 @@ CAPABILITIES = {
                 "embeddings": True,
                 "embeddings_batch": True,
                 "reranking": True,
-                "tool_calls": False,
-                "tool_calls_streaming": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
                 "multi_model": True,
                 "stop_parameter": True,
                 "echo_parameter": False,
@@ -71,8 +71,16 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "LFM2-1.2B-GGUF",
+                "tool_calling": "Qwen3-4B-Instruct-2507-GGUF",
                 "embedding": "nomic-embed-text-v2-moe-GGUF",
                 "reranking": "jina-reranker-v1-tiny-en-GGUF",
+            },
+        },
+        "llamacpp-hrx": {
+            "backends": ["hrx"],
+            "supports": {"chat_completions": True},
+            "test_models": {
+                "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
             },
         },
         "ryzenai": {
@@ -118,8 +126,8 @@ CAPABILITIES = {
                 "embeddings": True,
                 "embeddings_batch": False,
                 "reranking": False,
-                "tool_calls": False,
-                "tool_calls_streaming": False,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
                 "multi_model": False,
                 "stop_parameter": False,
                 "echo_parameter": False,
@@ -129,6 +137,7 @@ CAPABILITIES = {
             },
             "test_models": {
                 "llm": "llama3.2-1b-FLM",
+                "tool_calling": "qwen3-it-4b-FLM",
                 "embedding": "embed-gemma-300m-FLM",
             },
         },
@@ -213,6 +222,23 @@ CAPABILITIES = {
                 "audio_generation": "ACE-Step-Music",
             },
         },
+        "openmoss": {
+            "backends": ["vulkan", "rocm", "cuda"],
+            # Keep the duplicate backend's flat fallback a superset of its TTS
+            # entry because _build_flat_capabilities() intentionally keeps the
+            # first modality occurrence for duplicate backend names.
+            "supports": {
+                "audio_generation": True,
+                "pcm_audio_generation": True,
+                "tts": True,
+                "voice_cloning": True,
+                "voice_design": True,
+            },
+            "test_models": {
+                "audio_generation": "MOSS-SoundEffect",
+                "tts": "OpenMOSS-TTS",
+            },
+        },
     },
     "model3d": {
         "trellis": {
@@ -244,6 +270,9 @@ CAPABILITIES = {
                 "voice_cloning": True,
                 "voice_design": True,
             },
+            # Integrated voice design is exercised through the speech model. Keep
+            # the legacy standalone id for compatibility until the GUI migration
+            # removes MOSS-VoiceGen in its own PR.
             "test_models": {
                 "tts": "OpenMOSS-TTS",
                 "tts_design": "MOSS-VoiceGen",
@@ -373,6 +402,9 @@ def get_test_model(
     # Fall back to generic model type
     if model_type in test_models:
         return test_models[model_type]
+
+    if model_type == "tool_calling":
+        return get_test_model("llm", wrapped_server, backend, modality)
 
     raise ValueError(
         f"No test model found for type '{model_type}' with wrapped_server='{wrapped_server}', backend='{backend}'"
