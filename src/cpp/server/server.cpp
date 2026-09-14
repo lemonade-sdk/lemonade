@@ -16,10 +16,10 @@
 #include "lemon/mcp_server.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
+#include "lemon/backends/backend_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
-#include "lemon/backends/sdcpp/sdcpp_server.h"
-#include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/model_types.h"
 #include <cstring>
 #include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/utils/image_sniff.h"
@@ -5541,10 +5541,19 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        std::string upscale_model_path;
-        std::string recipe;
+        ModelInfo info;
         try {
-            auto info = model_manager_->get_model_info(upscale_model_name);
+            info = model_manager_->get_model_info(upscale_model_name);
+
+            if (!lemon::has_label(info.labels, "upscaling")) {
+                res.status = 400;
+                nlohmann::json error = {{"error", {
+                    {"message", "Upscale model is not labeled 'upscaling': " + upscale_model_name},
+                    {"type", "invalid_request_error"}
+                }}};
+                res.set_content(error.dump(), "application/json");
+                return;
+            }
 
             if (!model_manager_->is_model_downloaded(upscale_model_name)) {
                 LOG(INFO, "Server") << "Upscale model not cached, downloading from its remote registry..." << std::endl;
@@ -5553,8 +5562,6 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
                 info = model_manager_->get_model_info(upscale_model_name);
             }
 
-            upscale_model_path = info.resolved_path("main");
-            recipe = info.recipe;
         } catch (const std::exception& e) {
             res.status = 404;
             nlohmann::json error = {{"error", {
@@ -5567,24 +5574,24 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::string b64_image = request_json["image"].get<std::string>();
 
-        // Upscaling is model-free: no model is loaded through the router, so we
-        // dispatch by recipe to each backend's shared upscale API, which shells
-        // out to its own CLI binary directly (backend selection, binary path,
-        // and runtime environment all live in the backend).
-        std::string upscaled;
-        if (recipe == "thenoise") {
-            upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(b64_image, upscale_model_path);
-        } else if (recipe == "sd-cpp") {
-            upscaled = lemon::backends::SDServer::upscale_via_cli(b64_image, upscale_model_path);
-        } else {
+        backends::BackendContext context;
+        context.log_level = config_->log_level();
+        context.model_manager = model_manager_.get();
+        context.backend_manager = backend_manager_.get();
+        context.cloud_registry = cloud_registry_.get();
+        context.model_info = &info;
+        auto server = backends::create_server(info.recipe, context);
+        if (!server || !supports_capability<IUpscaleServer>(server.get())) {
             res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "Upscale is not supported by recipe: " + recipe},
+                {"message", "Upscale is not supported by recipe: " + info.recipe},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
             return;
         }
+        auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
+        std::string upscaled = upscale_server->upscale(b64_image, info.resolved_path("main"));
 
         if (upscaled.empty()) {
             res.status = 500;

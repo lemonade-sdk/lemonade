@@ -636,7 +636,7 @@ json SDServer::image_variations(const json& request) {
     return forward_multipart_request("/v1/images/edits", fields, 0);
 }
 
-std::string SDServer::upscale_via_cli(
+std::string SDServer::upscale(
     const std::string& b64_image,
     const std::string& upscale_model_path) {
 
