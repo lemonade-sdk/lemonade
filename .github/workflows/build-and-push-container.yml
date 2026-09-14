@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - "release-v*"
     tags:
       - "v*"
   workflow_dispatch:
@@ -42,6 +43,12 @@ jobs:
               # Tagged release: publish the version tag and move latest.
               echo "tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               echo "push_latest=true" >> $GITHUB_OUTPUT
+            elif [[ "${GITHUB_REF}" == refs/heads/release-v* ]]; then
+              # Release branch: publish a rolling candidate tag plus an
+              # immutable per-candidate tag matching the GitHub prerelease.
+              echo "tag=candidate" >> $GITHUB_OUTPUT
+              echo "sha_tag=candidate-v$(python3 tools/version.py)" >> $GITHUB_OUTPUT
+              echo "push_latest=false" >> $GITHUB_OUTPUT
             else
               # Push to main: publish a rolling edge tag plus an immutable sha tag.
               echo "tag=edge" >> $GITHUB_OUTPUT
