@@ -564,6 +564,9 @@ std::string SystemInfo::get_unsupported_backend_error(const std::string& recipe,
                 }
             }
             error += ".";
+            error += " To install for a specific target when no compatible device is "
+                     "present, pass --force --arch <target> (e.g. --force --arch sm_89 "
+                     "for CUDA, --force --arch gfx1151 for ROCm).";
             break;
         }
     }
@@ -2060,10 +2063,16 @@ std::string identify_npu_arch() {
 namespace {
     // Per-thread arch override consumed by get_rocm_arch(). Empty = probe hardware.
     thread_local std::string g_rocm_arch_override;
+    // Per-thread arch override consumed by get_cuda_arch(). Empty = probe hardware.
+    thread_local std::string g_cuda_arch_override;
 }
 
 void SystemInfo::set_rocm_arch_override(const std::string& arch) {
     g_rocm_arch_override = arch;
+}
+
+void SystemInfo::set_cuda_arch_override(const std::string& arch) {
+    g_cuda_arch_override = arch;
 }
 
 std::string SystemInfo::rocm_asset_family(const std::string& arch) {
@@ -2196,6 +2205,9 @@ std::string SystemInfo::get_cuda_arch() {
     // On multi-GPU systems, selects the GPU with the highest supported compute
     // capability. Uses the cached family field (populated from nvidia-smi during
     // device detection), falling back to marketing-name inference for older drivers.
+    if (!g_cuda_arch_override.empty()) {
+        return g_cuda_arch_override;
+    }
     try {
         json system_info = SystemInfoCache::get_system_info_with_cache();
 

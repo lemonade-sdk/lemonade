@@ -623,10 +623,12 @@ lemonade backends uninstall SPEC
 | `lemonade backends install SPEC` | Install a backend. Format: `recipe:backend` (e.g., `llamacpp:vulkan`) |
 | `lemonade backends uninstall SPEC` | Uninstall a backend. Format: `recipe:backend` (e.g., `llamacpp:cpu`) |
 | `lemonade backends install SPEC --force` | Bypass hardware filtering and attempt the install anyway |
+| `lemonade backends install SPEC --force --arch ARCH` | Force-install a specific GPU target (e.g. `sm_89`, `gfx1151`) when no matching device is present |
 
 **Notes:**
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
+- GPU-specific backends (CUDA, ROCm) publish per-architecture binaries. If `--force` alone can't detect a target GPU, pass `--arch` to select one explicitly (useful when preparing an install for a different machine)
 
 **Examples:**
 
