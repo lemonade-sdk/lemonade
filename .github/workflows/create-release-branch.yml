@@ -1,0 +1,37 @@
+name: Create Release Branch
+
+on:
+  schedule:
+    - cron: "0 19 * * 3"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  create-release-branch:
+    runs-on: ubuntu-latest
+    steps:
+      # release-v* branches only accept pushes from release admins, and a push
+      # made with GITHUB_TOKEN would not start the candidate builds. The app
+      # must be on that branch rule's push allowlist.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.RELEASE_BRANCH_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_BRANCH_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Create the release branch from main
+        run: |
+          set -euo pipefail
+          BRANCH=$(python3 tools/version.py --release-branch)
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+            echo "::error::$BRANCH already exists"
+            exit 1
+          fi
+          echo "Creating $BRANCH from main at $(git rev-parse HEAD)"
+          git push origin "HEAD:refs/heads/$BRANCH"

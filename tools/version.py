@@ -17,6 +17,9 @@ Usage::
     # Print the computed version for the current checkout
     python tools/version.py
 
+    # Print the name of the release branch for the most recent Wednesday cutoff
+    python tools/version.py --release-branch
+
     # Import and reuse in other tooling
     from tools.version import get_version
     version = get_version(repo_root)
@@ -106,6 +109,19 @@ def upcoming_release_week(now):
     return iso_date.year, iso_date.week
 
 
+def release_branch_name(now):
+    """Name of the release branch for the most recent Wednesday 19:00 UTC cutoff."""
+    days_since_wednesday = (now.weekday() - 2) % 7
+    cutoff = (now - datetime.timedelta(days=days_since_wednesday)).replace(
+        hour=19, minute=0, second=0, microsecond=0
+    )
+    if now < cutoff:
+        cutoff -= datetime.timedelta(days=7)
+    release_date = cutoff + datetime.timedelta(days=7)
+    iso_date = release_date.isocalendar()
+    return f"release-v{iso_date.year}.{iso_date.week}"
+
+
 def generated_version(repo, now, branch=None, head="HEAD"):
     tag_version = exact_release_tag(repo, head)
     if tag_version:
@@ -143,6 +159,10 @@ def get_version(repo, now=None, branch=None, head="HEAD"):
 
 
 def main():
+    if "--release-branch" in sys.argv[1:]:
+        print(release_branch_name(datetime.datetime.now(datetime.timezone.utc)))
+        return 0
+
     repo = Path(__file__).resolve().parent.parent
     try:
         print(get_version(repo))
