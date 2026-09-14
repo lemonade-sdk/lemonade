@@ -659,6 +659,91 @@ class EndpointTests(ServerTestBase):
         )
         print("[OK] /metrics returned Prometheus text with loaded model samples")
 
+    def test_002c_metrics_expose_model_aliases(self):
+        """Aliases must be relatable to their target model in /metrics."""
+        alias_name = "test-metrics-alias"
+        hop_alias = "test-metrics-hop-alias"
+
+        for alias, target in (
+            (alias_name, ENDPOINT_TEST_MODEL),
+            (hop_alias, alias_name),
+        ):
+            add_res = requests.post(
+                f"{self.internal_url}/aliases",
+                json={"alias": alias, "target": target},
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(add_res.status_code, 200, add_res.text)
+            self.addCleanup(
+                requests.delete,
+                f"{self.internal_url}/aliases/{requests.utils.quote(alias)}",
+                headers=_auth_headers(),
+                timeout=TIMEOUT_DEFAULT,
+            )
+
+        load_res = requests.post(
+            f"{self.base_url}/load",
+            json={"model_name": ENDPOINT_TEST_MODEL},
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(load_res.status_code, 200, load_res.text)
+
+        response = requests.get(
+            f"http://localhost:{PORT}/metrics", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+
+        values = {}
+        for family in text_string_to_metric_families(response.text):
+            for sample in family.samples:
+                values.setdefault(sample.name, []).append((sample.labels, sample.value))
+
+        self.assertIn(
+            "lemonade_model_alias_info",
+            values,
+            "no series relates an alias to a model",
+        )
+        alias_targets = {
+            labels.get("alias"): labels.get("model_name")
+            for labels, value in values["lemonade_model_alias_info"]
+            if value == 1.0
+        }
+        self.assertEqual(alias_targets.get(alias_name), ENDPOINT_TEST_MODEL)
+        self.assertEqual(
+            alias_targets.get(hop_alias),
+            ENDPOINT_TEST_MODEL,
+            "a chained alias must report the final model, not the intermediate alias",
+        )
+
+        # The mapping is only useful if it joins onto the model series, so the
+        # target it names must be the label the model series actually carries.
+        loaded_by_name = {}
+        for labels, value in values.get("lemonade_model_loaded", []):
+            name = labels.get("model_name")
+            loaded_by_name[name] = max(loaded_by_name.get(name, 0.0), value)
+        self.assertEqual(loaded_by_name.get(ENDPOINT_TEST_MODEL), 1.0)
+        for alias in (alias_name, hop_alias):
+            target = alias_targets[alias]
+            self.assertIn(
+                target,
+                loaded_by_name,
+                f"alias {alias} points at {target}, which has no model series",
+            )
+
+        # An alias is a name for a model, not a second model: it must not create
+        # duplicate model series or double-count the cumulative counters.
+        self.assertNotIn(alias_name, loaded_by_name)
+        self.assertNotIn(
+            alias_name,
+            [
+                labels.get("model_name")
+                for labels, _ in values.get("lemonade_model_requests_total", [])
+            ],
+        )
+
+        print("[OK] /metrics relates aliases to their target model")
+
     def test_002b_cache_and_routing_metrics_series(self):
         """Cache-effectiveness and route-stability series exist in /metrics and /stats."""
         response = requests.get(
