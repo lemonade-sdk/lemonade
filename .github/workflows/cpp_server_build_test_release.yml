@@ -668,16 +668,16 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
-        with:
-          clean: true
-          fetch-depth: 0
-
       - name: Install RPM packaging tools
         shell: bash
         run: |
           set -e
-          dnf install -y python3 rpm-build
+          dnf install -y git python3 rpm-build
+
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
 
       - name: Get Lemonade version
         id: get_version
