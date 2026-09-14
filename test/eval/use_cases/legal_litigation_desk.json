@@ -6,7 +6,7 @@
     "Qwen3.5-9B-GGUF",
     "fireworks.kimi-k2p6",
     "user.mmbert32k-pii-onnx",
-    "Qwen3.5-2B-GGUF"
+    "Gemma-4-E4B-it-GGUF"
   ],
   "routing": {
     "candidates": [
@@ -61,7 +61,7 @@
       {
         "id": "privilege-judge",
         "type": "llm",
-        "model": "Qwen3.5-2B-GGUF",
+        "model": "Gemma-4-E4B-it-GGUF",
         "prompt": "You assess whether a request from a lawyer at a litigation firm touches privileged or confidential matter information.\n\nA request is PRIVILEGED when it involves attorney work product, litigation strategy, settlement positions or authority, internal assessments of a case's strengths and weaknesses, communications with or about a specific client, deposition or witness preparation, discovery material, or anything about an ongoing or anticipated matter the firm is handling.\n\nA request is PUBLIC when it concerns general legal research: statutes, published case law, citation formatting, jurisdictional rules, procedural deadlines in the abstract, or drafting boilerplate clauses with no client-specific facts.",
         "labels": [
           "PRIVILEGED",

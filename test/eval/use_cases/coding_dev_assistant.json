@@ -3,18 +3,18 @@
   "model_name": "user.DevAssist-Router",
   "recipe": "collection.router",
   "components": [
-    "Qwen3.5-2B-GGUF",
+    "Gemma-4-E4B-it-GGUF",
     "Qwen3.5-9B-GGUF",
     "fireworks.kimi-k2p6",
     "user.pplx-pii-masking-onnx"
   ],
   "routing": {
     "candidates": [
-      "Qwen3.5-2B-GGUF",
+      "Gemma-4-E4B-it-GGUF",
       "Qwen3.5-9B-GGUF",
       "fireworks.kimi-k2p6"
     ],
-    "default_model": "Qwen3.5-2B-GGUF",
+    "default_model": "Gemma-4-E4B-it-GGUF",
     "classifiers": [
       {
         "id": "secrets-pplx",
@@ -64,7 +64,7 @@
       {
         "id": "task-shape",
         "type": "llm",
-        "model": "Qwen3.5-2B-GGUF",
+        "model": "Gemma-4-E4B-it-GGUF",
         "prompt": "You assess the shape of a software engineering request.\n\nA request is ARCHITECTURE when it asks for system or API design, a multi-file or multi-service refactor, a migration plan, a performance or concurrency investigation across components, a security review, or a trade-off analysis between approaches.\n\nA request is ROUTINE when it asks about syntax, a single function or small snippet, the meaning of an error message, a regular expression, a shell one-liner, a library's basic usage, or a quick explanation of a concept.",
         "labels": [
           "ARCHITECTURE",
