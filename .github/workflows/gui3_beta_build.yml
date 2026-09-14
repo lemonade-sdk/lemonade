@@ -266,7 +266,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ env.BUILD_LABEL }}-macos
-          path: artifacts/lemonade-${{ env.BUILD_LABEL }}-macos.zip
+          path: |
+            artifacts/lemonade-${{ env.BUILD_LABEL }}-macos.zip
+            artifacts/lemonade-gui3-beta-${{ env.BUILD_LABEL }}-macos.zip
           retention-days: 14
 
   build-beta-linux:
@@ -351,7 +353,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-${{ env.BUILD_LABEL }}-linux-x64
-          path: artifacts/lemonade-${{ env.BUILD_LABEL }}-linux-x64.tar.gz
+          path: |
+            artifacts/lemonade-${{ env.BUILD_LABEL }}-linux-x64.tar.gz
+            artifacts/lemonade-gui3-beta-${{ env.BUILD_LABEL }}-linux-x64.tar.gz
           retention-days: 14
 
   publish-gui3-beta:

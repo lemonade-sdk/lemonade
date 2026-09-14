@@ -63,6 +63,22 @@ server-owned changes are shared: model downloads, loads and unloads, saved
 affect other clients. GUI-local state such as theme, Favorites, chat history,
 and request-time chat sampling remains separate.
 
+## Report a GUI3 Beta issue
+
+Use the [new issue form](https://github.com/lemonade-sdk/lemonade/issues/new/choose)
+for problems specific to the GUI3 Beta, and select the **GUI3 Beta** milestone.
+Include:
+
+- OS and GUI3 app version
+- Lemonade Server version
+- Steps to reproduce
+- Expected and actual behavior
+- Relevant logs or screenshots
+- Whether it also happens with the stable GUI against the stable server
+
+Use the normal issue process for unrelated server, backend, model, or API
+issues. Do not file those under the GUI3 Beta milestone.
+
 ## Navigate GUI3
 
 The title bar is available from every workspace:
@@ -360,7 +376,7 @@ reaches 100%.
 Model preparation also appears inline in Chat, and model, backend, connection,
 MCP, and download failures appear near the control that initiated them. GUI3
 does not currently provide a general-purpose Jobs workspace; use the
-[Job Engine API](/api/lemonade/#job-engine-api) for server job sequences.
+[Job Engine API](../api/lemonade.md#job-engine-api) for server job sequences.
 
 ## Remote servers and multiple clients
 
@@ -406,5 +422,5 @@ sampling do not.
    **Monitor > Logs**, then compare the running command in Effective settings
    with the persistent model configuration.
 
-For server behavior, see [server concepts](/guide/concepts/),
-[configuration](/guide/configuration/), and the [API reference](/api/).
+For server behavior, see [server concepts](concepts.md),
+[configuration](configuration/README.md), and the [API reference](../api/README.md).
