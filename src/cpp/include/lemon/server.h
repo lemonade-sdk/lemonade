@@ -108,6 +108,8 @@ private:
     // Endpoint handlers
     void handle_health(const httplib::Request& req, httplib::Response& res);
     void handle_live(const httplib::Request& req, httplib::Response& res);
+    void handle_docs(const httplib::Request& req, httplib::Response& res);
+    void handle_doc_page(const httplib::Request& req, httplib::Response& res);
     void handle_models(const httplib::Request& req, httplib::Response& res);
     void handle_model_register(const httplib::Request& req, httplib::Response& res);
     void validate_model_registration_name(const std::string& model_name,
@@ -204,12 +206,10 @@ private:
     // loops without any keys still work.
     void handle_cloud_auth_set(const httplib::Request& req, httplib::Response& res);
     void handle_cloud_auth_clear(const httplib::Request& req, httplib::Response& res);
-    void handle_params(const httplib::Request& req, httplib::Response& res);
     void handle_metrics(const httplib::Request& req, httplib::Response& res);
     void handle_stats(const httplib::Request& req, httplib::Response& res);
     void handle_system_info(const httplib::Request& req, httplib::Response& res);
     void handle_system_stats(const httplib::Request& req, httplib::Response& res);
-    void handle_log_level(const httplib::Request& req, httplib::Response& res);
     void handle_shutdown(const httplib::Request& req, httplib::Response& res);
     void handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res);
 

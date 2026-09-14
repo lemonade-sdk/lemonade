@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/api_docs.h"
 #include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
@@ -13,11 +14,11 @@
 #include "lemon/config_file.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
-#include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
+#include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/backend_utils.h"
 #include <cstring>
 #include "lemon/utils/conversation_fingerprint.h"
@@ -25,6 +26,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/session_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/thinking_controls.h"
@@ -374,6 +376,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     // Set global HttpClient timeout
     utils::HttpClient::set_default_timeout(config->global_timeout());
 
+    // Global download rate limit
+    utils::HttpClient::set_download_rate_limit(config->download_rate_limit_bytes_per_second());
+
     cloud_registry_ = std::make_unique<CloudProviderRegistry>();
     // Seed installed providers from config.json. Runtime keys stay empty
     // until either an env var resolves them per-request or a client POSTs
@@ -388,6 +393,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
+    model_manager_->set_default_model_source_provider(
+        [this]() { return config_->default_model_source(); });
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -936,80 +943,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
-    auto trim = [](const std::string& str) -> std::string {
-        size_t s = str.find_first_not_of(" \t\r\n");
-        if (s == std::string::npos) return "";
-        size_t e = str.find_last_not_of(" \t\r\n");
-        return str.substr(s, e - s + 1);
-    };
-
-    std::string client_val;
-    if (config_) {
-        for (const auto& hdr : config_->telemetry_session_headers_client()) {
-            std::string cleaned_hdr = trim(hdr);
-            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
-                std::string val = trim(req.get_header_value(cleaned_hdr));
-                if (!val.empty()) {
-                    client_val = val;
-                    break;
-                }
-            }
-        }
-    }
-    if (client_val.empty()) {
-        static const char* kWellKnownClientHeaders[] = {
-            "x-opencode-client",
-            "x-client-id",
-            "x-client-name"
-        };
-        for (const char* hdr : kWellKnownClientHeaders) {
-            if (req.has_header(hdr)) {
-                std::string val = trim(req.get_header_value(hdr));
-                if (!val.empty()) {
-                    client_val = val;
-                    break;
-                }
-            }
-        }
+    session::SessionContext telemetry_session = config_
+        ? session::resolve_session_context(
+              req,
+              config_->telemetry_session_headers_id(),
+              config_->telemetry_session_headers_client())
+        : session::resolve_session_context(req, {}, {});
+    if (!telemetry_session.session_id.empty()) {
+        telemetry::g_incoming_client_id = telemetry_session.client_id;
+        telemetry::g_incoming_session_id = telemetry_session.session_id;
     }
 
-    std::string session_val;
-    if (config_) {
-        for (const auto& hdr : config_->telemetry_session_headers_id()) {
-            std::string cleaned_hdr = trim(hdr);
-            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
-                std::string val = trim(req.get_header_value(cleaned_hdr));
-                if (!val.empty()) {
-                    session_val = val;
-                    break;
-                }
-            }
-        }
-    }
-    if (session_val.empty()) {
-        static const char* kWellKnownSessionHeaders[] = {
-            "x-opencode-session",
-            "x-session-id",
-            "x-client-session-id",
-            "mcp-session-id",
-            "x-conversation-id",
-            "session-id"
-        };
-        for (const char* hdr : kWellKnownSessionHeaders) {
-            if (req.has_header(hdr)) {
-                std::string val = trim(req.get_header_value(hdr));
-                if (!val.empty()) {
-                    session_val = val;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!session_val.empty()) {
-        telemetry::g_incoming_client_id = client_val;
-        telemetry::g_incoming_session_id = session_val;
-    }
+    // Reset every request so a reused worker thread can't leak the prior
+    // caller's session to a cloud provider.
+    session::g_request_session = session::resolve_forwardable_session(req);
 
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
@@ -1032,9 +979,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
     //   regular key also authenticates against /internal/*.
     // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), legacy /internal/* routes
-    //   require no authentication. The MCP process-launch surface is deliberately
-    //   fail-closed and requires an explicitly configured admin key.
+    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
     // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
@@ -1053,23 +998,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
-    const bool is_mcp_internal_route =
-        req.path == "/internal/mcp" ||
-        req.path.rfind("/internal/mcp/", 0) == 0;
-
     if (is_internal_route) {
-        // MCP server registration can launch arbitrary local processes. Do not
-        // expose that capability on a keyless server, even on loopback: permissive
-        // CORS would otherwise let an unrelated web page drive these endpoints.
-        // Apply this to OPTIONS as well so a browser preflight fails closed.
-        if (is_mcp_internal_route && admin_api_key_.empty()) {
-            res.status = 403;
-            res.set_content(
-                "{\"error\": \"MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY\"}",
-                "application/json");
-            return httplib::Server::HandlerResponse::Handled;
-        }
-
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -1111,16 +1040,20 @@ void Server::setup_routes(httplib::Server &web_server) {
 
         if (req.has_header("Origin")) {
             std::string origin = req.get_header_value("Origin");
-            const char* env_origins = std::getenv("LEMONADE_ALLOWED_ORIGINS");
-            std::string allowed_origins = env_origins ? std::string(env_origins) : "";
+            std::string host = req.get_header_value("Host");
+            std::string scheme = "http";
 
-            if (utils::is_origin_allowed(origin, allowed_origins)) {
+            std::string allowed_origins = utils::resolve_allowed_origins();
+            std::string bound_host = config_ ? config_->host() : "";
+            if (utils::is_origin_allowed(origin, allowed_origins, host, scheme, bound_host)) {
                 res.set_header("Access-Control-Allow-Origin", origin);
                 if (req.has_header("Access-Control-Request-Private-Network") &&
                     req.get_header_value("Access-Control-Request-Private-Network") == "true") {
                     res.set_header("Access-Control-Allow-Private-Network", "true");
                 }
             } else {
+                LOG(WARNING, "Server") << "Rejected request from unauthorized origin: " << origin
+                                       << ". Configure allowed_origins in config.json or via 'lemonade config set allowed_origins=...' to allow this origin." << std::endl;
                 res.status = 403;
                 res.set_content("{\"error\": \"Origin not allowed\"}", "application/json");
                 return httplib::Server::HandlerResponse::Handled;
@@ -1157,7 +1090,7 @@ void Server::setup_routes(httplib::Server &web_server) {
         web_server.Post("/api/v1/" + endpoint, handler);
         web_server.Post("/v0/" + endpoint, handler);
         web_server.Post("/v1/" + endpoint, handler);
-        if (endpoint != "params" && endpoint != "jobs") {
+        if (endpoint != "jobs") {
             web_server.Get("/api/v0/" + endpoint, [](const httplib::Request&, httplib::Response& res) {
                 res.status = 405;
                 res.set_content("{\"error\": \"Method Not Allowed. Use POST for this endpoint\"}", "application/json");
@@ -1181,6 +1114,18 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_get("health", [this](const httplib::Request& req, httplib::Response& res) {
         handle_health(req, res);
     });
+
+    // API reference bundled with the server. The index is fetched first; each entry
+    // carries the URL of the document, so clients never build doc paths themselves.
+    register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docs(req, res);
+    });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Get(std::string(prefix) + R"(/docs/(.+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+            handle_doc_page(req, res);
+        });
+    }
 
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1398,14 +1343,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_delete(req, res);
     });
 
-    register_post("params", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_params(req, res);
-    });
-
-    register_get("params", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_config_get(req, res);
-    });
-
     // Backend management endpoints
     register_post("install", [this](const httplib::Request& req, httplib::Response& res) {
         handle_install(req, res);
@@ -1430,10 +1367,6 @@ void Server::setup_routes(httplib::Server &web_server) {
 
     register_get("system-stats", [this](const httplib::Request& req, httplib::Response& res) {
         handle_system_stats(req, res);
-    });
-
-    register_post("log-level", [this](const httplib::Request& req, httplib::Response& res) {
-        handle_log_level(req, res);
     });
 
 
@@ -1488,11 +1421,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_aliases_remove(req, res);
     });
 
-    // Server-side MCP client host foundation (admin-gated through the existing
-    // /internal/* pre-routing auth). GUI3 and the web UI can both use these
-    // endpoints via the normal Lemonade server connection.
-    register_mcp_client_routes(web_server, cache_dir_, config_dir_);
-
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
     //   DELETE /v1/cloud/auth/{p}
@@ -1514,12 +1442,6 @@ void Server::setup_routes(httplib::Server &web_server) {
     });
     web_server.Delete(R"(/v1/cloud/auth/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
         handle_cloud_auth_clear(req, res);
-    });
-
-    // Test endpoint to verify POST works
-    web_server.Post("/api/v1/test", [](const httplib::Request& req, httplib::Response& res) {
-        LOG(INFO, "Server") << "TEST POST endpoint hit!" << std::endl;
-        res.set_content("{\"test\": \"ok\"}", "application/json");
     });
 
     // Register Ollama-compatible API routes
@@ -1576,8 +1498,12 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"source", info.source.empty() ? info.registry_source : info.source},
-                {"registry_source", info.registry_source},
+                {"source", info.source.empty()
+                    ? remote_registry_source_name(
+                        parse_remote_registry_source(info.registry_source))
+                    : info.source},
+                {"registry_source", remote_registry_source_name(
+                    parse_remote_registry_source(info.registry_source))},
                 {"components", public_components},
                 {"mmproj", info.mmproj()}
             };
@@ -1629,10 +1555,7 @@ void Server::setup_static_files(httplib::Server &web_server) {
         res.set_content(html_template, "text/html");
     };
 
-    // Keep status page at /status endpoint
-    web_server.Get("/status", serve_index_html);
-
-    // Also serve index.html at /api/v1 for compatibility
+    // Serve index.html at /api/v1 for compatibility
     web_server.Get("/api/v1", serve_index_html);
 
     // Mount static files directory for status page assets (CSS, JS, images)
@@ -1847,10 +1770,9 @@ window.api = {
             std::string file_path = req.matches[1].str();
             serve_web_app_asset(req, res, file_path);
         });
-
         // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /v0, /v1, /static, or /live
         // This enables client-side routing
-        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal).*)",
+        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal|/docs(/|$)).*)",
                       [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
             // Only serve index.html if the path doesn't look like a file with extension
             std::string path = req.path;
@@ -1893,6 +1815,13 @@ window.api = {
             }
         });
     }
+
+    auto docs_not_found = [](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Not Found. For API documentation, use /v1/docs.\"}", "application/json");
+    };
+    web_server.Get("/docs", docs_not_found);
+    web_server.Get(R"(/docs/(.*))", docs_not_found);
 
     // Override default headers for static files to include no-cache
     // This ensures the web UI always gets the latest version
@@ -2091,10 +2020,9 @@ void Server::run() {
             LOG(WARNING, "Server")
                 << "Serving on non-loopback host '" << bound_host
                 << "' without an API key. All endpoints, including the /internal/* "
-                   "control endpoints and the /internal/mcp/* process-launch endpoints, "
-                   "are reachable from other machines unauthenticated. Set "
-                   "LEMONADE_API_KEY to secure all endpoints; LEMONADE_ADMIN_API_KEY "
-                   "on its own only secures the /internal/* "
+                   "control endpoints, are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
+                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
                    "control endpoints." << std::endl;
         } else if (api_key_.empty()) {
             LOG(WARNING, "Server")
@@ -2674,6 +2602,45 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
     res.status = 200;
 }
 
+void Server::handle_docs(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    // Echo back the prefix the client used so the URLs stay valid on all four.
+    std::string prefix = req.path.substr(0, req.path.size() - std::string("/docs").size());
+
+    nlohmann::json docs = nlohmann::json::array();
+    for (const ApiDoc& doc : list_api_docs(docs_dir)) {
+        docs.push_back({
+            {"id", doc.id},
+            {"title", doc.title},
+            {"url", prefix + "/docs/" + doc.id},
+            {"bytes", doc.bytes}
+        });
+    }
+
+    nlohmann::json body = {
+        {"version", LEMON_VERSION_STRING},
+        {"format", "text/markdown"},
+        {"docs", docs}
+    };
+    res.set_content(body.dump(2), "application/json");
+    res.status = 200;
+}
+
+void Server::handle_doc_page(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    std::string content;
+    if (!read_api_doc(docs_dir, req.matches[1].str(), content)) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Documentation page not found\"}", "application/json");
+        return;
+    }
+
+    res.set_content(content, "text/markdown");
+    res.status = 200;
+}
+
 void Server::handle_model_update_check(const httplib::Request& req, httplib::Response& res) {
     (void)req;
 
@@ -3221,8 +3188,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
-        {"source", info.source.empty() ? info.registry_source : info.source},
-        {"registry_source", info.registry_source},
+        {"source", info.source.empty()
+            ? remote_registry_source_name(
+                parse_remote_registry_source(info.registry_source))
+            : info.source},
+        {"registry_source", remote_registry_source_name(
+            parse_remote_registry_source(info.registry_source))},
         {"labels", info.labels},
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
@@ -3265,6 +3236,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
     // models that don't carry one so the field doesn't pollute every entry.
     if (!info.system_prompt.empty()) {
         model_json["system_prompt"] = info.system_prompt;
+    }
+
+    auto audio_defaults = info.extras.find("audio_defaults");
+    if (audio_defaults != info.extras.end() &&
+        audio_defaults->second.is_object()) {
+        model_json["audio_defaults"] = audio_defaults->second;
     }
 
     // Add image_defaults if present (for sd-cpp models)
@@ -3805,6 +3782,11 @@ void Server::handle_routing_validate(const httplib::Request& req, httplib::Respo
         RouteContext ctx;
         ctx.input = prompt;
         ctx.params.chars = prompt.size();
+        // A test prompt is a single turn with no history, so its whole-request
+        // total is the prompt itself — the same equality build_route_context
+        // gives the history-less `prompt` form. Leaving this at 0 would make
+        // every min_total_chars rule silently untestable here.
+        ctx.params.total_chars = prompt.size();
         ctx.params.has_images = has_images;
         ctx.params.has_tools = has_tools;
         ctx.metadata = std::move(metadata);
@@ -3920,7 +3902,6 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
             LOG(DEBUG, "Server") << "No tools in request" << std::endl;
         }
 
-        bool request_modified = false;
         std::optional<RouterDispatchResult> route_dispatch;
 
         // Omni "collection" models run a server-side tool-calling loop instead of a
@@ -4015,22 +3996,13 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use original request body - each backend (FLM, llamacpp, etc.) handles
-        // model name transformation internally via their forward methods.
-        // Note: request_json was already normalized at the top of this function
-        std::string request_body = req.body;
-
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
-        request_modified = normalize_thinking_controls(request_json) || request_modified;
-
-        // If we modified the request (or normalized the model name earlier), serialize to string
-        // The early normalize_client_model_name() call modifies request_json but doesn't set a flag,
-        // so we always use request_json for the body to ensure model name normalization is applied
-        request_body = request_json.dump();
+        normalize_thinking_controls(request_json);
 
         if (is_streaming) {
             try {
+                std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/chat/completions - Streaming" << std::endl;
 
@@ -4160,11 +4132,9 @@ void Server::handle_completions(const httplib::Request& req, httplib::Response& 
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Use normalized request - model name was already normalized at the top
-        std::string request_body = request_json.dump();
-
         if (is_streaming) {
             try {
+                std::string request_body = request_json.dump();
                 // Log the HTTP request
                 LOG(INFO, "Server") << "POST /api/v1/completions - Streaming" << std::endl;
 
@@ -4781,6 +4751,17 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
         // Handle model loading
         if (request_json.contains("model")) {
             std::string requested_model = request_json["model"];
+            if (auto info = router_->try_get_model_info(requested_model);
+                info && info->type != ModelType::TTS) {
+                res.status = 400;
+                res.set_content(nlohmann::json{{"error", {
+                    {"message", "Model '" + requested_model +
+                        "' is not a text-to-speech model"},
+                    {"type", "invalid_request_error"},
+                    {"code", "model_not_applicable"}}}}.dump(),
+                    "application/json");
+                return;
+            }
             try {
                 auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
             } catch (const std::exception& e) {
@@ -4805,6 +4786,15 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.status = 400;
             nlohmann::json error = {{"error", {
                 {"message", "Missing 'input' field in request"},
+                {"type", "invalid_request_error"}
+            }}};
+            res.set_content(error.dump(), "application/json");
+            return;
+        }
+        if (!request_json["input"].is_string()) {
+            res.status = 400;
+            nlohmann::json error = {{"error", {
+                {"message", "'input' must be a string"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
@@ -4880,7 +4870,14 @@ void Server::handle_audio_speech(const httplib::Request& req, httplib::Response&
             res.set_content(error.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES[response_format];
+        const auto format_metadata =
+            router_->audio_speech_format_metadata(speech_model, response_format);
+        std::string mime_type = format_metadata.content_type.empty()
+            ? MIME_TYPES[response_format].get<std::string>()
+            : format_metadata.content_type;
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
         // The backend has to encode what the Content-Type above promises. Without
         // this it would receive whatever the client sent -- nothing, when the
         // format came from a default -- and fall back to its own choice.
@@ -4995,7 +4992,7 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        for (const auto* field : {"lyrics", "vocal_language"}) {
+        for (const auto* field : {"prompt", "lyrics", "vocal_language"}) {
             if (request_json.contains(field) && !request_json[field].is_string()) {
                 res.status = 400;
                 res.set_content(nlohmann::json{{"error", {
@@ -5006,6 +5003,17 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
         }
 
         std::string requested_model = request_json["model"];
+        if (auto info = router_->try_get_model_info(requested_model);
+            info && info->type != ModelType::AUDIO_GENERATION) {
+            res.status = 400;
+            res.set_content(nlohmann::json{{"error", {
+                {"message", "Model '" + requested_model +
+                    "' is not an audio-generation model"},
+                {"type", "invalid_request_error"},
+                {"code", "model_not_applicable"}}}}.dump(),
+                "application/json");
+            return;
+        }
         try {
             auto_load_model_if_needed(requested_model, extract_auto_load_options(request_json));
         } catch (const std::exception& e) {
@@ -5036,8 +5044,16 @@ void Server::handle_audio_generations(const httplib::Request& req, httplib::Resp
                 {"type", "invalid_request_error"}}}}.dump(), "application/json");
             return;
         }
-        std::string mime_type = MIME_TYPES.contains(response_format)
-            ? MIME_TYPES[response_format] : MIME_TYPES["wav"];
+        const auto format_metadata =
+            router_->audio_generation_format_metadata(requested_model, response_format);
+        std::string mime_type = !format_metadata.content_type.empty()
+            ? format_metadata.content_type
+            : (MIME_TYPES.contains(response_format)
+                ? MIME_TYPES[response_format].get<std::string>()
+                : MIME_TYPES["wav"].get<std::string>());
+        for (const auto& [name, value] : format_metadata.headers) {
+            res.set_header(name, value);
+        }
 
         LOG(INFO, "Server") << "POST /api/v1/audio/generations" << std::endl;
 
@@ -5526,7 +5542,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
         }
 
         std::string upscale_model_path;
-        std::string backend;
+        std::string recipe;
         try {
             auto info = model_manager_->get_model_info(upscale_model_name);
 
@@ -5538,27 +5554,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             }
 
             upscale_model_path = info.resolved_path("main");
-
-            // Honor explicit config first (e.g. sdcpp.backend = "rocm").
-            // "auto" in config.json is mapped to "" by recipe_options().
-            auto recipe_opts = config_->recipe_options("");
-            if (recipe_opts.contains("sd-cpp_backend") &&
-                recipe_opts["sd-cpp_backend"].is_string()) {
-                backend = recipe_opts["sd-cpp_backend"].get<std::string>();
-            }
-
-            // Auto-detect best backend when not explicitly configured,
-            // matching the same logic SDServer::load() uses via
-            // RecipeOptions::get_option(). Without this, upscaling
-            // silently falls back to CPU even when ROCm/Vulkan is available.
-            if (backend.empty()) {
-                auto supported = SystemInfo::get_supported_backends("sd-cpp");
-                if (!supported.backends.empty()) {
-                    backend = supported.backends[0];
-                } else {
-                    backend = "cpu";
-                }
-            }
+            recipe = info.recipe;
         } catch (const std::exception& e) {
             res.status = 404;
             nlohmann::json error = {{"error", {
@@ -5569,106 +5565,31 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
 
-        // sd-server's HTTP API does not expose an upscaling endpoint.
-        // Upscaling is only available via the sd-cli binary's -M upscale mode,
-        // so we shell out to sd-cli as a subprocess. This also keeps upscaling
-        // as a separate request from generation, which lets the frontend show
-        // the original and upscaled images side by side with independent timing.
-        std::string exe_dir = lemon::backends::BackendUtils::get_backend_binary_path(
-            *lemon::backends::try_get_spec_for_recipe("sd-cpp"), backend);
-        std::filesystem::path cli_exe = std::filesystem::path(exe_dir).parent_path() /
-#ifdef _WIN32
-            "sd-cli.exe";
-#else
-            "sd-cli";
-#endif
+        std::string b64_image = request_json["image"].get<std::string>();
 
-        if (!std::filesystem::exists(cli_exe)) {
-            res.status = 500;
+        // Upscaling is model-free: no model is loaded through the router, so we
+        // dispatch by recipe to each backend's shared upscale API, which shells
+        // out to its own CLI binary directly (backend selection, binary path,
+        // and runtime environment all live in the backend).
+        std::string upscaled;
+        if (recipe == "thenoise") {
+            upscaled = lemon::backends::TheNoiseServer::upscale_via_cli(b64_image, upscale_model_path);
+        } else if (recipe == "sd-cpp") {
+            upscaled = lemon::backends::SDServer::upscale_via_cli(b64_image, upscale_model_path);
+        } else {
+            res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "sd-cpp backend not installed (sd-cli not found at: "
-                            + cli_exe.string() + ")"},
-                {"type", "server_error"}
+                {"message", "Upscale is not supported by recipe: " + recipe},
+                {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
             return;
         }
 
-        std::vector<std::pair<std::string, std::string>> env_vars;
-        std::filesystem::path cli_dir = cli_exe.parent_path();
-
-        std::string resolved_backend = backend;
-        if (backend == "rocm") {
-            std::string channel = "stable";
-            if (config_) {
-                channel = config_->rocm_channel_for_recipe("sd-cpp");
-            }
-            resolved_backend = "rocm-" + channel;
-        }
-#ifndef _WIN32
-        std::string lib_path = cli_dir.string();
-
-        if (resolved_backend == "rocm-stable") {
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            if (!rocm_arch.empty()) {
-                std::string therock_dirs = lemon::backends::BackendUtils::join_runtime_dirs(
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch));
-                if (!therock_dirs.empty()) {
-                    lib_path = therock_dirs + ":" + lib_path;
-                }
-            }
-        }
-
-        const char* existing_ld_path = std::getenv("LD_LIBRARY_PATH");
-        if (existing_ld_path && strlen(existing_ld_path) > 0) {
-            lib_path = lib_path + ":" + std::string(existing_ld_path);
-        }
-        env_vars.push_back({"LD_LIBRARY_PATH", lib_path});
-#else
-        if (resolved_backend == "rocm-stable") {
-            std::string new_path = cli_dir.string();
-            std::string rocm_arch = SystemInfo::get_rocm_arch();
-            std::vector<std::string> therock_dirs;
-            if (!rocm_arch.empty()) {
-                therock_dirs =
-                    lemon::backends::BackendUtils::get_therock_lib_paths(rocm_arch);
-                for (auto it = therock_dirs.rbegin(); it != therock_dirs.rend(); ++it) {
-                    if (!it->empty()) {
-                        new_path = *it + ";" + new_path;
-                    }
-                }
-            }
-
-            const char* existing_path = std::getenv("PATH");
-            if (existing_path && strlen(existing_path) > 0) new_path += ";" + std::string(existing_path);
-            env_vars.push_back({"PATH", new_path});
-
-            if (!therock_dirs.empty()) {
-                fs::path therock_dll = fs::path(therock_dirs.front()) / "amdhip64_7.dll";
-                fs::path target_dll = cli_exe.parent_path() / "amdhip64_7.dll";
-                if (fs::exists(therock_dll)) {
-                    std::error_code ec;
-                    fs::copy_file(therock_dll, target_dll, fs::copy_options::overwrite_existing, ec);
-                    if (!ec) {
-                        LOG(INFO, "Server") << "Copied amdhip64_7.dll from TheRock to "
-                            << lemon::utils::path_to_utf8(target_dll) << std::endl;
-                    } else {
-                        LOG(ERROR, "Server") << "Failed to copy amdhip64_7.dll: "
-                            << ec.message() << std::endl;
-                    }
-                }
-            }
-        }
-#endif
-
-        std::string b64_image = request_json["image"].get<std::string>();
-        std::string upscaled = lemon::backends::SDServer::upscale_via_cli(
-            b64_image, upscale_model_path, cli_exe.string(), env_vars);
-
         if (upscaled.empty()) {
             res.status = 500;
             nlohmann::json error = {{"error", {
-                {"message", "ESRGAN upscale failed"},
+                {"message", "Upscale failed"},
                 {"type", "server_error"}
             }}};
             res.set_content(error.dump(), "application/json");
@@ -5734,12 +5655,10 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
-        // Re-serialize so any collection.router model rewrite reaches the backend
-        // (streaming forwards this body verbatim).
-        std::string request_body = request_json.dump();
-
         if (is_streaming) {
             try {
+                // Re-serialize so any collection.router model rewrite reaches the backend.
+                std::string request_body = request_json.dump();
                 LOG(INFO, "Server") << "POST /api/v1/responses - Streaming" << std::endl;
 
                 set_route_decision_sse_content_provider(
@@ -5889,6 +5808,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json download_request = collection_file_import
             ? request_json
             : nlohmann::json::object();
+        for (const char* field : {"source", "registry_source"}) {
+            if (request_json.contains(field)) {
+                download_request[field] = request_json[field];
+            }
+        }
 
         if (stream) {
             auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {
@@ -6811,32 +6735,6 @@ void Server::handle_cloud_auth_clear(const httplib::Request& req, httplib::Respo
     }
 }
 
-void Server::handle_params(const httplib::Request& req, httplib::Response& res) {
-    try {
-        auto body = nlohmann::json::parse(req.body);
-
-        // Delegate to RuntimeConfig — accepts all known recipe option keys
-        auto result = config_->set(body, [this](const json& applied) {
-            apply_config_side_effects(applied);
-        });
-        res.set_content(result.dump(), "application/json");
-    } catch (const nlohmann::json::parse_error& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_params: invalid JSON: " << e.what() << std::endl;
-        res.status = 400;
-        nlohmann::json error = {{"error", "Invalid JSON in request body"}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::invalid_argument& e) {
-        res.status = 400;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::exception& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_params: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    }
-}
-
 // Called by handle_pull when local_import=true
 // Parameters:
 //   - dest_path: Directory where model files are located (already copied/uploaded)
@@ -7007,6 +6905,7 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
                 {"allow_insecure_http", rec.allow_insecure_http},
                 {"auth_header_name", rec.auth_header_name},
                 {"auth_header_prefix", rec.auth_header_prefix},
+                {"wire_format", rec.wire_format},
                 {"env_var", CloudProviderRegistry::env_var_name(rec.name)},
                 {"env_var_set", state.env_var_set},
                 {"runtime_key_set", state.runtime_key_set},
@@ -7082,31 +6981,6 @@ void Server::handle_system_stats(const httplib::Request& req, httplib::Response&
     stats["npu_percent"] = (npu_percent >= 0) ? nlohmann::json(npu_percent) : nlohmann::json();
 
     res.set_content(stats.dump(), "application/json");
-}
-
-void Server::handle_log_level(const httplib::Request& req, httplib::Response& res) {
-    try {
-        auto request_json = nlohmann::json::parse(req.body);
-
-        // Translate {"level":"debug"} -> config_->set({"log_level":"debug"})
-        json changes = {{"log_level", request_json["level"]}};
-        config_->set(changes, [this](const json& applied) {
-            apply_config_side_effects(applied);
-        });
-
-        // Return same response format for backward compatibility
-        nlohmann::json response = {{"status", "success"}, {"level", config_->log_level()}};
-        res.set_content(response.dump(), "application/json");
-    } catch (const std::invalid_argument& e) {
-        res.status = 400;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    } catch (const std::exception& e) {
-        LOG(ERROR, "Server") << "ERROR in handle_log_level: " << e.what() << std::endl;
-        res.status = 500;
-        nlohmann::json error = {{"error", e.what()}};
-        res.set_content(error.dump(), "application/json");
-    }
 }
 
 void Server::handle_simulate_vram_pressure(const httplib::Request& req, httplib::Response& res) {
@@ -7426,14 +7300,30 @@ void Server::apply_config_side_effects(const json& applied_changes) {
                     websocket_server_->start();
                 }
             }
-        } else if (key == "log_level") {
-            std::string level = config_->log_level();
-            LOG(INFO, "Server") << "Log level changed to: " << level << std::endl;
-            reconfigure_application_logging(level);
+        } else if (key == "log_level" || key == "log_file" || key == "log_max_file_size_mb" || key == "log_max_files") {
+            LogRotationConfig rot_cfg;
+            rot_cfg.file_mode = config_->log_file();
+            rot_cfg.max_file_size_mb = config_->log_max_file_size_mb();
+            rot_cfg.max_files = config_->log_max_files();
+            LOG(INFO, "Server") << "Logging configuration updated (level=" << config_->log_level()
+                                << ", file=" << rot_cfg.file_mode
+                                << ", max_size=" << rot_cfg.max_file_size_mb << "MB"
+                                << ", max_files=" << rot_cfg.max_files << ")" << std::endl;
+            reconfigure_application_logging(config_->log_level(), rot_cfg);
         } else if (key == "global_timeout") {
             long timeout = config_->global_timeout();
             LOG(INFO, "Server") << "Global timeout changed to: " << timeout << "s" << std::endl;
             utils::HttpClient::set_default_timeout(timeout);
+        } else if (key == "download_rate_limit") {
+            const int64_t bps = config_->download_rate_limit_bytes_per_second();
+            if (bps > 0) {
+                LOG(INFO, "Server") << "Download rate limit enabled at " << bps << " B/s" << std::endl;
+            } else {
+                LOG(INFO, "Server") << "Download rate limit disabled" << std::endl;
+            }
+            utils::HttpClient::set_download_rate_limit(bps);
+        } else if (key == "allowed_origins") {
+            LOG(INFO, "Server") << "Allowed origins updated: " << config_->allowed_origins() << std::endl;
         } else if (key == "broadcast" || key == "no_broadcast") {
             bool bcast = config_->broadcast();
             LOG(INFO, "Server") << "Broadcast " << (bcast ? "enabled" : "disabled") << std::endl;
@@ -7953,7 +7843,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
         //   {backend: "cloud", provider: "fireworks",
         //    base_url: "https://api.fireworks.ai/inference/v1",
         //    allow_insecure_http: false,
-        //    auth_header_name / auth_header_prefix: see
+        //    auth_header_name / auth_header_prefix / wire_format: see
         //      CloudProviderRegistry::Record,
         //    api_key: "..."}
         //
@@ -7987,9 +7877,9 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
             }
 
             CloudProviderRegistry::InstallOptions install_options;
-            auto read_header_field = [&](const char* field,
-                                         std::string (*validate)(const std::string&),
-                                         std::optional<std::string>& out) {
+            auto read_validated_field = [&](const char* field,
+                                            std::string (*validate)(const std::string&),
+                                            std::optional<std::string>& out) {
                 if (!request_json.contains(field)) return true;
                 if (!request_json[field].is_string()) {
                     reject(std::string(field) + " must be a string when provided");
@@ -8003,12 +7893,15 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 out = std::move(value);
                 return true;
             };
-            if (!read_header_field("auth_header_name",
-                                   CloudProviderRegistry::validate_auth_header_name,
-                                   install_options.auth_header_name) ||
-                !read_header_field("auth_header_prefix",
-                                   CloudProviderRegistry::validate_auth_header_prefix,
-                                   install_options.auth_header_prefix)) {
+            if (!read_validated_field("auth_header_name",
+                                      CloudProviderRegistry::validate_auth_header_name,
+                                      install_options.auth_header_name) ||
+                !read_validated_field("auth_header_prefix",
+                                      CloudProviderRegistry::validate_auth_header_prefix,
+                                      install_options.auth_header_prefix) ||
+                !read_validated_field("wire_format",
+                                      CloudProviderRegistry::validate_wire_format,
+                                      install_options.wire_format)) {
                 return;
             }
             if (request_json.contains("allow_insecure_http")) {
@@ -8068,6 +7961,7 @@ void Server::handle_install(const httplib::Request& req, httplib::Response& res)
                 {"allow_insecure_http", cloud_registry_->allow_insecure_http_for(provider)},
                 {"auth_header_name", auth_header.name},
                 {"auth_header_prefix", auth_header.prefix},
+                {"wire_format", cloud_registry_->wire_format_for(provider)},
                 {"models_discovered", models_after},
                 {"auth_state", {
                     {"env_var_set", state.env_var_set},

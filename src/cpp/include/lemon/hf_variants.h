@@ -18,6 +18,9 @@ struct GgufVariant {
     // how `name` was disambiguated. Empty when no quant could be recognized.
     std::string quant;
     std::string primary_file;  // First file (lexicographic) representing this variant.
+    // Repository-relative speculative draft companion selected for this main variant.
+    // Empty when no single draft mechanism can be selected safely.
+    std::string draft_file;
     std::vector<std::string> files;  // All files belonging to this variant.
     bool sharded = false;
     uint64_t size_bytes = 0;   // Sum of file sizes (0 if unknown).
@@ -40,6 +43,10 @@ struct GgufVariantSet {
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {});
+
+std::string llamacpp_gguf_incompatibility(
+    const nlohmann::json& repository_metadata,
+    const std::string& registry_source);
 
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //

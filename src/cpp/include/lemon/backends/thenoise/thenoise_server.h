@@ -39,6 +39,10 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
+    static std::string upscale_via_cli(
+        const std::string& b64_image,
+        const std::string& upscale_model_path);
+
 private:
     // image_defaults from the currently loaded model's server_models.json entry.
     // Applied when a request doesn't specify size / steps / cfg_scale / etc.

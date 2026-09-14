@@ -449,7 +449,10 @@ private:
     }
 };
 
-static MetricsWorker g_metrics_worker;
+static MetricsWorker& get_metrics_worker() {
+    static MetricsWorker worker;
+    return worker;
+}
 
 class TelemetryQueue {
 private:
@@ -792,13 +795,17 @@ static TelemetryQueue& get_queue() {
     return queue;
 }
 
+void initialize() {
+    (void)get_metrics_worker();
+}
+
 void shutdown() {
-    g_metrics_worker.stop();
+    get_metrics_worker().stop();
     get_queue().shutdown();
 }
 
 void flush() {
-    g_metrics_worker.drain();
+    get_metrics_worker().drain();
     get_queue().flush();
 }
 
@@ -1399,7 +1406,7 @@ void end_llm_span_async(
         return;
     }
 
-    if (!g_metrics_worker.enqueue(span, metrics_url, parser, usage_payload, text_output, tool_calls)) {
+    if (!get_metrics_worker().enqueue(span, metrics_url, parser, usage_payload, text_output, tool_calls)) {
         LOG(WARNING, "Telemetry") << "MetricsWorker queue full. Dropping optional metrics and completing span immediately." << std::endl;
         span->end_with_success(usage_payload, text_output, tool_calls);
     }

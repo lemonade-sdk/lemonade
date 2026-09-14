@@ -300,7 +300,7 @@ void validate_leaf(const json& leaf,
             throw std::invalid_argument(path + ".regex must be a non-empty string");
         }
     }
-    for (const char* op : {"min_chars", "max_chars"}) {
+    for (const char* op : {"min_chars", "max_chars", "min_total_chars", "max_total_chars"}) {
         if (leaf.contains(op)) {
             ++condition_count;
             if (!leaf.at(op).is_number_integer() || leaf.at(op).get<long long>() < 0) {
@@ -551,7 +551,7 @@ const std::set<std::string>& routing_match_expr_keys() {
     static const std::set<std::string> keys = {
         "any", "all", "not", "classifier", "label", "min_score", "max_score",
         "keywords_any", "keywords_all", "regex", "min_chars", "max_chars",
-        "has_tools", "has_images", "metadata"};
+        "min_total_chars", "max_total_chars", "has_tools", "has_images", "metadata"};
     return keys;
 }
 
@@ -651,15 +651,21 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     // Desugar the L0a `routing.router` sugar into explicit classifiers + rules
     // before the normal parse path runs. Everything downstream sees the core
     // form only.
+    const bool is_router_sugar = routing.contains("router");
     json desugared;
     const json* routing_eff = &routing;
-    if (routing.contains("router")) {
+    if (is_router_sugar) {
         desugared = desugar_routing_router(routing);
         routing_eff = &desugared;
     }
 
+    // Only the routing.router sugar's synthesized classifier gets
+    // has_tools/has_images (#2789) — see LlmClassifier::effective_prompt in
+    // routing_policy.cpp for why an author-declared classifier never does.
+    const bool expose_request_features = is_router_sugar;
+
     const json classifier_configs = parse_classifier_configs(*routing_eff, declared, options);
-    policy.classifiers = make_classifiers(classifier_configs);
+    policy.classifiers = make_classifiers(classifier_configs, expose_request_features);
     policy.rules = parse_rules(*routing_eff, policy.candidates, policy.classifiers, declared, options);
     policy.helper_models = collect_policy_helper_models(policy);
 

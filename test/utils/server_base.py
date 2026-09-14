@@ -155,8 +155,15 @@ def wait_for_server(port=PORT, timeout=60):
 
 
 def _auth_headers():
-    """Return Authorization header if LEMONADE_API_KEY is set."""
-    api_key = os.environ.get("LEMONADE_API_KEY")
+    """Return Authorization header for the highest-privilege key that is set.
+
+    The admin key comes first because it authenticates against both the regular
+    API routes and /internal/*, while LEMONADE_API_KEY cannot reach /internal/*
+    when a distinct admin key is configured.
+    """
+    api_key = os.environ.get("LEMONADE_ADMIN_API_KEY") or os.environ.get(
+        "LEMONADE_API_KEY"
+    )
     if api_key:
         return {"Authorization": f"Bearer {api_key}"}
     return {}

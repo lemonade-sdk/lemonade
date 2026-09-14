@@ -4,9 +4,10 @@ Router end-to-end tests for Lemonade Server (issue #2388).
 Registers a `collection.router` collection and drives it with a vanilla OpenAI
 client, asserting that requests are dispatched to the right candidate by the
 policy's rules. Covers deterministic conditions (keywords / min_chars /
-metadata), a model-backed `semantic_similarity` classifier, a cloud candidate,
-first-match ordering, fail-open to `default_model`, and the decision surfaced on
-the response (`x-lemonade-route` header + `x_lemonade_route` body).
+min_total_chars / metadata), a model-backed `semantic_similarity` classifier, a
+cloud candidate, first-match ordering, fail-open to `default_model`, and the
+decision surfaced on the response (`x-lemonade-route` header +
+`x_lemonade_route` body).
 
 The routing decision is computed server-side before the request is forwarded to
 the chosen candidate, so these are true end-to-end runs: a real completion comes
@@ -210,6 +211,12 @@ POLICY = {
                 "route_to": CAPABLE_MODEL,
                 "outputs": {"reason": "complex-or-long"},
             },
+            {
+                "id": "long-conversation-to-capable",
+                "match": {"min_total_chars": 4000},
+                "route_to": CAPABLE_MODEL,
+                "outputs": {"reason": "long-conversation"},
+            },
         ],
     },
 }
@@ -252,11 +259,16 @@ class RouterTests(ServerTestBase):
         super().setUp()
         self._ensure_setup()
 
-    def _route(self, prompt, metadata=None, collection=COLLECTION_NAME):
-        """Send a chat request through the router; return (header, decision, body)."""
+    def _route(
+        self, prompt=None, metadata=None, collection=COLLECTION_NAME, messages=None
+    ):
+        """Send a chat request through the router; return (header, decision, body).
+
+        Pass `messages` instead of `prompt` to route a multi-turn conversation.
+        """
         body = {
             "model": collection,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages or [{"role": "user", "content": prompt}],
             "max_tokens": 8,
             "temperature": 0.0,
             "route_trace": True,
@@ -483,6 +495,47 @@ class RouterTests(ServerTestBase):
         decision = resp.json().get("x_lemonade_route", {})
         self.assertEqual(decision.get("trace", []), [])
         print("[OK] route_trace omitted -> no trace array")
+
+    def test_605_total_chars_routes_long_conversation(self):
+        """A long history with a short final turn routes via min_total_chars.
+
+        `min_chars` sees only "go on", so this is the case the whole-conversation
+        bound exists for: without it the request lands on the small default.
+        """
+        history = "We reviewed the quarterly telemetry numbers in detail. " * 40
+        messages = [
+            {"role": "user", "content": history},
+            {"role": "assistant", "content": history},
+            {"role": "user", "content": "go on"},
+        ]
+        self.assertGreater(sum(len(m["content"]) for m in messages), 4000)
+        self.assertLess(len(messages[-1]["content"]), 4000)
+
+        header, decision, _ = self._route(messages=messages)
+        self.assertEqual(decision.get("route_to"), CAPABLE_MODEL)
+        self.assertEqual(decision.get("matched_rule"), "long-conversation-to-capable")
+        self.assertFalse(decision.get("default_used"))
+        self.assertEqual(header, "long-conversation-to-capable")
+        tmap = self._trace_map(decision)
+        self.assertTrue(tmap.get("min_total_chars"))
+        self.assertFalse(tmap.get("min_chars"))
+        print(f"[OK] min_total_chars -> {CAPABLE_MODEL} (short last turn)")
+
+    def test_606_short_conversation_falls_through(self):
+        """The same final turn with a short history falls open to default."""
+        messages = [
+            {"role": "user", "content": "Hi there."},
+            {"role": "assistant", "content": "Hello! How can I help?"},
+            {"role": "user", "content": "go on"},
+        ]
+        self.assertLess(sum(len(m["content"]) for m in messages), 4000)
+
+        _, decision, _ = self._route(messages=messages)
+        self.assertEqual(decision.get("route_to"), DEFAULT_MODEL)
+        self.assertTrue(decision.get("default_used"))
+        self.assertEqual(decision.get("matched_rule"), "")
+        self.assertFalse(self._trace_map(decision).get("min_total_chars"))
+        print(f"[OK] short conversation -> {DEFAULT_MODEL} (default)")
 
     def test_610_cloud_candidate_routing(self):
         """A candidate whose recipe is `cloud` routes to a cloud provider.

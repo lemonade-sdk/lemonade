@@ -20,6 +20,7 @@ Usage:
     python server_endpoints.py
 """
 
+import contextlib
 import json
 import os
 import platform
@@ -101,6 +102,62 @@ def _lemond_health_ok(port, headers):
         return response.status_code == 200
     except requests.RequestException:
         return False
+
+
+@contextlib.contextmanager
+def _running_lemond(config=None, cache_prefix="lemond_test_"):
+    """Spawn lemond on a free port with the given config.json body.
+
+    Skips the calling test when no daemon binary is available. Yields
+    (proc, port, headers, log_path) and terminates the daemon plus removes
+    its cache directory on exit.
+    """
+    lemond_binary = _resolve_lemond_binary()
+    if not lemond_binary:
+        raise unittest.SkipTest("lemond binary not found (build it or add it to PATH)")
+
+    headers = {}
+    api_key = os.environ.get("LEMONADE_API_KEY")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    port = _pick_free_port()
+    cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
+    log_path = os.path.join(cache_dir, "lemond.log")
+    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
+        json.dump({"config_version": 2, **(config or {})}, f)
+
+    proc = None
+    try:
+        with open(log_path, "w", encoding="utf-8") as log:
+            proc = subprocess.Popen(
+                [lemond_binary, cache_dir, "--port", str(port)],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=os.environ.copy(),
+            )
+        yield proc, port, headers, log_path
+    finally:
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=10)
+        shutil.rmtree(cache_dir, ignore_errors=True)
+
+
+def _wait_until_healthy(proc, port, headers, timeout_s=60):
+    """Poll /api/v1/health until lemond answers or the deadline expires."""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            return False
+        if _lemond_health_ok(port, headers):
+            return True
+        time.sleep(1)
+    return False
 
 
 class EndpointTests(ServerTestBase):
@@ -236,6 +293,39 @@ class EndpointTests(ServerTestBase):
                     404,
                     f"POST endpoint {endpoint} is not registered on {version}",
                 )
+
+        session.close()
+
+    def test_000b_retired_endpoints_removed(self):
+        """Verify the retired routes stay gone on every prefix."""
+        session = requests.Session()
+        headers = _auth_headers()
+
+        for endpoint in ["params", "log-level", "test"]:
+            for prefix in ["/api/v0", "/api/v1", "/v0", "/v1"]:
+                url = f"http://localhost:{PORT}{prefix}/{endpoint}"
+                for response in (
+                    session.get(url, headers=headers, timeout=TIMEOUT_DEFAULT),
+                    session.post(
+                        url, json={}, headers=headers, timeout=TIMEOUT_DEFAULT
+                    ),
+                ):
+                    self.assertEqual(
+                        response.status_code,
+                        404,
+                        f"Retired endpoint {prefix}/{endpoint} still responds",
+                    )
+
+        response = session.get(
+            f"http://localhost:{PORT}/status", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 404, "Retired /status still responds")
+
+        # The legacy status page is still served at its documented location.
+        response = session.get(
+            f"http://localhost:{PORT}/api/v1", headers=headers, timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200, response.text)
 
         session.close()
 
@@ -4593,6 +4683,57 @@ class EndpointTests(ServerTestBase):
         self.assertTrue(decision["default_used"])
         print("[OK] /routing/validate fell through to the default model")
 
+    def test_021zta_routing_validate_total_chars_uses_prompt_length(self):
+        """A test prompt is a single turn with no history, so `min_total_chars`
+        measures the prompt itself — the same equality the history-less
+        completions form gives. A context that left the total at 0 would make
+        every whole-conversation rule untestable in the Router Builder."""
+        policy = {
+            "version": "1",
+            "recipe": "collection.router",
+            "components": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+            "routing": {
+                "candidates": ["Qwen3-8B-GGUF", "vllm.qwen3-32b"],
+                "default_model": "Qwen3-8B-GGUF",
+                "rules": [
+                    {
+                        "id": "long-conversation-to-big",
+                        "match": {"min_total_chars": 100},
+                        "route_to": "vllm.qwen3-32b",
+                    }
+                ],
+            },
+        }
+        long_prompt = "tell me more about this topic. " * 10  # 310 chars
+        self.assertGreater(len(long_prompt), 100)
+        response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": long_prompt},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        decision = response.json()["decision"]
+        self.assertEqual(decision["route_to"], "vllm.qwen3-32b")
+        self.assertEqual(decision["matched_rule"], "long-conversation-to-big")
+        self.assertFalse(decision["default_used"])
+        self.assertTrue(
+            any(
+                entry.get("condition") == "min_total_chars"
+                and entry.get("result") is True
+                for entry in decision.get("trace", [])
+            ),
+            f"trace must include the matched min_total_chars condition: {decision}",
+        )
+
+        short_response = requests.post(
+            f"{self.base_url}/routing/validate",
+            json={"policy": policy, "prompt": "hi"},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(short_response.status_code, 200, short_response.text)
+        self.assertTrue(short_response.json()["decision"]["default_used"])
+        print("[OK] /routing/validate measures min_total_chars on the test prompt")
+
     def test_021zu_routing_validate_bad_policy_returns_400(self):
         """A malformed policy (missing the required 'routing' key) is rejected
         with a 400 and a clear error message, not a crash."""
@@ -7159,11 +7300,39 @@ class EndpointTests(ServerTestBase):
             )
             self.assertIsInstance(v["sharded"], bool)
             self.assertIsInstance(v["size_bytes"], int)
+            self.assertGreater(
+                v["size_bytes"],
+                0,
+                f"Variant '{v.get('name')}' has no file size metadata",
+            )
 
         print(
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_incompatible_gguf(self):
+        """A GGUF repository without a model architecture is not a llama.cpp model."""
+        checkpoint = "stduhpf/Krea-2-Turbo-GGUF"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for incompatible checkpoint, got "
+            f"{response.status_code}: {response.text}",
+        )
+        error = response.json().get("error", "")
+        self.assertIn("not compatible with llama.cpp", error)
+        self.assertIn("does not declare a model architecture", error)
+        print("[OK] Incompatible GGUF checkpoint was rejected before download")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.
@@ -8064,6 +8233,308 @@ class EndpointTests(ServerTestBase):
         )
 
         print("[OK] /internal/models/sync security boundary is secure")
+
+    def test_057_download_rate_limit_config(self):
+        """download_rate_limit is a string cap that validates and round-trips
+        via /internal/set. Spawns its own lemond so it does not depend on an
+        externally-managed server (unlike the shared-server assumption of
+        ServerTestBase)."""
+        with _running_lemond(cache_prefix="lemond_ratecfg_") as (
+            proc,
+            port,
+            headers,
+            log_path,
+        ):
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            # Invalid values are rejected by config validation.
+            bad_changes = [
+                {"download_rate_limit": "10M5"},  # malformed rate string
+                {"download_rate_limit": -5},  # non-string / negative
+                {"download_rate_limit": "abc"},  # invalid rate string
+            ]
+            for body in bad_changes:
+                resp = requests.post(
+                    set_url,
+                    headers=headers,
+                    json=body,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(
+                    resp.status_code,
+                    400,
+                    f"expected 400 for {body!r}, got {resp.status_code}: {resp.text}",
+                )
+
+            # A full round-trip persists in the config snapshot.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "10M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "10M")
+
+            # A partial update preserves unrelated keys.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "20M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "20M")
+
+            # Clearing the cap means runtime unlimited.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(
+                resp.status_code, 200, f"/internal/set failed: {resp.text}"
+            )
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg["download_rate_limit"], "")
+
+            print(
+                "[OK] download_rate_limit validates and round-trips via /internal/set"
+            )
+
+    def test_058_download_rate_limit_invalid_config_startup(self):
+        """An invalid download_rate_limit in config.json must not crash
+        lemond: the raw value is preserved in the snapshot and the server stays
+        healthy (invalid caps are treated as unlimited)."""
+        with _running_lemond(
+            config={"download_rate_limit": "-1"},
+            cache_prefix="lemond_badcfg_",
+        ) as (proc, port, headers, log_path):
+            if not _wait_until_healthy(proc, port, headers):
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    log = f.read()
+                self.fail(
+                    f"lemond with invalid download_rate_limit crashed or never "
+                    f"became healthy on port {port}.\n=== lemond log ===\n{log}"
+                )
+
+            cfg = requests.get(
+                f"http://localhost:{port}/internal/config",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            # The raw value is preserved verbatim in the config snapshot.
+            self.assertEqual(cfg.get("download_rate_limit"), "-1")
+
+            print(
+                "[OK] lemond stays healthy with an invalid download_rate_limit "
+                "in config.json"
+            )
+
+    def test_059_download_rate_limit_runtime_effect(self):
+        """Changing download_rate_limit via /internal/set must actually apply
+        the cap to HttpClient at runtime: the side-effect log line records the
+        newly active byte rate, clearing it disables capping, and the last
+        value is persisted to config.json."""
+        with _running_lemond(
+            config={"download_rate_limit": "10M"},
+            cache_prefix="lemond_ratecfg_",
+        ) as (proc, port, headers, log_path):
+            config_path = os.path.join(os.path.dirname(log_path), "config.json")
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            config_url = f"http://localhost:{port}/internal/config"
+            set_url = f"http://localhost:{port}/internal/set"
+
+            def _wait_for_log(needle, timeout_s=10.0):
+                deadline = time.time() + timeout_s
+                while time.time() < deadline:
+                    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                        if needle in f.read():
+                            return True
+                    time.sleep(0.2)
+                return False
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "10M")
+
+            # Raising the cap takes effect immediately and is logged.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": "50M"},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(
+                _wait_for_log("Download rate limit enabled at 52428800 B/s"),
+                "runtime cap change was not applied to HttpClient",
+            )
+
+            # Clearing the cap disables limiting at runtime too.
+            resp = requests.post(
+                set_url,
+                headers=headers,
+                json={"download_rate_limit": ""},
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(resp.status_code, 200, resp.text)
+            self.assertTrue(
+                _wait_for_log("Download rate limit disabled"),
+                "clearing the cap did not disable runtime limiting",
+            )
+
+            # The persistent channel wrote the final value; "" equals the
+            # default, so the key may be pruned from disk.
+            with open(config_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f).get("download_rate_limit", ""), "")
+
+            cfg = requests.get(
+                config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+            ).json()
+            self.assertEqual(cfg.get("download_rate_limit"), "")
+
+            print(
+                "[OK] /internal/set applies download_rate_limit at runtime "
+                "and persists it"
+            )
+
+    def test_060_docs_index(self):
+        """GET /docs returns an index of the bundled documentation (#1700)."""
+        response = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+
+        body = response.json()
+        self.assertIn("version", body)
+        self.assertEqual(body["format"], "text/markdown")
+        self.assertGreater(len(body["docs"]), 0)
+
+        for entry in body["docs"]:
+            for field in ("id", "title", "url", "bytes"):
+                self.assertIn(field, entry)
+
+        ids = [entry["id"] for entry in body["docs"]]
+        self.assertIn("api/lemonade", ids)
+        self.assertEqual(ids, sorted(ids))
+
+    def test_061_docs_index_quad_prefix(self):
+        """The index is served on all four prefixes and echoes the one used."""
+        prefixes = ["/api/v0", "/api/v1", "/v0", "/v1"]
+        id_sets = []
+        for prefix in prefixes:
+            response = requests.get(
+                f"http://localhost:{PORT}{prefix}/docs", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{prefix}/docs did not return 200"
+            )
+            body = response.json()
+            for entry in body["docs"]:
+                self.assertEqual(
+                    entry["url"],
+                    f"{prefix}/docs/{entry['id']}",
+                    f"{prefix}/docs returned a url for another prefix",
+                )
+            id_sets.append(sorted(entry["id"] for entry in body["docs"]))
+
+        for ids in id_sets[1:]:
+            self.assertEqual(ids, id_sets[0], "docs index differs between prefixes")
+
+    def test_062_docs_pages_are_fetchable(self):
+        """Every url the index advertises serves that document as markdown."""
+        index = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT).json()
+
+        for entry in index["docs"]:
+            response = requests.get(
+                f"http://localhost:{PORT}{entry['url']}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{entry['url']} did not return 200"
+            )
+            self.assertIn("text/markdown", response.headers.get("Content-Type", ""))
+            self.assertGreater(len(response.text), 0)
+
+        lemonade = requests.get(
+            f"{self.base_url}/docs/api/lemonade", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(lemonade.status_code, 200)
+        self.assertIn("# Lemonade API", lemonade.text)
+
+    def test_063_docs_page_not_found(self):
+        """Unknown documents and path traversal both 404 rather than leaking files.
+
+        Traversal is percent-encoded because HTTP clients resolve a literal ".."
+        before sending, which would never reach the server's guard.
+        """
+        for path in (
+            "/docs/api/does-not-exist",
+            "/docs/%2e%2e/%2e%2e/CMakeLists.txt",
+            "/docs/api/%2e%2e/%2e%2e/%2e%2e/CMakeLists.txt",
+        ):
+            response = requests.get(f"{self.base_url}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(response.status_code, 404, f"{path} was not rejected")
+
+    def test_064_docs_endpoint_rejects_post(self):
+        """POST /docs is not a defined route, consistent with other GET-only endpoints."""
+        response = requests.post(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
+
+    def test_065_unversioned_docs_returns_404_and_not_spa(self):
+        """GET /docs and /docs/ return 404; with web-app resources present, /docs-example falls through to SPA."""
+        server_origin = f"http://localhost:{PORT}"
+
+        # 1. Unconditional /docs subtree rejection
+        for path in ["/docs", "/docs/", "/docs/api/lemonade"]:
+            res = requests.get(f"{server_origin}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(res.status_code, 404, f"{path} did not return 404")
+            self.assertIn("application/json", res.headers.get("Content-Type", ""))
+            self.assertIn("For API documentation, use /v1/docs", res.text)
+
+        # 2. Determine web-app availability independently to test SPA fallback
+        root_res = requests.get(f"{server_origin}/", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(root_res.status_code, 200)
+        self.assertIn("text/html", root_res.headers.get("Content-Type", ""))
+        has_web_app = (
+            "window.api" in root_res.text or '<div id="root">' in root_res.text
+        )
+
+        spa_res = requests.get(f"{server_origin}/docs-example", timeout=TIMEOUT_DEFAULT)
+        if has_web_app:
+            self.assertEqual(
+                spa_res.status_code, 200, "/docs-example failed to reach SPA fallback"
+            )
+            self.assertIn("text/html", spa_res.headers.get("Content-Type", ""))
+        else:
+            self.assertEqual(
+                spa_res.status_code,
+                404,
+                "/docs-example returned unexpected status without web app",
+            )
 
 
 if __name__ == "__main__":

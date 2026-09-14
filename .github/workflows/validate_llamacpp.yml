@@ -49,7 +49,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE=$(gh api repos/ggml-org/llama.cpp/releases/latest --jq '.tag_name')
+          set -euo pipefail
+          # Upstream's semver releases (v0.3.0) are what /releases/latest now
+          # returns, and they carry no binaries -- the bNNNN nightlies hold the
+          # assets and are flagged as prereleases.
+          TAGS=$(gh api repos/ggml-org/llama.cpp/releases \
+            --jq '.[] | select(.draft | not) | .tag_name')
+          RELEASE=$(printf '%s\n' "$TAGS" | grep -m1 -E '^b[0-9]+$' || true)
+          if [ -z "$RELEASE" ]; then
+            echo "::error::No bNNNN release found in ggml-org/llama.cpp."
+            exit 1
+          fi
           echo "Latest llama.cpp release: $RELEASE"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
@@ -436,26 +446,26 @@ jobs:
           - backend: vulkan
             runner: >-
               ${{ fromJSON(needs.build.outputs.lite == 'true'
-              && '["self-hosted","Windows","stx-halo","vulkan","lemon-prod"]'
-              || '["self-hosted","Windows","128gb","vulkan","lemon-prod"]') }}
+              && '["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]'
+              || '["self-hosted","Windows","X64","128gb","vulkan","lemon-prod"]') }}
           - backend: rocm
             channel: stable
             runner: >-
               ${{ fromJSON(needs.build.outputs.lite == 'true'
-              && '["self-hosted","Windows","stx-halo","rocm","lemon-prod"]'
-              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
+              && '["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]'
+              || '["self-hosted","Windows","X64","128gb","rocm","lemon-prod"]') }}
           - backend: rocm
             channel: nightly
             runner: >-
               ${{ fromJSON(needs.build.outputs.lite == 'true'
-              && '["self-hosted","Windows","stx-halo","rocm","lemon-prod"]'
-              || '["self-hosted","Windows","128gb","rocm","lemon-prod"]') }}
+              && '["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]'
+              || '["self-hosted","Windows","X64","128gb","rocm","lemon-prod"]') }}
           # CUDA validation is prepared but intentionally disabled until an
           # NVIDIA self-hosted runner is available. To enable it, uncomment this
           # matrix entry.
           #
           # - backend: cuda
-          #   runner: [self-hosted, Windows, 128gb, cuda]
+          #   runner: [self-hosted, Windows, X64, 128gb, cuda]
     steps:
       - name: Capture Vulkan runner configuration
         if: matrix.backend == 'vulkan'
@@ -965,6 +975,11 @@ jobs:
               print("  none")
           PY
 
+      - name: Update supported llama.cpp architectures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/update_llamacpp_architectures.py
+
       - name: Generate PR body
         shell: bash
         env:
@@ -1098,13 +1113,13 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           # Skip if backend_versions.json is already up to date
-          if git diff --quiet src/cpp/resources/backend_versions.json; then
+          if git diff --quiet src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h; then
             echo "backend_versions.json is unchanged — nothing to update."
             exit 0
           fi
 
           git checkout -b "$BRANCH"
-          git add src/cpp/resources/backend_versions.json
+          git add src/cpp/resources/backend_versions.json src/cpp/include/lemon/llamacpp_architectures_generated.h
           git commit -m "Update llama.cpp to ${LLAMACPP_RELEASE}, rocm-stable to ${LLAMACPP_LEMONADE_RELEASE}, rocm-nightly to ${LLAMACPP_ROCM_RELEASE}"
           git push origin "$BRANCH"
 

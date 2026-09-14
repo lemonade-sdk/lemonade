@@ -134,6 +134,11 @@ static std::string resolve_llamacpp_runtime_args(const ModelInfo& model_info,
         defaults.push_back({"--spec-type draft-mtp", "--spec-type"});
     }
 
+    // An auto slot count also enables the unified KV buffer, which advertises the
+    // full ctx_size to every slot instead of dividing it. Pinning the count keeps
+    // ctx_size the context a request actually gets.
+    defaults.push_back({"--parallel 1", "--parallel", {"-np"}});
+
     return append_runtime_arg_defaults(custom_args, defaults);
 }
 
@@ -590,27 +595,6 @@ void LlamaCppServer::unload() {
     const ProcessHandle handle = consume_process_handle_for_cleanup();
     if (has_process_handle(handle)) {
         ProcessManager::stop_process(handle);
-    }
-}
-
-bool LlamaCppServer::downsize() {
-    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
-    try {
-        json slots = get_slots();
-        if (slots.is_array()) {
-            for (const auto& slot : slots) {
-                if (slot.contains("id") && slot["id"].is_number()) {
-                    int id = slot["id"].get<int>();
-                    slots_action(id, "erase", json::object());
-                }
-            }
-        } else if (slots.contains("id")) {
-            slots_action(slots["id"].get<int>(), "erase", json::object());
-        }
-        return true;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
-        return false;
     }
 }
 

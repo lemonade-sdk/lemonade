@@ -127,19 +127,6 @@ jobs:
           if ($failures.Count -gt 0) { exit 1 }
           Write-Host "Build and packaging successful!" -ForegroundColor Green
 
-      - name: Run MCP client unit test on Windows
-        shell: PowerShell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          # Exercise the Windows-only process, quoting, environment-block, and
-          # pipe/handle paths that Linux and macOS cannot cover.
-          cmake --build build --config Release --target test_mcp_client_config
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          ctest --test-dir build -C Release --output-on-failure -R "^mcp_client_config$"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
       - name: Upload Lemonade Server Installers
         id: upload-unsigned-msi
         uses: actions/upload-artifact@v7
@@ -819,8 +806,20 @@ jobs:
       - name: Install minimal build dependencies
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if sudo apt-get update && \
+                sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Build embeddable archive
         shell: bash
@@ -864,8 +863,20 @@ jobs:
       - name: Install build dependencies
         run: |
           set -e
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if sudo apt-get update && \
+                sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Build
         run: |
@@ -1005,77 +1016,82 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
-            runner: [Windows, vulkan, rocm, lemon-prod]
+            runner: [Windows, X64, vulkan, rocm, lemon-prod]
           - name: omni
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan"
-            runner: [Windows, vulkan, stx-halo, lemon-prod]
+            runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
           - name: ryzenai
             script: server_llm.py
             extra_args: "--wrapped-server ryzenai"
             backends: "cpu hybrid npu"
-            runner: [Windows, xdna2, lemon-prod]
+            runner: [Windows, X64, xdna2, lemon-prod]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
             backends: "npu"
-            runner: [Windows, xdna2, lemon-prod]
+            runner: [Windows, X64, xdna2, lemon-prod]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu npu rocm"
-            runner: [Windows, stx-halo, lemon-prod]
+            runner: [Windows, X64, stx-halo, lemon-prod]
           - name: flm-whisper
             script: server_whisper.py
             extra_args: "--wrapped-server flm"
             backends: "npu"
-            runner: [Windows, xdna2, lemon-prod]
+            runner: [Windows, X64, xdna2, lemon-prod]
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
             backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
+            runner: [self-hosted, Windows, X64, lemon-prod]
           - name: classify-onnxruntime
             script: server_classify.py
             extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
+            runner: [self-hosted, Windows, X64, lemon-prod]
           - name: router-onnxruntime
             script: server_router.py
             extra_args: "--wrapped-server onnxruntime"
             backends: "cpu"
-            runner: [self-hosted, Windows, lemon-prod]
+            runner: [self-hosted, Windows, X64, lemon-prod]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
             backends: "cpu rocm vulkan"
-            runner: [Windows, rocm, vulkan, lemon-prod]
+            runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
             extra_args: "--wrapped-server thinksound"
             backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
+            runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: audio-gen-acestep
             script: server_audio_generation.py
             extra_args: "--wrapped-server acestep"
             backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
+            runner: [Windows, X64, rocm, vulkan, lemon-prod]
+          - name: audio-gen-openmoss
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
             backends: ""
-            runner: [self-hosted, Windows, lemon-prod]
+            runner: [self-hosted, Windows, X64, lemon-prod]
           - name: 3d-trellis
             script: server_3d.py
             extra_args: "--wrapped-server trellis"
             backends: "vulkan rocm"
-            runner: [Windows, rocm, vulkan, lemon-prod]
-          # - name: tts-openmoss
-          #   script: server_tts_openmoss.py
-          #   extra_args: "--wrapped-server openmoss"
-          #   backends: "vulkan rocm"
-          #   runner: [Windows, rocm, vulkan, lemon-prod]
+            runner: [Windows, X64, rocm, vulkan, lemon-prod]
+          - name: tts-openmoss
+            script: server_tts_openmoss.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Windows, X64, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1273,62 +1289,72 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
+          - name: llamacpp-hrx
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp-hrx"
+            backends: "hrx"
+            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
           - name: omni
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan"
-            runner: [Linux, vulkan, stx-halo, lemon-prod]
+            runner: [Linux, X64, vulkan, stx-halo, lemon-prod]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
             backends: "cpu rocm vulkan"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
           - name: thenoise
             script: server_thenoise.py
             extra_args: "--wrapped-server thenoise"
             backends: "rocm"
-            runner: [Linux, rocm, stx-halo, lemon-prod]
+            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
             extra_args: "--wrapped-server thinksound"
             backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
           - name: audio-gen-acestep
             script: server_audio_generation.py
             extra_args: "--wrapped-server acestep"
             backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
+          - name: audio-gen-openmoss
+            script: server_audio_generation.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu vulkan rocm"
-            runner: [Linux, rocm, xdna2, lemon-prod]
+            runner: [Linux, X64, rocm, xdna2, lemon-prod]
           - name: moonshine
             script: server_moonshine.py
             extra_args: "--wrapped-server moonshine"
             backends: "cpu"
-            runner: [self-hosted, Linux, lemon-prod]
+            runner: [self-hosted, Linux, X64, lemon-prod]
           - name: flm
             script: server_llm.py
             extra_args: "--wrapped-server flm"
             backends: "npu"
-            runner: [Linux, xdna2, lemon-prod]
+            runner: [Linux, X64, xdna2, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
             extra_args: ""
             backends: ""
-            runner: [self-hosted, Linux, lemon-prod]
+            runner: [self-hosted, Linux, X64, lemon-prod]
           - name: 3d-trellis
             script: server_3d.py
             extra_args: "--wrapped-server trellis"
             backends: "vulkan rocm"
-            runner: [Linux, vulkan, rocm, lemon-prod]
-          # - name: tts-openmoss
-          #   script: server_tts_openmoss.py
-          #   extra_args: "--wrapped-server openmoss"
-          #   backends: "vulkan rocm"
-          #   runner: [Linux, vulkan, rocm, lemon-prod]
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
+          - name: tts-openmoss
+            script: server_tts_openmoss.py
+            extra_args: "--wrapped-server openmoss"
+            backends: "vulkan rocm"
+            runner: [Linux, X64, vulkan, rocm, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
@@ -1952,6 +1978,13 @@ jobs:
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
 
+      - name: Test log rotation
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: bash
+        run: |
+          .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu log-rotation"
+          .venv/bin/python test/server_log_rotation.py
+
       - name: Test router
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
         shell: bash
@@ -2273,12 +2306,55 @@ jobs:
           name: lemonade-macos-pkg
           path: .
 
+      # Must precede the install: the .pkg postflight starts lemond via launchd,
+      # which passes on the launchd domain environment rather than this shell's.
+      # HF_HUB_CACHE rather than HF_HOME because the daemon plist pins HF_HOME,
+      # and plist EnvironmentVariables outrank the domain environment; HF_HUB_CACHE
+      # is unset there and wins over HF_HOME in resolve_hf_cache_dir(). The daemon
+      # runs as root and the suites' own servers as the runner user, so the path is
+      # shared and world-writable.
+      - name: Point every lemond at one HF cache
+        shell: bash
+        run: |
+          set -e
+          sudo mkdir -p /Users/Shared/hf-cache
+          # The daemon writes as root and the suites' own servers as the runner
+          # user, so a mode on the root alone would not reach the model
+          # directories the daemon creates later. An inherited ACL does.
+          sudo chmod 0777 /Users/Shared/hf-cache
+          ACE="list,search,add_file,add_subdirectory,delete,delete_child"
+          ACE="$ACE,read,write,execute,append,readattr,writeattr"
+          ACE="$ACE,readextattr,writeextattr,readsecurity"
+          ACE="$ACE,file_inherit,directory_inherit"
+          sudo chmod +a "everyone allow $ACE" /Users/Shared/hf-cache
+          ls -lde /Users/Shared/hf-cache
+          sudo launchctl setenv HF_HUB_CACHE /Users/Shared/hf-cache
+          echo "HF_HUB_CACHE=/Users/Shared/hf-cache" >> $GITHUB_ENV
+
       - name: Install Lemonade Server (.pkg)
         id: install-pkg
         uses: ./.github/actions/install-lemonade-server-dmg
         with:
           version: ${{ env.LEMONADE_VERSION }}
           download-artifact: 'false'
+
+      - name: Verify the server picked up the cache setting
+        # Assert rather than assume: a server that missed it silently downloads
+        # into a second cache, which is the flake this step exists to prevent.
+        shell: bash
+        run: |
+          set -e
+          PID=$(sudo lsof -t -nP -iTCP:13305 -sTCP:LISTEN 2>/dev/null | head -1)
+          if [ -z "$PID" ]; then
+            echo "ERROR: nothing is listening on port 13305"
+            exit 1
+          fi
+          if ! sudo ps eww -p "$PID" | grep -q "HF_HUB_CACHE=/Users/Shared/hf-cache"; then
+            echo "ERROR: lemond (PID $PID) is missing HF_HUB_CACHE"
+            sudo ps eww -p "$PID" || true
+            exit 1
+          fi
+          echo "lemond (PID $PID) has HF_HUB_CACHE"
 
       - name: Set HF_HOME environment variable
         shell: bash

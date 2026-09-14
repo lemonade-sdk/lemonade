@@ -234,6 +234,8 @@ public:
     void audio_speech(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_speech_supported_formats(const std::string& model_name);
     std::vector<std::string> audio_speech_supported_streaming_formats(const std::string& model_name);
+    AudioFormatMetadata audio_speech_format_metadata(
+        const std::string& model_name, const std::string& response_format);
 
     json image_generations(const json& request);
     json image_edits(const json& request);
@@ -241,6 +243,8 @@ public:
 
     void audio_generations(const json& request, httplib::DataSink& sink);
     std::vector<std::string> audio_generation_supported_formats(const std::string& model_name);
+    AudioFormatMetadata audio_generation_format_metadata(
+        const std::string& model_name, const std::string& response_format);
     void model_3d_generations(const json& request, httplib::DataSink& sink);
 
     void chat_completion_stream(const std::string& request_body, httplib::DataSink& sink);

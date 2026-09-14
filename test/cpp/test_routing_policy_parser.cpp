@@ -179,6 +179,16 @@ static void test_validation_errors_are_clear() {
     check("unsafe rule id rejected",
           throws_with(unsafe_rule_id, "must match [A-Za-z0-9._-]"));
 
+    json negative_total_chars = fixture("l1_keywords.json");
+    negative_total_chars["routing"]["rules"][1]["match"] = json{{"min_total_chars", -1}};
+    check("negative min_total_chars rejected",
+          throws_with(negative_total_chars, "must be a non-negative integer"));
+
+    json fractional_total_chars = fixture("l1_keywords.json");
+    fractional_total_chars["routing"]["rules"][1]["match"] = json{{"max_total_chars", 1.5}};
+    check("non-integer max_total_chars rejected",
+          throws_with(fractional_total_chars, "must be a non-negative integer"));
+
     json router_plus_rules = fixture("l0a_llm_router.json");
     router_plus_rules["routing"]["rules"] = json::array({json{
         {"id", "r0"},
