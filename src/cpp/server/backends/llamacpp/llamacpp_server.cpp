@@ -598,27 +598,6 @@ void LlamaCppServer::unload() {
     }
 }
 
-bool LlamaCppServer::downsize() {
-    LOG(INFO, "LlamaCpp") << "Downsizing model by erasing KV cache..." << std::endl;
-    try {
-        json slots = get_slots();
-        if (slots.is_array()) {
-            for (const auto& slot : slots) {
-                if (slot.contains("id") && slot["id"].is_number()) {
-                    int id = slot["id"].get<int>();
-                    slots_action(id, "erase", json::object());
-                }
-            }
-        } else if (slots.contains("id")) {
-            slots_action(slots["id"].get<int>(), "erase", json::object());
-        }
-        return true;
-    } catch (const std::exception& e) {
-        LOG(ERROR, "LlamaCpp") << "Failed to downsize model: " << e.what() << std::endl;
-        return false;
-    }
-}
-
 json LlamaCppServer::normalize_response_model(json response, const json& request) const {
     if (response.is_object() && response.contains("model")) {
         response["model"] = request.value("model", get_model_name());

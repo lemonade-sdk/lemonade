@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   repo-manager:
-    runs-on: [self-hosted, linux, repo-manager]
+    runs-on: [self-hosted, linux, X64, repo-manager]
     timeout-minutes: 30
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

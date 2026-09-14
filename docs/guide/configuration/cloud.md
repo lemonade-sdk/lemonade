@@ -113,6 +113,16 @@ curl -X POST http://localhost:13305/v1/chat/completions \
 
 No special headers, no per-request credentials — `lemond` resolves the key from its registry and forwards the request transparently.
 
+## Session continuity headers
+
+Some providers key their prompt cache on a per-session identifier the client supplies as an HTTP header (for example, OpenCode sends `x-opencode-session`). When a request carries a well-known session header, Lemonade relays it upstream **verbatim** — the same header name that arrived is re-sent with the resolved value — so the provider can maintain cache continuity across the Lemonade hop:
+
+- If the client sends `x-opencode-session`, the provider receives `x-opencode-session`.
+- If the client sends `x-session-id`, the provider receives `x-session-id`.
+- Requests with no recognized session header are forwarded unchanged.
+
+The relay uses the built-in well-known session header allowlist only (`x-opencode-session`, `x-session-id`, `x-client-session-id`, `mcp-session-id`, `x-conversation-id`, `session-id`). Headers you configure for telemetry correlation via `telemetry.session.headers.id` are **not** sent to external providers, so internal identifiers never leave your network. Discovery (`GET <base_url>/models`) never carries a session header, since it is an administrative catalog query rather than inference.
+
 ## Authentication precedence
 
 When `lemond` needs an API key for a provider, it resolves it in this order:

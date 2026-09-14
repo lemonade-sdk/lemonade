@@ -1,4 +1,5 @@
 #include "lemon/server.h"
+#include "lemon/api_docs.h"
 #include "lemon/audio_types.h"
 #include "lemon/auto_tune.h"
 #include "lemon/error_types.h"
@@ -13,7 +14,6 @@
 #include "lemon/config_file.h"
 #include "lemon/jobs/job_manager.h"
 #include "lemon/mcp_server.h"
-#include "lemon/mcp_client.h"
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
@@ -26,6 +26,7 @@
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/model_name_utils.h"
 #include "lemon/utils/path_utils.h"
+#include "lemon/utils/session_utils.h"
 #include "lemon/streaming_proxy.h"
 #include "lemon/logging_config.h"
 #include "lemon/thinking_controls.h"
@@ -392,6 +393,8 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     alias_manager_ = std::make_unique<AliasManager>(cache_dir_);
     model_manager_ = std::make_unique<ModelManager>(config_->extra_models_dir());
     model_manager_->set_cloud_registry(cloud_registry_.get());
+    model_manager_->set_default_model_source_provider(
+        [this]() { return config_->default_model_source(); });
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
@@ -940,80 +943,20 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     telemetry::g_incoming_client_id.clear();
     telemetry::g_incoming_session_id.clear();
 
-    auto trim = [](const std::string& str) -> std::string {
-        size_t s = str.find_first_not_of(" \t\r\n");
-        if (s == std::string::npos) return "";
-        size_t e = str.find_last_not_of(" \t\r\n");
-        return str.substr(s, e - s + 1);
-    };
-
-    std::string client_val;
-    if (config_) {
-        for (const auto& hdr : config_->telemetry_session_headers_client()) {
-            std::string cleaned_hdr = trim(hdr);
-            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
-                std::string val = trim(req.get_header_value(cleaned_hdr));
-                if (!val.empty()) {
-                    client_val = val;
-                    break;
-                }
-            }
-        }
-    }
-    if (client_val.empty()) {
-        static const char* kWellKnownClientHeaders[] = {
-            "x-opencode-client",
-            "x-client-id",
-            "x-client-name"
-        };
-        for (const char* hdr : kWellKnownClientHeaders) {
-            if (req.has_header(hdr)) {
-                std::string val = trim(req.get_header_value(hdr));
-                if (!val.empty()) {
-                    client_val = val;
-                    break;
-                }
-            }
-        }
+    session::SessionContext telemetry_session = config_
+        ? session::resolve_session_context(
+              req,
+              config_->telemetry_session_headers_id(),
+              config_->telemetry_session_headers_client())
+        : session::resolve_session_context(req, {}, {});
+    if (!telemetry_session.session_id.empty()) {
+        telemetry::g_incoming_client_id = telemetry_session.client_id;
+        telemetry::g_incoming_session_id = telemetry_session.session_id;
     }
 
-    std::string session_val;
-    if (config_) {
-        for (const auto& hdr : config_->telemetry_session_headers_id()) {
-            std::string cleaned_hdr = trim(hdr);
-            if (!cleaned_hdr.empty() && req.has_header(cleaned_hdr)) {
-                std::string val = trim(req.get_header_value(cleaned_hdr));
-                if (!val.empty()) {
-                    session_val = val;
-                    break;
-                }
-            }
-        }
-    }
-    if (session_val.empty()) {
-        static const char* kWellKnownSessionHeaders[] = {
-            "x-opencode-session",
-            "x-session-id",
-            "x-client-session-id",
-            "mcp-session-id",
-            "x-conversation-id",
-            "session-id"
-        };
-        for (const char* hdr : kWellKnownSessionHeaders) {
-            if (req.has_header(hdr)) {
-                std::string val = trim(req.get_header_value(hdr));
-                if (!val.empty()) {
-                    session_val = val;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (!session_val.empty()) {
-        telemetry::g_incoming_client_id = client_val;
-        telemetry::g_incoming_session_id = session_val;
-    }
+    // Reset every request so a reused worker thread can't leak the prior
+    // caller's session to a cloud provider.
+    session::g_request_session = session::resolve_forwardable_session(req);
 
     // Check if path requires authentication (API routes and internal endpoints).
     // /mcp is included here so that LEMONADE_API_KEY enforcement covers the MCP
@@ -1036,9 +979,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
     //   when LEMONADE_ADMIN_API_KEY is unset, admin_api_key_ == api_key_, so the
     //   regular key also authenticates against /internal/*.
     // - If api_key_ is empty, the regular endpoints require no authentication.
-    // - If admin_api_key_ is empty (neither key set), legacy /internal/* routes
-    //   require no authentication. The MCP process-launch surface is deliberately
-    //   fail-closed and requires an explicitly configured admin key.
+    // - If admin_api_key_ is empty (neither key set), /internal/* requires none.
 
     // Safely extract bearer token, guarding against malformed Authorization headers
     std::string auth_token;
@@ -1057,23 +998,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
     telemetry::g_current_auth_token = auth_token;
 
-    const bool is_mcp_internal_route =
-        req.path == "/internal/mcp" ||
-        req.path.rfind("/internal/mcp/", 0) == 0;
-
     if (is_internal_route) {
-        // MCP server registration can launch arbitrary local processes. Do not
-        // expose that capability on a keyless server, even on loopback: permissive
-        // CORS would otherwise let an unrelated web page drive these endpoints.
-        // Apply this to OPTIONS as well so a browser preflight fails closed.
-        if (is_mcp_internal_route && admin_api_key_.empty()) {
-            res.status = 403;
-            res.set_content(
-                "{\"error\": \"MCP administration requires LEMONADE_ADMIN_API_KEY or LEMONADE_API_KEY\"}",
-                "application/json");
-            return httplib::Server::HandlerResponse::Handled;
-        }
-
         // Internal routes require admin key authentication
         if (!admin_api_key_.empty() && req.method != "OPTIONS") {
             if (auth_token != admin_api_key_) {
@@ -1189,6 +1114,18 @@ void Server::setup_routes(httplib::Server &web_server) {
     register_get("health", [this](const httplib::Request& req, httplib::Response& res) {
         handle_health(req, res);
     });
+
+    // API reference bundled with the server. The index is fetched first; each entry
+    // carries the URL of the document, so clients never build doc paths themselves.
+    register_get("docs", [this](const httplib::Request& req, httplib::Response& res) {
+        handle_docs(req, res);
+    });
+    for (const char* prefix : {"/api/v0", "/api/v1", "/v0", "/v1"}) {
+        web_server.Get(std::string(prefix) + R"(/docs/(.+))",
+                       [this](const httplib::Request& req, httplib::Response& res) {
+            handle_doc_page(req, res);
+        });
+    }
 
     // Models endpoints
     register_get("models", [this](const httplib::Request& req, httplib::Response& res) {
@@ -1484,11 +1421,6 @@ void Server::setup_routes(httplib::Server &web_server) {
         handle_aliases_remove(req, res);
     });
 
-    // Server-side MCP client host foundation (admin-gated through the existing
-    // /internal/* pre-routing auth). GUI3 and the web UI can both use these
-    // endpoints via the normal Lemonade server connection.
-    register_mcp_client_routes(web_server, cache_dir_, config_dir_);
-
     // Cloud auth: register quad-prefix POST and a parameterized DELETE.
     //   POST /v1/cloud/auth        body: {provider, api_key}
     //   DELETE /v1/cloud/auth/{p}
@@ -1566,8 +1498,12 @@ void Server::setup_static_files(httplib::Server &web_server) {
                 {"recipe", info.recipe},
                 {"labels", info.labels},
                 {"suggested", info.suggested},
-                {"source", info.source.empty() ? info.registry_source : info.source},
-                {"registry_source", info.registry_source},
+                {"source", info.source.empty()
+                    ? remote_registry_source_name(
+                        parse_remote_registry_source(info.registry_source))
+                    : info.source},
+                {"registry_source", remote_registry_source_name(
+                    parse_remote_registry_source(info.registry_source))},
                 {"components", public_components},
                 {"mmproj", info.mmproj()}
             };
@@ -1834,10 +1770,9 @@ window.api = {
             std::string file_path = req.matches[1].str();
             serve_web_app_asset(req, res, file_path);
         });
-
         // SPA fallback: serve index.html for any unmatched GET routes that don't start with /api, /v0, /v1, /static, or /live
         // This enables client-side routing
-        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal).*)",
+        web_server.Get(R"(^(?!/api|/v0|/v1|/static|/live|/status|/internal|/docs(/|$)).*)",
                       [serve_web_app_html](const httplib::Request& req, httplib::Response& res) {
             // Only serve index.html if the path doesn't look like a file with extension
             std::string path = req.path;
@@ -1880,6 +1815,13 @@ window.api = {
             }
         });
     }
+
+    auto docs_not_found = [](const httplib::Request&, httplib::Response& res) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Not Found. For API documentation, use /v1/docs.\"}", "application/json");
+    };
+    web_server.Get("/docs", docs_not_found);
+    web_server.Get(R"(/docs/(.*))", docs_not_found);
 
     // Override default headers for static files to include no-cache
     // This ensures the web UI always gets the latest version
@@ -2078,10 +2020,9 @@ void Server::run() {
             LOG(WARNING, "Server")
                 << "Serving on non-loopback host '" << bound_host
                 << "' without an API key. All endpoints, including the /internal/* "
-                   "control endpoints and the /internal/mcp/* process-launch endpoints, "
-                   "are reachable from other machines unauthenticated. Set "
-                   "LEMONADE_API_KEY to secure all endpoints; LEMONADE_ADMIN_API_KEY "
-                   "on its own only secures the /internal/* "
+                   "control endpoints, are reachable from other machines "
+                   "unauthenticated. Set LEMONADE_API_KEY to secure all endpoints; "
+                   "LEMONADE_ADMIN_API_KEY on its own only secures the /internal/* "
                    "control endpoints." << std::endl;
         } else if (api_key_.empty()) {
             LOG(WARNING, "Server")
@@ -2661,6 +2602,45 @@ void Server::handle_live(const httplib::Request& req, httplib::Response& res) {
     res.status = 200;
 }
 
+void Server::handle_docs(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    // Echo back the prefix the client used so the URLs stay valid on all four.
+    std::string prefix = req.path.substr(0, req.path.size() - std::string("/docs").size());
+
+    nlohmann::json docs = nlohmann::json::array();
+    for (const ApiDoc& doc : list_api_docs(docs_dir)) {
+        docs.push_back({
+            {"id", doc.id},
+            {"title", doc.title},
+            {"url", prefix + "/docs/" + doc.id},
+            {"bytes", doc.bytes}
+        });
+    }
+
+    nlohmann::json body = {
+        {"version", LEMON_VERSION_STRING},
+        {"format", "text/markdown"},
+        {"docs", docs}
+    };
+    res.set_content(body.dump(2), "application/json");
+    res.status = 200;
+}
+
+void Server::handle_doc_page(const httplib::Request& req, httplib::Response& res) {
+    std::string docs_dir = utils::get_resource_path("resources/docs");
+
+    std::string content;
+    if (!read_api_doc(docs_dir, req.matches[1].str(), content)) {
+        res.status = 404;
+        res.set_content("{\"error\": \"Documentation page not found\"}", "application/json");
+        return;
+    }
+
+    res.set_content(content, "text/markdown");
+    res.status = 200;
+}
+
 void Server::handle_model_update_check(const httplib::Request& req, httplib::Response& res) {
     (void)req;
 
@@ -3208,8 +3188,12 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         {"downloaded", info.downloaded},
         {"update_available", info.update_available},
         {"suggested", info.suggested},
-        {"source", info.source.empty() ? info.registry_source : info.source},
-        {"registry_source", info.registry_source},
+        {"source", info.source.empty()
+            ? remote_registry_source_name(
+                parse_remote_registry_source(info.registry_source))
+            : info.source},
+        {"registry_source", remote_registry_source_name(
+            parse_remote_registry_source(info.registry_source))},
         {"labels", info.labels},
         {"components", public_components},
         {"recipe_options", info.recipe_options.to_json()},
@@ -5889,6 +5873,11 @@ void Server::handle_pull(const httplib::Request& req, httplib::Response& res) {
         nlohmann::json download_request = collection_file_import
             ? request_json
             : nlohmann::json::object();
+        for (const char* field : {"source", "registry_source"}) {
+            if (request_json.contains(field)) {
+                download_request[field] = request_json[field];
+            }
+        }
 
         if (stream) {
             auto operation = [this, model_name, download_request, do_not_upgrade](DownloadProgressCallback progress_cb) {

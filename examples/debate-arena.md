@@ -8,7 +8,7 @@ Debate Arena is a single-file HTML/CSS/JS web app that pits up to 9 LLMs against
 2. Configure the server to support 9 concurrent model instances. Use one of:
    - **Persistent config**: Set `"max_loaded_models": 9` in `config.json`
    - **Runtime API**: `POST` to `/internal/set` with `{"max_loaded_models": 9}`
-3. Download https://github.com/lemonade-sdk/lemonade/blob/main/examples/llm-debate.html and open it in your web browser
+3. Download https://github.com/lemonade-sdk/lemonade/blob/main/examples/llm-debate.html, run `python3 -m http.server 8080` in the folder where you saved it, and open http://localhost:8080/llm-debate.html in your web browser (opening the file directly from disk is blocked by the server's default `allowed_origins`)
 4. You can uncheck some models to save VRAM. Running all 9 requires ~32 GB.
 
 ### How it works

@@ -231,6 +231,10 @@ Voice design is opt-in through the `voice_design_description` extension and is n
 
 `MOSS-SoundEffect` uses the same recipe but is an audio-generation model: `audio_generations()` forwards to the backend's `/sfx` endpoint, accepting `duration`/`cfg` as aliases for `seconds`/`cfg_scale`.
 
+### llama.cpp (`llamacpp`)
+
+Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
+
 ### Model downloads
 
 A checkpoint file can be reached twice during a registry download: once because the backend's `select_checkpoint_files` claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS `.extras.gguf` sidecars are both). The same bytes either way, so `download_from_registry` collapses duplicates before counting, or the progress total overshoots.
