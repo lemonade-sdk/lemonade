@@ -7,6 +7,7 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/session_utils.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -457,7 +458,8 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
         return missing_creds_error();
     }
     std::string url = upstream_url(creds.base_url, path);
-    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
 
     try {
         auto response = utils::HttpClient::post(
@@ -615,7 +617,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     std::string url = upstream_url(creds.base_url, endpoint);
 
-    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
 
     try {
         if (sse) {

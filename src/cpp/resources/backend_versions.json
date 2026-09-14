@@ -49,8 +49,8 @@
         }
       },
       "ROCm/ggml-staging-automation": {
-        "hrx-b59": {
-          "llama-hrx-b59-bin-manylinux-hrx-x64.tar.gz": "sha256:d2fe01432c372ae4382678cb80542a0c5c80a8e3862c52b3d94e77e81062f1b7"
+        "hrx-b69": {
+          "llama-hrx-b69-bin-manylinux-hrx-x64.tar.gz": "sha256:e82b6bc6ec896afcf32dfa99e75ecaffa9b0470ac35c3ae8939f05c5cfb8a87c"
         }
       }
     }
@@ -64,7 +64,7 @@
     "cpu": "b10723"
   },
   "llamacpp-hrx": {
-    "hrx": "hrx-b59"
+    "hrx": "hrx-b69"
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -74,11 +74,11 @@
     "metal": "v1.8.4"
   },
   "sd-cpp": {
-    "cpu": "master-827-97d2990",
-    "rocm-stable": "master-827-97d2990",
-    "vulkan": "master-827-97d2990",
-    "cuda": "master-827-e2329c3",
-    "metal": "master-827-97d2990"
+    "cpu": "master-843-462d675",
+    "rocm-stable": "master-843-462d675",
+    "vulkan": "master-843-462d675",
+    "cuda": "master-841-017cc8e",
+    "metal": "master-843-462d675"
   },
   "ds4": {
     "rocm": "b0001"
@@ -146,7 +146,7 @@
     "npu": "v1.7.0"
   },
   "flm": {
-    "npu": "v1.0.3"
+    "npu": "v1.0.5"
   },
   "kokoro": {
     "cpu": "b17",

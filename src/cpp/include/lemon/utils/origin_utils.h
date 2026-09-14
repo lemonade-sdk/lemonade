@@ -6,6 +6,7 @@
 #include <cctype>
 #include <chrono>
 #include <mutex>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -33,6 +34,7 @@ struct Origin {
     std::string scheme;
     std::string host;
     int port = -1;
+    bool wildcard_port = false;
 
     bool is_valid() const {
         return !host.empty();
@@ -56,31 +58,62 @@ struct Origin {
             return false;
         }
 
-        if (host != pattern.host) {
+        static const std::regex wildcard_domain_regex(R"(^\*\.(.+)$)");
+        std::smatch match;
+
+        if (pattern.host == "*") {
+            // Universal host wildcard
+        } else if (std::regex_match(pattern.host, match, wildcard_domain_regex)) {
+            std::string suffix = "." + match[1].str();
+            if (host.size() <= suffix.size() || host.compare(host.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                return false;
+            }
+        } else if (host != pattern.host) {
             return false;
         }
 
-        if (get_effective_port() != pattern.get_effective_port()) {
-            return false;
-        }
-
-        return true;
+        return pattern.wildcard_port || get_effective_port() == pattern.get_effective_port();
     }
 };
+
+inline std::string trim(std::string s) {
+    s.erase(0, s.find_first_not_of(" \t\r\n"));
+    if (!s.empty()) {
+        s.erase(s.find_last_not_of(" \t\r\n") + 1);
+    }
+    return s;
+}
 
 inline std::string to_lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
     return s;
 }
 
+inline bool parse_port(const std::string& port_str, Origin& out) {
+    static const std::regex port_regex(R"(^(\*|[0-9]{1,5})$)");
+    std::smatch match;
+    if (!std::regex_match(port_str, match, port_regex)) {
+        return false;
+    }
+    if (match[1] == "*") {
+        out.wildcard_port = true;
+        return true;
+    }
+    try {
+        long long p = std::stoll(match[1].str());
+        if (p < 0 || p > 65535) {
+            return false;
+        }
+        out.port = static_cast<int>(p);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
 inline Origin parse_origin(const std::string& origin_str) {
     Origin out;
-    std::string str = origin_str;
-
-    str.erase(0, str.find_first_not_of(" \t\r\n"));
-    if (!str.empty()) {
-        str.erase(str.find_last_not_of(" \t\r\n") + 1);
-    }
+    std::string str = trim(origin_str);
 
     if (str.empty()) {
         return out;
@@ -132,47 +165,17 @@ inline Origin parse_origin(const std::string& origin_str) {
         out.host = "[" + to_lower(raw_ipv6) + "]";
         std::string rest = host_and_port.substr(bracket_end + 1);
         if (!rest.empty()) {
-            if (rest[0] == ':') {
-                std::string port_str = rest.substr(1);
-                if (port_str.empty() || !std::all_of(port_str.begin(), port_str.end(), [](unsigned char c) { return std::isdigit(c); })) {
-                    return Origin{};
-                }
-                try {
-                    size_t idx = 0;
-                    long long p = std::stoll(port_str, &idx);
-                    if (idx != port_str.size() || p < 0 || p > 65535) {
-                        return Origin{};
-                    }
-                    out.port = static_cast<int>(p);
-                } catch (...) {
-                    return Origin{};
-                }
-            } else {
+            if (rest[0] != ':' || !parse_port(rest.substr(1), out)) {
                 return Origin{};
             }
         }
     } else {
         size_t first_colon = host_and_port.find(':');
         size_t last_colon = host_and_port.find_last_of(':');
-        if (last_colon != std::string::npos) {
-            if (first_colon == last_colon) {
-                out.host = to_lower(host_and_port.substr(0, last_colon));
-                std::string port_str = host_and_port.substr(last_colon + 1);
-                if (port_str.empty() || !std::all_of(port_str.begin(), port_str.end(), [](unsigned char c) { return std::isdigit(c); })) {
-                    return Origin{};
-                }
-                try {
-                    size_t idx = 0;
-                    long long p = std::stoll(port_str, &idx);
-                    if (idx != port_str.size() || p < 0 || p > 65535) {
-                        return Origin{};
-                    }
-                    out.port = static_cast<int>(p);
-                } catch (...) {
-                    return Origin{};
-                }
-            } else {
-                out.host = to_lower(host_and_port);
+        if (last_colon != std::string::npos && first_colon == last_colon) {
+            out.host = to_lower(host_and_port.substr(0, last_colon));
+            if (!parse_port(host_and_port.substr(last_colon + 1), out)) {
+                return Origin{};
             }
         } else {
             out.host = to_lower(host_and_port);
@@ -402,9 +405,9 @@ inline bool is_origin_allowed(
         std::stringstream ss(allowed_origins);
         std::string item;
         while (std::getline(ss, item, ',')) {
-            item.erase(0, item.find_first_not_of(" \t\r\n"));
-            if (!item.empty()) {
-                item.erase(item.find_last_not_of(" \t\r\n") + 1);
+            item = trim(item);
+            if (item.empty()) {
+                continue;
             }
             const bool is_opaque_null = request_origin.scheme.empty() && request_origin.host == "null" && request_origin.port == -1;
             if (to_lower(item) == "null" && is_opaque_null) {
