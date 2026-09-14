@@ -25,6 +25,7 @@ Usage::
     version = get_version(repo_root)
 """
 
+import argparse
 import datetime
 import os
 import re
@@ -110,7 +111,6 @@ def upcoming_release_week(now):
 
 
 def release_branch_name(now):
-    """Name of the release branch for the most recent Wednesday 19:00 UTC cutoff."""
     days_since_wednesday = (now.weekday() - 2) % 7
     cutoff = (now - datetime.timedelta(days=days_since_wednesday)).replace(
         hour=19, minute=0, second=0, microsecond=0
@@ -159,7 +159,17 @@ def get_version(repo, now=None, branch=None, head="HEAD"):
 
 
 def main():
-    if "--release-branch" in sys.argv[1:]:
+    parser = argparse.ArgumentParser(
+        description="Compute the Lemonade version string from git state."
+    )
+    parser.add_argument(
+        "--release-branch",
+        action="store_true",
+        help="print the release branch name for the most recent Wednesday cutoff",
+    )
+    args = parser.parse_args()
+
+    if args.release_branch:
         print(release_branch_name(datetime.datetime.now(datetime.timezone.utc)))
         return 0
 
