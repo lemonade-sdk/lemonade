@@ -278,6 +278,10 @@ public:
     // (e.g. routing CostServices). Returns nullopt when the name is unknown.
     std::optional<ModelInfo> try_get_model_info(const std::string& model_name) const;
 
+    // Current registry-change generation, for the same seams: a cache keyed on
+    // it stays valid until a model is added, edited or removed.
+    uint64_t registry_generation() const;
+
     // Test hooks
     void simulate_vram_pressure(double pct);
 
