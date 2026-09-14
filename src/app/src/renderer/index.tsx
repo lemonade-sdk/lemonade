@@ -1,15 +1,19 @@
-import './tauriShim';
+import { isTauri } from './tauriShim';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { getMobileStoreUrl } from './utils/mobileStoreRedirect';
 import '../../assets/favicon.ico';
 
-// Detect mobile user agents and redirect to appropriate app store
 const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
-if (/android/i.test(userAgent)) {
-  window.location.href = 'https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai';
-} else if (/iPad|iPhone|iPod/.test(userAgent) && !(window as any).MSStream) {
-  window.location.href = 'https://apps.apple.com/ca/app/lemonade-mobile/id6757372210';
+const mobileStoreUrl = getMobileStoreUrl(
+  userAgent,
+  isTauri(),
+  Boolean((window as any).MSStream),
+);
+
+if (mobileStoreUrl) {
+  window.location.href = mobileStoreUrl;
 } else {
   const root = ReactDOM.createRoot(
     document.getElementById('root') as HTMLElement
