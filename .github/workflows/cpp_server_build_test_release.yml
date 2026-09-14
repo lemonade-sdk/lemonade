@@ -679,6 +679,9 @@ jobs:
           clean: true
           fetch-depth: 0
 
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$(pwd)"
+
       - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
