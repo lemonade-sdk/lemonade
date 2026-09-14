@@ -15,8 +15,11 @@ runs:
 
         if command -v python3 >/dev/null 2>&1; then
           PYTHON=python3
-        else
+        elif command -v python >/dev/null 2>&1; then
           PYTHON=python
+        else
+          echo "ERROR: Python is required to determine the Lemonade version"
+          exit 1
         fi
         VERSION=$("$PYTHON" tools/version.py)
 

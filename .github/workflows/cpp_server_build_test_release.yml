@@ -453,6 +453,8 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
@@ -504,11 +506,11 @@ jobs:
       - name: Enable Trixie backports
         run: |
           echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
-      - name: Install git
+      - name: Install bootstrap dependencies
         run: |
           set -e
           apt-get update
-          apt-get install -y git
+          apt-get install -y git python3
       - name: Install from backports
         run: |
           set -e
@@ -675,7 +677,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          dnf install -y rpm-build
+          dnf install -y python3 rpm-build
 
       - name: Get Lemonade version
         id: get_version
