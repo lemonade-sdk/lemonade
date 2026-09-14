@@ -2,6 +2,8 @@
 
 A native desktop GUI for interacting with the Lemonade Server.
 
+For the end-user workflow, see the [GUI3 app guide](../guide/gui3.md).
+
 ## Overview
 
 This app provides a native desktop experience for managing models and chatting with LLMs running on `lemond`. It connects to the server via HTTP API and offers a modern, resizable panel-based interface.
@@ -12,8 +14,8 @@ It is built with **Tauri v2**, which embeds the operating system's native webvie
 - Model management (list, pull, load/unload)
 - Chat interface with markdown/code rendering and LaTeX support
 - Real-time server log viewer
-- Persistent layout and inference settings
-- Custom frameless window with zoom controls
+- Persistent client preferences and server-owned model load settings
+- Custom frameless window controls
 - `lemonade://` deep-link protocol handler
 - UDP beacon discovery to find a running `lemond` server on the local machine
 
@@ -23,9 +25,27 @@ The Tauri desktop app is a **thin client** for a separately-running `lemond` ser
 
 Consequences that callers of this code need to know about:
 
-- **Per-client local state.** All user-tunable state (inference params, layout sizes, zoom, base URL, API key) lives in `~/.config/lemonade/app_settings.json` on the client, owned by the Rust host (`src-tauri/src/settings.rs`). It is **never** stored or proxied through `lemond`, because two clients against the same server must be able to hold different preferences.
+- **Per-client local state.** Layout sizes, theme, base URL, an optionally remembered API key, chat history, and request-time chat sampling belong to the GUI client. Native host settings live in `~/.config/lemonade/app_settings.json`; browser-capable preferences use scoped web storage.
+- **Server-owned configuration.** Persistent per-model load options from **Models > Configuration**, memory and eviction settings, model directories, and cloud-provider definitions are read from and written to `lemond`. Multiple clients connected to one server therefore share them. Cloud API keys remain environment-backed or ephemeral in server memory and are never written to `config.json`.
 - **The desktop app does not manage `lemond`'s lifecycle.** The server is started independently — on Windows by `LemonadeServer.exe` (auto-started via the startup folder, tray icon always visible), on Linux/macOS by the user or a service. The Tauri app is opened on demand and must not add itself to autostart, spawn `lemond` as a subprocess, or assume `lemond` is on the same machine.
 - **Discovery is best-effort local + explicit remote.** `beacon.rs` listens for a UDP broadcast emitted by a local `lemond` to auto-populate the base URL. For remote-server use, the user sets `baseURL` + `apiKey` in settings and the client talks to that endpoint directly.
+
+## Publishing GUI3 Beta packages
+
+The manual [`GUI3 Beta Build`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/gui3_beta_build.yml)
+workflow builds Windows, macOS, and Linux packages. Run it from the branch
+that should be tested, set **Publish the GUI-only packages as a GitHub
+prerelease** to `true`, and optionally change the artifact label. The workflow
+uploads short-lived Actions artifacts for every run and, when publishing is
+enabled, creates a numbered GitHub prerelease containing only the GUI-only
+packages.
+
+The published packages intentionally exclude `lemond`, the CLI, and model
+resources. This lets testers extract the package beside an existing Lemonade
+installation without replacing its server or competing for port `13305`. The
+beta GUI still talks to that existing server, so server-owned changes are
+shared; use a separate server process and port only when an isolated test
+environment is required.
 
 ## Code Structure
 
@@ -37,17 +57,16 @@ src/app/
 ├── assets/                        # Icons, logos
 │
 ├── src/
-│   ├── global.d.ts                # window.api type declaration
-│   └── renderer/                  # React UI (TypeScript)
-│       ├── index.tsx              # Renderer entry (imports tauriShim first)
-│       ├── tauriShim.ts           # Installs window.api → Tauri invoke() bridge
-│       ├── App.tsx                # Root component, layout orchestration
-│       ├── TitleBar.tsx           # Custom window controls
-│       ├── ModelManager.tsx       # Model list and actions
-│       ├── ChatWindow.tsx         # LLM chat interface
-│       ├── LogsWindow.tsx         # Server log viewer
-│       ├── SettingsPanel.tsx      # Inference parameters
-│       └── utils/                 # API helpers and config
+│   ├── index.tsx                  # Renderer entry (imports tauriShim first)
+│   ├── tauriShim.ts               # Installs window.api → Tauri invoke() bridge
+│   ├── App.tsx                    # Root component and workspace orchestration
+│   ├── api.ts                     # HTTP client and normalized server state
+│   ├── modelConfiguration.ts      # Client sampling and load-option resolution
+│   ├── components/                # Chat, Models, Backends, Monitor, Settings
+│   ├── features/                  # Feature-specific state and helpers
+│   ├── hooks/                     # Shared React hooks
+│   ├── styles/                    # Tokens and renderer styles
+│   └── tools/                     # MCP and Omni tool definitions
 │
 └── src-tauri/                     # Rust host (Tauri backend)
     ├── Cargo.toml                 # Rust dependencies
@@ -66,7 +85,7 @@ src/app/
         └── webview_shim.rs        # Per-platform webview hooks (mic permission, link interception)
 ```
 
-> `/health`, `/system-stats`, and `/system-info` are NOT proxied through Rust. The renderer fetches them directly via `serverConfig.fetch(...)`; see `StatusBar.tsx` and `AboutModal.tsx`.
+> Server API calls are not proxied through Rust. The renderer uses `api.ts` to call the configured `lemond` endpoint directly; `App.tsx` owns the shared health, model, and system-information lifecycle.
 
 ## Architecture
 
@@ -134,18 +153,7 @@ npm run watch:renderer         # Webpack watch mode for the renderer only
 
 ## Testing custom Omni Models
 
-The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app)) has both an automated smoke test and a manual checklist.
-
-### Automated unit test
-
-A focused Node-based smoke test exercises the custom Omni Model utility layer without starting Tauri or the Lemonade server:
-
-```bash
-cd src/app
-npm run test:custom-collections
-```
-
-It uses the helpers in [`src/app/src/renderer/utils/customCollections.ts`](https://github.com/lemonade-sdk/lemonade/blob/main/src/app/src/renderer/utils/customCollections.ts) to verify that Omni Models can be saved, edited, imported, exported, and filtered by compatible component role.
+The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app)) is implemented by `src/components/ModelManager.tsx` and `src/features/customModels/customModelStore.ts`.
 
 ### Manual desktop smoke test
 
@@ -154,8 +162,8 @@ Use the desktop app to verify the user-facing flow end to end:
 1. Start the Lemonade desktop app.
 2. Download at least one chat-capable LLM in **Model Manager**.
 3. Optionally download one image model, one edit-capable image model, one vision model, one transcription model, and one speech model.
-4. From the menu bar, choose **File > New Omni Model > Manually**.
-5. Save an Omni Model with only an LLM and verify it appears as `user.<name>` in the chat model picker.
+4. Open **Models**, select **Open custom models**, and choose **Omni Collection**.
+5. Save an Omni Collection with only a planner LLM and verify it appears as `user.<name>` in the chat model picker.
 6. Edit the Omni Model to add optional role models and save again.
 7. Select the Omni Model in chat and run prompts that trigger the configured tools, such as image generation, speech synthesis, audio transcription, or image analysis.
 8. Export the Omni Model JSON, delete the Omni Model, import the JSON, and verify it reappears.

@@ -14,6 +14,8 @@ Lemonade runs as a [lightweight local service](./concepts.md) on your computer a
 
 The simplest way to experience Lemonade is to explore the built-in GUI, which helps you manage models and try them out.
 
+See the [GUI3 app guide](./gui3.md) for the current desktop and browser layout, model workflow, chat experience, monitoring tools, and connection settings.
+
 === "Windows"
 
     Click the 🍋 tray icon and select Open Lemonade App.

@@ -8,6 +8,11 @@ on:
         required: false
         default: "beta"
         type: string
+      publish_release:
+        description: "Publish the GUI-only packages as a GitHub prerelease."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -159,6 +164,25 @@ jobs:
             Copy-Item "lemonade-server-minimal.msi" "artifacts\lemonade-server-${env:BUILD_LABEL}-windows-x64.msi"
           }
 
+          if (-not (Test-Path "build\app\lemonade-app.exe")) {
+            Write-Host "ERROR: build\app\lemonade-app.exe not found." -ForegroundColor Red
+            exit 1
+          }
+
+          $guiDir = "artifacts\lemonade-gui3-beta-${env:BUILD_LABEL}-windows-x64"
+          New-Item -ItemType Directory -Force -Path $guiDir | Out-Null
+          Copy-Item "build\app\lemonade-app.exe" "$guiDir\lemonade-app.exe"
+          @"
+          GUI3 Beta is a client-only package.
+
+          Keep your existing Lemonade Server or LemonadeServer.exe running.
+          Launch lemonade-app.exe from this folder; it connects to that server.
+          Do not install the beta server MSI alongside an existing installation.
+          "@ | Set-Content "$guiDir\README.txt"
+          Compress-Archive -Path "$guiDir\*" `
+            -DestinationPath "artifacts\lemonade-gui3-beta-${env:BUILD_LABEL}-windows-x64.zip" `
+            -Force
+
           Get-ChildItem artifacts | Format-Table Name, Length
 
       - name: Upload Windows beta artifacts
@@ -221,6 +245,20 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             artifacts/lemonade-${BUILD_LABEL}-macos \
             artifacts/lemonade-${BUILD_LABEL}-macos.zip
+
+          gui_dir="artifacts/lemonade-gui3-beta-${BUILD_LABEL}-macos"
+          mkdir -p "$gui_dir"
+          cp -R build/app/lemonade-app.app "$gui_dir/"
+          cat > "$gui_dir/README.txt" <<'EOF'
+          GUI3 Beta is a client-only package.
+
+          Keep your existing Lemonade Server running and launch Lemonade App
+          from this folder. Do not install a beta server package alongside an
+          existing installation.
+          EOF
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$gui_dir" \
+            "artifacts/lemonade-gui3-beta-${BUILD_LABEL}-macos.zip"
 
           ls -lh artifacts
 
@@ -293,6 +331,20 @@ jobs:
           cp -R build/resources artifacts/lemonade-${BUILD_LABEL}-linux-x64/
 
           tar -C artifacts -czf artifacts/lemonade-${BUILD_LABEL}-linux-x64.tar.gz lemonade-${BUILD_LABEL}-linux-x64
+
+          gui_dir="artifacts/lemonade-gui3-beta-${BUILD_LABEL}-linux-x64"
+          mkdir -p "$gui_dir"
+          cp build/app/lemonade-app "$gui_dir/"
+          cat > "$gui_dir/README.txt" <<'EOF'
+          GUI3 Beta is a client-only package.
+
+          Keep your existing Lemonade Server running and launch lemonade-app
+          from this folder. Do not start a second server on the same port.
+          EOF
+          tar -C artifacts -czf \
+            "artifacts/lemonade-gui3-beta-${BUILD_LABEL}-linux-x64.tar.gz" \
+            "lemonade-gui3-beta-${BUILD_LABEL}-linux-x64"
+
           ls -lh artifacts
 
       - name: Upload Linux beta artifact
@@ -301,3 +353,48 @@ jobs:
           name: lemonade-${{ env.BUILD_LABEL }}-linux-x64
           path: artifacts/lemonade-${{ env.BUILD_LABEL }}-linux-x64.tar.gz
           retention-days: 14
+
+  publish-gui3-beta:
+    name: Publish GUI3 Beta prerelease
+    if: inputs.publish_release == true
+    needs:
+      - build-beta-windows
+      - build-beta-macos
+      - build-beta-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download GUI3 beta build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: lemonade-${{ env.BUILD_LABEL }}-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Collect GUI-only release packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          find release-assets -type f -name 'lemonade-gui3-beta-*' -exec cp {} . \;
+          ls -lh lemonade-gui3-beta-*
+
+      - name: Create GUI3 Beta GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gui3-beta-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: GUI3 Beta ${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          generate_release_notes: false
+          body: |
+            GUI3 Beta client packages for testing.
+
+            These packages contain the GUI only. Keep an existing Lemonade Server or LemonadeServer.exe running and launch the GUI package from an extracted folder. Do not install the beta server MSI alongside an existing Lemonade installation.
+
+            The GUI connects to the server's configured endpoint, normally `http://127.0.0.1:13305`. Changes to models and server settings are shared with every client connected to that server.
+          files: |
+            lemonade-gui3-beta-*
+          fail_on_unmatched_files: true
