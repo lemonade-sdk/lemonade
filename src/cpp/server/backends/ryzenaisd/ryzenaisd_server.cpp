@@ -245,7 +245,7 @@ void RyzenAISDServer::load(const std::string& model_name,
         false,        // filter_health_logs
         env_vars
     );
-    set_process_handle(handle);
+    set_process_handle(handle, process_exe_path, args);
 
     if (!has_process_handle(handle)) {
         throw std::runtime_error("Failed to start ryzenai-sd-server process");

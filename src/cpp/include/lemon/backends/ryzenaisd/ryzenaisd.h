@@ -35,9 +35,9 @@ inline const BackendDescriptor descriptor = {
         // Windows-only: AMD NPU (XDNA / Strix)
         {"npu", {"windows"}, {{"amd_npu", {}}}, "AMD Ryzen AI NPU (XDNA)"},
     },
-    /*default_labels*/  {"image"},
+    /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Image generation",
+    /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "ryzenai-sd",
     /*rocm_channels*/   {},
