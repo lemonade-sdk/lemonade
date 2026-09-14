@@ -421,6 +421,54 @@ class McpGatewayTests(ServerTestBase):
         # Some tiny test models emit empty strings — just assert the shape.
         self.assertIsInstance(content[0]["text"], str)
 
+    def test_031_chat_tool_resolves_a_model_alias(self):
+        """An alias must work as the `model` argument, as it does on the REST endpoints."""
+        alias = f"mcp-alias-{uuid.uuid4().hex[:8]}"
+        base = f"http://localhost:{PORT}"
+
+        registered = requests.post(
+            f"{base}/internal/aliases",
+            json={"alias": alias, "target": ENDPOINT_TEST_MODEL},
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            registered.status_code,
+            200,
+            msg=f"could not register alias: {registered.text[:200]}",
+        )
+        self.addCleanup(
+            requests.delete,
+            f"{base}/internal/aliases/{alias}",
+            headers=_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_chat",
+                    "arguments": {
+                        "model": alias,
+                        "messages": [
+                            {"role": "user", "content": "Say hello in 3 words."},
+                        ],
+                        "max_tokens": 16,
+                    },
+                },
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        body = response.json()
+        self.assertNotIn("error", body, msg=str(body))
+        self.assertFalse(
+            body["result"]["isError"],
+            msg=f"alias was not resolved: {body['result']}",
+        )
+
 
 if __name__ == "__main__":
     run_server_tests(McpGatewayTests, description="MCP GATEWAY TESTS")
