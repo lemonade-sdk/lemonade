@@ -25,7 +25,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import requests  # noqa: E402
 
-from utils.server_base import ServerTestBase, run_server_tests  # noqa: E402
+from utils.server_base import (  # noqa: E402
+    ServerTestBase,
+    run_server_tests,
+)
+from utils.server_base import _auth_headers as _admin_auth_headers  # noqa: E402
 from utils.test_models import (  # noqa: E402
     ENDPOINT_TEST_MODEL,
     PORT,
@@ -420,6 +424,47 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(content[0]["type"], "text")
         # Some tiny test models emit empty strings — just assert the shape.
         self.assertIsInstance(content[0]["text"], str)
+
+    def test_031_chat_tool_resolves_alias(self):
+        """An explicit `model` argument must be resolved through aliases."""
+        alias_name = "test-mcp-alias"
+        internal_url = f"http://localhost:{PORT}/internal"
+
+        add_res = requests.post(
+            f"{internal_url}/aliases",
+            json={"alias": alias_name, "target": ENDPOINT_TEST_MODEL},
+            headers=_admin_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(add_res.status_code, 200, add_res.text)
+        self.addCleanup(
+            requests.delete,
+            f"{internal_url}/aliases/{requests.utils.quote(alias_name)}",
+            headers=_admin_auth_headers(),
+            timeout=TIMEOUT_DEFAULT,
+        )
+
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_chat",
+                    "arguments": {
+                        "model": alias_name,
+                        "messages": [
+                            {"role": "user", "content": "Say hello in 3 words."},
+                        ],
+                        "max_tokens": 16,
+                    },
+                },
+            },
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        body = response.json()
+        self.assertNotIn("error", body, msg=str(body))
+        self.assertFalse(body["result"]["isError"], msg=str(body["result"]))
 
 
 if __name__ == "__main__":
