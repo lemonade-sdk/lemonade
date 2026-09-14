@@ -1062,8 +1062,8 @@ jobs:
             extra_args: ""
             backends: "cpu rocm vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
-          - name: stable-diffusion-npu
-            script: server_sd_npu.py
+          - name: ryzenai-sd
+            script: server_ryzenai_sd.py
             extra_args: "--wrapped-server ryzenai-sd-server --backend npu"
             backends: "npu"
             runner: [Windows, X64, xdna2, lemon-prod]

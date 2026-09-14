@@ -18,11 +18,11 @@ Prerequisites:
     - An AMD Ryzen AI NPU is available.
 
 Usage:
-    python server_sd_npu.py --wrapped-server ryzenai-sd-server --backend npu
-    python server_sd_npu.py --cli-binary /path/to/lemonade
+    python server_ryzenai_sd.py --wrapped-server ryzenai-sd-server --backend npu
+    python server_ryzenai_sd.py --cli-binary /path/to/lemonade
 
     # Backward compatible (defaults to ryzenai-sd-server):
-    python server_sd_npu.py
+    python server_ryzenai_sd.py
 
 Notes:
     - First load can take several minutes (checkpoint download + subprocess
