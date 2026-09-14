@@ -4,6 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include <cstdint>
 #include <string>
 
 namespace lemon {
@@ -60,6 +61,10 @@ private:
 };
 
 namespace llamacpp {
+int64_t per_request_context_length(int64_t ctx_size,
+                                   int64_t max_context_window,
+                                   const std::string& custom_args);
+
 // Factory for the llamacpp backend (constructs the server class — lemond only).
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();

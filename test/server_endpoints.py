@@ -838,6 +838,45 @@ class EndpointTests(ServerTestBase):
 
         print("[OK] context_length reflects an explicit ctx_size")
 
+    def test_006aa_context_length_accounts_for_llamacpp_slots(self):
+        """Non-unified llama.cpp slots partition the configured context."""
+        self._snapshot_options()
+        self._unload_for_configured_context()
+        self._reset_options()
+
+        cases = [
+            ("--parallel 2 --no-kv-unified", 4096),
+            ("-np 4 --no-kv-unified", 2048),
+            ("--parallel 2 --kv-unified", 8192),
+            ("--parallel 2 --kv-unified --kv-unified-per-slot 2048", 2048),
+        ]
+        for llamacpp_args, expected in cases:
+            with self.subTest(llamacpp_args=llamacpp_args):
+                response = requests.post(
+                    self._options_url(),
+                    json={"ctx_size": 8192, "llamacpp_args": llamacpp_args},
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(
+                    self._retrieve_model_json().get("context_length"), expected
+                )
+
+        response = requests.post(
+            self._options_url(),
+            json={
+                "ctx_size": -1,
+                "llamacpp_args": "--parallel 2 --no-kv-unified",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        model = self._retrieve_model_json()
+        self.assertEqual(model.get("max_context_window"), 32768)
+        self.assertEqual(model.get("context_length"), 16384)
+
+        print("[OK] context_length accounts for llama.cpp slot partitioning")
+
     def test_006b_context_length_inherits_global_ctx_size(self):
         """With nothing saved on the model, context_length follows the global."""
         original_ctx_size = requests.get(

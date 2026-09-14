@@ -675,6 +675,83 @@ namespace lemon {
 namespace backends {
 namespace llamacpp {
 
+int64_t per_request_context_length(int64_t ctx_size,
+                                   int64_t max_context_window,
+                                   const std::string& custom_args) {
+    if (ctx_size <= 0) {
+        return ctx_size;
+    }
+
+    int64_t parallel = 1;
+    int64_t per_slot_cap = 0;
+    bool kv_unified = false;
+    const auto tokens = parse_custom_args(custom_args);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::string flag = tokens[i];
+        std::string inline_value;
+        const size_t equals = flag.find('=');
+        if (equals != std::string::npos) {
+            inline_value = flag.substr(equals + 1);
+            flag.resize(equals);
+        }
+
+        if (flag == "--kv-unified") {
+            kv_unified = true;
+            continue;
+        }
+        if (flag == "--no-kv-unified") {
+            kv_unified = false;
+            continue;
+        }
+        if (flag != "--parallel" && flag != "-np" &&
+            flag != "--kv-unified-per-slot") {
+            continue;
+        }
+
+        const bool separate_value = inline_value.empty();
+        const std::string value = separate_value && i + 1 < tokens.size()
+            ? tokens[i + 1] : inline_value;
+        try {
+            size_t parsed = 0;
+            const int64_t candidate = std::stoll(value, &parsed);
+            if (parsed != value.size()) {
+                continue;
+            }
+            if (flag == "--kv-unified-per-slot") {
+                per_slot_cap = candidate;
+            } else {
+                parallel = candidate;
+            }
+            if (separate_value) {
+                ++i;
+            }
+        } catch (const std::exception&) {
+        }
+    }
+
+    if (parallel < 0) {
+        kv_unified = true;
+    }
+
+    constexpr int64_t context_alignment = 256;
+    auto align_context = [](int64_t value) {
+        return ((value + context_alignment - 1) / context_alignment)
+            * context_alignment;
+    };
+
+    int64_t result = align_context(ctx_size);
+    if (!kv_unified && parallel > 1) {
+        result = align_context(result / parallel);
+    }
+    if (per_slot_cap > 0) {
+        result = (std::min)(result, per_slot_cap);
+    }
+    if (max_context_window > 0) {
+        result = (std::min)(result, max_context_window);
+    }
+    return result;
+}
+
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
     return make_server<LlamaCppServer>(ctx);
 }
