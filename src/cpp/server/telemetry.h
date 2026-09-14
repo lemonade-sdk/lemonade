@@ -85,4 +85,24 @@ extern thread_local std::string g_incoming_parent_span_id;
 extern thread_local std::string g_incoming_client_id;
 extern thread_local std::string g_incoming_session_id;
 
+// The routing decision for the current request, as a compact JSON object
+// ({collection, to, matched_rule, default_used} plus the flattened
+// estimated_cost fields). Empty when the request did not go through a
+// collection.router. A thread-local because the inference span is created deep
+// in Router, where the Decision is no longer in scope; cleared per request like
+// the trace-context fields above so it cannot leak across a reused worker.
+extern thread_local std::string g_current_route_decision;
+
+// Map a g_current_route_decision payload to its span attributes, under the
+// existing llm.* namespace. Split out from apply_route_attributes so the
+// mapping is unit-testable without constructing a span. An empty, malformed,
+// or non-object payload yields no attributes, and a non-scalar member is
+// skipped rather than stringified -- a span attribute is a scalar.
+std::map<std::string, nlohmann::json> route_span_attributes(const std::string& payload);
+
+// Mirror the current request's routing decision onto its inference span, so a
+// trace shows which candidate a collection.router picked and what that
+// candidate was reported to cost. No-op when the request was not routed.
+void apply_route_attributes(InferenceSpan& span);
+
 } // namespace lemon::telemetry
