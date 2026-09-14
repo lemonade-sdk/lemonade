@@ -152,6 +152,8 @@ the generator instead. Prose outside the markers is preserved. -->
 | `height` | — | SIZE | 512 | Output image height |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
+| `video_frames` | — | SIZE | 33 | Number of video frames |
+| `fps` | — | SIZE | 16 | Video frames per second |
 
 #### `thenoise` — TheNoise ROCm
 
