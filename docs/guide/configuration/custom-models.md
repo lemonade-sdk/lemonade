@@ -386,6 +386,10 @@ This file contains a JSON object where each key is a model name and each value d
 | `size` | No | Number | Model size in GB. Informational only — displayed in the UI and used for RAM filtering. |
 | `mmproj` | No | String | Filename of the multimodal projector file for llamacpp vision models (must be in the same registry repo as the checkpoint). This is a **top-level field**, not inside `checkpoints`. |
 | `image_defaults` | No | Object | Default image generation parameters for `sd-cpp` models. See [Image defaults](#image-defaults). |
+| `cost_tier` | No | String | Coarse price band for cost-aware routing: `free`, `low`, `medium` or `high`. Any other value is ignored when a routing decision is resolved. See [Cost metadata](#cost-metadata). |
+| `cost_input_per_million` | No | Number | Price per million input tokens. Negative values are ignored. |
+| `cost_output_per_million` | No | Number | Price per million output tokens. Negative values are ignored. |
+| `latency_ms_hint` | No | Number | Expected time-to-first-token in milliseconds, for policies that weigh latency. Negative values are ignored. |
 
 \* Either `checkpoint` or `checkpoints` is required, but not both.
 \*\* Required only when `recipe: "collection.omni"`. Collections do not use `checkpoint`/`checkpoints`.
@@ -461,6 +465,34 @@ For `sd-cpp` recipe models, you can specify default image generation parameters:
     }
 }
 ```
+
+### Cost metadata
+
+A `collection.router` policy can route on price — see the `cost` classifier and
+the `cost_select` routing mode in the [API reference](../../api/openai.md). Those
+read four optional fields off each candidate model:
+
+```json
+{
+  "user.Qwen3-8B-GGUF": {
+    "checkpoint": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+    "recipe": "llamacpp",
+    "cost_tier": "free",
+    "cost_input_per_million": 0.0,
+    "cost_output_per_million": 0.0,
+    "latency_ms_hint": 90
+  }
+}
+```
+
+Local models are usually free to run, so the useful case is mixing local and
+cloud candidates in one policy: give the local models `cost_tier: "free"` and
+let the cloud provider's discovered prices stand, so a cost-aware rule can
+prefer local until a request genuinely needs the stronger remote model.
+
+Cloud models get their prices from provider discovery and need none of this.
+Values that cannot be used — an unrecognized `cost_tier`, a negative price — are
+ignored when the decision is resolved rather than rejected at registration.
 
 ### Model naming
 
