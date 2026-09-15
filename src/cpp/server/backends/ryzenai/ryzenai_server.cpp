@@ -102,11 +102,12 @@ void RyzenAIServer::load(const std::string& model_name,
     }
     LOG(DEBUG, "RyzenAI") << std::endl;
 
-    // Start the process (filter health check spam)
+    // Start the process from its own directory so sibling DLLs are found.
+    std::string working_dir = fs::path(ryzenai_server_path).parent_path().string();
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         ryzenai_server_path,
         args,
-        "",
+        working_dir,
         is_debug(),
         true
     );
