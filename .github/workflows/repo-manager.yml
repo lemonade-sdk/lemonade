@@ -51,7 +51,7 @@ jobs:
     needs: list-commits
     if: needs.list-commits.outputs.shas != '[]'
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
