@@ -10,7 +10,9 @@ The version is derived, in priority order, from:
 3. A ``release-vYYYY.WW`` branch, in which case the patch number ``N`` is the
    number of commits since the branch point (or the last release tag).
 4. Otherwise a development version ``YYYY.WW.0~<count>.<hash>`` for the upcoming
-   release week.
+   release week. Outside a git work tree (for example a ``docker build`` context,
+   which excludes ``.git``) the count and hash are unknown and the version is
+   ``YYYY.WW.0~0.nogit``.
 
 Usage::
 
@@ -122,7 +124,18 @@ def release_branch_name(now):
     return f"release-v{iso_date.year}.{iso_date.week}"
 
 
+def in_git_work_tree(repo):
+    try:
+        return git("rev-parse", "--is-inside-work-tree", cwd=repo) == "true"
+    except (OSError, subprocess.CalledProcessError):
+        return False
+
+
 def generated_version(repo, now, branch=None, head="HEAD"):
+    if not in_git_work_tree(repo):
+        year, week = upcoming_release_week(now)
+        return f"{year}.{week}.0~0.nogit"
+
     tag_version = exact_release_tag(repo, head)
     if tag_version:
         return tag_version
