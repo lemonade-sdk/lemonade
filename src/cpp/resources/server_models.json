@@ -1228,6 +1228,62 @@
         ],
         "size": 5.16
     },
+    "K2-Horizon-0.9B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-0.9B-GGUF:K2-Horizon-1B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling",
+            "hot"
+        ],
+        "size": 2.16
+    },
+    "K2-Horizon-3.7B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-3.7B-GGUF:K2-Horizon-4B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 10.13
+    },
+    "K2-Horizon-7B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-7B-GGUF:K2-Horizon-7B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 18.01
+    },
+    "K2-Horizon-32B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-32B-GGUF:K2-Horizon-32B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 69.57
+    },
+    "K2-Horizon-MoVA-36B-A4B-GGUF": {
+        "checkpoint": "IFM/K2-Horizon-MoVA-36B-A4B-GGUF:K2-Horizon-36B-BF16.gguf",
+        "recipe": "llamacpp",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "tool-calling"
+        ],
+        "size": 74.92
+    },
     "PromptBridge-0.6b-Alpha-GGUF": {
         "checkpoint": "mradermacher/PromptBridge-0.6b-Alpha-GGUF:PromptBridge-0.6b-Alpha.Q4_K_M.gguf",
         "recipe": "llamacpp",
