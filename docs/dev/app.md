@@ -30,23 +30,6 @@ Consequences that callers of this code need to know about:
 - **The desktop app does not manage `lemond`'s lifecycle.** The server is started independently — on Windows by `LemonadeServer.exe` (auto-started via the startup folder, tray icon always visible), on Linux/macOS by the user or a service. The Tauri app is opened on demand and must not add itself to autostart, spawn `lemond` as a subprocess, or assume `lemond` is on the same machine.
 - **Discovery is best-effort local + explicit remote.** `beacon.rs` listens for a UDP broadcast emitted by a local `lemond` to auto-populate the base URL. For remote-server use, the user sets `baseURL` + `apiKey` in settings and the client talks to that endpoint directly.
 
-## Publishing GUI3 Beta packages
-
-The manual [`GUI3 Beta Build`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/gui3_beta_build.yml)
-workflow builds Windows, macOS, and Linux packages. Run it from the branch
-that should be tested, set **Publish the GUI-only packages as a GitHub
-prerelease** to `true`, and optionally change the artifact label. The workflow
-uploads short-lived Actions artifacts for every run and, when publishing is
-enabled, creates a numbered GitHub prerelease containing only the GUI-only
-packages.
-
-The published packages intentionally exclude `lemond`, the CLI, and model
-resources. This lets testers extract the package beside an existing Lemonade
-installation without replacing its server or competing for port `13305`. The
-beta GUI still talks to that existing server, so server-owned changes are
-shared; use a separate server process and port only when an isolated test
-environment is required.
-
 ## Code Structure
 
 ```
@@ -115,29 +98,36 @@ src/app/
 - **Windows only:** WebView2 runtime (pre-installed on Windows 10 1803+ and Windows 11).
 - **macOS only:** No extra dependencies — WKWebView ships with the OS.
 
-## Building
+## Building locally
+
+The CMake build is the recommended way to build the desktop client with the
+repository's current configuration. Run the setup script from the repository
+root, then build the platform target:
+
+```powershell
+.\setup.ps1
+cmake --build --preset windows --target tauri-app
+```
+
+The Windows executable is `build\app\lemonade-app.exe`.
+
+```bash
+./setup.sh
+cmake --build --preset default --target tauri-app
+```
+
+On macOS the application bundle is `build/app/lemonade-app.app`; on Linux the
+executable is `build/app/lemonade-app`.
+
+These targets build the GUI client but do not start `lemond`, download models,
+or manage the server lifecycle. Start a Lemonade Server separately and launch
+the resulting GUI executable. For renderer-only or Tauri development, install
+the frontend dependencies and use the scripts below from `src/app`:
 
 ```bash
 cd src/app
-
-# Install webpack + Tauri CLI dependencies
 npm ci
-
-# Run in dev mode (opens a window, hot-reloads webpack)
 npm run dev
-
-# Production build (single binary, no OS bundles)
-npm run build -- --no-bundle
-
-# Production build with platform bundles (macOS .app, Linux .deb/.rpm, Windows MSI/NSIS)
-npm run build
-```
-
-The preferred path for shipping is through CMake, which stages the Tauri output alongside the rest of the server:
-
-```bash
-cmake --build --preset default --target tauri-app      # Linux / macOS
-cmake --build --preset windows --target tauri-app      # Windows
 ```
 
 ## Development Scripts

@@ -33,40 +33,62 @@ The status dot beside the Lemonade name is green when the configured server is
 reachable. If it is gray, open **Settings > Server** and check the endpoint and
 API key.
 
-## Test GUI3 Beta beside an existing Lemonade installation
+## Build and run GUI3 locally
 
-GUI3 Beta is a client-only preview. Download the latest
-[GUI3 Beta prerelease](https://github.com/lemonade-sdk/lemonade/releases), then
-choose the package for your operating system:
+GUI3 is built from the repository with the same CMake targets used by the
+desktop application. First install Node.js 20+, Rust via
+[rustup](https://rustup.rs), and the platform prerequisites described in the
+[developer app guide](../dev/app.md#prerequisites). Then run these commands
+from the repository root:
 
-- **Windows:** extract the GUI3 Beta `.zip` to a new folder and launch
-  `lemonade-app.exe`.
-- **macOS:** extract the GUI3 Beta `.zip`, then open `lemonade-app.app` from
-  the extracted folder.
-- **Linux:** extract the GUI3 Beta `.tar.gz`, then run `lemonade-app` from the
-  extracted folder.
+=== "Windows"
 
-Keep your existing Lemonade Server or `LemonadeServer.exe` running. The beta
-GUI discovers the local server through the UDP beacon or connects to
-`http://127.0.0.1:13305`; if it does not connect automatically, open
-**Settings > Server** and enter that URL. The beta GUI does not install,
-replace, or start a second server.
+    ```powershell
+    .\setup.ps1
+    cmake --build --preset windows --target tauri-app
+    ```
 
-Do **not** install `lemonade.msi` or `lemonade-server-minimal.msi` from a beta
-build over an existing installation. Those installers include server
-components and are for isolated packaging tests, not normal side-by-side GUI
-testing. Do not start a second server on the same port.
+    The executable is `build\app\lemonade-app.exe`.
 
-The beta client and the existing client can use the same server, but
-server-owned changes are shared: model downloads, loads and unloads, saved
-**Models > Configuration** values, memory settings, and server settings can
-affect other clients. GUI-local state such as theme, Favorites, chat history,
-and request-time chat sampling remains separate.
+=== "macOS"
 
-## Report a GUI3 Beta issue
+    ```bash
+    ./setup.sh
+    cmake --build --preset default --target tauri-app
+    ```
+
+    The application bundle is `build/app/lemonade-app.app`.
+
+=== "Linux"
+
+    ```bash
+    ./setup.sh
+    cmake --build --preset default --target tauri-app
+    ```
+
+    The executable is `build/app/lemonade-app`.
+
+These commands build the GUI client; they do not start `lemond` or download
+models. Start Lemonade Server separately, then launch the resulting GUI
+executable. On Windows, the normal server process is `LemonadeServer.exe`; on
+macOS or Linux, start `lemond` using the platform's usual service or launch
+command. GUI3 normally connects to `http://127.0.0.1:13305`, or discovers a
+local server through the UDP beacon. For another server, enter its URL and API
+key under **Settings > Server**.
+
+To use a locally built GUI beside an existing Lemonade installation, launch the
+executable from its build folder and leave the existing server running. Do not
+start a second server on port `13305`. Both GUI clients can connect to the same
+server, so model downloads, loads and unloads, saved **Models >
+Configuration** values, memory settings, and server settings are shared.
+Theme, Favorites, chat history, and request-time chat sampling remain local to
+each GUI client.
+
+## Report a GUI3 issue
 
 Use the [new issue form](https://github.com/lemonade-sdk/lemonade/issues/new/choose)
-for problems specific to the GUI3 Beta, and select the **GUI3 Beta** milestone.
+for problems specific to GUI3. For a preview build, select the **GUI3 Beta**
+milestone.
 Include:
 
 - OS and GUI3 app version
