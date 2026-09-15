@@ -6,7 +6,7 @@ This guide documents the end-to-end process of releasing Lemonade.
 
 Lemonade has built its brand on quality and ease-of-use. Do not release a new Lemonade version if this is compromised in any way.
 
-The repo-manager workflow runs automatically on every push to `main` or a release branch and publishes a live release dashboard at [https://lemonade-server.ai/repo-manager](https://lemonade-server.ai/repo-manager). Use it to assess whether the release is ready to ship. It also maintains three GitHub issues for the upcoming release (described in the steps below); these are updated automatically on each push.
+repo-manager reviews every commit as it lands on `main`, and the release workflow has it draft each candidate's checklist, release notes, and Discord announcement. It stores all of that as files in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing), which is rendered as a live release dashboard at [https://testing.lemonade-server.ai](https://testing.lemonade-server.ai).
 
 ## Release Cadence and Channels
 
@@ -44,17 +44,17 @@ A source tree may contain a `.version` file to override the calculated version. 
 
 At 19:00 UTC every Wednesday, automation creates `release-v<year>.<week>` from the tip of `main`, where the year and week identify the following week's release. The initial branch build is candidate `.0`.
 
-Every push to a `release-v*` branch produces the next candidate and publishes it to the candidate/prerelease channels. Creating the branch also causes repo-manager to create three GitHub issues:
+Every push to a `release-v*` branch produces the next candidate and publishes it to the candidate/prerelease channels. The same workflow runs repo-manager over the branch before it creates the release, so every candidate, and every stable release, comes with:
 
-- **`Release v<year>.<week> final checklist`** — a prioritized P1/P2/P3 checklist and a machine-generated `Ready` or `Needs Attention` verdict.
-- **`v<year>.<week> release notes`** — pre-populated Headline and Breaking Changes sections used by the release action.
-- **`v<year>.<week> announcement`** — a Discord announcement draft with feature sections and contributor shoutouts.
+- **The dashboard:** a checklist of what this release changed and what to exercise on each platform, prioritized P0 or P1, drawn from the reviews of the commits in it.
+- **`releases/v<year>.<week>/notes.md`:** the Headline and Breaking Changes sections the release action puts on the release page.
+- **`releases/v<year>.<week>/announcement.md`:** a Discord announcement draft with feature sections and contributor shoutouts.
 
-Repo-manager re-syncs the issues after every push to the release branch. Comments on those issues are considered when it regenerates their content.
+Every later push to the branch regenerates the files from the new commit range, except that a file you have edited yourself is kept and never overwritten.
 
 ### 2. Test the Candidate
 
-The release admin moderates the `#release-candidate` Discord channel, announces each candidate, and uses the repo-manager checklist to tell volunteers what needs testing. The admin also monitors issues with the `release-candidate` label and triages them against the project's supported use cases and quality standards.
+The release admin moderates the `#release-candidate` Discord channel, announces each candidate, and tells volunteers what needs testing. The admin also monitors issues with the `candidate` label and triages them against the project's supported use cases and quality standards.
 
 At minimum, each platform needs someone to install or upgrade to the candidate and exercise it. Testing normal production workloads is encouraged. Candidate testers should back up their configuration and models before installing a candidate, especially when a release includes a schema migration or another breaking change.
 
@@ -78,15 +78,15 @@ When testing exposes a missing automated test, file an issue or RFC to add that 
 
 Stable publication is always a human decision. Before tagging a candidate:
 
-- Check the **`Release v<year>.<week> final checklist`** issue. Resolve all P1 items and confirm that its verdict is `Ready`.
-- Review the candidate feedback and all open issues carrying the `release-candidate` label.
-- Review and edit the release-notes issue as described below.
+- Read this release's page on [the dashboard](https://testing.lemonade-server.ai), which collects the checklist and the reviews of every commit in the release.
+- Review the candidate feedback and all open issues carrying the `candidate` label.
+- Review and edit `notes.md` as described below.
 
 If blocking issues remain at 19:00 UTC on Friday, skip that week's stable release by leaving the release branch untagged. Hold a postmortem to decide whether the review, testing, or release policy needs adjustment. Candidate artifacts keep their existing versions; version numbers are never reused.
 
 ### 4. Review the Release Notes
 
-Open the **`v<year>.<week> release notes`** GitHub issue. Repo-manager pre-populates the **Headline** and **Breaking Changes** sections from the commit history. Review and edit them before tagging because the release action pulls these sections directly into the GitHub release page.
+Edit `releases/v<year>.<week>/notes.md` in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing). repo-manager pre-populates the **Headline** and **Breaking Changes** sections from the commit history, and stops regenerating the file once you have edited it. Review and edit before tagging, because the release action pulls these sections directly into the GitHub release page.
 
 #### Headline
 
@@ -148,7 +148,7 @@ DO NOT add or replace release artifacts, as this would break the chain of custod
 
 ### 8. Post the Discord Announcement
 
-Open the **`v<year>.<week> announcement`** GitHub issue. Repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits, and post it in `#announcements` on the Lemonade Discord.
+Open `releases/v<year>.<week>/announcement.md` in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing). repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits there so they are kept, and post it in `#announcements` on the Lemonade Discord.
 
 Use `@everyone` for the regular weekly release and `@release` for a hotfix.
 
