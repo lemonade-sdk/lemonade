@@ -79,6 +79,9 @@
   "ryzenai": {
     "server_bin": "builtin"
   },
+  "ryzenai_medusa": {
+    "server_bin": "builtin"
+  },
   "sdcpp": {
     "args": "",
     "backend": "auto",

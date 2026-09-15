@@ -2569,5 +2569,70 @@
         ],
         "size": 81.0,
         "min_resident_gb": 16.0
+    },
+    "Llama-3.2-1B-Instruct-Medusa-NPU": {
+        "checkpoint": "amd/Llama-3.2-1B-Instruct-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 1.76
+    },
+    "Llama-3.2-3B-Instruct-Medusa-NPU": {
+        "checkpoint": "amd/Llama-3.2-3B-Instruct-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 3.38
+    },
+    "Qwen2.5-3B-Instruct-Medusa-NPU": {
+        "checkpoint": "amd/Qwen2.5-3B-Instruct-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 3.5
+    },
+    "Qwen2.5-7B-Instruct-Medusa-NPU": {
+        "checkpoint": "amd/Qwen2.5-7B-Instruct-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 8.0
+    },
+    "Phi-3-Mini-Instruct-Medusa-NPU": {
+        "checkpoint": "amd/Phi-3-mini-4k-instruct-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 2.39
+    },
+    "DeepSeek-R1-Distill-Qwen-1.5B-Medusa-NPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Qwen-1.5B-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 2.3
+    },
+    "DeepSeek-R1-Distill-Llama-8B-Medusa-NPU": {
+        "checkpoint": "amd/DeepSeek-R1-Distill-Llama-8B-onnx-ryzenai-medusa-npu",
+        "recipe": "ryzenai-llm-medusa",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 9.3
     }
 }

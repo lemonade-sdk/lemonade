@@ -26,10 +26,16 @@ InstallParams RyzenAIServer::get_install_params(const std::string& /*backend*/, 
     return {"lemonade-sdk/ryzenai-server", "ryzenai-server.zip"};
 }
 
-RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager, BackendManager* backend_manager)
+InstallParams RyzenAIServer::get_install_params_medusa(const std::string& /*backend*/, const std::string& /*version*/) {
+    return {"lemonade-sdk/ryzenai-server", "medusa-server.zip"};
+}
+
+RyzenAIServer::RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager,
+                             BackendManager* backend_manager, const backends::BackendSpec* spec)
     : WrappedServer("RyzenAI-Server", debug ? "debug" : "info", model_manager, backend_manager),
       model_name_(model_name),
-      is_loaded_(false) {
+      is_loaded_(false),
+      spec_(spec ? spec : backends::ryzenai::spec()) {
 }
 
 RyzenAIServer::~RyzenAIServer() {
@@ -57,9 +63,9 @@ void RyzenAIServer::load(const std::string& model_name,
     LOG(DEBUG, "RyzenAI") << "Loading model: " << model_name << std::endl;
     int ctx_size = options.get_option("ctx_size");
 
-    backend_manager_->install_backend("ryzenai-llm", "npu");
+    backend_manager_->install_backend(spec_->recipe, "npu");
 
-    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*backends::ryzenai::spec(), "npu");
+    std::string ryzenai_server_path = backends::BackendUtils::get_backend_binary_path(*spec_, "npu");
     if (ryzenai_server_path.empty()) {
         throw std::runtime_error("RyzenAI-Server executable not found even after installation attempt");
     }
@@ -169,10 +175,9 @@ namespace backends {
 namespace ryzenai {
 
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
-    // RyzenAI requires its model path resolved before load() via set_model_path().
     auto server = std::make_unique<::lemon::RyzenAIServer>(
         ctx.model_info->model_name, ctx.log_level == "debug",
-        ctx.model_manager, ctx.backend_manager);
+        ctx.model_manager, ctx.backend_manager, spec());
     server->set_model_path(ctx.model_info->resolved_path());
     return server;
 }

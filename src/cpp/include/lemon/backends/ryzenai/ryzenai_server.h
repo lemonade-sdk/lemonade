@@ -16,10 +16,11 @@ using backends::InstallParams;
 class RyzenAIServer : public WrappedServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
-
+    static InstallParams get_install_params_medusa(const std::string& backend, const std::string& version);
 
     RyzenAIServer(const std::string& model_name, bool debug, ModelManager* model_manager,
-                  BackendManager* backend_manager);
+                  BackendManager* backend_manager,
+                  const backends::BackendSpec* spec = nullptr);
     ~RyzenAIServer() override;
 
     // Installation and availability
@@ -44,6 +45,7 @@ private:
     std::string model_name_;
     std::string model_path_;
     bool is_loaded_;
+    const backends::BackendSpec* spec_;  // which recipe/binary/install-params to use
 };
 
 } // namespace lemon

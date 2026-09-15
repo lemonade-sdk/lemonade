@@ -514,6 +514,7 @@ static const std::map<std::string, std::string> DEVICE_FAMILY_NAMES = {
 
     // NPU architectures
     {"XDNA2", "AMD XDNA 2"},
+    {"XDNA3", "AMD XDNA 3 (Medusa)"},
 };
 
 // Maps device types to human-readable names (for error messages)
@@ -1931,6 +1932,8 @@ static std::string identify_npu_arch_linux() {
         if (query_aie_metadata.cols == 8) {
             return "XDNA2";
         }
+        // TODO: Confirm AIE4 (Medusa) column count and uncomment:
+        // else if (query_aie_metadata.cols == N) { return "XDNA3"; }
 
         //Fallback path for missing amdxdna driver (just check PCI IDs)
         fs::path pci_path = "/sys/bus/pci/devices";
@@ -2045,14 +2048,24 @@ std::string identify_npu_arch() {
     if (found_xdna2) {
         return "XDNA2";
     }
+
+    // XDNA3 NPU (Medusa/AIE4): AMD vendor 1022, device TBD
+    // TODO: Replace DEV_XXXX with the confirmed Medusa PCI device ID once known.
+    // bool found_xdna3 = false;
+    // wmi_conn.query(
+    //     L"SELECT PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE '%VEN_1022&DEV_XXXX%'",
+    //     [&found_xdna3](IWbemClassObject* pObj) {
+    //         found_xdna3 = true;
+    //     });
+    // if (found_xdna3) {
+    //     return "XDNA3";
+    // }
 #else
     std::string linux_arch = identify_npu_arch_linux();
     if (!linux_arch.empty()) {
         return linux_arch;
     }
 #endif
-
-    // Future: Add XDNA3, XDNA4, etc. with their PCI device IDs
 
     return "";
 }
