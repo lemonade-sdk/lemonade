@@ -5595,9 +5595,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.low_speed_time = 60;
         download_opts.connect_timeout = 60;
         download_opts.expected_total_bytes = file_size;
-        if (auto* cfg = RuntimeConfig::global()) {
-            download_opts.parallel_parts = cfg->download_parallelism();
-        }
+        download_opts.parallel_parts = utils::kDefaultParallelParts;
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
             if (hash.contains("algorithm") && hash["algorithm"].is_string() &&

@@ -1203,7 +1203,7 @@ bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
     const auto* p = reinterpret_cast<const unsigned char*>(buf.data()) + sizeof(kPartJournalMagic);
     total = get_u64_le(p);
     const uint64_t parts = get_u64_le(p + 8);
-    if (parts == 0 || parts > static_cast<uint64_t>(kMaxParallelParts)) return false;
+    if (parts == 0 || parts > 1024) return false;  // bounds a corrupt length field
     if (buf.size() != kHeaderBytes + parts * 8) return false;
 
     out.assign(static_cast<size_t>(parts), 0);
@@ -1841,8 +1841,8 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
         const size_t min_per_part = (std::max)(options.parallel_min_bytes_per_part, size_t{1});
         if (total > 0) {
-            parts = (std::min)({options.parallel_parts, kMaxParallelParts,
-                                static_cast<int>(total / min_per_part)});
+            parts = (std::min)(options.parallel_parts,
+                               static_cast<int>(total / min_per_part));
         }
 
         if (parts >= 2) {

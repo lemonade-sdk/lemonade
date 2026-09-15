@@ -55,7 +55,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "ctx_size": -1,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
-  "download_parallelism": 16,
   "download_rate_limit": "",
   "ds4": {
     "args": ""

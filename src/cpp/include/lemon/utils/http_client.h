@@ -75,9 +75,10 @@ enum class HttpSecurityPolicy {
     AllowInsecureHttp,
 };
 
-// Upper bound on concurrent connections per download. Declared here, beside the
-// option it bounds, so the config validator and the transfer cannot drift.
-constexpr int kMaxParallelParts = 64;
+// Concurrent connections a parallel download uses. Matches the count mainstream
+// model downloaders settle on; the origin, not the client, is the limit well
+// before this.
+constexpr int kDefaultParallelParts = 16;
 
 // Download configuration options
 struct DownloadOptions {
@@ -100,8 +101,8 @@ struct DownloadOptions {
     std::string expected_hash;
     std::string expected_hash_algorithm;
 
-    // Concurrent ranged connections used for one file, capped at
-    // kMaxParallelParts. 1 keeps the historical single-stream transfer.
+    // Concurrent ranged connections used for one file. 1 keeps the historical
+    // single-stream transfer.
     // Parallelism is skipped, without failing, when the origin ignores Range, the
     // total size is unknown, the file is too small to split, or a download rate
     // limit is configured — a cap is enforced per connection, so N streams would

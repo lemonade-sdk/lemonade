@@ -3,7 +3,6 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
-#include "lemon/utils/http_client.h"
 #include "lemon/utils/rate_limit_utils.h"
 #include <algorithm>
 #include <atomic>
@@ -414,11 +413,6 @@ long RuntimeConfig::global_timeout() const {
 int RuntimeConfig::max_loaded_models() const {
     std::shared_lock lock(mutex_);
     return config_["max_loaded_models"].get<int>();
-}
-
-int RuntimeConfig::download_parallelism() const {
-    std::shared_lock lock(mutex_);
-    return config_["download_parallelism"].get<int>();
 }
 
 int64_t RuntimeConfig::download_rate_limit_bytes_per_second() const {
@@ -857,16 +851,6 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         if (source != "huggingface" && source != "modelscope") {
             throw std::invalid_argument(
                 "'default_model_source' must be either 'huggingface', or 'modelscope'");
-        }
-    } else if (key == "download_parallelism") {
-        if (!value.is_number_integer()) {
-            throw std::invalid_argument("'download_parallelism' must be an integer");
-        }
-        const int parallelism = value.get<int>();
-        if (parallelism < 1 || parallelism > utils::kMaxParallelParts) {
-            throw std::invalid_argument(
-                "'download_parallelism' must be between 1 and " +
-                std::to_string(utils::kMaxParallelParts) + " (1 disables parallel downloads)");
         }
     } else if (key == "download_rate_limit") {
         if (!value.is_string()) {
