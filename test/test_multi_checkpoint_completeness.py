@@ -2,12 +2,14 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
-import time
 import unittest
-import requests
 
-from utils.test_models import get_default_lemond_binary, get_default_cli_binary
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from utils.server_fixture import allocate_free_port, lemond_server, make_clean_env
+from utils.test_models import get_default_cli_binary
 
 
 class TestMultiCheckpointCompleteness(unittest.TestCase):
@@ -21,56 +23,11 @@ class TestMultiCheckpointCompleteness(unittest.TestCase):
 
     def setUp(self):
         self.tmp_dir = tempfile.mkdtemp()
-        self.lemond_bin = get_default_lemond_binary()
         self.cli_bin = get_default_cli_binary()
-        self.port = 13306
-        self.server_proc = None
-        self.server_stdout = ""
-        self.server_stderr = ""
+        self.port = allocate_free_port()
 
     def tearDown(self):
-        self.stop_server()
-        shutil.rmtree(self.tmp_dir)
-
-    def start_server(self, capture_output=False):
-        self.stop_server()
-        env = os.environ.copy()
-        # Ensure it doesn't use the real HF cache
-        env["HF_HUB_CACHE"] = os.path.join(self.tmp_dir, "hf")
-        os.makedirs(env["HF_HUB_CACHE"], exist_ok=True)
-
-        stdout = subprocess.PIPE if capture_output else subprocess.DEVNULL
-        stderr = subprocess.PIPE if capture_output else subprocess.DEVNULL
-
-        self.server_proc = subprocess.Popen(
-            [self.lemond_bin, self.tmp_dir, "--port", str(self.port)],
-            stdout=stdout,
-            stderr=stderr,
-            text=True,
-            env=env,
-        )
-        for i in range(30):
-            try:
-                requests.get(f"http://localhost:{self.port}/api/v1/models", timeout=1)
-                break
-            except:
-                time.sleep(1)
-        else:
-            self.fail("Server timed out")
-
-    def stop_server(self):
-        if self.server_proc:
-            self.server_proc.terminate()
-            try:
-                stdout, stderr = self.server_proc.communicate(timeout=5)
-                self.server_stdout = stdout if stdout else ""
-                self.server_stderr = stderr if stderr else ""
-            except:
-                self.server_proc.kill()
-                stdout, stderr = self.server_proc.communicate()
-                self.server_stdout = stdout if stdout else ""
-                self.server_stderr = stderr if stderr else ""
-            self.server_proc = None
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def test_incomplete_component_reaches_cli_and_collection_pull(self):
         comp_id = "comp-multi"
@@ -87,35 +44,63 @@ class TestMultiCheckpointCompleteness(unittest.TestCase):
             coll_id: {"components": [comp_id], "recipe": "collection.omni"},
         }
 
-        with open(os.path.join(self.tmp_dir, "user_models.json"), "w") as f:
+        env = make_clean_env(self.tmp_dir)
+        os.makedirs(env["LEMONADE_CONFIG_DIR"], exist_ok=True)
+        with open(
+            os.path.join(env["LEMONADE_CONFIG_DIR"], "user_models.json"), "w"
+        ) as f:
             json.dump(user_models, f)
 
         with open(path1, "wb") as f:
             f.write(b"GGUF")
 
-        self.start_server(capture_output=True)
+        log_path = os.path.join(self.tmp_dir, "lemond.log")
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            with lemond_server(
+                port=self.port,
+                cache_dir=self.tmp_dir,
+                env=env,
+                wait_health=True,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+            ):
+                list_result = subprocess.run(
+                    [
+                        self.cli_bin,
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(self.port),
+                        "list",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                )
+                self.assertEqual(list_result.returncode, 0, list_result.stderr)
+                component_rows = [
+                    line for line in list_result.stdout.splitlines() if comp_id in line
+                ]
+                self.assertTrue(component_rows, list_result.stdout)
+                self.assertIn("No", component_rows[0])
 
-        list_result = subprocess.run(
-            [self.cli_bin, "--port", str(self.port), "list"],
-            capture_output=True,
-            text=True,
-        )
-        self.assertEqual(list_result.returncode, 0, list_result.stderr)
-        component_rows = [
-            line for line in list_result.stdout.splitlines() if comp_id in line
-        ]
-        self.assertTrue(component_rows, list_result.stdout)
-        self.assertIn("No", component_rows[0])
+                subprocess.run(
+                    [
+                        self.cli_bin,
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(self.port),
+                        "pull",
+                        coll_id,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                )
 
-        subprocess.run(
-            [self.cli_bin, "--port", str(self.port), "pull", coll_id],
-            capture_output=True,
-            text=True,
-        )
-
-        self.stop_server()
-
-        log_output = self.server_stdout + self.server_stderr
+        with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+            log_output = f.read()
         self.assertIn(f"Downloading component: {comp_id}", log_output)
 
 

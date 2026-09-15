@@ -8,6 +8,7 @@ based on the current wrapped server and backend.
 
 import os
 import platform
+import shutil
 
 
 def _workspace_root():
@@ -19,16 +20,57 @@ def _workspace_root():
 
 
 def _default_build_binary(name):
-    """Return the default path for a build binary, handling multi-config generators."""
+    """Return the default path for a build binary, handling multi-config generators and installs."""
+    bin_name = f"{name}.exe" if platform.system() == "Windows" else name
+
+    # Check explicit environment variable overrides
+    if name == "lemond":
+        env_daemon = os.environ.get("LEMONADE_DAEMON_BINARY") or os.environ.get(
+            "LEMONADE_BINARY"
+        )
+        if env_daemon and os.path.exists(env_daemon):
+            return env_daemon
+    elif name == "lemonade":
+        env_cli = os.environ.get("CLI_BINARY")
+        if env_cli and os.path.exists(env_cli):
+            return env_cli
+
+    # Check sibling directory of CLI_BINARY if available (e.g. MSI/package install dir)
+    cli_bin = os.environ.get("CLI_BINARY")
+    if cli_bin:
+        sibling = os.path.join(os.path.dirname(cli_bin), bin_name)
+        if os.path.exists(sibling):
+            return sibling
+
+    # Check LEMONADE_INSTALL_PATH/bin if set
+    install_path = os.environ.get("LEMONADE_INSTALL_PATH")
+    if install_path:
+        installed_bin = os.path.join(install_path, "bin", bin_name)
+        if os.path.exists(installed_bin):
+            return installed_bin
+
     root = _workspace_root()
     if platform.system() == "Windows":
-        release_path = os.path.join(root, "build", "Release", f"{name}.exe")
-        debug_path = os.path.join(root, "build", "Debug", f"{name}.exe")
-        if os.path.exists(release_path):
-            return release_path
-        return debug_path
+        for sub in ("Release", "Debug", ""):
+            build_path = (
+                os.path.join(root, "build", sub, bin_name)
+                if sub
+                else os.path.join(root, "build", bin_name)
+            )
+            if os.path.exists(build_path):
+                return build_path
+        which_path = shutil.which(bin_name)
+        if which_path:
+            return which_path
+        return os.path.join(root, "build", "Release", bin_name)
     else:
-        return os.path.join(root, "build", name)
+        build_path = os.path.join(root, "build", bin_name)
+        if os.path.exists(build_path):
+            return build_path
+        which_path = shutil.which(name)
+        if which_path:
+            return which_path
+        return build_path
 
 
 def get_default_cli_binary():
