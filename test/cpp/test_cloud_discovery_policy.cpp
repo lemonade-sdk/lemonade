@@ -132,6 +132,88 @@ int main() {
                 "/v1 is matched as a whole segment, not a byte prefix");
     }
 
+    {
+        // OpenRouter format: top-level context_length and top_provider completion tokens.
+        nlohmann::json openrouter_entry = {
+            {"id", "deepseek/deepseek-v4-flash-0731"},
+            {"context_length", 1310720},
+            {"top_provider", {
+                {"context_length", 1048576},
+                {"max_completion_tokens", 943718}
+            }}
+        };
+        const auto limits = CloudServer::parse_cloud_limits(openrouter_entry);
+        r.check(limits.first == 1310720, "OpenRouter: reads top-level context_length");
+        r.check(limits.second == 943718, "OpenRouter: reads top_provider.max_completion_tokens");
+    }
+
+    {
+        // Fallback to top_provider when top-level context_length is missing.
+        nlohmann::json top_provider_fallback = {
+            {"id", "provider/model"},
+            {"top_provider", {
+                {"context_length", 32768},
+                {"max_output_tokens", 4096}
+            }}
+        };
+        const auto limits = CloudServer::parse_cloud_limits(top_provider_fallback);
+        r.check(limits.first == 32768, "top_provider fallback: reads context_length");
+        r.check(limits.second == 4096, "top_provider fallback: reads max_output_tokens");
+    }
+
+    {
+        // OpenRouter per_request_limits: completion_tokens caps top_provider.max_completion_tokens
+        // and per_request_limits.context_length caps context_length.
+        nlohmann::json openrouter_capped = {
+            {"id", "provider/model"},
+            {"context_length", 1310720},
+            {"top_provider", {
+                {"context_length", 1048576},
+                {"max_completion_tokens", 943718}
+            }},
+            {"per_request_limits", {
+                {"context_length", 128000},
+                {"completion_tokens", 16384}
+            }}
+        };
+        const auto limits = CloudServer::parse_cloud_limits(openrouter_capped);
+        r.check(limits.first == 128000, "per_request_limits.context_length caps context_length");
+        r.check(limits.second == 16384, "per_request_limits.completion_tokens caps top_provider output");
+    }
+
+    {
+        // String numeric values and per_request_limits fallback.
+        nlohmann::json string_limits = {
+            {"id", "custom/model"},
+            {"max_context_length", "65536"},
+            {"per_request_limits", {
+                {"max_completion_tokens", "8192"}
+            }}
+        };
+        const auto limits = CloudServer::parse_cloud_limits(string_limits);
+        r.check(limits.first == 65536, "string conversion: reads max_context_length");
+        r.check(limits.second == 8192, "string conversion: reads per_request_limits.max_completion_tokens");
+    }
+
+    {
+        // Stricter string numeric conversion: trailing junk or negative values are rejected.
+        nlohmann::json malformed_limits = {
+            {"id", "malformed/model"},
+            {"context_length", "128k"},
+            {"max_completion_tokens", "-50"}
+        };
+        const auto limits = CloudServer::parse_cloud_limits(malformed_limits);
+        r.check(limits.first == 0, "malformed string with trailing chars rejected -> 0");
+        r.check(limits.second == 0, "negative value rejected -> 0");
+    }
+
+    {
+        // Empty / missing limits default to 0
+        nlohmann::json bare = {{"id", "bare/model"}};
+        const auto limits = CloudServer::parse_cloud_limits(bare);
+        r.check(limits.first == 0 && limits.second == 0, "missing limits -> 0, 0");
+    }
+
     printf("\n=== %d passed, %d failed ===\n", r.passed, r.failed);
     return r.failed == 0 ? 0 : 1;
 }

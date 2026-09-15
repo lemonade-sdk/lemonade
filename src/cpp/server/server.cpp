@@ -3223,6 +3223,11 @@ nlohmann::json Server::model_info_to_json(const std::string& model_id, const Mod
         model_json["context_length"] = context_length;
     }
 
+    if (info.max_output_tokens > 0) {
+        model_json["max_output_tokens"] = info.max_output_tokens;
+        model_json["max_completion_tokens"] = info.max_output_tokens;
+    }
+
     // Per-million-token pricing in USD, when the provider reported it (cloud
     // models from OpenRouter/Together). Display only.
     if (info.cost_input_per_million >= 0) {
