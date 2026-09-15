@@ -410,6 +410,14 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
                 break;
             }
         }
+        // Momentum signal: every user turn's byte length, oldest first (used
+        // only when routing.momentum is enabled; harmless to collect otherwise).
+        for (const auto& msg : messages) {
+            if (msg.is_object() && msg.value("role", std::string()) == "user" &&
+                msg.contains("content")) {
+                ctx.user_turn_chars.push_back(collect_text_from_content(msg["content"]).size());
+            }
+        }
     } else if (request_json.contains("prompt")) {
         const auto& prompt = request_json["prompt"];
         if (prompt.is_string()) {
@@ -459,6 +467,14 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
                     break;
                 }
             }
+            // Momentum signal: every user turn's byte length, oldest first.
+            for (const auto& item : input) {
+                if (item.is_object() && item.value("role", std::string()) == "user" &&
+                    item.contains("content")) {
+                    ctx.user_turn_chars.push_back(
+                        collect_text_from_content(item["content"]).size());
+                }
+            }
             // Fallback for role-less inputs (plain strings or bare content
             // parts): concatenate their text in order.
             if (!found_user) {
@@ -480,6 +496,11 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
     }
 
     ctx.params.chars = ctx.input.size();
+    if (ctx.user_turn_chars.empty()) {
+        // Legacy `prompt`, or the Responses role-less fallback — no multi-turn
+        // concept to speak of; degenerates momentum to exactly raw chars.
+        ctx.user_turn_chars.push_back(ctx.params.chars);
+    }
 
     if (request_json.contains("metadata") && request_json["metadata"].is_object()) {
         for (auto it = request_json["metadata"].begin();
