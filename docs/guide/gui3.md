@@ -6,7 +6,7 @@ React interface. The server owns model files, loaded models, backends, and
 persistent load configuration; each GUI client owns its connection, layout,
 chat history, and chat preferences.
 
-![GUI3 Chat workspace](../assets/gui3-guide/01-chat.png)
+![GUI3 Chat workspace](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/01-chat.png)
 
 *These screenshots use the current GUI3 renderer. Numbered yellow callouts
 identify the controls described in the text.*
@@ -158,7 +158,7 @@ include context size and automatic context tuning, backend and device, typed
 load-time sampling fields, and additional backend CLI arguments. The controls
 come from the selected recipe, so not every model shows every field.
 
-![A selected model's Configuration tab, with callouts for the tab, load settings, and Save](../assets/gui3-guide/02-models.png)
+![A selected model's Configuration tab, with callouts for the tab, load settings, and Save](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/02-models.png)
 
 The values shown in the form are sent by **Load** or **Get & Load**, even if
 they have not been saved. **Save** is callout **3**; it and the other actions
@@ -250,7 +250,7 @@ changes.
 3. **Effective load command** is the authoritative command reported by the
    running server.
 
-![Effective settings, with callouts for resolved sources, chat sampling, and the running command](../assets/gui3-guide/07-effective-settings.png)
+![Effective settings, with callouts for resolved sources, chat sampling, and the running command](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/07-effective-settings.png)
 
 Select **Save sampling** to store temperature, top-p, top-k, min-p, and repeat
 penalty for future chat requests from this client. An empty field omits that
@@ -271,7 +271,7 @@ argument editor:
 2. Select **I know what I am doing** (**2**) to unlock the editor.
 3. Edit the session-only argument string (**3**).
 
-![The Effective settings backend override, with callouts for the running command, unlock control, and session-only editor](../assets/gui3-guide/08-session-override.png)
+![The Effective settings backend override, with callouts for the running command, unlock control, and session-only editor](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/08-session-override.png)
 
 The buttons depend on runtime state:
 
