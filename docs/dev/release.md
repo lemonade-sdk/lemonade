@@ -6,8 +6,6 @@ This guide documents the end-to-end process of releasing Lemonade.
 
 Lemonade has built its brand on quality and ease-of-use. Do not release a new Lemonade version if this is compromised in any way.
 
-repo-manager reviews every commit as it lands on `main`, and the release workflow has it draft each candidate's checklist, release notes, and Discord announcement. It stores all of that as files in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing), which is rendered as a live release dashboard at [https://testing.lemonade-server.ai](https://testing.lemonade-server.ai).
-
 ## Release Cadence and Channels
 
 Lemonade operates on a weekly release cadence. A release candidate is branched from `main` every Wednesday at 19:00 UTC and tested by the community for the following week. A release admin decides whether to promote a tested candidate to the stable channels.
@@ -38,6 +36,10 @@ The week is the release week the commit would enter. Before the Wednesday 19:00 
 
 A source tree may contain a `.version` file to override the calculated version. Release source archives include this file so unpacked source retains the version of the artifact from which it came.
 
+## repo-manager
+
+We have an AI-assisted tool called `repo-manager` that reviews every commit as it lands on `main` and summarizes these into a final release checklist for testers. This data doesn't replace human judgement, but can help to identify areas for testing. `repo-manager` also produces draft release notes and a Discord announcement for each release. It stores all of that as files in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing), which is rendered as a live release dashboard at [https://testing.lemonade-server.ai](https://testing.lemonade-server.ai).
+
 ## Release Lifecycle
 
 ### 1. Create and Publish the First Candidate
@@ -46,7 +48,7 @@ At 19:00 UTC every Wednesday, automation creates `release-v<year>.<week>` from t
 
 Every push to a `release-v*` branch produces the next candidate and publishes it to the candidate/prerelease channels. The same workflow runs repo-manager over the branch before it creates the release, so every candidate, and every stable release, comes with:
 
-- **The dashboard:** a checklist of what this release changed and what to exercise on each platform, prioritized P0 or P1, drawn from the reviews of the commits in it.
+- **The dashboard:** a checklist of what this release changed and what to exercise on each platform, drawn from the reviews of the commits in it.
 - **`releases/v<year>.<week>/notes.md`:** the Headline and Breaking Changes sections the release action puts on the release page.
 - **`releases/v<year>.<week>/announcement.md`:** a Discord announcement draft with feature sections and contributor shoutouts.
 
@@ -65,12 +67,6 @@ When testing finds a problem, choose one of these outcomes:
 3. **Revert:** If a blocking problem would be too complex to fix safely during the release cycle, revert the responsible commit or commits from both `main` and the release branch. The change must return to PR review before it can land again.
 
 Pushing a hotfix or revert to the release branch automatically publishes a new candidate with an incremented `number`. If an automated cherry-pick conflicts, stop and resolve the situation through the normal reviewed development process; do not introduce release-only code.
-
-Workflow-dispatch tools are available to perform the common branch operations:
-
-- **Cherry-pick to release branch:** cherry-picks one or more fixes from `main` into the current release branch.
-- **Release hotfix:** cherry-picks one or more commits into an older `release-v*` branch, causing a new candidate to be published before it is considered for stable.
-- **Revert commit:** reverts one or more commits from both `main` and the current release branch.
 
 When testing exposes a missing automated test, file an issue or RFC to add that coverage so the same class of regression is caught in CI.
 
