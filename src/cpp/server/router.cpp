@@ -998,9 +998,12 @@ void Router::load_model(const std::string& model_name,
                                       canonical_model_name);
         }
 
-        // Auto-tune: resolve ctx_size = -1 → computed from memory + arch metadata
-        // Done AFTER eviction so that freed VRAM/RAM is visible to the memory query.
-        int64_t auto_ctx = resolve_auto_ctx_size(effective_options, model_info);
+        // Auto-tune only backends that consume ctx_size. Remote providers own
+        // their context allocation and expose the resulting limit through discovery.
+        const auto* backend_desc = backends::descriptor_for(model_info.recipe);
+        int64_t auto_ctx = !backend_desc || backend_desc->uses_ctx_size
+            ? resolve_auto_ctx_size(effective_options, model_info)
+            : -2;
         const bool ctx_size_auto = auto_ctx != -2;
         if (auto_ctx > 0) {
             LOG(INFO, "Router") << "Auto-tune ctx_size resolved to " << auto_ctx << std::endl;

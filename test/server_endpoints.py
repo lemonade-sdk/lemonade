@@ -2067,7 +2067,14 @@ class EndpointTests(ServerTestBase):
         class _FakeProvider(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 if self.path.rstrip("/").endswith("/models"):
-                    data = [{"id": uid, "object": "model"} for uid in upstream_ids]
+                    data = []
+                    for item in upstream_ids:
+                        if isinstance(item, dict):
+                            entry = dict(item)
+                            entry.setdefault("object", "model")
+                            data.append(entry)
+                        else:
+                            data.append({"id": item, "object": "model"})
                     payload = _json.dumps({"object": "list", "data": data}).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -2164,7 +2171,7 @@ class EndpointTests(ServerTestBase):
             }
 
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id],
+            [{"id": upstream_id, "context_length": 262144}],
             chat_handler=chat_response,
         )
 
@@ -2226,12 +2233,13 @@ class EndpointTests(ServerTestBase):
                 f"{self.base_url}/models",
                 timeout=TIMEOUT_DEFAULT,
             ).json()
-            ids = [m["id"] for m in models.get("data", [])]
-            self.assertIn(
-                public_name,
-                ids,
-                f"Discovered cloud model should appear in /models; got {ids}",
+            cloud_model = next(
+                model
+                for model in models.get("data", [])
+                if model["id"] == public_name
             )
+            self.assertEqual(cloud_model.get("context_length"), 262144)
+            self.assertEqual(cloud_model.get("max_context_window"), 262144)
 
             # (5) Round-trip chat completion through the mock.
             resp = requests.post(
@@ -2246,6 +2254,29 @@ class EndpointTests(ServerTestBase):
             self.assertEqual(resp.status_code, 200, f"chat failed: {resp.text}")
             reply = resp.json()["choices"][0]["message"]["content"]
             self.assertEqual(reply, "pong")
+
+            models = requests.get(
+                f"{self.base_url}/models",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            cloud_model = next(
+                model
+                for model in models.get("data", [])
+                if model["id"] == public_name
+            )
+            self.assertEqual(cloud_model.get("context_length"), 262144)
+            self.assertEqual(cloud_model.get("max_context_window"), 262144)
+
+            health = requests.get(
+                f"{self.base_url}/health",
+                timeout=TIMEOUT_DEFAULT,
+            ).json()
+            loaded_cloud = next(
+                model
+                for model in health["all_models_loaded"]
+                if model["model_name"] == public_name
+            )
+            self.assertNotIn("ctx_size", loaded_cloud["recipe_options"])
 
             # (6) DELETE /cloud/auth clears the runtime key and evicts models.
             resp = requests.delete(
