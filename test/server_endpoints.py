@@ -105,12 +105,14 @@ def _lemond_health_ok(port, headers):
 
 
 @contextlib.contextmanager
-def _running_lemond(config=None, cache_prefix="lemond_test_"):
+def _running_lemond(
+    config=None, cache_prefix="lemond_test_", cache_dir=None, config_dir=None
+):
     """Spawn lemond on a free port with the given config.json body.
 
     Skips the calling test when no daemon binary is available. Yields
     (proc, port, headers, log_path) and terminates the daemon plus removes
-    its cache directory on exit.
+    its directories on exit (unless external directories were supplied).
     """
     lemond_binary = _resolve_lemond_binary()
     if not lemond_binary:
@@ -122,16 +124,42 @@ def _running_lemond(config=None, cache_prefix="lemond_test_"):
         headers["Authorization"] = f"Bearer {api_key}"
 
     port = _pick_free_port()
-    cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
+    owns_cache_dir = cache_dir is None
+    owns_config_dir = config_dir is None
+    if owns_cache_dir:
+        cache_dir = tempfile.mkdtemp(prefix=cache_prefix)
     log_path = os.path.join(cache_dir, "lemond.log")
-    with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
-        json.dump({"config_version": 2, **(config or {})}, f)
+
+    cmd = [lemond_binary, cache_dir]
+    effective_config_dir = config_dir if config_dir is not None else cache_dir
+    if config_dir is not None:
+        cmd.append(config_dir)
+
+    if config is not None:
+        with open(
+            os.path.join(effective_config_dir, "config.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump({"config_version": 2, **config}, f)
+    elif owns_config_dir and config_dir is not None:
+        with open(
+            os.path.join(effective_config_dir, "config.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump({"config_version": 2}, f)
+    elif owns_cache_dir and config_dir is None:
+        with open(
+            os.path.join(effective_config_dir, "config.json"), "w", encoding="utf-8"
+        ) as f:
+            json.dump({"config_version": 2}, f)
+
+    cmd.extend(["--port", str(port)])
 
     proc = None
     try:
-        with open(log_path, "w", encoding="utf-8") as log:
+        with open(
+            log_path, "a" if not owns_cache_dir else "w", encoding="utf-8"
+        ) as log:
             proc = subprocess.Popen(
-                [lemond_binary, cache_dir, "--port", str(port)],
+                cmd,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=os.environ.copy(),
@@ -145,7 +173,10 @@ def _running_lemond(config=None, cache_prefix="lemond_test_"):
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=10)
-        shutil.rmtree(cache_dir, ignore_errors=True)
+        if owns_cache_dir:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        if owns_config_dir and config_dir is not None:
+            shutil.rmtree(config_dir, ignore_errors=True)
 
 
 def _wait_until_healthy(proc, port, headers, timeout_s=60):
@@ -8535,6 +8566,126 @@ class EndpointTests(ServerTestBase):
                 404,
                 "/docs-example returned unexpected status without web app",
             )
+
+    def test_066_telemetry_otlp_headers_startup_and_persistence(self):
+        """Verify that invalid telemetry OTLP headers in config.json are sanitized
+        on startup, that updates via /internal/set persist to disk, and that setting
+        empty headers clears them across a daemon restart."""
+        initial_cfg = {
+            "telemetry": {
+                "enabled": True,
+                "otlp": {
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Content-Length": "123",
+                        "X-Bad\nHeader": "bad",
+                        "  X-Startup-Valid  ": "  StartupVal  ",
+                    }
+                },
+            }
+        }
+        cache_dir = tempfile.mkdtemp(prefix="lemond_otlphdr_cache_")
+        config_dir = tempfile.mkdtemp(prefix="lemond_otlphdr_cfg_")
+        try:
+            with _running_lemond(
+                config=initial_cfg,
+                cache_dir=cache_dir,
+                config_dir=config_dir,
+            ) as (proc, port, headers, log_path):
+                self.assertTrue(
+                    _wait_until_healthy(proc, port, headers),
+                    f"lemond never became healthy on port {port} (see {log_path})",
+                )
+                config_path = os.path.join(config_dir, "config.json")
+                set_url = f"http://localhost:{port}/internal/set"
+                config_url = f"http://localhost:{port}/internal/config"
+
+                # 1. Verify invalid headers were sanitized and valid ones trimmed on startup
+                cfg = requests.get(
+                    config_url, headers=headers, timeout=TIMEOUT_DEFAULT
+                ).json()
+                otlp_headers = (
+                    cfg.get("telemetry", {}).get("otlp", {}).get("headers", {})
+                )
+                self.assertNotIn("Content-Type", otlp_headers)
+                self.assertNotIn("Content-Length", otlp_headers)
+                self.assertNotIn("X-Bad\nHeader", otlp_headers)
+                self.assertEqual(otlp_headers.get("X-Startup-Valid"), "StartupVal")
+
+                # 2. Rejection of invalid headers via /internal/set
+                bad_payload = {
+                    "telemetry": {
+                        "otlp": {"headers": {"Content-Type": "application/json"}}
+                    }
+                }
+                res = requests.post(
+                    set_url, headers=headers, json=bad_payload, timeout=TIMEOUT_DEFAULT
+                )
+                self.assertEqual(res.status_code, 400)
+
+                # 3. Replace headers via /internal/set and verify persistence to config.json
+                update_payload = {
+                    "telemetry": {"otlp": {"headers": {"X-Updated": "NewVal"}}}
+                }
+                res = requests.post(
+                    set_url,
+                    headers=headers,
+                    json=update_payload,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(res.status_code, 200)
+
+                with open(config_path, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                self.assertEqual(
+                    saved.get("telemetry", {}).get("otlp", {}).get("headers"),
+                    {"X-Updated": "NewVal"},
+                )
+
+                # 4. Clear headers with empty dict {}
+                clear_payload = {"telemetry": {"otlp": {"headers": {}}}}
+                res = requests.post(
+                    set_url,
+                    headers=headers,
+                    json=clear_payload,
+                    timeout=TIMEOUT_DEFAULT,
+                )
+                self.assertEqual(res.status_code, 200)
+
+                with open(config_path, "r", encoding="utf-8") as f:
+                    saved = json.load(f)
+                self.assertEqual(
+                    saved.get("telemetry", {}).get("otlp", {}).get("headers"),
+                    {},
+                )
+
+            # 5. Restart lemond on the same cache and config directories to verify cleared headers persist across restart
+            with _running_lemond(
+                cache_dir=cache_dir,
+                config_dir=config_dir,
+            ) as (
+                proc,
+                port,
+                headers,
+                log_path,
+            ):
+                self.assertTrue(
+                    _wait_until_healthy(proc, port, headers),
+                    f"restarted lemond never became healthy on port {port} (see {log_path})",
+                )
+                restarted_cfg = requests.get(
+                    f"http://localhost:{port}/internal/config",
+                    headers=headers,
+                    timeout=TIMEOUT_DEFAULT,
+                ).json()
+                self.assertEqual(
+                    restarted_cfg.get("telemetry", {}).get("otlp", {}).get("headers"),
+                    {},
+                    "cleared headers did not survive daemon restart",
+                )
+        finally:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            shutil.rmtree(config_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":

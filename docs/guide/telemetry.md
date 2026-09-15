@@ -177,7 +177,7 @@ Telemetry settings are configured under the `telemetry` block in your `config.js
 | `telemetry.otlp.endpoint` | string | `"http://localhost:4318/v1/traces"` | The OTLP HTTP receiver endpoint URL. |
 | `telemetry.otlp.protocol` | string | `"http/protobuf"` | The encoding protocol: `"http/protobuf"` or `"http/json"`. |
 | `telemetry.otlp.semantics` | array | `["openinference", "otel_genai"]` | Enabled trace conventions. Supported: `"openinference"`, `"otel_genai"`. |
-| `telemetry.otlp.headers` | object | `{}` | Custom HTTP headers sent with trace exports (e.g., API keys, project names). |
+| `telemetry.otlp.headers` | object | `{}` | Custom HTTP headers sent with trace exports (e.g., API keys, project names). Keys must be valid HTTP field tokens (RFC 9110: ASCII letters, digits, and allowed punctuation; no spaces or colons) and cannot be empty or override well-known headers (`Content-Type`, `Content-Length`). Values must be valid HTTP field values and cannot contain CR, LF, or NUL. Setting `{}` clears custom headers. |
 | `telemetry.otlp.max_retries` | int | `0` | Maximum export retry attempts for transient server errors (0 to disable retries). |
 | `telemetry.otlp.retry_backoff_base_s` | double | `5.0` | Base exponential backoff delay in seconds for retries. |
 | `telemetry.otlp.send_batch_size` | int | `100` | Target number of spans to dispatch in a single HTTP request batch. |

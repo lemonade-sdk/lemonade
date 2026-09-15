@@ -4,6 +4,7 @@
 #include "lemon/utils/aixlog.hpp"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/rate_limit_utils.h"
+#include <httplib.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
@@ -42,6 +43,72 @@ static bool is_backend_name(const std::string& key) {
         }
     }
     return false;
+}
+
+static inline bool is_invalid_header_char(char c) {
+    return c == '\r' || c == '\n' || c == '\0';
+}
+
+std::string sanitize_header_for_log(const std::string& str) {
+    std::string safe;
+    safe.reserve(str.size());
+    for (char c : str) {
+        safe += is_invalid_header_char(c) ? '?' : c;
+    }
+    return safe;
+}
+
+static bool sanitize_and_trim_token(std::string& s) {
+    for (char c : s) {
+        if (is_invalid_header_char(c)) {
+            return false;
+        }
+    }
+    size_t start = 0;
+    while (start < s.size() && (s[start] == ' ' || s[start] == '\t')) {
+        start++;
+    }
+    size_t end = s.size();
+    while (end > start && (s[end - 1] == ' ' || s[end - 1] == '\t')) {
+        end--;
+    }
+    if (end < s.size()) s.erase(end);
+    if (start > 0) s.erase(0, start);
+    return true;
+}
+
+static bool iequals(const std::string& s, const char* target, size_t len) {
+    if (s.size() != len) return false;
+    for (size_t i = 0; i < len; ++i) {
+        if (std::tolower(static_cast<unsigned char>(s[i])) != target[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+HeaderValidationResult validate_otlp_header(std::string& k, std::string& v) {
+    if (!sanitize_and_trim_token(k) || !sanitize_and_trim_token(v)) {
+        return HeaderValidationResult::InvalidCharacters;
+    }
+
+    if (k.empty()) {
+        return HeaderValidationResult::EmptyKey;
+    }
+
+    if (!httplib::detail::fields::is_field_name(k)) {
+        return HeaderValidationResult::InvalidCharacters;
+    }
+
+    if (!v.empty() && !httplib::detail::fields::is_field_value(v)) {
+        return HeaderValidationResult::InvalidCharacters;
+    }
+
+    if (iequals(k, "content-type", 12) || iequals(k, "content-length", 14)) {
+        return HeaderValidationResult::DisallowedHeader;
+    }
+
+    return HeaderValidationResult::Valid;
 }
 
 // A config section has a selectable "backend" key iff its descriptor opts in.
@@ -168,6 +235,29 @@ static std::pair<json, std::string> normalize_config_set_changes(const json& cha
         normalized.erase(key);
     }
 
+    if (normalized.contains("telemetry") && normalized["telemetry"].is_object() &&
+        normalized["telemetry"].contains("otlp") && normalized["telemetry"]["otlp"].is_object() &&
+        normalized["telemetry"]["otlp"].contains("headers") && normalized["telemetry"]["otlp"]["headers"].is_object()) {
+        json norm_headers = json::object();
+        for (auto& [h_key, h_val] : normalized["telemetry"]["otlp"]["headers"].items()) {
+            if (!h_val.is_string()) {
+                throw std::invalid_argument("'telemetry.otlp.headers' values must be strings");
+            }
+            std::string k = h_key;
+            std::string v = h_val.get<std::string>();
+            auto res = validate_otlp_header(k, v);
+            if (res == HeaderValidationResult::EmptyKey) {
+                throw std::invalid_argument("'telemetry.otlp.headers' keys cannot be empty");
+            } else if (res == HeaderValidationResult::InvalidCharacters) {
+                throw std::invalid_argument("'telemetry.otlp.headers' key or value contains invalid character (must be a valid HTTP field token and value)");
+            } else if (res == HeaderValidationResult::DisallowedHeader) {
+                throw std::invalid_argument("Disallowed overriding well-known OTLP header: " + k);
+            }
+            norm_headers[k] = v;
+        }
+        normalized["telemetry"]["otlp"]["headers"] = norm_headers;
+    }
+
     return {normalized, message};
 }
 
@@ -272,6 +362,30 @@ RuntimeConfig::RuntimeConfig(const json& config)
             config_["broadcast"] = !config_["no_broadcast"].get<bool>();
         }
         config_.erase("no_broadcast");
+    }
+
+    if (config_.contains("telemetry") && config_["telemetry"].is_object() &&
+        config_["telemetry"].contains("otlp") && config_["telemetry"]["otlp"].is_object() &&
+        config_["telemetry"]["otlp"].contains("headers")) {
+        if (config_["telemetry"]["otlp"]["headers"].is_object()) {
+            json sanitized_headers = json::object();
+            for (auto& [h_key, h_val] : config_["telemetry"]["otlp"]["headers"].items()) {
+                if (!h_val.is_string()) continue;
+                std::string k = h_key;
+                std::string v = h_val.get<std::string>();
+                auto res = validate_otlp_header(k, v);
+                if (res == HeaderValidationResult::Valid) {
+                    sanitized_headers[k] = v;
+                } else if (res == HeaderValidationResult::DisallowedHeader) {
+                    LOG(WARNING, "Telemetry") << "Disallowed overriding well-known OTLP header on startup: " << h_key << std::endl;
+                } else {
+                    LOG(WARNING, "Telemetry") << "Rejected invalid OTLP header on startup (key: \"" << sanitize_header_for_log(h_key) << "\")." << std::endl;
+                }
+            }
+            config_["telemetry"]["otlp"]["headers"] = sanitized_headers;
+        } else {
+            config_["telemetry"]["otlp"]["headers"] = json::object();
+        }
     }
 
     // Validate logging settings on startup
@@ -1019,8 +1133,25 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                     }
                 }
             }
-            if (otlp.contains("headers") && !otlp["headers"].is_object()) {
-                throw std::invalid_argument("'telemetry.otlp.headers' must be an object");
+            if (otlp.contains("headers")) {
+                if (!otlp["headers"].is_object()) {
+                    throw std::invalid_argument("'telemetry.otlp.headers' must be an object");
+                }
+                for (auto& [h_key, h_val] : otlp["headers"].items()) {
+                    if (!h_val.is_string()) {
+                        throw std::invalid_argument("'telemetry.otlp.headers' values must be strings");
+                    }
+                    std::string k = h_key;
+                    std::string v = h_val.get<std::string>();
+                    auto res = validate_otlp_header(k, v);
+                    if (res == HeaderValidationResult::EmptyKey) {
+                        throw std::invalid_argument("'telemetry.otlp.headers' keys cannot be empty");
+                    } else if (res == HeaderValidationResult::InvalidCharacters) {
+                        throw std::invalid_argument("'telemetry.otlp.headers' key or value contains invalid character (must be a valid HTTP field token and value)");
+                    } else if (res == HeaderValidationResult::DisallowedHeader) {
+                        throw std::invalid_argument("Disallowed overriding well-known OTLP header: " + k);
+                    }
+                }
             }
             if (otlp.contains("max_retries")) {
                 if (!otlp["max_retries"].is_number_integer()) {
