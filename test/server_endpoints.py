@@ -1593,7 +1593,7 @@ class EndpointTests(ServerTestBase):
             timeout=TIMEOUT_DEFAULT,
         )
         self._reset_options()
-        self._set_global_llamacpp_args("--no-mmap --threads 1")
+        self._set_global_llamacpp_args("--load-mode none --threads 1")
 
         response = requests.post(
             self._options_url(),
@@ -1620,7 +1620,7 @@ class EndpointTests(ServerTestBase):
         self.assertIsNotNone(loaded)
         loaded_args = loaded.get("recipe_options", {}).get("llamacpp_args", "")
         self.assertIn("--threads 2", loaded_args)
-        self.assertIn("--no-mmap", loaded_args)
+        self.assertIn("--load-mode none", loaded_args)
         self.assertNotIn("--threads-batch 1", loaded_args)
         self.assertNotIn("--threads 1 ", loaded_args + " ")
 
@@ -1681,11 +1681,11 @@ class EndpointTests(ServerTestBase):
         )
         merged = requests.post(
             self._options_url(),
-            json={"llamacpp_args": "--no-mmap"},
+            json={"llamacpp_args": "--load-mode none"},
             timeout=TIMEOUT_DEFAULT,
         ).json()
         self.assertEqual(merged["saved"].get("ctx_size"), 4096)
-        self.assertEqual(merged["saved"].get("llamacpp_args"), "--no-mmap")
+        self.assertEqual(merged["saved"].get("llamacpp_args"), "--load-mode none")
 
         # Clearing one key leaves the other alone
         partial = requests.post(
@@ -1847,7 +1847,7 @@ class EndpointTests(ServerTestBase):
                 self._reset_options()
                 requests.post(
                     self._options_url(),
-                    json={"ctx_size": ctx_size, "llamacpp_args": "--no-mmap"},
+                    json={"ctx_size": ctx_size, "llamacpp_args": "--load-mode none"},
                     timeout=TIMEOUT_DEFAULT,
                 )
                 effective = requests.get(
