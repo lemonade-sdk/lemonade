@@ -267,3 +267,28 @@ runs:
         if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
         Write-Error "Server did not start within $maxWait seconds"
         exit 1
+
+    - name: Report detected hardware
+      shell: powershell
+      run: |
+        # The AMD GPU driver version is the first thing to check when a rig
+        # starts failing inference, so surface it in the job log rather than
+        # only inside the server-log artifact.
+        $logFile = Join-Path $env:TEMP "lemonade-server.log"
+        if (-not (Test-Path $logFile)) {
+          Write-Host "::warning title=No startup log::Expected lemond's startup log at $logFile"
+          exit 0
+        }
+
+        $lines = @(Get-Content $logFile)
+        $hit = $lines | Select-String -Pattern "Backend availability:" | Select-Object -First 1
+        if (-not $hit) {
+          Write-Host "::warning title=No hardware report::'Backend availability' not found in $logFile"
+          exit 0
+        }
+
+        Write-Host "=== Detected hardware (lemond startup) ===" -ForegroundColor Cyan
+        for ($i = $hit.LineNumber - 1; $i -lt $lines.Count; $i++) {
+          if ($i -ge $hit.LineNumber -and $lines[$i] -notmatch "\(ModelManager\)\s+- ") { break }
+          Write-Host $lines[$i]
+        }
