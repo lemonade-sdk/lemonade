@@ -356,6 +356,45 @@ private:
     WrappedServer* find_npu_server_by_recipe(const std::string& recipe) const;
     WrappedServer* find_coexisting_server_by_type(ModelType type) const;
     void evict_all_npu_servers();
+    // ExclusiveNpu slot-policy decision for `recipe`: if a same-recipe NPU
+    // server is already running, evict every other-recipe NPU server and
+    // return it so the caller hot-swaps into it instead of restarting the
+    // subprocess; otherwise evict all NPU servers and return nullptr so the
+    // caller creates a fresh one. Throws RouterResidencyConflictException if a
+    // live NPU server's residency class forbids displacement by this request.
+    // Caller holds load_mutex_.
+    WrappedServer* resolve_npu_exclusivity_locked(
+        const std::string& canonical_model_name,
+        const std::string& recipe,
+        ResidencyClass requested_residency_class);
+    // Returns the server to load `model_info` into: `hotswap_target` re-stamped
+    // with the resolved ctx-size/residency if non-null, otherwise a freshly
+    // constructed server (returned via `new_server`, stamped with full
+    // metadata/pin/access-time).
+    WrappedServer* create_or_reuse_backend_locked(
+        WrappedServer* hotswap_target,
+        const std::string& canonical_model_name,
+        const ModelInfo& model_info,
+        const RecipeOptions& effective_options,
+        ModelType model_type,
+        DeviceType device_type,
+        bool ctx_size_auto,
+        ResidencyClass requested_residency_class,
+        bool final_pinned,
+        std::unique_ptr<WrappedServer>& new_server);
+    // Commits a successful load: for a hot-swap, publishes the new model
+    // identity onto `hotswap_target` now that the swap has actually completed;
+    // otherwise installs the reclaim notifier and moves `new_server` into
+    // loaded_servers_.
+    void commit_loaded_server_locked(
+        WrappedServer* hotswap_target,
+        std::unique_ptr<WrappedServer> new_server,
+        const std::string& canonical_model_name,
+        const ModelInfo& model_info,
+        const RecipeOptions& effective_options,
+        ModelType model_type,
+        DeviceType device_type,
+        bool final_pinned);
     void evict_server(WrappedServer* server, int timeout_seconds = -1);
     void evict_all_servers();
     // Publish the (already-canonicalized) needed-helper set under load_mutex_,

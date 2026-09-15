@@ -588,6 +588,50 @@ WrappedServer* Router::find_npu_server_by_recipe(const std::string& recipe) cons
     return nullptr;
 }
 
+WrappedServer* Router::resolve_npu_exclusivity_locked(
+    const std::string& canonical_model_name,
+    const std::string& recipe,
+    ResidencyClass requested_residency_class) {
+    // Hardware exclusivity is stronger than count-based pools. Never
+    // alternate a router helper and its candidate across the same NPU:
+    // reject the cross-residency combination deterministically instead.
+    for (const auto& server : loaded_servers_) {
+        if (server->is_backend_alive() &&
+            (server->get_device_type() & DEVICE_NPU) &&
+            should_reject_residency_displacement(
+                requested_residency_class,
+                server->get_residency_class())) {
+            throw RouterResidencyConflictException(
+                canonical_model_name,
+                server->get_model_name(),
+                recipe + " requires exclusive NPU access");
+        }
+    }
+
+    WrappedServer* hotswap_target = find_npu_server_by_recipe(recipe);
+    if (hotswap_target) {
+        LOG(INFO, "Router") << recipe
+                  << " already has an NPU server running, hot-swapping instead "
+                  << "of evicting: " << hotswap_target->get_model_name() << std::endl;
+        std::vector<WrappedServer*> other_npu_servers;
+        for (const auto& server : loaded_servers_) {
+            if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU) &&
+                server.get() != hotswap_target) {
+                other_npu_servers.push_back(server.get());
+            }
+        }
+        for (auto* server : other_npu_servers) {
+            LOG(INFO, "Router") << "Evicting NPU server: " << server->get_model_name() << std::endl;
+            evict_server(server);
+        }
+    } else if (has_npu_server()) {
+        LOG(INFO, "Router") << recipe
+                  << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
+        evict_all_npu_servers();
+    }
+    return hotswap_target;
+}
+
 WrappedServer* Router::find_coexisting_server_by_type(ModelType type) const {
     for (const auto& server : loaded_servers_) {
         if (server->is_backend_alive() &&
@@ -699,6 +743,53 @@ std::unique_ptr<WrappedServer> Router::create_backend_server(const ModelInfo& mo
     LOG(DEBUG, "Router") << "No registered backend for recipe '" << model_info.recipe
                          << "', defaulting to LlamaCpp" << std::endl;
     return std::make_unique<backends::LlamaCppServer>(log_level, model_manager_, backend_manager_);
+}
+
+WrappedServer* Router::create_or_reuse_backend_locked(
+    WrappedServer* hotswap_target,
+    const std::string& canonical_model_name,
+    const ModelInfo& model_info,
+    const RecipeOptions& effective_options,
+    ModelType model_type,
+    DeviceType device_type,
+    bool ctx_size_auto,
+    ResidencyClass requested_residency_class,
+    bool final_pinned,
+    std::unique_ptr<WrappedServer>& new_server) {
+    if (!hotswap_target) {
+        new_server = create_backend_server(model_info);
+        new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        new_server->set_ctx_size_auto(ctx_size_auto);
+        new_server->set_residency_class(requested_residency_class);
+        new_server->set_pinned(final_pinned);
+        new_server->update_access_time();
+        return new_server.get();
+    }
+    hotswap_target->set_ctx_size_auto(ctx_size_auto);
+    hotswap_target->set_residency_class(requested_residency_class);
+    return hotswap_target;
+}
+
+void Router::commit_loaded_server_locked(
+    WrappedServer* hotswap_target,
+    std::unique_ptr<WrappedServer> new_server,
+    const std::string& canonical_model_name,
+    const ModelInfo& model_info,
+    const RecipeOptions& effective_options,
+    ModelType model_type,
+    DeviceType device_type,
+    bool final_pinned) {
+    if (hotswap_target) {
+        // Publish the new identity only now that the swap has actually
+        // completed -- doing this before load() succeeds would let
+        // concurrent requests for the new model name route to a backend
+        // that's still mid-swap on its old model.
+        hotswap_target->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
+        hotswap_target->set_pinned(final_pinned);
+        return;
+    }
+    install_reclaim_notifier(new_server.get());
+    loaded_servers_.push_back(std::move(new_server));
 }
 
 bool Router::begin_exclusive(std::atomic<bool>* cancel) {
@@ -923,42 +1014,8 @@ void Router::load_model(const std::string& model_name,
         WrappedServer* hotswap_target = nullptr;
         switch (slot_policy_for_recipe(model_info.recipe)) {
             case SlotPolicy::ExclusiveNpu: {
-                // Hardware exclusivity is stronger than count-based pools. Never
-                // alternate a router helper and its candidate across the same NPU:
-                // reject the cross-residency combination deterministically instead.
-                for (const auto& server : loaded_servers_) {
-                    if (server->is_backend_alive() &&
-                        (server->get_device_type() & DEVICE_NPU) &&
-                        should_reject_residency_displacement(
-                            requested_residency_class,
-                            server->get_residency_class())) {
-                        throw RouterResidencyConflictException(
-                            canonical_model_name,
-                            server->get_model_name(),
-                            model_info.recipe + " requires exclusive NPU access");
-                    }
-                }
-                hotswap_target = find_npu_server_by_recipe(model_info.recipe);
-                if (hotswap_target) {
-                    LOG(INFO, "Router") << model_info.recipe
-                              << " already has an NPU server running, hot-swapping instead "
-                              << "of evicting: " << hotswap_target->get_model_name() << std::endl;
-                    std::vector<WrappedServer*> other_npu_servers;
-                    for (const auto& server : loaded_servers_) {
-                        if (server->is_backend_alive() && (server->get_device_type() & DEVICE_NPU) &&
-                            server.get() != hotswap_target) {
-                            other_npu_servers.push_back(server.get());
-                        }
-                    }
-                    for (auto* server : other_npu_servers) {
-                        LOG(INFO, "Router") << "Evicting NPU server: " << server->get_model_name() << std::endl;
-                        evict_server(server);
-                    }
-                } else if (has_npu_server()) {
-                    LOG(INFO, "Router") << model_info.recipe
-                              << " requires exclusive NPU access, evicting all NPU servers..." << std::endl;
-                    evict_all_npu_servers();
-                }
+                hotswap_target = resolve_npu_exclusivity_locked(
+                    canonical_model_name, model_info.recipe, requested_residency_class);
                 break;
             }
             case SlotPolicy::CoexistByType: {
@@ -1055,19 +1112,10 @@ void Router::load_model(const std::string& model_name,
 
         // Create a new backend server, or reuse the hot-swap target found above.
         std::unique_ptr<WrappedServer> new_server;
-        WrappedServer* target_server = hotswap_target;
-        if (!target_server) {
-            new_server = create_backend_server(model_info);
-            new_server->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
-            new_server->set_ctx_size_auto(ctx_size_auto);
-            new_server->set_residency_class(requested_residency_class);
-            new_server->set_pinned(final_pinned);
-            new_server->update_access_time();
-            target_server = new_server.get();
-        } else {
-            target_server->set_ctx_size_auto(ctx_size_auto);
-            target_server->set_residency_class(requested_residency_class);
-        }
+        WrappedServer* target_server = create_or_reuse_backend_locked(
+            hotswap_target, canonical_model_name, model_info, effective_options,
+            model_type, device_type, ctx_size_auto, requested_residency_class,
+            final_pinned, new_server);
 
         // CRITICAL: Release lock before slow backend startup
         lock.unlock();
@@ -1120,17 +1168,9 @@ void Router::load_model(const std::string& model_name,
             target_server->update_access_time();
             target_server->set_state(ModelState::READY);
 
-            if (hotswap_target) {
-                // Publish the new identity only now that the swap has actually
-                // completed -- doing this before load() succeeds would let
-                // concurrent requests for the new model name route to a backend
-                // that's still mid-swap on its old model.
-                hotswap_target->set_model_metadata(canonical_model_name, model_info.checkpoint(), model_type, device_type, effective_options);
-                hotswap_target->set_pinned(final_pinned);
-            } else {
-                install_reclaim_notifier(new_server.get());
-                loaded_servers_.push_back(std::move(new_server));
-            }
+            commit_loaded_server_locked(hotswap_target, std::move(new_server),
+                                        canonical_model_name, model_info, effective_options,
+                                        model_type, device_type, final_pinned);
 
             is_loading_ = false;
             load_cv_.notify_all();
