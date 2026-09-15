@@ -43,6 +43,20 @@ bool recipe_is_image_backed(const std::string& recipe) {
     return descriptor && descriptor->image_backed;
 }
 
+bool backend_is_image_backed(const std::string& recipe, const std::string& backend) {
+    if (recipe_is_image_backed(recipe)) return true;
+    const json& data = versions();
+    if (!data.contains(recipe) || !data[recipe].is_object()) return false;
+    const json& recipe_node = data[recipe];
+    if (!recipe_node.contains(backend) || !recipe_node[backend].is_object()) return false;
+    const json& node = recipe_node[backend];
+    if (node.contains("repository")) return true;
+    for (auto it = node.begin(); it != node.end(); ++it) {
+        if (it.value().is_object() && it.value().contains("repository")) return true;
+    }
+    return false;
+}
+
 utils::ContainerImageRef image_pin(const std::string& recipe, const std::string& variant,
                                    const std::string& arch) {
     const json& data = versions();
@@ -77,12 +91,12 @@ std::vector<ImagePin> all_image_pins() {
     std::vector<ImagePin> pins;
     const json& data = versions();
     for (const auto* descriptor : all_descriptors()) {
-        if (!descriptor->image_backed) continue;
         const std::string& recipe = descriptor->recipe;
         if (!data.contains(recipe) || !data[recipe].is_object()) continue;
         for (auto variant_it = data[recipe].begin(); variant_it != data[recipe].end();
              ++variant_it) {
             if (!variant_it.value().is_object()) continue;
+            if (!backend_is_image_backed(recipe, variant_it.key())) continue;
             if (variant_it.value().contains("repository")) {
                 pins.push_back({recipe, variant_it.key(), "", parse_ref(variant_it.value())});
                 continue;

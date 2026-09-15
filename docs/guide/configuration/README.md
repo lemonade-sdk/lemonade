@@ -114,6 +114,9 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "port": 13305,
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
+  "rocmfpx": {
+    "args": ""
+  },
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -171,10 +174,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
-  },
-  "toolbox": {
-    "args": "",
-    "backend": "auto"
   },
   "trellis": {
     "args": "",

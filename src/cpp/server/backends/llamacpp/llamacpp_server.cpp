@@ -7,6 +7,7 @@
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/container_backend.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
@@ -249,6 +250,19 @@ void LlamaCppServer::load(const std::string& model_name,
     RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
 
     LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
+
+    // One llama.cpp build ships as a container rather than a release asset. It
+    // runs the same llama-server, so it diverges only at launch.
+    if (backends::backend_is_image_backed(llamacpp::descriptor.recipe, llamacpp_backend)) {
+        ContainerLaunch launch;
+        launch.recipe = llamacpp::descriptor.recipe;
+        launch.variant = llamacpp_backend;
+        launch.profile_id = llamacpp::container_profile_for(llamacpp_backend);
+        launch.args_option = "llamacpp_args";
+        launch.reserved_flags = &llamacpp::reserved_custom_arg_flags();
+        load_containerized(model_name, model_info, options, launch);
+        return;
+    }
 
     bool use_gpu = (llamacpp_backend != "cpu");
 
@@ -548,6 +562,122 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
+void LlamaCppServer::load_containerized(const std::string& model_name,
+                                        const ModelInfo& model_info,
+                                        const RecipeOptions& options,
+                                        const ContainerLaunch& launch) {
+    LOG(INFO, "LlamaCpp") << "Loading " << model_name << " on " << launch.recipe << ":"
+                          << launch.variant << std::endl;
+
+    int ctx_size = options.get_option("ctx_size");
+    const std::string custom_args = options.get_option(launch.args_option);
+
+    const std::string gguf_path = model_info.resolved_path();
+    if (gguf_path.empty() || !fs::exists(gguf_path)) {
+        throw std::runtime_error(launch.recipe + ": GGUF file not found for checkpoint: " +
+                                 model_info.checkpoint());
+    }
+    const std::string mmproj_path = model_info.resolved_path("mmproj");
+
+    device_type_ = DEVICE_GPU;
+    backend_manager_->install_backend(launch.recipe, launch.variant);
+
+    port_ = choose_port();
+
+    // A container left by a previous run (a killed lemond) would make `run`
+    // fail on the name, so clear it before claiming the name again.
+    clear_stale_container(launch.recipe, launch.variant);
+
+    ContainerLaunchRequest request;
+    request.recipe = launch.recipe;
+    request.variant = launch.variant;
+    request.profile_id = launch.profile_id;
+    ContainerLaunchPlan plan = plan_container_launch(request, port_);
+
+    const bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
+    const bool supports_reranking = (model_info.type == ModelType::RERANKING);
+    if (supports_embeddings && ctx_size < EMBEDDING_CTX_SIZE) {
+        ctx_size = EMBEDDING_CTX_SIZE;
+    }
+
+    std::vector<std::string> command;
+    command.push_back("llama-server");
+    command.push_back("-m");
+    command.push_back(plan.container_path(gguf_path));
+    command.push_back("--host");
+    command.push_back("0.0.0.0");  // reachable from the published loopback port only
+    command.push_back("--port");
+    command.push_back(std::to_string(port_));
+    command.push_back("--ctx-size");
+    command.push_back(std::to_string(ctx_size));
+    command.push_back("--jinja");
+    command.push_back("--metrics");
+    command.push_back("--batch-size");
+    command.push_back(std::to_string(launch.batch_size));
+    command.push_back("--ubatch-size");
+    command.push_back(std::to_string(launch.ubatch_size));
+    if (launch.flash_attention) {
+        command.push_back("-fa");
+        command.push_back("1");
+    }
+    if (launch.no_mmap) {
+        command.push_back("--no-mmap");
+    }
+    if (!mmproj_path.empty()) {
+        command.push_back("--mmproj");
+        command.push_back(plan.container_path(mmproj_path));
+    }
+    if (supports_embeddings) {
+        command.push_back("--embeddings");
+    }
+    if (supports_reranking) {
+        command.push_back("--reranking");
+    }
+
+    if (!custom_args.empty()) {
+        const std::string validation_error =
+            validate_custom_args(custom_args, *launch.reserved_flags);
+        if (!validation_error.empty()) {
+            throw std::invalid_argument("Invalid custom " + launch.recipe + " arguments:\n" +
+                                        validation_error);
+        }
+        const std::vector<std::string> parsed = parse_custom_args(custom_args);
+        command.insert(command.end(), parsed.begin(), parsed.end());
+    }
+
+    plan.set_command(std::move(command));
+    const std::vector<std::string> engine_args = plan.engine_args();
+
+    LOG(INFO, "LlamaCpp") << "Starting " << plan.image().tagged_ref() << " as "
+                          << plan.container_name() << " on port " << port_ << std::endl;
+
+    const bool inherit_output = (log_level_ == "info") || is_debug();
+    set_process_handle(ProcessManager::start_process(plan.engine_executable(), engine_args, "",
+                                                     inherit_output, true, {}),
+                       plan.engine_executable(), engine_args);
+
+    if (!wait_for_ready("/health")) {
+        unload_containerized(launch.recipe, launch.variant);
+        throw std::runtime_error(launch.recipe + " llama-server failed to start");
+    }
+
+    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
+}
+
+void LlamaCppServer::unload_containerized(const std::string& recipe, const std::string& variant) {
+    stop_backend_watchdog();
+
+    if (!variant.empty()) {
+        stop_container_for(recipe, variant);
+    }
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        LOG(INFO, "LlamaCpp") << "Stopping " << recipe << " container" << std::endl;
+        ProcessManager::stop_process(handle);
+    }
+}
+
 void LlamaCppServer::unload() {
     stop_backend_watchdog();
     LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
@@ -742,7 +872,7 @@ bool is_ggml_hip_plugin_available() {
 
 
 const BackendSpec* spec() { return make_spec<LlamaCppServer>(descriptor); }
-const BackendOps* ops() { return single_ops<LlamaCppOps<>>(); }
+const BackendOps* ops() { return single_ops<LlamaCppRecipeOps>(); }
 }  // namespace llamacpp
 }  // namespace backends
 }  // namespace lemon

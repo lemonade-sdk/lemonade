@@ -6,6 +6,9 @@
 #include <string>
 
 #include "lemon/backends/backend_ops.h"
+#include "lemon/backends/container_backend.h"
+#include "lemon/backends/container_image_pins.h"
+#include "lemon/backends/llamacpp/llamacpp.h"
 #include "lemon/backends/llamacpp/llamacpp_gguf.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
@@ -20,16 +23,16 @@ namespace backends {
 // validation, the truncated-download check, and the runtime args a model
 // implies.
 //
-// Templated on its base only so llamacpp-toolbox, which runs the same
-// llama-server out of a container, can layer it over ContainerBackendOps and
-// get both halves. Plain `LlamaCppOps` is the ordinary non-container case.
+// Templated on its base only so a fork that runs the same llama-server out of a
+// container (rocmfpx) can layer it over ContainerBackendOps and get both halves.
+// Plain `LlamaCppOps` is the ordinary non-container case.
 template <typename Base = BackendOps>
 class LlamaCppOps : public Base {
 public:
     using Base::Base;
 
     // The descriptor option this backend's custom llama-server arguments live
-    // in. llamacpp-toolbox names its own.
+    // in. A fork with its own recipe names its own.
     virtual std::string args_option_name() const { return "llamacpp_args"; }
 
     void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const override {
@@ -124,7 +127,7 @@ public:
     }
 
     // The two below concern the PATH-installed "system" llama-server, which only
-    // the llamacpp recipe exposes. llamacpp-toolbox has no such variant and
+    // the llamacpp recipe exposes. A containerized fork has no such variant and
     // overrides both back to its container behavior (digest, image pulled).
 
     std::string resolve_version(const std::string& backend,
@@ -150,6 +153,60 @@ public:
         }
         return {binary_found, ""};
     }
+};
+
+// Ops for the `llamacpp` recipe itself. One of its backends runs from a
+// container (see the nathanw row in llamacpp.h), and its install side has to
+// behave like a container rather than like a missing download, so each of these
+// hands off for that backend and keeps the release-asset path for the rest.
+class LlamaCppRecipeOps : public LlamaCppOps<> {
+public:
+    LlamaCppRecipeOps() : container_(llamacpp::descriptor.recipe) {}
+
+    bool install(const std::string& backend, bool force,
+                 DownloadProgressCallback progress) const override {
+        if (containerized(backend)) return container_.install(backend, force, progress);
+        return LlamaCppOps<>::install(backend, force, progress);
+    }
+
+    bool uninstall(const std::string& backend) const override {
+        if (containerized(backend)) return container_.uninstall(backend);
+        return LlamaCppOps<>::uninstall(backend);
+    }
+
+    std::string resolve_version(const std::string& backend,
+                                const std::string& file_version) const override {
+        if (containerized(backend)) return container_.resolve_version(backend, file_version);
+        return LlamaCppOps<>::resolve_version(backend, file_version);
+    }
+
+    InstallCheck check_install(const std::string& backend, bool binary_found) const override {
+        if (containerized(backend)) return container_.check_install(backend, binary_found);
+        return LlamaCppOps<>::check_install(backend, binary_found);
+    }
+
+    std::optional<UnavailableState> classify_unavailable(
+        const std::string& backend, const std::string& install_error,
+        const std::string& default_install_command) const override {
+        if (containerized(backend)) {
+            return container_.classify_unavailable(backend, install_error,
+                                                   default_install_command);
+        }
+        return LlamaCppOps<>::classify_unavailable(backend, install_error,
+                                                   default_install_command);
+    }
+
+    std::string artifact_url(const std::string& backend) const override {
+        if (containerized(backend)) return container_.artifact_url(backend);
+        return LlamaCppOps<>::artifact_url(backend);
+    }
+
+private:
+    static bool containerized(const std::string& backend) {
+        return backend_is_image_backed(llamacpp::descriptor.recipe, backend);
+    }
+
+    ContainerBackendOps container_;
 };
 
 }  // namespace backends

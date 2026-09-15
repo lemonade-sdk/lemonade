@@ -1,0 +1,69 @@
+#include "lemon/backends/rocmfpx/rocmfpx_server.h"
+
+#include <string>
+
+#include <lemon/utils/aixlog.hpp>
+#include "lemon/backends/rocmfpx/rocmfpx.h"
+#include "lemon/model_manager.h"
+
+namespace lemon {
+namespace backends {
+
+namespace {
+constexpr const char* kVariant = "rocmfpx";
+}  // namespace
+
+RocmFpxServer::RocmFpxServer(const std::string& log_level, ModelManager* model_manager,
+                             BackendManager* backend_manager)
+    : LlamaCppServer(log_level, model_manager, backend_manager) {
+    server_name_ = "rocmfpx";
+}
+
+RocmFpxServer::~RocmFpxServer() {
+    unload();
+}
+
+void RocmFpxServer::load(const std::string& model_name, const ModelInfo& model_info,
+                         const RecipeOptions& options, bool do_not_upgrade) {
+    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned digest is present
+
+    const rocmfpx::LaunchDefaults tuned = rocmfpx::launch_defaults();
+
+    ContainerLaunch launch;
+    launch.recipe = rocmfpx::descriptor.recipe;
+    launch.variant = kVariant;
+    launch.profile_id = "amd-rocm";
+    launch.args_option = "rocmfpx_args";
+    launch.reserved_flags = &rocmfpx::reserved_custom_arg_flags();
+    launch.batch_size = tuned.batch_size;
+    launch.ubatch_size = tuned.ubatch_size;
+    launch.flash_attention = tuned.flash_attention;
+    launch.no_mmap = tuned.no_mmap;
+
+    load_containerized(model_name, model_info, options, launch);
+}
+
+void RocmFpxServer::unload() {
+    unload_containerized(rocmfpx::descriptor.recipe, kVariant);
+}
+
+namespace rocmfpx {
+
+std::unique_ptr<WrappedServer> create(const BackendContext& ctx) {
+    return make_server<RocmFpxServer>(ctx);
+}
+
+const BackendSpec* spec() {
+    static const BackendSpec kSpec(descriptor.recipe, descriptor.binary, nullptr, false);
+    return &kSpec;
+}
+
+const BackendOps* ops() {
+    static const RocmFpxOps kOps(descriptor.recipe);
+    return &kOps;
+}
+
+}  // namespace rocmfpx
+
+}  // namespace backends
+}  // namespace lemon

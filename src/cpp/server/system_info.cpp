@@ -472,7 +472,7 @@ static const std::vector<RecipeBackendDef>& recipe_defs() {
         for (const auto* desc : lemon::backends::all_descriptors()) {
             for (const auto& row : desc->support) {
                 v.push_back({desc->recipe, row.backend, row.supported_os, row.devices,
-                             row.device_summary, row.arch_gates});
+                             row.device_summary, row.arch_gates, row.never_default});
             }
         }
         return v;
@@ -807,7 +807,7 @@ static std::string get_expected_backend_version(const std::string& recipe, const
     // Image-backed recipes pin a repository/tag/digest per GPU arch rather than a
     // release tag. The digest is the expected "version", so the shared
     // update-state machinery compares it against the digest actually pulled.
-    if (backends::recipe_is_image_backed(recipe)) {
+    if (backends::backend_is_image_backed(recipe, backend)) {
         return backends::expected_image_digest(recipe, backend);
     }
 
@@ -1599,7 +1599,8 @@ json SystemInfo::build_recipes_info(const json& devices) {
             continue;
         }
 
-        bool skip_as_default = (def.backend == "system" && !prefer_llamacpp_system);
+        bool skip_as_default = def.never_default ||
+                               (def.backend == "system" && !prefer_llamacpp_system);
         if (supported && !skip_as_default) {
             const std::string effective_state =
                 recipes[def.recipe]["backends"][def.backend].value("state", "unsupported");

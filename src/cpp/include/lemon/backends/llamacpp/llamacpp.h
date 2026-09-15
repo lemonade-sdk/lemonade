@@ -2,9 +2,39 @@
 
 #include "lemon/backends/backend_descriptor.h"
 
+#include <set>
+#include <string>
+
 namespace lemon {
 namespace backends {
 namespace llamacpp {
+
+// Flags Lemonade owns on a containerized llama-server. A later flag wins in
+// llama.cpp's left-to-right parse, so a user-supplied copy of any of these would
+// move the port out from under the proxy, rebind the host, or swap the model.
+// The binary path builds its reserved set as it assembles argv; a container
+// launch takes a fixed command, so it states the set instead.
+inline const std::set<std::string>& reserved_custom_arg_flags() {
+    static const std::set<std::string> kReserved = {
+        "-m", "--model",
+        "-mu", "--model-url",
+        "-hf", "--hf-repo", "--hf-file",
+        "--host", "--port",
+        "-c", "--ctx-size",
+        "--jinja", "--no-jinja",
+        "--metrics",
+        "--mmproj", "--no-mmproj",
+    };
+    return kReserved;
+}
+
+// Device passthrough profile for a containerized backend. Stated rather than
+// derived from the name: "nathanw" is a Vulkan build whose name says nothing
+// about that, and a name-prefix rule would silently hand it the ROCm profile.
+inline const char* container_profile_for(const std::string& backend) {
+    (void)backend;
+    return "vulkan";
+}
 
 // The llamacpp backend descriptor (plain data). Header-only `inline const` so it
 // links into both the lemonade CLI and lemond without a separate source file.
@@ -45,6 +75,13 @@ inline const BackendDescriptor descriptor = {
           {"gfx90a", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
+        // Nathan W's Vulkan performance fork. It reads ordinary GGUFs, so it is
+        // a build of this recipe rather than an engine of its own; it just
+        // happens to ship as a container instead of a release asset, which
+        // backend_versions.json records by pinning an image for it. Opt-in only:
+        // never_default keeps a fresh install on the stock Vulkan build.
+        {"nathanw", {"linux"}, {{"amd_gpu", {"gfx1151"}}},
+         "AMD Strix Halo (Nathan W's Vulkan performance fork)**", {}, /*never_default*/ true},
     },
     /*supported_modes*/ {"chat", "embeddings", "reranking"},
     /*required_checkpoints*/ {"main"},

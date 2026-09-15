@@ -8110,7 +8110,7 @@ void Server::handle_install_dry_run(const httplib::Request& req, httplib::Respon
         // they would install instead of failing with a missing-version error
         // that reads like a broken registry. The equivalent staleness check for
         // them is `gen_toolbox_catalog.py pins --check`.
-        if (backends::recipe_is_image_backed(recipe)) {
+        if (backends::backend_is_image_backed(recipe, backend)) {
             const auto pin = backends::image_pin(recipe, backend);
             SystemInfo::set_rocm_arch_override("");
             nlohmann::json response = {

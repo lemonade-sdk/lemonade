@@ -44,6 +44,29 @@ static inline bool config_migrate_v1_to_v2(json& config) {
     return changed;
 }
 
+/// Migrate a v2 config to v3:
+///   - The `toolbox` section became `rocmfpx` when the two forks it bundled were
+///     split apart; its `args` carry over, its `backend` does not (the surviving
+///     recipe has one build, and the other fork moved to `llamacpp`).
+///   - Bump config_version to 3
+/// Returns true if the config was modified.
+static inline bool config_migrate_v2_to_v3(json& config) {
+    if (config.contains("toolbox") && config["toolbox"].is_object()) {
+        json toolbox = config["toolbox"];
+        config.erase("toolbox");
+        if (!config.contains("rocmfpx") || !config["rocmfpx"].is_object()) {
+            config["rocmfpx"] = json::object();
+        }
+        if (toolbox.contains("args") && toolbox["args"].is_string() &&
+            !toolbox["args"].get<std::string>().empty()) {
+            config["rocmfpx"]["args"] = toolbox["args"];
+        }
+    }
+
+    config["config_version"] = 3;
+    return true;
+}
+
 /// Apply in-memory migrations from an older config_version.
 /// The `config` parameter is the post-merge object (defaults + user overrides);
 /// `original_version` is the version from the file before merging.
@@ -71,6 +94,11 @@ static inline bool config_migrate(json& config,
     if (current_version < 2) {
         config_migrate_v1_to_v2(config);
         current_version = 2;
+    }
+
+    if (current_version < 3) {
+        config_migrate_v2_to_v3(config);
+        current_version = 3;
     }
 
     return true;

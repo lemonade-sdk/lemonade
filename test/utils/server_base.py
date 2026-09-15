@@ -411,14 +411,13 @@ def _build_runtime_config(additional_server_args=None):
         config["trellis"] = {"backend": backend}
     elif wrapped_server == "openmoss" and backend:
         config["openmoss"] = {"backend": backend}
-    # The toolbox recipe's config section is "toolbox", not its recipe name.
-    elif wrapped_server == "llamacpp-toolbox" and backend:
+    elif wrapped_server == "rocmfpx":
         # Every ROCmFPX model published is a reasoning model, so with the small
         # token budgets these tests use the whole budget lands in
         # `reasoning_content` and `content` comes back empty. That is correct
         # model behavior, not a server bug, so reasoning is turned off for the
         # run rather than weakening the assertions.
-        config["toolbox"] = {"backend": backend, "args": "--reasoning off"}
+        config["rocmfpx"] = {"args": "--reasoning off"}
 
     # Parse additional_server_args for known flags
     additional = list(_config.get("additional_server_args", []))

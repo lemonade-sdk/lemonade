@@ -83,10 +83,9 @@ CAPABILITIES = {
                 "llm": "Meta-Llama-3.1-8B-Instruct-HRX",
             },
         },
-        # The forked toolbox images run the same llama-server, so they serve the
-        # same surface. The test model is a ROCmFPX conversion, which only this
-        # fork can read; nathanw takes ordinary GGUFs and is covered by hand.
-        "llamacpp-toolbox": {
+        # The fork runs the same llama-server, so it serves the same surface.
+        # Its models are ROCmFPX conversions that only it can read.
+        "rocmfpx": {
             "backends": ["rocmfpx"],
             "supports": {
                 "chat_completions": True,
@@ -103,7 +102,7 @@ CAPABILITIES = {
                 "static_max_context_window": True,
             },
             "test_models": {
-                "llm": "Qwen3.8-27B-ROCmFP4-FAST-Toolbox",
+                "llm": "Qwen3.8-27B-ROCmFP4-FAST",
             },
         },
         "ds4": {

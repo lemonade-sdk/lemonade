@@ -164,7 +164,7 @@ set(LEMON_BACKENDS
     "vllm|vllm"
     "thenoise|thenoise"
     "ds4|ds4"
-    "llamacpp-toolbox|toolbox"
+    "rocmfpx|rocmfpx"
     "halogen|halogen"
     "cloud|cloud"
     "thinksound|thinksound"
@@ -3251,11 +3251,11 @@ endif()
 
 # Image-backed recipes: every variant in a descriptor's support rows must have a
 # committed digest pin for each arch it claims, and nothing else may declare one.
-set(_TOOLBOX_PINS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_toolbox_image_pins.cpp")
-if(BUILD_TESTING AND EXISTS "${_TOOLBOX_PINS_TEST_SRC}")
-    add_executable(test_toolbox_image_pins test/cpp/test_toolbox_image_pins.cpp)
-    target_link_libraries(test_toolbox_image_pins PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ToolboxImagePinsTest CI ON COMMAND test_toolbox_image_pins)
+set(_IMAGE_PINS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_image_pins.cpp")
+if(BUILD_TESTING AND EXISTS "${_IMAGE_PINS_TEST_SRC}")
+    add_executable(test_container_image_pins test/cpp/test_container_image_pins.cpp)
+    target_link_libraries(test_container_image_pins PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ContainerImagePinsTest CI ON COMMAND test_container_image_pins)
 endif()
 
 # llamacpp gfx950 (MI350) install gate: only the Linux + stable-channel asset is

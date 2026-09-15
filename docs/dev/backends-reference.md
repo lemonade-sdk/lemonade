@@ -14,12 +14,12 @@ the generator instead. Prose outside the markers is preserved. -->
 | `flm` | FastFlowLM NPU | no | yes | npu |
 | `halogen` | Halogen Flash (experimental) | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
-| `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, rocm, system, vulkan |
+| `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
-| `llamacpp-toolbox` | Llama.cpp Toolbox (experimental) | yes | yes | nathanw, rocmfpx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
 | `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
+| `rocmfpx` | ROCm FPX (experimental) | no | yes | rocmfpx |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
@@ -48,9 +48,8 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
 | `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
 | `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp` | nathanw | linux | amd_gpu (gfx1151) |
 | `llamacpp-hrx` | hrx | linux | amd_gpu (gfx1100, gfx1151) |
-| `llamacpp-toolbox` | rocmfpx | linux | amd_gpu (gfx1151) |
-| `llamacpp-toolbox` | nathanw | linux | amd_gpu (gfx1151) |
 | `moonshine` | cpu | windows | cpu (x86_64) |
 | `moonshine` | cpu | linux | cpu (arm64, x86_64) |
 | `moonshine` | cpu | macos | cpu (arm64) |
@@ -60,6 +59,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `openmoss` | cuda | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `openmoss` | rocm | linux, windows | amd_gpu |
+| `rocmfpx` | rocmfpx | linux | amd_gpu (gfx1151) |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | macos | metal |
 | `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
@@ -127,14 +127,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
 | `hrx_args` | `--hrx-args` | ARGS | "" | Custom arguments to pass to the HRX llama-server |
 
-#### `llamacpp-toolbox` — Llama.cpp Toolbox (experimental)
-
-| Option | CLI flag | Type | Default | Description |
-|--------|----------|------|---------|-------------|
-| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
-| `llamacpp-toolbox_backend` | `--llamacpp-toolbox` | BACKEND | "" | Toolbox image variant to run |
-| `toolbox_args` | `--toolbox-args` | ARGS | "" | Custom arguments to pass to the toolbox llama-server |
-
 #### `moonshine` — Moonshine
 
 | Option | CLI flag | Type | Default | Description |
@@ -152,6 +144,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | Option | CLI flag | Type | Default | Description |
 |--------|----------|------|---------|-------------|
 | `openmoss_backend` | `--openmoss` | BACKEND | "" | OpenMOSS TTS backend to use |
+
+#### `rocmfpx` — ROCm FPX (experimental)
+
+| Option | CLI flag | Type | Default | Description |
+|--------|----------|------|---------|-------------|
+| `ctx_size` | `--ctx-size` | SIZE | -1 | Context size for the model |
+| `rocmfpx_args` | `--rocmfpx-args` | ARGS | "" | Custom arguments to pass to the ROCm FPX llama-server |
 
 #### `sd-cpp` — StableDiffusion.cpp
 

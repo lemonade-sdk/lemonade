@@ -4,6 +4,7 @@
 
 #include "lemon/wrapped_server.h"
 #include "lemon/backends/backend_utils.h"
+#include <set>
 #include <string>
 
 namespace lemon {
@@ -54,6 +55,31 @@ public:
 
     // ITokenizerServer implementation
     json tokenize(const json& request) override;
+
+protected:
+    // Everything a containerized llama-server launch varies on. The image runs
+    // the same binary this class drives from disk, so only the launch differs;
+    // the forks that ship this way (rocmfpx, llamacpp's nathanw) each fill this
+    // in and inherit the rest of the class unchanged.
+    struct ContainerLaunch {
+        std::string recipe;
+        std::string variant;
+        std::string profile_id;
+        std::string args_option;                      // descriptor option holding custom args
+        const std::set<std::string>* reserved_flags;  // flags the caller owns
+        int batch_size = 2048;
+        int ubatch_size = 2048;
+        bool flash_attention = true;
+        bool no_mmap = false;
+    };
+
+    // Start llama-server inside a pinned OCI image rather than from a local
+    // binary, then wait for it the same way load() does.
+    void load_containerized(const std::string& model_name, const ModelInfo& model_info,
+                            const RecipeOptions& options, const ContainerLaunch& launch);
+
+    // Stop the container started by load_containerized(), if any.
+    void unload_containerized(const std::string& recipe, const std::string& variant);
 
 private:
     // llama-server echoes the local .gguf path it was launched with (`-m <path>`)

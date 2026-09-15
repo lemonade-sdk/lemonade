@@ -73,7 +73,7 @@ ContainerEngine docker_engine() {
 
 ContainerRunSpec sample_spec() {
     ContainerRunSpec spec;
-    spec.name = "lemonade-llamacpp-toolbox-rocm";
+    spec.name = "lemonade-rocmfpx-rocmfpx";
     spec.image = "docker.io/kyuz0/amd-strix-halo-toolboxes@sha256:abc";
     spec.profile = ContainerRuntime::device_profile("amd-rocm");
     spec.mounts.push_back({"/home/u/.cache/huggingface", "/hf", true});
@@ -90,7 +90,7 @@ void test_run_args() {
 
     expect(args[0] == "run", "run args start with run");
     expect(contains(args, "--rm"), "container is removed on exit");
-    expect(contains(args, "--name lemonade-llamacpp-toolbox-rocm"), "container is named");
+    expect(contains(args, "--name lemonade-rocmfpx-rocmfpx"), "container is named");
     expect(contains(args, "--device /dev/kfd"), "kfd passed through");
     expect(contains(args, "--device /dev/dri"), "dri passed through");
     expect(contains(args, "--group-add video"), "video group added");
@@ -217,8 +217,8 @@ void test_path_rewriting() {
 }
 
 void test_container_names() {
-    expect(ContainerRuntime::container_name("llamacpp-toolbox", "rocm") ==
-               "lemonade-llamacpp-toolbox-rocm",
+    expect(ContainerRuntime::container_name("rocmfpx", "rocmfpx") ==
+               "lemonade-rocmfpx-rocmfpx",
            "container name is prefixed and hyphenated");
     expect(ContainerRuntime::container_name("ds4", "") == "lemonade-ds4",
            "empty variant omits the suffix");

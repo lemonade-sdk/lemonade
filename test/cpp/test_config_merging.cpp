@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -287,19 +288,41 @@ static void test_config_file_migration_sparse() {
 
     // load() triggers migration
     json merged = ConfigFile::load(temp.string(), temp.string());
-    check(merged["config_version"] == 2, "merged version is 2");
+    check(merged["config_version"] == 3, "merged version is 3");
     check(merged["ctx_size"] == -1, "ctx_size migrated 4096 -> -1");
     check(merged["port"] == 7777, "user port 7777 preserved");
     check(merged["llamacpp"]["backend"] == "cpu", "user backend cpu preserved");
 
     // Verify on-disk file was updated with migrated version, but STILL sparse!
     json raw_after = ConfigFile::load_raw(temp.string());
-    check(raw_after["config_version"] == 2, "on-disk config_version updated to 2");
+    check(raw_after["config_version"] == 3, "on-disk config_version updated to 3");
     check(raw_after["ctx_size"] == -1, "on-disk ctx_size updated to -1");
     check(raw_after["port"] == 7777, "on-disk user port preserved");
     check(!raw_after.contains("host"), "on-disk file did not inject host");
     check(!raw_after.contains("telemetry"), "on-disk file did not inject telemetry");
     check(!raw_after.contains("whispercpp"), "on-disk file did not inject whispercpp");
+}
+
+static void test_config_file_migration_toolbox_to_rocmfpx() {
+    std::puts("\n--- test_config_file_migration_toolbox_to_rocmfpx ---");
+    ScopedTempDir temp;
+
+    json v2 = {
+        {"config_version", 2},
+        {"toolbox", {{"args", "--threads 8"}, {"backend", "rocmfpx"}}}
+    };
+    ConfigFile::save(temp.string(), v2);
+
+    json merged = ConfigFile::load(temp.string(), temp.string());
+    check(merged["config_version"] == 3, "merged version is 3");
+    check(merged["rocmfpx"]["args"] == "--threads 8", "toolbox args carried to rocmfpx");
+
+    json raw_after = ConfigFile::load_raw(temp.string());
+    check(!raw_after.contains("toolbox"), "on-disk toolbox section removed");
+    check(raw_after["rocmfpx"]["args"] == "--threads 8", "on-disk rocmfpx args written");
+    // The surviving recipe has one build, and the fork the other value named
+    // moved to the llamacpp recipe, so carrying it over would select nothing.
+    check(!raw_after["rocmfpx"].contains("backend"), "dead toolbox backend key dropped");
 }
 
 static void test_config_file_corrupt_handling() {
@@ -615,6 +638,15 @@ static void test_server_handle_config_set_direct() {
 int main() {
     std::puts("=== Config Merging and Sparse Lifecycle Unit Tests ===\n");
 
+    // A host with the distro package installed has /usr/share/lemonade/defaults.json,
+    // which get_defaults() merges over the build's own copy. Its config_version
+    // would then decide which migrations this test sees. Point the last layer at
+    // the build's defaults so the assertions describe this tree, not the host.
+    static std::string defaults_override =
+        "LEMONADE_DEFAULTS_PATH=" +
+        lemon::utils::get_resource_path("resources/defaults.json");
+    ::putenv(const_cast<char*>(defaults_override.c_str()));
+
     test_deep_merge_level1();
     test_deep_merge_level2_backend();
     test_deep_merge_level3_telemetry();
@@ -624,6 +656,7 @@ int main() {
     test_config_file_missing_creates_no_file();
     test_config_file_sparse_merge_and_preservation();
     test_config_file_migration_sparse();
+    test_config_file_migration_toolbox_to_rocmfpx();
     test_config_file_corrupt_handling();
 
     test_distro_layer_precedence();

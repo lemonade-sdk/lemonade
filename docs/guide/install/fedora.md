@@ -36,9 +36,9 @@ Once the service is running, open [http://localhost:13305](http://localhost:1330
 
 ## Optional: container runtime
 
-The `llamacpp-toolbox`, `ds4` and `halogen` backends run inside OCI container images, so they need
+The `rocmfpx`, `ds4` and `halogen` backends run inside OCI container images, so they need
 podman (preferred) or docker on the host. Nothing else does. See
-[Container Toolbox Backends](../configuration/toolboxes.md).
+[Container Backends](../configuration/container-backends.md).
 
 ```bash
 sudo dnf install podman

@@ -56,10 +56,31 @@
     "rocm-nightly": "b1319",
     "cuda": "b10711",
     "metal": "b10723",
-    "cpu": "b10723"
+    "cpu": "b10723",
+    "nathanw": {
+      "gfx1151": {
+        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+        "tag": "vulkan-radv-performance",
+        "digest": "sha256:42630818d084f3fa712a06a8fd2259338361e52f1c36720cb3b75639686bac03",
+        "channel": "experimental",
+        "compressed_bytes": 606169183
+      }
+    }
   },
   "llamacpp-hrx": {
     "hrx": "hrx-b69"
+  },
+  "rocmfpx": {
+    "comment": "ROCm FPX llama.cpp fork image from kyuz0/amd-strix-halo-toolboxes: FP4/FP6/FP8 weight formats plus MTP, gfx1151-only upstream. `tag` is documentation only: `digest` is what gets pulled, so an upstream retag cannot change what a Lemonade release runs. Bumped by .github/workflows/toolbox_image_refresh.yml.",
+    "rocmfpx": {
+      "gfx1151": {
+        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
+        "tag": "rocm-10.0-rocmfpx",
+        "digest": "sha256:02da5f5c60202bade700a1e2c032ad367fc2b524ef0b2ac60a8ff55611a88054",
+        "channel": "experimental",
+        "compressed_bytes": 1389977330
+      }
+    }
   },
   "whispercpp": {
     "cpu": "v1.8.4",
@@ -216,27 +237,6 @@
     "vulkan": "v0.3.0",
     "rocm-stable": "v0.3.0",
     "cuda": "v0.3.0"
-  },
-  "llamacpp-toolbox": {
-    "comment": "Forked llama.cpp toolbox images from kyuz0/amd-strix-halo-toolboxes. Only the forks stock llama.cpp cannot substitute for: ROCmFPX weight formats, and Nathan W's Vulkan performance build. Both are gfx1151-only upstream. `tag` is documentation only: `digest` is what gets pulled, so an upstream retag cannot change what a Lemonade release runs. Bumped by .github/workflows/toolbox_image_refresh.yml.",
-    "rocmfpx": {
-      "gfx1151": {
-        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
-        "tag": "rocm-10.0-rocmfpx",
-        "digest": "sha256:02da5f5c60202bade700a1e2c032ad367fc2b524ef0b2ac60a8ff55611a88054",
-        "channel": "experimental",
-        "compressed_bytes": 1389977330
-      }
-    },
-    "nathanw": {
-      "gfx1151": {
-        "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
-        "tag": "vulkan-radv-performance",
-        "digest": "sha256:42630818d084f3fa712a06a8fd2259338361e52f1c36720cb3b75639686bac03",
-        "channel": "experimental",
-        "compressed_bytes": 606169183
-      }
-    }
   },
   "halogen": {
     "comment": "Peonist's closed-source Halogen Flash engine. Not one of Donato's images; his cockpit pins an older release, so this tracks Peonist's own registry.",

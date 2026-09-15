@@ -29,6 +29,13 @@ namespace {
 
 constexpr const char* kVariant = "rocm";
 constexpr int kNativeContext = 262144;
+// The image's own built-in chat budget, which it applies when nothing overrides it.
+constexpr int kDefaultMaxTokens = 8192;
+
+// Pinning ~68 GiB of weights off disk is the bulk of a cold start, so readiness
+// is bounded by storage bandwidth rather than by anything global_timeout
+// describes. Floor the wait here and let a larger global_timeout raise it.
+constexpr long kStartupTimeoutSeconds = 1800;
 
 bool has_suffix(const std::string& value, const std::string& suffix) {
     return value.size() >= suffix.size() &&
@@ -148,8 +155,14 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                                  vision_tower + " in " + bundle_dir.string());
     }
 
-    int ctx_size = options.get_option("ctx_size");
-    if (ctx_size <= 0 || ctx_size > kNativeContext) {
+    // Auto-tune sizes a context from GGUF architecture metadata against the GPU
+    // pool. An HGN checkpoint carries no such metadata and Halogen keeps its KV
+    // in host RAM, so that estimate describes neither the model nor the device.
+    // Left alone the engine defaults to its native context and fits the KV pool
+    // downward against the memory it measures, which is the better answer.
+    const json ctx_json = options.get_option("ctx_size");
+    int ctx_size = (!ctx_size_is_auto() && ctx_json.is_number()) ? ctx_json.get<int>() : 0;
+    if (ctx_size > kNativeContext) {
         ctx_size = kNativeContext;
     }
 
@@ -173,7 +186,15 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
     plan.add_env("HALOGEN_CK_OVERLAY", bundle_in_container + "/" + overlay);
     plan.add_env("HALOGEN_TOKENIZER", bundle_in_container + "/" + tokenizer_dir);
     plan.add_env("HALOGEN_API_PORT", std::to_string(port_));
-    plan.add_env("HALOGEN_CTX", std::to_string(ctx_size));
+    if (ctx_size > 0) {
+        plan.add_env("HALOGEN_CTX", std::to_string(ctx_size));
+        // A request reserves prompt + max_tokens against the context, and the
+        // image's built-in chat budget is 8192. Narrowing the context without
+        // narrowing that budget rejects every request that omits max_tokens,
+        // which is most OpenAI clients.
+        plan.add_env("HALOGEN_MAX_TOKENS_DEFAULT",
+                     std::to_string((std::min)(ctx_size / 2, kDefaultMaxTokens)));
+    }
     // HALOGEN_KV_POOL_POSITIONS is deliberately left unset: the engine sizes the
     // pool from the memory the OS reports and lowers it when the configured one
     // will not fit. A host that carves a large block out for the iGPU in
@@ -197,7 +218,8 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
 
     // Halogen maps a 115 GiB checkpoint before it binds, so readiness takes far
     // longer than a GGUF load; /v1/models is the cheapest always-on route.
-    if (!wait_for_ready("/v1/models", HttpClient::get_default_timeout())) {
+    if (!wait_for_ready("/v1/models", (std::max)(kStartupTimeoutSeconds,
+                                                 HttpClient::get_default_timeout()))) {
         unload();
         throw std::runtime_error("Halogen server failed to start within timeout");
     }

@@ -10,6 +10,7 @@
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <set>
 
@@ -21,6 +22,12 @@ namespace backends {
 
 namespace {
 constexpr const char* kVariant = "rocm";
+
+// ds4-server streams an 80 GB+ MoE off disk and binds only once it is loaded,
+// so readiness is bounded by storage bandwidth rather than by anything
+// global_timeout describes. Floor the wait here and let a larger
+// global_timeout raise it.
+constexpr long kStartupTimeoutSeconds = 1800;
 
 // ds4-server sizes its expert cache from the whole device arena, which on an
 // APU is the GTT window. That leaves too little for a long prompt's prefill:
@@ -160,7 +167,8 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
     // cheapest always-on route and doubles as the watchdog probe.
-    if (!wait_for_ready("/v1/models", HttpClient::get_default_timeout())) {
+    if (!wait_for_ready("/v1/models", (std::max)(kStartupTimeoutSeconds,
+                                                 HttpClient::get_default_timeout()))) {
         unload();
         throw std::runtime_error("ds4-server failed to start within timeout");
     }

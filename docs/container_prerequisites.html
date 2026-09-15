@@ -16,7 +16,7 @@
         Container Prerequisites
       </div>
       <div class="subtitle">
-        What the toolbox backends need from your machine, and how to provide it
+        What the container backends need from your machine, and how to provide it
       </div>
     </div>
 
@@ -25,7 +25,7 @@
         <h2>Why this page</h2>
         <p>
           Three Lemonade backends run inside OCI containers rather than as downloaded
-          binaries: <code>llamacpp-toolbox</code>, <code>ds4</code> and <code>halogen</code>.
+          binaries: <code>rocmfpx</code>, <code>ds4</code> and <code>halogen</code>.
           They are prebuilt images that bundle a complete ROCm or Vulkan stack, which is what
           makes them work on hardware where a plain binary would not.
         </p>
@@ -178,7 +178,7 @@
       <div class="install-section" id="render-node-missing">
         <h2>/dev/dri is missing</h2>
         <p>
-          The render node under <code>/dev/dri</code> is how the Vulkan toolbox variants reach
+          The render node under <code>/dev/dri</code> is how the Vulkan container backends reach
           the GPU. Check that it exists:
         </p>
         <div class="code-block">
@@ -196,7 +196,7 @@
         <p>
           On Strix Halo the GPU shares system memory, and how much of it the GPU may use is set
           at boot. Out of the box the limit is roughly half your RAM, which is not enough for
-          the largest toolbox models. Check the current limit:
+          the largest container-backed models. Check the current limit:
         </p>
         <div class="code-block">
           <code>cat /sys/module/ttm/parameters/pages_limit</code>
@@ -247,7 +247,7 @@
         <p>
           If it is older than 7.0, there is no workaround: Halogen's memory path depends on
           kernel support that is not backported. Wait for your distribution to ship a 7.x
-          kernel, or use one of the <code>llamacpp-toolbox</code> variants in the meantime -
+          kernel, or use <code>rocmfpx</code> or llama.cpp's <code>nathanw</code> build in the meantime -
           they run on the same GPU with no kernel floor beyond the CWSR fix.
         </p>
         <p class="option-note">
@@ -259,7 +259,7 @@
       <div class="install-section">
         <h2>Running Lemonade itself in a container</h2>
         <p>
-          None of this works from inside Lemonade's own Docker image. The toolbox backends
+          None of this works from inside Lemonade's own Docker image. The container backends
           launch sibling containers, which a container cannot do without privileges that the
           Lemonade image deliberately does not request. Run Lemonade on the host to use them.
         </p>

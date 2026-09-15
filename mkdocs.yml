@@ -72,7 +72,7 @@ nav:
       - Custom Models: guide/configuration/custom-models.md
       - Running Many Models: guide/configuration/multi-model.md
       - llama.cpp: guide/configuration/llamacpp.md
-      - Container Toolboxes: guide/configuration/toolboxes.md
+      - Container Backends: guide/configuration/container-backends.md
       - vLLM: guide/configuration/vllm.md
       - Moonshine: guide/configuration/moonshine.md
       - Cloud Offload: guide/configuration/cloud.md

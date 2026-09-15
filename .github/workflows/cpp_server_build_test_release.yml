@@ -1303,9 +1303,9 @@ jobs:
           # have no row at all, since their smallest published models are 81 GB
           # and 121 GiB, which is not a merge-queue download. Both are verified
           # by hand on Strix Halo hardware.
-          - name: llamacpp-toolbox
+          - name: rocmfpx
             script: server_llm.py
-            extra_args: "--wrapped-server llamacpp-toolbox --lite"
+            extra_args: "--wrapped-server rocmfpx --lite"
             backends: "rocmfpx"
             runner: [Linux, X64, rocm, stx-halo, lemon-prod]
           - name: omni

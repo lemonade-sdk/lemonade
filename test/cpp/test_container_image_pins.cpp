@@ -1,10 +1,11 @@
-// Proves every image-backed recipe's committed pins line up with its descriptor.
-// A support row with no pin resolves to "publishes no toolbox image for <arch>"
-// at load time; a pin with no support row is dead weight the refresh workflow
-// would keep bumping.
+// Proves every committed image pin lines up with a descriptor support row. A
+// support row with no pin resolves to "publishes no image for <arch>" at load
+// time; a pin with no support row is dead weight the refresh workflow would keep
+// bumping. Image-backedness is per backend, not per recipe: llamacpp ships
+// release binaries with one containerized fork among them.
 //
-// Build with: cmake --build --preset default --target test_toolbox_image_pins
-// Run with: ctest --test-dir build -R '^ToolboxImagePinsTest$' --output-on-failure
+// Build with: cmake --build --preset default --target test_container_image_pins
+// Run with: ctest --test-dir build -R '^ContainerImagePinsTest$' --output-on-failure
 
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/container_image_pins.h"
@@ -16,6 +17,7 @@
 
 using lemon::backends::all_descriptors;
 using lemon::backends::all_image_pins;
+using lemon::backends::backend_is_image_backed;
 using lemon::backends::image_pin;
 
 namespace {
@@ -45,7 +47,6 @@ int main() {
     expect(!pins.empty(), "at least one image pin is committed");
 
     std::set<std::string> pinned;  // "<recipe>|<variant>|<arch>"
-    std::set<std::string> image_backed_recipes;
 
     for (const auto& pin : pins) {
         const std::string label = pin.recipe + ":" + pin.variant + "/" + pin.arch;
@@ -58,20 +59,18 @@ int main() {
                label + " resolves to a digest reference, never a tag");
         expect(pinned.insert(pin.recipe + "|" + pin.variant + "|" + pin.arch).second,
                label + " is pinned exactly once");
-        image_backed_recipes.insert(pin.recipe);
+        expect(backend_is_image_backed(pin.recipe, pin.variant),
+               label + " is pinned only because that backend runs from an image");
     }
 
     for (const auto* descriptor : all_descriptors()) {
-        if (!descriptor->image_backed) {
-            expect(image_backed_recipes.count(descriptor->recipe) == 0,
-                   descriptor->recipe + " declares no pins unless it is image-backed");
-            continue;
+        if (descriptor->image_backed) {
+            expect(!descriptor->support.empty(),
+                   descriptor->recipe + " declares at least one support row");
         }
 
-        expect(!descriptor->support.empty(),
-               descriptor->recipe + " declares at least one support row");
-
         for (const auto& row : descriptor->support) {
+            if (!backend_is_image_backed(descriptor->recipe, row.backend)) continue;
             auto amd = row.devices.find("amd_gpu");
             if (amd == row.devices.end()) continue;
             for (const auto& arch : amd->second) {
@@ -88,9 +87,9 @@ int main() {
     }
 
     if (failures == 0) {
-        std::cout << "All toolbox image pin tests passed" << std::endl;
+        std::cout << "All container image pin tests passed" << std::endl;
         return 0;
     }
-    std::cout << failures << " toolbox image pin test(s) failed" << std::endl;
+    std::cout << failures << " container image pin test(s) failed" << std::endl;
     return 1;
 }

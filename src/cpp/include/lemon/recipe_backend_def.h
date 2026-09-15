@@ -38,6 +38,7 @@ struct RecipeBackendDef {
     // May contain footnote markers (e.g. "*") whose text lives as prose in the doc.
     std::string device_summary = "";
     ArchInstallGates arch_gates;
+    bool never_default = false;  // see BackendSupport::never_default
 };
 
 // A backend descriptor's support row, without the recipe (it's always the
@@ -49,6 +50,12 @@ struct BackendSupport {
     DeviceConstraints devices;
     std::string device_summary = "";
     ArchInstallGates arch_gates;
+
+    // True for a backend a user must pick deliberately. It still appears in
+    // /system-info and the CLI, but never becomes a recipe's default_backend,
+    // not even when it is the only one installed. Experimental forks set this:
+    // they are opt-in speed, not what a fresh install should silently run.
+    bool never_default = false;
 };
 
 } // namespace lemon

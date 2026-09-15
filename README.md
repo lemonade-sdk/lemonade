@@ -148,7 +148,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   <tbody>
     <tr>
       <td rowspan="14"><strong>Text generation</strong></td>
-      <td rowspan="6"><code>llamacpp</code></td>
+      <td rowspan="7"><code>llamacpp</code></td>
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
       <td>Linux</td>
@@ -177,6 +177,11 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU; ARM64 CPU (Linux)</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>nathanw</code></td>
+      <td>AMD Strix Halo (Nathan W's Vulkan performance fork)**</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="1"><code>llamacpp-hrx</code> (experimental)</td>
@@ -209,14 +214,9 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Linux</td>
     </tr>
     <tr>
-      <td rowspan="2"><code>llamacpp-toolbox</code> (experimental)</td>
+      <td rowspan="1"><code>rocmfpx</code> (experimental)</td>
       <td><code>rocmfpx</code></td>
       <td>AMD Strix Halo (ROCmFP4/FP6/FP8 weights, MTP)</td>
-      <td>Linux</td>
-    </tr>
-    <tr>
-      <td><code>nathanw</code></td>
-      <td>AMD Strix Halo (Nathan W's Vulkan performance fork)</td>
       <td>Linux</td>
     </tr>
     <tr>

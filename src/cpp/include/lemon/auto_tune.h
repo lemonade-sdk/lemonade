@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iomanip>
 #include <optional>
+#include <lemon/backends/backend_descriptor_registry.h>
 #include <lemon/gpu_memory_selection.h>
 #include <lemon/model_manager.h>
 #include <lemon/system_info.h>
@@ -228,7 +229,14 @@ inline int64_t compute_auto_context_size(const ModelInfo& model_info,
 
     // Available memory for KV cache = total - used - model weights
     // (used is already subtracted in get_available_memory_gb)
-    double model_weight_gb = (std::max)(0.0, model_info.size);
+    // A streaming backend reads most of the checkpoint off disk on demand, so
+    // what competes with the KV cache is its resident working set, not the file.
+    const auto* desc = backends::descriptor_for(model_info.recipe);
+    const bool streams = desc && desc->streams_model_from_storage;
+    double model_weight_gb = (std::max)(
+        0.0, streams ? ModelManager::streaming_working_set_gb(model_info.min_resident_gb,
+                                                              model_info.size)
+                     : model_info.size);
     double available_for_kv_gb = available_memory_gb - model_weight_gb;
 
     if (available_for_kv_gb <= 0) {

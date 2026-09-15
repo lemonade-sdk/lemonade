@@ -13,7 +13,7 @@
   "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
-  "config_version": 2,
+  "config_version": 3,
   "ctx_size": -1,
   "default_model_source": "huggingface",
   "disable_model_filtering": false,
@@ -76,6 +76,9 @@
   "port": 13305,
   "rocm_channel": "stable",
   "rocm_install_method": "auto",
+  "rocmfpx": {
+    "args": ""
+  },
   "ryzenai": {
     "server_bin": "builtin"
   },
@@ -133,10 +136,6 @@
     "cuda_bin": "builtin",
     "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
-  },
-  "toolbox": {
-    "args": "",
-    "backend": "auto"
   },
   "trellis": {
     "args": "",

@@ -1,19 +1,21 @@
-# Container Toolbox Backends
+# Container Backends
 
-Three Lemonade backends run inside OCI container images instead of downloaded binaries:
+Some Lemonade backends run inside OCI container images instead of downloaded binaries:
 
-| Recipe | Engine | Hardware |
-|--------|--------|----------|
-| `llamacpp-toolbox` | Forked llama.cpp builds mainline cannot substitute for | Strix Halo (gfx1151) |
-| `ds4` | antirez's DwarfStar4 for the DeepSeek V4 family | Strix Halo, Radeon AI PRO R9700 |
-| `halogen` | Peonist's Halogen Flash engine | Strix Halo only |
+| Recipe | Backend | Engine | Hardware |
+|--------|---------|--------|----------|
+| `rocmfpx` | `rocmfpx` | ROCm FPX: a llama.cpp fork adding FP4/FP6/FP8 weights and MTP | Strix Halo (gfx1151) |
+| `llamacpp` | `nathanw` | Nathan W's Vulkan performance build of llama.cpp | Strix Halo (gfx1151) |
+| `ds4` | `ds4` | antirez's DwarfStar4 for the DeepSeek V4 family | Strix Halo, Radeon AI PRO R9700 |
+| `halogen` | `halogen` | Peonist's Halogen Flash engine | Strix Halo only |
 
 The images come from [Donato Capitella's toolbox project](https://github.com/kyuz0/amd-strix-halo-toolboxes)
 and, for Halogen, from [Peonist](https://github.com/peonist-ai). They bundle a complete ROCm or
 Vulkan stack, which is how they run engine builds that a plain binary release cannot deliver for
-this hardware.
+this hardware. Which collection an image is published in is packaging, so it does not appear in
+Lemonade: what you pick is an engine, and for `nathanw`, a build of one.
 
-They are Linux-only by construction. On Windows and macOS these recipes are hidden.
+They are Linux-only by construction. On Windows and macOS these backends are hidden.
 
 ## Prerequisites
 
@@ -25,31 +27,30 @@ If a backend shows **action required** in the backend manager, the message names
 links to the matching section of the
 [container prerequisites page](https://lemonade-server.ai/container_prerequisites.html).
 
-## `llamacpp-toolbox` variants
+## Why these two llama.cpp forks sit in different places
 
-Pick one with `--llamacpp-toolbox <variant>`, or set `backend` in the `toolbox` section of
-`config.json`. `auto` picks the first variant your GPU supports.
+Both are forks of llama.cpp shipped from the same image collection, and they are reached
+differently because they differ in kind.
 
-| Variant | Image tag | What it is |
-|---------|-----------|------------|
-| `rocmfpx` | `rocm-10.0-rocmfpx` | ROCmFPX fork: FP3/FP4/FP6/FP8 weight formats, MTP |
-| `nathanw` | `vulkan-radv-performance` | Nathan W's Vulkan performance fork |
+**`rocmfpx` is its own engine.** It adds FP4/FP6/FP8 weight formats that nothing else can read: a
+model quantized to ROCmFP4 will not load under `llamacpp`, and an ordinary GGUF gains nothing from
+it. Its models name their format (`Qwen3.8-27B-ROCmFP4-FAST`), and they carry the `rocmfpx` recipe.
+There is one build, so there is nothing to select; pass extra llama-server flags with
+`--rocmfpx-args`, or the `args` key of the `rocmfpx` section of `config.json`.
 
-Both are gfx1151-only upstream. These are the builds stock llama.cpp cannot stand in for: running
-an ordinary GGUF on ROCm or Vulkan is what the existing `llamacpp` recipe already does, so this
-recipe deliberately does not duplicate it.
+**`nathanw` is a build of `llamacpp`.** It reads ordinary GGUFs and only changes how fast they run,
+so it is a backend of the llama.cpp recipe alongside `vulkan` and `rocm`. Any `llamacpp` model can
+use it: pick it with `--llamacpp nathanw`, or set `backend` in the `llamacpp` section of
+`config.json`. It is never chosen automatically, including when it is the only backend installed,
+because an experimental fork should be something you asked for.
 
-`rocmfpx` exists because the weight formats it adds cannot be read by anything else - a model
-quantized to ROCmFP4 will not load under `llamacpp`. `nathanw` takes ordinary GGUFs; it is a
-tuning fork, not a new weight format.
-
-kyuz0 also publishes a Vulkan build of the ROCmFPX fork, which is the only ROCmFPX image that
-covers the Radeon AI PRO R9700 (gfx1201). Lemonade does not ship it: on Strix Halo it is redundant
-with the HIP build above, and nothing here is validated on an R9700.
+kyuz0 also publishes a Vulkan build of the ROCm FPX fork, which is the only one that covers the
+Radeon AI PRO R9700 (gfx1201). Lemonade does not ship it: on Strix Halo it is redundant with the
+HIP build, and nothing here is validated on an R9700.
 
 ## Pinning and updates
 
-Each variant is pinned by **digest**, not by tag, in `backend_versions.json`. The upstream tags are
+Each image is pinned by **digest**, not by tag, in `backend_versions.json`. The upstream tags are
 rebuilt whenever their upstream moves - often daily - so a tag alone would mean two installs of
 the same Lemonade release running different code. The tag is recorded next to the digest for
 readability only.
@@ -58,30 +59,28 @@ A consequence worth knowing: a pinned image trails upstream by up to a week plus
 Digests move through a scheduled PR (`.github/workflows/toolbox_image_refresh.yml`), never
 automatically.
 
-`lemonade backends install llamacpp-toolbox:rocmfpx` pulls the pinned digest;
-`lemonade backends uninstall llamacpp-toolbox:rocmfpx` removes the image. The "installed version"
-Lemonade reports for these backends is the digest actually present on your machine.
+`lemonade backends install rocmfpx:rocmfpx` pulls the pinned digest;
+`lemonade backends uninstall rocmfpx:rocmfpx` removes the image. The same two commands work for
+`llamacpp:nathanw`. The "installed version" Lemonade reports for these backends is the digest
+actually present on your machine.
 
 ## Options
 
 ```json
 {
-  "toolbox": {
-    "backend": "auto",
+  "rocmfpx": {
     "args": ""
   }
 }
 ```
 
-- `backend` - which variant to run. `auto` picks the first supported one.
-- `args` (`--toolbox-args`) - extra arguments for the containerized `llama-server`. Lemonade owns
+- `args` (`--rocmfpx-args`) - extra arguments for the containerized `llama-server`. Lemonade owns
   the model path, host, port, context size, `--jinja` and `--metrics`; passing your own copy of
-  those is rejected.
+  those is rejected. `nathanw` takes the same kind of arguments through `--llamacpp-args`.
 
-Per variant, Lemonade applies the calibrated batch and micro-batch sizes and flash attention from
-the upstream catalog's serving configs, and disables mmap for the ROCmFPX variants, whose weight
-formats are decoded on the fly. Anything you pass in `args` wins, because llama.cpp parses left
-to right.
+Lemonade applies the calibrated batch and micro-batch sizes and flash attention from the upstream
+catalog's serving configs, and disables mmap for ROCm FPX, whose weight formats are decoded on the
+fly. Anything you pass in `args` wins, because llama.cpp parses left to right.
 
 ## DS4
 
@@ -131,9 +130,15 @@ measured at 7.2 GiB for the 262144-position pool it settles on here; the 68 GiB 
 locks are host RAM. The server measures that budget at startup and lowers the pool itself when the
 configured one will not fit, so Lemonade deliberately leaves `HALOGEN_KV_POOL_POSITIONS` unset.
 
+The context is left to the engine for the same reason: an HGN checkpoint carries none of the
+architecture metadata Lemonade's auto-tuning reads, so on `ctx_size: -1` (the default) Halogen
+starts at its native 262144 and fits the pool to the memory it measures. Setting `ctx_size`
+explicitly overrides that, and Lemonade then lowers the server's default `max_tokens` to match,
+because a request reserves prompt plus `max_tokens` against the context.
+
 Measured on a 128 GB Strix Halo with the carve-out minimized: 96.5 GiB held in all, listening 92
 seconds after launch, and around 45 tokens per second, which is roughly three times what the
-llama.cpp toolbox variants reach on the same machine.
+the llama.cpp forks reach on the same machine.
 
 One hardware note worth acting on: if your BIOS carves a fixed block of memory out for the iGPU,
 Halogen does not need it. It reaches the same unified memory through GTT either way, and the
@@ -157,14 +162,15 @@ here first. Give these models room, or turn reasoning off per request with
 
 | Models | Recipe | Notes |
 |--------|--------|-------|
-| ROCmFP4 / ROCmI4 quantizations of Qwen3.8-27B and Qwopus3.6-27B | `llamacpp-toolbox` | Community conversions; the uploader is named in each entry |
+| ROCmFP4 / ROCmI4 quantizations of Qwen3.8-27B and Qwopus3.6-27B | `rocmfpx` | Community conversions; the uploader is named in each entry |
 | DeepSeek V4 Flash, DeepSeek V4.1 Flash, GLM 5.3 Flash | `ds4` | Translated from the upstream catalog |
 | Qwen3.8-Flash-Next W4B, four overlay/vision combinations | `halogen` | All four share one checkpoint download |
 
 The DS4 and Halogen entries are generated from the upstream catalog by
-`docs/tools/gen_toolbox_catalog.py` and carry `catalog_source: ai-toolbox-cockpit`. The ROCmFPX
+`docs/tools/gen_toolbox_catalog.py` and carry `catalog_source: ai-toolbox-cockpit`. The ROCm FPX
 picks are curated by hand - one quantization per model family - because choosing among a
-community uploader's variants is a judgment call, not a mapping.
+community uploader's variants is a judgment call, not a mapping. `nathanw` has no models of its
+own: it runs whatever the `llamacpp` recipe already lists.
 
 ## Limitations
 

@@ -405,7 +405,7 @@ static void parse_extras(ModelInfo& info, const json& model_json) {
     static const std::set<std::string> kKnownKeys = {
         "checkpoint", "checkpoints", "components", "mmproj", "recipe", "suggested",
         "source", "registry_source", "size", "cloud_provider",
-        "labels", "image_defaults", "recipe_options"
+        "labels", "image_defaults", "recipe_options", "input_aliases"
     };
     if (!model_json.is_object()) return;
     for (auto& [key, value] : model_json.items()) {
@@ -3124,6 +3124,16 @@ void ModelManager::build_cache() {
         if (value.contains("labels") && value["labels"].is_array()) {
             for (const auto& label : value["labels"]) {
                 info.labels.push_back(label.get<std::string>());
+            }
+        }
+
+        // Names this model used to answer to. A renamed entry keeps resolving
+        // for requests, saved per-model options and already-downloaded files,
+        // without the old name appearing in /models.
+        if (value.contains("input_aliases") && value["input_aliases"].is_array()) {
+            for (const auto& alias : value["input_aliases"]) {
+                if (!alias.is_string()) continue;
+                info.input_aliases.push_back(alias.get<std::string>());
             }
         }
 
