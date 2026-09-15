@@ -24,6 +24,32 @@ class ReleaseWeekTests(unittest.TestCase):
         self.assertEqual(version.upcoming_release_week(now), (2027, 2))
 
 
+class ReleaseBranchNameTests(unittest.TestCase):
+    def test_at_wednesday_cutoff_names_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 19, 0, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2026.38")
+
+    def test_late_wednesday_run_still_names_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 19, 45, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2026.38")
+
+    def test_before_wednesday_cutoff_names_the_branch_cut_last_week(self):
+        now = datetime.datetime(2026, 9, 9, 18, 59, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2026.37")
+
+    def test_branch_week_matches_dev_version_week_before_cutoff(self):
+        just_before = datetime.datetime(2026, 9, 9, 18, 59, tzinfo=UTC)
+        at_cutoff = datetime.datetime(2026, 9, 9, 19, 0, tzinfo=UTC)
+        year, week = version.upcoming_release_week(just_before)
+        self.assertEqual(
+            version.release_branch_name(at_cutoff), f"release-v{year}.{week}"
+        )
+
+    def test_iso_year_follows_release_date(self):
+        now = datetime.datetime(2026, 12, 30, 19, 0, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2027.1")
+
+
 class VersionTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()

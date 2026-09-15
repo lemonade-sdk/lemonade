@@ -17,11 +17,15 @@ Usage::
     # Print the computed version for the current checkout
     python tools/version.py
 
+    # Print the name of the release branch for the most recent Wednesday cutoff
+    python tools/version.py --release-branch
+
     # Import and reuse in other tooling
     from tools.version import get_version
     version = get_version(repo_root)
 """
 
+import argparse
 import datetime
 import os
 import re
@@ -106,6 +110,18 @@ def upcoming_release_week(now):
     return iso_date.year, iso_date.week
 
 
+def release_branch_name(now):
+    days_since_wednesday = (now.weekday() - 2) % 7
+    cutoff = (now - datetime.timedelta(days=days_since_wednesday)).replace(
+        hour=19, minute=0, second=0, microsecond=0
+    )
+    if now < cutoff:
+        cutoff -= datetime.timedelta(days=7)
+    release_date = cutoff + datetime.timedelta(days=7)
+    iso_date = release_date.isocalendar()
+    return f"release-v{iso_date.year}.{iso_date.week}"
+
+
 def generated_version(repo, now, branch=None, head="HEAD"):
     tag_version = exact_release_tag(repo, head)
     if tag_version:
@@ -143,6 +159,20 @@ def get_version(repo, now=None, branch=None, head="HEAD"):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Compute the Lemonade version string from git state."
+    )
+    parser.add_argument(
+        "--release-branch",
+        action="store_true",
+        help="print the release branch name for the most recent Wednesday cutoff",
+    )
+    args = parser.parse_args()
+
+    if args.release_branch:
+        print(release_branch_name(datetime.datetime.now(datetime.timezone.utc)))
+        return 0
+
     repo = Path(__file__).resolve().parent.parent
     try:
         print(get_version(repo))
