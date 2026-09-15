@@ -9,8 +9,40 @@ permissions:
   contents: read
 
 jobs:
+  classify-small-docs-pr:
+    name: Classify small docs PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/actions/classify-small-docs-pr
+      - name: Classify changed files
+        id: classify
+        uses: ./.github/actions/classify-small-docs-pr
+        with:
+          max-files: "5"
+
+  full-ci-gate:
+    name: Full CI gate
+    needs: classify-small-docs-pr
+    if: >-
+      !cancelled() &&
+      (needs.classify-small-docs-pr.result != 'success' ||
+       needs.classify-small-docs-pr.outputs.docs_only != 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ needs.classify-small-docs-pr.outputs.reason }}"
+
   routing-schema-tests:
     name: Routing schema + fixtures
+    needs: full-ci-gate
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
