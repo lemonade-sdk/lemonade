@@ -1761,6 +1761,32 @@
         ],
         "size": 14.4
     },
+    "Ornith-1.5-9B-GGUF": {
+        "checkpoint": "ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Ornith-1.5-9B-BF16.gguf",
+        "recipe": "llamacpp",
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 6.7
+    },
+    "Ornith-1.5-35B-A3B-GGUF": {
+        "checkpoint": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
+        "mmproj": "mmproj-Ornith-1.5-35B-BF16.gguf",
+        "recipe": "llamacpp",
+        "labels": [
+            "chat",
+            "coding",
+            "reasoning",
+            "tool-calling",
+            "vision"
+        ],
+        "size": 22.6
+    },
     "Whisper-Tiny": {
         "checkpoints": {
             "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
