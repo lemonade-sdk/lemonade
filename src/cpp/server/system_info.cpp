@@ -2769,8 +2769,11 @@ NPUInfo WindowsSystemInfo::get_npu_device() {
         return npu;
     }
 
-    // Check for NPU driver
-    std::string driver_version = get_driver_version("NPU Compute Accelerator Device");
+    // Check for NPU driver — device name differs by generation:
+    // XDNA2: "NPU Compute Accelerator Device"
+    // XDNA3 (Medusa): "AMD XDNA(TM) NPU"
+    // Use "NPU" as a common substring that matches both.
+    std::string driver_version = get_driver_version("NPU");
     if (!driver_version.empty()) {
         npu.available = true;
     } else {
