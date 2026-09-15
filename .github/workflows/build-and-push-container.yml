@@ -25,8 +25,13 @@ env:
   IMAGE_NAME: ${{ github.repository }}-server
 
 jobs:
-  build-and-push:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      sha_tag: ${{ steps.tag.outputs.sha_tag }}
+      push_latest: ${{ steps.tag.outputs.push_latest }}
+      source_ref: ${{ steps.tag.outputs.source_ref }}
 
     steps:
       - name: Checkout repository
@@ -36,6 +41,9 @@ jobs:
 
       - name: Determine tag
         id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_ADD_LATEST: ${{ inputs.add_latest }}
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -49,10 +57,35 @@ jobs:
               echo "push_latest=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "tag=${{ inputs.tag }}" >> $GITHUB_OUTPUT
-            echo "push_latest=${{ inputs.add_latest }}" >> $GITHUB_OUTPUT
-            git checkout "refs/tags/${{ inputs.tag }}"
+            echo "tag=${INPUT_TAG}" >> $GITHUB_OUTPUT
+            echo "push_latest=${INPUT_ADD_LATEST}" >> $GITHUB_OUTPUT
+            git checkout "refs/tags/${INPUT_TAG}"
           fi
+
+          echo "source_ref=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+  build-and-push:
+    needs: prepare
+    name: Build and push (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_ref }}
+          fetch-depth: 0 # needed to fetch tags
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -64,13 +97,209 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and push image
+      - name: Build and push image digest
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           file: Dockerfile
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
-            ${{ steps.tag.outputs.sha_tag != '' && format('{0}/{1}:{2}', env.REGISTRY, env.IMAGE_NAME, steps.tag.outputs.sha_tag) || '' }}
-            ${{ steps.tag.outputs.push_latest == 'true' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Pull built image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${DIGEST}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid image digest: ${DIGEST}"
+            exit 1
+          fi
+
+          image_ref="${REGISTRY}/${IMAGE_NAME}@${DIGEST}"
+          local_image="lemonade-server:test-${{ matrix.arch }}"
+
+          docker pull --platform "${{ matrix.platform }}" "${image_ref}"
+          docker tag "${image_ref}" "${local_image}"
+
+          echo "LOCAL_IMAGE=${local_image}" >> "${GITHUB_ENV}"
+
+      - name: Verify image architecture
+        run: |
+          actual_arch="$(
+            docker image inspect \
+              "${LOCAL_IMAGE}" \
+              --format '{{.Architecture}}'
+          )"
+
+          if [[ "${actual_arch}" != "${{ matrix.arch }}" ]]; then
+            echo "Expected ${{ matrix.arch }}, got ${actual_arch}"
+            exit 1
+          fi
+
+      - name: Verify CLI starts
+        run: |
+          docker run --rm \
+            "${LOCAL_IMAGE}" \
+            lemonade --help
+
+      - name: Start server
+        run: |
+          docker run --detach \
+            --name lemonade-smoke \
+            --publish 127.0.0.1:13305:13305 \
+            "${LOCAL_IMAGE}"
+
+      - name: Check server health
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent \
+              http://127.0.0.1:13305/live \
+              > /dev/null; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "Server failed to become healthy"
+          docker logs lemonade-smoke
+          exit 1
+
+      - name: Show server logs
+        if: failure()
+        run: docker logs lemonade-smoke || true
+
+      - name: Stop server
+        if: always()
+        run: docker rm --force lemonade-smoke || true
+
+      - name: Export tested image digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload tested image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-manifest:
+    needs:
+      - prepare
+      - build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download tested image digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: container-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create and verify multi-platform image
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA_TAG: ${{ needs.prepare.outputs.sha_tag }}
+          PUSH_LATEST: ${{ needs.prepare.outputs.push_latest }}
+        run: |
+          set -euo pipefail
+
+          image="${REGISTRY}/${IMAGE_NAME}"
+          sources=()
+
+          while IFS= read -r digest_file; do
+            digest="$(basename "${digest_file}")"
+
+            if [[ ! "${digest}" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "Invalid image digest: ${digest}"
+              exit 1
+            fi
+
+            sources+=("${image}@sha256:${digest}")
+          done < <(
+            find "${RUNNER_TEMP}/digests" \
+              -maxdepth 1 \
+              -type f \
+              | sort
+          )
+
+          if [[ "${#sources[@]}" -ne 2 ]]; then
+            echo "Expected two tested image digests, got ${#sources[@]}"
+            exit 1
+          fi
+
+          if [[ -n "${SHA_TAG}" ]]; then
+            immutable_tag="${SHA_TAG}"
+            mutable_tag="${TAG}"
+          else
+            immutable_tag="${TAG}"
+
+            if [[ "${PUSH_LATEST}" == "true" ]]; then
+              mutable_tag="latest"
+            else
+              mutable_tag=""
+            fi
+          fi
+
+          verify_manifest() {
+            local ref="$1"
+            local platforms
+
+            platforms="$(
+              docker buildx imagetools inspect --raw "${ref}" \
+                | jq -r '
+                    .manifests[]?.platform
+                    | select(.os == "linux")
+                    | select(
+                        .architecture == "amd64"
+                        or .architecture == "arm64"
+                      )
+                    | "\(.os)/\(.architecture)"
+                  ' \
+                | sort -u
+            )"
+
+            if [[ "${platforms}" != $'linux/amd64\nlinux/arm64' ]]; then
+              echo "Unexpected platforms in ${ref}:"
+              printf '%s\n' "${platforms}"
+              exit 1
+            fi
+          }
+
+          immutable_ref="${image}:${immutable_tag}"
+
+          docker buildx imagetools create \
+            --tag "${immutable_ref}" \
+            "${sources[@]}"
+
+          verify_manifest "${immutable_ref}"
+
+          if [[ -n "${mutable_tag}" ]]; then
+            mutable_ref="${image}:${mutable_tag}"
+
+            docker buildx imagetools create \
+              --tag "${mutable_ref}" \
+              "${immutable_ref}"
+
+            verify_manifest "${mutable_ref}"
+          fi
