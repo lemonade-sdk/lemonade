@@ -1973,6 +1973,9 @@ static std::string identify_npu_arch_linux() {
                         revision_str == "0x20")
                         return "XDNA2";
                 }
+                if (device_str == "0x17f1") {
+                    return "XDNA3";
+                }
             }
         }
     }
@@ -2049,17 +2052,16 @@ std::string identify_npu_arch() {
         return "XDNA2";
     }
 
-    // XDNA3 NPU (Medusa/AIE4): AMD vendor 1022, device TBD
-    // TODO: Replace DEV_XXXX with the confirmed Medusa PCI device ID once known.
-    // bool found_xdna3 = false;
-    // wmi_conn.query(
-    //     L"SELECT PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE '%VEN_1022&DEV_XXXX%'",
-    //     [&found_xdna3](IWbemClassObject* pObj) {
-    //         found_xdna3 = true;
-    //     });
-    // if (found_xdna3) {
-    //     return "XDNA3";
-    // }
+    // XDNA3 NPU (Medusa/AIE4): AMD vendor 1022, device 17F1
+    bool found_xdna3 = false;
+    wmi_conn.query(
+        L"SELECT PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE '%VEN_1022&DEV_17F1%'",
+        [&found_xdna3](IWbemClassObject* pObj) {
+            found_xdna3 = true;
+        });
+    if (found_xdna3) {
+        return "XDNA3";
+    }
 #else
     std::string linux_arch = identify_npu_arch_linux();
     if (!linux_arch.empty()) {
