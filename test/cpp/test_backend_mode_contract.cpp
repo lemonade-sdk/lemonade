@@ -178,8 +178,10 @@ int main() {
         // checkable: a backend locked to a fixed non-chat modality must not
         // claim it.
         if (declared.count("chat") != 0) {
+            // Cloud models route to separate upstream endpoints per model.
+            const uint32_t allowed = recipe == "cloud" ? lemon::CAP_IMAGE : 0;
             check(recipe + ": declares 'chat' and implements no exclusive modality",
-                  (entry.capabilities & kExclusiveModalities) == 0);
+                  (entry.capabilities & kExclusiveModalities & ~allowed) == 0);
         }
 
         // Every mode has a human-readable name, so a new one cannot reach the
@@ -236,6 +238,9 @@ int main() {
          {"embeddings"}, ModelType::EMBEDDING},
         {"llamacpp bare", "llamacpp", {}, true, {"chat"}, ModelType::LLM},
         {"sd-cpp bare", "sd-cpp", {}, true, {"image"}, ModelType::IMAGE},
+        {"cloud image", "cloud", {"cloud", "image"}, true, {"cloud", "image"}, ModelType::IMAGE},
+        {"cloud chat", "cloud", {"cloud", "chat"}, true, {"cloud", "chat"}, ModelType::LLM},
+        {"cloud mixed modes", "cloud", {"chat", "image"}, false, {}, {}},
         // onnxruntime is the backend that does serve classification.
         {"onnxruntime + classification", "onnxruntime", {"classification"}, true,
          {"classification"}, ModelType::CLASSIFICATION},
