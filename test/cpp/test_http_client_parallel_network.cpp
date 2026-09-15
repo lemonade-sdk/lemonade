@@ -58,26 +58,11 @@ int run(const char* label, int parts, const std::string& out) {
 }
 
 int main(int argc, char** argv) {
-    if (argc >= 4) {
+    if (argc == 4) {
         g_target = {argv[1], static_cast<size_t>(std::stoull(argv[2])), argv[3]};
         printf("target: %s (%.0f MB)\n", g_target.url.c_str(), g_target.size / 1e6);
     }
     int bad = 0;
-    if (argc >= 5) {
-        // Ad-hoc sweep: a comma-separated part list, for tuning the per-part floor.
-        std::string list(argv[4]);
-        size_t pos = 0;
-        while (pos <= list.size()) {
-            const auto comma = list.find(',', pos);
-            const int parts = std::stoi(list.substr(pos, comma - pos));
-            bad += run(("parts=" + std::to_string(parts)).c_str(), parts,
-                       (fs::temp_directory_path() / "lemon_e2e_sweep.bin").string());
-            if (comma == std::string::npos) break;
-            pos = comma + 1;
-        }
-        printf("\n%s\n", bad == 0 ? "both paths verified against the Hub's sha256" : "FAILURE");
-        return bad;
-    }
     bad += run("single-stream", 1, (fs::temp_directory_path() / "lemon_e2e_1.bin").string());
     bad += run("parallel x16", 16, (fs::temp_directory_path() / "lemon_e2e_16.bin").string());
     printf("\n%s\n", bad == 0 ? "both paths verified against the Hub's sha256" : "FAILURE");

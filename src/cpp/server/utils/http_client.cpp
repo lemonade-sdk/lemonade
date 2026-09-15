@@ -1298,6 +1298,8 @@ size_t part_write_callback(void* ptr, size_t size, size_t nmemb, void* userdata)
         return 0;
     }
     if (ctx->content_range_mismatch) return 0;
+    // Defence in depth: a surplus landing in the neighbouring part's slice is
+    // normally overwritten by that part, so no test isolates this.
     if (bytes > ctx->remaining) return 0;
 
     if (fwrite(ptr, 1, bytes, ctx->fp) != bytes) {

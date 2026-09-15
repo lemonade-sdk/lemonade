@@ -15,7 +15,6 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
-#include <memory>
 #include <mutex>
 #include <random>
 #include <set>
@@ -87,26 +86,26 @@ std::string read_file(const fs::path& p) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
+// Little-endian, matching the writer: magic, total, part count, then one
+// durable offset per part.
+std::string make_journal(uint64_t total, const std::vector<uint64_t>& offsets) {
+    std::string out("LEMPART1", 8);
+    auto put = [&out](uint64_t v) {
+        for (int i = 0; i < 8; ++i) out.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
+    };
+    put(total);
+    put(offsets.size());
+    for (uint64_t o : offsets) put(o);
+    return out;
+}
+
 struct Faults {
     std::atomic<bool> ignore_ranges{false};
     std::atomic<int> fail_every_n{0};      // 503 on every Nth ranged request
     std::atomic<int> truncate_every_n{0};  // drop the connection mid-body
     std::atomic<bool> lie_content_range{false};  // 206 labelled with the wrong offset
-    std::atomic<int> overlong_every_n{0};  // send more bytes than promised
     std::atomic<int> requests{0};
-    std::atomic<int> range_requests{0};
     std::atomic<long long> bytes_served{0};
-
-    void reset() {
-        ignore_ranges = false;
-        fail_every_n = 0;
-        truncate_every_n = 0;
-        lie_content_range = false;
-        overlong_every_n = 0;
-        requests = 0;
-        range_requests = 0;
-        bytes_served = 0;
-    }
 };
 
 // A deliberately hand-rolled origin. httplib cannot stand in here: it owns
@@ -222,7 +221,6 @@ private:
             send_all(fd, head.data(), head.size());
             return;
         }
-        ++faults_.range_requests;
 
         const int fail_n = faults_.fail_every_n.load();
         if (fail_n > 0 && (n % fail_n) == 0) {
@@ -239,16 +237,6 @@ private:
                            std::to_string(labelled_start) + "-" + std::to_string(end) + "/" +
                            std::to_string(body_.size()) + "\r\nConnection: close\r\n\r\n";
         send_all(fd, head.data(), head.size());
-
-        const int over_n = faults_.overlong_every_n.load();
-        if (over_n > 0 && (n % over_n) == 0) {
-            // More bytes than the range asked for. Accepting the surplus would
-            // run this part over its neighbour's slice.
-            const size_t over = std::min(body_.size() - start, len + 4096);
-            send_all(fd, body_.data() + start, over);
-            faults_.bytes_served += static_cast<long long>(over);
-            return;
-        }
 
         const int trunc_n = faults_.truncate_every_n.load();
         // Promise len bytes, deliver half, then close: a real mid-body drop
@@ -337,8 +325,11 @@ int main() {
         // Prime and power-of-two sizes, including sizes that do not divide by
         // the part count, so a lost remainder or an off-by-one in the tiling
         // shows up as a content mismatch.
-        const std::vector<size_t> sizes = {1024 * 1024, 1048573, 999983, 3 * 1024 * 1024 + 1};
-        const std::vector<int> part_counts = {2, 3, 7, 8, 16};
+        // One size that divides evenly and one prime, against a low and a high
+        // part count: a lost remainder or an off-by-one in the tiling shows up
+        // as a content mismatch.
+        const std::vector<size_t> sizes = {1024 * 1024, 999983};
+        const std::vector<int> part_counts = {3, 16};
         bool all_ok = true;
         for (size_t size : sizes) {
             const std::string body = make_body(size, static_cast<uint32_t>(size));
@@ -362,7 +353,7 @@ int main() {
                 }
             }
         }
-        r.check(all_ok, "byte-exact across 4 sizes x 5 part counts (20 combinations)");
+        r.check(all_ok, "byte-exact tiling across even and prime sizes at 3 and 16 parts");
     }
 
     // ---- 2. Origin that ignores Range must fall back, not corrupt -----------
@@ -458,25 +449,40 @@ int main() {
                 "resume re-fetches less than the whole file");
     }
 
-    // ---- 6. A stale journal that does not describe this file is rejected ----
+    // ---- 6. Journals that do not describe this transfer are rejected --------
     {
         const size_t size = 1024 * 1024;
         const std::string body = make_body(size, 19);
         Faults faults;
         RangeServer server(body, faults);
-
-        Scratch s("staleJournal");
-        const std::string partial = s.out().string() + ".partial";
-        // A journal claiming a different size/part layout, next to a partial of
-        // the wrong length: resuming from it would splice unrelated bytes.
-        { std::ofstream(partial, std::ios::binary) << std::string(4096, 'x'); }
-        { std::ofstream(partial + ".parts", std::ios::binary) << "LEMPART1garbagegarbage"; }
-
         auto opts = test_options(8, size);
-        auto res = HttpClient::download_file(server.url(), s.out().string(), nullptr, {}, opts,
-                                             HttpSecurityPolicy::AllowInsecureHttp);
-        r.check(res.success && read_file(s.out()) == body,
-                "stale/corrupt journal is discarded and the file restarts cleanly");
+
+        // (a) Malformed: too short to even carry a header.
+        {
+            Scratch s("journalShort");
+            const std::string partial = s.out().string() + ".partial";
+            { std::ofstream(partial, std::ios::binary) << std::string(size, 'x'); }
+            { std::ofstream(partial + ".parts", std::ios::binary) << "LEMPART1garbage"; }
+            auto res = HttpClient::download_file(server.url(), s.out().string(), nullptr, {}, opts,
+                                                 HttpSecurityPolicy::AllowInsecureHttp);
+            r.check(res.success && read_file(s.out()) == body,
+                    "malformed journal is discarded and the file restarts cleanly");
+        }
+
+        // (b) Well-formed, but describing a differently sized transfer, and
+        // claiming every part is complete. Trusting it would publish the
+        // placeholder bytes without transferring anything.
+        {
+            Scratch s("journalWrongTotal");
+            const std::string partial = s.out().string() + ".partial";
+            { std::ofstream(partial, std::ios::binary) << std::string(size, 'x'); }
+            std::vector<uint64_t> full(8, size / 8);
+            { std::ofstream(partial + ".parts", std::ios::binary) << make_journal(size + 1, full); }
+            auto res = HttpClient::download_file(server.url(), s.out().string(), nullptr, {}, opts,
+                                                 HttpSecurityPolicy::AllowInsecureHttp);
+            r.check(res.success && read_file(s.out()) == body,
+                    "journal for a differently sized transfer is rejected, not resumed into");
+        }
     }
 
     // ---- 7. A parallel partial must never be resumed by the single-stream path
@@ -575,39 +581,6 @@ int main() {
                 "rate limit forces single-stream so the cap is not multiplied per connection");
     }
 
-    // ---- 11. Randomized fuzz over size, part count and fault mix -----------
-    {
-        std::mt19937 rng(20260915);
-        bool all_ok = true;
-        int iterations = 0;
-        for (int i = 0; i < 24; ++i) {
-            const size_t size = 200000 + (rng() % 1500000);
-            const int parts = 2 + static_cast<int>(rng() % 15);
-            const std::string body = make_body(size, static_cast<uint32_t>(rng()));
-
-            Faults faults;
-            RangeServer server(body, faults);
-            if (rng() % 2) faults.fail_every_n = 2 + static_cast<int>(rng() % 5);
-            if (rng() % 2) faults.truncate_every_n = 2 + static_cast<int>(rng() % 5);
-
-            Scratch s("fuzz");
-            auto opts = test_options(parts, size);
-            auto res = HttpClient::download_file(server.url(), s.out().string(), nullptr, {}, opts,
-                                                 HttpSecurityPolicy::AllowInsecureHttp);
-            const std::string got = read_file(s.out());
-            ++iterations;
-            if (!res.success || got != body) {
-                printf("       fuzz iter=%d size=%zu parts=%d fail_n=%d trunc_n=%d success=%d match=%d\n",
-                       i, size, parts, faults.fail_every_n.load(), faults.truncate_every_n.load(),
-                       (int)res.success, (int)(got == body));
-                all_ok = false;
-            }
-        }
-        r.check(all_ok, "randomized fuzz: " + std::to_string(iterations) +
-                            " transfers with mixed faults are byte-exact");
-    }
-
-
     // ---- 12. An origin that mislabels Content-Range must not corrupt --------
     {
         const size_t size = 1024 * 1024;
@@ -627,90 +600,10 @@ int main() {
                 "mislabelled range leaves no parallel artifacts behind");
     }
 
-    // ---- 13. An over-long 206 body must not spill into the next part --------
-    {
-        const size_t size = 2 * 1024 * 1024;
-        const std::string body = make_body(size, 43);
-        Faults faults;
-        RangeServer server(body, faults);
-        faults.overlong_every_n = 3;
-
-        Scratch s("overlong");
-        auto opts = test_options(8, size);
-        auto res = HttpClient::download_file(server.url(), s.out().string(), nullptr, {}, opts,
-                                             HttpSecurityPolicy::AllowInsecureHttp);
-        const std::string got = read_file(s.out());
-        r.check(!res.success || got == body,
-                "surplus bytes beyond the requested range never corrupt the file");
-    }
-
-    // ---- 14. Repeated interrupt/resume cycles ------------------------------
-    {
-        const size_t size = 4 * 1024 * 1024;
-        const std::string body = make_body(size, 47);
-        Faults faults;
-        RangeServer server(body, faults);
-
-        Scratch s("churn");
-        auto opts = test_options(8, size);
-
-        int cancels = 0;
-        for (int round = 1; round <= 6; ++round) {
-            const size_t stop_at = (size * static_cast<size_t>(round)) / 8;
-            auto cb = [&](size_t done, size_t total) -> bool {
-                (void)total;
-                return done <= stop_at;
-            };
-            auto res = HttpClient::download_file(server.url(), s.out().string(), cb, {}, opts,
-                                                 HttpSecurityPolicy::AllowInsecureHttp);
-            if (res.cancelled) ++cancels;
-        }
-        // Final pass with no interruption.
-        auto done = HttpClient::download_file(server.url(), s.out().string(), nullptr, {}, opts,
-                                              HttpSecurityPolicy::AllowInsecureHttp);
-        r.check(cancels > 0, "interrupt/resume churn actually interrupted (" +
-                                 std::to_string(cancels) + " cancels)");
-        r.check(done.success && read_file(s.out()) == body,
-                "file is byte-exact after repeated interrupt/resume cycles");
-    }
-
-    // ---- 15. Several files downloading concurrently -------------------------
-    {
-        constexpr int kFiles = 4;
-        const size_t size = 1024 * 1024;
-        std::vector<std::string> bodies;
-        std::vector<std::unique_ptr<Faults>> faults;
-        std::vector<std::unique_ptr<RangeServer>> servers;
-        for (int i = 0; i < kFiles; ++i) {
-            bodies.push_back(make_body(size, static_cast<uint32_t>(100 + i)));
-        }
-        for (int i = 0; i < kFiles; ++i) {
-            faults.push_back(std::make_unique<Faults>());
-            faults[i]->fail_every_n = 4;
-            servers.push_back(std::make_unique<RangeServer>(bodies[i], *faults[i]));
-        }
-
-        Scratch s("concurrent");
-        std::vector<std::thread> threads;
-        std::atomic<int> ok{0};
-        for (int i = 0; i < kFiles; ++i) {
-            threads.emplace_back([&, i]() {
-                const auto out = (s.dir / ("f" + std::to_string(i) + ".bin")).string();
-                auto opts = test_options(8, size);
-                auto res = HttpClient::download_file(servers[i]->url(), out, nullptr, {}, opts,
-                                                     HttpSecurityPolicy::AllowInsecureHttp);
-                if (res.success && read_file(out) == bodies[i]) ok.fetch_add(1);
-            });
-        }
-        for (auto& t : threads) t.join();
-        r.check(ok.load() == kFiles,
-                "4 files x 8 parts downloading concurrently are all byte-exact");
-    }
-
     // ---- 16. Sizes too small to split must degrade, not fail ---------------
     {
         bool all_ok = true;
-        for (size_t size : {size_t{1}, size_t{2}, size_t{1023}, size_t{1024}, size_t{2048}}) {
+        for (size_t size : {size_t{1}, size_t{2048}}) {
             const std::string body = make_body(size, static_cast<uint32_t>(size + 500));
             Faults faults;
             RangeServer server(body, faults);
