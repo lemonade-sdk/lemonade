@@ -78,6 +78,13 @@ class VersionTests(unittest.TestCase):
         self.git("add", "marker")
         self.git("commit", "-m", message)
 
+    def test_without_git_falls_back_to_dated_placeholder(self):
+        now = datetime.datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as plain_dir:
+            self.assertEqual(
+                version.get_version(Path(plain_dir), now), "2026.39.0~0.nogit"
+            )
+
     def test_version_file_overrides_git(self):
         (self.repo / ".version").write_text("vcustom-version\n", encoding="utf-8")
         self.assertEqual(version.get_version(self.repo), "vcustom-version")
