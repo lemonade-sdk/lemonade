@@ -3794,12 +3794,15 @@ std::map<std::string, ModelInfo> ModelManager::filter_models_by_backend(
         nlohmann::json dev_list = devices.is_array() ? devices : nlohmann::json{devices};
 
         for (const auto& dev : dev_list) {
+            if (!dev.is_object())
+                continue;
+
             // Behavior is chosen per device, not per device-type: AMD APUs are
             // reported under "amd_gpu" with "integrated": true and their GTT
             // pool in virtual_mem_gb -- an "amd_igpu" container key is never
             // emitted, so default to integrated when the flag is absent.
             MemoryAllocBehavior dev_mem_alloc_behavior = MemoryAllocBehavior::Hardware;
-            if (dev.value("integrated", true))
+            if (dev_type == "amd_gpu" && dev.value("integrated", true))
                 dev_mem_alloc_behavior = MemoryAllocBehavior::Largest;
             if (enable_dgpu_gtt)
                 dev_mem_alloc_behavior = MemoryAllocBehavior::Unified;
