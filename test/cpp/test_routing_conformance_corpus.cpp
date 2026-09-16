@@ -551,8 +551,7 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
 
         // Fresh fake, policy and engine per case; the fake outlives the engine.
         lemon::testing::FakeClassifierServices fake;
-        if (row->contains("services") &&
-            !apply_row_services(fake, row->at("services"), name + ".services")) {
+        if (row->contains("services") && !apply_row_services(fake, row->at("services"), name + ".services")) {
             continue;
         }
 
@@ -569,8 +568,7 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
     // Every declared policy must be exercised by at least one case; an unused
     // policy is dead weight the corpus should not carry silently.
     for (auto it = policies_json->begin(); it != policies_json->end(); ++it) {
-        check(rel + "::" + it.key() + ": policy is used by at least one case",
-              used_policies.count(it.key()) != 0);
+        check(rel + "::" + it.key() + ": policy is used by at least one case", used_policies.count(it.key()) != 0);
     }
     return executed;
 }
