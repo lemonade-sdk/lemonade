@@ -1360,50 +1360,63 @@ class ReliabilityTests(TelemetryTestBase):
                 os.environ.pop(env_key, None)
 
     def test_016_config_telemetry_headers(self):
-        """Verify that configuration-based telemetry headers are validated, sanitized, and disallowed keys are rejected."""
-        # Enable telemetry with a mix of valid, invalid, and disallowed headers
-        headers_payload = {
-            "X-Valid-Header": "ValidValue",
-            "Content-Type": "application/json",  # disallowed
-            "Content-Length": "123",  # disallowed
-            "X-Invalid\nHeader": "SomeValue",  # invalid key (LF in middle)
-            "X-Invalid-Value": "SomeValue\0",  # invalid value (NUL)
-        }
-        self._enable_telemetry(headers=headers_payload)
+        """Verify that configuration-based telemetry headers are validated and disallowed/invalid keys are rejected."""
+        # Test rejection of disallowed and invalid headers via /internal/set
+        for bad_header, expected_err in [
+            (
+                {"Content-Type": "application/json"},
+                "Disallowed overriding well-known OTLP header",
+            ),
+            (
+                {"Content-Length": "123"},
+                "Disallowed overriding well-known OTLP header",
+            ),
+            ({"X-Invalid\nHeader": "SomeValue"}, "contains invalid character"),
+            ({"X-Invalid-Value": "SomeValue\0"}, "contains invalid character"),
+            ({"": "empty_key"}, "keys cannot be empty"),
+            ({"Content-Type: foo": "bar"}, "contains invalid character"),
+            ({"X Header": "val"}, "contains invalid character"),
+            ({"X[Header]": "val"}, "contains invalid character"),
+        ]:
+            payload = {"telemetry": {"otlp": {"headers": bad_header}}}
+            res = self._auth_post(f"http://localhost:{PORT}/internal/set", payload)
+            self.assertEqual(
+                res.status_code, 400, f"Expected 400 for bad header {bad_header}"
+            )
+            self.assertIn(expected_err, res.json().get("error", ""))
 
-        # Trigger completion to send a span
-        payload = {
-            "model": "builtin.nonexistent-model-name-error",
-            "messages": [
-                {"role": "user", "content": "Trigger trace for config headers test."}
-            ],
-        }
-        self._auth_post(f"http://127.0.0.1:{PORT}/v1/chat/completions", payload)
+        try:
+            # Enable telemetry pointing to mock collector with valid headers
+            self._enable_telemetry(headers={"  X-Valid-Header  ": "  ValidValue  "})
 
-        # Wait for mock collector to receive telemetry span
-        span_received = self._wait_for_span()
-        self.assertIsNotNone(
-            span_received,
-            "Telemetry span was not received by the OTLP mock receiver.",
-        )
+            # Trigger completion to send a span
+            payload = {
+                "model": "builtin.nonexistent-model-name-error",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "Trigger trace for config headers test.",
+                    }
+                ],
+            }
+            self._auth_post(f"http://127.0.0.1:{PORT}/v1/chat/completions", payload)
 
-        headers = span_received["headers"]
-        val_valid = _get_header_value(headers, "x-valid-header")
-        val_content_type = _get_header_value(headers, "content-type")
-        val_content_length = _get_header_value(headers, "content-length")
-        val_invalid_key = _get_header_value(headers, "x-invalid\nheader")
-        val_invalid_val = _get_header_value(headers, "x-invalid-value")
+            # Wait for mock collector to receive telemetry span
+            span_received = self._wait_for_span()
+            self.assertIsNotNone(
+                span_received,
+                "Telemetry span was not received by the OTLP mock receiver.",
+            )
 
-        self.assertIsNotNone(
-            val_valid, "x-valid-header was not found in received headers"
-        )
-        self.assertEqual(val_valid, "ValidValue")
-
-        # Disallowed overriding headers should not be populated
-        self.assertNotEqual(val_content_type, "application/json")
-        self.assertNotEqual(val_content_length, "123")
-        self.assertIsNone(val_invalid_key, "invalid key with LF should be rejected")
-        self.assertIsNone(val_invalid_val, "invalid value with NUL should be rejected")
+            headers = span_received["headers"]
+            val_valid = _get_header_value(headers, "x-valid-header")
+            self.assertIsNotNone(
+                val_valid, "x-valid-header was not found in received headers"
+            )
+            self.assertEqual(val_valid, "ValidValue")
+        finally:
+            # Clean up headers so subsequent tests do not inherit them
+            self._enable_telemetry(headers={})
 
     def test_017_non_retryable_errors(self):
         """Verify that telemetry spans are dropped immediately on non-retryable 4xx errors (e.g., 400)."""
