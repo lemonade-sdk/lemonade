@@ -43,6 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      release_branch: ${{ steps.get_version.outputs.release_branch }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -2718,6 +2719,43 @@ jobs:
         uses: ./.github/actions/teardown-windows-ci-env
 
   # ========================================================================
+  # REPO-MANAGER JOB - Release checklist, notes, and announcement
+  # ========================================================================
+
+  repo-manager-release:
+    name: Build Release Artifacts
+    needs: source-tarball
+    # A stable tag points at a commit that already had a candidate build, so its artifacts
+    # exist and describe the same commit range; regenerating them would only reword what the
+    # release admin already read. The release job tolerates this job being skipped.
+    if: startsWith(github.ref, 'refs/heads/release-v')
+    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    timeout-minutes: 180
+    # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
+    # repository's pull requests and issues.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    # One release's notes, checklist and announcement are one set of files, so successive
+    # builds of the same release queue instead of overwriting each other.
+    concurrency:
+      group: repo-manager-release-${{ needs.source-tarball.outputs.release_branch }}
+      cancel-in-progress: false
+    steps:
+      # Enough to resolve the local action; it does its own clone.
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/repo-manager
+        with:
+          command: release build --branch ${{ needs.source-tarball.outputs.release_branch }} --head ${{ github.sha }}
+          app-client-id: ${{ vars.RELEASE_BRANCH_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.RELEASE_BRANCH_APP_PRIVATE_KEY }}
+
+  # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
 
@@ -2740,6 +2778,7 @@ jobs:
       - test-embeddable-macos
       - test-embeddable-windows
       - source-tarball
+      - repo-manager-release
     # Candidates skip sign-msi-installers, so a plain `needs` would skip this
     # job too; check the results explicitly instead.
     if: >-

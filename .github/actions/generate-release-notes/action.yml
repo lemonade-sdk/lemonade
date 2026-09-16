@@ -75,34 +75,35 @@ runs:
         # Extract unique contributors from the changelog (exclude bots)
         CONTRIBUTORS=$(echo "$AUTO_NOTES" | grep -oE '@[a-zA-Z0-9_-]+' | grep -ivE '^@(copilot|claude)$' | sort -u | tr '\n' ' ' | sed 's/ /, /g' | sed 's/, $//' || echo "")
 
-        # Search for the release notes issue by exact title (e.g. "v2026.38.0 release notes")
-        RELEASE_NOTES_ISSUE_BODY=$(gh issue list --repo "$REPO" \
-          --state open \
-          --search "\"v$VERSION release notes\" in:title" \
-          --json body --limit 1 \
-          | jq -r '.[0].body // ""' 2>/dev/null || echo "")
+        # The release admin edits these notes in lemonade-sdk/lemonade-testing. Read them
+        # through the contents API: raw.githubusercontent.com sits behind a CDN that can
+        # still serve a copy from before this run wrote the file.
+        NOTES_REPO="lemonade-sdk/lemonade-testing"
+        NOTES_PATH="releases/v${VERSION%.*}/notes.md"
+        echo "Reading $NOTES_PATH from $NOTES_REPO"
 
-        HEADLINE_SECTION=""
-        BREAKING_CHANGES_SECTION=""
+        NOTES_B64=$(gh api "repos/$NOTES_REPO/contents/$NOTES_PATH" --jq .content) || {
+          echo "::error::$NOTES_REPO does not have $NOTES_PATH. A release does not publish without notes."
+          exit 1
+        }
+        NOTES=$(printf '%s' "$NOTES_B64" | base64 -d)
 
-        if [ -n "$RELEASE_NOTES_ISSUE_BODY" ]; then
-          echo "Found release notes issue, extracting Headline and Breaking Changes..."
-          HEADLINE_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
-            awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')
-          BREAKING_CHANGES_SECTION=$(echo "$RELEASE_NOTES_ISSUE_BODY" | \
-            awk '/^## Breaking Changes/{found=1} found && /^## / && !/^## Breaking Changes/{found=0} found{print}')
-        else
-          echo "No release notes issue found; Headline and Breaking Changes will need to be added manually."
+        HEADLINE_SECTION=$(echo "$NOTES" | \
+          awk '/^## Headline/{found=1} found && /^## / && !/^## Headline/{found=0} found{print}')
+        BREAKING_CHANGES_SECTION=$(echo "$NOTES" | \
+          awk '/^## Breaking Changes/{found=1} found && /^## / && !/^## Breaking Changes/{found=0} found{print}')
+
+        if [ -z "$HEADLINE_SECTION" ]; then
+          echo "::error::$NOTES_PATH has no '## Headline' section. A release does not publish without notes."
+          exit 1
         fi
 
         # Build the release notes file
         RELEASE_NOTES_FILE="release_notes.md"
 
         {
-          if [ -n "$HEADLINE_SECTION" ]; then
-            echo "$HEADLINE_SECTION"
-            echo ""
-          fi
+          echo "$HEADLINE_SECTION"
+          echo ""
           if [ -n "$BREAKING_CHANGES_SECTION" ]; then
             echo "$BREAKING_CHANGES_SECTION"
             echo ""

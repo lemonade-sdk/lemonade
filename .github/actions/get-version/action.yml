@@ -4,6 +4,9 @@ outputs:
   version:
     description: 'The version string (e.g., 2026.38.0)'
     value: ${{ steps.extract.outputs.version }}
+  release_branch:
+    description: 'Release branch this version was built from (e.g. release-v2026.38), empty for a development build'
+    value: ${{ steps.extract.outputs.release_branch }}
 runs:
   using: "composite"
   steps:
@@ -31,3 +34,12 @@ runs:
         echo "Lemonade version: $VERSION"
         echo "version=$VERSION" >> $GITHUB_OUTPUT
         echo "LEMONADE_VERSION=$VERSION" >> $GITHUB_ENV
+
+        # A release version is exactly year.week.number, and its first two components name
+        # the branch it was built from. A development build belongs to no release branch.
+        RELEASE_BRANCH=""
+        if [[ "$VERSION" =~ ^([0-9]+\.[0-9]+)\.[0-9]+$ ]]; then
+          RELEASE_BRANCH="release-v${BASH_REMATCH[1]}"
+        fi
+        echo "Release branch: ${RELEASE_BRANCH:-none}"
+        echo "release_branch=$RELEASE_BRANCH" >> $GITHUB_OUTPUT

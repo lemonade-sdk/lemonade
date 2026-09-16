@@ -1,0 +1,222 @@
+name: 'Repo Manager'
+description: >-
+  Run one repo-manager command on a self-hosted runner: install its pinned tools, serve the
+  model from a lemond this job starts, and commit the result to lemonade-sdk/lemonade-testing.
+
+inputs:
+  command:
+    description: 'repo-manager command and arguments, for example "commit review <sha>".'
+    required: true
+  app-client-id:
+    description: >-
+      Client ID of the GitHub App that may push to lemonade-sdk/lemonade-testing, the
+      repository where repo-manager keeps its results.
+    required: true
+  app-private-key:
+    description: 'Private key of that app. A composite action cannot read `secrets` itself.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Pin versions and locate the machine-level cache
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        {
+          echo "REPO_MANAGER_VERSION=v1.0.1"
+          echo "REPO_MANAGER_MODEL=Qwen3.6-35B-A3B-MTP-GGUF"
+          echo "LEMONADE_VERSION=11.9.0"
+          echo "GH_CLI_VERSION=2.101.0"
+        } >> "$GITHUB_ENV"
+
+        # Every tool below is installed into $RUNNER_TEMP and thrown away with the job.
+        # lemond's cache is the exception, because the model in it is 23GB. Locate it from
+        # the passwd database: other jobs on these runners redirect HOME into their
+        # workspace, and a wrong value here would put the cache somewhere that gets wiped.
+        home=$(getent passwd "$(id -u)" | cut -d: -f6)
+        test -n "$home"
+        lemond_cache="$home/.cache/lemonade-ci/repo-manager"
+
+        # pi writes its provider config and skills under HOME.
+        rm_home="$RUNNER_TEMP/home"
+
+        mkdir -p "$lemond_cache" "$rm_home"
+        {
+          echo "LEMOND_CACHE=$lemond_cache"
+          echo "RM_HOME=$rm_home"
+        } >> "$GITHUB_ENV"
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install the GitHub CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/gh"
+        curl -sfL "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz" \
+          | tar -xz --strip-components=1 -C "$RUNNER_TEMP/gh"
+        echo "$RUNNER_TEMP/gh/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/gh/bin/gh" --version
+
+    - name: Install repo-manager
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 -m venv "$RUNNER_TEMP/venv"
+        "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check \
+          "git+https://github.com/lemonade-sdk/repo-manager.git@${REPO_MANAGER_VERSION}"
+        echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/venv/bin/repo-manager" --version
+
+    - name: Resolve the pi version repo-manager was tested against
+      id: pi
+      shell: bash
+      run: |
+        set -euo pipefail
+        version=$("$RUNNER_TEMP/venv/bin/repo-manager" pi version)
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Install pi
+      shell: bash
+      env:
+        PI_VERSION: ${{ steps.pi.outputs.version }}
+      run: |
+        set -euo pipefail
+        # `pi` on npm is a different package. This one installs its binary as `pi`.
+        npm install --prefix "$RUNNER_TEMP/npm" -g --no-fund --no-audit \
+          "@earendil-works/pi-coding-agent@${PI_VERSION}"
+        echo "$RUNNER_TEMP/npm/bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/npm/bin/pi" --version
+
+    - name: Install Lemonade
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/lemonade"
+        curl -sfL "https://github.com/lemonade-sdk/lemonade/releases/download/v${LEMONADE_VERSION}/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz" \
+          | tar -xz --strip-components=1 -C "$RUNNER_TEMP/lemonade"
+        chmod +x "$RUNNER_TEMP/lemonade/lemond"
+        echo "LEMOND=$RUNNER_TEMP/lemonade/lemond" >> "$GITHUB_ENV"
+        "$RUNNER_TEMP/lemonade/lemond" --version
+
+    - name: Start the model server
+      shell: bash
+      env:
+        # lemond keeps weights in the HuggingFace cache rather than the directory it is
+        # given, so both have to point at the cache for either to persist.
+        HF_HOME: ${{ env.LEMOND_CACHE }}
+      run: |
+        set -euo pipefail
+        logs="$RUNNER_TEMP/lemond-logs"
+        mkdir -p "$logs"
+
+        # The default port is usually already taken on these shared runners.
+        PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+
+        # --no-broadcast keeps this server out of the UDP discovery other jobs' CLIs use.
+        "$LEMOND" "$LEMOND_CACHE" --port "$PORT" --host 127.0.0.1 --no-broadcast \
+          > "$logs/lemond.stdout.log" 2> "$logs/lemond.stderr.log" &
+        LEMOND_PID=$!
+
+        for _ in $(seq 1 60); do
+          curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1 && break
+          kill -0 "$LEMOND_PID" 2>/dev/null || { cat "$logs/lemond.stderr.log"; exit 1; }
+          sleep 2
+        done
+        curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null
+
+        echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
+        {
+          echo "LEMOND_PORT=$PORT"
+          echo "LEMOND_PID=$LEMOND_PID"
+          echo "REPO_MANAGER_LEMONADE_URL=http://127.0.0.1:$PORT/v1"
+          echo "REPO_MANAGER_PI_MODEL=Lemonade/${REPO_MANAGER_MODEL}"
+        } >> "$GITHUB_ENV"
+
+    - name: Pull the model
+      shell: bash
+      run: |
+        set -euo pipefail
+        response=$(curl -sf -X POST "http://127.0.0.1:${LEMOND_PORT}/api/v1/pull" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_name\": \"${REPO_MANAGER_MODEL}\"}")
+        echo "$response"
+        test "$(printf '%s' "$response" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("status", ""))')" = "success"
+        du -sh "$LEMOND_CACHE"
+
+    - name: Point pi at the model server
+      shell: bash
+      env:
+        HOME: ${{ env.RM_HOME }}
+      run: repo-manager pi setup
+
+    - uses: actions/create-github-app-token@v3
+      id: state-token
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: lemonade-sdk
+        repositories: lemonade-testing
+
+    - name: Clone the repository repo-manager writes to
+      uses: actions/checkout@v5
+      with:
+        repository: lemonade-sdk/lemonade-testing
+        token: ${{ steps.state-token.outputs.token }}
+        path: state
+        fetch-depth: 1
+        persist-credentials: true
+
+    - name: Give that clone a committer
+      shell: bash
+      run: |
+        set -euo pipefail
+        git -C "$GITHUB_WORKSPACE/state" config user.name "Lemonade Bot"
+        git -C "$GITHUB_WORKSPACE/state" config user.email "lemonade@amd.com"
+
+    - name: Clone lemonade for git and diff operations
+      uses: actions/checkout@v5
+      with:
+        path: checkout
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Run repo-manager
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        HOME: ${{ env.RM_HOME }}
+        GH_TOKEN: ${{ github.token }}
+        COMMAND: ${{ inputs.command }}
+      run: |
+        set -euo pipefail
+        # $COMMAND is a command line, not one argument.
+        # shellcheck disable=SC2086
+        repo-manager $COMMAND --repo lemonade-sdk/lemonade --checkout checkout --state state
+
+    - name: Show the model server log
+      if: failure()
+      shell: bash
+      run: tail -n 100 "$RUNNER_TEMP/lemond-logs/lemond.stderr.log" 2>/dev/null || true
+
+    - name: Stop the model server
+      if: always()
+      shell: bash
+      run: |
+        # Not pkill: other jobs on these machines run lemond too.
+        if [ -n "${LEMOND_PORT:-}" ]; then
+          curl -sf -X POST "http://127.0.0.1:${LEMOND_PORT}/internal/shutdown" > /dev/null || true
+          sleep 2
+        fi
+        if [ -n "${LEMOND_PID:-}" ]; then
+          kill "$LEMOND_PID" 2>/dev/null || true
+        fi
