@@ -189,8 +189,15 @@ static std::string describe_illegal_labels(const std::string& model_name,
 // Order is most-specific to most-historical.
 
 static void populate_model_metadata(ModelInfo& info) {
-    info.max_context_window = 0;
-    if (!info.downloaded) return;
+    if (!info.downloaded) {
+        info.max_context_window = 0;
+        return;
+    }
+
+    const auto* desc = backends::descriptor_for(info.recipe);
+    if (!(desc && desc->dynamic_models)) {
+        info.max_context_window = 0;
+    }
 
     // Per-backend metadata (GGUF arch/labels for llamacpp, config.json ctx for
     // flm, …) is read by the backend's ops, not a recipe switchboard here.
