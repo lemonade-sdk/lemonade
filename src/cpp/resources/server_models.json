@@ -1765,6 +1765,7 @@
         "checkpoint": "ornith-ai/Ornith-1.5-9B-GGUF:Q4_K_M",
         "mmproj": "mmproj-Ornith-1.5-9B-BF16.gguf",
         "recipe": "llamacpp",
+        "suggested": true,
         "labels": [
             "chat",
             "coding",
@@ -1778,6 +1779,7 @@
         "checkpoint": "ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M",
         "mmproj": "mmproj-Ornith-1.5-35B-BF16.gguf",
         "recipe": "llamacpp",
+        "suggested": true,
         "labels": [
             "chat",
             "coding",
