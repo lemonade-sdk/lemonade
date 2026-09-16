@@ -17,6 +17,7 @@
 #include "lemon/ollama_api.h"
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
+#include "lemon/backends/llamacpp/llamacpp_server.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/backend_utils.h"
@@ -3141,9 +3142,18 @@ void Server::handle_model_register(const httplib::Request& req, httplib::Respons
 int64_t Server::resolve_context_length(const std::string& model_id, const ModelInfo& info) const {
     // ctx_size stores -1 for "size this automatically", so only a positive
     // value answers; anything else falls through to the next source.
-    auto ctx_size_of = [](const RecipeOptions& options) -> int64_t {
+    auto ctx_size_of = [&info](const RecipeOptions& options) -> int64_t {
         const nlohmann::json ctx_json = options.get_option("ctx_size");
-        return ctx_json.is_number() ? ctx_json.get<int64_t>() : 0;
+        const int64_t ctx_size = ctx_json.is_number() ? ctx_json.get<int64_t>() : 0;
+        if (info.recipe != "llamacpp") {
+            return ctx_size;
+        }
+
+        const nlohmann::json args_json = options.get_option("llamacpp_args");
+        const std::string args = args_json.is_string()
+            ? args_json.get<std::string>() : "";
+        return backends::llamacpp::per_request_context_length(
+            ctx_size, info.max_context_window, args);
     };
 
     if (router_) {
@@ -3154,10 +3164,17 @@ int64_t Server::resolve_context_length(const std::string& model_id, const ModelI
         }
 
         const RecipeOptions no_request_options(info.recipe, nlohmann::json::object());
-        const int64_t configured_ctx =
-            ctx_size_of(router_->resolve_effective_options(info, no_request_options));
+        const RecipeOptions configured_options =
+            router_->resolve_effective_options(info, no_request_options);
+        const int64_t configured_ctx = ctx_size_of(configured_options);
         if (configured_ctx > 0) {
             return configured_ctx;
+        }
+
+        if (info.recipe == "llamacpp" && info.max_context_window > 0) {
+            RecipeOptions max_context_options = configured_options;
+            max_context_options.set_option("ctx_size", info.max_context_window);
+            return ctx_size_of(max_context_options);
         }
     }
 
