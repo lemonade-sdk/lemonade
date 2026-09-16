@@ -19,7 +19,7 @@ Usage::
     # Print the computed version for the current checkout
     python tools/version.py
 
-    # Print the name of the release branch for the most recent Wednesday cutoff
+    # Print the name of the release branch for the most recent cutoff
     python tools/version.py --release-branch
 
     # Import and reuse in other tooling
@@ -37,6 +37,11 @@ from pathlib import Path
 
 RELEASE_BRANCH_PATTERN = re.compile(r"^release-v(\d{4})\.(\d{1,2})$")
 RELEASE_TAG_PATTERN = re.compile(r"^v(\d{4})\.(\d{1,2})\.(\d+)$")
+
+# The moment (UTC) the weekly release branch is cut from main, in datetime.weekday()
+# numbering. The cron in .github/workflows/create-release-branch.yml must agree.
+CUTOFF_WEEKDAY = 2
+CUTOFF_HOUR = 16
 
 
 def git(*args, cwd):
@@ -101,9 +106,9 @@ def release_commit_number(repo, year, week, head="HEAD"):
 
 
 def upcoming_release_week(now):
-    days_until_wednesday = (2 - now.weekday()) % 7
-    cutoff = (now + datetime.timedelta(days=days_until_wednesday)).replace(
-        hour=19, minute=0, second=0, microsecond=0
+    days_until_cutoff = (CUTOFF_WEEKDAY - now.weekday()) % 7
+    cutoff = (now + datetime.timedelta(days=days_until_cutoff)).replace(
+        hour=CUTOFF_HOUR, minute=0, second=0, microsecond=0
     )
     if now >= cutoff:
         cutoff += datetime.timedelta(days=7)
@@ -113,9 +118,9 @@ def upcoming_release_week(now):
 
 
 def release_branch_name(now):
-    days_since_wednesday = (now.weekday() - 2) % 7
-    cutoff = (now - datetime.timedelta(days=days_since_wednesday)).replace(
-        hour=19, minute=0, second=0, microsecond=0
+    days_since_cutoff = (now.weekday() - CUTOFF_WEEKDAY) % 7
+    cutoff = (now - datetime.timedelta(days=days_since_cutoff)).replace(
+        hour=CUTOFF_HOUR, minute=0, second=0, microsecond=0
     )
     if now < cutoff:
         cutoff -= datetime.timedelta(days=7)
@@ -178,7 +183,7 @@ def main():
     parser.add_argument(
         "--release-branch",
         action="store_true",
-        help="print the release branch name for the most recent Wednesday cutoff",
+        help="print the release branch name for the most recent cutoff",
     )
     args = parser.parse_args()
 

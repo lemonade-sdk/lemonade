@@ -2,7 +2,7 @@ name: Create Release Branch
 
 on:
   schedule:
-    - cron: "0 19 * * 3"
+    - cron: "0 16 * * 3"
   workflow_dispatch:
 
 permissions: {}

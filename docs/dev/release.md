@@ -8,11 +8,11 @@ Lemonade has built its brand on quality and ease-of-use. Do not release a new Le
 
 ## Release Cadence and Channels
 
-Lemonade operates on a weekly release cadence. A release candidate is branched from `main` every Wednesday at 19:00 UTC and tested by the community for the following week. A release admin decides whether to promote a tested candidate to the stable channels.
+Lemonade operates on a weekly release cadence. A release candidate is branched from `main` at the cutoff time, which is every Wednesday at 16:00 UTC, and tested by the community for the following week. A release admin decides whether to promote a tested candidate to the stable channels.
 
 Release candidates are published for Ubuntu, Windows, Docker, macOS, Fedora, and Debian. The PPA and Snap use the `candidate` channel, and GitHub marks the release as a prerelease. Builds from `main` continue to go to the `bleeding-edge` channels. Stable releases use the `stable` PPA and Snap channels and the `latest` GitHub and Docker channels.
 
-Any PR intended for the next release should be merged before the Wednesday cutoff. A commit merged after 19:00 UTC belongs to the following release cycle. Maintainers may postpone merging a PR to protect release quality.
+Any PR intended for the next release should be merged before the cutoff time. A commit merged after the cutoff belongs to the following release cycle. Maintainers may postpone merging a PR to protect release quality.
 
 ## Versioning
 
@@ -22,7 +22,7 @@ Lemonade versions have the deterministic format `year.week.number`:
 - `week` is the ISO week in which the stable release is scheduled.
 - `number` is the number of commits added to the release branch since it was created. It starts at `0` and increases monotonically. Each number identifies exactly one artifact, whether or not that artifact is promoted to stable.
 
-Release branches omit the final component and are named `release-v<year>.<week>`. For example, a branch created on Wednesday, September 9, 2026 for the following week's release is named `release-v2026.38`. Its first candidate is `v2026.38.0`; one fix on the release branch produces `v2026.38.1`. If `v2026.38.1` is promoted to stable and later needs a hotfix, the next artifact is `v2026.38.2`.
+Release branches omit the final component and are named `release-v<year>.<week>`. For example, a branch created on September 9, 2026 for the following week's release is named `release-v2026.38`. Its first candidate is `v2026.38.0`; one fix on the release branch produces `v2026.38.1`. If `v2026.38.1` is promoted to stable and later needs a hotfix, the next artifact is `v2026.38.2`.
 
 Windows MSI versions use a two-digit year because MSI version fields do not support the four-digit value. For example, Lemonade `2026.38.1` has MSI version `26.38.1`.
 
@@ -32,7 +32,7 @@ The version is calculated at build time rather than stored in `CMakeLists.txt`. 
 year.week.0~<commit-count>.<short-hash>
 ```
 
-The week is the release week the commit would enter. Before the Wednesday 19:00 UTC cutoff, this is the following week; after the cutoff, it is the week after that. For example, a build from `main` on September 10, 2026 could be `2026.39.0~1595.ff22950d`.
+The week is the release week the commit would enter. Before the cutoff time, this is the following week; after the cutoff, it is the week after that. For example, a build from `main` on September 10, 2026 could be `2026.39.0~1595.ff22950d`.
 
 A source tree may contain a `.version` file to override the calculated version. Release source archives include this file so unpacked source retains the version of the artifact from which it came.
 
@@ -44,7 +44,7 @@ We have an AI-assisted tool called `repo-manager` that reviews every commit as i
 
 ### 1. Create and Publish the First Candidate
 
-At 19:00 UTC every Wednesday, automation creates `release-v<year>.<week>` from the tip of `main`, where the year and week identify the following week's release. The initial branch build is candidate `.0`.
+At the cutoff time every week, automation creates `release-v<year>.<week>` from the tip of `main`, where the year and week identify the following week's release. The initial branch build is candidate `.0`.
 
 Every push to a `release-v*` branch produces the next candidate and publishes it to the candidate/prerelease channels. The same workflow runs repo-manager over the branch before it creates the release, so every candidate, and every stable release, comes with:
 

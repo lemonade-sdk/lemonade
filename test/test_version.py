@@ -1,4 +1,5 @@
 import datetime
+import re
 import subprocess
 import tempfile
 import unittest
@@ -10,43 +11,58 @@ from tools import version
 UTC = datetime.timezone.utc
 
 
+class CutoffTests(unittest.TestCase):
+    def test_workflow_cron_matches_the_cutoff(self):
+        workflow = Path(__file__).resolve().parents[1] / (
+            ".github/workflows/create-release-branch.yml"
+        )
+        match = re.search(
+            r'cron:\s*"(\d+) (\d+) \* \* (\d+)"', workflow.read_text(encoding="utf-8")
+        )
+        self.assertIsNotNone(match)
+        minute, hour, cron_weekday = (int(field) for field in match.groups())
+        self.assertEqual(minute, 0)
+        self.assertEqual(hour, version.CUTOFF_HOUR)
+        self.assertEqual(cron_weekday, (version.CUTOFF_WEEKDAY + 1) % 7)
+
+
 class ReleaseWeekTests(unittest.TestCase):
-    def test_before_wednesday_cutoff_targets_next_week(self):
-        now = datetime.datetime(2026, 9, 9, 18, 59, tzinfo=UTC)
+    def test_before_cutoff_targets_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 15, 59, tzinfo=UTC)
         self.assertEqual(version.upcoming_release_week(now), (2026, 38))
 
-    def test_at_wednesday_cutoff_targets_week_after_next(self):
-        now = datetime.datetime(2026, 9, 9, 19, 0, tzinfo=UTC)
+    def test_at_cutoff_targets_week_after_next(self):
+        now = datetime.datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
         self.assertEqual(version.upcoming_release_week(now), (2026, 39))
 
     def test_iso_year_follows_release_date(self):
-        now = datetime.datetime(2026, 12, 30, 20, 0, tzinfo=UTC)
+        now = datetime.datetime(2026, 12, 30, 17, 0, tzinfo=UTC)
         self.assertEqual(version.upcoming_release_week(now), (2027, 2))
 
 
 class ReleaseBranchNameTests(unittest.TestCase):
-    def test_at_wednesday_cutoff_names_next_week(self):
-        now = datetime.datetime(2026, 9, 9, 19, 0, tzinfo=UTC)
+    def test_at_cutoff_names_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
         self.assertEqual(version.release_branch_name(now), "release-v2026.38")
 
-    def test_late_wednesday_run_still_names_next_week(self):
-        now = datetime.datetime(2026, 9, 9, 19, 45, tzinfo=UTC)
+    def test_late_cutoff_day_run_still_names_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 16, 45, tzinfo=UTC)
         self.assertEqual(version.release_branch_name(now), "release-v2026.38")
 
-    def test_before_wednesday_cutoff_names_the_branch_cut_last_week(self):
-        now = datetime.datetime(2026, 9, 9, 18, 59, tzinfo=UTC)
+    def test_before_cutoff_names_the_branch_cut_last_week(self):
+        now = datetime.datetime(2026, 9, 9, 15, 59, tzinfo=UTC)
         self.assertEqual(version.release_branch_name(now), "release-v2026.37")
 
     def test_branch_week_matches_dev_version_week_before_cutoff(self):
-        just_before = datetime.datetime(2026, 9, 9, 18, 59, tzinfo=UTC)
-        at_cutoff = datetime.datetime(2026, 9, 9, 19, 0, tzinfo=UTC)
+        just_before = datetime.datetime(2026, 9, 9, 15, 59, tzinfo=UTC)
+        at_cutoff = datetime.datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
         year, week = version.upcoming_release_week(just_before)
         self.assertEqual(
             version.release_branch_name(at_cutoff), f"release-v{year}.{week}"
         )
 
     def test_iso_year_follows_release_date(self):
-        now = datetime.datetime(2026, 12, 30, 19, 0, tzinfo=UTC)
+        now = datetime.datetime(2026, 12, 30, 16, 0, tzinfo=UTC)
         self.assertEqual(version.release_branch_name(now), "release-v2027.1")
 
 
