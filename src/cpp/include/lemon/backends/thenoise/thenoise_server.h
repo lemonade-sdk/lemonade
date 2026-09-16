@@ -39,7 +39,7 @@ public:
     json image_edits(const json& request) override;
     json image_variations(const json& request) override;
 
-    std::string upscale(
+    std::string upscale_via_cli(
         const std::string& b64_image,
         const std::string& upscale_model_path) override;
 

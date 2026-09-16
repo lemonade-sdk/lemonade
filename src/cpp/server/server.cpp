@@ -5607,7 +5607,7 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
             return;
         }
         auto* upscale_server = dynamic_cast<IUpscaleServer*>(server.get());
-        std::string upscaled = upscale_server->upscale(b64_image, info.resolved_path("main"));
+        std::string upscaled = upscale_server->upscale_via_cli(b64_image, info.resolved_path("main"));
 
         if (upscaled.empty()) {
             res.status = 500;

@@ -95,7 +95,7 @@ public:
 class IUpscaleServer : public virtual ICapability {
 public:
     virtual ~IUpscaleServer() = default;
-    virtual std::string upscale(const std::string& b64_image,
+    virtual std::string upscale_via_cli(const std::string& b64_image,
                                 const std::string& upscale_model_path) = 0;
 };
 
