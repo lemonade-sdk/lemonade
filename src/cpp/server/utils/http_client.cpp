@@ -1180,8 +1180,7 @@ void write_part_journal(const std::string& output_path, uint64_t total,
 }
 
 bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
-                           std::vector<uint64_t>& out) {
-    const fs::path journal = path_from_utf8(part_journal_path(output_path));
+                           std::vector<uint64_t>& out) {    const fs::path journal = path_from_utf8(part_journal_path(output_path));
     std::error_code ec;
     if (!fs::exists(journal, ec)) return false;
 
@@ -1201,14 +1200,6 @@ bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
 
     out.assign(static_cast<size_t>(parts), 0);
     for (size_t i = 0; i < out.size(); ++i) out[i] = get_u64_le(p + 16 + i * 8);
-    return true;
-}
-
-bool read_part_journal(const std::string& output_path, uint64_t expect_total,
-                       size_t expect_parts, std::vector<uint64_t>& out) {
-    uint64_t total = 0;
-    if (!read_part_journal_raw(output_path, total, out)) return false;
-    if (total != expect_total || out.size() != expect_parts) return false;
     return true;
 }
 
