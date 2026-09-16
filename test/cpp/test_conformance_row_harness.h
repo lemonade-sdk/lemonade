@@ -50,11 +50,18 @@ inline std::vector<std::string> unknown_service_names(const nlohmann::json& serv
     return unknown;
 }
 
-enum class NameStatus { kOk, kMissing, kNotString, kDuplicate };
+enum class NameStatus { kOk, kMissing, kNotString, kDuplicate, kInvalidChars };
 
-// A row's "case_name": missing/empty, present but not a string, a duplicate of one
-// already accepted, or ok. Pure — does not mutate `seen_names`; the caller records
-// the name after accepting it.
+// A case label joins band path, policy name and case name with "::", so a name
+// holding a separator or whitespace would let two different rows render to the
+// same label.
+inline bool name_chars_ok(const std::string& name) {
+    return name.find_first_of(" \t\r\n/:") == std::string::npos;
+}
+
+// A row's "case_name": missing/empty, present but not a string, holding a
+// separator, a duplicate of one already accepted, or ok. Pure — does not mutate
+// `seen_names`; the caller records the name after accepting it.
 inline NameStatus check_case_name(const nlohmann::json& row,
                                   const std::set<std::string>& seen_names) {
     const auto it = row.is_object() ? row.find("case_name") : row.end();
@@ -62,6 +69,7 @@ inline NameStatus check_case_name(const nlohmann::json& row,
     if (!it->is_string()) return NameStatus::kNotString;
     const std::string name = it->get<std::string>();
     if (name.empty()) return NameStatus::kMissing;
+    if (!name_chars_ok(name)) return NameStatus::kInvalidChars;
     if (seen_names.count(name) != 0) return NameStatus::kDuplicate;
     return NameStatus::kOk;
 }

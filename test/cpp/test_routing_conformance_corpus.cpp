@@ -436,6 +436,10 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
         return std::nullopt;
     }
     const std::string policy_name = policy_it->get<std::string>();
+    if (!lemon::conformance::name_chars_ok(policy_name)) {
+        check(where + " policy_name '" + policy_name + "' has no separator or whitespace", false);
+        return std::nullopt;
+    }
     switch (lemon::conformance::check_case_name(row, seen_by_policy[policy_name])) {
         case lemon::conformance::NameStatus::kMissing:
             check(where + " has a case_name", false);
@@ -444,7 +448,12 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
             check(where + " case_name is a string", false);
             return std::nullopt;
         case lemon::conformance::NameStatus::kDuplicate:
-            check(where + " duplicate case name '" + policy_name + "/" + row.value("case_name", "") + "'", false);
+            check(where + " duplicate case name '" + policy_name + "::" + row.value("case_name", "") + "'", false);
+            return std::nullopt;
+        case lemon::conformance::NameStatus::kInvalidChars:
+            check(where + " case_name '" + row.value("case_name", "") +
+                      "' has no separator or whitespace",
+                  false);
             return std::nullopt;
         case lemon::conformance::NameStatus::kOk:
             break;
@@ -526,7 +535,9 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
         if (!row) continue;
 
         const std::string policy_name = row->at("policy_name").get<std::string>();
-        const std::string name = rel + "/" + policy_name + "/" + row->at("case_name").get<std::string>();
+        // "::" marks where the band's real directory path stops; the two names after
+        // it are JSON field values, not directories.
+        const std::string name = rel + "::" + policy_name + "::" + row->at("case_name").get<std::string>();
 
         const auto policy_entry = policies_json->find(policy_name);
         if (policy_entry == policies_json->end()) {
@@ -558,7 +569,7 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
     // Every declared policy must be exercised by at least one case; an unused
     // policy is dead weight the corpus should not carry silently.
     for (auto it = policies_json->begin(); it != policies_json->end(); ++it) {
-        check(rel + "/" + it.key() + ": policy is used by at least one case",
+        check(rel + "::" + it.key() + ": policy is used by at least one case",
               used_policies.count(it.key()) != 0);
     }
     return executed;

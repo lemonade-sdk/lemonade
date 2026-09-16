@@ -52,6 +52,14 @@ static void test_unknown_service_names(TestResult& r) {
     r.expect("unknown service rejected", unknown.size() == 1 && unknown.front() == "rerank");
 }
 
+static void test_name_chars_ok(TestResult& r) {
+    using lemon::conformance::name_chars_ok;
+
+    r.expect("plain name accepted", name_chars_ok("conditions_char_bounds"));
+    r.expect("tab rejected", !name_chars_ok("a\tb"));
+    r.expect("newline rejected", !name_chars_ok("a\nb"));
+}
+
 static void test_check_case_name(TestResult& r) {
     using lemon::conformance::check_case_name;
 
@@ -67,6 +75,14 @@ static void test_check_case_name(TestResult& r) {
              check_case_name(json{{"case_name", 123}}, seen) == NameStatus::kNotString);
     r.expect("duplicate name",
              check_case_name(json{{"case_name", "already"}}, seen) == NameStatus::kDuplicate);
+    r.expect("name with a slash rejected",
+             check_case_name(json{{"case_name", "a/b"}}, seen) == NameStatus::kInvalidChars);
+    r.expect("name with a colon rejected",
+             check_case_name(json{{"case_name", "a:b"}}, seen) == NameStatus::kInvalidChars);
+    r.expect("name with a space rejected",
+             check_case_name(json{{"case_name", "a b"}}, seen) == NameStatus::kInvalidChars);
+    r.expect("dots, dashes and underscores allowed",
+             check_case_name(json{{"case_name", "min_chars-inclusive.boundary"}}, seen) == NameStatus::kOk);
 }
 
 int main() {
@@ -75,6 +91,7 @@ int main() {
 
     test_unknown_row_keys(r);
     test_unknown_service_names(r);
+    test_name_chars_ok(r);
     test_check_case_name(r);
 
     std::printf("\n%d/%d tests passed\n", r.passed, r.passed + r.failed);
