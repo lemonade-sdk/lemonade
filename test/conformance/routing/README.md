@@ -30,11 +30,6 @@ pair `(policy_name, case_name)`, so two policies may reuse a `case_name`. Every 
 must be exercised by at least one case, and a case naming a policy absent from
 `policies.json` is a hard failure.
 
-The runner reports a case as `<band>::<policy_name>::<case_name>`, so neither name
-may contain `/`, `:` or whitespace; a name that does is a hard failure. The `::`
-marks where the band's directory path stops, so a label is never mistaken for a
-path on disk.
-
 `<schema_major>` is the policy's root `version`, and the runner fails a case whose
 policy declares a different one. It is **not** the `version` inside an expected
 `Decision`: that field is the decision envelope's own major, emitted by
