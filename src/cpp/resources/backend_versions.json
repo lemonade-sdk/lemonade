@@ -71,7 +71,7 @@
     "hrx": "hrx-b69"
   },
   "rocmfpx": {
-    "comment": "ROCm FPX llama.cpp fork image from kyuz0/amd-strix-halo-toolboxes: FP4/FP6/FP8 weight formats plus MTP, gfx1151-only upstream. `tag` is documentation only: `digest` is what gets pulled, so an upstream retag cannot change what a Lemonade release runs. Bumped by .github/workflows/toolbox_image_refresh.yml.",
+    "comment": "ROCm FPX llama.cpp fork image from kyuz0/amd-strix-halo-toolboxes: FP4/FP6/FP8 weight formats plus MTP, gfx1151-only upstream. `tag` is documentation only: `digest` is what gets pulled, so an upstream retag cannot change what a Lemonade release runs. Bumped by .github/workflows/toolbox_refresh.yml.",
     "rocmfpx": {
       "gfx1151": {
         "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
@@ -237,18 +237,6 @@
     "vulkan": "v0.3.0",
     "rocm-stable": "v0.3.0",
     "cuda": "v0.3.0"
-  },
-  "halogen": {
-    "comment": "Peonist's closed-source Halogen Flash engine. Not one of Donato's images; his cockpit pins an older release, so this tracks Peonist's own registry.",
-    "rocm": {
-      "gfx1151": {
-        "repository": "ghcr.io/peonist-ai/halogen-flash-server",
-        "tag": "0.6.2",
-        "digest": "sha256:25478f5fd4cf8a900b36c26363c30455946d283af1cbf804541adeccd34488e9",
-        "channel": "experimental",
-        "compressed_bytes": 908263424
-      }
-    }
   },
   "clear_bin_if_lemonade_below": "9.4.0"
 }

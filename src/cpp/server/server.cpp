@@ -401,7 +401,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
 
-    // No-op without a container runtime. See ContainerRuntime::sweep_containers.
+    // No-op without a container runtime. See ContainerRuntime::sweep_managed_containers.
     backends::sweep_managed_containers();
 
     router_ = std::make_unique<Router>(config_.get(),

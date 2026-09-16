@@ -95,9 +95,7 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     request.recipe = ds4::descriptor.recipe;
     request.variant = kVariant;
     request.profile_id = "ds4-rocm";
-    // A model registered by absolute path can live outside the HF cache, so
-    // mount its directory too.
-    request.extra_mounts.push_back(fs::path(gguf_path).parent_path().string());
+    request.model_paths.push_back(gguf_path);
     ContainerLaunchPlan plan = plan_container_launch(request, port_);
 
     std::vector<std::string> command;
@@ -164,13 +162,29 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
                                                      inherit_output, true, {}),
                        plan.engine_executable(), engine_args);
 
+    if (!plan.publishes_port()) {
+        const std::string address =
+            wait_for_container_address(ds4::descriptor.recipe, kVariant);
+        if (address.empty()) {
+            const std::string logs = container_logs_for(ds4::descriptor.recipe, kVariant);
+            unload();
+            throw std::runtime_error("ds4 container got no network address" +
+                                     (logs.empty() ? "" : "\n" + logs));
+        }
+        set_backend_host(address);
+    } else {
+        set_backend_host("127.0.0.1");
+    }
+
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
     // cheapest always-on route and doubles as the watchdog probe.
     if (!wait_for_ready("/v1/models", (std::max)(kStartupTimeoutSeconds,
                                                  HttpClient::get_default_timeout()))) {
+        const std::string logs = container_logs_for(ds4::descriptor.recipe, kVariant);
         unload();
-        throw std::runtime_error("ds4-server failed to start within timeout");
+        throw std::runtime_error("ds4-server failed to start within timeout" +
+                                 (logs.empty() ? "" : "\n" + logs));
     }
 }
 

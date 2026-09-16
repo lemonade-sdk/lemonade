@@ -623,13 +623,17 @@ protected:
     bool is_process_running() const;
 
     std::string get_base_url() const {
-        return "http://127.0.0.1:" + std::to_string(get_backend_port());
+        return "http://" + backend_host_ + ":" + std::to_string(get_backend_port());
     }
+
+    // Loopback by default; see plan_container_launch() for when it is not.
+    void set_backend_host(const std::string& host) { backend_host_ = host; }
 
     json create_watchdog_reset_response() const;
 
     std::string server_name_;
     int port_;
+    std::string backend_host_ = "127.0.0.1";
     ProcessHandle process_handle_;
     std::vector<std::string> launch_command_;
     mutable std::mutex process_mutex_;

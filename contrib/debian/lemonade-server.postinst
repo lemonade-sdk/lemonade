@@ -29,6 +29,15 @@ if [ "$1" = "configure" ]; then
 		usermod -a -G render lemonade
 	fi
 
+	# Rootless Podman for the container-backed recipes needs subordinate
+	# uid/gid ranges and a per-user runtime directory for the service user.
+	if ! grep -q "^lemonade:" /etc/subuid 2>/dev/null; then
+		usermod --add-subuids 200000-265535 --add-subgids 200000-265535 lemonade 2>/dev/null || true
+	fi
+	if command -v loginctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
+		loginctl enable-linger lemonade 2>/dev/null || true
+	fi
+
 	# Create /var/lib/lemonade (writable state + config for lemonade user).
 	# Ensure ownership even if usermod -m didn't move existing data.
 	if [ ! -d /var/lib/lemonade ]; then

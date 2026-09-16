@@ -18,6 +18,18 @@ namespace utils {
 // build_run_args() for what that buys.
 enum class ContainerEngineKind { None, Podman, Docker };
 
+// Where lemond itself is running relative to the engine. Everything but Native
+// means the engine lives outside lemond's own filesystem and process namespace,
+// so engine calls, mount sources and port reachability are translated.
+enum class HostTransport {
+    Native,     // engine binary on PATH, same namespace as lemond
+    Toolbox,    // Fedora Toolbox / Distrobox: engine runs on the host via flatpak-spawn
+    Container,  // lemond is itself a container talking to a bind-mounted engine socket
+    Snap,       // strictly confined snap driving the Docker snap's daemon
+};
+
+const char* host_transport_name(HostTransport transport);
+
 struct ContainerEngine {
     ContainerEngineKind kind = ContainerEngineKind::None;
     std::string executable;  // absolute path, as resolved on PATH
@@ -37,7 +49,8 @@ struct ContainerEngine {
 
 // Device passthrough for one class of workload, mirroring the runtime_profiles
 // in the upstream toolbox catalog. Held as data so a new profile is a table
-// entry rather than a branch in the launch path.
+// entry rather than a branch in the launch path. Anything here beyond devices
+// and groups loosens the default confinement, so each such entry records why.
 struct DeviceProfile {
     std::string id;
     std::vector<std::string> devices;                          // --device
@@ -50,17 +63,28 @@ struct DeviceProfile {
 };
 
 struct ContainerMount {
-    std::string host_path;
+    std::string host_path;  // a host directory or file, or a volume name when `volume`
     std::string container_path;
     bool read_only = true;
+    // Set when host_path names an engine volume rather than a host path. The
+    // engine then mounts `volume_subpath` inside that volume; "" is the whole
+    // volume. Docker calls this volume-subpath, podman subpath.
+    bool volume = false;
+    std::string volume_subpath;
 };
 
 struct ContainerRunSpec {
     std::string name;
     std::string image;  // pinned "<repository>@sha256:..." reference
+    std::vector<std::pair<std::string, std::string>> labels;
     DeviceProfile profile;
     std::vector<ContainerMount> mounts;
     std::vector<std::pair<std::string, std::string>> env;
+    // A network name or "container:<id>"; "none" is unreachable, so
+    // plan_container_launch() always overrides it.
+    std::string network = "none";
+    // Engine-dependent; plan_container_launch() explains the choice.
+    bool publish_port = true;
     int host_port = 0;
     int container_port = 0;
     std::string entrypoint;          // "" = the image's own entrypoint
@@ -97,6 +121,7 @@ enum class ContainerReadiness {
     NoKfd,
     NoRenderNode,
     NoGroupMembership,
+    NoHostMountMapping,
 };
 
 struct ReadinessResult {
@@ -120,10 +145,27 @@ using CommandRunner = std::function<CommandResult(const std::string& executable,
 
 class ContainerRuntime {
 public:
-    explicit ContainerRuntime(CommandRunner runner = nullptr);
+    explicit ContainerRuntime(CommandRunner runner = nullptr,
+                              std::optional<HostTransport> transport = std::nullopt);
 
     // Process-wide instance used by the backends.
     static ContainerRuntime& global();
+
+    // --- host transport ---------------------------------------------------
+    HostTransport transport() const { return transport_; }
+    static HostTransport detect_transport();
+    // The engine executable and leading argv for this transport. In a toolbox
+    // that is `flatpak-spawn --host <engine>`; a podman reached over a socket
+    // gets `--remote`.
+    std::pair<std::string, std::vector<std::string>> engine_invocation(
+        const ContainerEngine& engine) const;
+    // Container transport: the id of the container lemond runs in, from the
+    // engine's own view, or "" when it cannot be determined.
+    std::string self_container_id();
+    // Container transport: lemond's own mounts as (host source -> path inside
+    // lemond's container). A path lemond sees is translated back to the host
+    // through these before it is handed to the engine as a mount source.
+    const std::vector<ContainerMount>& self_mounts();
 
     // --- engine discovery -------------------------------------------------
     // Resolves podman first, then docker, and verifies the daemon/socket
@@ -152,10 +194,21 @@ public:
     // --- container lifecycle ----------------------------------------------
     void stop_container(const std::string& name, int timeout_seconds = 10);
     void remove_container(const std::string& name);
-    std::vector<std::string> list_containers(const std::string& name_prefix);
-    // Remove every container whose name starts with `name_prefix`. Called at
-    // startup so a killed lemond does not leave GPU-holding containers behind.
-    int sweep_containers(const std::string& name_prefix);
+    // The last `tail` lines the container wrote, for attaching to a failed load.
+    std::string container_logs(const std::string& name, int tail = 60);
+    // The container's address on its network, or "" while it has none yet.
+    std::string container_address(const std::string& name);
+
+    // Idempotent; `--internal`, carrying the managed label.
+    void ensure_isolated_network(const std::string& name);
+    void remove_network(const std::string& name);
+    std::vector<std::string> list_managed_networks();
+    // Every container carrying the managed label, running or not.
+    std::vector<std::string> list_managed_containers();
+    // Remove every container and private network carrying the managed label.
+    // Called at startup so a killed lemond does not leave GPU-holding
+    // containers behind.
+    int sweep_managed_containers();
 
     // --- pure helpers (no engine needed; unit-tested directly) -------------
     static std::vector<std::string> build_run_args(const ContainerEngine& engine,
@@ -164,16 +217,16 @@ public:
     static std::vector<std::string> build_stop_args(const std::string& name, int timeout_seconds);
 
     // Translate a host path into the path the container sees, using the longest
-    // matching mount. Returns "" when no mount covers it. The HF cache is a tree
-    // of symlinks into blobs/, so it is bind-mounted whole and model paths are
-    // rewritten through this rather than mounted file by file.
+    // matching mount. Returns "" when no mount covers it.
     static std::string rewrite_path(const std::vector<ContainerMount>& mounts,
                                     const std::string& host_path);
 
-    // Container name for a recipe/variant. The shared prefix is what
-    // sweep_containers() matches on, so every managed container must use this.
+    // Container name for a recipe/variant, for humans reading `ps`. Ownership is
+    // the label, not the name.
     static std::string container_name(const std::string& recipe, const std::string& variant);
-    static const char* managed_name_prefix();
+    // The bare label every managed container carries; `ps --filter label=` on
+    // it is how sweep and listing find them.
+    static const char* managed_label();
 
     // The named profile, or an empty profile when `id` is unknown.
     static const DeviceProfile& device_profile(const std::string& id);
@@ -200,13 +253,35 @@ public:
     static std::string parse_repo_digest(const std::string& output,
                                          const std::string& repository);
 
+    // --- GPU selection -----------------------------------------------------
+    // "gfx1151" for KFD's gfx_target_version 110501: major, then minor and
+    // stepping as single hex digits.
+    static std::string gfx_name_from_target_version(int target_version);
+    // Index among the GPU nodes (target version != 0), in KFD node order, of
+    // the first one whose name is `arch`; "" when none matches. That index is
+    // what HIP_VISIBLE_DEVICES counts.
+    static std::string pick_gpu_index(const std::vector<int>& target_versions,
+                                      const std::string& arch);
+    // The same, read from /sys/devices/virtual/kfd/kfd/topology/nodes.
+    static std::string kfd_gpu_index_for_arch(const std::string& arch);
+
+    // Named volumes have no usable host path from inside the sandbox, so their
+    // source is the volume name and the engine resolves it.
+    static std::vector<ContainerMount> parse_self_mounts(const std::string& inspect_json);
+
 private:
     CommandResult run(const std::vector<std::string>& args, int timeout_seconds);
+    CommandResult invoke(const ContainerEngine& engine, const std::vector<std::string>& args,
+                         int timeout_seconds);
     std::optional<ContainerEngine> probe(ContainerEngineKind kind, const std::string& binary);
 
     CommandRunner runner_;
+    HostTransport transport_;
     std::optional<ContainerEngine> engine_;
     bool engine_probed_ = false;
+    bool self_probed_ = false;
+    std::string self_id_;
+    std::vector<ContainerMount> self_mounts_;
 };
 
 }  // namespace utils

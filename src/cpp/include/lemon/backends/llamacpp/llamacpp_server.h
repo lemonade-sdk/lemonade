@@ -82,6 +82,11 @@ protected:
     void unload_containerized(const std::string& recipe, const std::string& variant);
 
 private:
+    // The (recipe, variant) whose container is currently loaded, so unload()
+    // stops the container by name rather than only signalling the client.
+    std::string container_recipe_;
+    std::string container_variant_;
+
     // llama-server echoes the local .gguf path it was launched with (`-m <path>`)
     // in the OpenAI `model` field. Rewrite it to the client-facing model id so
     // responses don't leak absolute filesystem paths (and usernames).

@@ -12,7 +12,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | ACE-Step | yes | no | cuda, rocm, vulkan |
 | `ds4` | DwarfStar4 (experimental) | no | yes | rocm |
 | `flm` | FastFlowLM NPU | no | yes | npu |
-| `halogen` | Halogen Flash (experimental) | no | yes | rocm |
 | `kokoro` | Kokoro | no | no | cpu, metal |
 | `llamacpp` | Llama.cpp GPU | yes | yes | cpu, cuda, metal, nathanw, rocm, system, vulkan |
 | `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
@@ -39,7 +38,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `ds4` | rocm | linux | amd_gpu (gfx1151, gfx1201) |
 | `flm` | npu | linux, windows | amd_npu (XDNA2) |
-| `halogen` | rocm | linux | amd_gpu (gfx1151) |
 | `kokoro` | metal | macos | metal |
 | `kokoro` | cpu | linux, windows | cpu (x86_64) |
 | `llamacpp` | system | linux | cpu (arm64, x86_64) |

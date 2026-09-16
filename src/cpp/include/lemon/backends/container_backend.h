@@ -34,7 +34,7 @@ public:
 
     // Device passthrough profile for a variant. The default maps the variant
     // name onto the catalog profiles (rocm* -> amd-rocm, vulkan* -> vulkan);
-    // backends with their own requirements (Halogen) override it.
+    // a backend with its own requirements overrides it.
     virtual std::string profile_id(const std::string& variant) const;
 
 protected:
@@ -56,9 +56,10 @@ struct ContainerLaunchRequest {
     std::string recipe;
     std::string variant;
     std::string profile_id;  // "" = derive from the variant name
-    // Extra host directories to bind-mount read-only at the same path inside the
-    // container. The Hugging Face cache is mounted automatically.
-    std::vector<std::string> extra_mounts;
+    // Host paths of the files (or directories) the engine needs. Each is
+    // resolved through its symlinks and bind-mounted read-only under
+    // /mnt/models; nothing else from the host is visible to the container.
+    std::vector<std::string> model_paths;
     std::vector<std::pair<std::string, std::string>> env;
     std::string entrypoint;  // "" = the image's own entrypoint
     std::string workdir;
@@ -77,16 +78,16 @@ public:
         spec_.command = std::move(command);
     }
 
-    // Environment for the container. Backends configured entirely through
-    // environment variables (Halogen) fill this in after resolving paths
-    // through container_path().
     void add_env(const std::string& key, const std::string& value) {
         spec_.env.push_back({key, value});
     }
 
+    // False: connect to wait_for_container_address() instead.
+    bool publishes_port() const { return spec_.publish_port; }
+
     // argv for ProcessManager::start_process(engine_executable(), args).
     std::vector<std::string> engine_args() const;
-    const std::string& engine_executable() const { return engine_.executable; }
+    const std::string& engine_executable() const { return engine_executable_; }
     const std::string& container_name() const { return spec_.name; }
     int host_port() const { return spec_.host_port; }
     const utils::ContainerImageRef& image() const { return image_; }
@@ -94,8 +95,13 @@ public:
 private:
     friend ContainerLaunchPlan plan_container_launch(const ContainerLaunchRequest&, int);
     utils::ContainerEngine engine_;
+    std::string engine_executable_;
+    std::vector<std::string> engine_prefix_;
     utils::ContainerRunSpec spec_;
     utils::ContainerImageRef image_;
+    // spec_.mounts holds host-side sources (see ContainerRuntime::self_mounts),
+    // so container_path() needs lemond's own view of the same mounts.
+    std::vector<utils::ContainerMount> visible_mounts_;
 };
 
 // Build the plan for a launch. Throws std::runtime_error carrying the
@@ -108,11 +114,20 @@ ContainerLaunchPlan plan_container_launch(const ContainerLaunchRequest& request,
 void clear_stale_container(const std::string& recipe, const std::string& variant);
 
 // Stop the container by name. Call this from unload() BEFORE killing the engine
-// client process: signalling the client orphans the container, which keeps
+// client process: SIGKILL is not proxied to the container, which would keep
 // holding the GPU.
 void stop_container_for(const std::string& recipe, const std::string& variant);
 
-// ContainerRuntime::sweep_containers() over everything Lemonade manages.
+// The container's recent output, for attaching to a failed load. Empty when
+// there is no engine or no such container.
+std::string container_logs_for(const std::string& recipe, const std::string& variant);
+
+// Polls until the engine has attached the container to its network or
+// `timeout_seconds` pass. "" on timeout.
+std::string wait_for_container_address(const std::string& recipe, const std::string& variant,
+                                       int timeout_seconds = 30);
+
+// ContainerRuntime::sweep_managed_containers() on the process-wide runtime.
 int sweep_managed_containers();
 
 }  // namespace backends

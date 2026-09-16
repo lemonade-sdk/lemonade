@@ -129,6 +129,37 @@ docker run -d \
 >
 > Then use the numbers, e.g. `--group-add 992 --group-add 44`.
 
+### Toolbox backends from the Docker image
+
+The container-backed recipes (`rocmfpx`, `ds4`, `llamacpp:nathanw`) run as sibling containers
+that Lemonade starts through the host's container engine. The Lemonade image does not include an
+engine of its own; mount the host's engine socket into it. With rootless podman on the host:
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-data:/opt/lemonade/.cache/lemonade \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
+  -v /run/user/$(id -u)/podman/podman.sock:/run/podman/podman.sock \
+  -e CONTAINER_HOST=unix:///run/podman/podman.sock \
+  --device=/dev/kfd \
+  --device=/dev/dri \
+  --group-add video \
+  --group-add render \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+With Docker on the host, mount `/var/run/docker.sock:/var/run/docker.sock` instead of the podman
+socket and drop the `CONTAINER_HOST` line. Lemonade inspects its own container to find the host
+side of the model cache, so nothing else is configured. The toolbox containers join Lemonade's
+network namespace and are reachable only from it.
+
+> Whoever can reach the engine socket can start any container that engine can. A rootless podman
+> socket is the safer grant: it is a user-level socket rather than root's.
+
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)

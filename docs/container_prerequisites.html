@@ -24,8 +24,8 @@
       <div class="install-section">
         <h2>Why this page</h2>
         <p>
-          Three Lemonade backends run inside OCI containers rather than as downloaded
-          binaries: <code>rocmfpx</code>, <code>ds4</code> and <code>halogen</code>.
+          Two Lemonade backends run inside OCI containers rather than as downloaded
+          binaries: <code>rocmfpx</code> and <code>ds4</code>.
           They are prebuilt images that bundle a complete ROCm or Vulkan stack, which is what
           makes them work on hardware where a plain binary would not.
         </p>
@@ -157,6 +157,47 @@
         </p>
       </div>
 
+      <div class="install-section" id="engine-socket">
+        <h2>Lemonade is running inside a container</h2>
+        <p>
+          The Lemonade Docker image cannot start containers of its own. It drives the
+          container engine on the host instead, through the engine's socket, and the toolbox
+          containers start as siblings that share Lemonade's network namespace. Lemonade
+          finds the host side of its model cache by inspecting its own container, so no
+          paths need to be configured.
+        </p>
+        <p>Add the socket to the documented <code>docker run</code>. With rootless podman on the host:</p>
+        <div class="code-block">
+          <code>-v /run/user/$(id -u)/podman/podman.sock:/run/podman/podman.sock -e CONTAINER_HOST=unix:///run/podman/podman.sock</code>
+        </div>
+        <p>With Docker on the host:</p>
+        <div class="code-block">
+          <code>-v /var/run/docker.sock:/var/run/docker.sock</code>
+        </div>
+        <p class="option-note">
+          Whoever can reach the engine socket can start any container the engine can, so a
+          rootless podman socket is the safer grant: it is a user-level socket, not root's.
+          The model cache volume must be one the engine can mount, which every named volume
+          and bind mount is.
+        </p>
+      </div>
+
+      <div class="install-section" id="snap-docker-plug">
+        <h2>The lemonade snap needs the Docker snap</h2>
+        <p>
+          A strictly confined snap cannot run a container engine, but snapd's
+          <code>docker</code> interface lets it drive the Docker snap's daemon. Install the
+          Docker snap and connect the plug once:
+        </p>
+        <div class="code-block">
+          <code>sudo snap install docker &amp;&amp; sudo snap connect lemonade:docker docker:docker-daemon</code>
+        </div>
+        <p class="option-note">
+          The interface never auto-connects, so this step stays manual. There is no podman
+          equivalent: the podman snap is published on the edge channel only.
+        </p>
+      </div>
+
       <div class="install-section" id="kfd-missing">
         <h2>/dev/kfd is missing</h2>
         <p>
@@ -230,29 +271,7 @@
           that is usually the wrong trade: they reach the same unified memory through GTT whether
           the carve-out is large or small, and the reserved block comes straight out of the file
           cache that large mapped checkpoints read through. Setting the option back to Auto or its
-          minimum (about 512 MiB) is what the Halogen authors recommend, and it costs the GPU
-          nothing as long as GTT is sized as above.
-        </p>
-      </div>
-
-      <div class="install-section" id="halogen-kernel">
-        <h2>Kernel too old for Halogen</h2>
-        <p>
-          The <code>halogen</code> backend needs Linux <strong>7.0 or newer</strong>, which is
-          ahead of what most distributions ship today. Check your kernel:
-        </p>
-        <div class="code-block">
-          <code>uname -r</code>
-        </div>
-        <p>
-          If it is older than 7.0, there is no workaround: Halogen's memory path depends on
-          kernel support that is not backported. Wait for your distribution to ship a 7.x
-          kernel, or use <code>rocmfpx</code> or llama.cpp's <code>nathanw</code> build in the meantime -
-          they run on the same GPU with no kernel floor beyond the CWSR fix.
-        </p>
-        <p class="option-note">
-          Halogen also needs about 130 GB of free disk for its checkpoint bundle, and enough
-          GPU memory to hold it. See the GTT section above.
+          minimum (about 512 MiB) costs the GPU nothing as long as GTT is sized as above.
         </p>
       </div>
 

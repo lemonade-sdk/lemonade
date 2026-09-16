@@ -547,6 +547,9 @@ void LlamaCppServer::load(const std::string& model_name,
 #endif
 
     bool inherit_llama_output = (log_level_ == "info") || is_debug();
+    set_backend_host("127.0.0.1");
+    container_recipe_.clear();
+    container_variant_.clear();
     set_process_handle(ProcessManager::start_process(
         process_executable, args, working_dir, inherit_llama_output, true, env_vars),
         process_executable, args);
@@ -587,11 +590,15 @@ void LlamaCppServer::load_containerized(const std::string& model_name,
     // A container left by a previous run (a killed lemond) would make `run`
     // fail on the name, so clear it before claiming the name again.
     clear_stale_container(launch.recipe, launch.variant);
+    container_recipe_ = launch.recipe;
+    container_variant_ = launch.variant;
 
     ContainerLaunchRequest request;
     request.recipe = launch.recipe;
     request.variant = launch.variant;
     request.profile_id = launch.profile_id;
+    request.model_paths.push_back(gguf_path);
+    if (!mmproj_path.empty()) request.model_paths.push_back(mmproj_path);
     ContainerLaunchPlan plan = plan_container_launch(request, port_);
 
     const bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
@@ -656,9 +663,24 @@ void LlamaCppServer::load_containerized(const std::string& model_name,
                                                      inherit_output, true, {}),
                        plan.engine_executable(), engine_args);
 
+    if (!plan.publishes_port()) {
+        const std::string address = wait_for_container_address(launch.recipe, launch.variant);
+        if (address.empty()) {
+            const std::string logs = container_logs_for(launch.recipe, launch.variant);
+            unload_containerized(launch.recipe, launch.variant);
+            throw std::runtime_error(launch.recipe + " container got no network address" +
+                                     (logs.empty() ? "" : "\n" + logs));
+        }
+        set_backend_host(address);
+    } else {
+        set_backend_host("127.0.0.1");
+    }
+
     if (!wait_for_ready("/health")) {
+        const std::string logs = container_logs_for(launch.recipe, launch.variant);
         unload_containerized(launch.recipe, launch.variant);
-        throw std::runtime_error(launch.recipe + " llama-server failed to start");
+        throw std::runtime_error(launch.recipe + " llama-server failed to start" +
+                                 (logs.empty() ? "" : "\n" + logs));
     }
 
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
@@ -670,6 +692,8 @@ void LlamaCppServer::unload_containerized(const std::string& recipe, const std::
     if (!variant.empty()) {
         stop_container_for(recipe, variant);
     }
+    container_recipe_.clear();
+    container_variant_.clear();
 
     const ProcessHandle handle = consume_process_handle_for_cleanup();
     if (has_process_handle(handle)) {
@@ -679,6 +703,14 @@ void LlamaCppServer::unload_containerized(const std::string& recipe, const std::
 }
 
 void LlamaCppServer::unload() {
+    if (!container_variant_.empty()) {
+        // Copies: unload_containerized() clears the members it would otherwise
+        // be reading through these references.
+        const std::string recipe = container_recipe_;
+        const std::string variant = container_variant_;
+        unload_containerized(recipe, variant);
+        return;
+    }
     stop_backend_watchdog();
     LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
 

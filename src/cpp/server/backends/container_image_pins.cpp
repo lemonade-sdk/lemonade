@@ -115,13 +115,8 @@ std::vector<ImagePin> all_image_pins() {
 std::string registry_url(const utils::ContainerImageRef& ref) {
     if (!ref.valid()) return "";
     const std::string kDockerIo = "docker.io/";
-    const std::string kGhcr = "ghcr.io/";
     if (ref.repository.rfind(kDockerIo, 0) == 0) {
         return "https://hub.docker.com/r/" + ref.repository.substr(kDockerIo.size()) + "/tags";
-    }
-    if (ref.repository.rfind(kGhcr, 0) == 0) {
-        return "https://github.com/" + ref.repository.substr(kGhcr.size()) + "/pkgs/container/" +
-               ref.repository.substr(ref.repository.find_last_of('/') + 1);
     }
     return "";
 }

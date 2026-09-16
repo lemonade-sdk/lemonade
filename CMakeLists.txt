@@ -165,7 +165,6 @@ set(LEMON_BACKENDS
     "thenoise|thenoise"
     "ds4|ds4"
     "rocmfpx|rocmfpx"
-    "halogen|halogen"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
@@ -1982,6 +1981,13 @@ if(UNIX AND NOT APPLE)
             "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
         )
     endif()
+
+    # Drop-in that lets the system service run rootless Podman for the
+    # container-backed recipes; see data/lemond-containers.conf.
+    install(FILES ${CMAKE_SOURCE_DIR}/data/lemond-containers.conf
+        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service.d
+        RENAME containers.conf
+    )
 
     # Install sysusers.d snippet so the 'lemonade' system user is created
     install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers
