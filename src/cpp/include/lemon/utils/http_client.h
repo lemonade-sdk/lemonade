@@ -50,7 +50,7 @@ struct DownloadResult {
     bool disk_full = false;            // True if download failed due to insufficient disk space
     bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
     bool ranges_unsupported = false;   // Origin ignored Range; caller should use the single-stream path
-    int parts_used = 1;                // Concurrent connections the transfer actually used
+    int max_parts_used = 1;            // Peak concurrent connections during the transfer
 };
 
 // Progress callback returns bool: true = continue, false = cancel download

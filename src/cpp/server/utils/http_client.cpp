@@ -1585,6 +1585,14 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
     const uint64_t num_chunks = (total_size + kChunkSize - 1) / kChunkSize;
     int max_parts_seen = 0;
     uint64_t bytes_done = 0;
+    const uint64_t resumed_at_start = [&]() -> uint64_t {
+        uint64_t t = 0;
+        std::vector<uint64_t> offsets;
+        if (!read_part_journal_raw(output_path, t, offsets) || t != total_size) return 0;
+        uint64_t sum = 0;
+        for (uint64_t o : offsets) sum += o;
+        return sum;
+    }();
 
     for (uint64_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
         if (g_download_cancelled.load() || ranges_unsupported.load()) break;
@@ -1753,6 +1761,7 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
             for (uint64_t o : offsets) total_received += o;
         }
     }
+    result.bytes_downloaded = static_cast<size_t>((std::max)(total_received, bytes_done) - resumed_at_start);
 
     if (total_received < total_size) {
         result.can_resume = true;
@@ -1763,7 +1772,7 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
     fs::remove(path_from_utf8(journal), ec);
     if (callback) (void)callback(total_size, total_size);
     result.success = true;
-    result.parts_used = max_parts_seen;
+    result.max_parts_used = max_parts_seen;
     result.http_code = 206;
     return result;
 }
