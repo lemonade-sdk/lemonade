@@ -32,11 +32,8 @@ namespace utils {
 
 std::atomic<bool> g_download_cancelled{false};
 
-// libcurl's implicit global init is not thread safe, and easy handles are
-// created concurrently from httplib workers and from each download's part
-// threads. Running it here happens during static init, before any thread
-// exists. Cleanup is deliberately not registered: other statics may still issue
-// requests during teardown.
+// libcurl's implicit global init is not thread-safe; do it once at static init
+// before any worker thread can create an easy handle.
 namespace {
 struct CurlGlobalInit {
     CurlGlobalInit() { curl_global_init(CURL_GLOBAL_DEFAULT); }
@@ -1136,14 +1133,13 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
 
 namespace {
 
-constexpr char kPartJournalMagic[8] = {'L', 'E', 'M', 'P', 'A', 'R', 'T', '1'};
-
-// Bytes a part buffers before it forces them to disk and republishes its
-// durable offset. The journal must never claim more than what fflush has
-// handed to the OS: under-reporting re-fetches a little on resume, which is
-// harmless because a part always rewrites the same bytes at the same offsets,
-// while over-reporting would leave a permanent hole.
+constexpr char kPartJournalMagic[8] = {'L', 'E', 'M', 'P', 'A', 'R', 'T', '2'};
+constexpr uint64_t kChunkSize = 256ull * 1024 * 1024;
+constexpr int kMaxConcurrency = 32;
+constexpr int kInitialConcurrency = 4;
 constexpr uint64_t kPartFlushInterval = 4ull * 1024 * 1024;
+
+std::atomic<int> g_parallel_concurrency{kInitialConcurrency};
 
 void put_u64_le(std::string& out, uint64_t v) {
     for (int i = 0; i < 8; ++i) out.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
@@ -1155,8 +1151,7 @@ uint64_t get_u64_le(const unsigned char* p) {
     return v;
 }
 
-// Replaces the journal atomically so a crash mid-write cannot leave a torn
-// record that resume would read as real progress.
+// Journal format: magic | total_size | part_count | per-part durable offsets.
 void write_part_journal(const std::string& output_path, uint64_t total,
                         const std::vector<std::atomic<uint64_t>>& durable) {
     std::string buf(kPartJournalMagic, sizeof(kPartJournalMagic));
@@ -1184,8 +1179,6 @@ void write_part_journal(const std::string& output_path, uint64_t total,
     }
 }
 
-// Decodes a journal without knowing which transfer wrote it: validates only the
-// magic and that the payload length matches its own part count.
 bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
                            std::vector<uint64_t>& out) {
     const fs::path journal = path_from_utf8(part_journal_path(output_path));
@@ -1203,7 +1196,7 @@ bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
     const auto* p = reinterpret_cast<const unsigned char*>(buf.data()) + sizeof(kPartJournalMagic);
     total = get_u64_le(p);
     const uint64_t parts = get_u64_le(p + 8);
-    if (parts == 0 || parts > 1024) return false;  // bounds a corrupt length field
+    if (parts == 0 || parts > 1024) return false;
     if (buf.size() != kHeaderBytes + parts * 8) return false;
 
     out.assign(static_cast<size_t>(parts), 0);
@@ -1211,9 +1204,6 @@ bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
     return true;
 }
 
-// Any mismatch (size, part count) means the journal describes a differently
-// shaped transfer, so it is discarded and the file restarts from zero rather
-// than resuming into stale offsets.
 bool read_part_journal(const std::string& output_path, uint64_t expect_total,
                        size_t expect_parts, std::vector<uint64_t>& out) {
     uint64_t total = 0;
@@ -1239,6 +1229,7 @@ struct PartContext {
     std::chrono::steady_clock::time_point last_progress{};
 };
 
+// Validates Content-Range and HTTP status for each part's response.
 size_t part_header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
     const size_t total = size * nitems;
     auto* ctx = static_cast<PartContext*>(userdata);
@@ -1246,10 +1237,6 @@ size_t part_header_callback(char* buffer, size_t size, size_t nitems, void* user
 
     std::string line(buffer, total);
 
-    // A 206 whose Content-Range starts somewhere other than what this part
-    // asked for would be written at the requested offset and silently corrupt
-    // the file. Validated when present; origins that omit it are still
-    // accepted, since the range itself was honoured.
     if (line.size() > 14) {
         if (lower_copy(line.substr(0, 14)) == "content-range:") {
             const auto bytes_pos = line.find("bytes");
@@ -1273,9 +1260,6 @@ size_t part_header_callback(char* buffer, size_t size, size_t nitems, void* user
         std::string version;
         long code = 0;
         iss >> version >> code;
-        // A 200 here means the origin served the whole body instead of the
-        // requested range. Writing it at this part's offset would corrupt the
-        // file, so the transfer is abandoned and the caller falls back.
         ctx->saw_partial_content = (code == 206);
         if (code == 200 && ctx->ranges_unsupported) {
             ctx->ranges_unsupported->store(true);
@@ -1285,21 +1269,18 @@ size_t part_header_callback(char* buffer, size_t size, size_t nitems, void* user
     return total;
 }
 
+// Writes a part's body at its absolute offset; rejects bytes not authorized by a 206.
 size_t part_write_callback(void* ptr, size_t size, size_t nmemb, void* userdata) {
     auto* ctx = static_cast<PartContext*>(userdata);
     const size_t bytes = size * nmemb;
     if (!ctx || !ctx->fp) return 0;
     if (bytes == 0) return 0;
 
-    // Refuse any body that was not authorized by a 206, and any body longer
-    // than the range asked for; either would write outside this part's slice.
     if (!ctx->saw_partial_content) {
         if (ctx->ranges_unsupported) ctx->ranges_unsupported->store(true);
         return 0;
     }
     if (ctx->content_range_mismatch) return 0;
-    // Defence in depth: a surplus landing in the neighbouring part's slice is
-    // normally overwritten by that part, so no test isolates this.
     if (bytes > ctx->remaining) return 0;
 
     if (fwrite(ptr, 1, bytes, ctx->fp) != bytes) {
@@ -1322,6 +1303,7 @@ size_t part_write_callback(void* ptr, size_t size, size_t nmemb, void* userdata)
     return bytes;
 }
 
+// Cancels the part on cancel, range rejection, or no-progress timeout.
 int part_progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
                            curl_off_t, curl_off_t) {
     (void)dltotal;
@@ -1349,8 +1331,7 @@ struct PartOutcome {
     std::string error;
 };
 
-// Transfers [start + already_done, end] for one part, retrying transport
-// failures with the same backoff schedule the single-stream path uses.
+// Downloads one byte range with retry; resumes from the durable offset.
 PartOutcome run_part(const std::string& url,
                      const std::string& output_path,
                      uint64_t start,
@@ -1371,8 +1352,6 @@ PartOutcome run_part(const std::string& url,
             return outcome;
         }
         if (attempt > 0) {
-            // Sleep in slices so a cancel during backoff is noticed promptly
-            // instead of after the full (exponential) delay.
             for (int slept = 0; slept < retry_delay_ms; slept += 100) {
                 if (cancel.load() || ranges_unsupported.load() || g_download_cancelled.load()) {
                     outcome.error = "cancelled";
@@ -1399,10 +1378,6 @@ PartOutcome run_part(const std::string& url,
             outcome.error = "Failed to open output file for part write";
             return outcome;
         }
-        // curl hands the write callback at most CURL_MAX_WRITE_SIZE (16 KB) at a
-        // time. Left on the default stdio buffer each of those is its own
-        // write(), interleaved across every part's offset; batching them keeps
-        // each part's output contiguous on disk.
         setvbuf(fp, nullptr, _IOFBF, 1 << 20);
 
 #ifdef _WIN32
@@ -1478,8 +1453,6 @@ PartOutcome run_part(const std::string& url,
             return outcome;
         }
         if (ctx.write_failed) {
-            // Retrying a full disk only burns bandwidth, so this stops here the
-            // same way the single-stream path does.
             std::error_code space_ec;
             const auto si = fs::space(get_disk_space_probe_path(path_from_utf8(output_path)), space_ec);
             if (!space_ec && si.available < 1024 * 1024) {
@@ -1491,9 +1464,6 @@ PartOutcome run_part(const std::string& url,
             return outcome;
         }
         if (ctx.content_range_mismatch) {
-            // Will not heal on retry, and trusting it would place bytes at the
-            // wrong offset. Treated as "this origin cannot serve ranges" so the
-            // caller falls back rather than failing the download.
             ranges_unsupported.store(true);
             outcome.error = "origin returned a Content-Range that does not match the request";
             return outcome;
@@ -1508,7 +1478,6 @@ PartOutcome run_part(const std::string& url,
             return outcome;
         }
 
-        // 4xx other than the transient 408/429 can never succeed on retry.
         if (http_code >= 400 && http_code < 500 && http_code != 408 && http_code != 429) {
             outcome.error = "HTTP " + std::to_string(http_code);
             return outcome;
@@ -1527,9 +1496,7 @@ PartOutcome run_part(const std::string& url,
 
 namespace {
 
-// HEAD probe used only when the caller did not already know the size. Returns 0
-// when the origin does not report a usable Content-Length, which keeps the
-// transfer on the single-stream path rather than guessing at part boundaries.
+// HEAD request; returns 0 when the origin reports no usable Content-Length.
 size_t probe_total_size(const std::string& url,
                         const std::map<std::string, std::string>& headers,
                         HttpSecurityPolicy policy) {
@@ -1567,6 +1534,7 @@ size_t probe_total_size(const std::string& url,
 
 }  // namespace
 
+// Downloads a file in 256 MB chunks, adapting concurrency between chunks.
 DownloadResult HttpClient::download_parallel(const std::string& url,
                                              const std::string& output_path,
                                              size_t total_size,
@@ -1577,22 +1545,12 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
                                              HttpSecurityPolicy policy) {
     DownloadResult result;
     result.total_bytes = total_size;
-    result.parts_used = parts;
 
     const fs::path out_fs = path_from_utf8(output_path);
     const std::string journal = part_journal_path(output_path);
 
-    std::vector<uint64_t> resume_offsets;
-    bool resuming = false;
     std::error_code ec;
-    if (options.resume_partial && fs::exists(out_fs, ec) &&
-        fs::file_size(out_fs, ec) == total_size &&
-        read_part_journal(output_path, total_size, static_cast<size_t>(parts), resume_offsets)) {
-        resuming = true;
-    }
-
-    if (!resuming) {
-        resume_offsets.assign(static_cast<size_t>(parts), 0);
+    if (!fs::exists(out_fs, ec) || fs::file_size(out_fs, ec) != total_size) {
         fs::remove(path_from_utf8(journal), ec);
         {
 #ifdef _WIN32
@@ -1607,11 +1565,7 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
             fclose(fp);
         }
 #ifdef _WIN32
-        // Parts write at offsets spread across the whole file immediately. On
-        // NTFS a plain extend leaves valid-data-length at 0, so the first write
-        // near the end synchronously zero-fills everything before it — writing
-        // the file's own size in zeroes before any payload lands. Marking it
-        // sparse makes the extend free, as ftruncate already is elsewhere.
+        // Mark sparse so the initial extend does not zero-fill the whole file.
         HANDLE sparse_handle = CreateFileW(out_fs.c_str(), GENERIC_WRITE,
                                            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
@@ -1629,81 +1583,161 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
         }
     }
 
-    std::vector<std::atomic<uint64_t>> received(parts);
-    std::vector<std::atomic<uint64_t>> durable(parts);
-    std::atomic<bool> cancel{false};
     std::atomic<bool> ranges_unsupported{false};
+    int concurrency = (std::min)(
+        (std::max)(g_parallel_concurrency.load(), 1),
+        (std::min)(parts, kMaxConcurrency));
+    const int cap = (std::min)(parts, kMaxConcurrency);
+    const int lower = (std::min)(kInitialConcurrency, cap);
+    double peak_bps = 0.0;
 
-    const uint64_t chunk = total_size / static_cast<uint64_t>(parts);
-    std::vector<std::pair<uint64_t, uint64_t>> spans(parts);
-    for (int i = 0; i < parts; ++i) {
-        const uint64_t start = chunk * static_cast<uint64_t>(i);
-        // The last part absorbs the remainder so the spans always tile exactly.
-        const uint64_t end = (i == parts - 1) ? (total_size - 1)
-                                              : (start + chunk - 1);
-        spans[i] = {start, end};
-        const uint64_t span_len = end - start + 1;
-        const uint64_t done = (std::min)(resume_offsets[i], span_len);
-        received[i].store(done);
-        durable[i].store(done);
-    }
+    const uint64_t num_chunks = (total_size + kChunkSize - 1) / kChunkSize;
+    int max_parts_seen = 0;
+    uint64_t bytes_done = 0;
 
-    std::vector<PartOutcome> outcomes(parts);
-    std::atomic<int> finished{0};
-    std::vector<std::thread> workers;
-    workers.reserve(parts);
-    for (int i = 0; i < parts; ++i) {
-        workers.emplace_back([&, i]() {
-            outcomes[i] = run_part(url, output_path, spans[i].first, spans[i].second,
-                                   received[i], durable[i], cancel, ranges_unsupported,
-                                   headers, options, policy);
-            finished.fetch_add(1);
-        });
-    }
+    for (uint64_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
+        if (g_download_cancelled.load() || ranges_unsupported.load()) break;
 
-    // Progress is aggregated and emitted from this one thread: the callback
-    // reaches SSE sinks and job state that are not written for concurrent
-    // callers, and at transfer speed every part would otherwise call it
-    // thousands of times a second.
-    auto last_journal = std::chrono::steady_clock::now();
-    std::vector<uint64_t> journalled(parts, UINT64_MAX);
-    for (;;) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        const uint64_t chunk_start = chunk_idx * kChunkSize;
+        const uint64_t chunk_end = (std::min)(chunk_start + kChunkSize, static_cast<uint64_t>(total_size)) - 1;
+        const uint64_t chunk_len = chunk_end - chunk_start + 1;
+        const int effective_parts = concurrency;
+        max_parts_seen = (std::max)(max_parts_seen, effective_parts);
 
-        uint64_t sum = 0;
-        for (const auto& r : received) sum += r.load();
-
-        if (callback && !callback(static_cast<size_t>(sum), total_size)) {
-            cancel.store(true);
+        const uint64_t span = chunk_len / effective_parts;
+        std::vector<std::pair<uint64_t, uint64_t>> spans(effective_parts);
+        for (int i = 0; i < effective_parts; ++i) {
+            const uint64_t s = chunk_start + span * static_cast<uint64_t>(i);
+            const uint64_t e = (i == effective_parts - 1) ? chunk_end : (s + span - 1);
+            spans[i] = {s, e};
         }
 
-        // durable only advances every kPartFlushInterval, so most ticks would
-        // rewrite an identical payload into the directory the parts are writing.
-        const auto now = std::chrono::steady_clock::now();
-        if (now - last_journal >= std::chrono::seconds(2)) {
-            bool changed = false;
-            for (int i = 0; i < parts; ++i) {
-                const uint64_t d = durable[i].load();
-                if (journalled[i] != d) {
-                    journalled[i] = d;
-                    changed = true;
-                }
+        // Load resume offsets for this chunk's parts from the journal.
+        std::vector<uint64_t> resume_offsets;
+        uint64_t journal_total = 0;
+        bool have_journal = read_part_journal_raw(output_path, journal_total, resume_offsets);
+        std::vector<std::atomic<uint64_t>> received(effective_parts);
+        std::vector<std::atomic<uint64_t>> durable(effective_parts);
+        for (int i = 0; i < effective_parts; ++i) {
+            const uint64_t span_len = spans[i].second - spans[i].first + 1;
+            uint64_t done = 0;
+            if (have_journal && journal_total == total_size &&
+                i < static_cast<int>(resume_offsets.size())) {
+                done = (std::min)(resume_offsets[i], span_len);
             }
-            if (changed) write_part_journal(output_path, total_size, durable);
-            last_journal = now;
+            received[i].store(done);
+            durable[i].store(done);
         }
 
-        // Completion is decided by the workers having returned, not by the byte
-        // counters reaching their targets: a part that exhausts its retries
-        // stops short, and waiting on its counter would never return.
-        if (finished.load() == parts || cancel.load() || ranges_unsupported.load()) break;
+        std::vector<PartOutcome> outcomes(effective_parts);
+        std::atomic<bool> cancel{false};
+        std::atomic<int> finished{0};
+        const uint64_t chunk_initial_done = [&]() {
+            uint64_t sum = 0;
+            for (const auto& r : received) sum += r.load();
+            return sum;
+        }();
+        const auto chunk_started = std::chrono::steady_clock::now();
+        std::vector<std::thread> workers;
+        workers.reserve(effective_parts);
+        for (int i = 0; i < effective_parts; ++i) {
+            workers.emplace_back([&, i]() {
+                outcomes[i] = run_part(url, output_path, spans[i].first, spans[i].second,
+                                       received[i], durable[i], cancel, ranges_unsupported,
+                                       headers, options, policy);
+                finished.fetch_add(1);
+            });
+        }
+
+        auto last_journal = std::chrono::steady_clock::now();
+        std::vector<uint64_t> journalled(effective_parts, UINT64_MAX);
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            uint64_t sum = 0;
+            for (const auto& r : received) sum += r.load();
+            if (callback && !callback(static_cast<size_t>(bytes_done + sum), total_size)) {
+                cancel.store(true);
+            }
+
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_journal >= std::chrono::seconds(2)) {
+                bool changed = false;
+                for (int i = 0; i < effective_parts; ++i) {
+                    const uint64_t d = durable[i].load();
+                    if (journalled[i] != d) { journalled[i] = d; changed = true; }
+                }
+                if (changed) write_part_journal(output_path, total_size, durable);
+                last_journal = now;
+            }
+
+            if (finished.load() == effective_parts || cancel.load() ||
+                ranges_unsupported.load() || g_download_cancelled.load()) break;
+        }
+
+        for (auto& w : workers) w.join();
+
+        uint64_t chunk_received = 0;
+        for (const auto& r : received) chunk_received += r.load();
+
+        write_part_journal(output_path, total_size, durable);
+
+        bool chunk_complete = (chunk_received == chunk_len);
+        int failures = 0;
+        bool disk_full = false;
+        for (const auto& o : outcomes) {
+            if (o.disk_full) disk_full = true;
+            if (!o.success) ++failures;
+        }
+
+        if (disk_full) {
+            result.disk_full = true;
+            result.can_resume = true;
+            result.error_message = "Disk full: not enough space to complete download";
+            return result;
+        }
+
+        if (cancel.load() || g_download_cancelled.load()) {
+            result.cancelled = true;
+            result.can_resume = true;
+            result.error_message = "Download cancelled by user";
+            return result;
+        }
+
+        if (ranges_unsupported.load()) {
+            result.ranges_unsupported = true;
+            result.error_message = "Origin ignored Range requests; falling back to single-stream download";
+            fs::remove(path_from_utf8(journal), ec);
+            return result;
+        }
+
+        if (!chunk_complete && failures > 0) {
+            concurrency = (std::max)(lower, concurrency - concurrency / 4);
+            g_parallel_concurrency.store(concurrency);
+            result.can_resume = true;
+            result.error_message = "Parallel download failed in chunk " +
+                std::to_string(chunk_idx) + ": " + outcomes[0].error;
+            return result;
+        }
+
+        // Adapt concurrency for the next chunk from measured throughput.
+        if (chunk_complete) {
+            bytes_done += chunk_len;
+            uint64_t fresh = 0;
+            for (const auto& r : received) fresh += r.load();
+            fresh = (std::max)(fresh, chunk_initial_done) - chunk_initial_done;
+            const double secs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - chunk_started).count() / 1e6;
+            const double bps = secs > 0.0 ? static_cast<double>(fresh) / secs : 0.0;
+            peak_bps = (std::max)(peak_bps, bps);
+            if (peak_bps > 0.0 && bps < 0.5 * peak_bps) {
+                concurrency = (std::max)(lower, concurrency - concurrency / 4);
+            } else if (concurrency < cap) {
+                concurrency++;
+            }
+            g_parallel_concurrency.store(concurrency);
+        }
     }
-
-    for (auto& w : workers) w.join();
-
-    uint64_t total_received = 0;
-    for (const auto& r : received) total_received += r.load();
-    result.bytes_downloaded = static_cast<size_t>(total_received);
 
     if (ranges_unsupported.load()) {
         result.ranges_unsupported = true;
@@ -1712,30 +1746,33 @@ DownloadResult HttpClient::download_parallel(const std::string& url,
         return result;
     }
 
-    if (cancel.load() || g_download_cancelled.load()) {
-        write_part_journal(output_path, total_size, durable);
+    if (g_download_cancelled.load()) {
         result.cancelled = true;
         result.can_resume = true;
         result.error_message = "Download cancelled by user";
         return result;
     }
 
-    std::string first_error;
-    for (const auto& o : outcomes) {
-        if (o.disk_full) result.disk_full = true;
-        if (!o.success && first_error.empty()) first_error = o.error;
+    // Final verification: all bytes accounted for.
+    uint64_t total_received = 0;
+    {
+        uint64_t t = 0;
+        std::vector<uint64_t> offsets;
+        if (read_part_journal_raw(output_path, t, offsets)) {
+            for (uint64_t o : offsets) total_received += o;
+        }
     }
-    if (!first_error.empty() || total_received != total_size) {
-        write_part_journal(output_path, total_size, durable);
+
+    if (total_received < total_size) {
         result.can_resume = true;
-        result.error_message = "Parallel download failed: " +
-            (first_error.empty() ? std::string("incomplete transfer") : first_error);
+        result.error_message = "Incomplete transfer";
         return result;
     }
 
     fs::remove(path_from_utf8(journal), ec);
-    if (callback) (void)callback(static_cast<size_t>(total_size), total_size);
+    if (callback) (void)callback(total_size, total_size);
     result.success = true;
+    result.parts_used = max_parts_seen;
     result.http_code = 206;
     return result;
 }
@@ -1819,14 +1856,11 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
     }
 
-    // Parallel path. Skipped rather than failed whenever its preconditions do
-    // not hold, so every caller keeps the single-stream behavior by default.
     const std::string part_journal = part_journal_path(partial_path);
 
-    // A pre-sized parallel partial carries no usable resume offset for the
-    // single-stream path: its size is the final size from the moment it is
-    // created, so resuming from it would append past real data. Every route back
-    // to the single-stream path goes through here.
+    // A pre-sized parallel partial is unusable by the single-stream path: its
+    // size equals the final size from creation, so resuming from it would append
+    // past real data.
     const auto discard_parallel_partial = [&]() {
         std::error_code ec;
         fs::remove(partial_path_fs, ec);
@@ -1837,14 +1871,10 @@ DownloadResult HttpClient::download_file(const std::string& url,
     if (options.parallel_parts > 1 && download_rate_limit_bytes_per_second_.load() == 0) {
         size_t total = options.expected_total_bytes;
         if (total == 0) {
-            // Costs a round trip, so it is only paid by callers that cannot
-            // supply the size themselves.
             total = probe_total_size(url, headers, policy);
         }
-        const size_t min_per_part = (std::max)(options.parallel_min_bytes_per_part, size_t{1});
         if (total > 0) {
-            parts = (std::min)(options.parallel_parts,
-                               static_cast<int>(total / min_per_part));
+            parts = (std::min)(options.parallel_parts, kMaxConcurrency);
         }
 
         if (parts >= 2) {
@@ -1868,9 +1898,6 @@ DownloadResult HttpClient::download_file(const std::string& url,
             }
 
             if (!par.success && !par.ranges_unsupported) {
-                // Transport exhaustion or a full disk. The journal and pre-sized
-                // file are left in place so rerunning resumes rather than
-                // restarting.
                 LOG(ERROR, "HttpClient") << "[Download] " << par.error_message << std::endl;
                 return par;
             }
@@ -1883,7 +1910,6 @@ DownloadResult HttpClient::download_file(const std::string& url,
         }
     }
 
-    // A journal here was left by an earlier run that this call is not resuming.
     if (fs::exists(path_from_utf8(part_journal))) {
         discard_parallel_partial();
     }

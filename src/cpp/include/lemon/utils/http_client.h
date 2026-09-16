@@ -75,9 +75,6 @@ enum class HttpSecurityPolicy {
     AllowInsecureHttp,
 };
 
-// Concurrent connections a parallel download uses. Matches the count mainstream
-// model downloaders settle on; the origin, not the client, is the limit well
-// before this.
 constexpr int kDefaultParallelParts = 16;
 
 // Download configuration options
@@ -101,22 +98,13 @@ struct DownloadOptions {
     std::string expected_hash;
     std::string expected_hash_algorithm;
 
-    // Concurrent ranged connections used for one file. 1 keeps the historical
-    // single-stream transfer.
-    // Parallelism is skipped, without failing, when the origin ignores Range, the
-    // total size is unknown, the file is too small to split, or a download rate
-    // limit is configured — a cap is enforced per connection, so N streams would
-    // each receive the full cap.
+    // 1 keeps the single-stream transfer. Parallelism is skipped (not failed)
+    // when the origin ignores Range, the size is unknown, the file is too small
+    // to split, or a rate limit is configured.
     int parallel_parts = 1;
-    // Floor on each connection's slice; the part count is reduced (possibly to 1,
-    // which falls back to a single stream) rather than honoured blindly. Measured
-    // against Hugging Face: at ~9 MB per slice 16 connections ran slower than one
-    // (42.7 vs 49.6 MB/s), while at ~29 MB they ran faster (55.5 vs 46.3). The
-    // cost being amortized is connection setup plus each stream's own ramp.
     size_t parallel_min_bytes_per_part = 32ull * 1024 * 1024;
 
-    // Total size when the caller already knows it (Hugging Face manifests carry
-    // it), which lets the parallel path skip a HEAD probe.
+    // Skips the HEAD probe when non-zero.
     size_t expected_total_bytes = 0;
 };
 
@@ -211,11 +199,7 @@ private:
     static std::atomic<long> default_timeout_seconds_;
     static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
 
-    // Downloads one file over `parts` concurrent ranged connections into
-    // output_path, which is pre-sized and written at absolute offsets. Per-part
-    // progress is journalled beside it so an interrupted transfer resumes
-    // without re-reading the (sparse) file size, which no longer reflects how
-    // many bytes actually arrived.
+    // Downloads one file over concurrent ranged connections.
     static DownloadResult download_parallel(const std::string& url,
                                             const std::string& output_path,
                                             size_t total_size,
@@ -278,15 +262,9 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
     };
 }
 
-// Bytes of output_path's in-progress download that have actually arrived.
-// download_file's parallel path pre-sizes the .partial file, so from creation
-// its size equals the final size and says nothing about progress; the per-part
-// journal beside it is the only truthful source once one exists. Callers sizing
-// a download or reporting progress MUST use this rather than fs::file_size.
+// Actual bytes received for a partial download (reads the part journal when present).
 size_t partial_bytes_on_disk(const std::string& output_path);
-
-// The per-part progress journal beside an in-progress .partial file. Callers
-// that delete or sweep .partial files must delete this too, or journals orphan.
+// Path of the per-part progress journal for a .partial file.
 std::string part_journal_path(const std::string& partial_path);
 
 // Global flag: set from signal handler to cancel in-progress model downloads.
