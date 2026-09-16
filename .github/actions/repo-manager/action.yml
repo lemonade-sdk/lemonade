@@ -25,7 +25,7 @@ runs:
         set -euo pipefail
 
         {
-          echo "REPO_MANAGER_VERSION=v1.0.1"
+          echo "REPO_MANAGER_VERSION=v1.0.2"
           echo "REPO_MANAGER_MODEL=Qwen3.6-35B-A3B-MTP-GGUF"
           echo "LEMONADE_VERSION=11.9.0"
           echo "GH_CLI_VERSION=2.101.0"
