@@ -27,6 +27,7 @@ import Modal from './inspect/Modal';
 import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
 import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';import { backendLabel } from '../modelPresentation';
 import { useServerModelState } from '../features/models/modelState';
+import { useI18n } from '../i18n';
 import {
   ModelDetailPanelPreloaded as ModelDetailPanel,
   RouterEditorPanelPreloaded as RouterEditorPanel,
@@ -898,6 +899,7 @@ interface OmniComponentPickerProps {
 }
 
 const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, options, onChange, onHuggingFaceSearch }) => {
+  const { t } = useI18n();
   const config = OMNI_COMPONENT_ROLE_CONFIG[role];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -986,7 +988,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
           onChange={e => { setQuery(e.target.value); setOpen(true); setActiveIndex(-1); }}
           onBlur={() => window.setTimeout(() => { setOpen(false); setActiveIndex(-1); }, 120)}
           onKeyDown={handleKeyDown}
-          placeholder={config.placeholder}
+          placeholder={t(config.placeholder)}
           autoComplete="off"
         />
         {value && !config.required && (
@@ -1027,7 +1029,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 </div>
               )) : (
                 <div className="omni-component-picker__empty">
-                  No compatible {config.label.toLowerCase()} model found. Use the main search or HuggingFace zone to download/register one first.
+                  {t('No compatible {capability} model found. Use the main search or HuggingFace zone to download/register one first.', { capability: t(config.label).toLowerCase() })}
                 </div>
               )}
             </div>
@@ -1038,7 +1040,7 @@ const OmniComponentPicker: React.FC<OmniComponentPickerProps> = ({ role, value, 
                 onMouseDown={e => e.preventDefault()}
                 onClick={() => { onHuggingFaceSearch(query.trim()); setOpen(false); setActiveIndex(-1); }}
               >
-                Search HuggingFace for "{query.trim()}"
+                {t('Search HuggingFace for "{query}"', { query: query.trim() })}
               </button>
             )}
           </div>
@@ -1056,6 +1058,7 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelRequest }) => {
+  const { t } = useI18n();
   useEffect(() => {
     // Direct/deep-linked Models loads must also warm the details/editor modules
     // automatically. Never make selecting a model the event that starts them.
@@ -2694,17 +2697,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
         {loading ? (
           <div className="hf-zone__loading" role="status" aria-live="polite">
             <span className="hf-zone__spinner" aria-hidden="true" />
-            <span>Searching {meta.label}…</span>
+            <span>{t('Searching {provider}…', { provider: t(meta.label) })}</span>
           </div>
         ) : error ? (
           <div className="hf-zone__empty hf-zone__empty--error">
             <Icon name="alert" size={16} />
-            <span>{meta.label} search is unavailable: {error}</span>
+            <span>{t('{provider} search is unavailable: {error}', { provider: t(meta.label), error })}</span>
           </div>
         ) : results.length === 0 ? (
           <div className="hf-zone__empty">
             <Icon name="cloud-off" size={16} />
-            <span>No compatible {meta.label} models match the active filters.</span>
+            <span>{t('No compatible {provider} models match the active filters.', { provider: t(meta.label) })}</span>
           </div>
         ) : (
           <WorkspaceList
@@ -2726,7 +2729,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
   };
 
   const renderRegistryZones = () => !hasRemoteActivity ? null : (
-    <div className="registry-zones" aria-label="Remote model search results">
+    <div className="registry-zones" aria-label={t('Remote model search results')}>
       {renderProviderZone('huggingface')}
       {renderProviderZone('modelscope')}
     </div>
@@ -2742,21 +2745,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
       {externalModelDeleteNotice && (
         <div className="manager__toast manager__toast--external-model" role="status" aria-live="polite" aria-atomic="true">
           <span className="manager__toast-message">
-            {externalModelDeleteNotice.displayName} is managed in your external models folder. Delete it directly from that folder.
+            {t('{name} is managed in your external models folder. Delete it directly from that folder.', { name: externalModelDeleteNotice.displayName })}
           </span>
           <button
             type="button"
             className="manager__toast-dismiss"
             onClick={() => setExternalModelDeleteNotice(null)}
-            aria-label="Dismiss notification"
-            title="Dismiss"
+            aria-label={t('Dismiss notification')}
+            title={t('Dismiss')}
           >
             <Icon name="x" size={14} aria-hidden="true" />
           </button>
         </div>
       )}
       <WorkspaceMobileMenuButton
-        menuLabel="Open model filters"
+        menuLabel={t('Open model filters')}
         panelId="model-nav-rail"
         expanded={mobileRail.isOpen}
         onClick={mobileRail.toggle}
@@ -2770,17 +2773,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           setRouterDeleteCandidate(null);
           setRouterDeleteError(null);
         }}
-        title="Delete router definition?"
+        title={t('Delete router definition?')}
         maxWidth="480px"
       >
         <div className="inspect-modal-body">
-          <p>Delete <strong>{routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate)}</strong>? This removes the saved router definition.</p>
+          <p>{t('Delete {name}? This removes the saved router definition.', { name: routerDeleteCandidate?.display_name || modelName(routerDeleteCandidate) })}</p>
           {routerDeleteError && <div className="manager__inline-notice" role="alert">{routerDeleteError}</div>}
         </div>
         <div className="inspect-modal-footer">
-          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>Cancel</WorkspaceActionButton>
+          <WorkspaceActionButton appearance="secondary" disabled={deletingRouterDefinition} onClick={() => { setRouterDeleteCandidate(null); setRouterDeleteError(null); }}>{t('Cancel')}</WorkspaceActionButton>
           <WorkspaceActionButton appearance="danger" disabled={deletingRouterDefinition} onClick={() => { void confirmRouterDefinitionDelete(); }}>
-            {deletingRouterDefinition ? 'Deleting…' : 'Delete router'}
+            {deletingRouterDefinition ? t('Deleting…') : t('Delete router')}
           </WorkspaceActionButton>
         </div>
       </Modal>
@@ -3178,14 +3181,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
           </WorkspaceDetailPanel>
         </div>
       ) : (!selectedDetailModel && !selectedRemoteModel) ? (
-        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+        <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label={t('Model detail')}>
           <div className="model-detail-panel__placeholder">
             <Icon name="model" size={40} aria-hidden="true" />
-            <p>{allModels.length === 0 ? 'Loading model catalog…' : 'No model selected'}</p>
+            <p>{allModels.length === 0 ? t('Loading model catalog…') : t('No model selected')}</p>
             <p className="model-detail-panel__placeholder-sub">
               {allModels.length === 0
-                ? 'Downloaded models appear first while the full Lemonade catalog finishes loading.'
-                : 'Select a model from the list to view its details.'}
+                ? t('Downloaded models appear first while the full Lemonade catalog finishes loading.')
+                : t('Select a model from the list to view its details.')}
             </p>
           </div>
         </div>
