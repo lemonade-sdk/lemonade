@@ -49,6 +49,8 @@ struct DownloadResult {
     bool can_resume = false;          // Whether partial download can be resumed
     bool disk_full = false;            // True if download failed due to insufficient disk space
     bool permanent = false;            // Non-recoverable failure (e.g. unsupported protocol, malformed URL); do not retry
+    bool ranges_unsupported = false;   // Origin ignored Range; caller should use the single-stream path
+    int parts_used = 1;                // Concurrent connections the transfer actually used
 };
 
 // Progress callback returns bool: true = continue, false = cancel download
@@ -73,6 +75,8 @@ enum class HttpSecurityPolicy {
     AllowInsecureHttp,
 };
 
+constexpr int kDefaultParallelParts = 16;
+
 // Download configuration options
 struct DownloadOptions {
     int max_retries = 5;              // Maximum retry attempts
@@ -93,6 +97,15 @@ struct DownloadOptions {
     // for non-LFS file ETags. SHA256 is used for LFS objects and release assets.
     std::string expected_hash;
     std::string expected_hash_algorithm;
+
+    // 1 keeps the single-stream transfer. Parallelism is skipped (not failed)
+    // when the origin ignores Range, the size is unknown, the file is too small
+    // to split, or a rate limit is configured.
+    int parallel_parts = 1;
+    size_t parallel_min_bytes_per_part = 32ull * 1024 * 1024;
+
+    // Skips the HEAD probe when non-zero.
+    size_t expected_total_bytes = 0;
 };
 
 class HttpClient {
@@ -186,6 +199,16 @@ private:
     static std::atomic<long> default_timeout_seconds_;
     static std::atomic<int64_t> download_rate_limit_bytes_per_second_;
 
+    // Downloads one file over concurrent ranged connections.
+    static DownloadResult download_parallel(const std::string& url,
+                                            const std::string& output_path,
+                                            size_t total_size,
+                                            int parts,
+                                            ProgressCallback callback,
+                                            const std::map<std::string, std::string>& headers,
+                                            const DownloadOptions& options,
+                                            HttpSecurityPolicy policy);
+
     // Single download attempt, may resume from offset
     static DownloadResult download_attempt(const std::string& url,
                                            const std::string& output_path,
@@ -238,6 +261,11 @@ inline ProgressCallback create_throttled_progress_callback(size_t resume_offset 
         return true;  // Always continue (console callback never cancels)
     };
 }
+
+// Actual bytes received for a partial download (reads the part journal when present).
+size_t partial_bytes_on_disk(const std::string& output_path);
+// Path of the per-part progress journal for a .partial file.
+std::string part_journal_path(const std::string& partial_path);
 
 // Global flag: set from signal handler to cancel in-progress model downloads.
 // Checked by the libcurl progress callback during transfer.

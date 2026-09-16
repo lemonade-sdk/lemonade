@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <mutex>
@@ -19,12 +20,26 @@
 #include <vector>
 #include <mbedtls/md.h>
 
+#ifdef _WIN32
+#include <windows.h>
+#include <winioctl.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace lemon {
 namespace utils {
 
 std::atomic<bool> g_download_cancelled{false};
+
+// libcurl's implicit global init is not thread-safe; do it once at static init
+// before any worker thread can create an easy handle.
+namespace {
+struct CurlGlobalInit {
+    CurlGlobalInit() { curl_global_init(CURL_GLOBAL_DEFAULT); }
+};
+CurlGlobalInit g_curl_global_init;
+}  // namespace
 
 std::atomic<long> HttpClient::default_timeout_seconds_{300};
 
@@ -1116,6 +1131,652 @@ DownloadResult HttpClient::download_attempt(const std::string& url,
     return result;
 }
 
+namespace {
+
+constexpr char kPartJournalMagic[8] = {'L', 'E', 'M', 'P', 'A', 'R', 'T', '2'};
+constexpr uint64_t kChunkSize = 256ull * 1024 * 1024;
+constexpr int kMaxConcurrency = 32;
+constexpr int kInitialConcurrency = 4;
+constexpr uint64_t kPartFlushInterval = 4ull * 1024 * 1024;
+
+std::atomic<int> g_parallel_concurrency{kInitialConcurrency};
+
+void put_u64_le(std::string& out, uint64_t v) {
+    for (int i = 0; i < 8; ++i) out.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
+}
+
+uint64_t get_u64_le(const unsigned char* p) {
+    uint64_t v = 0;
+    for (int i = 0; i < 8; ++i) v |= static_cast<uint64_t>(p[i]) << (8 * i);
+    return v;
+}
+
+// Journal format: magic | total_size | part_count | per-part durable offsets.
+void write_part_journal(const std::string& output_path, uint64_t total,
+                        const std::vector<std::atomic<uint64_t>>& durable) {
+    std::string buf(kPartJournalMagic, sizeof(kPartJournalMagic));
+    put_u64_le(buf, total);
+    put_u64_le(buf, static_cast<uint64_t>(durable.size()));
+    for (const auto& d : durable) put_u64_le(buf, d.load());
+
+    const std::string journal = part_journal_path(output_path);
+    const std::string tmp = journal + ".tmp";
+    const fs::path tmp_fs = path_from_utf8(tmp);
+    {
+#ifdef _WIN32
+        FILE* fp = _wfopen(tmp_fs.c_str(), L"wb");
+#else
+        FILE* fp = fopen(tmp.c_str(), "wb");
+#endif
+        if (!fp) return;
+        fwrite(buf.data(), 1, buf.size(), fp);
+        fflush(fp);
+        fclose(fp);
+    }
+    std::error_code ec;
+    if (!atomic_replace_file(tmp_fs, path_from_utf8(journal), ec)) {
+        fs::remove(tmp_fs, ec);
+    }
+}
+
+bool read_part_journal_raw(const std::string& output_path, uint64_t& total,
+                           std::vector<uint64_t>& out) {
+    const fs::path journal = path_from_utf8(part_journal_path(output_path));
+    std::error_code ec;
+    if (!fs::exists(journal, ec)) return false;
+
+    std::ifstream in(journal, std::ios::binary);
+    if (!in) return false;
+    std::string buf((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+
+    constexpr size_t kHeaderBytes = sizeof(kPartJournalMagic) + 16;
+    if (buf.size() < kHeaderBytes) return false;
+    if (std::memcmp(buf.data(), kPartJournalMagic, sizeof(kPartJournalMagic)) != 0) return false;
+
+    const auto* p = reinterpret_cast<const unsigned char*>(buf.data()) + sizeof(kPartJournalMagic);
+    total = get_u64_le(p);
+    const uint64_t parts = get_u64_le(p + 8);
+    if (parts == 0 || parts > 1024) return false;
+    if (buf.size() != kHeaderBytes + parts * 8) return false;
+
+    out.assign(static_cast<size_t>(parts), 0);
+    for (size_t i = 0; i < out.size(); ++i) out[i] = get_u64_le(p + 16 + i * 8);
+    return true;
+}
+
+bool read_part_journal(const std::string& output_path, uint64_t expect_total,
+                       size_t expect_parts, std::vector<uint64_t>& out) {
+    uint64_t total = 0;
+    if (!read_part_journal_raw(output_path, total, out)) return false;
+    if (total != expect_total || out.size() != expect_parts) return false;
+    return true;
+}
+
+struct PartContext {
+    FILE* fp = nullptr;
+    uint64_t expected_start = 0;
+    bool content_range_mismatch = false;
+    bool write_failed = false;
+    std::atomic<uint64_t>* received = nullptr;
+    std::atomic<uint64_t>* durable = nullptr;
+    std::atomic<bool>* cancel = nullptr;
+    std::atomic<bool>* ranges_unsupported = nullptr;
+    uint64_t since_flush = 0;
+    uint64_t remaining = 0;
+    bool saw_partial_content = false;
+    int no_progress_timeout = 0;
+    curl_off_t last_dlnow = 0;
+    std::chrono::steady_clock::time_point last_progress{};
+};
+
+// Validates Content-Range and HTTP status for each part's response.
+size_t part_header_callback(char* buffer, size_t size, size_t nitems, void* userdata) {
+    const size_t total = size * nitems;
+    auto* ctx = static_cast<PartContext*>(userdata);
+    if (!ctx || total == 0) return total;
+
+    std::string line(buffer, total);
+
+    if (line.size() > 14) {
+        if (lower_copy(line.substr(0, 14)) == "content-range:") {
+            const auto bytes_pos = line.find("bytes");
+            const auto dash = line.find('-', bytes_pos == std::string::npos ? 0 : bytes_pos);
+            if (bytes_pos != std::string::npos && dash != std::string::npos) {
+                try {
+                    const uint64_t got =
+                        std::stoull(line.substr(bytes_pos + 5, dash - (bytes_pos + 5)));
+                    if (got != ctx->expected_start) {
+                        ctx->content_range_mismatch = true;
+                    }
+                } catch (...) {
+                    ctx->content_range_mismatch = true;
+                }
+            }
+        }
+    }
+
+    if (line.rfind("HTTP/", 0) == 0) {
+        std::istringstream iss(line);
+        std::string version;
+        long code = 0;
+        iss >> version >> code;
+        ctx->saw_partial_content = (code == 206);
+        if (code == 200 && ctx->ranges_unsupported) {
+            ctx->ranges_unsupported->store(true);
+        }
+        ctx->last_progress = std::chrono::steady_clock::now();
+    }
+    return total;
+}
+
+// Writes a part's body at its absolute offset; rejects bytes not authorized by a 206.
+size_t part_write_callback(void* ptr, size_t size, size_t nmemb, void* userdata) {
+    auto* ctx = static_cast<PartContext*>(userdata);
+    const size_t bytes = size * nmemb;
+    if (!ctx || !ctx->fp) return 0;
+    if (bytes == 0) return 0;
+
+    if (!ctx->saw_partial_content) {
+        if (ctx->ranges_unsupported) ctx->ranges_unsupported->store(true);
+        return 0;
+    }
+    if (ctx->content_range_mismatch) return 0;
+    if (bytes > ctx->remaining) return 0;
+
+    if (fwrite(ptr, 1, bytes, ctx->fp) != bytes) {
+        ctx->write_failed = true;
+        return 0;
+    }
+
+    ctx->remaining -= bytes;
+    ctx->since_flush += bytes;
+    ctx->received->fetch_add(bytes);
+
+    if (ctx->since_flush >= kPartFlushInterval || ctx->remaining == 0) {
+        if (fflush(ctx->fp) != 0) {
+            ctx->write_failed = true;
+            return 0;
+        }
+        ctx->durable->store(ctx->received->load());
+        ctx->since_flush = 0;
+    }
+    return bytes;
+}
+
+// Cancels the part on cancel, range rejection, or no-progress timeout.
+int part_progress_callback(void* clientp, curl_off_t dltotal, curl_off_t dlnow,
+                           curl_off_t, curl_off_t) {
+    (void)dltotal;
+    auto* ctx = static_cast<PartContext*>(clientp);
+    if (!ctx) return 0;
+    if (g_download_cancelled.load()) return 1;
+    if (ctx->cancel && ctx->cancel->load()) return 1;
+    if (ctx->ranges_unsupported && ctx->ranges_unsupported->load()) return 1;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (dlnow > ctx->last_dlnow) {
+        ctx->last_dlnow = dlnow;
+        ctx->last_progress = now;
+    } else if (ctx->no_progress_timeout > 0) {
+        const auto idle = std::chrono::duration_cast<std::chrono::seconds>(
+            now - ctx->last_progress).count();
+        if (idle >= ctx->no_progress_timeout) return 1;
+    }
+    return 0;
+}
+
+struct PartOutcome {
+    bool success = false;
+    bool disk_full = false;
+    std::string error;
+};
+
+// Downloads one byte range with retry; resumes from the durable offset.
+PartOutcome run_part(const std::string& url,
+                     const std::string& output_path,
+                     uint64_t start,
+                     uint64_t end,
+                     std::atomic<uint64_t>& received,
+                     std::atomic<uint64_t>& durable,
+                     std::atomic<bool>& cancel,
+                     std::atomic<bool>& ranges_unsupported,
+                     const std::map<std::string, std::string>& headers,
+                     const DownloadOptions& options,
+                     HttpSecurityPolicy policy) {
+    PartOutcome outcome;
+    int retry_delay_ms = options.initial_retry_delay_ms;
+
+    for (int attempt = 0; attempt <= options.max_retries; ++attempt) {
+        if (cancel.load() || ranges_unsupported.load() || g_download_cancelled.load()) {
+            outcome.error = "cancelled";
+            return outcome;
+        }
+        if (attempt > 0) {
+            for (int slept = 0; slept < retry_delay_ms; slept += 100) {
+                if (cancel.load() || ranges_unsupported.load() || g_download_cancelled.load()) {
+                    outcome.error = "cancelled";
+                    return outcome;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            retry_delay_ms = (std::min)(retry_delay_ms * 2, options.max_retry_delay_ms);
+        }
+
+        const uint64_t done = received.load();
+        if (start + done > end) {
+            outcome.success = true;
+            return outcome;
+        }
+
+        fs::path out_fs = path_from_utf8(output_path);
+#ifdef _WIN32
+        FILE* fp = _wfopen(out_fs.c_str(), L"r+b");
+#else
+        FILE* fp = fopen(output_path.c_str(), "r+b");
+#endif
+        if (!fp) {
+            outcome.error = "Failed to open output file for part write";
+            return outcome;
+        }
+        setvbuf(fp, nullptr, _IOFBF, 1 << 20);
+
+#ifdef _WIN32
+        if (_fseeki64(fp, static_cast<__int64>(start + done), SEEK_SET) != 0) {
+#else
+        if (fseeko(fp, static_cast<off_t>(start + done), SEEK_SET) != 0) {
+#endif
+            fclose(fp);
+            outcome.error = "Failed to seek to part offset";
+            return outcome;
+        }
+
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            fclose(fp);
+            outcome.error = "Failed to initialize CURL";
+            return outcome;
+        }
+
+        PartContext ctx;
+        ctx.fp = fp;
+        ctx.received = &received;
+        ctx.durable = &durable;
+        ctx.cancel = &cancel;
+        ctx.ranges_unsupported = &ranges_unsupported;
+        ctx.remaining = end - (start + done) + 1;
+        ctx.no_progress_timeout = options.no_progress_timeout;
+        ctx.expected_start = start + done;
+        ctx.last_progress = std::chrono::steady_clock::now();
+
+        const std::string range = std::to_string(start + done) + "-" + std::to_string(end);
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_RANGE, range.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, part_write_callback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+        curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, part_header_callback);
+        curl_easy_setopt(curl, CURLOPT_HEADERDATA, &ctx);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, part_progress_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &ctx);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 0L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, static_cast<long>(options.connect_timeout));
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, static_cast<long>(options.low_speed_limit));
+        curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, static_cast<long>(options.low_speed_time));
+
+        if (!apply_http_security_policy(curl, policy, true)) {
+            curl_easy_cleanup(curl);
+            fclose(fp);
+            outcome.error = "Failed to apply HTTP security policy";
+            return outcome;
+        }
+
+        struct curl_slist* header_list = nullptr;
+        for (const auto& header : headers) {
+            header_list = curl_slist_append(header_list, (header.first + ": " + header.second).c_str());
+        }
+        if (header_list) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+
+        const CURLcode res = curl_easy_perform(curl);
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+        fflush(fp);
+        durable.store(received.load());
+        fclose(fp);
+        if (header_list) curl_slist_free_all(header_list);
+        curl_easy_cleanup(curl);
+
+        if (ranges_unsupported.load()) {
+            outcome.error = "origin ignored Range";
+            return outcome;
+        }
+        if (ctx.write_failed) {
+            std::error_code space_ec;
+            const auto si = fs::space(get_disk_space_probe_path(path_from_utf8(output_path)), space_ec);
+            if (!space_ec && si.available < 1024 * 1024) {
+                outcome.disk_full = true;
+                outcome.error = "Disk full: not enough space to complete download";
+                return outcome;
+            }
+            outcome.error = "Failed to write to " + output_path;
+            return outcome;
+        }
+        if (ctx.content_range_mismatch) {
+            ranges_unsupported.store(true);
+            outcome.error = "origin returned a Content-Range that does not match the request";
+            return outcome;
+        }
+        if (cancel.load() || g_download_cancelled.load()) {
+            outcome.error = "cancelled";
+            return outcome;
+        }
+
+        if (res == CURLE_OK && http_code == 206 && received.load() == end - start + 1) {
+            outcome.success = true;
+            return outcome;
+        }
+
+        if (http_code >= 400 && http_code < 500 && http_code != 408 && http_code != 429) {
+            outcome.error = "HTTP " + std::to_string(http_code);
+            return outcome;
+        }
+
+        outcome.error = (res == CURLE_OK)
+            ? ("incomplete part (HTTP " + std::to_string(http_code) + ")")
+            : std::string(curl_easy_strerror(res));
+    }
+
+    return outcome;
+}
+
+}  // namespace
+
+
+namespace {
+
+// HEAD request; returns 0 when the origin reports no usable Content-Length.
+size_t probe_total_size(const std::string& url,
+                        const std::map<std::string, std::string>& headers,
+                        HttpSecurityPolicy policy) {
+    CURL* curl = curl_easy_init();
+    if (!curl) return 0;
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 60L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+    if (!apply_http_security_policy(curl, policy, true)) {
+        curl_easy_cleanup(curl);
+        return 0;
+    }
+
+    struct curl_slist* header_list = nullptr;
+    for (const auto& header : headers) {
+        header_list = curl_slist_append(header_list, (header.first + ": " + header.second).c_str());
+    }
+    if (header_list) curl_easy_setopt(curl, CURLOPT_HTTPHEADER, header_list);
+
+    const CURLcode res = curl_easy_perform(curl);
+    long http_code = 0;
+    curl_off_t length = -1;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &length);
+
+    if (header_list) curl_slist_free_all(header_list);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK || http_code < 200 || http_code >= 300) return 0;
+    return curl_off_to_size(length);
+}
+
+}  // namespace
+
+// Downloads a file in 256 MB chunks, adapting concurrency between chunks.
+DownloadResult HttpClient::download_parallel(const std::string& url,
+                                             const std::string& output_path,
+                                             size_t total_size,
+                                             int parts,
+                                             ProgressCallback callback,
+                                             const std::map<std::string, std::string>& headers,
+                                             const DownloadOptions& options,
+                                             HttpSecurityPolicy policy) {
+    DownloadResult result;
+    result.total_bytes = total_size;
+
+    const fs::path out_fs = path_from_utf8(output_path);
+    const std::string journal = part_journal_path(output_path);
+
+    std::error_code ec;
+    if (!fs::exists(out_fs, ec) || fs::file_size(out_fs, ec) != total_size) {
+        fs::remove(path_from_utf8(journal), ec);
+        {
+#ifdef _WIN32
+            FILE* fp = _wfopen(out_fs.c_str(), L"wb");
+#else
+            FILE* fp = fopen(output_path.c_str(), "wb");
+#endif
+            if (!fp) {
+                result.error_message = "Failed to create output file: " + output_path;
+                return result;
+            }
+            fclose(fp);
+        }
+#ifdef _WIN32
+        // Mark sparse so the initial extend does not zero-fill the whole file.
+        HANDLE sparse_handle = CreateFileW(out_fs.c_str(), GENERIC_WRITE,
+                                           FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (sparse_handle != INVALID_HANDLE_VALUE) {
+            DWORD returned = 0;
+            DeviceIoControl(sparse_handle, FSCTL_SET_SPARSE, nullptr, 0, nullptr, 0,
+                            &returned, nullptr);
+            CloseHandle(sparse_handle);
+        }
+#endif
+        fs::resize_file(out_fs, total_size, ec);
+        if (ec) {
+            result.error_message = "Failed to preallocate " + output_path + ": " + ec.message();
+            return result;
+        }
+    }
+
+    std::atomic<bool> ranges_unsupported{false};
+    int concurrency = (std::min)(
+        (std::max)(g_parallel_concurrency.load(), 1),
+        (std::min)(parts, kMaxConcurrency));
+    const int cap = (std::min)(parts, kMaxConcurrency);
+    const int lower = (std::min)(kInitialConcurrency, cap);
+    double peak_bps = 0.0;
+
+    const uint64_t num_chunks = (total_size + kChunkSize - 1) / kChunkSize;
+    int max_parts_seen = 0;
+    uint64_t bytes_done = 0;
+
+    for (uint64_t chunk_idx = 0; chunk_idx < num_chunks; ++chunk_idx) {
+        if (g_download_cancelled.load() || ranges_unsupported.load()) break;
+
+        const uint64_t chunk_start = chunk_idx * kChunkSize;
+        const uint64_t chunk_end = (std::min)(chunk_start + kChunkSize, static_cast<uint64_t>(total_size)) - 1;
+        const uint64_t chunk_len = chunk_end - chunk_start + 1;
+        const int effective_parts = concurrency;
+        max_parts_seen = (std::max)(max_parts_seen, effective_parts);
+
+        const uint64_t span = chunk_len / effective_parts;
+        std::vector<std::pair<uint64_t, uint64_t>> spans(effective_parts);
+        for (int i = 0; i < effective_parts; ++i) {
+            const uint64_t s = chunk_start + span * static_cast<uint64_t>(i);
+            const uint64_t e = (i == effective_parts - 1) ? chunk_end : (s + span - 1);
+            spans[i] = {s, e};
+        }
+
+        // Load resume offsets for this chunk's parts from the journal.
+        std::vector<uint64_t> resume_offsets;
+        uint64_t journal_total = 0;
+        bool have_journal = read_part_journal_raw(output_path, journal_total, resume_offsets);
+        std::vector<std::atomic<uint64_t>> received(effective_parts);
+        std::vector<std::atomic<uint64_t>> durable(effective_parts);
+        for (int i = 0; i < effective_parts; ++i) {
+            const uint64_t span_len = spans[i].second - spans[i].first + 1;
+            uint64_t done = 0;
+            if (have_journal && journal_total == total_size &&
+                i < static_cast<int>(resume_offsets.size())) {
+                done = (std::min)(resume_offsets[i], span_len);
+            }
+            received[i].store(done);
+            durable[i].store(done);
+        }
+
+        std::vector<PartOutcome> outcomes(effective_parts);
+        std::atomic<bool> cancel{false};
+        std::atomic<int> finished{0};
+        const uint64_t chunk_initial_done = [&]() {
+            uint64_t sum = 0;
+            for (const auto& r : received) sum += r.load();
+            return sum;
+        }();
+        const auto chunk_started = std::chrono::steady_clock::now();
+        std::vector<std::thread> workers;
+        workers.reserve(effective_parts);
+        for (int i = 0; i < effective_parts; ++i) {
+            workers.emplace_back([&, i]() {
+                outcomes[i] = run_part(url, output_path, spans[i].first, spans[i].second,
+                                       received[i], durable[i], cancel, ranges_unsupported,
+                                       headers, options, policy);
+                finished.fetch_add(1);
+            });
+        }
+
+        auto last_journal = std::chrono::steady_clock::now();
+        std::vector<uint64_t> journalled(effective_parts, UINT64_MAX);
+        for (;;) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+            uint64_t sum = 0;
+            for (const auto& r : received) sum += r.load();
+            if (callback && !callback(static_cast<size_t>(bytes_done + sum), total_size)) {
+                cancel.store(true);
+            }
+
+            const auto now = std::chrono::steady_clock::now();
+            if (now - last_journal >= std::chrono::seconds(2)) {
+                bool changed = false;
+                for (int i = 0; i < effective_parts; ++i) {
+                    const uint64_t d = durable[i].load();
+                    if (journalled[i] != d) { journalled[i] = d; changed = true; }
+                }
+                if (changed) write_part_journal(output_path, total_size, durable);
+                last_journal = now;
+            }
+
+            if (finished.load() == effective_parts || cancel.load() ||
+                ranges_unsupported.load() || g_download_cancelled.load()) break;
+        }
+
+        for (auto& w : workers) w.join();
+
+        uint64_t chunk_received = 0;
+        for (const auto& r : received) chunk_received += r.load();
+
+        write_part_journal(output_path, total_size, durable);
+
+        bool chunk_complete = (chunk_received == chunk_len);
+        int failures = 0;
+        bool disk_full = false;
+        for (const auto& o : outcomes) {
+            if (o.disk_full) disk_full = true;
+            if (!o.success) ++failures;
+        }
+
+        if (disk_full) {
+            result.disk_full = true;
+            result.can_resume = true;
+            result.error_message = "Disk full: not enough space to complete download";
+            return result;
+        }
+
+        if (cancel.load() || g_download_cancelled.load()) {
+            result.cancelled = true;
+            result.can_resume = true;
+            result.error_message = "Download cancelled by user";
+            return result;
+        }
+
+        if (ranges_unsupported.load()) {
+            result.ranges_unsupported = true;
+            result.error_message = "Origin ignored Range requests; falling back to single-stream download";
+            fs::remove(path_from_utf8(journal), ec);
+            return result;
+        }
+
+        if (!chunk_complete && failures > 0) {
+            concurrency = (std::max)(lower, concurrency - concurrency / 4);
+            g_parallel_concurrency.store(concurrency);
+            result.can_resume = true;
+            result.error_message = "Parallel download failed in chunk " +
+                std::to_string(chunk_idx) + ": " + outcomes[0].error;
+            return result;
+        }
+
+        // Adapt concurrency for the next chunk from measured throughput.
+        if (chunk_complete) {
+            bytes_done += chunk_len;
+            uint64_t fresh = 0;
+            for (const auto& r : received) fresh += r.load();
+            fresh = (std::max)(fresh, chunk_initial_done) - chunk_initial_done;
+            const double secs = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - chunk_started).count() / 1e6;
+            const double bps = secs > 0.0 ? static_cast<double>(fresh) / secs : 0.0;
+            peak_bps = (std::max)(peak_bps, bps);
+            if (peak_bps > 0.0 && bps < 0.5 * peak_bps) {
+                concurrency = (std::max)(lower, concurrency - concurrency / 4);
+            } else if (concurrency < cap) {
+                concurrency++;
+            }
+            g_parallel_concurrency.store(concurrency);
+        }
+    }
+
+    if (ranges_unsupported.load()) {
+        result.ranges_unsupported = true;
+        result.error_message = "Origin ignored Range requests; falling back to single-stream download";
+        fs::remove(path_from_utf8(journal), ec);
+        return result;
+    }
+
+    if (g_download_cancelled.load()) {
+        result.cancelled = true;
+        result.can_resume = true;
+        result.error_message = "Download cancelled by user";
+        return result;
+    }
+
+    // Final verification: all bytes accounted for.
+    uint64_t total_received = 0;
+    {
+        uint64_t t = 0;
+        std::vector<uint64_t> offsets;
+        if (read_part_journal_raw(output_path, t, offsets)) {
+            for (uint64_t o : offsets) total_received += o;
+        }
+    }
+
+    if (total_received < total_size) {
+        result.can_resume = true;
+        result.error_message = "Incomplete transfer";
+        return result;
+    }
+
+    fs::remove(path_from_utf8(journal), ec);
+    if (callback) (void)callback(total_size, total_size);
+    result.success = true;
+    result.parts_used = max_parts_seen;
+    result.http_code = 206;
+    return result;
+}
+
 DownloadResult HttpClient::download_file(const std::string& url,
                                          const std::string& output_path,
                                          ProgressCallback callback,
@@ -1193,6 +1854,64 @@ DownloadResult HttpClient::download_file(const std::string& url,
             LOG(INFO, "Download") << "File already exists: " << output_path << std::endl;
             return final_result;
         }
+    }
+
+    const std::string part_journal = part_journal_path(partial_path);
+
+    // A pre-sized parallel partial is unusable by the single-stream path: its
+    // size equals the final size from creation, so resuming from it would append
+    // past real data.
+    const auto discard_parallel_partial = [&]() {
+        std::error_code ec;
+        fs::remove(partial_path_fs, ec);
+        fs::remove(path_from_utf8(part_journal), ec);
+    };
+
+    int parts = 1;
+    if (options.parallel_parts > 1 && download_rate_limit_bytes_per_second_.load() == 0) {
+        size_t total = options.expected_total_bytes;
+        if (total == 0) {
+            total = probe_total_size(url, headers, policy);
+        }
+        if (total > 0) {
+            parts = (std::min)(options.parallel_parts, kMaxConcurrency);
+        }
+
+        if (parts >= 2) {
+            DownloadResult par = download_parallel(url, partial_path, total, parts,
+                                                   callback, headers, options, policy);
+            if (par.cancelled) {
+                LOG(INFO, "Download") << " Cancelled by user" << std::endl;
+                return par;
+            }
+
+            const bool verified = par.success &&
+                (!expected_hash.present() || verify_file_hash(partial_path_fs, expected_hash).ok);
+
+            if (verified) {
+                std::error_code ec;
+                if (!atomic_replace_file(partial_path_fs, output_path_fs, ec)) {
+                    par.success = false;
+                    par.error_message = "Download succeeded but failed to publish file: " + ec.message();
+                }
+                return par;
+            }
+
+            if (!par.success && !par.ranges_unsupported) {
+                LOG(ERROR, "HttpClient") << "[Download] " << par.error_message << std::endl;
+                return par;
+            }
+
+            LOG(INFO, "Download") << " Parallel download unusable ("
+                                  << (par.success ? "failed verification"
+                                                  : "origin cannot serve ranges")
+                                  << "); using single-stream download" << std::endl;
+            discard_parallel_partial();
+        }
+    }
+
+    if (fs::exists(path_from_utf8(part_journal))) {
+        discard_parallel_partial();
     }
 
     // Check for existing partial file to resume
@@ -1360,6 +2079,25 @@ DownloadResult HttpClient::download_file(const std::string& url,
 
     final_result.error_message = oss.str();
     return final_result;
+}
+
+std::string part_journal_path(const std::string& partial_path) {
+    return partial_path + ".parts";
+}
+
+size_t partial_bytes_on_disk(const std::string& output_path) {
+    uint64_t total = 0;
+    std::vector<uint64_t> offsets;
+    if (read_part_journal_raw(output_path, total, offsets)) {
+        uint64_t sum = 0;
+        for (uint64_t o : offsets) sum += o;
+        return static_cast<size_t>((std::min)(sum, total));
+    }
+
+    std::error_code ec;
+    const fs::path partial = path_from_utf8(output_path + ".partial");
+    const auto size = fs::file_size(partial, ec);
+    return ec ? 0 : static_cast<size_t>(size);
 }
 
 bool HttpClient::is_reachable(const std::string& url,
