@@ -2732,10 +2732,12 @@ jobs:
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
     timeout-minutes: 180
     # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
-    # repository's pull requests and issues.
+    # repository's pull requests and issues, and runs from an image in this repository's
+    # container registry.
     permissions:
       contents: read
       issues: read
+      packages: read
       pull-requests: read
     # One release's notes, checklist and announcement are one set of files, so successive
     # builds of the same release queue instead of overwriting each other.

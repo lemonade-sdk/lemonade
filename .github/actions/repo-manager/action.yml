@@ -1,7 +1,8 @@
 name: 'Repo Manager'
 description: >-
-  Run one repo-manager command on a self-hosted runner: install its pinned tools, serve the
-  model from a lemond this job starts, and commit the result to lemonade-sdk/lemonade-testing.
+  Run one repo-manager command on a self-hosted runner: pull the container image holding
+  its pinned tools, serve the model from a lemond inside that container, and commit the
+  result to lemonade-sdk/lemonade-testing.
 
 inputs:
   command:
@@ -21,143 +22,81 @@ runs:
   steps:
     - name: Pin versions and locate the machine-level cache
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
 
-        {
-          echo "REPO_MANAGER_VERSION=v1.0.3"
-          echo "REPO_MANAGER_MODEL=Qwen3.6-35B-A3B-MTP-GGUF"
-          echo "LEMONADE_VERSION=11.9.0"
-          echo "GH_CLI_VERSION=2.101.0"
-        } >> "$GITHUB_ENV"
+        # Comments and blank lines are not valid in $GITHUB_ENV, so only assignments go.
+        grep -E '^[A-Z0-9_]+=' "$ACTION_PATH/versions.env" >> "$GITHUB_ENV"
+        # shellcheck source=/dev/null
+        . "$ACTION_PATH/versions.env"
 
-        # Every tool below is installed into $RUNNER_TEMP and thrown away with the job.
-        # lemond's cache is the exception, because the model in it is 23GB. Locate it from
-        # the passwd database: other jobs on these runners redirect HOME into their
-        # workspace, and a wrong value here would put the cache somewhere that gets wiped.
+        # The tools come from the image; lemond's cache cannot, because the model in it is
+        # 23GB. Locate it from the passwd database: other jobs on these runners redirect
+        # HOME into their workspace, and a wrong value here would put the cache somewhere
+        # that gets wiped.
         home=$(getent passwd "$(id -u)" | cut -d: -f6)
         test -n "$home"
         lemond_cache="$home/.cache/lemonade-ci/repo-manager"
 
-        # pi writes its provider config and skills under HOME.
+        # pi writes its provider config and skills under HOME, so the container is given a
+        # per-job one instead of the runner's.
         rm_home="$RUNNER_TEMP/home"
+        logs="$RUNNER_TEMP/lemond-logs"
 
-        mkdir -p "$lemond_cache" "$rm_home"
+        # Registry credentials go in a per-job config rather than the shared home: two of
+        # these jobs can run on one machine, and one of them logging out must not cancel
+        # the other's login.
+        docker_config="$RUNNER_TEMP/docker"
+
+        mkdir -p "$lemond_cache" "$rm_home" "$logs" "$docker_config"
         {
           echo "LEMOND_CACHE=$lemond_cache"
           echo "RM_HOME=$rm_home"
+          echo "LEMOND_LOGS=$logs"
+          echo "DOCKER_CONFIG=$docker_config"
+          echo "RM_IMAGE=ghcr.io/lemonade-sdk/lemonade/repo-manager:${REPO_MANAGER_VERSION}"
+          # Several of these jobs share a runner, so the name cannot be a constant.
+          echo "RM_CONTAINER=repo-manager-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$$"
         } >> "$GITHUB_ENV"
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-
-    - uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-
-    - name: Install the GitHub CLI
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p "$RUNNER_TEMP/gh"
-        curl -sfL "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz" \
-          | tar -xz --strip-components=1 -C "$RUNNER_TEMP/gh"
-        echo "$RUNNER_TEMP/gh/bin" >> "$GITHUB_PATH"
-        "$RUNNER_TEMP/gh/bin/gh" --version
-
-    - name: Install repo-manager
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 -m venv "$RUNNER_TEMP/venv"
-        "$RUNNER_TEMP/venv/bin/pip" install --quiet --disable-pip-version-check \
-          "git+https://github.com/lemonade-sdk/repo-manager.git@${REPO_MANAGER_VERSION}"
-        echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
-        "$RUNNER_TEMP/venv/bin/repo-manager" --version
-
-    - name: Resolve the pi version repo-manager was tested against
-      id: pi
-      shell: bash
-      run: |
-        set -euo pipefail
-        version=$("$RUNNER_TEMP/venv/bin/repo-manager" pi version)
-        test -n "$version"
-        echo "version=$version" >> "$GITHUB_OUTPUT"
-
-    - name: Install pi
+    - name: Get the repo-manager image
       shell: bash
       env:
-        PI_VERSION: ${{ steps.pi.outputs.version }}
+        ACTION_PATH: ${{ github.action_path }}
+        GHCR_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        # `pi` on npm is a different package. This one installs its binary as `pi`.
-        npm install --prefix "$RUNNER_TEMP/npm" -g --no-fund --no-audit \
-          "@earendil-works/pi-coding-agent@${PI_VERSION}"
-        echo "$RUNNER_TEMP/npm/bin" >> "$GITHUB_PATH"
-        "$RUNNER_TEMP/npm/bin/pi" --version
 
-    - name: Install Lemonade
-      shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p "$RUNNER_TEMP/lemonade"
-        curl -sfL "https://github.com/lemonade-sdk/lemonade/releases/download/v${LEMONADE_VERSION}/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz" \
-          | tar -xz --strip-components=1 -C "$RUNNER_TEMP/lemonade"
-        chmod +x "$RUNNER_TEMP/lemonade/lemond"
-        echo "LEMOND=$RUNNER_TEMP/lemonade/lemond" >> "$GITHUB_ENV"
-        "$RUNNER_TEMP/lemonade/lemond" --version
+        if ! command -v docker > /dev/null; then
+          echo "::error title=This runner has no Docker::repo-manager runs in a container; see docs/dev/self-hosted-runners.md for what a Linux runner in the production pool needs."
+          exit 1
+        fi
 
-    - name: Start the model server
-      shell: bash
-      env:
-        # lemond keeps weights in the HuggingFace cache rather than the directory it is
-        # given, so both have to point at the cache for either to persist.
-        HF_HOME: ${{ env.LEMOND_CACHE }}
-      run: |
-        set -euo pipefail
-        logs="$RUNNER_TEMP/lemond-logs"
-        mkdir -p "$logs"
+        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
-        # The default port is usually already taken on these shared runners.
-        PORT=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
+        # The image carries the versions.env it was built from, so a tag that exists but
+        # predates the last bump is detected rather than silently used.
+        current_image() {
+          docker run --rm "$RM_IMAGE" cat /opt/versions.env 2>/dev/null \
+            | diff -q - "$ACTION_PATH/versions.env" > /dev/null 2>&1
+        }
 
-        # --no-broadcast keeps this server out of the UDP discovery other jobs' CLIs use.
-        "$LEMOND" "$LEMOND_CACHE" --port "$PORT" --host 127.0.0.1 --no-broadcast \
-          > "$logs/lemond.stdout.log" 2> "$logs/lemond.stderr.log" &
-        LEMOND_PID=$!
-
-        for _ in $(seq 1 60); do
-          curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1 && break
-          kill -0 "$LEMOND_PID" 2>/dev/null || { cat "$logs/lemond.stderr.log"; exit 1; }
-          sleep 2
-        done
-        curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null
-
-        echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
-        {
-          echo "LEMOND_PORT=$PORT"
-          echo "LEMOND_PID=$LEMOND_PID"
-          echo "REPO_MANAGER_LEMONADE_URL=http://127.0.0.1:$PORT/v1"
-          echo "REPO_MANAGER_PI_MODEL=Lemonade/${REPO_MANAGER_MODEL}"
-        } >> "$GITHUB_ENV"
-
-    - name: Pull the model
-      shell: bash
-      run: |
-        set -euo pipefail
-        response=$(curl -sf -X POST "http://127.0.0.1:${LEMOND_PORT}/api/v1/pull" \
-          -H "Content-Type: application/json" \
-          -d "{\"model_name\": \"${REPO_MANAGER_MODEL}\"}")
-        echo "$response"
-        test "$(printf '%s' "$response" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("status", ""))')" = "success"
-        du -sh "$LEMOND_CACHE"
-
-    - name: Point pi at the model server
-      shell: bash
-      env:
-        HOME: ${{ env.RM_HOME }}
-      run: repo-manager pi setup
+        # A version bump reaches main as a one-line edit, and the review of that very
+        # commit starts before the image build it triggers can finish. Building here when
+        # the registry is behind keeps a bump from being blocked on infrastructure; it is
+        # the same recipe either way, and the weekly publish keeps this the exception.
+        if ! docker pull --quiet "$RM_IMAGE" || ! current_image; then
+          echo "::warning title=Building the repo-manager image on the runner::$RM_IMAGE is missing from the registry or was built before the last version bump."
+          docker build \
+            --build-arg "REPO_MANAGER_VERSION=$REPO_MANAGER_VERSION" \
+            --build-arg "LEMONADE_VERSION=$LEMONADE_VERSION" \
+            --build-arg "GH_CLI_VERSION=$GH_CLI_VERSION" \
+            --build-arg "NODE_VERSION=$NODE_VERSION" \
+            --tag "$RM_IMAGE" "$ACTION_PATH"
+          current_image
+        fi
 
     - uses: actions/create-github-app-token@v3
       id: state-token
@@ -192,31 +131,55 @@ runs:
 
     - name: Run repo-manager
       shell: bash
-      working-directory: ${{ github.workspace }}
       env:
-        HOME: ${{ env.RM_HOME }}
-        GH_TOKEN: ${{ github.token }}
+        ACTION_PATH: ${{ github.action_path }}
         COMMAND: ${{ inputs.command }}
+        GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        # $COMMAND is a command line, not one argument.
-        # shellcheck disable=SC2086
-        repo-manager $COMMAND --repo lemonade-sdk/lemonade --checkout checkout --state state
+
+        # Device access is what makes the model usable at all; the group IDs behind those
+        # devices differ per machine, so they are resolved here rather than baked in.
+        devices=(--device /dev/dri)
+        if [ -e /dev/kfd ]; then
+          devices+=(--device /dev/kfd)
+        fi
+        group_args=()
+        for group in render video; do
+          gid=$(getent group "$group" | cut -d: -f3 || true)
+          if [ -n "$gid" ]; then
+            group_args+=(--group-add "$gid")
+          fi
+        done
+
+        # As the runner's own uid, so that the clones this job leaves behind stay
+        # deletable by the jobs that follow it on this machine.
+        docker run --rm --name "$RM_CONTAINER" \
+          --user "$(id -u):$(id -g)" \
+          "${devices[@]}" \
+          "${group_args[@]}" \
+          --volume "$GITHUB_WORKSPACE:/workspace" \
+          --volume "$LEMOND_CACHE:/cache" \
+          --volume "$RM_HOME:/rm-home" \
+          --volume "$LEMOND_LOGS:/logs" \
+          --volume "$ACTION_PATH/run.sh:/run.sh:ro" \
+          --workdir /workspace \
+          --env HOME=/rm-home \
+          --env HF_HOME=/cache \
+          --env COMMAND \
+          --env GH_TOKEN \
+          --env REPO_MANAGER_MODEL \
+          "$RM_IMAGE" bash /run.sh
 
     - name: Show the model server log
       if: failure()
       shell: bash
-      run: tail -n 100 "$RUNNER_TEMP/lemond-logs/lemond.stderr.log" 2>/dev/null || true
+      run: tail -n 100 "$LEMOND_LOGS/lemond.stderr.log" 2>/dev/null || true
 
-    - name: Stop the model server
+    - name: Clean up
       if: always()
       shell: bash
       run: |
-        # Not pkill: other jobs on these machines run lemond too.
-        if [ -n "${LEMOND_PORT:-}" ]; then
-          curl -sf -X POST "http://127.0.0.1:${LEMOND_PORT}/internal/shutdown" > /dev/null || true
-          sleep 2
-        fi
-        if [ -n "${LEMOND_PID:-}" ]; then
-          kill "$LEMOND_PID" 2>/dev/null || true
-        fi
+        # A cancelled job leaves the container behind, and --rm never gets to run.
+        docker rm --force "$RM_CONTAINER" > /dev/null 2>&1 || true
+        docker logout ghcr.io > /dev/null 2>&1 || true

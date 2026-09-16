@@ -40,6 +40,17 @@ A source tree may contain a `.version` file to override the calculated version. 
 
 We have an AI-assisted tool called `repo-manager` that reviews every commit as it lands on `main` and summarizes these into a final release checklist for testers. This data doesn't replace human judgement, but can help to identify areas for testing. `repo-manager` also produces draft release notes and a Discord announcement for each release. It stores all of that as files in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing), which is rendered as a live release dashboard at [https://testing.lemonade-server.ai](https://testing.lemonade-server.ai).
 
+### How repo-manager runs in CI
+
+`repo-manager` needs several pinned tools (itself, the `pi` coding agent, a `lemond` to serve its model, and the GitHub CLI). Rather than install those onto a self-hosted runner for every job, they are baked into a container image, `ghcr.io/lemonade-sdk/lemonade/repo-manager`, and the [repo-manager action](https://github.com/lemonade-sdk/lemonade/blob/main/.github/actions/repo-manager/action.yml) runs each command inside it. The model weights are the one thing the image cannot carry — they are 23GB — so they stay in a cache on the runner and are mounted in.
+
+Everything the image contains is pinned in [`.github/actions/repo-manager/versions.env`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/actions/repo-manager/versions.env). To upgrade `repo-manager`, or the `lemond` that serves its model, edit that file:
+
+- Merging the edit publishes a matching image, weekly rebuilds keep it current, and both happen in [`build-repo-manager-container.yml`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/build-repo-manager-container.yml).
+- A job that finds the registry behind builds the image on the runner instead, so an upgrade is never waiting on a publish.
+
+Runners that take these jobs need Docker and GPU device access; see [Self Hosted Runners](self-hosted-runners.md#linux-machine-setup).
+
 ## Release Lifecycle
 
 ### 1. Create and Publish the First Candidate
