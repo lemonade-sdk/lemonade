@@ -85,6 +85,91 @@ static void test_check_case_name(TestResult& r) {
              check_case_name(json{{"case_name", "min_chars-inclusive.boundary"}}, seen) == NameStatus::kOk);
 }
 
+static json decision(const json& extra = json::object()) {
+    json d = {{"version", "1"},      {"route_to", "LocalLLM"}, {"matched_rule", "rule-1"},
+              {"default_used", false}, {"outputs", json::object()}};
+    for (auto it = extra.begin(); it != extra.end(); ++it) d[it.key()] = it.value();
+    return d;
+}
+
+static json with_trace(const json& entry) {
+    json d = decision();
+    d["trace"] = json::array({entry});
+    return d;
+}
+
+static bool says(const std::vector<std::string>& out, const std::string& needle) {
+    return out.size() == 1 && out.front().find(needle) != std::string::npos;
+}
+
+static void test_compare_decision(TestResult& r) {
+    using lemon::conformance::compare_decision;
+    const std::set<std::string> semantic = {"classifier:topic"};
+
+    r.expect("identical decisions match", compare_decision(decision(), decision(), semantic).empty());
+    r.expect("changed value reported",
+             says(compare_decision(decision(), decision({{"route_to", "CloudLLM"}}), semantic),
+                  "route_to: expected"));
+
+    // Drift between route_decision_to_json and the comparison schema.
+    r.expect("unexpected field reported",
+             says(compare_decision(decision(), decision({{"confidence", 0.5}}), semantic),
+                  "confidence: unexpected field"));
+
+    // A known field on one side only is a case failure, not schema drift.
+    r.expect("field on one side only reported",
+             says(compare_decision(decision({{"trace", json::array()}}), decision(), semantic),
+                  "trace: present in the expected decision only"));
+
+    json without_route = decision();
+    without_route.erase("route_to");
+    r.expect("required field missing from both reported",
+             says(compare_decision(without_route, without_route, semantic),
+                  "route_to: missing from both sides"));
+}
+
+static void test_compare_trace(TestResult& r) {
+    using lemon::conformance::compare_decision;
+    const std::set<std::string> semantic = {"classifier:topic"};
+
+    const json semantic_entry = {{"condition", "classifier:topic"}, {"result", true}, {"score", 0.5}};
+    json near = semantic_entry;
+    near["score"] = 0.5 + 1e-13;
+    r.expect("semantic score within tolerance matches",
+             compare_decision(with_trace(semantic_entry), with_trace(near), semantic).empty());
+
+    json far = semantic_entry;
+    far["score"] = 0.5 + 1e-6;
+    r.expect("semantic score beyond tolerance reported",
+             says(compare_decision(with_trace(semantic_entry), with_trace(far), semantic),
+                  "trace[0].score: expected"));
+
+    // A stubbed score is not computed, so it gets no margin.
+    const json plain_entry = {{"condition", "min_chars"}, {"result", true}, {"score", 0.5}};
+    json plain_near = plain_entry;
+    plain_near["score"] = 0.5 + 1e-13;
+    r.expect("non-semantic score is exact",
+             says(compare_decision(with_trace(plain_entry), with_trace(plain_near), semantic),
+                  "trace[0].score: expected"));
+
+    r.expect("trace length mismatch reported",
+             says(compare_decision(with_trace(semantic_entry), decision({{"trace", json::array()}}),
+                                   semantic),
+                  "trace: expected 1 entries, produced 0"));
+
+    json with_rationale = semantic_entry;
+    with_rationale["rationale"] = "because";
+    r.expect("rationale is compared",
+             says(compare_decision(with_trace(with_rationale), with_trace(semantic_entry), semantic),
+                  "trace[0].rationale: present in the expected decision only"));
+
+    json unknown_entry = semantic_entry;
+    unknown_entry["weight"] = 1;
+    r.expect("unexpected trace field reported",
+             says(compare_decision(with_trace(unknown_entry), with_trace(semantic_entry), semantic),
+                  "trace[0].weight: unexpected field"));
+}
+
 int main() {
     TestResult r;
     std::printf("=== Conformance Row Checks Unit Tests ===\n\n");
@@ -93,6 +178,8 @@ int main() {
     test_unknown_service_names(r);
     test_name_chars_ok(r);
     test_check_case_name(r);
+    test_compare_decision(r);
+    test_compare_trace(r);
 
     std::printf("\n%d/%d tests passed\n", r.passed, r.passed + r.failed);
     return r.failed == 0 ? 0 : 1;
