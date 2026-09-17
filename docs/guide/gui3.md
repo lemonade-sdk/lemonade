@@ -6,6 +6,8 @@ React interface. The server owns model files, loaded models, backends, and
 persistent load configuration; each GUI client owns its connection, layout,
 chat history, and chat preferences.
 
+To build GUI3 from source, start with the [developer app guide](../dev/app.md#building-locally).
+
 ![GUI3 Chat workspace](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/01-chat.png)
 
 *These screenshots use the current GUI3 renderer. Numbered yellow callouts
@@ -18,8 +20,7 @@ and **Effective settings** button (**3**).
 
 When building from source, configure and build the repository first. Start the
 built Lemonade Server, then launch GUI3 or open the browser build at the
-server's URL. The [developer app guide](../dev/app.md#building-locally) has the
-platform-specific build and server-start commands.
+server's URL.
 
 - **Windows source build:** start the built `lemond.exe`, then launch the
   built `lemonade-app.exe`. An installed build can instead be opened from the
@@ -38,31 +39,6 @@ use the server origin.
 The status dot beside the Lemonade name is green when the configured server is
 reachable. If it is gray, open **Settings > Server** and check the endpoint and
 API key.
-
-## Build GUI3 locally
-
-For desktop and browser build commands, platform prerequisites, and how to run
-GUI3 against an existing Lemonade Server, see the
-[developer app guide](../dev/app.md#building-locally). Do not start a second
-server on port `13305`; a locally built GUI can connect to the server already
-running on that port.
-
-## Report a GUI3 issue
-
-Use the [new issue form](https://github.com/lemonade-sdk/lemonade/issues/new/choose)
-for problems specific to GUI3. For a preview build, select the **GUI3 Beta**
-milestone.
-Include:
-
-- OS and GUI3 app version
-- Lemonade Server version
-- Steps to reproduce
-- Expected and actual behavior
-- Relevant logs or screenshots
-- Whether it also happens with the stable GUI against the stable server
-
-Use the normal issue process for unrelated server, backend, model, or API
-issues. Do not file those under the GUI3 Beta milestone.
 
 ## Navigate GUI3
 
@@ -406,6 +382,23 @@ sampling do not.
 7. **Inference is slow or fails:** inspect **Monitor > Telemetry** and
    **Monitor > Logs**, then compare the running command in Effective settings
    with the persistent model configuration.
+
+### Report a GUI3 issue
+
+For a problem specific to GUI3, use the repository's
+[issue forms](https://github.com/lemonade-sdk/lemonade/issues/new/choose) and
+choose **Bug Report**. Include:
+
+- OS, GUI3 app version, and Lemonade Server version;
+- steps to reproduce;
+- expected and actual behavior;
+- relevant logs or screenshots; and
+- whether it also happens with the stable GUI against the stable server.
+
+For a preview build, select the **GUI3 Beta** milestone if GitHub allows you to
+assign it. If you do not have milestone permission, mention that you are using
+the GUI3 beta build and leave the milestone assignment to a maintainer. Use
+the normal issue process for unrelated server, backend, model, or API issues.
 
 For server behavior, see [server concepts](concepts.md),
 [configuration](configuration/README.md), and the [API reference](../api/README.md).

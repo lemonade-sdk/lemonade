@@ -100,9 +100,15 @@ src/app/
 
 ## Building locally
 
+### Browser client (non-Tauri)
 The CMake build is the recommended way to build the server and GUI clients with
 the repository's current configuration. Run the setup script from the
 repository root, then build the server and browser client:
+
+```powershell
+.\setup.ps1
+cmake --build --preset windows
+```
 
 ```powershell
 .\setup.ps1
@@ -123,14 +129,14 @@ cmake --build --preset default
 ./build/lemond
 ```
 
-### Browser client
-
 The browser client does not require Rust or the Tauri target. The platform
 build commands above build it automatically when `BUILD_WEB_APP` is enabled
 (the default). Open `http://127.0.0.1:13305/app` in a browser after starting
 `lemond`; `/web-app` remains available for backward compatibility. If a
 Lemonade Server is already running, build the GUI without starting another
 instance on port `13305`.
+
+### Desktop client (Tauri)
 
 To build the Tauri desktop client after the server is built and running:
 
