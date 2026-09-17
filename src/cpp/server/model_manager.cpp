@@ -1112,48 +1112,6 @@ void ModelManager::notify_models_changed() {
     }
 }
 
-bool ModelManager::refresh_user_models_from_disk_for_lookup(const std::string& model_name) {
-    std::vector<std::string> candidate_keys;
-
-    if (auto canon = parse_canonical_id(model_name)) {
-        if (canon->source == ModelSource::Registered) {
-            candidate_keys.push_back(canon->bare_name);
-        }
-    } else if (!model_name.empty()) {
-        candidate_keys.push_back(model_name);
-    }
-
-    if (candidate_keys.empty()) {
-        return false;
-    }
-
-    json latest_user_models = load_optional_json(get_user_models_file());
-    if (!latest_user_models.is_object()) {
-        return false;
-    }
-
-    bool found = false;
-    for (const auto& key : candidate_keys) {
-        if (latest_user_models.contains(key)) {
-            found = true;
-            break;
-        }
-    }
-
-    if (!found) {
-        return false;
-    }
-
-    {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        user_models_ = std::move(latest_user_models);
-        cache_valid_ = false;
-    }
-
-    build_cache();
-    return true;
-}
-
 void ModelManager::set_extra_models_dir(const std::string& dir) {
     extra_models_dir_ = dir;
 
@@ -6311,16 +6269,6 @@ ModelInfo ModelManager::get_model_info(const std::string& model_name) {
         }
     }
 
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        auto it = models_cache_.find(canonical_name);
-        if (it != models_cache_.end()) {
-            return it->second;
-        }
-    }
-
     throw std::runtime_error("Model not found: " + model_name);
 }
 
@@ -6352,13 +6300,6 @@ bool ModelManager::model_exists(const std::string& model_name) {
         if (models_cache_.find(canonical_name) != models_cache_.end()) {
             return true;
         }
-    }
-
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        std::lock_guard<std::mutex> lock(models_cache_mutex_);
-        auto alias_it = public_model_aliases_.find(model_name);
-        std::string canonical_name = alias_it != public_model_aliases_.end() ? alias_it->second : model_name;
-        return models_cache_.find(canonical_name) != models_cache_.end();
     }
 
     return false;
@@ -6552,16 +6493,6 @@ bool ModelManager::model_exists_unfiltered(const std::string& model_name) {
         return true;
     }
 
-    // If a stale warm cache caused the alias/registry lookup to miss, reload the
-    // persisted user registry before reporting a hard "not found".
-    if (refresh_user_models_from_disk_for_lookup(model_name)) {
-        if (exists_in_registries(model_name)) {
-            return true;
-        }
-        canonical_name = resolve_model_name(model_name);
-        return exists_in_registries(canonical_name) || server_models_.contains(canonical_name);
-    }
-
     return false;
 }
 
@@ -6596,16 +6527,6 @@ ModelInfo ModelManager::get_model_info_unfiltered(const std::string& model_name)
         std::string canonical_name = resolve_model_name(model_name);
         if (canonical_name != model_name) {
             resolved = try_resolve(canonical_name);
-        }
-    }
-
-    if (!resolved && refresh_user_models_from_disk_for_lookup(model_name)) {
-        resolved = try_resolve(model_name);
-        if (!resolved) {
-            std::string canonical_name = resolve_model_name(model_name);
-            if (canonical_name != model_name) {
-                resolved = try_resolve(canonical_name);
-            }
         }
     }
 

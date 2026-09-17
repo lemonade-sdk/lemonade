@@ -633,11 +633,6 @@ private:
     mutable std::set<std::string> recipes_all_models_filtered_;
     mutable bool cache_valid_ = false;
 
-    // Refresh user_models.json on-demand when a user.* lookup misses the cache.
-    // This keeps startup cache warmup / external registry writes from causing
-    // stale hard "Model not found" failures for registered user models.
-    bool refresh_user_models_from_disk_for_lookup(const std::string& model_name);
-
     json get_sync_status_locked() const;
     void rebuild_public_model_aliases_locked();
 };
