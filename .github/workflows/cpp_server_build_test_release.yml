@@ -1114,7 +1114,7 @@ jobs:
           - name: audio-gen-openmoss
             script: server_audio_generation.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
@@ -1129,7 +1129,7 @@ jobs:
           - name: tts-openmoss
             script: server_tts_openmoss.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1362,7 +1362,7 @@ jobs:
           - name: audio-gen-openmoss
             script: server_audio_generation.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
           - name: whisper
             script: server_whisper.py
@@ -1392,7 +1392,7 @@ jobs:
           - name: tts-openmoss
             script: server_tts_openmoss.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"

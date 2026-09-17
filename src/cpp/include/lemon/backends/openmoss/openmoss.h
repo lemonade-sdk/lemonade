@@ -23,21 +23,20 @@ inline const BackendDescriptor descriptor = {
     /*support*/ {
         {"cuda", {"linux", "windows"}, {{"nvidia_gpu", {}}}, "NVIDIA GPUs"},
         {"vulkan", {"linux", "windows"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}, {"nvidia_gpu", {}}}, "Vulkan-capable GPUs"},
-        {"rocm", {"linux", "windows"}, {{"amd_gpu", {}}}, "AMD GPUs (ROCm via TheRock)"},
     },
     /*supported_modes*/ {"tts", "audio-generation"},
     /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "",
-    /*rocm_channels*/   {"stable"},
+    /*rocm_channels*/   {},
     /*exposes_prometheus_metrics*/ false,
     /*rocm_requires_cwsr_fix*/ false,
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      false,
     /*arg_variants*/    {},
-    /*bin_variants*/    {"vulkan", "rocm", "cuda"},
+    /*bin_variants*/    {"vulkan", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
 };
 
