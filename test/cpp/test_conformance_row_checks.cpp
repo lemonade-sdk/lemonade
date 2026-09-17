@@ -1,10 +1,10 @@
 // Self-test for the conformance corpus runner's pure row guards (#2425).
 //
 // The runner rejects malformed cases.jsonl rows (unknown key, missing/duplicate
-// name, unknown service). These guards protect the whole corpus, so a regression
-// that quietly stopped rejecting bad input would let coverage erode while CI
-// stayed green. This locks the pure checks in memory — no fixtures, no second
-// corpus.
+// name, unknown service) and a policies.json that declares a policy name twice.
+// These guards protect the whole corpus, so a regression that quietly stopped
+// rejecting bad input would let coverage erode while CI stayed green. This locks
+// the pure checks in memory — no fixtures, no second corpus.
 
 #include "test_conformance_decision_compare.h"
 #include "test_conformance_row_harness.h"
@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <vector>
 
 using lemon::conformance::NameStatus;
 using nlohmann::json;
@@ -51,6 +52,25 @@ static void test_unknown_service_names(TestResult& r) {
     const json bad = {{"embed", json::object()}, {"rerank", json::object()}};
     const std::vector<std::string> unknown = unknown_service_names(bad);
     r.expect("unknown service rejected", unknown.size() == 1 && unknown.front() == "rerank");
+}
+
+static void test_duplicate_policy_names(TestResult& r) {
+    using lemon::conformance::duplicate_policy_names;
+
+    r.expect("distinct names accepted",
+             duplicate_policy_names(R"({"a": {}, "b": {}})").empty());
+
+    const std::vector<std::string> dup = duplicate_policy_names(R"({"a": {}, "b": {}, "a": {}})");
+    r.expect("repeated name reported", dup.size() == 1 && dup.front() == "a");
+
+    r.expect("a name repeated twice is reported once",
+             duplicate_policy_names(R"({"a": {}, "a": {}, "a": {}})").size() == 1);
+
+    // Only the policy names are checked; keys inside a policy are the parser's business.
+    r.expect("repeated key inside a policy ignored",
+             duplicate_policy_names(R"({"a": {"x": 1, "x": 2}})").empty());
+
+    r.expect("unparsable text reports nothing", duplicate_policy_names("{").empty());
 }
 
 static void test_name_chars_ok(TestResult& r) {
@@ -164,6 +184,7 @@ int main() {
 
     test_unknown_row_keys(r);
     test_unknown_service_names(r);
+    test_duplicate_policy_names(r);
     test_name_chars_ok(r);
     test_check_case_name(r);
     test_compare_decision(r);

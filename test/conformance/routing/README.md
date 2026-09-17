@@ -60,8 +60,9 @@ test/conformance/routing/
 
 One directory per schema major, one directory per tier inside it, exactly two
 files per tier. The runner enforces this layout strictly. Any stray file, extra
-directory, missing file, policy whose `version` does not match the directory
-name, policy no case uses, or case naming an unknown policy is a hard failure.
+directory, missing file, policy name declared twice in the same `policies.json`,
+policy whose `version` does not match the directory name, policy no case uses, or
+case naming an unknown policy is a hard failure.
 Strictness is deliberate: a corpus that silently loses cases is worse than one
 that fails.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
@@ -48,6 +49,32 @@ inline std::vector<std::string> unknown_service_names(const nlohmann::json& serv
         if (allowed_service_names().count(it.key()) == 0) unknown.push_back(it.key());
     }
     return unknown;
+}
+
+// nlohmann keeps only the last of two identically-named keys, so a policies.json
+// declaring the same policy name twice parses cleanly and every case silently runs
+// against whichever copy came last. Takes the raw file text and returns the
+// top-level names that appear more than once, in the order they first repeat.
+inline std::vector<std::string> duplicate_policy_names(const std::string& text) {
+    std::set<std::string> seen;
+    std::vector<std::string> duplicates;
+    nlohmann::json::parser_callback_t collect =
+        [&](int depth, nlohmann::json::parse_event_t event, nlohmann::json& parsed) {
+            if (event == nlohmann::json::parse_event_t::key && depth == 1) {
+                const std::string name = parsed.get<std::string>();
+                if (!seen.insert(name).second &&
+                    std::find(duplicates.begin(), duplicates.end(), name) == duplicates.end()) {
+                    duplicates.push_back(name);
+                }
+            }
+            return true;
+        };
+    try {
+        static_cast<void>(nlohmann::json::parse(text, collect));
+    } catch (const std::exception&) {
+        return {};
+    }
+    return duplicates;
 }
 
 enum class NameStatus { kOk, kMissing, kNotString, kDuplicate, kInvalidChars };

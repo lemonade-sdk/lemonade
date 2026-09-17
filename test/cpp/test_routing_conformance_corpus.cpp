@@ -53,14 +53,14 @@ static void fail(const std::string& name, const std::string& detail) {
     std::printf("  %s\n", detail.c_str());
 }
 
-static json load_json_file(const fs::path& path) {
+static std::string read_file_text(const fs::path& path) {
     std::ifstream in(path);
     if (!in) {
         throw std::runtime_error("could not open " + path.string());
     }
     std::stringstream ss;
     ss << in.rdbuf();
-    return json::parse(ss.str());
+    return ss.str();
 }
 
 // fs::relative resolves the path, so it throws on entries the corpus should reject
@@ -267,13 +267,15 @@ static void report_mismatch(const json& expected, const json& produced,
 }
 
 // A band's policies.json is a name -> policy map; a case selects one by its
-// policy_name. The version directory name (the band's parent) is the schema major
-// every policy must declare, so a policy under the wrong version cannot pass
-// unnoticed. Read once per band.
+// policy_name, so a name declared twice makes that selection ambiguous. The version
+// directory name (the band's parent) is the schema major every policy must declare,
+// so a policy under the wrong version cannot pass unnoticed. Read once per band.
 static std::optional<json> load_policies_json(const fs::path& band_dir, const std::string& rel) {
     json policies_json;
+    std::string text;
     try {
-        policies_json = load_json_file(band_dir / "policies.json");
+        text = read_file_text(band_dir / "policies.json");
+        policies_json = json::parse(text);
     } catch (const std::exception& e) {
         fail(rel + ": policies.json parses", e.what());
         return std::nullopt;
@@ -282,6 +284,11 @@ static std::optional<json> load_policies_json(const fs::path& band_dir, const st
         check(rel + ": policies.json is a non-empty name -> policy map", false);
         return std::nullopt;
     }
+    const std::vector<std::string> duplicates = lemon::conformance::duplicate_policy_names(text);
+    for (const auto& name : duplicates) {
+        check(rel + ": policies.json declares '" + name + "' once", false);
+    }
+    if (!duplicates.empty()) return std::nullopt;
     const std::string directory_version = band_dir.parent_path().filename().string();
     bool ok = true;
     for (auto it = policies_json.begin(); it != policies_json.end(); ++it) {
