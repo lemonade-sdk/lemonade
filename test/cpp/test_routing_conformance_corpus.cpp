@@ -385,17 +385,8 @@ static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContex
     const json produced = lemon::route_decision_to_json(decision);
     const json& expected = row.at("decision");
 
-    // Only a semantic_similarity classifier's score is computed, so only its trace
-    // condition ("classifier:<id>") gets the tolerance.
-    std::set<std::string> semantic_conditions;
-    for (const auto& entry : engine.policy().classifiers) {
-        if (entry.second && entry.second->type() == "semantic_similarity") {
-            semantic_conditions.insert("classifier:" + entry.first);
-        }
-    }
-
     const std::vector<std::string> mismatches =
-        lemon::conformance::compare_decision(expected, produced, semantic_conditions);
+        lemon::conformance::compare_decision(expected, produced);
 
     // A backend call the case did not stub means the decision rests on a
     // placeholder default, so it fails regardless of whether the fields matched.

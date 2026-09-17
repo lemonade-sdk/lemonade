@@ -88,11 +88,6 @@ inline std::string field_path(const std::string& prefix, const std::string& name
     return prefix.empty() ? name : prefix + "." + name;
 }
 
-inline std::string read_string(const nlohmann::json& obj, const char* key) {
-    const auto it = obj.find(key);
-    return (it != obj.end() && it->is_string()) ? it->get<std::string>() : std::string();
-}
-
 // Exact equality when `tolerance` is empty. Given one, two numbers may differ by up
 // to that much; non-numbers stay exact either way, so a malformed score cannot slip
 // through the margin.
@@ -160,19 +155,10 @@ inline void report_unexpected_fields(const nlohmann::json& expected,
 }
 
 inline void compare_trace_entry(const nlohmann::json& expected, const nlohmann::json& produced,
-                                const std::string& path,
-                                const std::set<std::string>& semantic_conditions,
-                                std::vector<std::string>& out) {
-    // Only a semantic_similarity score is computed; every other score is a stub
-    // literal and must match exactly.
-    const std::optional<double> score_tolerance =
-        semantic_conditions.count(read_string(expected, "condition")) != 0
-            ? std::optional<double>(kScoreTolerance)
-            : std::nullopt;
-
+                                const std::string& path, std::vector<std::string>& out) {
     compare_field(expected, produced, "condition", path, std::nullopt, out);
     compare_field(expected, produced, "result", path, std::nullopt, out);
-    compare_field(expected, produced, "score", path, score_tolerance, out);
+    compare_field(expected, produced, "score", path, kScoreTolerance, out);
     compare_field(expected, produced, "label", path, std::nullopt, out);
     compare_field(expected, produced, "rationale", path, std::nullopt, out);
 
@@ -182,7 +168,6 @@ inline void compare_trace_entry(const nlohmann::json& expected, const nlohmann::
 }
 
 inline void compare_trace(const nlohmann::json& expected, const nlohmann::json& produced,
-                          const std::set<std::string>& semantic_conditions,
                           std::vector<std::string>& out) {
     if (!both_carry(expected, produced, "trace", "", out)) return;
 
@@ -203,18 +188,16 @@ inline void compare_trace(const nlohmann::json& expected, const nlohmann::json& 
             out.push_back(path + ": expected a JSON object on both sides");
             continue;
         }
-        compare_trace_entry(expected_trace[i], produced_trace[i], path, semantic_conditions, out);
+        compare_trace_entry(expected_trace[i], produced_trace[i], path, out);
     }
 }
 
 } // namespace detail
 
 // Every way `produced` differs from the recorded `expected` decision; empty when
-// they match. `semantic_conditions` holds the trace conditions ("classifier:<id>")
-// whose score is computed by semantic_similarity and so gets the tolerance.
-inline std::vector<std::string> compare_decision(
-    const nlohmann::json& expected, const nlohmann::json& produced,
-    const std::set<std::string>& semantic_conditions) {
+// they match.
+inline std::vector<std::string> compare_decision(const nlohmann::json& expected,
+                                                 const nlohmann::json& produced) {
     std::vector<std::string> out;
     if (!expected.is_object() || !produced.is_object()) {
         out.push_back("decision: expected a JSON object on both sides");
@@ -226,7 +209,7 @@ inline std::vector<std::string> compare_decision(
     detail::compare_field(expected, produced, "matched_rule", "", std::nullopt, out);
     detail::compare_field(expected, produced, "default_used", "", std::nullopt, out);
     detail::compare_field(expected, produced, "outputs", "", std::nullopt, out);
-    detail::compare_trace(expected, produced, semantic_conditions, out);
+    detail::compare_trace(expected, produced, out);
 
     detail::report_missing_fields(
         expected, produced, {"version", "route_to", "matched_rule", "default_used", "outputs"}, "",
