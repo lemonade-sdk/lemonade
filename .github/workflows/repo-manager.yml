@@ -58,8 +58,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-      # /dev/dri is what keeps the model on the iGPU instead of the CPU.
-      options: --device /dev/dri
+      # /dev/dri is what keeps the model on the iGPU instead of the CPU. keep-groups
+      # passes the runner account's render/video membership through, which rootless
+      # podman needs to reach that device and which Docker does not accept.
+      options: --device /dev/dri --group-add keep-groups
     strategy:
       fail-fast: false
       matrix:
