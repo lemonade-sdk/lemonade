@@ -79,7 +79,7 @@ inline std::vector<std::string> duplicate_policy_names(const std::string& text) 
 
 enum class NameStatus { kOk, kMissing, kNotString, kDuplicate, kInvalidChars };
 
-// A case label joins band path, policy name and case name with "::", so a name
+// A case label joins tier path, policy name and case name with "::", so a name
 // holding a separator or whitespace would let two different rows render to the
 // same label.
 inline bool name_chars_ok(const std::string& name) {

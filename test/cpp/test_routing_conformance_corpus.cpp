@@ -88,18 +88,18 @@ static DirEntries list_entries(const fs::path& dir, std::error_code& ec) {
     return entries;
 }
 
-// A leaf band directory must hold exactly policies.json + cases.jsonl and no
+// A leaf tier directory must hold exactly policies.json + cases.jsonl and no
 // subdirectory. Returns true only when it is well-formed; every deviation is a
 // hard failure, not a silent skip.
-static bool is_valid_band_dir(const fs::path& band_dir, const fs::path& root) {
-    const std::string rel = rel_label(band_dir, root);
+static bool is_valid_tier_dir(const fs::path& tier_dir, const fs::path& root) {
+    const std::string rel = rel_label(tier_dir, root);
 
     std::error_code policies_ec;
     std::error_code cases_ec;
-    const bool has_policies = fs::exists(band_dir / "policies.json", policies_ec);
-    const bool has_cases = fs::exists(band_dir / "cases.jsonl", cases_ec);
+    const bool has_policies = fs::exists(tier_dir / "policies.json", policies_ec);
+    const bool has_cases = fs::exists(tier_dir / "cases.jsonl", cases_ec);
     std::error_code sec;
-    const DirEntries nested = list_entries(band_dir, sec);
+    const DirEntries nested = list_entries(tier_dir, sec);
 
     bool ok = true;
     if (policies_ec || cases_ec) {
@@ -131,11 +131,11 @@ static bool is_valid_band_dir(const fs::path& band_dir, const fs::path& root) {
     return ok;
 }
 
-// Corpus layout is exactly routing/<version>/<band>/{policies.json,cases.jsonl}.
-// <band> groups cases by the engine tier they lock (l0a, l1, l2, l3). Anything off
+// Corpus layout is exactly routing/<version>/<tier>/{policies.json,cases.jsonl}.
+// One <tier> directory per engine tier (l0a, l1, l2, l3). Anything off
 // that shape — stray files, a missing file, an extra nesting level, an unreadable
 // dir — is a hard failure, not silently skipped.
-static std::vector<fs::path> find_band_dirs(const fs::path& root) {
+static std::vector<fs::path> find_tier_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
     // Files directly under the root are docs (README.md), not corpus content.
@@ -152,11 +152,11 @@ static std::vector<fs::path> find_band_dirs(const fs::path& root) {
             continue;
         }
         for (const auto& stray : version_entries.non_dirs) {
-            check(rel_label(stray, root) + ": is a band directory", false);
+            check(rel_label(stray, root) + ": is a tier directory", false);
         }
-        for (const auto& band_dir : version_entries.dirs) {
-            if (is_valid_band_dir(band_dir, root)) {
-                dirs.push_back(band_dir);
+        for (const auto& tier_dir : version_entries.dirs) {
+            if (is_valid_tier_dir(tier_dir, root)) {
+                dirs.push_back(tier_dir);
             }
         }
     }
@@ -266,15 +266,15 @@ static void report_mismatch(const json& expected, const json& produced,
     }
 }
 
-// A band's policies.json is a name -> policy map; a case selects one by its
+// A tier's policies.json is a name -> policy map; a case selects one by its
 // policy_name, so a name declared twice makes that selection ambiguous. The version
-// directory name (the band's parent) is the schema major every policy must declare,
-// so a policy under the wrong version cannot pass unnoticed. Read once per band.
-static std::optional<json> load_policies_json(const fs::path& band_dir, const std::string& rel) {
+// directory name (the tier's parent) is the schema major every policy must declare,
+// so a policy under the wrong version cannot pass unnoticed. Read once per tier.
+static std::optional<json> load_policies_json(const fs::path& tier_dir, const std::string& rel) {
     json policies_json;
     std::string text;
     try {
-        text = read_file_text(band_dir / "policies.json");
+        text = read_file_text(tier_dir / "policies.json");
         policies_json = json::parse(text);
     } catch (const std::exception& e) {
         fail(rel + ": policies.json parses", e.what());
@@ -289,7 +289,7 @@ static std::optional<json> load_policies_json(const fs::path& band_dir, const st
         check(rel + ": policies.json declares '" + name + "' once", false);
     }
     if (!duplicates.empty()) return std::nullopt;
-    const std::string directory_version = band_dir.parent_path().filename().string();
+    const std::string directory_version = tier_dir.parent_path().filename().string();
     bool ok = true;
     for (auto it = policies_json.begin(); it != policies_json.end(); ++it) {
         const json& policy = it.value();
@@ -424,16 +424,16 @@ static bool is_blank(const std::string& line) {
     return line.find_first_not_of(" \t\r\n") == std::string::npos;
 }
 
-static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
-    const std::string rel = rel_label(band_dir, root);
+static int run_tier_dir(const fs::path& tier_dir, const fs::path& root) {
+    const std::string rel = rel_label(tier_dir, root);
 
-    // Read the band's policies once, up front, so a bad policy fails here instead
+    // Read the tier's policies once, up front, so a bad policy fails here instead
     // of on whichever case uses it first.
-    const std::optional<json> policies_json = load_policies_json(band_dir, rel);
+    const std::optional<json> policies_json = load_policies_json(tier_dir, rel);
     if (!policies_json) return 0;
 
     // Build + compile each policy once too, so a structurally bad policy fails the
-    // whole band here rather than on whichever case uses it first. Compile never
+    // whole tier here rather than on whichever case uses it first. Compile never
     // calls the services, so an empty fake is enough. The per-case build below stays.
     for (auto it = policies_json->begin(); it != policies_json->end(); ++it) {
         const std::string prel = rel + "/" + it.key();
@@ -443,7 +443,7 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
         if (!compile_engine(std::move(*probe_policy), probe.make(), prel)) return 0;
     }
 
-    std::ifstream cases(band_dir / "cases.jsonl");
+    std::ifstream cases(tier_dir / "cases.jsonl");
     if (!cases) {
         check(rel + ": cases.jsonl opens", false);
         return 0;
@@ -462,7 +462,7 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
         if (!row) continue;
 
         const std::string policy_name = row->at("policy_name").get<std::string>();
-        // "::" marks where the band's real directory path stops; the two names after
+        // "::" marks where the tier's real directory path stops; the two names after
         // it are JSON field values, not directories.
         const std::string name = rel + "::" + policy_name + "::" + row->at("case_name").get<std::string>();
 
@@ -509,17 +509,17 @@ int main() {
         return 1;
     }
 
-    const std::vector<fs::path> band_dirs = find_band_dirs(root);
-    if (band_dirs.empty()) {
-        check(root.generic_string() + ": has at least one valid band dir", false);
+    const std::vector<fs::path> tier_dirs = find_tier_dirs(root);
+    if (tier_dirs.empty()) {
+        check(root.generic_string() + ": has at least one valid tier dir", false);
         return 1;
     }
     int total_cases = 0;
-    for (const auto& band_dir : band_dirs) {
-        total_cases += run_band_dir(band_dir, root);
+    for (const auto& tier_dir : tier_dirs) {
+        total_cases += run_tier_dir(tier_dir, root);
     }
     check("corpus has at least one case", total_cases > 0);
-    std::printf("\n%d case(s) executed across %zu band dir(s)\n", total_cases, band_dirs.size());
+    std::printf("\n%d case(s) executed across %zu tier dir(s)\n", total_cases, tier_dirs.size());
 
     std::printf("\n%s\n", g_failures == 0 ? "ALL CONFORMANCE CASES PASSED" : "CONFORMANCE CASES FAILED");
     return g_failures == 0 ? 0 : 1;
