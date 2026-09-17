@@ -792,6 +792,8 @@ static bool cleanup_incomplete_hf_model_cache(const ModelInfo& info,
         }
 
         remove_file_or_throw(partial_path, "incomplete model download partial");
+        std::error_code journal_ec;
+        fs::remove(path_from_utf8(utils::part_journal_path(path_to_utf8(partial_path))), journal_ec);
         remove_stale_manifest_for_partial(partial_path, model_cache_path);
         cleanup_empty_parents(partial_path, model_cache_path);
         removed_any = true;
@@ -5481,7 +5483,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
                 bytes_needed_for_file = 0;
             } else if (safe_exists(partial_path_fs)) {
                 // Cap credit to manifest size - partial can't save more than the file costs
-                size_t partial_size = fs::file_size(partial_path_fs);
+                size_t partial_size = utils::partial_bytes_on_disk(output_path);
                 size_t bytes_already_on_disk = (std::min)(partial_size, file_size);
                 // Clamp to zero: manifest can contain size=0 entries while partials exist.
                 bytes_needed_for_file = (file_size > bytes_already_on_disk)
@@ -5586,7 +5588,7 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         if (fs::exists(output_path) && !fs::exists(partial_path)) {
             bytes_on_disk = file_size;  // File already complete
         } else if (fs::exists(partial_path)) {
-            bytes_on_disk = fs::file_size(partial_path);  // Partial download
+            bytes_on_disk = utils::partial_bytes_on_disk(output_path);  // Partial download
         }
 
         utils::DownloadOptions download_opts;
@@ -5597,6 +5599,8 @@ void ModelManager::download_from_manifest(const json& manifest, std::map<std::st
         download_opts.low_speed_limit = 1000;
         download_opts.low_speed_time = 60;
         download_opts.connect_timeout = 60;
+        download_opts.expected_total_bytes = file_size;
+        download_opts.parallel_parts = utils::kDefaultParallelParts;
         if (file_desc.contains("hash") && file_desc["hash"].is_object()) {
             const auto& hash = file_desc["hash"];
             if (hash.contains("algorithm") && hash["algorithm"].is_string() &&
