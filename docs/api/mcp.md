@@ -34,9 +34,11 @@ curl -s http://localhost:13305/mcp \
 
 ## Tools
 
+<!--
 The tool reference below is generated from a live Lemonade server's `tools/list`
 response. Tool names, descriptions, schemas, and MCP annotations therefore have a
 single source of truth in the server registry instead of being copied into the docs.
+-->
 
 <!-- BEGIN GENERATED: mcp-tools -->
 <!-- Generated from live /mcp tools/list. Do not edit this region by hand. -->
@@ -47,8 +49,8 @@ List models known to the Lemonade server. ALWAYS call this first if you don't al
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
-| `include_available` | no | `{"type":"boolean"}` |  |
-| `include_suggested` | no | `{"type":"boolean"}` |  |
+| `include_available` | no | `{"type":"boolean"}` | Include downloaded models in the `available` list. |
+| `include_suggested` | no | `{"type":"boolean"}` | Include suggested, not-yet-downloaded models in `suggested_to_pull`. |
 
 ### `lemonade_chat`
 
@@ -58,16 +60,16 @@ Chat completion against a locally hosted LLM. Pass a `messages` array (OpenAI ch
 |---|:---:|---|---|
 | `allow_download` | no | `{"type":"boolean"}` | Permit downloading the default model when none is loaded or downloaded. Defaults to false. |
 | `chat_template_kwargs` | no | `{"type":"object"}` | e.g. {"enable_thinking": true} to enable reasoning blocks; disabled by default |
-| `max_tokens` | no | `{"type":"integer"}` |  |
-| `messages` | yes | `{"items":{"type":"object"},"type":"array"}` |  |
+| `max_tokens` | no | `{"type":"integer"}` | Maximum number of output tokens. |
+| `messages` | yes | `{"items":{"type":"object"},"type":"array"}` | Conversation messages in OpenAI chat format. |
 | `model` | no | `{"type":"string"}` | Optional. Omit to auto-select a loaded/downloaded LLM; defaults to Qwen3.5-4B-MTP-GGUF only with allow_download=true. |
-| `response_format` | no | `{"type":"object"}` |  |
-| `seed` | no | `{"type":"integer"}` |  |
+| `response_format` | no | `{"type":"object"}` | OpenAI-compatible response format configuration. |
+| `seed` | no | `{"type":"integer"}` | Optional random seed for reproducible sampling. |
 | `stop` | no | `{}` | stop sequences (string or array) |
-| `temperature` | no | `{"type":"number"}` |  |
+| `temperature` | no | `{"type":"number"}` | Sampling temperature. |
 | `tool_choice` | no | `{}` | auto \| none \| required \| {type: function, ...} |
-| `tools` | no | `{"items":{"type":"object"},"type":"array"}` |  |
-| `top_p` | no | `{"type":"number"}` |  |
+| `tools` | no | `{"items":{"type":"object"},"type":"array"}` | OpenAI-compatible tool definitions available to the model. |
+| `top_p` | no | `{"type":"number"}` | Nucleus sampling probability. |
 
 ### `lemonade_transcribe_audio`
 
@@ -76,14 +78,14 @@ Transcribe an audio clip with a Whisper-class model. The Lemonade MCP server alw
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
 | `allow_download` | no | `{"type":"boolean"}` | Permit downloading the default model when none is loaded or downloaded. Defaults to false. |
-| `audio_base64` | no | `{"type":"string"}` |  |
+| `audio_base64` | no | `{"type":"string"}` | Base64-encoded audio data. Use instead of `audio_path`. |
 | `audio_path` | no | `{"type":"string"}` | Absolute path to a local audio file. Preferred over audio_base64. |
-| `filename` | no | `{"type":"string"}` |  |
-| `language` | no | `{"type":"string"}` |  |
+| `filename` | no | `{"type":"string"}` | Original audio filename, used as an input-format hint. |
+| `language` | no | `{"type":"string"}` | Optional source language hint. |
 | `model` | no | `{"type":"string"}` | Optional. Omit to auto-select a loaded/downloaded model; defaults to Whisper-Tiny only with allow_download=true. |
-| `prompt` | no | `{"type":"string"}` |  |
-| `response_format` | no | `{"enum":["json","text","srt","verbose_json","vtt"],"type":"string"}` |  |
-| `temperature` | no | `{"type":"number"}` |  |
+| `prompt` | no | `{"type":"string"}` | Optional text prompt to guide transcription. |
+| `response_format` | no | `{"enum":["json","text","srt","verbose_json","vtt"],"type":"string"}` | Transcription response format. |
+| `temperature` | no | `{"type":"number"}` | Sampling temperature for transcription. |
 
 ### `lemonade_generate_image`
 
@@ -92,16 +94,16 @@ Generate one or more images from a text prompt. The Lemonade MCP server always r
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
 | `allow_download` | no | `{"type":"boolean"}` | Permit downloading the default model when none is loaded or downloaded. Defaults to false. |
-| `cfg_scale` | no | `{"type":"number"}` |  |
+| `cfg_scale` | no | `{"type":"number"}` | Classifier-free guidance scale. |
 | `model` | no | `{"type":"string"}` | Optional. Omit to auto-select a loaded/downloaded image model; defaults to SD-Turbo only with allow_download=true. |
-| `n` | no | `{"minimum":1,"type":"integer"}` |  |
-| `negative_prompt` | no | `{"type":"string"}` |  |
+| `n` | no | `{"minimum":1,"type":"integer"}` | Number of images to generate. |
+| `negative_prompt` | no | `{"type":"string"}` | Text describing content to avoid in the generated image. |
 | `output_dir` | no | `{"type":"string"}` | Directory to write generated images into, inside the MCP image sandbox. Filenames are auto-generated and unique (image_<token>_<i>.png); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. |
 | `output_path` | no | `{"type":"string"}` | Exact path of the PNG file to write, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Relative paths resolve against the sandbox root; absolute paths must stay within it. Written as named (overwrites if it already exists). Only valid when n == 1. |
-| `prompt` | yes | `{"type":"string"}` |  |
-| `seed` | no | `{"type":"integer"}` |  |
-| `size` | no | `{"type":"string"}` |  |
-| `steps` | no | `{"type":"integer"}` |  |
+| `prompt` | yes | `{"type":"string"}` | Text prompt describing the image to generate. |
+| `seed` | no | `{"type":"integer"}` | Optional random seed for reproducible generation. |
+| `size` | no | `{"type":"string"}` | Requested image size as WIDTHxHEIGHT, for example 512x512. |
+| `steps` | no | `{"type":"integer"}` | Number of diffusion sampling steps. |
 
 ### `lemonade_omni`
 
@@ -110,18 +112,18 @@ Multimodal turn against a Lemonade Omni collection (one tool call -> text + imag
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
 | `allow_download` | no | `{"type":"boolean"}` | Permit downloading the default collection when none is downloaded. Defaults to false. |
-| `chat_template_kwargs` | no | `{"type":"object"}` |  |
-| `max_tokens` | no | `{"type":"integer"}` |  |
-| `messages` | yes | `{"items":{"type":"object"},"type":"array"}` |  |
+| `chat_template_kwargs` | no | `{"type":"object"}` | Additional chat-template arguments forwarded to the planner LLM. |
+| `max_tokens` | no | `{"type":"integer"}` | Maximum number of planner output tokens. |
+| `messages` | yes | `{"items":{"type":"object"},"type":"array"}` | Conversation messages in OpenAI chat format. |
 | `model` | no | `{"type":"string"}` | Optional. Omni collection name (recipe='collection.omni'). Omit to reuse a downloaded collection; defaults to LMX-Omni-5.5B-Lite only with allow_download=true. |
 | `output_dir` | no | `{"type":"string"}` | Directory to write produced artifacts into, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_<token>_<i>.<ext>); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks. |
-| `response_format` | no | `{"type":"object"}` |  |
-| `seed` | no | `{"type":"integer"}` |  |
+| `response_format` | no | `{"type":"object"}` | OpenAI-compatible response format configuration for the planner. |
+| `seed` | no | `{"type":"integer"}` | Optional random seed forwarded to the planner LLM. |
 | `stop` | no | `{}` | stop sequences (string or array) |
-| `temperature` | no | `{"type":"number"}` |  |
+| `temperature` | no | `{"type":"number"}` | Sampling temperature for the planner LLM. |
 | `tool_choice` | no | `{}` | auto \| none \| required \| {type: function, ...} |
-| `tools` | no | `{"items":{"type":"object"},"type":"array"}` |  |
-| `top_p` | no | `{"type":"number"}` |  |
+| `tools` | no | `{"items":{"type":"object"},"type":"array"}` | OpenAI-compatible application tool definitions passed to the planner. |
+| `top_p` | no | `{"type":"number"}` | Nucleus sampling probability for the planner LLM. |
 
 ### `lemonade_docs`
 

@@ -104,7 +104,10 @@ def render_tool(tool: dict) -> str:
         for arg, arg_schema in properties.items():
             if not isinstance(arg_schema, dict):
                 raise RuntimeError(f"{name}.{arg}: property schema must be an object")
-            desc = md(arg_schema.get("description", ""))
+            arg_description = arg_schema.get("description")
+            if not isinstance(arg_description, str) or not arg_description.strip():
+                raise RuntimeError(f"{name}.{arg}: missing description")
+            desc = md(arg_description)
             shape = md(f"`{compact_schema(arg_schema)}`")
             lines.append(
                 f"| `{md(arg)}` | {'yes' if arg in required else 'no'} | {shape} | {desc} |"
