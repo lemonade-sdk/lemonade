@@ -6,6 +6,7 @@
 // stayed green. This locks the pure checks in memory — no fixtures, no second
 // corpus.
 
+#include "test_conformance_decision_compare.h"
 #include "test_conformance_row_harness.h"
 
 #include <nlohmann/json.hpp>
