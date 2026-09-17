@@ -186,14 +186,16 @@ static bool apply_row_services(lemon::testing::FakeClassifierServices& fake, con
         check(where + ": is an object", false);
         return false;
     }
+    const std::vector<std::string> unknown = lemon::conformance::unknown_service_names(spec);
+    for (const auto& service_name : unknown) {
+        check(where + ": unknown service '" + service_name + "'", false);
+    }
+    if (!unknown.empty()) {
+        return false;
+    }
     bool ok = true;
     for (auto service = spec.begin(); service != spec.end(); ++service) {
         const std::string& name = service.key();
-        if (lemon::conformance::allowed_service_names().count(name) == 0) {
-            check(where + ": unknown service '" + name + "'", false);
-            ok = false;
-            continue;
-        }
         if (!service.value().is_object()) {
             check(where + "." + name + ": is a model -> answer map", false);
             ok = false;
