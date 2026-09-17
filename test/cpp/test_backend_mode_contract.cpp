@@ -46,7 +46,8 @@ const std::vector<std::pair<uint32_t, std::string>> kModeInterfaces = {
 // Capabilities that name no deployment mode, so kModeInterfaces omits them by
 // design rather than by oversight. Streaming transcription is a transport
 // detail of the transcription mode, not a mode of its own.
-constexpr uint32_t kNonModeCapabilities = lemon::CAP_STREAMING_TRANSCRIPTION;
+constexpr uint32_t kNonModeCapabilities = lemon::CAP_STREAMING_TRANSCRIPTION |
+                                          lemon::CAP_UPSCALE;
 
 // Serving one of these means a single fixed modality, which rules out chat.
 // Transcription is absent because a backend can serve it alongside chat. Defined
@@ -198,6 +199,14 @@ int main() {
         std::printf("     %s: modes [%s] capabilities [%s]\n", recipe.c_str(),
                     join(desc.supported_modes).c_str(),
                     join(desc.default_capabilities).c_str());
+    }
+
+    const std::set<std::string> upscale_recipes = {"sd-cpp", "thenoise"};
+    for (const auto& entry : entries) {
+        const bool implements_upscale = (entry.capabilities & lemon::CAP_UPSCALE) != 0;
+        const bool expects_upscale = upscale_recipes.count(entry.descriptor->recipe) != 0;
+        check(entry.descriptor->recipe + ": upscale capability matches its backend command",
+              implements_upscale == expects_upscale);
     }
 
     check_server_model_registry();
