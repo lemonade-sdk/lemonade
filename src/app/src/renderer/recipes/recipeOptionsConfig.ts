@@ -236,7 +236,7 @@ export const OPTION_DEFINITIONS: Record<string, OptionDef> = {
     type: 'string',
     default: '',
     label: 'Backend',
-    description: 'WhisperCpp backend to use (npu or cpu)',
+    description: 'WhisperCpp backend to use',
     isBackendOption: true,
     backendRecipe: 'whispercpp',
   },

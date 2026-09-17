@@ -144,11 +144,10 @@ CAPABILITIES = {
     },
     "whisper": {
         "whispercpp": {
-            "backends": ["cpu", "npu", "vulkan", "metal"],
+            "backends": ["cpu", "vulkan", "metal"],
             "supports": {
                 "transcription": True,
                 "transcription_with_language": True,
-                "rai_cache": True,
                 "realtime_websocket": True,
             },
             "test_models": {
@@ -160,7 +159,6 @@ CAPABILITIES = {
             "supports": {
                 "transcription": True,
                 "transcription_with_language": True,
-                "rai_cache": False,
                 "realtime_websocket": True,
             },
             "test_models": {
@@ -173,7 +171,6 @@ CAPABILITIES = {
                 "transcription": True,
                 # English-only checkpoints; the language param is ignored
                 "transcription_with_language": False,
-                "rai_cache": False,
                 "realtime_websocket": True,
             },
             "test_models": {

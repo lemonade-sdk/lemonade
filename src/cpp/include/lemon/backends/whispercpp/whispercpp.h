@@ -17,7 +17,7 @@ inline const BackendDescriptor descriptor = {
     /*binary*/          "whisper-server",
 #endif
     /*config_section*/  "",  // defaults to recipe
-    /*default_device*/  DEVICE_CPU,   // npu variant resolves to NPU + ExclusiveNpu via effective_*()
+    /*default_device*/  DEVICE_CPU,
     /*slot_policy*/     SlotPolicy::Standard,
     /*selectable_backend*/ true,
     /*uses_ctx_size*/   false,
@@ -29,7 +29,6 @@ inline const BackendDescriptor descriptor = {
          "Custom arguments to pass to whisper-server", "Whisper.cpp Options"},
     },
     /*support*/ {
-        {"npu", {"windows"}, {{"amd_npu", {"XDNA2"}}}, "XDNA2 NPU"},
         {"metal", {"macos"}, {{"metal", {}}}, "Apple Silicon GPU"},
         {"vulkan", {"windows", "linux"}, {{"cpu", {"x86_64"}}, {"amd_gpu", {}}}, "x86_64 CPU"},
         {"rocm", {"windows", "linux"},
@@ -37,7 +36,7 @@ inline const BackendDescriptor descriptor = {
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64"}}}, "x86_64 CPU"},
     },
     /*supported_modes*/ {"transcription"},
-    /*required_checkpoints*/ {"main"},  // npu_cache validated in load() (npu variant only)
+    /*required_checkpoints*/ {"main"},
     /*default_capabilities*/ {"realtime-transcription"},
     /*experimental*/    false,
     /*web_display_name*/ "whisper.cpp",
@@ -47,8 +46,8 @@ inline const BackendDescriptor descriptor = {
     /*version_policy*/  VersionPolicy::Exact,
     /*self_manages_downloads*/ false,
     /*takes_args*/      true,
-    /*arg_variants*/    {"cpu", "npu"},
-    /*bin_variants*/    {"cpu", "npu"},
+    /*arg_variants*/    {"cpu"},
+    /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
 };
 

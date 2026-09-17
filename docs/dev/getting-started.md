@@ -487,7 +487,7 @@ src/cpp/
 │   │   ├── fastflowlm_server.cpp # Wraps FastFlowLM for NPU inference
 │   │   ├── ryzenaiserver.cpp     # Wraps RyzenAI server for hybrid NPU
 │   │   ├── sd_server.cpp         # Wraps Stable Diffusion for image generation
-│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription (CPU/NPU)
+│   │   └── whisper_server.cpp    # Wraps whisper.cpp for audio transcription (CPU/GPU)
 │   │
 │   └── utils/                  # Utility functions
 │       ├── http_client.cpp     # HTTP client using libcurl

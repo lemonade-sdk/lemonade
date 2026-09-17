@@ -1791,8 +1791,7 @@
     },
     "Whisper-Tiny": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
-            "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+            "main": "ggerganov/whisper.cpp:ggml-tiny.bin"
         },
         "recipe": "whispercpp",
         "suggested": true,
@@ -1804,8 +1803,7 @@
     },
     "Whisper-Base": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-base.bin",
-            "npu_cache": "amd/whisper-base-onnx-npu:ggml-base-encoder-vitisai.rai"
+            "main": "ggerganov/whisper.cpp:ggml-base.bin"
         },
         "recipe": "whispercpp",
         "suggested": true,
@@ -1817,8 +1815,7 @@
     },
     "Whisper-Small": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-small.bin",
-            "npu_cache": "amd/whisper-small-onnx-npu:ggml-small-encoder-vitisai.rai"
+            "main": "ggerganov/whisper.cpp:ggml-small.bin"
         },
         "recipe": "whispercpp",
         "suggested": true,
@@ -1830,8 +1827,7 @@
     },
     "Whisper-Medium": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-medium.bin",
-            "npu_cache": "amd/whisper-medium-onnx-npu:ggml-medium-encoder-vitisai.rai"
+            "main": "ggerganov/whisper.cpp:ggml-medium.bin"
         },
         "recipe": "whispercpp",
         "suggested": true,
@@ -1843,8 +1839,7 @@
     },
     "Whisper-Large-v3": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-large-v3.bin",
-            "npu_cache": "amd/whisper-large-v3-onnx-npu:ggml-large-v3-encoder-vitisai.rai"
+            "main": "ggerganov/whisper.cpp:ggml-large-v3.bin"
         },
         "recipe": "whispercpp",
         "suggested": true,
@@ -1856,8 +1851,7 @@
     },
     "Whisper-Large-v3-Turbo": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin",
-            "npu_cache": "amd/whisper-large-turbo-onnx-npu:ggml-large-v3-turbo-encoder-vitisai.rai"
+            "main": "ggerganov/whisper.cpp:ggml-large-v3-turbo.bin"
         },
         "recipe": "whispercpp",
         "suggested": true,

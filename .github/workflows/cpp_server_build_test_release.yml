@@ -1074,7 +1074,7 @@ jobs:
           - name: whisper
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
-            backends: "cpu npu rocm"
+            backends: "cpu rocm"
             runner: [Windows, X64, stx-halo, lemon-prod]
           - name: flm-whisper
             script: server_whisper.py

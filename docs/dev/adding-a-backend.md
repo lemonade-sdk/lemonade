@@ -154,10 +154,10 @@ Pick the API-doc file by protocol: extend `docs/api/openai.md` for an OpenAI-com
 
 | Need | Hook |
 |------|------|
-| Device depends on the chosen backend variant (whisper npu vs cpu) | override `WrappedServer::effective_device(opts)` |
+| Device depends on the chosen backend variant (whisper vulkan vs cpu) | override `WrappedServer::effective_device(opts)` |
 | Eviction rule depends on the variant | override `WrappedServer::effective_slot_policy(opts)` |
 | Availability decided at runtime (cloud creds) | override `WrappedServer::availability()` |
-| Conditional / grouped checkpoints (sd-cpp flux, whisper npu_cache) | validate in `load()`; list only unconditional files in `required_checkpoints` |
+| Conditional / grouped checkpoints (sd-cpp flux) | validate in `load()`; list only unconditional files in `required_checkpoints` |
 | Custom per-model fields without editing `ModelInfo` | read `model_info.extra<T>("my_field", fallback)` (populated from unknown `server_models.json` keys) |
 | Models supplied at runtime, not from `server_models.json` | set `dynamic_models = true` and provide them in the class (see cloud's `discover_models()`) |
 | Per-create setup before load (ryzenai `set_model_path`) | do it in `create()` |
