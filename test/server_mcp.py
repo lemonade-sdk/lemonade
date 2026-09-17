@@ -220,17 +220,21 @@ class McpGatewayTests(ServerTestBase):
         self.assertEqual(body["result"], {})
 
     def test_012_tools_list(self):
-        """tools/list must include the five gateway tools, each with a schema."""
+        """tools/list must expose the pre-existing registry tools with valid schemas."""
         response = _post({"jsonrpc": "2.0", "id": 3, "method": "tools/list"})
         body = response.json()
         tools = body["result"]["tools"]
         names = {tool["name"] for tool in tools}
+        self.assertEqual(
+            len(names), len(tools), "tools/list contains duplicate tool names"
+        )
         expected = {
             "lemonade_list_models",
             "lemonade_chat",
             "lemonade_transcribe_audio",
             "lemonade_generate_image",
             "lemonade_omni",
+            "lemonade_docs",
         }
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
         for tool in tools:

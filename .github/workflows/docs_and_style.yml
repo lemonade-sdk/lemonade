@@ -33,9 +33,8 @@ jobs:
         run: node test/app/run-app-regression-tests.cjs
 
   backend-docs-drift:
-    # The backend reference doc (docs/dev/backends-reference.md) is generated from
-    # the self-describing backend descriptors. Build lemond, regenerate, and fail
-    # if the committed doc is stale — the same guarantee a lint provides.
+    # Server reference docs are generated from live self-describing endpoints.
+    # Build lemond, regenerate, and fail if committed docs are stale.
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
@@ -62,6 +61,8 @@ jobs:
         run: cmake --build --preset default --target lemond
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
+      - name: Check MCP reference docs are up to date
+        run: python3 docs/tools/gen_mcp_boilerplate.py --check
 
   pre-commit:
     runs-on: ubuntu-latest
