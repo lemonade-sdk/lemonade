@@ -122,9 +122,23 @@ function(add_cpp_ci_test test_name)
     # helper stays exempt from the direct-add_test() ban it enforces.
     _add_test(NAME ${test_name} COMMAND ${ACT_COMMAND})
 
+    # get_config_dir() lives in the server core, so a test that does not link the
+    # core cannot reach the real config dir and has nothing to redirect. That is
+    # the exact set, not a heuristic: linking the isolation TU into the others
+    # only breaks their link with undefined path_utils symbols.
     list(GET ACT_COMMAND 0 _act_target)
-    if(TARGET ${_act_target} AND TARGET lemonade-test-isolation)
-        target_link_libraries(${_act_target} PRIVATE lemonade-test-isolation)
+    if(TARGET ${_act_target})
+        get_target_property(_act_libs ${_act_target} LINK_LIBRARIES)
+        if(_act_libs AND "lemonade-server-core" IN_LIST _act_libs)
+            if(NOT TARGET lemonade-test-isolation)
+                message(FATAL_ERROR
+                    "add_cpp_ci_test(${test_name}): lemonade-test-isolation does not exist, "
+                    "so this test would run against the real config dir. Its source is pruned "
+                    "from trees that carry no tests (see .dockerignore), which is also where "
+                    "no test target is declared, so reaching here means the two disagree.")
+            endif()
+            target_link_libraries(${_act_target} PRIVATE lemonade-test-isolation)
+        endif()
     endif()
 
     if(_act_ci STREQUAL "ON")
@@ -1222,7 +1236,8 @@ endfunction()
 # test from the developer's real ~/.config/lemonade is not something a test
 # author can forget to do. An OBJECT library because a static one would let the
 # linker drop the translation unit: nothing references it.
-if(BUILD_TESTING)
+set(_TEST_ISOLATION_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/support/test_state_isolation.cpp")
+if(BUILD_TESTING AND EXISTS "${_TEST_ISOLATION_SRC}")
     add_library(lemonade-test-isolation OBJECT test/cpp/support/test_state_isolation.cpp)
     target_include_directories(lemonade-test-isolation PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp"
