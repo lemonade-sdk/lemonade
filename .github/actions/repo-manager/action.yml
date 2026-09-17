@@ -1,7 +1,7 @@
 name: 'Repo Manager'
 description: >-
-  Run one repo-manager command on a self-hosted runner: pull the container image holding
-  its pinned tools, serve the model from a lemond inside that container, and commit the
+  Run one repo-manager command. The calling job supplies the tools by running in the
+  repo-manager container; this starts a lemond in it to serve the model, and commits the
   result to lemonade-sdk/lemonade-testing.
 
 inputs:
@@ -20,84 +20,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Pin versions and locate the machine-level cache
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-      run: |
-        set -euo pipefail
-
-        # Comments and blank lines are not valid in $GITHUB_ENV, so only assignments go.
-        grep -E '^[A-Z0-9_]+=' "$ACTION_PATH/versions.env" >> "$GITHUB_ENV"
-        # shellcheck source=/dev/null
-        . "$ACTION_PATH/versions.env"
-
-        # The tools come from the image; lemond's cache cannot, because the model in it is
-        # 23GB. Locate it from the passwd database: other jobs on these runners redirect
-        # HOME into their workspace, and a wrong value here would put the cache somewhere
-        # that gets wiped.
-        home=$(getent passwd "$(id -u)" | cut -d: -f6)
-        test -n "$home"
-        lemond_cache="$home/.cache/lemonade-ci/repo-manager"
-
-        # pi writes its provider config and skills under HOME, so the container is given a
-        # per-job one instead of the runner's.
-        rm_home="$RUNNER_TEMP/home"
-        logs="$RUNNER_TEMP/lemond-logs"
-
-        # Registry credentials go in a per-job config rather than the shared home: two of
-        # these jobs can run on one machine, and one of them logging out must not cancel
-        # the other's login.
-        docker_config="$RUNNER_TEMP/docker"
-
-        mkdir -p "$lemond_cache" "$rm_home" "$logs" "$docker_config"
-        {
-          echo "LEMOND_CACHE=$lemond_cache"
-          echo "RM_HOME=$rm_home"
-          echo "LEMOND_LOGS=$logs"
-          echo "DOCKER_CONFIG=$docker_config"
-          echo "RM_IMAGE=ghcr.io/lemonade-sdk/lemonade/repo-manager:${REPO_MANAGER_VERSION}"
-          # Several of these jobs share a runner, so the name cannot be a constant.
-          echo "RM_CONTAINER=repo-manager-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$$"
-        } >> "$GITHUB_ENV"
-
-    - name: Get the repo-manager image
-      shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-        GHCR_TOKEN: ${{ github.token }}
-      run: |
-        set -euo pipefail
-
-        if ! command -v docker > /dev/null; then
-          echo "::error title=This runner has no Docker::repo-manager runs in a container; see docs/dev/self-hosted-runners.md for what a Linux runner in the production pool needs."
-          exit 1
-        fi
-
-        echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
-
-        # The image carries the versions.env it was built from, so a tag that exists but
-        # predates the last bump is detected rather than silently used.
-        current_image() {
-          docker run --rm "$RM_IMAGE" cat /opt/versions.env 2>/dev/null \
-            | diff -q - "$ACTION_PATH/versions.env" > /dev/null 2>&1
-        }
-
-        # A version bump reaches main as a one-line edit, and the review of that very
-        # commit starts before the image build it triggers can finish. Building here when
-        # the registry is behind keeps a bump from being blocked on infrastructure; it is
-        # the same recipe either way, and the weekly publish keeps this the exception.
-        if ! docker pull --quiet "$RM_IMAGE" || ! current_image; then
-          echo "::warning title=Building the repo-manager image on the runner::$RM_IMAGE is missing from the registry or was built before the last version bump."
-          docker build \
-            --build-arg "REPO_MANAGER_VERSION=$REPO_MANAGER_VERSION" \
-            --build-arg "LEMONADE_VERSION=$LEMONADE_VERSION" \
-            --build-arg "GH_CLI_VERSION=$GH_CLI_VERSION" \
-            --build-arg "NODE_VERSION=$NODE_VERSION" \
-            --tag "$RM_IMAGE" "$ACTION_PATH"
-          current_image
-        fi
-
     - uses: actions/create-github-app-token@v3
       id: state-token
       with:
@@ -131,55 +53,60 @@ runs:
 
     - name: Run repo-manager
       shell: bash
+      working-directory: ${{ github.workspace }}
       env:
-        ACTION_PATH: ${{ github.action_path }}
         COMMAND: ${{ inputs.command }}
         GH_TOKEN: ${{ github.token }}
+        REPO_MANAGER_MODEL: Qwen3.6-35B-A3B-MTP-GGUF
+        # /cache is the one thing the image cannot carry: the model in it is 23GB, so the
+        # calling job mounts it from the machine.
+        HF_HOME: /cache
       run: |
         set -euo pipefail
+        logs="$RUNNER_TEMP/lemond-logs"
+        mkdir -p "$logs"
 
-        # Device access is what makes the model usable at all; the group IDs behind those
-        # devices differ per machine, so they are resolved here rather than baked in.
-        devices=(--device /dev/dri)
-        if [ -e /dev/kfd ]; then
-          devices+=(--device /dev/kfd)
-        fi
-        group_args=()
-        for group in render video; do
-          gid=$(getent group "$group" | cut -d: -f3 || true)
-          if [ -n "$gid" ]; then
-            group_args+=(--group-add "$gid")
-          fi
+        # The container has its own network namespace, so nothing else on the machine can
+        # be holding this port. --no-broadcast keeps this server out of the UDP discovery
+        # other jobs' CLIs use.
+        PORT=8000
+        "$LEMOND" /cache --port "$PORT" --host 127.0.0.1 --no-broadcast \
+          > "$logs/lemond.stdout.log" 2> "$logs/lemond.stderr.log" &
+        LEMOND_PID=$!
+
+        for _ in $(seq 1 60); do
+          curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1 && break
+          kill -0 "$LEMOND_PID" 2>/dev/null || { cat "$logs/lemond.stderr.log"; exit 1; }
+          sleep 2
         done
+        curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null
 
-        # As the runner's own uid, so that the clones this job leaves behind stay
-        # deletable by the jobs that follow it on this machine.
-        docker run --rm --name "$RM_CONTAINER" \
-          --user "$(id -u):$(id -g)" \
-          "${devices[@]}" \
-          "${group_args[@]}" \
-          --volume "$GITHUB_WORKSPACE:/workspace" \
-          --volume "$LEMOND_CACHE:/cache" \
-          --volume "$RM_HOME:/rm-home" \
-          --volume "$LEMOND_LOGS:/logs" \
-          --volume "$ACTION_PATH/run.sh:/run.sh:ro" \
-          --workdir /workspace \
-          --env HOME=/rm-home \
-          --env HF_HOME=/cache \
-          --env COMMAND \
-          --env GH_TOKEN \
-          --env REPO_MANAGER_MODEL \
-          "$RM_IMAGE" bash /run.sh
+        response=$(curl -sf -X POST "http://127.0.0.1:$PORT/api/v1/pull" \
+          -H "Content-Type: application/json" \
+          -d "{\"model_name\": \"${REPO_MANAGER_MODEL}\"}")
+        echo "$response"
+        test "$(printf '%s' "$response" | jq -r '.status // ""')" = "success"
+        du -sh /cache
+
+        export REPO_MANAGER_LEMONADE_URL="http://127.0.0.1:$PORT/v1"
+        export REPO_MANAGER_PI_MODEL="Lemonade/${REPO_MANAGER_MODEL}"
+        repo-manager pi setup
+
+        # $COMMAND is a command line, not one argument.
+        # shellcheck disable=SC2086
+        repo-manager $COMMAND --repo lemonade-sdk/lemonade --checkout checkout --state state
 
     - name: Show the model server log
       if: failure()
       shell: bash
-      run: tail -n 100 "$LEMOND_LOGS/lemond.stderr.log" 2>/dev/null || true
+      run: tail -n 100 "$RUNNER_TEMP/lemond-logs/lemond.stderr.log" 2>/dev/null || true
 
-    - name: Clean up
+    - name: Leave the workspace owned by the runner account
       if: always()
       shell: bash
       run: |
-        # A cancelled job leaves the container behind, and --rm never gets to run.
-        docker rm --force "$RM_CONTAINER" > /dev/null 2>&1 || true
-        docker logout ghcr.io > /dev/null 2>&1 || true
+        # This job is root inside the container, so everything it wrote is root-owned on
+        # the machine. The runner's own work directory shows who that account is; without
+        # this the next job on this machine cannot clean the workspace.
+        work_root="${RUNNER_WORKSPACE%/*}"
+        chown -R --reference="$work_root" "$GITHUB_WORKSPACE" "$RUNNER_TEMP" || true

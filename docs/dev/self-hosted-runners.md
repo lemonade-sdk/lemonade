@@ -90,12 +90,9 @@ This guide will help you set up a computer as a GitHub self-hosted runner.
 
 ### Linux Machine Setup
 
-Some jobs bring their own tools in a container instead of installing them on the runner (the `repo-manager` jobs work this way; see [How repo-manager runs in CI](release.md#how-repo-manager-runs-in-ci)). A Linux runner that takes those jobs needs:
+Some jobs bring their own tools in a container instead of installing them on the runner (the `repo-manager` jobs work this way; see [How repo-manager runs in CI](release.md#how-repo-manager-runs-in-ci)). A Linux runner that takes those jobs needs Docker installed, with the account the runner service runs as in the `docker` group.
 
-- Docker installed, with the account the runner service runs as in the `docker` group.
-- That same account in the `render` and `video` groups, so a container can be handed `/dev/dri` and use the GPU. Without this the job still runs, on CPU, and takes hours instead of minutes.
-
-Check both with `docker run --rm --device /dev/dri --group-add "$(getent group render | cut -d: -f3)" ubuntu:24.04 ls -l /dev/dri`, run as the runner's account.
+Those jobs also keep a model cache at `/var/cache/lemonade-ci`, which survives between jobs and is the only thing they leave on the machine. Docker creates it on first use. Deleting it is safe; the next job re-downloads the model, which takes a while.
 
 ### Runner Configuration
 

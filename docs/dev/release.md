@@ -42,14 +42,12 @@ We have an AI-assisted tool called `repo-manager` that reviews every commit as i
 
 ### How repo-manager runs in CI
 
-`repo-manager` needs several pinned tools (itself, the `pi` coding agent, a `lemond` to serve its model, and the GitHub CLI). Rather than install those onto a self-hosted runner for every job, they are baked into a container image, `ghcr.io/lemonade-sdk/lemonade/repo-manager`, and the [repo-manager action](https://github.com/lemonade-sdk/lemonade/blob/main/.github/actions/repo-manager/action.yml) runs each command inside it. The model weights are the one thing the image cannot carry — they are 23GB — so they stay in a cache on the runner and are mounted in.
+`repo-manager` needs several pinned tools (itself, the `pi` coding agent, a `lemond` to serve its model, and the GitHub CLI). They are baked into a container image, [`ghcr.io/lemonade-sdk/lemonade/repo-manager`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/actions/repo-manager/Dockerfile), and the jobs that use `repo-manager` run inside it, so they install nothing on the runner.
 
-Everything the image contains is pinned in [`.github/actions/repo-manager/versions.env`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/actions/repo-manager/versions.env). To upgrade `repo-manager`, or the `lemond` that serves its model, edit that file:
+To upgrade any of those tools, edit the version in that Dockerfile. Merging the edit republishes `latest` via [`build-repo-manager-container.yml`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/build-repo-manager-container.yml), which also rebuilds weekly to pick up base image updates. The image is also tagged by commit sha, to roll back to.
 
-- Merging the edit publishes a matching image, weekly rebuilds keep it current, and both happen in [`build-repo-manager-container.yml`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/build-repo-manager-container.yml).
-- A job that finds the registry behind builds the image on the runner instead, so an upgrade is never waiting on a publish.
+The model weights are the one thing the image does not carry — they are 23GB — so they live at `/var/cache/lemonade-ci/repo-manager` on the runner and are mounted in. Runners that take these jobs need Docker; see [Self Hosted Runners](self-hosted-runners.md#linux-machine-setup).
 
-Runners that take these jobs need Docker and GPU device access; see [Self Hosted Runners](self-hosted-runners.md#linux-machine-setup).
 
 ## Release Lifecycle
 
