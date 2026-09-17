@@ -40,6 +40,15 @@ A source tree may contain a `.version` file to override the calculated version. 
 
 We have an AI-assisted tool called `repo-manager` that reviews every commit as it lands on `main` and summarizes these into a final release checklist for testers. This data doesn't replace human judgement, but can help to identify areas for testing. `repo-manager` also produces draft release notes and a Discord announcement for each release. It stores all of that as files in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing), which is rendered as a live release dashboard at [https://testing.lemonade-server.ai](https://testing.lemonade-server.ai).
 
+### How repo-manager runs in CI
+
+`repo-manager` needs several pinned tools (itself, the `pi` coding agent, a `lemond` to serve its model, and the GitHub CLI). They are baked into a container image, [`ghcr.io/lemonade-sdk/lemonade/repo-manager`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/actions/repo-manager/Dockerfile), and the jobs that use `repo-manager` run inside it, so they install nothing on the runner.
+
+To upgrade any of those tools, edit the version in that Dockerfile. Merging the edit republishes `latest` via [`build-repo-manager-container.yml`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/build-repo-manager-container.yml), which also rebuilds weekly to pick up base image updates. The image is also tagged by commit sha, to roll back to.
+
+The model weights are the one thing the image does not carry — they are 23GB — so they stay on the runner, in the same `hf-cache` beside the workspace that the nightly benchmark job uses on those machines. Runners that take these jobs need podman and GPU group access; see [Self Hosted Runners](self-hosted-runners.md#linux-machine-setup).
+
+
 ## Release Lifecycle
 
 ### 1. Create and Publish the First Candidate

@@ -14,6 +14,7 @@ concurrency:
 permissions:
   contents: read
   issues: read
+  packages: read
   pull-requests: read
 
 jobs:
@@ -52,6 +53,17 @@ jobs:
     if: needs.list-commits.outputs.shas != '[]'
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
     timeout-minutes: 120
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/repo-manager:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      # The model's recipe does not pin a llamacpp backend, so lemond picks: Vulkan needs
+      # /dev/dri, ROCm also needs /dev/kfd. Passing both means the choice does not have to
+      # be predicted here. keep-groups passes the runner account's render/video membership
+      # through, which rootless podman needs to reach those devices and which Docker does
+      # not accept.
+      options: --device /dev/dri --device /dev/kfd --group-add keep-groups
     strategy:
       fail-fast: false
       matrix:

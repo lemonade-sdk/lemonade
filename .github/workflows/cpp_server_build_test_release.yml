@@ -2734,11 +2734,24 @@ jobs:
     if: startsWith(github.ref, 'refs/heads/release-v')
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
     timeout-minutes: 180
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/repo-manager:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      # The model's recipe does not pin a llamacpp backend, so lemond picks: Vulkan needs
+      # /dev/dri, ROCm also needs /dev/kfd. Passing both means the choice does not have to
+      # be predicted here. keep-groups passes the runner account's render/video membership
+      # through, which rootless podman needs to reach those devices and which Docker does
+      # not accept.
+      options: --device /dev/dri --device /dev/kfd --group-add keep-groups
     # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
-    # repository's pull requests and issues.
+    # repository's pull requests and issues, and runs from an image in this repository's
+    # container registry.
     permissions:
       contents: read
       issues: read
+      packages: read
       pull-requests: read
     # One release's notes, checklist and announcement are one set of files, so successive
     # builds of the same release queue instead of overwriting each other.
