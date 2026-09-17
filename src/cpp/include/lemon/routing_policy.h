@@ -84,6 +84,13 @@ struct RouteContext {
         std::optional<std::size_t> expected_output_tokens;
     } params;
 
+    // UTF-8 byte length of every USER-role turn's text content, oldest-first,
+    // ending with the same turn that produced `input`/`params.chars`. Populated
+    // by build_route_context() regardless of whether the policy has a
+    // `momentum` block — used only to fold into a single effective_chars
+    // scalar in RoutingPolicyEngine::route(); no Condition reads it directly.
+    std::vector<std::size_t> user_turn_chars;
+
     // Routing inputs carried on the OpenAI `metadata` body field. List values
     // are comma-encoded by the caller; the engine exposes them verbatim. Trust
     // puts keys like "task_class"/"consent" here.
@@ -374,6 +381,13 @@ struct EvalContext {
     // ASCII-lowered copy of request.input, memoized so keyword leaves fold the
     // input at most once per request (the input is constant within a request).
     std::optional<std::string> lowered_input;
+
+    // Momentum-filtered effective length, computed once by
+    // RoutingPolicyEngine::route() from policy_.momentum + request's
+    // user_turn_chars, before rule evaluation — iff policy_.momentum.enabled.
+    // nullopt (the default) => CharsCondition reads request.params.chars
+    // exactly as it did before momentum existed.
+    std::optional<double> effective_chars;
 };
 
 // A node in a rule's compiled match tree. Both composites (all/any/not) and
@@ -443,6 +457,15 @@ LeafFactory make_leaf_factory(const std::map<std::string, ClassifierPtr>& classi
 // make_leaf_factory's deterministic_factories so rules can use these ops.
 NamedLeafFactories make_deterministic_leaf_factories();
 
+// Pure momentum filter: folds a per-user-turn UTF-8 byte-length series into a
+// single "effective length" via an asymmetric EMA — `attack` weight when a
+// turn's length rises (>=) the running value, `release` weight when it falls.
+// m_1 = turn_chars[0]; m_i = m_{i-1} + w*(c_i - m_{i-1}). Returns 0.0 for an
+// empty series (a defensive edge case; build_route_context never produces
+// one). attack=release=1.0 degenerates to m_n == turn_chars.back() bit-for-bit.
+double compute_effective_chars(const std::vector<std::size_t>& turn_chars,
+                               double attack, double release);
+
 // ---------------------------------------------------------------------------
 // Policy + engine (constructor signature only here)
 // ---------------------------------------------------------------------------
@@ -461,6 +484,15 @@ struct RoutePolicy {
     // without re-walking classifiers. Candidates are excluded — they load as
     // Standard residency when selected, not as helpers.
     std::vector<std::string> helper_models;
+
+    // Opt-in momentum filter for min_chars/max_chars. Off by default => zero
+    // behavior change for any policy that doesn't author this block. See
+    // compute_effective_chars() and CharsCondition.
+    struct Momentum {
+        bool enabled = false;
+        double attack = 1.0;    // rising-turn weight; instant escalation by default
+        double release = 0.3;   // falling-turn weight; slow decay by default
+    } momentum;
 };
 
 // Sorted, de-duplicated union of every classifier's referenced_models() — the
