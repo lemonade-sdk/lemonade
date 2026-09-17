@@ -238,9 +238,7 @@ curl -X POST http://localhost:13305/v1/pull \
 
 ### Edit JSON files directly
 
-Advanced users can edit `user_models.json` and `recipe_options.json` directly. The rest of this guide documents those files and gives complete examples.
-
-`lemond` reads both files at startup. **Restart `lemond` to pick up an edit made this way.** The CLI and API workflows above do not need a restart, because the server makes the change itself.
+Advanced users can edit `user_models.json` and `recipe_options.json` directly, however you must restart lemond for the changes to take effect. The rest of this guide documents those files and gives complete examples.
 
 ## Overview
 
