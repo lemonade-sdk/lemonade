@@ -15,7 +15,9 @@ Usage:
 
 import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 import http.server
 import threading
@@ -258,12 +260,9 @@ class MockOTLPServer(http.server.HTTPServer):
         self.request_queue = Queue()
 
 
-def find_free_port():
-    s = socket.socket()
-    s.bind(("", 0))
-    port = s.getsockname()[1]
-    s.close()
-    return port
+from utils.server_fixture import allocate_free_port, lemond_server, make_clean_env
+
+find_free_port = allocate_free_port
 
 
 def _get_header_value(headers, target_key):
@@ -1279,80 +1278,61 @@ class ReliabilityTests(TelemetryTestBase):
         original_env_val = os.environ.get(env_key)
         os.environ[env_key] = "X-Env-Header=EnvValue, Authorization=Bearer env_token"
 
-        lemond_bin = get_default_lemond_binary()
-        temp_port = find_free_port()
-
-        # Start a temporary server process with the updated env
-        env = os.environ.copy()
-        proc = subprocess.Popen(
-            [lemond_bin, "./build/temp_cache", "--port", str(temp_port)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            env=env,
-        )
-
+        temp_port = allocate_free_port()
+        temp_cache = tempfile.mkdtemp(prefix="temp_cache_")
+        env = make_clean_env(temp_cache)
+        env[env_key] = "X-Env-Header=EnvValue, Authorization=Bearer env_token"
         try:
-            # Wait for temporary server to start
-            for i in range(30):
-                try:
-                    requests.get(
-                        f"http://localhost:{temp_port}/api/v1/models", timeout=1
-                    )
-                    break
-                except:
-                    time.sleep(1)
-            else:
-                self.fail("Temporary lemond server failed to start")
-
-            # Enable telemetry pointing to mock collector on the temporary server
-            config_payload = {
-                "telemetry": {
-                    "enabled": True,
-                    "otlp": {
-                        "endpoint": f"http://127.0.0.1:{self.mock_port}/v1/traces",
-                        "headers": {},
-                    },
+            with lemond_server(
+                port=temp_port,
+                cache_dir=temp_cache,
+                env=env,
+                wait_health=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ):
+                # Enable telemetry pointing to mock collector on the temporary server
+                config_payload = {
+                    "telemetry": {
+                        "enabled": True,
+                        "otlp": {
+                            "endpoint": f"http://127.0.0.1:{self.mock_port}/v1/traces",
+                            "headers": {},
+                        },
+                    }
                 }
-            }
-            res = self._auth_post(
-                f"http://localhost:{temp_port}/internal/set", config_payload
-            )
-            self.assertEqual(res.status_code, 200, res.text)
+                res = self._auth_post(
+                    f"http://localhost:{temp_port}/internal/set", config_payload
+                )
+                self.assertEqual(res.status_code, 200, res.text)
 
-            # Send completions request to the temporary server
-            self._chat_completion("Hi.", port=temp_port)
+                # Send completions request to the temporary server
+                self._chat_completion("Hi.", port=temp_port)
 
-            # Wait for mock collector to receive telemetry span
-            span_received = self._wait_for_span()
+                # Wait for mock collector to receive telemetry span
+                span_received = self._wait_for_span()
 
-            self.assertIsNotNone(
-                span_received,
-                "Telemetry span was not received by the OTLP mock receiver.",
-            )
+                self.assertIsNotNone(
+                    span_received,
+                    "Telemetry span was not received by the OTLP mock receiver.",
+                )
 
-            # Assert headers case-insensitively
-            headers = span_received["headers"]
-            val_env = _get_header_value(headers, "x-env-header")
-            val_auth = _get_header_value(headers, "authorization")
+                # Assert headers case-insensitively
+                headers = span_received["headers"]
+                val_env = _get_header_value(headers, "x-env-header")
+                val_auth = _get_header_value(headers, "authorization")
 
-            self.assertIsNotNone(
-                val_env, "x-env-header was not found in received headers"
-            )
-            self.assertIsNotNone(
-                val_auth, "authorization header was not found in received headers"
-            )
-            self.assertEqual(val_env.lower(), "EnvValue".lower())
-            self.assertEqual(val_auth.lower(), "Bearer env_token".lower())
+                self.assertIsNotNone(
+                    val_env, "x-env-header was not found in received headers"
+                )
+                self.assertIsNotNone(
+                    val_auth, "authorization header was not found in received headers"
+                )
+                self.assertEqual(val_env.lower(), "EnvValue".lower())
+                self.assertEqual(val_auth.lower(), "Bearer env_token".lower())
 
         finally:
-            # Terminate temporary server
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-
+            shutil.rmtree(temp_cache, ignore_errors=True)
             # Clean up os.environ
             if original_env_val is not None:
                 os.environ[env_key] = original_env_val
