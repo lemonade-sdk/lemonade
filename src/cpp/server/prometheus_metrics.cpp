@@ -335,12 +335,14 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     metrics.describe("lemonade_model_input_tokens", "Latest input token count reported by a model.", "gauge");
     metrics.describe("lemonade_model_output_tokens", "Latest output token count reported by a model.", "gauge");
     metrics.describe("lemonade_model_prompt_tokens", "Latest prompt token count reported by a model.", "gauge");
+    metrics.describe("lemonade_model_cache_tokens", "Latest prompt tokens served from the backend prefix cache for a model.", "gauge");
     metrics.describe("lemonade_model_time_to_first_token_seconds", "Latest time to first token reported by a model.", "gauge");
     metrics.describe("lemonade_model_tokens_per_second", "Latest generation throughput reported by a model.", "gauge");
     metrics.describe("lemonade_model_requests_total", "Cumulative inference requests observed for a model.", "counter");
     metrics.describe("lemonade_model_input_tokens_total", "Cumulative input tokens observed for a model.", "counter");
     metrics.describe("lemonade_model_output_tokens_total", "Cumulative output tokens observed for a model.", "counter");
     metrics.describe("lemonade_model_prompt_tokens_total", "Cumulative prompt tokens observed for a model.", "counter");
+    metrics.describe("lemonade_model_cache_tokens_total", "Cumulative prompt tokens served from the backend prefix cache for a model.", "counter");
 
     for (const auto& model : model_metrics) {
         std::map<std::string, std::string> labels = {
@@ -365,6 +367,9 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
         if (json_number_as_double(telemetry.value("prompt_tokens", json()), metric_value)) {
             metrics.sample("lemonade_model_prompt_tokens", labels, metric_value);
         }
+        if (json_number_as_double(telemetry.value("cache_tokens", json()), metric_value)) {
+            metrics.sample("lemonade_model_cache_tokens", labels, metric_value);
+        }
         if (json_number_as_double(telemetry.value("time_to_first_token", json()), metric_value)) {
             metrics.sample("lemonade_model_time_to_first_token_seconds", labels, metric_value);
         }
@@ -380,6 +385,8 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
                             telemetry.value("output_tokens_total", 0ULL));
         metrics.sample_uint("lemonade_model_prompt_tokens_total", labels,
                             telemetry.value("prompt_tokens_total", 0ULL));
+        metrics.sample_uint("lemonade_model_cache_tokens_total", labels,
+                            telemetry.value("cache_tokens_total", 0ULL));
     }
 
     std::set<std::string> described_backend_metrics;
@@ -408,10 +415,16 @@ std::string build_prometheus_metrics(Router& router, const SystemMetrics& system
     metrics.describe("lemonade_input_tokens_total", "Cumulative input tokens observed by Lemonade.", "counter");
     metrics.describe("lemonade_output_tokens_total", "Cumulative output tokens observed by Lemonade.", "counter");
     metrics.describe("lemonade_prompt_tokens_total", "Cumulative prompt tokens observed by Lemonade.", "counter");
+    metrics.describe("lemonade_cache_tokens_total", "Cumulative prompt tokens served from backend prefix caches.", "counter");
+    metrics.describe("lemonade_routing_decisions_total", "Cumulative collection.router routing decisions.", "counter");
+    metrics.describe("lemonade_routing_switches_total", "Cumulative routing decisions that changed a conversation's routed model.", "counter");
     metrics.sample_uint("lemonade_requests_total", {}, totals.value("requests", 0ULL));
     metrics.sample_uint("lemonade_input_tokens_total", {}, totals.value("input_tokens", 0ULL));
     metrics.sample_uint("lemonade_output_tokens_total", {}, totals.value("output_tokens", 0ULL));
     metrics.sample_uint("lemonade_prompt_tokens_total", {}, totals.value("prompt_tokens", 0ULL));
+    metrics.sample_uint("lemonade_cache_tokens_total", {}, totals.value("cache_tokens", 0ULL));
+    metrics.sample_uint("lemonade_routing_decisions_total", {}, totals.value("routing_decisions", 0ULL));
+    metrics.sample_uint("lemonade_routing_switches_total", {}, totals.value("routing_switches", 0ULL));
 
     metrics.describe("lemonade_cpu_usage_percent", "System CPU utilization percentage.", "gauge");
     if (system_metrics.cpu_percent >= 0 && std::isfinite(system_metrics.cpu_percent)) {

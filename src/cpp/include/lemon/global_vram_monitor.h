@@ -8,7 +8,8 @@
 
 namespace lemon {
 
-// Callback function type: receives current VRAM usage percentage (0.0 to 1.0)
+// Callback function type. Hardware samples are 0.0 to 1.0; negative values are
+// reserved for explicit idle-only evaluations through the internal test/admin hook.
 using VramPressureCallback = std::function<void(double)>;
 
 class GlobalVramMonitor {
@@ -25,8 +26,8 @@ public:
     // Register a callback to be notified of the current VRAM usage
     void set_pressure_callback(VramPressureCallback callback);
 
-    // Test/admin hook: synchronously fire the pressure callback with a
-    // simulated usage fraction, bypassing the hardware poll.
+    // Test/admin hook: synchronously fire the pressure callback. A negative pct
+    // requests an idle-only eviction-engine evaluation without pressure eviction.
     void simulate_pressure(double pct) {
         std::lock_guard<std::mutex> lock(callback_mutex_);
         if (pressure_callback_) {

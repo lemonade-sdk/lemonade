@@ -54,7 +54,10 @@ nlohmann::json build_opencode_provider_block(
     for (const auto& model : models) {
         nlohmann::json model_entry = nlohmann::json::object();
         model_entry["name"] = model.display_name;
-        model_entry["contextWindow"] = model.context_window;
+        model_entry["limit"] = nlohmann::json::object({
+            {"context", model.context_window},
+            {"output", model.context_window / 3}
+        });
         models_json[model.id] = std::move(model_entry);
     }
     provider_block["models"] = std::move(models_json);

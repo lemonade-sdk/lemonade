@@ -1,10 +1,10 @@
 import { downloadTracker } from './downloadTracker';
 import type { DownloadProgressEvent } from './downloadTracker';
 import { serverFetch } from './serverConfig';
-import { fetchSystemInfoData, Recipes } from './systemData';
+import { fetchSystemInfoData, Recipes, SystemData } from './systemData';
 import { ModelsData } from './modelData';
 import { toFrontendOptionName, OPTION_DEFINITIONS } from '../recipes/recipeOptionsConfig';
-import { getCollectionComponents, isCollectionModel } from './collectionModels';
+import { getCollectionComponents, isCollectionModel, isRouterCollection } from './collectionModels';
 
 function extractServerErrorMessage(errorText: string, fallback: string): string {
   if (!errorText) return fallback;
@@ -384,12 +384,14 @@ export async function installBackend(
  * Install the appropriate backend for a recipe before loading a model.
  * Uses recipe default backend (first backend in server-provided priority order).
  * Installs/updates when required and throws actionable errors when not viable.
+ * Returns true when an installation was performed.
  */
 export async function ensureBackendForRecipe(
   recipe: string,
-  recipes?: Recipes
-): Promise<void> {
-  if (!recipes || !recipes[recipe]) return;
+  recipes?: Recipes,
+  options?: { autoOpenGuide?: boolean }
+): Promise<boolean> {
+  if (!recipes || !recipes[recipe]) return false;
 
   const recipeInfo = recipes[recipe];
   const defaultBackend = recipeInfo.default_backend;
@@ -404,17 +406,19 @@ export async function ensureBackendForRecipe(
 
   // `update_available` is a soft signal: the backend is fully usable, GitHub
   // just has a newer tag. Don't block model flows on it.
-  if (backendInfo.state === 'installed' || backendInfo.state === 'update_available') return;
+  if (backendInfo.state === 'installed' || backendInfo.state === 'update_available') return false;
 
   if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
     const action = backendInfo.action || '';
     const htmlUrlMatch = action.match(/https?:\/\/[^\s]+\.html/);
     if (htmlUrlMatch) {
-      window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: htmlUrlMatch[0] } }));
+      if (options?.autoOpenGuide !== false) {
+        window.dispatchEvent(new CustomEvent('open-external-content', { detail: { url: htmlUrlMatch[0] } }));
+      }
       throw new Error(backendInfo.message || `Please follow the guide to set up ${recipe}.`);
     }
     await installBackend(recipe, defaultBackend, true);
-    return;
+    return true;
   }
 
   if (backendInfo.state === 'unsupported') {
@@ -675,6 +679,11 @@ function extractExplicitBackend(loadBody?: Record<string, unknown>): { recipe: s
  * 4. Check if model is downloaded → re-verify via /models if uncertain
  * 5. If not downloaded, pull model (tracked in Download Manager)
  * 6. POST /load → load model into memory (merge loadBody if provided)
+ *
+ * Collections recurse into their components. Router collections diverge:
+ * candidates share a single /health and /system-info snapshot, run steps 1-5
+ * only (skipLoad - the server loads the routed candidate on demand), and a
+ * failing candidate is non-fatal unless every candidate fails.
  */
 export async function ensureModelReady(
   modelName: string,
@@ -688,12 +697,31 @@ export async function ensureModelReady(
   await ensureModelReadyInternal(modelName, modelsData, options, new Set<string>());
 }
 
+interface PreflightShared {
+  systemData: SystemData | null;
+  loadedModels: Set<string> | null;
+}
+
+async function fetchLoadedModelSnapshot(): Promise<Set<string> | null> {
+  try {
+    const healthResponse = await serverFetch('/health');
+    if (!healthResponse.ok) return null;
+    const healthData = await healthResponse.json();
+    const allLoaded: any[] = healthData.all_models_loaded || [];
+    return new Set(allLoaded.map((m: any) => String(m.model_name)));
+  } catch {
+    return null;
+  }
+}
+
 async function ensureModelReadyInternal(
   modelName: string,
   modelsData: ModelsData,
   options: {
     onModelLoading?: () => void;
     skipHealthCheck?: boolean;
+    skipLoad?: boolean;
+    shared?: PreflightShared;
     loadBody?: Record<string, unknown>;
   } | undefined,
   visited: Set<string>,
@@ -706,35 +734,68 @@ async function ensureModelReadyInternal(
     const modelInfo = modelsData[modelName];
     if (isCollectionModel(modelInfo)) {
       options?.onModelLoading?.();
+      // Router candidates only get installed/downloaded here. Loading is left
+      // to the server's dispatch, which loads just the routed candidate —
+      // pre-loading all of them thrashes the LRU cache and makes one broken
+      // candidate abort the whole turn.
+      const skipLoad = options?.skipLoad || isRouterCollection(modelInfo);
+      // One /health and /system-info round-trip serves all candidates instead
+      // of a pair per candidate.
+      const shared: PreflightShared = options?.shared ?? { systemData: null, loadedModels: null };
+      if (skipLoad && !shared.loadedModels && !options?.skipHealthCheck) {
+        shared.loadedModels = await fetchLoadedModelSnapshot();
+      }
       const components = getCollectionComponents(modelInfo);
+      const failures: string[] = [];
       for (const component of components) {
-        if (!modelsData[component]) {
-          throw new Error(`Omni-model "${modelName}" references missing component "${component}".`);
+        try {
+          if (!modelsData[component]) {
+            throw new Error(`Collection model "${modelName}" references missing component "${component}".`);
+          }
+          await ensureModelReadyInternal(component, modelsData, {
+            onModelLoading: options?.onModelLoading,
+            skipHealthCheck: options?.skipHealthCheck,
+            skipLoad,
+            shared,
+          }, visited);
+        } catch (error: any) {
+          // A router turn survives unusable candidates as long as one works;
+          // a paused download is a user decision, not a broken candidate.
+          if (!skipLoad || error instanceof DownloadAbortError) {
+            throw error;
+          }
+          failures.push(`${component}: ${error?.message || 'unknown error'}`);
         }
-        await ensureModelReadyInternal(component, modelsData, {
-          onModelLoading: options?.onModelLoading,
-          skipHealthCheck: options?.skipHealthCheck,
-        }, visited);
+      }
+      if (skipLoad && components.length > 0 && failures.length === components.length) {
+        throw new Error(`No usable candidates in "${modelName}":\n${failures.join('\n')}`);
       }
       return;
     }
 
     // Step 1: Check if model is already loaded via health endpoint
     if (!options?.skipHealthCheck) {
-      try {
-        const healthResponse = await serverFetch('/health');
-        if (healthResponse.ok) {
-          const healthData = await healthResponse.json();
-          const allLoaded: any[] = healthData.all_models_loaded || [];
-          const isLoaded = allLoaded.some(
-            (m: any) => m.model_name === modelName
-          );
-          if (isLoaded) {
-            return; // Model is already loaded - fast path
-          }
+      const loadedSnapshot = options?.shared?.loadedModels;
+      if (loadedSnapshot) {
+        if (loadedSnapshot.has(modelName)) {
+          return;
         }
-      } catch {
-        // Health check failed - continue with the full pre-flight
+      } else {
+        try {
+          const healthResponse = await serverFetch('/health');
+          if (healthResponse.ok) {
+            const healthData = await healthResponse.json();
+            const allLoaded: any[] = healthData.all_models_loaded || [];
+            const isLoaded = allLoaded.some(
+              (m: any) => m.model_name === modelName
+            );
+            if (isLoaded) {
+              return; // Model is already loaded - fast path
+            }
+          }
+        } catch {
+          // Health check failed - continue with the full pre-flight
+        }
       }
     }
 
@@ -744,6 +805,20 @@ async function ensureModelReadyInternal(
     // Step 3: Ensure backend is installed (fetch fresh system info to avoid stale closure)
     const recipe = modelInfo?.recipe;
     if (recipe) {
+      const shared = options?.shared;
+      const getRecipes = async () => {
+        if (shared) {
+          if (!shared.systemData) {
+            shared.systemData = await fetchSystemInfoData();
+          }
+          return shared.systemData.info?.recipes;
+        }
+        return (await fetchSystemInfoData()).info?.recipes;
+      };
+      // An install changes backend states, so later candidates must refetch.
+      const invalidateSystemData = () => {
+        if (shared) shared.systemData = null;
+      };
       // If loadBody specifies an explicit backend, install that one specifically
       const selectedBackendOptions = {
         ...(modelInfo?.recipe_options ?? {}),
@@ -751,14 +826,14 @@ async function ensureModelReadyInternal(
       };
       const explicitBackend = extractExplicitBackend(selectedBackendOptions);
       if (explicitBackend) {
-        const freshSystemData = await fetchSystemInfoData();
-        const freshRecipes = freshSystemData.info?.recipes;
+        const freshRecipes = await getRecipes();
         const recipeInfo = freshRecipes?.[explicitBackend.recipe];
         const backendInfo = recipeInfo?.backends?.[explicitBackend.backend];
 
         if (backendInfo) {
           if (backendInfo.state === 'installable' || backendInfo.state === 'update_required') {
             await installBackend(explicitBackend.recipe, explicitBackend.backend, true);
+            invalidateSystemData();
           } else if (backendInfo.state === 'unsupported') {
             const reason = backendInfo.message || 'Backend is not supported on this system.';
             throw new Error(`${explicitBackend.recipe}:${explicitBackend.backend} is unsupported. ${reason}`);
@@ -767,9 +842,13 @@ async function ensureModelReadyInternal(
           throw new Error(`Selected backend not found: ${explicitBackend.recipe}:${explicitBackend.backend}`);
         }
       } else {
-        const freshSystemData = await fetchSystemInfoData();
-        const freshRecipes = freshSystemData.info?.recipes;
-        await ensureBackendForRecipe(recipe, freshRecipes);
+        const freshRecipes = await getRecipes();
+        // Setup guides only auto-open for a model the user directly targeted;
+        // a router candidate may never be routed to.
+        const installed = await ensureBackendForRecipe(recipe, freshRecipes, {
+          autoOpenGuide: !options?.skipLoad,
+        });
+        if (installed) invalidateSystemData();
       }
     }
 
@@ -796,6 +875,9 @@ async function ensureModelReadyInternal(
     }
 
     // Step 6: Load model into memory (merge loadBody if provided)
+    if (options?.skipLoad) {
+      return;
+    }
     const loadModel = async () => {
       const loadPayload: Record<string, unknown> = { model_name: modelName, ...options?.loadBody };
       const loadResponse = await serverFetch('/load', {

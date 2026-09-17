@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - 'release-v*'
     tags:
       - '*'
   pull_request:
@@ -39,12 +40,6 @@ jobs:
                 "release": "24.04",
                 "distro": "ubuntu",
                 "codename": "noble",
-                "ppa": "ppa:lemonade-team/bleeding-edge"
-              },
-              {
-                "release": "25.10",
-                "distro": "ubuntu",
-                "codename": "questing",
                 "ppa": "ppa:lemonade-team/bleeding-edge"
               },
               {
@@ -153,8 +148,21 @@ jobs:
     steps:
       - name: Install checkout prerequisites
         run: |
-          apt-get update
-          apt-get install -y git ca-certificates software-properties-common
+          set -e
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if apt-get update && \
+                apt-get install -y git ca-certificates software-properties-common; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Add PPA for build dependencies
         if: matrix.ppa != ''
@@ -172,17 +180,30 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          apt-get update
-          apt-get install -y \
-            build-essential \
-            curl \
-            debhelper \
-            devscripts \
-            dpkg-dev \
-            git \
-            python3-pip \
-            python3-venv \
-            unzip
+          set -e
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if apt-get update && \
+                apt-get install -y \
+                  build-essential \
+                  curl \
+                  debhelper \
+                  devscripts \
+                  dpkg-dev \
+                  git \
+                  python3-pip \
+                  python3-venv \
+                  unzip; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
 
       - name: Prepare Debian build
         id: get_version
@@ -208,8 +229,6 @@ jobs:
 
   upload-stable:
     name: Upload (Stable)
-    strategy:
-      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     needs: [prepare-matrix, package]
     permissions:
       contents: read
@@ -217,21 +236,31 @@ jobs:
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/stable
-      artifact: lemonade-${{ matrix.codename }}-source-package
+      package_matrix: ${{ needs.prepare-matrix.outputs.package_matrix }}
+    secrets: inherit
+
+  upload-candidate:
+    name: Upload (Candidate)
+    needs: [prepare-matrix, package]
+    permissions:
+      contents: read
+    if: ${{ startsWith(github.ref, 'refs/heads/release-v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    uses: ./.github/workflows/upload.yml
+    with:
+      target: ppa:lemonade-team/candidate
+      package_matrix: ${{ needs.prepare-matrix.outputs.package_matrix }}
     secrets: inherit
 
   upload-bleeding-edge:
     name: Upload (Bleeding Edge)
-    strategy:
-      matrix: ${{ fromJSON(needs.prepare-matrix.outputs.package_matrix) }}
     needs: [prepare-matrix, package]
     permissions:
       contents: read
-    if: ${{ !startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     uses: ./.github/workflows/upload.yml
     with:
       target: ppa:lemonade-team/bleeding-edge
-      artifact: lemonade-${{ matrix.codename }}-source-package
+      package_matrix: ${{ needs.prepare-matrix.outputs.package_matrix }}
     secrets: inherit
 
   # Gate job that ensures: 1. in the merge queue, all jobs in `needs:` ran

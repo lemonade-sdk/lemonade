@@ -40,7 +40,7 @@
         "--background-index",
         "--clang-tidy",
         "--header-insertion=iwyu",
-        "--completion-style=detailed",
+        "--completion-style=detailed"
     ],
     "cmake.debugConfig": {
         "args": [
@@ -122,5 +122,5 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "variant": "cpp"
-    },
+    }
 }

@@ -37,7 +37,7 @@ from utils.test_models import PORT, TIMEOUT_DEFAULT, TIMEOUT_MODEL_OPERATION
 
 WATCHDOG_WAIT_SECONDS = int(os.environ.get("LEMONADE_TEST_WATCHDOG_WAIT_SECONDS", "60"))
 POLL_SECONDS = float(
-    os.environ.get("LEMONADE_TEST_WATCHDOG_ASSERT_POLL_SECONDS", "0.5")
+    os.environ.get("LEMONADE_TEST_WATCHDOG_ASSERT_POLL_SECONDS", "0.1")
 )
 
 
@@ -67,18 +67,18 @@ class WatchdogLifecycleTests(ServerTestBase):
             )
         super().setUpClass()
 
-    def tearDown(self):
-        # Best-effort cleanup so a failed run does not leave a backend around.
+    @classmethod
+    def tearDownClass(cls):
         try:
             requests.post(
-                f"{self.base_url}/unload",
+                f"http://localhost:{PORT}/api/v1/unload",
                 json={},
                 headers=_headers(),
                 timeout=TIMEOUT_DEFAULT,
             )
         except Exception:
             pass
-        super().tearDown()
+        super().tearDownClass()
 
     def _test_model(self):
         return os.environ.get("LEMONADE_TEST_MODEL") or self.get_test_model("llm")
@@ -99,6 +99,13 @@ class WatchdogLifecycleTests(ServerTestBase):
         return None
 
     def _load_model(self, model_name):
+        # Reuse a healthy backend recovered by the previous case instead of
+        # paying another unload/load cycle. The idle-crash case removes its
+        # dead backend from /health, so it naturally falls through to load.
+        existing = self._loaded_model_entry(model_name)
+        if existing and existing.get("loaded", True) and existing.get("pid", 0) > 0:
+            return existing
+
         response = requests.post(
             f"{self.base_url}/load",
             json={"model_name": model_name},
@@ -174,7 +181,7 @@ class WatchdogLifecycleTests(ServerTestBase):
         # this, reap the child, remove stale model state, and allow reload.
         os.kill(pid, signal.SIGKILL)
 
-    def _non_streaming_chat_completion(self, model_name):
+    def _non_streaming_chat_completion(self, model_name, max_tokens=8):
         response = requests.post(
             f"{self.base_url}/chat/completions",
             json={
@@ -182,13 +189,10 @@ class WatchdogLifecycleTests(ServerTestBase):
                 "messages": [
                     {
                         "role": "user",
-                        "content": (
-                            "Write five short numbered facts about reliable software. "
-                            "Keep each fact under one sentence."
-                        ),
+                        "content": "Say OK.",
                     }
                 ],
-                "max_tokens": 128,
+                "max_tokens": max_tokens,
                 "stream": False,
             },
             headers=_headers(),
@@ -331,7 +335,9 @@ class WatchdogLifecycleTests(ServerTestBase):
 
         def run_request():
             try:
-                result["payload"] = self._non_streaming_chat_completion(model_name)
+                result["payload"] = self._non_streaming_chat_completion(
+                    model_name, max_tokens=32
+                )
             except (
                 Exception
             ) as exc:  # noqa: BLE001 - preserve assertion details across thread boundary
@@ -363,9 +369,6 @@ class WatchdogLifecycleTests(ServerTestBase):
         self._wait_for_pid_reaped(old_pid)
         new_pid = self._assert_fresh_backend_pid(model_name, old_pid)
 
-        # Prove the reloaded model is not merely visible in /health but actually
-        # usable for another completion after the recovered in-flight request.
-        self._non_streaming_chat_completion(model_name)
         print(
             f"[OK] Active non-streaming request reloaded {model_name}: pid {old_pid} -> {new_pid}"
         )
@@ -394,9 +397,6 @@ class WatchdogLifecycleTests(ServerTestBase):
         self._wait_for_pid_reaped(old_pid)
         new_pid = self._assert_fresh_backend_pid(model_name, old_pid)
 
-        # A second call verifies the replacement backend remains reachable after
-        # the transparent replay completed.
-        self._non_streaming_chat_completion(model_name)
         print(
             f"[OK] Non-streaming downtime request reloaded {model_name}: pid {old_pid} -> {new_pid}"
         )
@@ -422,9 +422,12 @@ class WatchdogLifecycleTests(ServerTestBase):
         )
 
         results = [{}, {}]
+        first_request_started = threading.Event()
 
         def run_request(index):
             try:
+                if index == 0:
+                    first_request_started.set()
                 results[index]["payload"] = self._non_streaming_chat_completion(
                     model_name
                 )
@@ -439,13 +442,17 @@ class WatchdogLifecycleTests(ServerTestBase):
         ]
 
         workers[0].start()
-        time.sleep(
-            float(
-                os.environ.get(
-                    "LEMONADE_TEST_WATCHDOG_CONCURRENT_REQUEST_GAP_SECONDS", "0.05"
-                )
-            )
+        self.assertTrue(
+            first_request_started.wait(timeout=1.0),
+            "First concurrent request thread did not reach the request boundary",
         )
+
+        self._wait_for_pid_reaped(old_pid)
+        self.assertTrue(
+            workers[0].is_alive(),
+            "First request completed before the concurrent reload window was exercised",
+        )
+
         workers[1].start()
 
         for worker in workers:

@@ -47,6 +47,10 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
   }, [refresh]);
 
   const recipes = systemInfo?.recipes;
+  // `recipes` is canonical (docs are generated from it), so host-specific
+  // availability arrives separately: these have no model that fits this
+  // machine's memory, so there is nothing to install them for.
+  const unavailableRecipes = new Set(systemInfo?.unavailable_recipes ?? []);
 
   // Fetch asset sizes from GitHub Releases API
   useEffect(() => {
@@ -137,10 +141,29 @@ const BackendManager: React.FC<BackendManagerProps> = ({ searchQuery, showError,
     window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
+  // Matches the server's own `locally_installed` (system_info.cpp): these three
+  // states all mean the backend is on disk, `update_required` included.
+  const isLocallyInstalled = (info: BackendInfo) =>
+    info.state === 'installed' ||
+    info.state === 'update_available' ||
+    info.state === 'update_required';
+
+  // An unavailable recipe has no built-in model that fits this host, so it keeps
+  // only rows for an existing installation: this panel is the only one offering
+  // uninstall (ModelManager renders the 'banner' variant, which has none), so
+  // hiding those would strand them. `installable` and `action_required` are
+  // dropped — nothing is on disk yet, and setting one up would buy the user
+  // nothing. A recipe left with no rows falls out via the length check below.
+  const keepBackend = (recipeName: string) =>
+    unavailableRecipes.has(recipeName)
+      ? isLocallyInstalled
+      : (info: BackendInfo) => info.state !== 'unsupported';
+
   const groupedBackends: Array<[string, Array<[string, BackendInfo]>]> = recipes
     ? Object.entries(recipes)
       .map(([recipeName, recipe]: [string, Recipe]) => {
-        const backends = Object.entries(recipe.backends).filter(([, info]) => info.state !== 'unsupported');
+        const keep = keepBackend(recipeName);
+        const backends = Object.entries(recipe.backends).filter(([, info]) => keep(info));
         return [recipeName, backends] as [string, Array<[string, BackendInfo]>];
       })
       .filter(([, backends]) => backends.length > 0)

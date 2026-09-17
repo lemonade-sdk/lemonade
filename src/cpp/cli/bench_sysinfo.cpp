@@ -26,8 +26,13 @@ static double parse_gb_string(const std::string& s) {
 
 json build_hardware_profile(const json& sys_info,
                             const std::vector<std::string>& recipes,
-                            const std::vector<std::string>& backends) {
+                            const std::vector<std::string>& backends,
+                            const std::string& lemonade_version) {
     json profile;
+
+    if (!lemonade_version.empty()) {
+        profile["lemonade_version"] = lemonade_version;
+    }
 
     try {
         std::string os_version = sys_info.value("OS Version", "unknown");

@@ -21,7 +21,9 @@ export interface ModelInstallData {
   name: string;
   checkpoint: string;
   recipe: string;
-  source: ModelRegistrySource;
+  // Omitted when the user leaves the source on "Automatic" so the server can
+  // apply its configured default_model_source.
+  source?: ModelRegistrySource;
   checkpoints?: Record<string, string>;
   mmproj?: string;
   labels?: string[];
@@ -92,7 +94,8 @@ type AddModelFormState = {
   name: string;
   checkpoint: string;
   recipe: string;
-  source: ModelRegistrySource;
+  // '' means "Automatic": defer to the server's configured default_model_source.
+  source: ModelRegistrySource | '';
   textEncoderCheckpoint: string;
   vaeCheckpoint: string;
   mmproj: string;
@@ -106,7 +109,7 @@ const createEmptyForm = (initial?: AddModelInitialValues): AddModelFormState => 
   name: initial?.name ?? '',
   checkpoint: initial?.checkpoint ?? initial?.checkpoints?.main ?? '',
   recipe: initial?.recipe ?? 'llamacpp',
-  source: initial?.source ?? 'huggingface',
+  source: initial?.source ?? '',
   textEncoderCheckpoint: initial?.checkpoints?.text_encoder ?? '',
   vaeCheckpoint: initial?.checkpoints?.vae ?? '',
   mmproj: '',
@@ -204,7 +207,9 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
     onInstall({
       name,
       checkpoint,
-      source,
+      // Only pin a registry when the user picked one; "Automatic" lets the
+      // server apply its configured default_model_source.
+      ...(source ? { source } : {}),
       checkpoints: recipe === 'sd-cpp' && hasSdComponents
         ? { main: checkpoint, text_encoder: textEncoderCheckpoint, vae: vaeCheckpoint }
         : undefined,
@@ -292,13 +297,15 @@ const AddModelPanel: React.FC<AddModelPanelProps> = ({ onClose, onInstall, initi
           <select
             className="form-input form-select"
             value={form.source}
-            onChange={(e) => handleChange('source', e.target.value as ModelRegistrySource)}
+            onChange={(e) => handleChange('source', e.target.value as ModelRegistrySource | '')}
           >
+            <option value="">Automatic (server default)</option>
             <option value="huggingface">Hugging Face</option>
             <option value="modelscope">ModelScope</option>
           </select>
           <span className="settings-description">
-            Lemonade stores this source with the model so future updates use the same registry.
+            Automatic uses the server's configured default registry. Choosing one stores it with the
+            model so future updates use the same registry.
           </span>
         </div>
 

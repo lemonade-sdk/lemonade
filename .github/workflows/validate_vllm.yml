@@ -86,14 +86,15 @@ jobs:
           print(f"vllm.rocm: {old} -> {release}")
           PY
 
-      - name: Build Lemonade server
+      - name: Build lemond and the CLI
         run: |
           set -e
           ./setup.sh
           # Skip the web app; CI only exercises the backend.
           cmake -DBUILD_WEB_APP=OFF --preset default
-          cmake --build --preset default
+          cmake --build --preset default --target lemond lemonade
           test -f build/lemond || { echo "lemond not found!"; exit 1; }
+          test -f build/lemonade || { echo "lemonade not found!"; exit 1; }
           echo "Build successful!"
 
       - name: Upload build artifacts
@@ -113,7 +114,7 @@ jobs:
     name: Validate vllm (rocm)
     needs: [get-latest-releases, build]
     if: always() && needs.build.result == 'success'
-    runs-on: [self-hosted, stx-halo, Linux, lemon-prod]
+    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
     steps:
       - uses: actions/checkout@v5
         with:
@@ -138,6 +139,16 @@ jobs:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
+
+      - name: Set HF_HOME environment variable
+        run: |
+          # Persistent HF cache outside the workspace so model weights survive across
+          # jobs. The checkout clean wipes untracked workspace files (#2103), and the
+          # step below points HOME into the workspace, so the default cache location
+          # would be re-downloaded on every run.
+          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> "$GITHUB_ENV"
 
       - name: Run validation with lemond
         env:

@@ -64,11 +64,38 @@ std::string find_executable_in_path(const std::string& executable_name);
 void set_cache_dir(const std::string& dir);
 
 /**
+ * Set the lemonade config directory. Must be called once at startup before
+ * get_config_dir(). After this call, get_config_dir() returns this path.
+ */
+void set_config_dir(const std::string& dir);
+
+/**
  * Get the lemonade cache directory.
  * Returns the path set by set_cache_dir(), or falls back to
  * platform-specific defaults if set_cache_dir() was never called.
  */
 std::string get_cache_dir();
+
+/**
+ * Get the Lemonade configuration directory for persistent JSON/config files.
+ * Returns the path set by set_config_dir(), or falls back to the
+ * platform-specific config directory if set_config_dir() was never called.
+ */
+std::string get_config_dir();
+
+/**
+ * Migrate legacy JSON files on first startup after FHS split (issue #3027).
+ */
+void migrate_legacy_json_files_to_config_dir(const std::string& cache_dir,
+                                             const std::string& config_dir);
+
+/**
+ * Recover data left behind when an upgrade relocated the cache (issue #3387).
+ * Moves the pre-3028 home-based cache payload and HuggingFace models into the
+ * new cache/config/model directories. No-op when nothing was relocated.
+ */
+void migrate_legacy_paths(const std::string& cache_dir,
+                          const std::string& config_dir);
 
 /**
  * Set the models directory for HuggingFace model cache.

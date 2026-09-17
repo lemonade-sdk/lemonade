@@ -9,7 +9,7 @@
 namespace lemon {
 namespace backends {
 
-class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public IRerankingServer, public ITranscriptionServer {
+class FastFlowLMServer : public WrappedServer, public IEmbeddingsServer, public ITranscriptionServer {
 public:
     static InstallParams get_install_params(const std::string& backend, const std::string& version);
 
@@ -20,7 +20,8 @@ public:
     ~FastFlowLMServer() override;
 
     std::string download_model(const std::string& checkpoint,
-                              bool do_not_upgrade = false);
+                              bool do_not_upgrade = false,
+                              RemoteRegistrySource source = RemoteRegistrySource::HuggingFace);
 
     void load(const std::string& model_name,
              const ModelInfo& model_info,
@@ -36,9 +37,6 @@ public:
 
     // IEmbeddingsServer implementation
     json embeddings(const json& request) override;
-
-    // IRerankingServer implementation
-    json reranking(const json& request) override;
 
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
@@ -66,6 +64,7 @@ namespace fastflowlm {
 std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
+constexpr uint32_t capabilities() { return capability_mask_of<FastFlowLMServer>(); }
 }  // namespace fastflowlm
 }  // namespace backends
 }  // namespace lemon

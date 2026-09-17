@@ -206,7 +206,7 @@ void OnnxRuntimeServer::load(const std::string& model_name,
     bool inherit_output = (log_level_ == "info") || is_debug();
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         executable, args, "", inherit_output, false, {});
-    set_process_handle(started_handle);
+    set_process_handle(started_handle, executable, args);
 
     if (!has_process_handle(started_handle)) {
         throw std::runtime_error("Failed to start ort-server process");

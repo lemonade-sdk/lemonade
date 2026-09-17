@@ -29,9 +29,9 @@ inline const BackendDescriptor descriptor = {
         // everything else is wired (incl. the rocm_arch_overrides pins), so re-add them here once that lands.
         {"rocm", {"linux"}, {{"amd_gpu", {"gfx1150", "gfx1151", "gfx110X", "gfx120X"}}}, "Strix Halo iGPU (gfx1151)"},
     },
-    /*default_labels*/  {},
+    /*supported_modes*/ {"chat"},
     /*required_checkpoints*/ {"main"},
-    /*modality*/        "Text generation",
+    /*default_capabilities*/ {},
     /*experimental*/    true,
     /*web_display_name*/ "",
     /*rocm_channels*/   {},  // single rocm artifact, no stable/nightly channels

@@ -39,6 +39,7 @@ void print_table(const std::vector<BenchBackendResult>& results, const std::stri
 json to_json(const std::vector<BenchBackendResult>& results,
              const std::string& model,
              const std::string& timestamp,
-             const BenchConfig& config);
+             const BenchConfig& config,
+             const json& model_info);
 
 } // namespace lemon_cli

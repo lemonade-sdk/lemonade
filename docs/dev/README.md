@@ -30,10 +30,14 @@ Writing or improving docs? Read the [documentation guide](./documentation.md) fo
 
 Preparing a PR? Read the [testing guide](./testing.md) to learn which test suites cover your change and what reviewers expect.
 
+### Adding a Backend
+
+If you are adding a new backend, follow the template in the [adding a backend guide](./adding-a-backend.md).
+
 ### Lemonade Omni Models
 
 Lemonade has a unique capability to group LLM, image, and speech models together to present a unified omni-modal "model" to end-users. These one-click bundles are called Lemonade Omni Models, and they're routed via an internal mechanism called OmniRouter. Learn more [here](./lemonade-omni.md).
 
 ### CI System
 
-Lemonade has a CI system that tests pull requests on real AI PC hardware targets. The [self-hosted runners](./self-hosted-runners.md) guide documents how those are set up.
+Lemonade has a CI system that tests changes on real AI PC hardware targets — in the merge queue by default, or on a labeled PR (the [testing guide](./testing.md#what-defers-to-the-merge-queue) maps each `ci:*` label to the jobs it opts in). The [self-hosted runners](./self-hosted-runners.md) guide documents how those are set up.

@@ -562,7 +562,7 @@ void TrayUI::on_change_context_size(int new_ctx_size) {
     recipe_options_["ctx_size"] = new_ctx_size;
     nlohmann::json body;
     body["ctx_size"] = new_ctx_size;
-    http_post("/api/v1/params", body.dump());
+    http_post("/internal/set", body.dump());
     build_menu();
 
     std::string label = (new_ctx_size >= 1024)
@@ -710,6 +710,8 @@ std::string TrayUI::find_icon_path() {
         data_dirs.push_back("/opt/lemonade/share");
     }
     for (const auto& d : data_dirs) {
+        auto svg_clean = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonadeserver.Lemonade.svg";
+        if (fs::exists(svg_clean)) return svg_clean.string();
         auto svg = fs::path(d) / "icons/hicolor/scalable/apps/ai.lemonade_server.Lemonade.svg";
         if (fs::exists(svg)) return svg.string();
         auto ico = fs::path(d) / "lemonade-server/resources/static/favicon.ico";

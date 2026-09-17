@@ -28,6 +28,7 @@ corpus reads as a checklist against the v1 semantics table in
 ```
 1/
   l1_conditions_char_bounds/  # min_chars / max_chars (own policy: length rules are greedy)
+  l1_conditions_total_char_bounds/  # min_total_chars / max_total_chars over the whole request
   l1_conditions_features/     # boolean request-feature ops: has_tools / has_images
   l1_conditions_features_negated/  # authored has_tools:false — equality, matches when absent
   l1_conditions_metadata/     # metadata equals / any / exists / token-set semantics
@@ -55,7 +56,7 @@ Each line is one JSON object:
 | Field | Meaning |
 |-------|---------|
 | `name` | Unique, human-readable case id within the file. One case locks one behavior. |
-| `request` | A request body in any form `build_route_context` accepts: chat-completions (`messages`), legacy completions (`prompt`), or Responses (`input`), plus optional `model`, `metadata`, `tools`, and `route_trace`. The engine input is the last user message (or the `prompt`/`input` text); `min_chars`/`max_chars` count its UTF-8 bytes. |
+| `request` | A request body in any form `build_route_context` accepts: chat-completions (`messages`), legacy completions (`prompt`), or Responses (`input`), plus optional `model`, `metadata`, `tools`, and `route_trace`. The engine input is the last user message (or the `prompt`/`input` text); `min_chars`/`max_chars` count its UTF-8 bytes, while `min_total_chars`/`max_total_chars` count the UTF-8 bytes of every text part the body carries. |
 | `decision` | The exact `Decision` the engine must emit: `version`, `route_to`, `matched_rule` (empty on fall-through), `default_used`, `outputs`. |
 | `note` | Optional. Free-text annotation for a non-obvious case; ignored by the runner. |
 
@@ -99,6 +100,14 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | `max_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_char_bounds/max_chars-inclusive-boundary` |
 | `min_chars`/`max_chars` count bytes, not code points | `l1_conditions_char_bounds/max_chars-utf8-byte-count` |
 | length between the bounds satisfies neither rule ⇒ fall through to default | `l1_conditions_char_bounds/between-bounds-default` |
+| `min_total_chars` — inclusive (`>=`), UTF-8 bytes over the whole request | `l1_conditions_total_char_bounds/min_total_chars-inclusive-boundary` |
+| `min_total_chars` — one byte short ⇒ no match | `l1_conditions_total_char_bounds/min_total_chars-below-boundary` |
+| `max_total_chars` — inclusive (`<=`), UTF-8 bytes | `l1_conditions_total_char_bounds/max_total_chars-inclusive-boundary` |
+| `total_chars` counts bytes, not code points | `l1_conditions_total_char_bounds/total_chars-utf8-byte-count` |
+| `total_chars` sees conversation history a short final turn hides from `chars` | `l1_conditions_total_char_bounds/long-history-short-last-turn` |
+| `total_chars` sums every role, not just user turns | `l1_conditions_total_char_bounds/total_chars-counts-every-role` |
+| `total_chars` on the history-less `prompt` form equals `chars` | `l1_conditions_total_char_bounds/prompt-form-total-equals-chars` |
+| `total_chars` sums all items of a Responses `input` array, not just the routing item | `l1_conditions_total_char_bounds/responses-input-array-sums-all-items` |
 | `metadata` `any` — value equals one of the listed | `l1_conditions_metadata/metadata-any` |
 | `metadata` `equals` — value matches exactly | `l1_conditions_metadata/metadata-equals` |
 | `metadata` `equals` — near-miss value fails (exact, not substring) | `l1_conditions_metadata/metadata-equals-no-match` |
@@ -128,6 +137,8 @@ defines for v1 has exactly one lock, and combinators/resolution are tested once
 | trace emits condition `regex` | `l1_conditions_vocab/regex-trace` |
 | trace emits condition `min_chars` | `l1_conditions_char_bounds/min_chars-trace` |
 | trace emits condition `max_chars` | `l1_conditions_char_bounds/max_chars-trace` |
+| trace emits condition `min_total_chars` | `l1_conditions_total_char_bounds/min_total_chars-trace` |
+| trace emits condition `max_total_chars` | `l1_conditions_total_char_bounds/max_total_chars-trace` |
 | trace emits condition `has_tools` | `l1_conditions_features/has_tools-trace` |
 | trace emits condition `has_images` | `l1_conditions_features/has_images-trace` |
 | trace emits condition `metadata` | `l1_conditions_metadata/metadata-trace` |

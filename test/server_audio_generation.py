@@ -1,12 +1,13 @@
 """
 Audio generation tests for Lemonade Server.
 
-Tests the /audio/generations endpoint with the ThinkSound (sound effects)
-and ACE-Step (music) backends.
+Tests the /audio/generations endpoint with ThinkSound, ACE-Step, and
+OpenMOSS MOSS-SoundEffect backends.
 
 Usage:
     python server_audio_generation.py --wrapped-server thinksound --backend vulkan
     python server_audio_generation.py --wrapped-server acestep --backend rocm
+    python server_audio_generation.py --wrapped-server openmoss --backend vulkan
 """
 
 import requests
@@ -16,7 +17,7 @@ from utils.server_base import (
     run_server_tests,
     pull_model_with_retry,
 )
-from utils.capabilities import get_test_model
+from utils.capabilities import get_test_model, skip_if_unsupported
 from utils.test_models import (
     TIMEOUT_MODEL_OPERATION,
     TIMEOUT_DEFAULT,
@@ -178,6 +179,35 @@ class AudioGenerationTests(ServerTestBase):
         )
         self.assertIn("error", response.json(), "Response should contain 'error' field")
         print(f"[OK] Correctly rejected invalid model: {response.status_code}")
+
+    @skip_if_unsupported("pcm_audio_generation")
+    def test_007_pcm_response_metadata(self):
+        """OpenMOSS raw SoundEffect PCM carries its native 48 kHz mono contract."""
+        response = requests.post(
+            f"{self.base_url}/audio/generations",
+            json=self._generation_payload(response_format="pcm"),
+            timeout=TIMEOUT_MODEL_OPERATION,
+        )
+        self.assertEqual(response.status_code, 200, response.text[:1000])
+        self.assertIn("audio/pcm", response.headers.get("Content-Type", ""))
+        self.assertEqual(response.headers.get("X-MOSS-Sample-Rate"), "48000")
+        self.assertEqual(response.headers.get("X-MOSS-Channels"), "1")
+        self.assertFalse(response.content[:4] == b"RIFF")
+        self.assertGreater(len(response.content), 1000)
+
+    def test_008_audio_model_rejected_by_speech_endpoint(self):
+        """An audio-generation deployment cannot be driven through /audio/speech."""
+        model = get_test_model("audio_generation")
+        response = requests.post(
+            f"{self.base_url}/audio/speech",
+            json={"model": model, "input": "This is the wrong endpoint."},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 400, response.text[:1000])
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+        self.assertEqual(
+            response.json().get("error", {}).get("code"), "model_not_applicable"
+        )
 
 
 if __name__ == "__main__":

@@ -822,17 +822,8 @@ void print_model_list(const TermUi& ui,
         return;
     }
 
-    static const std::vector<std::string> non_chat = {
-        "embeddings", "reranking", "transcription", "image", "tts",
-        "upscaling", "edit"
-    };
-    auto is_non_chat = [&](const lemonade::ModelInfo& m) {
-        for (const auto& lbl : m.labels) {
-            for (const auto& nl : non_chat) {
-                if (lbl == nl) return true;
-            }
-        }
-        return false;
+    auto is_non_chat = [](const lemonade::ModelInfo& m) {
+        return !has_label(m, "chat");
     };
 
     // Best-effort: which models are currently loaded server-side?

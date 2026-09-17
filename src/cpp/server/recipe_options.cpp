@@ -3,6 +3,7 @@
 #include <lemon/utils/custom_args.h>
 #include <nlohmann/json.hpp>
 #include <map>
+#include <optional>
 #ifdef LEMONADE_CLI
 #include <CLI/CLI.hpp>
 #else
@@ -25,6 +26,7 @@ static const json& common_defaults() {
         {"downsize_idle_timeout", 60},    // Default soft idle timeout (1 min)
         {"evict_weight_factor", 1.0},     // Eviction-protection weight (higher = more protected)
         {"pinned", false},
+        {"auto_update", nullptr},
     };
     return d;
 }
@@ -83,6 +85,7 @@ static std::vector<std::string> get_keys_for_recipe(const std::string& recipe) {
     keys.push_back("downsize_idle_timeout");
     keys.push_back("evict_weight_factor");
     keys.push_back("pinned");
+    keys.push_back("auto_update");
 
     return keys;
 }
@@ -93,6 +96,33 @@ static bool is_empty_option(json option) {
            (option.is_string() && (option == "" || option == "auto"));
 }
 
+// ctx_size is the one option whose "auto" state is itself a value: -1 means
+// "size the context from available memory". Storing it has to be possible so a
+// model can be pinned to auto even when a lower layer sets an explicit size.
+// Anything that is not a number is discarded, since every consumer of ctx_size
+// reads it as an integer.
+static bool is_empty_option(const std::string& key, const json& option) {
+    if (key == "ctx_size") {
+        return !option.is_number();
+    }
+    return is_empty_option(option);
+}
+
+std::vector<std::string> RecipeOptions::keys_for_recipe(const std::string& recipe) {
+    return get_keys_for_recipe(recipe);
+}
+
+json RecipeOptions::to_resolved_json() const {
+    json resolved = json::object();
+    for (const auto& key : get_keys_for_recipe(recipe_)) {
+        resolved[key] = get_option(key);
+    }
+    return resolved;
+}
+
+bool RecipeOptions::is_default_sentinel(const std::string& key, const json& value) {
+    return is_empty_option(key, value);
+}
 
 #ifndef LEMONADE_CLI
 static bool try_get_backend_options(const std::string& opt_name, SystemInfo::SupportedBackendsResult& result) {
@@ -148,7 +178,11 @@ RecipeOptions::RecipeOptions(const std::string& recipe, const json& options) {
     std::vector<std::string> to_copy = get_keys_for_recipe(recipe_);
 
     for (auto key : to_copy) {
-        if (options.contains(key) && !is_empty_option(options[key])) {
+        if (!options.contains(key)) {
+            continue;
+        }
+        explicit_options_[key] = options[key];
+        if (!is_empty_option(key, options[key])) {
             options_[key] = options[key];
         }
     }
@@ -160,6 +194,20 @@ static std::string format_option_for_logging(const json& opt) {
     if (opt.is_number_float()) return std::to_string((double) opt);
     if (opt.is_number_integer()) return std::to_string((int) opt);
     return opt;
+}
+
+RecipeOptions RecipeOptions::merge_precedence_layers(const std::string& recipe,
+                                                     const json& lowest,
+                                                     const json& middle,
+                                                     const json& highest) {
+    json merged = lowest.is_object() ? lowest : json::object();
+    for (const json* layer : {&middle, &highest}) {
+        if (!layer->is_object()) continue;
+        for (auto it = layer->begin(); it != layer->end(); ++it) {
+            merged[it.key()] = it.value();
+        }
+    }
+    return RecipeOptions(recipe, merged);
 }
 
 json RecipeOptions::to_json() const {
@@ -183,38 +231,14 @@ std::string RecipeOptions::to_log_string(bool resolve_defaults) const {
 
 RecipeOptions RecipeOptions::inherit(const RecipeOptions& options) const {
     json merged = options_;
-    bool merge_args = options_.contains("merge_args") ? options_["merge_args"].get<bool>() : options.get_option("merge_args").get<bool>();
-
     for (auto it = options.options_.begin(); it != options.options_.end(); ++it) {
-        if (merge_args && it.key().size() >= 5 && it.key().substr(it.key().size() - 5) == "_args") {
-            // Special handling for _args options: parse, merge maps, re-stringify
-            std::string target_str = "";
-            if (merged.contains(it.key()) && merged[it.key()].is_string()) {
-                target_str = merged[it.key()];
-            }
-
-            std::string incoming_str = it.value().is_string() ? it.value() : "";
-
-            if (target_str.empty()) {
-                merged[it.key()] = incoming_str;
-            } else if (incoming_str.empty()) {
-                merged[it.key()] = target_str;
-            } else {
-                auto target_tokens = lemon::utils::parse_custom_args(target_str, true);
-                auto incoming_tokens = lemon::utils::parse_custom_args(incoming_str, true);
-
-                auto target_map = lemon::utils::build_custom_args_map(target_tokens);
-                auto incoming_map = lemon::utils::build_custom_args_map(incoming_tokens);
-
-                auto merged_map = lemon::utils::merge_args_maps(target_map, incoming_map);
-                merged[it.key()] = lemon::utils::map_to_args_string(merged_map);
-            }
-        } else if (!merged.contains(it.key()) && !is_empty_option(it.value())) {
+        if (!merged.contains(it.key()) && !is_empty_option(it.key(), it.value())) {
             merged[it.key()] = it.value();
         }
     }
-
-    return RecipeOptions(recipe_, merged);
+    RecipeOptions inherited(recipe_, merged);
+    inherited.explicit_options_ = explicit_options_;
+    return inherited;
 }
 
 json RecipeOptions::get_option(const std::string& opt) const {
@@ -233,12 +257,27 @@ json RecipeOptions::get_option(const std::string& opt) const {
     return get_defaults().contains(opt) ? get_defaults()[opt] : json();
 }
 
+bool RecipeOptions::has_option(const std::string& opt) const {
+    return options_.contains(opt);
+}
+
 void RecipeOptions::set_option(const std::string& opt, const json& value) {
     options_[opt] = value;
+    explicit_options_[opt] = value;
 }
 
 void RecipeOptions::remove_option(const std::string& opt) {
     options_.erase(opt);
+    explicit_options_.erase(opt);
+}
+
+bool RecipeOptions::has_explicit_option(const std::string& opt) const {
+    return explicit_options_.contains(opt);
+}
+
+json RecipeOptions::get_explicit_option(const std::string& opt) const {
+    auto it = explicit_options_.find(opt);
+    return it != explicit_options_.end() ? *it : json();
 }
 
 #ifdef LEMONADE_CLI

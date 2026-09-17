@@ -1,6 +1,7 @@
 // Unit tests for the Lemonade Router deterministic leaf conditions (#2380).
 //
-// Covers keywords_any/keywords_all, regex, min_chars/max_chars, has_tools/
+// Covers keywords_any/keywords_all, regex, min_chars/max_chars,
+// min_total_chars/max_total_chars, has_tools/
 // has_images, and metadata against the frozen v1 semantics in
 // route_policy.schema.json: case-insensitive (ASCII) substring, ECMAScript
 // regex, inclusive UTF-8-byte length bounds, and metadata equals/any/exists
@@ -137,6 +138,41 @@ void test_chars_utf8_bytes() {
     check("max_chars counts UTF-8 bytes (<=4 false)", !eval_leaf("max_chars", 4, req));
 }
 
+void test_total_chars() {
+    RouteContext req = make_request("12345");  // routing input: 5 bytes
+    req.params.total_chars = 20;               // whole conversation: 20 bytes
+    check("min_total_chars inclusive lower boundary",
+          eval_leaf("min_total_chars", 20, req));
+    check("min_total_chars below threshold", !eval_leaf("min_total_chars", 21, req));
+    check("max_total_chars inclusive upper boundary",
+          eval_leaf("max_total_chars", 20, req));
+    check("max_total_chars above threshold", !eval_leaf("max_total_chars", 19, req));
+}
+
+void test_total_chars_utf8_bytes() {
+    RouteContext req = make_request("x");
+    req.params.total_chars = std::string("caf\xC3\xA9").size();  // 5 bytes, 4 code points
+    check("min_total_chars counts UTF-8 bytes (>=5 true)",
+          eval_leaf("min_total_chars", 5, req));
+    check("min_total_chars counts UTF-8 bytes (>=6 false)",
+          !eval_leaf("min_total_chars", 6, req));
+    check("max_total_chars counts UTF-8 bytes (<=4 false)",
+          !eval_leaf("max_total_chars", 4, req));
+}
+
+// The motivating case: a long history whose last turn is short. The two bounds
+// read different numbers, so a conversation-length rule fires where an
+// input-length rule cannot see the history at all.
+void test_total_chars_independent_of_input_chars() {
+    RouteContext req = make_request("go on");  // 5 bytes
+    req.params.total_chars = 60000;
+    check("min_total_chars sees the history", eval_leaf("min_total_chars", 60000, req));
+    check("min_chars still sees only the last turn", !eval_leaf("min_chars", 60000, req));
+    check("max_chars still sees only the last turn", eval_leaf("max_chars", 5, req));
+    check("max_total_chars does not match the short last turn",
+          !eval_leaf("max_total_chars", 5, req));
+}
+
 void test_has_features() {
     RouteContext req = make_request("hi");
     req.params.has_tools = true;
@@ -214,6 +250,9 @@ void test_rejections() {
     check("non-string regex rejected", throws_invalid("regex", 5));
     check("negative min_chars rejected", throws_invalid("min_chars", -1));
     check("non-integer max_chars rejected", throws_invalid("max_chars", 1.5));
+    check("negative min_total_chars rejected", throws_invalid("min_total_chars", -1));
+    check("non-integer max_total_chars rejected", throws_invalid("max_total_chars", 1.5));
+    check("non-numeric min_total_chars rejected", throws_invalid("min_total_chars", "4000"));
     check("non-bool has_tools rejected", throws_invalid("has_tools", "yes"));
     check("metadata missing key rejected",
           throws_invalid("metadata", json{{"equals", "code"}}));
@@ -273,6 +312,23 @@ void test_trace_emitted() {
           !ctx.trace.empty() && !ctx.trace[0].score.has_value());
 }
 
+// The total bounds share an implementation with min_chars/max_chars, so the
+// trace must still name the op the author wrote.
+void test_total_chars_trace_names() {
+    RouteContext req = make_request("go on");
+    req.params.total_chars = 60000;
+    ClassifierServices services;
+
+    for (const char* op : {"min_total_chars", "max_total_chars"}) {
+        ConditionPtr cond = build_leaf(op, 60000);
+        EvalContext ctx{req, services};
+        ctx.want_trace = true;
+        cond->evaluate(ctx);
+        check((std::string("trace: condition name ") + op).c_str(),
+              ctx.trace.size() == 1 && ctx.trace[0].condition == op);
+    }
+}
+
 // The registry isolates each top-level key into its own single-key leaf and
 // ANDs multiple deterministic ops (implicit all). Verify a two-op leaf.
 void test_registry_implicit_all() {
@@ -305,6 +361,9 @@ int main() {
     test_regex_input_cap();
     test_chars();
     test_chars_utf8_bytes();
+    test_total_chars();
+    test_total_chars_utf8_bytes();
+    test_total_chars_independent_of_input_chars();
     test_has_features();
     test_metadata_equals();
     test_metadata_any();
@@ -312,6 +371,7 @@ int main() {
     test_rejections();
     test_regex_redos_rejected();
     test_trace_emitted();
+    test_total_chars_trace_names();
     test_registry_implicit_all();
 
     std::printf("\n%s\n", g_failures == 0 ? "ALL PASSED" : "FAILURES PRESENT");

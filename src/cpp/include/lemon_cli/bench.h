@@ -25,6 +25,8 @@ struct BenchScenario {
     std::vector<json> messages;  // Chat messages (system + user/assistant turns)
     json input;                  // Input for non-chat scenarios (e.g., textgen, embedding)
     json imgconfig;              // Input for image generation
+    std::string image_path;      // Path to image file for vision benchmarks (relative to scenario file)
+    std::string source_file;     // The scenario JSON file path (for resolving relative image paths at run time)
     int max_tokens;
     int warmup_runs = 0;
     int measurement_runs = 3;

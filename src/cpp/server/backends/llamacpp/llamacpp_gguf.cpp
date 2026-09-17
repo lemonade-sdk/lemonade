@@ -33,8 +33,29 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
         return model_cache_path;
     }
 
+    const fs::path snapshots_path = model_cache_path_fs / "snapshots";
+    const fs::path active_snapshot = hf_cache::active_snapshot_path(model_cache_path_fs);
+
+    if (active_snapshot.empty() && hf_cache::exists(snapshots_path)) {
+        return "";
+    }
+
+    auto is_uncommitted_snapshot_file = [&](const fs::path& candidate) {
+        fs::path relative = candidate.lexically_relative(snapshots_path);
+        if (relative.empty()) {
+            return false;
+        }
+
+        auto first = relative.begin();
+        if (first == relative.end() || *first == "." || *first == "..") {
+            return false;
+        }
+
+        return hf_cache::exists(snapshots_path / *first / ".download_manifest.json");
+    };
+
     // Collect the (sorted, mmproj-excluded) GGUF files under a search root.
-    auto collect_gguf_files = [](const fs::path& search_root) {
+    auto collect_gguf_files = [&](const fs::path& search_root) {
         std::vector<std::string> files;
         if (search_root.empty() || !hf_cache::exists(search_root)) {
             return files;
@@ -48,11 +69,13 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
                 continue;
             }
 
-            std::string filename = entry.path().filename().string();
-            std::string filename_lower = filename;
-            std::transform(filename_lower.begin(), filename_lower.end(), filename_lower.begin(), ::tolower);
+            const std::string filename_lower = to_lower(entry.path().filename().string());
+            const std::string extension_lower = to_lower(entry.path().extension().string());
 
-            if (filename.find(".gguf") != std::string::npos && filename_lower.find("mmproj") == std::string::npos) {
+            // ".gguf.partial" is an interrupted download, not a GGUF candidate.
+            if (extension_lower == ".gguf" &&
+                filename_lower.find("mmproj") == std::string::npos &&
+                !is_uncommitted_snapshot_file(entry.path())) {
                 files.push_back(path_to_utf8(entry.path()));
             }
         }
@@ -184,10 +207,10 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
 
     // Prefer the active refs/main snapshot so that when upstream only changed
     // README/metadata Lemonade keeps using the previous snapshot's artifacts.
-    std::vector<std::string> active_gguf_files =
-        collect_gguf_files(hf_cache::active_snapshot_path(model_cache_path_fs));
+    std::vector<std::string> active_gguf_files = collect_gguf_files(active_snapshot);
 
-    // Whole-repo-cache candidates spanning every snapshot, populated on demand.
+    // Whole-repo-cache candidates spanning completed snapshots, populated on
+    // demand. collect_gguf_files excludes snapshots with a live manifest.
     std::vector<std::string> all_cache_gguf_files;
     bool all_cache_computed = false;
     auto whole_cache_gguf_files = [&]() -> const std::vector<std::string>& {
@@ -199,7 +222,9 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
     };
 
     if (active_gguf_files.empty() && whole_cache_gguf_files().empty()) {
-        return model_cache_path;
+        // Preserve the historical flat-cache fallback, but never expose a
+        // modern snapshots cache as a valid directory checkpoint without GGUFs.
+        return hf_cache::exists(snapshots_path) ? "" : model_cache_path;
     }
 
     std::string resolved_path = resolve_gguf_variant(active_gguf_files);
@@ -207,11 +232,11 @@ std::string resolve_gguf_path(const std::string& model_cache_path, const std::st
     // #2300: a requested variant can live in a snapshot other than the one
     // refs/main points at (refs/main advances to whichever variant was pulled
     // last, stranding the others in earlier snapshots), so the active-only
-    // search above can report it missing. Broaden to every snapshot before
-    // giving up; blobs are content-addressed so reading an older snapshot is
-    // safe, and searching the active snapshot first preserves CHECKPOINT:VARIANT.
-    // The whole-cache set is a superset of the active set, so when they're equal
-    // the broader search is identical and skipped.
+    // search above can report it missing. Broaden to every completed snapshot
+    // before giving up; blobs are content-addressed so reading an older snapshot
+    // is safe, and searching the active snapshot first preserves
+    // CHECKPOINT:VARIANT. The whole-cache set is a superset of the active set,
+    // so when they're equal the broader search is identical and skipped.
     if (resolved_path.empty()) {
         const std::vector<std::string>& all_files = whole_cache_gguf_files();
         if (all_files != active_gguf_files) {

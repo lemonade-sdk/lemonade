@@ -34,6 +34,9 @@
 #include <string>
 #include <thread>
 
+#include "lemon/utils/aixlog.hpp"
+#include "lemon/utils/network_utils.h"
+
 namespace lemon {
 
 bool is_websocket_endpoint(const std::string& path);
@@ -139,6 +142,9 @@ public:
 
 private:
     bool process_and_close_socket(socket_t sock) override {
+        if (!lemon::utils::configure_tcp_keepalive(sock)) {
+            LOG(DEBUG, "Server") << "Failed to configure TCP keep-alive on accepted socket" << std::endl;
+        }
         if (upgrade_handler_ && detail::peek_websocket_upgrade(sock)) {
             if (upgrade_handler_(sock)) {
                 return true;  // ownership transferred to the WebSocket server

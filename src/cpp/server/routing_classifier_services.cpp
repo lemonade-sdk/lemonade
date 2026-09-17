@@ -7,6 +7,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <lemon/utils/aixlog.hpp>
 
 namespace lemon {
 namespace {
@@ -372,13 +373,34 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
         ctx.params.has_tools = true;
     }
 
+    // Prefer `max_tokens` (also the alias target for `max_completion_tokens`
+    // elsewhere in the server, see JsonUtils::add_legacy_max_tokens_alias);
+    // fall back to `max_completion_tokens` directly since this function reads
+    // the caller's raw body, upstream of that aliasing. `max_output_tokens` is
+    // /v1/responses' own name for the same limit. A non-positive or
+    // non-integer value is treated the same as absent.
+    for (const char* key : {"max_tokens", "max_completion_tokens", "max_output_tokens"}) {
+        if (request_json.contains(key) && request_json[key].is_number_integer() &&
+            request_json[key].get<long long>() > 0) {
+            ctx.params.expected_output_tokens =
+                static_cast<std::size_t>(request_json[key].get<long long>());
+            break;
+        }
+    }
+
     if (request_json.contains("messages") && request_json["messages"].is_array()) {
         const auto& messages = request_json["messages"];
+        // Totalling every role's text is what makes `total_chars` a proxy for
+        // prefill size: the whole array is what the backend prefills, not just
+        // the routing turn. It cannot ride along with an image scan that stops
+        // at the first hit, so the flag is latched instead of breaking out.
         for (const auto& msg : messages) {
-            if (msg.is_object() && msg.contains("content") && content_has_image(msg["content"])) {
+            if (!msg.is_object() || !msg.contains("content")) continue;
+            const auto& content = msg["content"];
+            if (!ctx.params.has_images && content_has_image(content)) {
                 ctx.params.has_images = true;
-                break;
             }
+            ctx.params.total_chars += collect_text_from_content(content).size();
         }
         for (int i = static_cast<int>(messages.size()) - 1; i >= 0; --i) {
             const auto& msg = messages[i];
@@ -399,21 +421,30 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
                 }
             }
         }
+        // Legacy completions carry no history, so every text byte in the
+        // request is already the routing input.
+        ctx.params.total_chars = ctx.input.size();
     } else if (request_json.contains("input")) {
         const auto& input = request_json["input"];
         if (input.is_string()) {
             ctx.input = input.get<std::string>();
+            ctx.params.total_chars = ctx.input.size();
         } else if (input.is_array()) {
             // Detect images anywhere in the input, mirroring how the chat path
-            // scans every message.
+            // scans every message, and total every item's text in the same pass
+            // — role-tagged or bare, which is more than the routing input takes.
             for (const auto& item : input) {
+                if (item.is_string()) {
+                    ctx.params.total_chars += item.get<std::string>().size();
+                    continue;
+                }
                 if (!item.is_object()) continue;
                 const json content =
                     item.contains("content") ? item["content"] : json::array({item});
-                if (content_has_image(content)) {
+                if (!ctx.params.has_images && content_has_image(content)) {
                     ctx.params.has_images = true;
-                    break;
                 }
+                ctx.params.total_chars += collect_text_from_content(content).size();
             }
             // Prefer the last user message's content, matching the chat path, so
             // earlier assistant/developer/system turns can't skew routing.
@@ -460,6 +491,78 @@ RouteContext build_route_context(const json& request_json, const std::string& mo
     }
 
     return ctx;
+}
+
+namespace {
+
+template <typename T>
+T extras_get(const std::map<std::string, json>& extras, const std::string& key,
+             const T& fallback) {
+    auto it = extras.find(key);
+    if (it == extras.end() || it->second.is_null()) {
+        return fallback;
+    }
+    try {
+        return it->second.get<T>();
+    } catch (...) {
+        return fallback;
+    }
+}
+
+// Non-negative numeric extras only; missing / null / negative / wrong-type →
+// nullopt so callers don't lean on a "<0 means unknown" sentinel.
+std::optional<double> extras_get_nonneg(const std::map<std::string, json>& extras,
+                                        const std::string& key) {
+    auto it = extras.find(key);
+    if (it == extras.end() || it->second.is_null()) {
+        return std::nullopt;
+    }
+    try {
+        const double value = it->second.get<double>();
+        if (value >= 0.0) {
+            return value;
+        }
+    } catch (...) {
+    }
+    return std::nullopt;
+}
+
+bool is_allowed_cost_tier(const std::string& tier) {
+    return tier == "free" || tier == "low" || tier == "medium" || tier == "high";
+}
+
+} // namespace
+
+CostInfo resolve_cost_info(std::optional<double> cost_input_per_million,
+                           std::optional<double> cost_output_per_million,
+                           const std::map<std::string, json>& extras) {
+    CostInfo out;
+
+    if (cost_input_per_million) {
+        out.cost_input_per_million = cost_input_per_million;
+    } else {
+        out.cost_input_per_million = extras_get_nonneg(extras, "cost_input_per_million");
+    }
+
+    if (cost_output_per_million) {
+        out.cost_output_per_million = cost_output_per_million;
+    } else {
+        out.cost_output_per_million = extras_get_nonneg(extras, "cost_output_per_million");
+    }
+
+    const std::string tier = extras_get<std::string>(extras, "cost_tier", "");
+    if (!tier.empty()) {
+        if (is_allowed_cost_tier(tier)) {
+            out.cost_tier = tier;
+        } else {
+            LOG(DEBUG, "Routing") << "Ignoring unrecognized cost_tier '" << tier
+                                  << "' (expected free|low|medium|high)" << std::endl;
+        }
+    }
+
+    out.latency_ms_hint = extras_get_nonneg(extras, "latency_ms_hint");
+
+    return out;
 }
 
 } // namespace lemon

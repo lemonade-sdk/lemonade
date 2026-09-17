@@ -4668,13 +4668,21 @@ body.install-options {
   mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
 }
 
+/* The track must size to its content (it holds two copies of the logo set) so the
+   -50% keyframe lands exactly on the second copy's start. Spacing lives on the
+   chips rather than flex gap — a track-level gap would offset that midpoint by
+   half a gap and cause a visible jump each loop. */
 .hp-logo-ticker-track {
   display: flex;
   align-items: center;
-  gap: 2.5rem;
+  width: max-content;
   white-space: nowrap;
   will-change: transform;
-  animation: ticker-scroll 30s linear infinite;
+  animation: ticker-scroll 45s linear infinite;
+}
+
+.hp-logo-ticker-track .hp-logo-chip {
+  margin-right: 2.5rem;
 }
 
 .hp-logo-ticker:hover .hp-logo-ticker-track {

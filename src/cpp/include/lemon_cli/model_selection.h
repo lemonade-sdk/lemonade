@@ -6,6 +6,9 @@
 
 namespace lemon_cli {
 
+// Whether the model carries the given label.
+bool has_label(const lemonade::ModelInfo& model, const std::string& label);
+
 // Prompt the user to select an available model when none was provided.
 // Returns true on success and writes the selected model into model_out.
 bool resolve_model_if_missing(lemonade::LemonadeClient& client,

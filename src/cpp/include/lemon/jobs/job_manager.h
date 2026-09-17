@@ -19,7 +19,7 @@ namespace jobs {
 
 class JobManager {
 public:
-    JobManager(std::string cache_dir, OpRegistry registry);
+    JobManager(std::string cache_dir, std::string config_dir, OpRegistry registry);
     ~JobManager();
 
     std::string create(const std::string& name, std::vector<StepRecord> steps, json inputs);

@@ -25,6 +25,9 @@ public:
     // Merge two JSON objects
     static json merge(const json& base, const json& overlay);
 
+    // Prune keys from overlay that match base values (and recursively prune empty child objects)
+    static void prune_matching(json& overlay, const json& base);
+
     // OpenAI compatibility: mirror max_completion_tokens to legacy max_tokens
     // when the request does not already provide max_tokens.
     static void add_legacy_max_tokens_alias(json& request);

@@ -83,6 +83,8 @@ nav:
   - Development:
     - Overview: dev/README.md
     - Philosophy: dev/philosophy.md
+    - AI Content Policy: dev/ai-content-policy.md
+    - Spec Driven Development Policy: dev/spec-driven-dev.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md
@@ -103,6 +105,7 @@ nav:
     - Claude Code: integrations/claude-code.md
     - CodeGPT: integrations/codeGPT.md
     - Continue: integrations/continue.md
+    - Interviewer: integrations/interviewer.md
     - LangChain: integrations/langchain.md
     - Lemon Zest: integrations/lemon-zest.md
     - Mindcraft: integrations/mindcraft.md
@@ -114,6 +117,7 @@ nav:
       - OpenAI Compatible: api/openai.md
       - Ollama Compatible: api/ollama.md
       - Anthropic Compatible: api/anthropic.md
+      - MCP Gateway: api/mcp.md
       - llama.cpp Specific: api/llamacpp.md
       - Lemonade Specific: api/lemonade.md
   - Embeddable Lemonade:

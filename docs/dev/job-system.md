@@ -170,7 +170,7 @@ status queries (model list, health, telemetry) are not gated.
 
 ## Persistence
 
-Jobs persist to `<cache_dir>/jobs.json` (atomic write, cap 50, oldest terminal
+Jobs persist to `<config_dir>/jobs.json` (atomic write, cap 50, oldest terminal
 evicted first). The cap is enforced at creation: when all 50 retained jobs are
 still active or resumable (nothing `completed`/`failed` to evict), `POST jobs`
 is rejected with `429` until a job is deleted or finishes. On startup a job left

@@ -49,6 +49,13 @@ public:
         (void)ctx;
     }
 
+    // Add automatic overridable options before exposing/passing to a backend.
+    // Managed arguments (model paths/ports) do not belong here. Default: none.
+    virtual void resolve_runtime_options(const ModelInfo& info, RecipeOptions& options) const {
+        (void)info;
+        (void)options;
+    }
+
     // Resolve a checkpoint to its absolute on-disk path (file or directory).
     // Default: the shared registry-cache behavior — locate the variant/aux file in the active
     // snapshot, else fall back to the model cache directory.

@@ -92,9 +92,16 @@ inline CustomArgsMap build_custom_args_map(const std::vector<std::string>& token
 
     for (const auto& token : tokens) {
         if (!token.empty() && token[0] == '-' && !is_negative_number(token)) {
-            // This is a flag; start a new entry
-            result[token].push_back({});
-            last_flag = token;
+            // This is a flag; start a new entry. Normalize --flag=value so it
+            // has the same precedence key as --flag value.
+            size_t eq_pos = token.find('=');
+            if (eq_pos != std::string::npos) {
+                last_flag = token.substr(0, eq_pos);
+                result[last_flag].push_back({token.substr(eq_pos + 1)});
+            } else {
+                result[token].push_back({});
+                last_flag = token;
+            }
         } else if (!last_flag.empty()) {
             // Append to the most recently seen flag
             result[last_flag].back().push_back(token);
@@ -129,6 +136,21 @@ inline std::string validate_custom_args(const std::string& custom_args_str, cons
     }
 
     return "";
+}
+
+inline bool custom_args_has_flag(const std::vector<std::string>& tokens,
+                                 const std::string& flag) {
+    for (const auto& arg : tokens) {
+        std::string token = arg;
+        size_t eq_pos = token.find('=');
+        if (eq_pos != std::string::npos) {
+            token = token.substr(0, eq_pos);
+        }
+        if (token == flag) {
+            return true;
+        }
+    }
+    return false;
 }
 
 inline std::string map_to_args_string(const CustomArgsMap& m) {

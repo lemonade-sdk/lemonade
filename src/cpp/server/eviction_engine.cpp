@@ -36,6 +36,11 @@ void EvictionEngine::stop() {
 }
 
 void EvictionEngine::on_vram_pressure(double pct) {
+    if (pct == -1.0) {
+        evaluate_servers(-1.0);
+        return;
+    }
+
     double threshold = RuntimeConfig::global()->auto_evict_threshold_pct();
     if (pct >= threshold) {
         LOG(INFO) << "VRAM pressure critical (" << (pct * 100.0) << "% >= " << (threshold * 100.0) << "%). Evaluating eviction." << std::endl;
@@ -123,7 +128,7 @@ void EvictionEngine::evaluate_servers(double current_vram_pct) {
                 break;
             }
 
-            // 2. Time-based soft idle (downsize) — collect the candidate only. The
+            // 2. Time-based soft idle (downsize) - collect the candidate only. The
             // model is not claimed here; try_begin_downsize() below atomically
             // re-checks that it is still idle and transitions it to DOWNSIZING.
             if (idle_ms >= downsize_timeout_sec * 1000 && state == ModelState::READY) {

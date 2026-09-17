@@ -54,8 +54,8 @@ Lemonade comes in two flavors:
 
 | Platform | Build |
 |----------|-------|
-| [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-supported-1793D1?logo=arch-linux&logoColor=white)](https://lemonade-server.ai/docs/guide/install/arch/) | [![Build on Arch](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Arch)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
-| [![Debian Trixie+](https://img.shields.io/badge/Debian-Trixie%2B-A81D33?logo=debian&logoColor=white)](https://lemonade-server.ai/docs/guide/install/debian/) | [![Build on Debian](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/linux_distro_builds.yml?branch=main&label=Build%20on%20Debian)](https://github.com/lemonade-sdk/lemonade/actions/workflows/linux_distro_builds.yml) |
+| [![Arch Linux](https://img.shields.io/badge/Arch%20Linux-supported-1793D1?logo=arch-linux&logoColor=white)](https://lemonade-server.ai/docs/guide/install/arch/) | [![Arch package](https://img.shields.io/archlinux/v/extra/x86_64/lemonade-server?label=Arch%20package)](https://archlinux.org/packages/extra/x86_64/lemonade-server) |
+| [![Debian Trixie+](https://img.shields.io/badge/Debian-Trixie%2B-A81D33?logo=debian&logoColor=white)](https://lemonade-server.ai/docs/guide/install/debian/) | [![Build .deb](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.deb)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
 | [![Docker](https://img.shields.io/badge/Docker-supported-2496ED?logo=docker&logoColor=white)](https://lemonade-server.ai/docs/guide/install/docker/) | [![Build Container Image](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/build-and-push-container.yml?branch=main&label=Build%20Container%20Image)](https://github.com/lemonade-sdk/lemonade/actions/workflows/build-and-push-container.yml) |
 | [![Fedora 43+](https://img.shields.io/badge/Fedora-43%2B-294172?logo=fedora&logoColor=white)](https://lemonade-server.ai/docs/guide/install/fedora/) | [![Build .rpm](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.rpm)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
 | [![macOS](https://img.shields.io/badge/macOS-supported-999999?logo=apple&logoColor=white)](https://lemonade-server.ai/docs/guide/install/macos/) | [![Build .pkg](https://img.shields.io/github/actions/workflow/status/lemonade-sdk/lemonade/cpp_server_build_test_release.yml?branch=main&label=Build%20.pkg)](https://github.com/lemonade-sdk/lemonade/actions/workflows/cpp_server_build_test_release.yml) |
@@ -98,6 +98,17 @@ lemonade list
 lemonade pull Gemma-4-E2B-it-GGUF
 ```
 
+To manage model aliases for environment-independent naming and active-standby failover:
+
+```
+lemonade alias add production-llm Gemma-4-E2B-it-GGUF
+lemonade alias list
+
+# Instant active-standby failover to a different model target
+lemonade alias add production-llm Qwen3-0.6B-GGUF
+lemonade alias remove production-llm
+```
+
 To see the backends available on your PC:
 
 ```
@@ -136,7 +147,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="9"><strong>Text generation</strong></td>
+      <td rowspan="11"><strong>Text generation</strong></td>
       <td rowspan="6"><code>llamacpp</code></td>
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
@@ -159,13 +170,19 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
     </tr>
     <tr>
       <td><code>rocm</code></td>
-      <td>Supported AMD ROCm iGPU/dGPU families, incl. AMD Instinct MI300X (gfx942) and MI350X (gfx950, Linux + stable only)*</td>
+      <td>AMD GPUs supported by ROCm</td>
       <td>Windows, Linux</td>
     </tr>
     <tr>
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU; ARM64 CPU (Linux)</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>llamacpp-hrx</code> (experimental)</td>
+      <td><code>hrx</code></td>
+      <td>AMD GPUs (gfx1100, gfx1151)</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="1"><code>flm</code></td>
@@ -183,6 +200,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td rowspan="1"><code>vllm</code> (experimental)</td>
       <td><code>rocm</code></td>
       <td>Strix Halo iGPU (gfx1151)</td>
+      <td>Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>ds4</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Prebuilt ds4 for AMD Strix Halo</td>
       <td>Linux</td>
     </tr>
     <tr>
@@ -280,7 +303,7 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Windows, Linux</td>
     </tr>
     <tr>
-      <td rowspan="5"><strong>Image generation</strong></td>
+      <td rowspan="6"><strong>Image generation</strong></td>
       <td rowspan="5"><code>sd-cpp</code></td>
       <td><code>metal</code></td>
       <td>Apple Silicon GPU</td>
@@ -305,6 +328,12 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td rowspan="1"><code>thenoise</code> (experimental)</td>
+      <td><code>rocm</code></td>
+      <td>Supported AMD ROCm families</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="3"><strong>3D generation</strong></td>
@@ -483,7 +512,7 @@ Lemonade is built by the local AI community! If you would like to contribute to 
 
 ## Maintainers
 
-This is a community project maintained by @amd-pworfolk @bitgamma @danielholanda @jeremyfowers @kenvandine @Geramy @ramkrishna2910 @sawansri @siavashhub @sofiageo @superm1 @vgodsoe, and sponsored by AMD. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues), emailing [lemonade@amd.com](mailto:lemonade@amd.com), or joining our [Discord](https://discord.gg/5xXzkMu8Zk).
+This is a community project with many maintainers, please see the [maintainers list here](./docs/dev/contribute.md#maintainers) to see their subject areas. You can reach us by filing an [issue](https://github.com/lemonade-sdk/lemonade/issues) or joining our [Discord](https://discord.gg/5xXzkMu8Zk). This project is sponsored by [AMD](mailto:lemonade@amd.com).
 
 ## Code Signing Policy
 

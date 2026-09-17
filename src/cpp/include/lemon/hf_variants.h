@@ -10,8 +10,17 @@ namespace lemon {
 
 // Single GGUF variant detected in a remote model registry repository.
 struct GgufVariant {
-    std::string name;          // Quant token (e.g. "Q4_K_M") or folder/file name fallback.
+    // Display label and selector. Callers pull `checkpoint:name`, so this must
+    // stay unique within a repository — when two variants share a quant it
+    // widens to the file stem. Do NOT sort on it; use `quant` for that.
+    std::string name;
+    // Quant token this variant was grouped under (e.g. "Q4_K_M"), independent of
+    // how `name` was disambiguated. Empty when no quant could be recognized.
+    std::string quant;
     std::string primary_file;  // First file (lexicographic) representing this variant.
+    // Repository-relative speculative draft companion selected for this main variant.
+    // Empty when no single draft mechanism can be selected safely.
+    std::string draft_file;
     std::vector<std::string> files;  // All files belonging to this variant.
     bool sharded = false;
     uint64_t size_bytes = 0;   // Sum of file sizes (0 if unknown).
@@ -21,6 +30,7 @@ struct GgufVariant {
 struct GgufVariantSet {
     std::vector<GgufVariant> variants;
     std::vector<std::string> mmproj_files;  // Bare filenames of mmproj-*.gguf files.
+    std::vector<std::string> draft_files;   // Bare filenames of recognized draft GGUF companions.
 };
 
 // Enumerate GGUF variants from a normalized repository file list.
@@ -33,6 +43,10 @@ struct GgufVariantSet {
 GgufVariantSet enumerate_gguf_variants(
     const std::vector<std::string>& repo_files,
     const std::vector<std::pair<std::string, uint64_t>>& file_sizes = {});
+
+std::string llamacpp_gguf_incompatibility(
+    const nlohmann::json& repository_metadata,
+    const std::string& registry_source);
 
 // Build the JSON response body for GET /api/v{0,1}/pull/variants.
 //
