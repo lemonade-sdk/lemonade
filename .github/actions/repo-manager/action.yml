@@ -72,9 +72,9 @@ runs:
         cache="$RUNNER_WORKSPACE/lemond-repo-manager-cache"
         mkdir -p "$HF_HOME" "$cache"
 
-        # The container has its own network namespace, so nothing else on the machine can
-        # be holding this port. --no-broadcast keeps this server out of the UDP discovery
-        # other jobs' CLIs use.
+        # A fixed port is safe because the container has its own network namespace.
+        # --no-broadcast because this server is private to the job and has no business
+        # answering discovery on the lab network.
         PORT=8000
         "$LEMOND" "$cache" --port "$PORT" --host 127.0.0.1 --no-broadcast \
           > "$logs/lemond.stdout.log" 2> "$logs/lemond.stderr.log" &
