@@ -72,6 +72,15 @@ runs:
         cache="$RUNNER_WORKSPACE/lemond-repo-manager-cache"
         mkdir -p "$HF_HOME" "$cache"
 
+        # Vulkan reports mesa's llvmpipe software device even when no GPU was passed in,
+        # so llama.cpp would run without complaint — on the CPU, turning a review into an
+        # overnight job. Only a real GPU counts.
+        if ! vulkaninfo --summary 2>/dev/null | grep -q 'deviceType.*PHYSICAL_DEVICE_TYPE_[A-Z_]*GPU'; then
+          echo "::error title=No GPU reached the container::Check that the runner account is in the render and video groups and that the job passes --device /dev/dri --device /dev/kfd. Vulkan sees only:"
+          vulkaninfo --summary 2>&1 | sed -n '/Devices:/,$p' | head -40
+          exit 1
+        fi
+
         # A fixed port is safe because the container has its own network namespace.
         # --no-broadcast because this server is private to the job and has no business
         # answering discovery on the lab network.
@@ -80,18 +89,32 @@ runs:
           > "$logs/lemond.stdout.log" 2> "$logs/lemond.stderr.log" &
         LEMOND_PID=$!
 
+        healthy=false
         for _ in $(seq 1 60); do
-          curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1 && break
-          kill -0 "$LEMOND_PID" 2>/dev/null || { cat "$logs/lemond.stderr.log"; exit 1; }
+          if curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null 2>&1; then
+            healthy=true
+            break
+          fi
+          kill -0 "$LEMOND_PID" 2>/dev/null || break
           sleep 2
         done
-        curl -sf "http://127.0.0.1:$PORT/api/v1/health" > /dev/null
+        if [ "$healthy" != true ]; then
+          echo "::error title=lemond never became healthy::"
+          tail -n 50 "$logs/lemond.stderr.log" || true
+          exit 1
+        fi
 
-        response=$(curl -sf -X POST "http://127.0.0.1:$PORT/api/v1/pull" \
+        # Not `curl -f`: a failed pull answers with the reason in its body, and -f throws
+        # that away and reports only its own exit code.
+        code=$(curl -s -o "$logs/pull.json" -w '%{http_code}' \
+          -X POST "http://127.0.0.1:$PORT/api/v1/pull" \
           -H "Content-Type: application/json" \
           -d "{\"model_name\": \"${REPO_MANAGER_MODEL}\"}")
-        echo "$response"
-        test "$(printf '%s' "$response" | jq -r '.status // ""')" = "success"
+        if [ "$code" != "200" ] || [ "$(jq -r '.status // ""' < "$logs/pull.json")" != "success" ]; then
+          echo "::error title=Could not pull $REPO_MANAGER_MODEL::lemond answered HTTP $code"
+          cat "$logs/pull.json"
+          exit 1
+        fi
         du -sh "$HF_HOME"
 
         export REPO_MANAGER_LEMONADE_URL="http://127.0.0.1:$PORT/v1"
