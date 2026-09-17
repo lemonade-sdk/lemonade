@@ -2738,10 +2738,6 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
       # /dev/dri is what keeps the model on the iGPU instead of the CPU.
       options: --device /dev/dri
-      # The model is 23GB, so it stays on the machine between jobs rather than in the
-      # image. Docker creates this on first use; nothing else on the machine writes it.
-      volumes:
-        - /var/cache/lemonade-ci/repo-manager:/cache
     # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
     # repository's pull requests and issues, and runs from an image in this repository's
     # container registry.

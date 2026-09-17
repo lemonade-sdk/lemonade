@@ -58,19 +58,25 @@ runs:
         COMMAND: ${{ inputs.command }}
         GH_TOKEN: ${{ github.token }}
         REPO_MANAGER_MODEL: Qwen3.6-35B-A3B-MTP-GGUF
-        # /cache is the one thing the image cannot carry: the model in it is 23GB, so the
-        # calling job mounts it from the machine.
-        HF_HOME: /cache
       run: |
         set -euo pipefail
         logs="$RUNNER_TEMP/lemond-logs"
         mkdir -p "$logs"
 
+        # The weights are the one thing the image cannot carry, at 23GB. They go beside
+        # the benchmark job's cache, which runs on these same machines: outside the
+        # workspace `clean: true` wipes, and outside RUNNER_TEMP, which is wiped between
+        # jobs. Container jobs see it without a mount because the runner's work directory
+        # is already mounted whole.
+        export HF_HOME="$RUNNER_WORKSPACE/hf-cache"
+        cache="$RUNNER_WORKSPACE/lemond-repo-manager-cache"
+        mkdir -p "$HF_HOME" "$cache"
+
         # The container has its own network namespace, so nothing else on the machine can
         # be holding this port. --no-broadcast keeps this server out of the UDP discovery
         # other jobs' CLIs use.
         PORT=8000
-        "$LEMOND" /cache --port "$PORT" --host 127.0.0.1 --no-broadcast \
+        "$LEMOND" "$cache" --port "$PORT" --host 127.0.0.1 --no-broadcast \
           > "$logs/lemond.stdout.log" 2> "$logs/lemond.stderr.log" &
         LEMOND_PID=$!
 
@@ -86,7 +92,7 @@ runs:
           -d "{\"model_name\": \"${REPO_MANAGER_MODEL}\"}")
         echo "$response"
         test "$(printf '%s' "$response" | jq -r '.status // ""')" = "success"
-        du -sh /cache
+        du -sh "$HF_HOME"
 
         export REPO_MANAGER_LEMONADE_URL="http://127.0.0.1:$PORT/v1"
         export REPO_MANAGER_PI_MODEL="Lemonade/${REPO_MANAGER_MODEL}"
