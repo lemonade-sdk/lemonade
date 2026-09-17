@@ -44,91 +44,14 @@ protected:
 // The device profile a variant needs, using the default name-based mapping.
 std::string default_profile_id(const std::string& variant);
 
-// URL of the container prerequisites page, optionally anchored at the section
-// that fixes `remediation_id`.
-std::string prerequisites_url(const std::string& remediation_id = "");
-
 // ---------------------------------------------------------------------------
 // Run side
 // ---------------------------------------------------------------------------
 
-struct ContainerLaunchRequest {
-    std::string recipe;
-    std::string variant;
-    std::string profile_id;  // "" = derive from the variant name
-    // Host paths of the files (or directories) the engine needs. Each is
-    // resolved through its symlinks and bind-mounted read-only under
-    // /mnt/models; nothing else from the host is visible to the container.
-    std::vector<std::string> model_paths;
-    std::vector<std::pair<std::string, std::string>> env;
-    std::string entrypoint;  // "" = the image's own entrypoint
-    std::string workdir;
-};
-
-// A resolved launch: which engine, which image, how the container is wired, and
-// the argv to hand ProcessManager once the workload command is filled in.
-class ContainerLaunchPlan {
-public:
-    // Host path -> the path the container sees. Throws when no mount covers it,
-    // because launching with an unreachable model path fails opaquely inside the
-    // container instead.
-    std::string container_path(const std::string& host_path) const;
-
-    void set_command(std::vector<std::string> command) {
-        spec_.command = std::move(command);
-    }
-
-    void add_env(const std::string& key, const std::string& value) {
-        spec_.env.push_back({key, value});
-    }
-
-    // False: connect to wait_for_container_address() instead.
-    bool publishes_port() const { return spec_.publish_port; }
-
-    // argv for ProcessManager::start_process(engine_executable(), args).
-    std::vector<std::string> engine_args() const;
-    const std::string& engine_executable() const { return engine_executable_; }
-    const std::string& container_name() const { return spec_.name; }
-    int host_port() const { return spec_.host_port; }
-    const utils::ContainerImageRef& image() const { return image_; }
-
-private:
-    friend ContainerLaunchPlan plan_container_launch(const ContainerLaunchRequest&, int);
-    utils::ContainerEngine engine_;
-    std::string engine_executable_;
-    std::vector<std::string> engine_prefix_;
-    utils::ContainerRunSpec spec_;
-    utils::ContainerImageRef image_;
-    // spec_.mounts holds host-side sources (see ContainerRuntime::self_mounts),
-    // so container_path() needs lemond's own view of the same mounts.
-    std::vector<utils::ContainerMount> visible_mounts_;
-};
-
-// Build the plan for a launch. Throws std::runtime_error carrying the
-// remediation text when the host cannot run containers, when no image is pinned
-// for this host, or when the image has not been pulled.
-ContainerLaunchPlan plan_container_launch(const ContainerLaunchRequest& request, int host_port);
-
-// Remove any container left over from a previous run of this (recipe, variant)
-// so a relaunch is not refused for a name collision.
-void clear_stale_container(const std::string& recipe, const std::string& variant);
-
-// Stop the container by name. Call this from unload() BEFORE killing the engine
-// client process: SIGKILL is not proxied to the container, which would keep
-// holding the GPU.
-void stop_container_for(const std::string& recipe, const std::string& variant);
-
-// The container's recent output, for attaching to a failed load. Empty when
-// there is no engine or no such container.
-std::string container_logs_for(const std::string& recipe, const std::string& variant);
-
-// Polls until the engine has attached the container to its network or
-// `timeout_seconds` pass. "" on timeout.
-std::string wait_for_container_address(const std::string& recipe, const std::string& variant,
-                                       int timeout_seconds = 30);
-
-// ContainerRuntime::sweep_managed_containers() on the process-wide runtime.
-int sweep_managed_containers();
+// The pinned image for (recipe, variant) on this host. Throws when the recipe
+// publishes nothing for this GPU, which is the only answer a caller can act on.
+utils::ContainerImageRef pinned_image_or_throw(const std::string& recipe,
+                                               const std::string& variant);
 
 }  // namespace backends
 }  // namespace lemon

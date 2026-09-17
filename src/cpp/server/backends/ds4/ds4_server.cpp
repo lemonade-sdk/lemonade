@@ -8,7 +8,6 @@
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
-#include "lemon/utils/process_manager.h"
 #include <lemon/utils/aixlog.hpp>
 #include <algorithm>
 #include <filesystem>
@@ -89,26 +88,17 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     backend_manager_->install_backend(ds4::descriptor.recipe, kVariant);
 
     port_ = choose_port();
-    clear_stale_container(ds4::descriptor.recipe, kVariant);
 
-    ContainerLaunchRequest request;
-    request.recipe = ds4::descriptor.recipe;
-    request.variant = kVariant;
-    request.profile_id = "ds4-rocm";
-    request.model_paths.push_back(gguf_path);
-    ContainerLaunchPlan plan = plan_container_launch(request, port_);
-
-    std::vector<std::string> command;
-    command.push_back("ds4-server");
-    command.push_back("-m");
-    command.push_back(plan.container_path(gguf_path));
-    command.push_back("--host");
-    command.push_back("0.0.0.0");  // reachable from the published loopback port only
-    command.push_back("--port");
-    command.push_back(std::to_string(port_));
+    std::vector<std::string> args;
+    args.push_back("-m");
+    args.push_back(gguf_path);
+    args.push_back("--host");
+    args.push_back("0.0.0.0");  // reachable from the published loopback port only
+    args.push_back("--port");
+    args.push_back(std::to_string(port_));
     if (ctx_size > 0) {
-        command.push_back("--ctx");
-        command.push_back(std::to_string(ctx_size));
+        args.push_back("--ctx");
+        args.push_back(std::to_string(ctx_size));
     }
 
     // ds4-server defaults to full residency, which maps the entire model into
@@ -118,13 +108,13 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     // disk instead; a user-supplied later flag (e.g.
     // --ssd-streaming-cache-experts) still wins since ds4-server parses
     // left-to-right.
-    command.push_back("--ssd-streaming");
+    args.push_back("--ssd-streaming");
 
     // Chunk the prefill graph. Without this a long prompt does not merely fail:
     // it faults the GPU (HSA_STATUS_ERROR_MEMORY_FAULT in a quantize kernel) and
     // takes the container with it, where chunked it returns a clean error.
-    command.push_back("--prefill-chunk");
-    command.push_back("2048");
+    args.push_back("--prefill-chunk");
+    args.push_back("2048");
 
     const double pool_gb = gpu_pool_gb();
     if (pool_gb > 0.0) {
@@ -132,8 +122,8 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         if (cache_gb > 0) {
             // The GB form also reserves two full prefill layers, which is the
             // headroom the long-prompt path needs.
-            command.push_back("--ssd-streaming-cache-experts");
-            command.push_back(std::to_string(cache_gb) + "GB");
+            args.push_back("--ssd-streaming-cache-experts");
+            args.push_back(std::to_string(cache_gb) + "GB");
             LOG(DEBUG, "DS4") << "Capping the expert cache at " << cache_gb
                               << " GB of the " << pool_gb << " GB device pool" << std::endl;
         }
@@ -147,57 +137,27 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         }
         LOG(DEBUG, "DS4") << "Adding custom arguments: " << ds4_args << std::endl;
         std::vector<std::string> custom_args = parse_custom_args(ds4_args);
-        command.insert(command.end(), custom_args.begin(), custom_args.end());
+        args.insert(args.end(), custom_args.begin(), custom_args.end());
     }
 
-    plan.set_command(std::move(command));
-    const std::vector<std::string> engine_args = plan.engine_args();
-
-    LOG(INFO, "DS4") << "Starting " << plan.image().tagged_ref() << " as "
-                     << plan.container_name() << " for " << gguf_path << " on port " << port_
-                     << std::endl;
-
-    const bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
-    set_process_handle(ProcessManager::start_process(plan.engine_executable(), engine_args, "",
-                                                     inherit_output, true, {}),
-                       plan.engine_executable(), engine_args);
-
-    if (!plan.publishes_port()) {
-        const std::string address =
-            wait_for_container_address(ds4::descriptor.recipe, kVariant);
-        if (address.empty()) {
-            const std::string logs = container_logs_for(ds4::descriptor.recipe, kVariant);
-            unload();
-            throw std::runtime_error("ds4 container got no network address" +
-                                     (logs.empty() ? "" : "\n" + logs));
-        }
-        set_backend_host(address);
-    } else {
-        set_backend_host("127.0.0.1");
-    }
+    ContainerTarget target;
+    target.entry = "ds4-server";
+    target.recipe = ds4::descriptor.recipe;
+    target.variant = kVariant;
+    target.profile_id = "ds4-rocm";
+    target.model_paths.push_back(gguf_path);
 
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
     // cheapest always-on route and doubles as the watchdog probe.
-    if (!wait_for_ready("/v1/models", (std::max)(kStartupTimeoutSeconds,
-                                                 HttpClient::get_default_timeout()))) {
-        const std::string logs = container_logs_for(ds4::descriptor.recipe, kVariant);
-        unload();
-        throw std::runtime_error("ds4-server failed to start within timeout" +
-                                 (logs.empty() ? "" : "\n" + logs));
-    }
+    launch(std::move(args), target, "/v1/models",
+           (std::max)(kStartupTimeoutSeconds, HttpClient::get_default_timeout()),
+           (log_level_ == "info") || (log_level_ == "debug"));
 }
 
 void Ds4Server::unload() {
     stop_backend_watchdog();
-
-    stop_container_for(ds4::descriptor.recipe, kVariant);
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "DS4") << "Stopping ds4-server" << std::endl;
-        ProcessManager::stop_process(handle);
-    }
+    stop_child();
 }
 
 json Ds4Server::chat_completion(const json& request) {

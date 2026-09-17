@@ -57,36 +57,26 @@ public:
     json tokenize(const json& request) override;
 
 protected:
-    // Everything a containerized llama-server launch varies on. The image runs
-    // the same binary this class drives from disk, so only the launch differs;
-    // the forks that ship this way (rocmfpx, llamacpp's nathanw) each fill this
-    // in and inherit the rest of the class unchanged.
-    struct ContainerLaunch {
+    // How a recipe launches llama-server. The variants that ship as an OCI
+    // image run the same binary, so they differ only in where it runs and which
+    // tuning flags the recipe pins; the rest of load() is shared.
+    struct LlamaLaunch {
         std::string recipe;
         std::string variant;
-        std::string profile_id;
-        std::string args_option;                      // descriptor option holding custom args
-        const std::set<std::string>* reserved_flags;  // flags the caller owns
-        int batch_size = 2048;
-        int ubatch_size = 2048;
-        bool flash_attention = true;
+        std::string args_option = "llamacpp_args";
+        const std::set<std::string>* reserved_flags = nullptr;
+        bool containerized = false;
+        std::string profile_id;  // container only; "" derives from the variant
+        // 0 / false leaves the flag off, which is llama-server's own default.
+        int batch_size = 0;
+        int ubatch_size = 0;
+        bool flash_attention = false;
         bool no_mmap = false;
     };
 
-    // Start llama-server inside a pinned OCI image rather than from a local
-    // binary, then wait for it the same way load() does.
-    void load_containerized(const std::string& model_name, const ModelInfo& model_info,
-                            const RecipeOptions& options, const ContainerLaunch& launch);
-
-    // Stop the container started by load_containerized(), if any.
-    void unload_containerized(const std::string& recipe, const std::string& variant);
+    virtual LlamaLaunch launch_profile(const RecipeOptions& options) const;
 
 private:
-    // The (recipe, variant) whose container is currently loaded, so unload()
-    // stops the container by name rather than only signalling the client.
-    std::string container_recipe_;
-    std::string container_variant_;
-
     // llama-server echoes the local .gguf path it was launched with (`-m <path>`)
     // in the OpenAI `model` field. Rewrite it to the client-facing model id so
     // responses don't leak absolute filesystem paths (and usernames).

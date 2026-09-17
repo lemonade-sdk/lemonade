@@ -83,6 +83,14 @@ static void push_arg(std::vector<std::string>& args,
     push_reserved(reserved, key, aliases);
 }
 
+// get_option() answers null for an option the recipe does not declare, and a
+// null json is not convertible to std::string. Recipes that launch llama-server
+// without declaring llamacpp's own options reach here.
+static std::string string_option(const RecipeOptions& options, const std::string& key) {
+    const json value = options.get_option(key);
+    return value.is_string() ? value.get<std::string>() : std::string();
+}
+
 static std::string resolve_llamacpp_backend(const std::string& backend) {
     if (backend == "rocm") {
         // Map "rocm" to the appropriate channel based on config
@@ -232,6 +240,23 @@ LlamaCppServer::~LlamaCppServer() {
     unload();
 }
 
+LlamaCppServer::LlamaLaunch LlamaCppServer::launch_profile(const RecipeOptions& options) const {
+    const std::string chosen = string_option(options, "llamacpp_backend");
+    RuntimeConfig::validate_backend_choice("llamacpp", chosen);
+
+    LlamaLaunch launch;
+    launch.recipe = llamacpp::descriptor.recipe;
+    launch.variant = resolve_llamacpp_backend(chosen);
+    launch.args_option = "llamacpp_args";
+    launch.reserved_flags = &llamacpp::reserved_custom_arg_flags();
+    // One llama.cpp build ships as an OCI image rather than a release asset.
+    launch.containerized = backends::backend_is_image_backed(launch.recipe, launch.variant);
+    if (launch.containerized) {
+        launch.profile_id = llamacpp::container_profile_for(launch.variant);
+    }
+    return launch;
+}
+
 void LlamaCppServer::load(const std::string& model_name,
                          const ModelInfo& model_info,
                          const RecipeOptions& options,
@@ -240,42 +265,34 @@ void LlamaCppServer::load(const std::string& model_name,
 
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
+    const LlamaLaunch recipe_launch = launch_profile(options);
+    const std::string& llamacpp_backend = recipe_launch.variant;
+
     int ctx_size = options.get_option("ctx_size");
-
-    std::string llamacpp_device = options.get_option("llamacpp_device");
-    std::string llamacpp_backend_option = options.get_option("llamacpp_backend");
-    std::string llamacpp_backend = resolve_llamacpp_backend(llamacpp_backend_option);
-    std::string llamacpp_args = options.get_option("llamacpp_args");
-
-    RuntimeConfig::validate_backend_choice("llamacpp", llamacpp_backend_option);
+    std::string llamacpp_device = string_option(options, "llamacpp_device");
+    std::string llamacpp_args = string_option(options, recipe_launch.args_option);
 
     LOG(INFO, "LlamaCpp") << "Using LlamaCpp Backend: " << llamacpp_backend << std::endl;
-
-    // One llama.cpp build ships as a container rather than a release asset. It
-    // runs the same llama-server, so it diverges only at launch.
-    if (backends::backend_is_image_backed(llamacpp::descriptor.recipe, llamacpp_backend)) {
-        ContainerLaunch launch;
-        launch.recipe = llamacpp::descriptor.recipe;
-        launch.variant = llamacpp_backend;
-        launch.profile_id = llamacpp::container_profile_for(llamacpp_backend);
-        launch.args_option = "llamacpp_args";
-        launch.reserved_flags = &llamacpp::reserved_custom_arg_flags();
-        load_containerized(model_name, model_info, options, launch);
-        return;
-    }
 
     bool use_gpu = (llamacpp_backend != "cpu");
 
     // Update device type based on the actual backend selected.
     device_type_ = use_gpu ? DEVICE_GPU : DEVICE_CPU;
 
-    // Install llama-server if needed (use per-model backend)
-    backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
+    // Install the backend if needed: a release asset, or the pinned image.
+    backend_manager_->install_backend(recipe_launch.recipe, llamacpp_backend);
 
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
+    const bool hf_load = model_info.extra<bool>("hf_load", false);
+    if (hf_load && recipe_launch.containerized) {
+        throw std::runtime_error(
+            recipe_launch.recipe +
+            ": this model lets llama-server fetch its own weights, which a container cannot do "
+            "on its private network. Use a backend that runs on the host.");
+    }
     std::string gguf_path = model_info.resolved_path();
-    if (gguf_path.empty() && !model_info.extra<bool>("hf_load", false)) {
+    if (gguf_path.empty() && !hf_load) {
         throw std::runtime_error("GGUF file not found for checkpoint: " + model_info.checkpoint());
     }
 
@@ -289,7 +306,10 @@ void LlamaCppServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
+    std::string executable;
+    if (!recipe_launch.containerized) {
+        executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
+    }
 
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
@@ -309,7 +329,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // is required for models like Qwen2.5-Omni where the manual -m + --mmproj
     // path rejects audio content parts in /v1/chat/completions — the -hf path
     // drives the dual-clip (vision+audio) context correctly.
-    if (model_info.extra<bool>("hf_load", false)) {
+    if (hf_load) {
         push_arg(args, reserved_flags, "-hf", model_info.checkpoint(),
                  std::vector<std::string>{"--hf-repo", "-mr", "--hf-file", "-mf"});
     } else {
@@ -324,15 +344,35 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
+    if (recipe_launch.containerized) {
+        // Inside the container this is its own namespace; the only way in is the
+        // engine's loopback publication or its private network address.
+        push_arg(args, reserved_flags, "--host", "0.0.0.0");
+    }
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
+
+    if (recipe_launch.batch_size > 0) {
+        push_arg(args, reserved_flags, "--batch-size", std::to_string(recipe_launch.batch_size),
+                 std::vector<std::string>{"-b"});
+    }
+    if (recipe_launch.ubatch_size > 0) {
+        push_arg(args, reserved_flags, "--ubatch-size", std::to_string(recipe_launch.ubatch_size),
+                 std::vector<std::string>{"-ub"});
+    }
+    if (recipe_launch.flash_attention) {
+        push_arg(args, reserved_flags, "-fa", "1", std::vector<std::string>{"--flash-attn"});
+    }
+    if (recipe_launch.no_mmap) {
+        push_arg(args, reserved_flags, "--no-mmap");
+    }
 
     LOG(DEBUG, "LlamaCpp") << "Using backend: " << llamacpp_backend << "\n"
             << "[LlamaCpp] Use GPU: " << (use_gpu ? "true" : "false") << std::endl;
 
     // Add mmproj file if present (for vision models). Skip when hf_load is set —
     // llama-server resolves the mmproj companion itself from the HF repo.
-    if (!mmproj_path.empty() && !model_info.extra<bool>("hf_load", false)) {
+    if (!mmproj_path.empty() && !hf_load) {
         push_arg(args, reserved_flags, "--mmproj", mmproj_path);
         if (!use_gpu) {
             LOG(DEBUG, "LlamaCpp") << "Skipping mmproj argument since GPU mode is not enabled" << std::endl;
@@ -368,6 +408,10 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--reranking", std::vector<std::string>{"--rerank"});
 
     // Validate and append custom arguments
+    if (recipe_launch.reserved_flags) {
+        reserved_flags.insert(recipe_launch.reserved_flags->begin(),
+                              recipe_launch.reserved_flags->end());
+    }
     if (!llamacpp_args.empty()) {
         std::string validation_error = validate_custom_args(llamacpp_args, reserved_flags);
         if (!validation_error.empty()) {
@@ -382,6 +426,23 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
+
+    const bool inherit_llama_output = (log_level_ == "info") || is_debug();
+
+    if (recipe_launch.containerized) {
+        ContainerTarget target;
+        target.entry = "llama-server";
+        target.recipe = recipe_launch.recipe;
+        target.variant = recipe_launch.variant;
+        target.profile_id = recipe_launch.profile_id;
+        target.model_paths.push_back(gguf_path);
+        if (!mmproj_path.empty()) target.model_paths.push_back(mmproj_path);
+        if (use_draft_checkpoint) target.model_paths.push_back(draft_path);
+
+        launch(std::move(args), target, "/health", 600, inherit_llama_output);
+        LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
+        return;
+    }
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
@@ -546,178 +607,19 @@ void LlamaCppServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    bool inherit_llama_output = (log_level_ == "info") || is_debug();
-    set_backend_host("127.0.0.1");
-    container_recipe_.clear();
-    container_variant_.clear();
-    set_process_handle(ProcessManager::start_process(
-        process_executable, args, working_dir, inherit_llama_output, true, env_vars),
-        process_executable, args);
+    HostTarget target;
+    target.binary = process_executable;
+    target.env = env_vars;
+    target.working_dir = working_dir;
 
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("llama-server failed to start");
-    }
-
+    launch(std::move(args), target, "/health", 600, inherit_llama_output);
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void LlamaCppServer::load_containerized(const std::string& model_name,
-                                        const ModelInfo& model_info,
-                                        const RecipeOptions& options,
-                                        const ContainerLaunch& launch) {
-    LOG(INFO, "LlamaCpp") << "Loading " << model_name << " on " << launch.recipe << ":"
-                          << launch.variant << std::endl;
-
-    int ctx_size = options.get_option("ctx_size");
-    const std::string custom_args = options.get_option(launch.args_option);
-
-    const std::string gguf_path = model_info.resolved_path();
-    if (gguf_path.empty() || !fs::exists(gguf_path)) {
-        throw std::runtime_error(launch.recipe + ": GGUF file not found for checkpoint: " +
-                                 model_info.checkpoint());
-    }
-    const std::string mmproj_path = model_info.resolved_path("mmproj");
-
-    device_type_ = DEVICE_GPU;
-    backend_manager_->install_backend(launch.recipe, launch.variant);
-
-    port_ = choose_port();
-
-    // A container left by a previous run (a killed lemond) would make `run`
-    // fail on the name, so clear it before claiming the name again.
-    clear_stale_container(launch.recipe, launch.variant);
-    container_recipe_ = launch.recipe;
-    container_variant_ = launch.variant;
-
-    ContainerLaunchRequest request;
-    request.recipe = launch.recipe;
-    request.variant = launch.variant;
-    request.profile_id = launch.profile_id;
-    request.model_paths.push_back(gguf_path);
-    if (!mmproj_path.empty()) request.model_paths.push_back(mmproj_path);
-    ContainerLaunchPlan plan = plan_container_launch(request, port_);
-
-    const bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
-    const bool supports_reranking = (model_info.type == ModelType::RERANKING);
-    if (supports_embeddings && ctx_size < EMBEDDING_CTX_SIZE) {
-        ctx_size = EMBEDDING_CTX_SIZE;
-    }
-
-    std::vector<std::string> command;
-    command.push_back("llama-server");
-    command.push_back("-m");
-    command.push_back(plan.container_path(gguf_path));
-    command.push_back("--host");
-    command.push_back("0.0.0.0");  // reachable from the published loopback port only
-    command.push_back("--port");
-    command.push_back(std::to_string(port_));
-    command.push_back("--ctx-size");
-    command.push_back(std::to_string(ctx_size));
-    command.push_back("--jinja");
-    command.push_back("--metrics");
-    command.push_back("--batch-size");
-    command.push_back(std::to_string(launch.batch_size));
-    command.push_back("--ubatch-size");
-    command.push_back(std::to_string(launch.ubatch_size));
-    if (launch.flash_attention) {
-        command.push_back("-fa");
-        command.push_back("1");
-    }
-    if (launch.no_mmap) {
-        command.push_back("--no-mmap");
-    }
-    if (!mmproj_path.empty()) {
-        command.push_back("--mmproj");
-        command.push_back(plan.container_path(mmproj_path));
-    }
-    if (supports_embeddings) {
-        command.push_back("--embeddings");
-    }
-    if (supports_reranking) {
-        command.push_back("--reranking");
-    }
-
-    if (!custom_args.empty()) {
-        const std::string validation_error =
-            validate_custom_args(custom_args, *launch.reserved_flags);
-        if (!validation_error.empty()) {
-            throw std::invalid_argument("Invalid custom " + launch.recipe + " arguments:\n" +
-                                        validation_error);
-        }
-        const std::vector<std::string> parsed = parse_custom_args(custom_args);
-        command.insert(command.end(), parsed.begin(), parsed.end());
-    }
-
-    plan.set_command(std::move(command));
-    const std::vector<std::string> engine_args = plan.engine_args();
-
-    LOG(INFO, "LlamaCpp") << "Starting " << plan.image().tagged_ref() << " as "
-                          << plan.container_name() << " on port " << port_ << std::endl;
-
-    const bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(plan.engine_executable(), engine_args, "",
-                                                     inherit_output, true, {}),
-                       plan.engine_executable(), engine_args);
-
-    if (!plan.publishes_port()) {
-        const std::string address = wait_for_container_address(launch.recipe, launch.variant);
-        if (address.empty()) {
-            const std::string logs = container_logs_for(launch.recipe, launch.variant);
-            unload_containerized(launch.recipe, launch.variant);
-            throw std::runtime_error(launch.recipe + " container got no network address" +
-                                     (logs.empty() ? "" : "\n" + logs));
-        }
-        set_backend_host(address);
-    } else {
-        set_backend_host("127.0.0.1");
-    }
-
-    if (!wait_for_ready("/health")) {
-        const std::string logs = container_logs_for(launch.recipe, launch.variant);
-        unload_containerized(launch.recipe, launch.variant);
-        throw std::runtime_error(launch.recipe + " llama-server failed to start" +
-                                 (logs.empty() ? "" : "\n" + logs));
-    }
-
-    LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
-}
-
-void LlamaCppServer::unload_containerized(const std::string& recipe, const std::string& variant) {
-    stop_backend_watchdog();
-
-    if (!variant.empty()) {
-        stop_container_for(recipe, variant);
-    }
-    container_recipe_.clear();
-    container_variant_.clear();
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "LlamaCpp") << "Stopping " << recipe << " container" << std::endl;
-        ProcessManager::stop_process(handle);
-    }
 }
 
 void LlamaCppServer::unload() {
-    if (!container_variant_.empty()) {
-        // Copies: unload_containerized() clears the members it would otherwise
-        // be reading through these references.
-        const std::string recipe = container_recipe_;
-        const std::string variant = container_variant_;
-        unload_containerized(recipe, variant);
-        return;
-    }
     stop_backend_watchdog();
     LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
+    stop_child();
 }
 
 bool LlamaCppServer::downsize() {

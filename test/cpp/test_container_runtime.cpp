@@ -91,7 +91,7 @@ ContainerRunSpec sample_spec() {
 
 // The launch contract: what every container gets, and nothing more.
 void test_run_args() {
-    const auto args = ContainerRuntime::build_run_args(podman_engine(), sample_spec());
+    const auto args = sample_spec().to_argv(podman_engine());
 
     expect(args[0] == "run", "run args start with run");
     expect(contains(args, "--rm"), "container is removed on exit");
@@ -129,20 +129,20 @@ void test_run_args() {
 void test_docker_is_reached_by_address() {
     ContainerRunSpec spec = sample_spec();
     spec.publish_port = false;
-    const auto args = ContainerRuntime::build_run_args(docker_engine(), spec);
+    const auto args = spec.to_argv(docker_engine());
     expect(contains(args, "--network=lemonade-rocmfpx-rocmfpx") && !contains(args, "-p "),
            "docker on an internal network publishes nothing");
     ContainerRunSpec fallback;
     fallback.name = "x";
     fallback.image = "img";
-    const auto none = ContainerRuntime::build_run_args(docker_engine(), fallback);
+    const auto none = fallback.to_argv(docker_engine());
     expect(contains(none, "--network=none"), "an unset network falls back to none");
 }
 
 void test_shared_network_namespace() {
     ContainerRunSpec spec = sample_spec();
     spec.network = "container:abc123";
-    const auto args = ContainerRuntime::build_run_args(podman_engine(), spec);
+    const auto args = spec.to_argv(podman_engine());
     expect(contains(args, "--network=container:abc123"), "joins lemond's namespace");
     expect(!contains(args, "-p "), "no port published inside a shared namespace");
 }
@@ -156,11 +156,11 @@ void test_volume_mounts() {
     volume.volume_subpath = "hub/blobs/deadbeef";
     spec.mounts = {volume};
 
-    const auto docker_args = ContainerRuntime::build_run_args(docker_engine(), spec);
+    const auto docker_args = spec.to_argv(docker_engine());
     expect(contains(docker_args, "--mount type=volume,src=lemonade-cache,destination="
                                  "/mnt/models/model.gguf,volume-subpath=hub/blobs/deadbeef,ro"),
            "docker spells a volume subpath as volume-subpath");
-    const auto podman_args = ContainerRuntime::build_run_args(podman_engine(), spec);
+    const auto podman_args = spec.to_argv(podman_engine());
     expect(contains(podman_args, "--mount type=volume,src=lemonade-cache,destination="
                                  "/mnt/models/model.gguf,subpath=hub/blobs/deadbeef,ro"),
            "podman spells a volume subpath as subpath");
@@ -170,10 +170,10 @@ void test_keep_groups_translation() {
     ContainerRunSpec spec = sample_spec();
     spec.profile = ContainerRuntime::device_profile("amd-rocm-keep-groups");
 
-    const auto podman_args = ContainerRuntime::build_run_args(podman_engine(), spec);
+    const auto podman_args = spec.to_argv(podman_engine());
     expect(contains(podman_args, "--group-add keep-groups"), "podman keeps host groups");
 
-    const auto docker_args = ContainerRuntime::build_run_args(docker_engine(), spec);
+    const auto docker_args = spec.to_argv(docker_engine());
     expect(!contains(docker_args, "keep-groups"), "docker drops the podman-only keyword");
     expect(contains(docker_args, "--group-add video") && contains(docker_args, "--group-add render"),
            "docker gets explicit groups instead");
@@ -182,7 +182,7 @@ void test_keep_groups_translation() {
 void test_ds4_profile() {
     ContainerRunSpec spec = sample_spec();
     spec.profile = ContainerRuntime::device_profile("ds4-rocm");
-    const auto args = ContainerRuntime::build_run_args(podman_engine(), spec);
+    const auto args = spec.to_argv(podman_engine());
     expect(contains(args, "--ipc=host"), "ds4 needs host IPC");
     expect(contains(args, "--cap-add SYS_PTRACE"), "ds4 gets SYS_PTRACE back after cap-drop");
     const int drop = index_of(args, "--cap-drop=all");
@@ -194,7 +194,7 @@ void test_profile_env() {
     ContainerRunSpec spec = sample_spec();
     spec.profile = ContainerRuntime::device_profile("amd-rocm-hipblaslt");
     spec.env.push_back({"HIP_VISIBLE_DEVICES", "0"});
-    const auto args = ContainerRuntime::build_run_args(podman_engine(), spec);
+    const auto args = spec.to_argv(podman_engine());
     expect(contains(args, "--env ROCBLAS_USE_HIPBLASLT=1"), "profile env applied");
     expect(contains(args, "--env HIP_VISIBLE_DEVICES=0"), "spec env applied");
 }

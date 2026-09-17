@@ -6,6 +6,8 @@
 #include <utility>
 #include <vector>
 
+#include "lemon/utils/process_manager.h"
+
 namespace lemon {
 struct DownloadProgress;
 using DownloadProgressCallback = std::function<bool(const DownloadProgress&)>;
@@ -15,7 +17,7 @@ namespace lemon {
 namespace utils {
 
 // Which OCI engine is driving the containers. Podman is preferred; see
-// build_run_args() for what that buys.
+// ContainerRunSpec::to_argv() for what that buys.
 enum class ContainerEngineKind { None, Podman, Docker };
 
 // Where lemond itself is running relative to the engine. Everything but Native
@@ -29,6 +31,10 @@ enum class HostTransport {
 };
 
 const char* host_transport_name(HostTransport transport);
+
+// URL of the container prerequisites page, optionally anchored at the section
+// that fixes a ReadinessResult's `remediation_id`.
+std::string container_prerequisites_url(const std::string& remediation_id = "");
 
 struct ContainerEngine {
     ContainerEngineKind kind = ContainerEngineKind::None;
@@ -80,16 +86,20 @@ struct ContainerRunSpec {
     DeviceProfile profile;
     std::vector<ContainerMount> mounts;
     std::vector<std::pair<std::string, std::string>> env;
-    // A network name or "container:<id>"; "none" is unreachable, so
-    // plan_container_launch() always overrides it.
+    // A network name or "container:<id>"; "none" is unreachable, so start()
+    // always overrides it.
     std::string network = "none";
-    // Engine-dependent; plan_container_launch() explains the choice.
+    // Engine-dependent; start() explains the choice.
     bool publish_port = true;
     int host_port = 0;
     int container_port = 0;
     std::string entrypoint;          // "" = the image's own entrypoint
     std::vector<std::string> command;  // argv appended after the image
     std::string workdir;
+
+    // The engine argv for this spec. Pure; the engine decides only where podman
+    // and docker spell the same thing differently.
+    std::vector<std::string> to_argv(const ContainerEngine& engine) const;
 };
 
 // A pinned image. `tag` is documentation only: `digest` is what gets pulled, so
@@ -109,6 +119,36 @@ struct ContainerImageRef {
     std::string tagged_ref() const {
         return tag.empty() ? repository : repository + ":" + tag;
     }
+};
+
+// What a backend asks to run inside a pinned image.
+struct ContainerWorkload {
+    std::string name;
+    std::string recipe;
+    std::string variant;
+    ContainerImageRef image;
+    std::string profile_id;
+    // Bind-mounted read-only under /mnt/models. Any `command` or `env` entry
+    // equal to one of these is rewritten to the path inside, so a caller never
+    // spells an in-container path itself.
+    std::vector<std::string> model_paths;
+    std::vector<std::string> command;  // argv inside the image, argv[0] included
+    std::vector<std::pair<std::string, std::string>> env;
+    std::string entrypoint;  // "" = the image's own entrypoint
+    std::string workdir;
+    int port = 0;
+    bool inherit_output = false;
+};
+
+struct RunningChild {
+    ProcessHandle client{nullptr, 0};
+    std::string executable;
+    std::vector<std::string> args;
+    std::string host;  // already resolved, published port or container address
+    int port = 0;
+    // Empty on the host. A container is not lemond's child, so stopping one
+    // takes this name rather than `client`.
+    std::string container;
 };
 
 // Why a container-backed recipe cannot run right now. Each value maps to a
@@ -192,6 +232,13 @@ public:
     void remove_image(const ContainerImageRef& ref);
 
     // --- container lifecycle ----------------------------------------------
+    // Throws std::runtime_error carrying remediation text when the host cannot
+    // run the workload.
+    RunningChild start(const ContainerWorkload& workload);
+    // Call BEFORE killing the engine client: SIGKILL is not proxied inward, and
+    // the container would go on holding the GPU.
+    void stop(const std::string& name);
+
     void stop_container(const std::string& name, int timeout_seconds = 10);
     void remove_container(const std::string& name);
     // The last `tail` lines the container wrote, for attaching to a failed load.
@@ -211,8 +258,6 @@ public:
     int sweep_managed_containers();
 
     // --- pure helpers (no engine needed; unit-tested directly) -------------
-    static std::vector<std::string> build_run_args(const ContainerEngine& engine,
-                                                   const ContainerRunSpec& spec);
     static std::vector<std::string> build_pull_args(const ContainerImageRef& ref);
     static std::vector<std::string> build_stop_args(const std::string& name, int timeout_seconds);
 

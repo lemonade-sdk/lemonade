@@ -18,6 +18,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/container_backend.h"
+#include "lemon/utils/container_runtime.h"
 #include "lemon/backends/container_image_pins.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/thenoise/thenoise_server.h"
@@ -401,8 +402,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
 
-    // No-op without a container runtime. See ContainerRuntime::sweep_managed_containers.
-    backends::sweep_managed_containers();
+    // No-op without a container runtime. A killed lemond leaves GPU-holding
+    // containers behind; they carry the managed label, so this clears them.
+    if (const int swept = utils::ContainerRuntime::global().sweep_managed_containers()) {
+        LOG(INFO, "Container") << "Swept " << swept << " stale Lemonade container(s)" << std::endl;
+    }
 
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),

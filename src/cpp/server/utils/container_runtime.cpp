@@ -14,6 +14,7 @@
 #include <lemon/utils/aixlog.hpp>
 #include <nlohmann/json.hpp>
 #include "lemon/model_manager.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/utils/process_manager.h"
 
@@ -32,6 +33,8 @@ namespace utils {
 namespace {
 
 constexpr const char* kManagedPrefix = "lemonade-";
+constexpr const char* kPrerequisitesUrl = "https://lemonade-server.ai/container_prerequisites.html";
+constexpr const char* kModelsMountRoot = "/mnt/models";
 constexpr const char* kManagedLabel = "ai.lemonade";
 constexpr const char* kKfdTopologyNodes = "/sys/devices/virtual/kfd/kfd/topology/nodes";
 constexpr int kShortCommandTimeout = 30;
@@ -130,7 +133,70 @@ const std::map<std::string, DeviceProfile>& profile_table() {
     return table;
 }
 
+// The mount the engine on the host needs in order to expose `visible_path`
+// (a path as lemond sees it) at `inside`. Native, toolbox and snap transports
+// share the host filesystem (a toolbox exposes the host under /run/host, which
+// is the same tree). Inside a container the path is looked up through lemond's
+// own mounts, which may be a named volume rather than a host directory.
+ContainerMount host_mount_for(ContainerRuntime& runtime, const std::string& visible_path,
+                              const std::string& inside) {
+    ContainerMount mount;
+    mount.container_path = inside;
+    mount.read_only = true;
+    switch (runtime.transport()) {
+        case HostTransport::Native:
+        case HostTransport::Snap:
+            mount.host_path = visible_path;
+            return mount;
+        case HostTransport::Toolbox: {
+            const std::string kRunHost = "/run/host";
+            mount.host_path = visible_path.rfind(kRunHost + "/", 0) == 0
+                                  ? visible_path.substr(kRunHost.size())
+                                  : visible_path;
+            return mount;
+        }
+        case HostTransport::Container: {
+            // Longest matching self-mount wins; the container path of that mount
+            // is the prefix to strip and its host source the prefix to add.
+            const ContainerMount* best = nullptr;
+            for (const auto& self_mount : runtime.self_mounts()) {
+                const std::string& prefix = self_mount.container_path;
+                if (visible_path.rfind(prefix, 0) != 0) continue;
+                if (visible_path.size() > prefix.size() && visible_path[prefix.size()] != '/' &&
+                    prefix.back() != '/') {
+                    continue;
+                }
+                if (!best || prefix.size() > best->container_path.size()) best = &self_mount;
+            }
+            if (!best) {
+                throw std::runtime_error(
+                    "'" + visible_path +
+                    "' is not inside any volume mounted into lemond's container, so the "
+                    "engine on the host cannot mount it. See " +
+                    container_prerequisites_url("engine-socket"));
+            }
+            std::string suffix = visible_path.substr(best->container_path.size());
+            if (!suffix.empty() && suffix.front() == '/') suffix.erase(0, 1);
+            if (best->volume) {
+                mount.volume = true;
+                mount.host_path = best->host_path;
+                mount.volume_subpath = suffix;
+            } else {
+                mount.host_path = suffix.empty() ? best->host_path : best->host_path + "/" + suffix;
+            }
+            return mount;
+        }
+    }
+    mount.host_path = visible_path;
+    return mount;
+}
+
 }  // namespace
+
+std::string container_prerequisites_url(const std::string& remediation_id) {
+    return remediation_id.empty() ? std::string(kPrerequisitesUrl)
+                                  : std::string(kPrerequisitesUrl) + "#" + remediation_id;
+}
 
 const char* host_transport_name(HostTransport transport) {
     switch (transport) {
@@ -393,8 +459,8 @@ std::vector<std::string> ContainerRuntime::build_stop_args(const std::string& na
     return {"stop", "--time", std::to_string(timeout_seconds), name};
 }
 
-std::vector<std::string> ContainerRuntime::build_run_args(const ContainerEngine& engine,
-                                                          const ContainerRunSpec& spec) {
+std::vector<std::string> ContainerRunSpec::to_argv(const ContainerEngine& engine) const {
+    const ContainerRunSpec& spec = *this;
     std::vector<std::string> args;
     args.push_back("run");
     args.push_back("--rm");
@@ -827,6 +893,153 @@ void ContainerRuntime::remove_image(const ContainerImageRef& ref) {
     }
 }
 
+RunningChild ContainerRuntime::start(const ContainerWorkload& workload) {
+    // Host readiness first: a machine with no container runtime should say so,
+    // not report a missing image pin it could not have used anyway.
+    const DeviceProfile& profile = device_profile(workload.profile_id);
+    const ReadinessResult readiness = check_readiness(profile);
+    if (!readiness.ok()) {
+        throw std::runtime_error(readiness.message + " See " +
+                                 container_prerequisites_url(readiness.remediation_id));
+    }
+
+    const auto& found = engine();
+    if (!found) {
+        throw std::runtime_error("No container runtime found. See " +
+                                 container_prerequisites_url("no-container-runtime"));
+    }
+    if (!workload.image.valid()) {
+        throw std::runtime_error("No toolbox image is pinned for " + workload.recipe + ":" +
+                                 workload.variant);
+    }
+    if (!has_image_digest(workload.image.repository, workload.image.digest)) {
+        throw std::runtime_error("Toolbox image " + workload.image.tagged_ref() +
+                                 " is not installed at the pinned digest");
+    }
+
+    // A container left by a previous run (a killed lemond) would make `run`
+    // fail on the name, so clear it before claiming the name again.
+    remove_container(workload.name);
+
+    ContainerRunSpec spec;
+    spec.name = workload.name;
+    spec.image = workload.image.pinned_ref();
+    spec.labels = {
+        {std::string(managed_label()) + ".recipe", workload.recipe},
+        {std::string(managed_label()) + ".variant", workload.variant},
+        {std::string(managed_label()) + ".port", std::to_string(workload.port)},
+    };
+    spec.profile = resolve_profile_groups(profile);
+    spec.host_port = workload.port;
+    spec.container_port = workload.port;
+    spec.env = workload.env;
+    spec.entrypoint = workload.entrypoint;
+    spec.workdir = workload.workdir;
+
+    // Inside a container lemond's loopback is its own network namespace, so the
+    // workload joins it instead of publishing a port to the host. Everywhere
+    // else the workload gets a private internal network of its own: no default
+    // route, no NAT, nothing else on it. Docker cannot publish a port from such
+    // a network but the host can route to the container's address on it;
+    // rootless podman is the reverse, so it publishes on loopback.
+    const std::string self_id = self_container_id();
+    if (!self_id.empty()) {
+        spec.network = "container:" + self_id;
+        spec.publish_port = false;
+    } else {
+        ensure_isolated_network(spec.name);
+        spec.network = spec.name;
+        spec.publish_port = (found->kind == ContainerEngineKind::Podman);
+    }
+
+    // sysfs shows the host's KFD topology in every transport, so the GPU index
+    // is computed the same way everywhere; no match simply adds nothing.
+    const std::string gpu_index = kfd_gpu_index_for_arch(SystemInfo::get_rocm_arch());
+    if (!gpu_index.empty()) spec.env.push_back({"HIP_VISIBLE_DEVICES", gpu_index});
+
+    // Each model file is resolved through the Hugging Face cache's symlinks and
+    // mounted alone under /mnt/models, so the container sees exactly the files
+    // it was given and the in-container path is the same on every host. Both
+    // spellings map to it, because a caller writes the path it was handed.
+    std::map<std::string, std::string> inside_path;
+    std::map<std::string, std::string> claimed;  // in-container path -> its source
+    for (const auto& model_path : workload.model_paths) {
+        if (model_path.empty()) continue;
+        std::error_code ec;
+        const fs::path canonical = fs::canonical(model_path, ec);
+        if (ec) {
+            throw std::runtime_error("Model path '" + model_path + "' does not exist");
+        }
+        const std::string visible = canonical.string();
+        const auto seen = inside_path.find(visible);
+        if (seen != inside_path.end()) {
+            inside_path[model_path] = seen->second;
+            continue;
+        }
+        // Two different files can share a basename; the second one gets a
+        // numbered directory rather than silently shadowing the first.
+        std::string inside = std::string(kModelsMountRoot) + "/" + canonical.filename().string();
+        for (int n = 2; claimed.count(inside); ++n) {
+            inside = std::string(kModelsMountRoot) + "/" + std::to_string(n) + "/" +
+                     canonical.filename().string();
+        }
+        claimed[inside] = visible;
+        inside_path[visible] = inside;
+        inside_path[model_path] = inside;
+        spec.mounts.push_back(host_mount_for(*this, visible, inside));
+    }
+
+    const auto rewrite = [&inside_path](std::string& value) {
+        const auto it = inside_path.find(value);
+        if (it != inside_path.end()) value = it->second;
+    };
+    spec.command = workload.command;
+    for (auto& arg : spec.command) rewrite(arg);
+    for (auto& entry : spec.env) rewrite(entry.second);
+
+    RunningChild running;
+    std::tie(running.executable, running.args) = engine_invocation(*found);
+    const std::vector<std::string> run_args = spec.to_argv(*found);
+    running.args.insert(running.args.end(), run_args.begin(), run_args.end());
+    running.container = spec.name;
+    running.port = workload.port;
+
+    LOG(INFO, "Container") << "Starting " << workload.image.tagged_ref() << " as " << spec.name
+                           << " on port " << workload.port << std::endl;
+
+    running.client = ProcessManager::start_process(running.executable, running.args, "",
+                                                   workload.inherit_output, true, {});
+
+    if (spec.publish_port) {
+        running.host = "127.0.0.1";
+        return running;
+    }
+
+    // Docker cannot publish from an internal network, so lemond talks to the
+    // container's own address on it. The engine attaches it asynchronously.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (std::chrono::steady_clock::now() < deadline) {
+        running.host = container_address(spec.name);
+        if (!running.host.empty()) return running;
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+
+    const std::string logs = container_logs(spec.name);
+    stop(spec.name);
+    ProcessManager::stop_process(running.client);
+    throw std::runtime_error(spec.name + " got no network address" +
+                             (logs.empty() ? "" : "\n" + logs));
+}
+
+void ContainerRuntime::stop(const std::string& name) {
+    if (name.empty() || !engine()) return;
+    stop_container(name);
+    // --rm detaches the container from its network asynchronously, so remove it
+    // explicitly first or the network is still in use.
+    remove_container(name);
+    remove_network(name);
+}
+
 void ContainerRuntime::stop_container(const std::string& name, int timeout_seconds) {
     if (name.empty() || !engine()) return;
     const CommandResult result = run(build_stop_args(name, timeout_seconds), timeout_seconds + 15);
@@ -912,6 +1125,7 @@ std::vector<std::string> ContainerRuntime::list_managed_containers() {
 }
 
 int ContainerRuntime::sweep_managed_containers() {
+    if (!engine()) return 0;
     int removed = 0;
     for (const auto& name : list_managed_containers()) {
         LOG(INFO, "Container") << "Removing stale container " << name << std::endl;

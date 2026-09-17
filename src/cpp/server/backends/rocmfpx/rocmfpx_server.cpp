@@ -23,28 +23,22 @@ RocmFpxServer::~RocmFpxServer() {
     unload();
 }
 
-void RocmFpxServer::load(const std::string& model_name, const ModelInfo& model_info,
-                         const RecipeOptions& options, bool do_not_upgrade) {
-    (void)do_not_upgrade;  // install_backend() is a no-op once the pinned digest is present
-
+LlamaCppServer::LlamaLaunch RocmFpxServer::launch_profile(const RecipeOptions& options) const {
+    (void)options;  // this recipe has exactly one variant, so nothing to select
     const rocmfpx::LaunchDefaults tuned = rocmfpx::launch_defaults();
 
-    ContainerLaunch launch;
+    LlamaLaunch launch;
     launch.recipe = rocmfpx::descriptor.recipe;
     launch.variant = kVariant;
-    launch.profile_id = "amd-rocm";
     launch.args_option = "rocmfpx_args";
     launch.reserved_flags = &rocmfpx::reserved_custom_arg_flags();
+    launch.containerized = true;
+    launch.profile_id = "amd-rocm";
     launch.batch_size = tuned.batch_size;
     launch.ubatch_size = tuned.ubatch_size;
     launch.flash_attention = tuned.flash_attention;
     launch.no_mmap = tuned.no_mmap;
-
-    load_containerized(model_name, model_info, options, launch);
-}
-
-void RocmFpxServer::unload() {
-    unload_containerized(rocmfpx::descriptor.recipe, kVariant);
+    return launch;
 }
 
 namespace rocmfpx {

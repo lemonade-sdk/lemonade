@@ -9,6 +9,7 @@
 #include <thread>
 #include <atomic>
 #include <stdexcept>
+#include <variant>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
@@ -79,6 +80,23 @@ struct Telemetry {
         };
     }
 };
+
+// Where a backend's server argv runs.
+struct HostTarget {
+    std::string binary;
+    std::vector<std::pair<std::string, std::string>> env;
+    std::string working_dir;
+};
+
+struct ContainerTarget {
+    std::string entry;  // the server's name on the image's PATH, i.e. argv[0]
+    std::string recipe;
+    std::string variant;
+    std::string profile_id;  // "" = derive from the variant name
+    std::vector<std::string> model_paths;  // see utils::ContainerWorkload
+};
+
+using LaunchTarget = std::variant<HostTarget, ContainerTarget>;
 
 class WrappedServer : public ICompletionServer {
 public:
@@ -594,6 +612,17 @@ protected:
                            const std::vector<std::string>& args);
     ProcessHandle consume_process_handle_for_cleanup();
 
+    // The only place the host and container paths differ, so a backend builds
+    // one argv for both and picks a target at the end of load(). Blocks until
+    // `health_endpoint` answers, and throws with the container's own output
+    // attached when it does not.
+    void launch(std::vector<std::string> argv, const LaunchTarget& target,
+                const std::string& health_endpoint, long timeout_seconds = 600,
+                bool inherit_output = false);
+
+    // Stop whatever launch() started. Safe to call when nothing is running.
+    void stop_child();
+
     // Choose an available port
     int choose_port();
 
@@ -626,7 +655,8 @@ protected:
         return "http://" + backend_host_ + ":" + std::to_string(get_backend_port());
     }
 
-    // Loopback by default; see plan_container_launch() for when it is not.
+    // Loopback by default; a container launch resolves it to the container's own
+    // address when the engine cannot publish a port.
     void set_backend_host(const std::string& host) { backend_host_ = host; }
 
     json create_watchdog_reset_response() const;
@@ -636,6 +666,9 @@ protected:
     std::string backend_host_ = "127.0.0.1";
     ProcessHandle process_handle_;
     std::vector<std::string> launch_command_;
+    // Set when launch() ran the child in a container. The container is not a
+    // child of lemond, so stopping it needs its name, not the client's handle.
+    std::string container_name_;
     mutable std::mutex process_mutex_;
     Telemetry telemetry_;
     std::string log_level_;

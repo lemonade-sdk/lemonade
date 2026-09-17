@@ -1,6 +1,8 @@
 #include <lemon/wrapped_server.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/http_client.h>
+#include <lemon/backends/container_backend.h>
+#include <lemon/utils/container_runtime.h>
 #include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
 #include <httplib.h>
@@ -411,6 +413,87 @@ bool WrappedServer::has_backend_process_exited() const {
     return !utils::ProcessManager::is_running(handle);
 }
 
+
+namespace {
+
+utils::ContainerWorkload workload_for(const ContainerTarget& target,
+                                      std::vector<std::string> argv, int port,
+                                      bool inherit_output) {
+    utils::ContainerWorkload workload;
+    workload.recipe = target.recipe;
+    workload.variant = target.variant;
+    workload.name = utils::ContainerRuntime::container_name(target.recipe, target.variant);
+    workload.image = backends::pinned_image_or_throw(target.recipe, target.variant);
+    workload.profile_id = target.profile_id.empty() ? backends::default_profile_id(target.variant)
+                                                    : target.profile_id;
+    workload.model_paths = target.model_paths;
+    workload.command.push_back(target.entry);
+    workload.command.insert(workload.command.end(), argv.begin(), argv.end());
+    workload.port = port;
+    workload.inherit_output = inherit_output;
+    return workload;
+}
+
+}  // namespace
+
+void WrappedServer::launch(std::vector<std::string> argv, const LaunchTarget& target,
+                           const std::string& health_endpoint, long timeout_seconds,
+                           bool inherit_output) {
+    // Both branches answer the same question, "what did I start and where do I
+    // reach it", so everything after them is shared.
+    utils::RunningChild child;
+    if (const auto* host = std::get_if<HostTarget>(&target)) {
+        child.executable = host->binary;
+        child.args = std::move(argv);
+        child.host = "127.0.0.1";
+        child.port = port_;
+        child.client = utils::ProcessManager::start_process(
+            child.executable, child.args, host->working_dir, inherit_output, true, host->env);
+    } else {
+        child = utils::ContainerRuntime::global().start(workload_for(
+            std::get<ContainerTarget>(target), std::move(argv), port_, inherit_output));
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(process_mutex_);
+        container_name_ = child.container;
+    }
+    set_backend_host(child.host);
+    set_process_handle(child.client, child.executable, child.args);
+
+    if (wait_for_ready(health_endpoint, timeout_seconds)) {
+        return;
+    }
+
+    // The container's own output is the only account of why it never answered;
+    // the client process only ever reports that the engine exited.
+    std::string logs;
+    if (!child.container.empty()) {
+        logs = utils::ContainerRuntime::global().container_logs(child.container);
+    }
+    stop_child();
+    throw std::runtime_error(server_name_ + " failed to start within timeout" +
+                             (logs.empty() ? "" : "\n" + logs));
+}
+
+void WrappedServer::stop_child() {
+    std::string container;
+    {
+        std::lock_guard<std::mutex> lock(process_mutex_);
+        container.swap(container_name_);
+    }
+    // Before the client, not after: SIGKILL is not proxied into the container,
+    // which would leave it holding the GPU.
+    if (!container.empty()) {
+        utils::ContainerRuntime::global().stop(container);
+    }
+
+    const ProcessHandle handle = consume_process_handle_for_cleanup();
+    if (has_process_handle(handle)) {
+        utils::ProcessManager::stop_process(handle);
+    }
+}
+
 void WrappedServer::request_backend_reset_from_watchdog(const std::string& reason) {
     if (watchdog_triggered_.exchange(true, std::memory_order_acq_rel)) {
         return;
@@ -419,6 +502,15 @@ void WrappedServer::request_backend_reset_from_watchdog(const std::string& reaso
     {
         std::lock_guard<std::mutex> lock(watchdog_mutex_);
         watchdog_reset_reason_ = reason;
+    }
+
+    std::string container;
+    {
+        std::lock_guard<std::mutex> lock(process_mutex_);
+        container.swap(container_name_);
+    }
+    if (!container.empty()) {
+        utils::ContainerRuntime::global().stop(container);
     }
 
     // Consume the lifecycle handle exactly once. This prevents later status

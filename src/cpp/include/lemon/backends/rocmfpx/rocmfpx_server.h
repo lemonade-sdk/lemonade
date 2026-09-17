@@ -12,20 +12,17 @@
 namespace lemon {
 namespace backends {
 
-// Runs the prebuilt ROCm FPX image as a Lemonade backend. The image puts
-// llama-server on PATH and declares no entrypoint, so this is the ordinary
-// llama.cpp server class with a containerized launch: everything above load() -
-// chat, embeddings, reranking, slots, tokenize, streaming, downsize - is
-// inherited unchanged.
+// Runs the prebuilt ROCm FPX image. The image puts llama-server on PATH and
+// declares no entrypoint, so this fills in a LlamaLaunch and inherits the rest
+// of LlamaCppServer unchanged.
 class RocmFpxServer : public LlamaCppServer {
 public:
     RocmFpxServer(const std::string& log_level, ModelManager* model_manager,
                   BackendManager* backend_manager);
     ~RocmFpxServer() override;
 
-    void load(const std::string& model_name, const ModelInfo& model_info,
-              const RecipeOptions& options, bool do_not_upgrade = false) override;
-    void unload() override;
+protected:
+    LlamaLaunch launch_profile(const RecipeOptions& options) const override;
 };
 
 // The same llama.cpp model management as the llamacpp recipe, layered over the
