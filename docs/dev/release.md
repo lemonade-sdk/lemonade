@@ -46,7 +46,7 @@ We have an AI-assisted tool called `repo-manager` that reviews every commit as i
 
 To upgrade any of those tools, edit the version in that Dockerfile. Merging the edit republishes `latest` via [`build-repo-manager-container.yml`](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/build-repo-manager-container.yml), which also rebuilds weekly to pick up base image updates. The image is also tagged by commit sha, to roll back to.
 
-The model weights are the one thing the image does not carry — they are 23GB — so they stay on the runner, in the same `hf-cache` beside the workspace that the nightly benchmark job uses on those machines. Runners that take these jobs need Docker; see [Self Hosted Runners](self-hosted-runners.md#linux-machine-setup).
+The model weights are the one thing the image does not carry — they are 23GB — so they stay on the runner, in the same `hf-cache` beside the workspace that the nightly benchmark job uses on those machines. Runners that take these jobs need podman and GPU group access; see [Self Hosted Runners](self-hosted-runners.md#linux-machine-setup).
 
 
 ## Release Lifecycle
