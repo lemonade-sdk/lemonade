@@ -240,6 +240,8 @@ curl -X POST http://localhost:13305/v1/pull \
 
 Advanced users can edit `user_models.json` and `recipe_options.json` directly. The rest of this guide documents those files and gives complete examples.
 
+`lemond` reads both files at startup. **Restart `lemond` to pick up an edit made this way.** The CLI and API workflows above do not need a restart, because the server makes the change itself.
+
 ## Overview
 
 Custom model configuration involves two files, both located in the Lemonade config directory:
