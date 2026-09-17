@@ -33,12 +33,31 @@ fs::path claim_state_dir() {
     throw std::runtime_error("could not claim a unique test state dir");
 }
 
+void install_sandbox_environment(const fs::path& root) {
+    const fs::path home = root / "home";
+    fs::create_directories(home);
+
+    const std::string home_utf8 = utils::path_to_utf8(home);
+    utils::set_environment_variable_utf8("HOME", home_utf8);
+    utils::set_environment_variable_utf8("USERPROFILE", home_utf8);
+
+    // Keep higher-priority overrides logically unset so tests can exercise
+    // XDG/systemd precedence without inheriting the developer's environment.
+    utils::unset_environment_variable_utf8("LEMONADE_CACHE_DIR");
+    utils::unset_environment_variable_utf8("CACHE_DIRECTORY");
+    utils::unset_environment_variable_utf8("STATE_DIRECTORY");
+    utils::unset_environment_variable_utf8("XDG_CACHE_HOME");
+    utils::unset_environment_variable_utf8("XDG_CONFIG_HOME");
+}
+
 struct Isolation {
     fs::path dir;
 
     Isolation() : dir(claim_state_dir()) {
-        utils::set_cache_dir(dir.string());
-        utils::set_config_dir(dir.string());
+        install_sandbox_environment(dir);
+        const std::string dir_utf8 = utils::path_to_utf8(dir);
+        utils::set_cache_dir(dir_utf8);
+        utils::set_config_dir(dir_utf8);
     }
 
     ~Isolation() {

@@ -50,6 +50,25 @@ public:
         return wstring_to_utf8(value);
     }
 
+    void set_environment_variable_utf8(const std::string& name,
+                                       const std::string& value) override {
+        const std::wstring wide_name = utf8_to_wstring(name);
+        const std::wstring wide_value = utf8_to_wstring(value);
+        if (_wputenv_s(wide_name.c_str(), wide_value.c_str()) != 0 ||
+            !SetEnvironmentVariableW(wide_name.c_str(), wide_value.c_str())) {
+            throw std::runtime_error("Failed to set environment variable: " + name);
+        }
+    }
+
+    void unset_environment_variable_utf8(const std::string& name) override {
+        const std::wstring wide_name = utf8_to_wstring(name);
+        if (_wputenv_s(wide_name.c_str(), L"") != 0 ||
+            !SetEnvironmentVariableW(wide_name.c_str(), nullptr)) {
+            throw std::runtime_error("Failed to unset environment variable: " + name);
+        }
+    }
+
+
     fs::path path_from_utf8(const std::string& path) override {
         return fs::u8path(path);
     }

@@ -1244,6 +1244,15 @@ if(BUILD_TESTING AND EXISTS "${_TEST_ISOLATION_SRC}")
     )
 endif()
 
+set(_TEST_ISOLATION_GUARD_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_state_isolation_guard.cpp"
+)
+if(BUILD_TESTING AND EXISTS "${_TEST_ISOLATION_GUARD_SRC}")
+    add_executable(test_state_isolation_guard ${_TEST_ISOLATION_GUARD_SRC})
+    target_link_libraries(test_state_isolation_guard PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StateIsolationGuardTest CI ON COMMAND test_state_isolation_guard)
+endif()
+
 set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
 if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
     add_executable(test_vllm_arg_resolver

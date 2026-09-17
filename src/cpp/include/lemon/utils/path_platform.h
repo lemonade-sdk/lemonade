@@ -16,6 +16,9 @@ public:
 
     // Environment variable handling with UTF-8 encoding
     virtual std::string get_environment_variable_utf8(const std::string& name) = 0;
+    virtual void set_environment_variable_utf8(const std::string& name,
+                                               const std::string& value) = 0;
+    virtual void unset_environment_variable_utf8(const std::string& name) = 0;
 
     // Path encoding conversion
     virtual fs::path path_from_utf8(const std::string& path) = 0;
