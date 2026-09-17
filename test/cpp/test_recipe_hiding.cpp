@@ -7,15 +7,12 @@
 //     clobber it.
 
 #include "lemon/model_manager.h"
-#include "lemon/utils/path_utils.h"
 
 #include <cstdio>
-#include <filesystem>
 #include <map>
 #include <set>
 #include <string>
 
-namespace fs = std::filesystem;
 using lemon::ModelInfo;
 using lemon::ModelManager;
 
@@ -126,10 +123,6 @@ static void test_incremental_pass_does_not_clobber(ModelManager& manager,
 }
 
 int main() {
-    fs::path temp = fs::temp_directory_path() / "lemonade-recipe-hiding-test";
-    fs::create_directories(temp);
-    lemon::utils::set_cache_dir(temp.string());
-
     test_pure_set_difference();
 
     ModelManager manager;
@@ -144,8 +137,6 @@ int main() {
         test_full_pass_commits_and_recomputes(manager, probe);
         test_incremental_pass_does_not_clobber(manager, probe);
     }
-
-    fs::remove_all(temp);
 
     if (g_failures == 0) {
         std::printf("All recipe hiding tests passed.\n");

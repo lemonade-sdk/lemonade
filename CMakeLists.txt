@@ -122,6 +122,11 @@ function(add_cpp_ci_test test_name)
     # helper stays exempt from the direct-add_test() ban it enforces.
     _add_test(NAME ${test_name} COMMAND ${ACT_COMMAND})
 
+    list(GET ACT_COMMAND 0 _act_target)
+    if(TARGET ${_act_target} AND TARGET lemonade-test-isolation)
+        target_link_libraries(${_act_target} PRIVATE lemonade-test-isolation)
+    endif()
+
     if(_act_ci STREQUAL "ON")
         if(ACT_DEPENDS)
             register_cpp_ci_test(${test_name} ${ACT_DEPENDS})
@@ -1211,6 +1216,18 @@ function(add_test)
         "Direct add_test() is disabled in this project. Declare the test with "
         "add_cpp_ci_test(<Name> CI <ON|OFF> COMMAND <...>) so its CI status is explicit.")
 endfunction()
+
+# Points get_cache_dir()/get_config_dir() at a throwaway directory before main()
+# runs. add_cpp_ci_test() links it into every test executable, so isolating a
+# test from the developer's real ~/.config/lemonade is not something a test
+# author can forget to do. An OBJECT library because a static one would let the
+# linker drop the translation unit: nothing references it.
+if(BUILD_TESTING)
+    add_library(lemonade-test-isolation OBJECT test/cpp/support/test_state_isolation.cpp)
+    target_include_directories(lemonade-test-isolation PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp"
+    )
+endif()
 
 set(VLLM_ARG_RESOLVER_TEST_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_vllm_arg_resolver.cpp")
 if(BUILD_TESTING AND EXISTS "${VLLM_ARG_RESOLVER_TEST_SOURCE}")
