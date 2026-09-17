@@ -110,11 +110,6 @@ repository root, then build the server and browser client:
 cmake --build --preset windows
 ```
 
-```powershell
-.\setup.ps1
-cmake --build --preset windows
-```
-
 Start the built server before opening a GUI:
 
 ```powershell
