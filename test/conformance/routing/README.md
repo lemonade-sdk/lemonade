@@ -131,9 +131,13 @@ and fills it from the case's `services` object:
 - `null` makes that call fail. The classifier then reports failure and its rule
   resolves through `on_error` (`match_false` by default, `match_true` if set).
 
-The fake is strict. Every backend call a case triggers must have a stub answer;
-an unstubbed call fails the case even if the decision happened to match. If a
-classifier should score low, write the low score explicitly (`{"code": 0.0}`).
+The fake is strict in both directions. Every backend call a case triggers must
+have a stub answer; an unstubbed call fails the case even if the decision
+happened to match. If a classifier should score low, write the low score
+explicitly (`{"code": 0.0}`). A stub the case declares but no call uses fails it
+too, so a typo'd model or phrase, or an answer left over from an earlier version
+of the case, cannot sit there looking like coverage. Declare exactly the answers
+the case needs.
 
 Two details for `embed` authors:
 
