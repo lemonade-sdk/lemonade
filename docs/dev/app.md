@@ -100,29 +100,52 @@ src/app/
 
 ## Building locally
 
-The CMake build is the recommended way to build the desktop client with the
-repository's current configuration. Run the setup script from the repository
-root, then build the platform target:
+The CMake build is the recommended way to build the server and GUI clients with
+the repository's current configuration. Run the setup script from the
+repository root, then build the server and browser client:
 
 ```powershell
 .\setup.ps1
-cmake --build --preset windows --target tauri-app
+cmake --build --preset windows
 ```
 
-The Windows executable is `build\app\lemonade-app.exe`.
+Start the built server before opening a GUI:
+
+```powershell
+.\build\Release\lemond.exe
+```
+
+On macOS or Linux, configure and build with:
 
 ```bash
 ./setup.sh
-cmake --build --preset default --target tauri-app
+cmake --build --preset default
+./build/lemond
 ```
 
-On macOS the application bundle is `build/app/lemonade-app.app`; on Linux the
-executable is `build/app/lemonade-app`.
+### Browser client
 
-These targets build the GUI client but do not start `lemond`, download models,
-or manage the server lifecycle. Start a Lemonade Server separately and launch
-the resulting GUI executable. For renderer-only or Tauri development, install
-the frontend dependencies and use the scripts below from `src/app`:
+The browser client does not require Rust or the Tauri target. The platform
+build commands above build it automatically when `BUILD_WEB_APP` is enabled
+(the default). Open `http://127.0.0.1:13305/app` in a browser after starting
+`lemond`; `/web-app` remains available for backward compatibility. If a
+Lemonade Server is already running, build the GUI without starting another
+instance on port `13305`.
+
+To build the Tauri desktop client after the server is built and running:
+
+```bash
+cmake --build --preset windows --target tauri-app  # Windows
+cmake --build --preset default --target tauri-app  # macOS / Linux
+```
+
+With Visual Studio 2026, use the `vs18` preset instead of `windows`. The
+Windows executable is `build\app\lemonade-app.exe`; on macOS the application
+bundle is `build/app/lemonade-app.app`; on Linux the executable is
+`build/app/lemonade-app`.
+
+For renderer-only or Tauri development, install the frontend dependencies and
+use the scripts below from `src/app`:
 
 ```bash
 cd src/app

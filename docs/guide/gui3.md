@@ -16,73 +16,36 @@ and **Effective settings** button (**3**).
 
 ## Open the app
 
-Lemonade Server should be running before you open GUI3.
+When building from source, configure and build the repository first. Start the
+built Lemonade Server, then launch GUI3 or open the browser build at the
+server's URL. The [developer app guide](../dev/app.md#building-locally) has the
+platform-specific build and server-start commands.
 
-- **Windows:** open the Lemonade tray menu and select **Open Lemonade App**.
-  `LemonadeServer.exe` and its tray icon continue running when the app closes.
-- **macOS:** open **Lemonade App** from Applications.
-- **Linux or browser:** open `http://localhost:13305` when the web app is
-  enabled. The legacy `/web-app` URL also remains available.
+- **Windows source build:** start the built `lemond.exe`, then launch the
+  built `lemonade-app.exe`. An installed build can instead be opened from the
+  Lemonade tray menu; its server continues running when the app closes.
+- **macOS source build:** start the built `lemond`, then launch the built
+  `lemonade-app.app`. An installed build can instead be opened from
+  Applications.
+- **Linux source build or browser:** start the built `lemond`, then open
+  `http://127.0.0.1:13305`. The GUI is served at `/app`; `/web-app` remains
+  available as a backward-compatible URL.
 
 The desktop app uses a saved endpoint when one exists and can discover a local
-server through Lemonade's UDP beacon. The browser build uses the server origin
-when it is served by `lemond`; otherwise the default is
-`http://127.0.0.1:13305`.
+server through Lemonade's UDP beacon. For a browser build served by `lemond`,
+use the server origin.
 
 The status dot beside the Lemonade name is green when the configured server is
 reachable. If it is gray, open **Settings > Server** and check the endpoint and
 API key.
 
-## Build and run GUI3 locally
+## Build GUI3 locally
 
-GUI3 is built from the repository with the same CMake targets used by the
-desktop application. First install Node.js 20+, Rust via
-[rustup](https://rustup.rs), and the platform prerequisites described in the
-[developer app guide](../dev/app.md#prerequisites). Then run these commands
-from the repository root:
-
-=== "Windows"
-
-    ```powershell
-    .\setup.ps1
-    cmake --build --preset windows --target tauri-app
-    ```
-
-    The executable is `build\app\lemonade-app.exe`.
-
-=== "macOS"
-
-    ```bash
-    ./setup.sh
-    cmake --build --preset default --target tauri-app
-    ```
-
-    The application bundle is `build/app/lemonade-app.app`.
-
-=== "Linux"
-
-    ```bash
-    ./setup.sh
-    cmake --build --preset default --target tauri-app
-    ```
-
-    The executable is `build/app/lemonade-app`.
-
-These commands build the GUI client; they do not start `lemond` or download
-models. Start Lemonade Server separately, then launch the resulting GUI
-executable. On Windows, the normal server process is `LemonadeServer.exe`; on
-macOS or Linux, start `lemond` using the platform's usual service or launch
-command. GUI3 normally connects to `http://127.0.0.1:13305`, or discovers a
-local server through the UDP beacon. For another server, enter its URL and API
-key under **Settings > Server**.
-
-To use a locally built GUI beside an existing Lemonade installation, launch the
-executable from its build folder and leave the existing server running. Do not
-start a second server on port `13305`. Both GUI clients can connect to the same
-server, so model downloads, loads and unloads, saved **Models >
-Configuration** values, memory settings, and server settings are shared.
-Theme, Favorites, chat history, and request-time chat sampling remain local to
-each GUI client.
+For desktop and browser build commands, platform prerequisites, and how to run
+GUI3 against an existing Lemonade Server, see the
+[developer app guide](../dev/app.md#building-locally). Do not start a second
+server on port `13305`; a locally built GUI can connect to the server already
+running on that port.
 
 ## Report a GUI3 issue
 
