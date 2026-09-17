@@ -2901,18 +2901,18 @@ endif()
 # in-memory row guards (unknown key / missing, duplicate or malformed name / unknown
 # service) and the Decision comparison, so a regression that neutered one fails CI
 # instead of silently eroding coverage.
-set(_ROUTING_CONFORMANCE_ROW_CHECKS_TEST_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_conformance_row_checks.cpp"
+set(_ROUTING_CONFORMANCE_HARNESS_CHECKS_TEST_SRC
+    "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_conformance_harness_checks.cpp"
 )
-if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_ROW_CHECKS_TEST_SRC}")
-    add_executable(test_conformance_row_checks test/cpp/test_conformance_row_checks.cpp)
-    target_include_directories(test_conformance_row_checks PRIVATE
+if(BUILD_TESTING AND EXISTS "${_ROUTING_CONFORMANCE_HARNESS_CHECKS_TEST_SRC}")
+    add_executable(test_conformance_harness_checks test/cpp/test_conformance_harness_checks.cpp)
+    target_include_directories(test_conformance_harness_checks PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/test/cpp
     )
-    target_link_libraries(test_conformance_row_checks PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(test_conformance_harness_checks PRIVATE nlohmann_json::nlohmann_json)
 
     include(CTest)
-    add_cpp_ci_test(ConformanceRowChecksTest CI ON COMMAND test_conformance_row_checks)
+    add_cpp_ci_test(ConformanceHarnessChecksTest CI ON COMMAND test_conformance_harness_checks)
 endif()
 
 # ModelManager collection validation for collection.router registration:

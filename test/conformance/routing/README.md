@@ -169,8 +169,8 @@ cmake --build build --target test_routing_conformance_corpus
 ```
 
 The row-level checks of the runner (allowed keys, names, decision comparison)
-have their own unit test, `test/cpp/test_conformance_row_checks.cpp`
-(CTest target `ConformanceRowChecksTest`).
+have their own unit test, `test/cpp/test_conformance_harness_checks.cpp`
+(CTest target `ConformanceHarnessChecksTest`).
 
 ## Coverage
 

@@ -6,8 +6,8 @@
 // rejecting bad input would let coverage erode while CI stayed green. This locks
 // the pure checks in memory — no fixtures, no second corpus.
 
-#include "test_conformance_decision_compare.h"
-#include "test_conformance_row_harness.h"
+#include "conformance_decision_compare.h"
+#include "conformance_row_checks.h"
 
 #include <nlohmann/json.hpp>
 #include <cstdio>

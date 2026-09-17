@@ -9,8 +9,8 @@
 // FakeClassifierServices and declare the answers it returns, so a case tests
 // the engine's threshold and selection logic rather than a real model's floats.
 
-#include "test_conformance_decision_compare.h"
-#include "test_conformance_row_harness.h"
+#include "conformance_decision_compare.h"
+#include "conformance_row_checks.h"
 #include "fake_classifier_services.h"
 #include "lemon/route_decision_response.h"
 #include "lemon/routing_classifier_services.h"
