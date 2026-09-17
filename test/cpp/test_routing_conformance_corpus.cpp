@@ -467,9 +467,9 @@ static int run_band_dir(const fs::path& band_dir, const fs::path& root) {
         }
 
         std::optional<RoutePolicy> policy = build_policy(policy_entry.value(), name);
-        if (!policy) return executed;
+        if (!policy) continue;
         std::optional<RoutingPolicyEngine> engine = compile_engine(std::move(*policy), fake.make(), name);
-        if (!engine) return executed;
+        if (!engine) continue;
 
         run_case(*engine, request_context, fake, *row, name);
         ++executed;
