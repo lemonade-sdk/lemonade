@@ -84,7 +84,7 @@
       "default_model": "local",
       "rules": [
         { "id": "keywords_any-rule", "match": { "keywords_any": ["alpha"] }, "route_to": "cloud" },
-        { "id": "keywords_all-rule", "match": { "keywords_all": ["charlie", "delta"] }, "route_to": "cloud" },
+        { "id": "keywords_all-rule", "match": { "keywords_all": ["Charlie", "delta"] }, "route_to": "cloud" },
         { "id": "regex-rule", "match": { "regex": "echo-[0-9]+" }, "route_to": "cloud" },
         { "id": "any-rule", "match": { "any": [
           { "keywords_any": ["foxtrot"] },

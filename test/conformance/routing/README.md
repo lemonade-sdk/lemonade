@@ -220,6 +220,7 @@ order.
 | The reply names `BigLLM-model`. It contains a candidate name but is not equal to one, so no candidate is scored. Matching is exact, not substring. | `superstring-name-no-exact-match` |
 | The reply names `bigllm`. It differs from `BigLLM` only in case and does not match. | `case-mismatched-name-no-match` |
 | The reply is wrapped in a ``` fence with a newline after the opening fence. The fence is stripped, the object is parsed, and the request routes to `BigLLM`. | `fenced-reply-routes` |
+| The fence opens as ```` ```json ````, the usual instruction-tuned shape. The whole first line is the fence, so the tag is dropped with it and the reply routes to `BigLLM`. | `fenced-json-tag-reply-routes` |
 | A valid fenced object is followed by "Hope that helps!". Text after the closing fence breaks the "no other text" rule, so it is rejected. | `fenced-trailing-prose-falls-open` |
 | The reply opens a fence and has a newline, but never closes the fence. Rejected. | `no-closing-fence-falls-open` |
 | The fence is followed by the object on the same line, with no newline. The body cannot be delimited, so it is rejected. | `no-newline-fence-falls-open` |
@@ -253,7 +254,7 @@ Unless stated otherwise, candidates are `local` (the `default_model`) and
 `cloud`, and every rule routes to `cloud`.
 
 **`conditions_vocab`** — one rule per op: `keywords_any: ["alpha"]`,
-`keywords_all: ["charlie", "delta"]`, `regex: "echo-[0-9]+"`, an `any` over
+`keywords_all: ["Charlie", "delta"]`, `regex: "echo-[0-9]+"`, an `any` over
 `foxtrot` / `golf`, an `all` over `hotel` / `india`, an `all` of `juliett` and
 `not(kilo)`, an implicit-all leaf `{keywords_any: ["lima"], max_chars: 1000}`,
 `keywords_any: ["café"]`, and `regex: "id-\d"`.
@@ -264,7 +265,7 @@ Unless stated otherwise, candidates are `local` (the `default_model`) and
 | "ALPHA release notes" matches the lowercase keyword `alpha`. | `keywords_any-case-fold` |
 | Lowercase "café" matches the keyword `café`. Non-ASCII bytes compare fine when the case already agrees. | `keywords_any-non-ascii-match` |
 | "CAFÉ AU LAIT" does not match `café`. The ASCII letters are folded but `É` is left as is, so the fold is ASCII-only. Falls back to `local`. | `keywords_any-non-ascii-no-case-fold` |
-| The input has both `charlie` and `delta`, so `keywords_all` matches. | `keywords_all-both-present` |
+| The input has both `charlie` and `delta`, so `keywords_all` matches. The keyword is authored `Charlie`, so the ASCII fold applies to the policy side as well as the input. | `keywords_all-both-present` |
 | The input has `charlie` but not `delta`, so `keywords_all` fails and the request falls back. | `keywords_all-one-missing-no-match` |
 | "deploy echo-42 now" matches `echo-[0-9]+`. The pattern is searched anywhere in the input, not matched against the whole of it. | `regex-matches-substring` |
 | "deploy echo-x now" has no digit after `echo-` and does not match. | `regex-no-match` |
@@ -357,6 +358,7 @@ and `consent equals: "denied"`; `consent exists: false`; `region exists: true`;
 | `consent: "denied"` equals the rule value exactly. | `metadata-equals` |
 | `consent: "denieddd"` is not equal to `denied`. `equals` is exact, not prefix or substring, so the request falls back. | `metadata-equals-no-match` |
 | `consent: "DENIED"` does not equal `denied`. Comparison is case-sensitive. | `metadata-equals-case-sensitive` |
+| `consent: "granted, denied"` does not equal `denied`. `equals` compares the raw string; only `any` splits on commas. Splitting here would have found the token `denied` and matched. | `metadata-equals-not-token-split` |
 | `note: ""` against the rule `equals: ""`. A blank value counts as absent, so the rule never matches even though the strings are equal. | `metadata-equals-blank-never-matches` |
 | No `consent` key is sent, so `exists: false` matches. | `metadata-exists-false` |
 | `region: "eu-west"` is present and non-blank, so `exists: true` matches. | `metadata-exists-true` |
@@ -453,6 +455,7 @@ rule at `min_score: 0.5`; the `fail_open` rule comes first.
 | The input embedding for `fail_open` is stubbed `null`, so the embed call fails. The classifier fails, `match_false` applies, the rule misses and its trace entry has no `score`. `fail_closed` gets a real orthogonal vector, scores 0 and misses too. | `input-embedding-failure-fails-open` |
 | The input vector for `fail_open` is `[0, 0, 0]`. A zero vector has no direction, the cosine is undefined, and the classifier fails as above. | `zero-vector-input-fails-open` |
 | The input vector for `fail_open` has 2 elements while the phrase has 3. They cannot be compared, so the classifier fails as above. | `dimension-mismatch-fails-open` |
+| The reference phrase of `fail_open` is stubbed `null`, so embedding it fails. Phrases are embedded before the input, so the classifier fails there and never embeds the input (the case declares no stub for it, and the strict fake would report the call). `match_false` applies as above. | `phrase-embedding-failure-fails-open` |
 | `fail_open` scores a real 0 and misses. The input embedding for `fail_closed` is `null`; with `match_true` its rule fires as if matched, routing to `MathLLM`. Its trace entry has `result: true` and no `score`. | `failure-fires-via-match-true` |
 | Both classifiers succeed with a real score ≈ 0.447, below 0.5. Both miss, including the `match_true` one. `on_error` acts only on failure, never on a low score. | `success-below-threshold-misses` |
 
@@ -495,15 +498,25 @@ in `[0.4, 0.7]` → `CodingLLM`; `math` with no bounds → `MathLLM`; `algebra` 
 | `{code: 0.3}`: `code` is under the threshold and `math` is absent (0), so both rules miss and the request falls back. | `only-code-in-map-below-defaults` |
 | `{code: 0.2, math: 0.3}`: both labels present but under the threshold, so the request falls back. | `neither-label-matches-defaults` |
 
+**`classifier_max_only_band`** — label `code`; one rule with `max_score: 0.3` and
+no `min_score`.
+
+| Behavior | Case |
+|----------|------|
+| `code: 0.1` matches. The default `min_score: 0.5` applies only when neither bound is given, so a `max_score`-only band has no lower bound. An implicit floor would have missed here. | `max-only-band-low-score-matches` |
+| `code: 0.4` is over `max_score` and misses. The upper bound still applies. | `max-only-band-above-max-misses` |
+
 **`classifier_implicit_label`** — `categorical` has labels `code`, `math` and
 `default_label: code`; `labelless` declares no labels. Each has a rule without
-`label` (`min_score: 0.5`), `categorical` first.
+`label` (`min_score: 0.5`), `categorical` first. A third rule names `categorical`
+with an explicit `label: math`.
 
 | Behavior | Case |
 |----------|------|
 | `categorical` returns `{code: 0.9, math: 0.1}`. The rule reads the `default_label` `code` and fires. | `default-label-used-when-label-omitted` |
 | `categorical` scores 0 on both labels and misses. `labelless` returns a single entry `{toxicity: 0.8}`; with no labels declared, that lone score is read and the rule fires. | `primary-reads-lone-score` |
-| `labelless` returns two entries `{code: 0.9, math: 0.1}`. With no label to pick, the score is 0 rather than a guess, so the rule misses although one entry is 0.9. | `primary-multi-entry-scores-zero` |
+| `labelless` returns two entries `{code: 0.9, math: 0.1}`. With no label to pick, the score is 0 rather than a guess, so the rule misses although one entry is 0.9. The explicit-label rule reads `math` at 0 and misses too; three trace entries. | `primary-multi-entry-scores-zero` |
+| `categorical` returns `{code: 0.1, math: 0.9}`. The label-less rule reads `default_label` `code` (0.1) and misses; the third rule names `label: math`, reads 0.9 and fires. An explicit label wins over `default_label`; reading the default instead would have fallen open. | `explicit-label-overrides-default-label` |
 
 **`classifier_on_error`** — `fail_open` (default `on_error`) and `fail_closed`
 (`match_true`), each with a `code` rule at `min_score: 0.5`; `fail_open` first.

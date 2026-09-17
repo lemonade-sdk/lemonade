@@ -79,7 +79,8 @@
       ],
       "rules": [
         { "id": "categorical-rule", "match": { "classifier": "categorical", "min_score": 0.5 }, "route_to": "CodingLLM" },
-        { "id": "labelless-rule", "match": { "classifier": "labelless", "min_score": 0.5 }, "route_to": "MathLLM" }
+        { "id": "labelless-rule", "match": { "classifier": "labelless", "min_score": 0.5 }, "route_to": "MathLLM" },
+        { "id": "explicit-label-rule", "match": { "classifier": "categorical", "label": "math", "min_score": 0.5 }, "route_to": "MathLLM" }
       ]
     }
   },
@@ -97,6 +98,22 @@
       "rules": [
         { "id": "code-rule", "match": { "classifier": "topic", "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
         { "id": "math-rule", "match": { "classifier": "topic", "label": "math", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_max_only_band": {
+    "version": "1",
+    "model_name": "user.Classifier-MaxOnlyBand",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "TopicModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code"] }
+      ],
+      "rules": [
+        { "id": "code-max-only", "match": { "classifier": "topic", "label": "code", "max_score": 0.3 }, "route_to": "CodingLLM" }
       ]
     }
   },
