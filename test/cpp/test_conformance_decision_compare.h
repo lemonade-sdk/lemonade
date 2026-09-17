@@ -17,8 +17,13 @@
 namespace lemon {
 namespace conformance {
 
-// A semantic_similarity score is computed (dot product, square root, division), so
-// its last bits can differ across CI's x86/ARM runners.
+// Applies to every trace score. A semantic_similarity score is computed (dot product,
+// square roots, a division), so its last bits can differ across CI's x86/ARM runners.
+// Classifier and llm-router scores are copied from the stub answers and are exact in
+// practice, but a trace entry only names `classifier:<id>`, not the classifier type,
+// so the margin cannot be narrowed to the computed ones. A blanket margin this small
+// hides nothing that matters: a score difference under it cannot move a score across a
+// threshold without also flipping `result`, which is compared exactly.
 inline constexpr double kScoreTolerance = 1e-12;
 
 namespace detail {
@@ -50,11 +55,10 @@ inline bool both_carry(const nlohmann::json& expected, const nlohmann::json& pro
     return false;
 }
 
-// Compares one field and reports it when it differs. `tolerance` is empty for all
-// but a trace `score` whose condition is a semantic_similarity classifier; every
-// other field is a string, a boolean or recorded JSON and must match exactly. Each
-// field carries its own tolerance, so a second computed field would not disturb
-// this one.
+// Compares one field and reports it when it differs. `tolerance` is empty for every
+// field but a trace `score`; the rest are strings, booleans or recorded JSON and must
+// match exactly. Each field carries its own tolerance, so a second computed field
+// would not disturb this one.
 inline void compare_field(const nlohmann::json& expected, const nlohmann::json& produced,
                           const char* name, const std::string& prefix,
                           const std::optional<double>& tolerance,
