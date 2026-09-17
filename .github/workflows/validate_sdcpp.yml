@@ -440,6 +440,31 @@ jobs:
             }
           }
 
+      - name: Fail if the rocm backend fell back to CPU
+        if: always() && matrix.backend == 'rocm'
+        shell: PowerShell
+        run: |
+          $ErrorActionPreference = "Stop"
+          # A rocm leg that quietly ran on CPU still reports success and takes
+          # roughly as long as the cpu leg, so it validated nothing. ggml prints
+          # the device it initialized to lemond's stderr; require it.
+          $log = "server-logs-${{ matrix.label }}\lemond.stderr.log"
+          if (-not (Test-Path $log)) {
+            Write-Host "::error title=No server log::$log not found; cannot tell which device was used"
+            exit 1
+          }
+
+          $text = Get-Content $log -Raw
+          if ($text -match "ggml_cuda_init: found \d+ ROCm devices") {
+            $device = ($text -split "`n" | Where-Object { $_ -match "^\s*Device \d+:" } | Select-Object -First 1)
+            Write-Host "ROCm device in use: $($device.Trim())"
+            exit 0
+          }
+
+          Write-Host "::error title=ROCm fell back to CPU::${{ matrix.label }} requested the rocm backend but no ROCm device was initialized"
+          Get-Content $log -Tail 20
+          exit 1
+
       - name: Upload validation evidence
         if: always()
         uses: actions/upload-artifact@v7
