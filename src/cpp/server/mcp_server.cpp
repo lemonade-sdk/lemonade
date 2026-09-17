@@ -1169,6 +1169,15 @@ std::vector<McpTool> McpServer::build_tools() {
                         {"include_suggested", {{"type", "boolean"}, {"description", "Include suggested, not-yet-downloaded models in `suggested_to_pull`."}}},
                     }},
                 }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success returns two `text` content blocks: a human-readable summary, then a "
+                         "JSON-stringified object with `loaded`, `available`, `suggested_to_pull`, and "
+                         "`recommended_chat_model`."
+                        },
+                    }},
+                }},
             },
             [this](const json& arguments) {
                 return tool_list_models(arguments);
@@ -1206,6 +1215,17 @@ std::vector<McpTool> McpServer::build_tools() {
                                                   {"description", "e.g. {\"enable_thinking\": true} to enable reasoning blocks; disabled by default"}}},
                     }},
                 }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success returns one `text` content block with the assistant output. If the "
+                         "model emits tool calls, a second `text` block prefixed with `tool_calls: ` "
+                         "contains the JSON tool-call array. If normal content is empty but reasoning "
+                         "content is present, the first block contains the reasoning fallback instead of "
+                         "an empty string."
+                        },
+                    }},
+                }},
             },
             [this](const json& arguments) {
                 return tool_chat(arguments);
@@ -1219,7 +1239,7 @@ std::vector<McpTool> McpServer::build_tools() {
                  "caller, so prefer `audio_path` (an absolute path to a local "
                  "audio file: wav, mp3, m4a, ogg, flac, webm). Use "
                  "`audio_base64` only when you genuinely have audio bytes in "
-                 "memory. Exactly one of the two must be provided. `model` is "
+                 "memory. If both are provided, `audio_path` takes precedence. `model` is "
                  "OPTIONAL: when omitted, the server reuses an already-loaded "
                  "transcription model, else an already-downloaded one; if neither "
                  "exists it asks you to pass a `model` or `allow_download: true` "
@@ -1232,14 +1252,22 @@ std::vector<McpTool> McpServer::build_tools() {
                         {"allow_download", {{"type", "boolean"},
                                             {"description", "Permit downloading the default model when none is loaded or downloaded. Defaults to false."}}},
                         {"audio_path",    {{"type", "string"},
-                                           {"description", "Absolute path to a local audio file. Preferred over audio_base64."}}},
-                        {"audio_base64",  {{"type", "string"}, {"description", "Base64-encoded audio data. Use instead of `audio_path`."}}},
+                                           {"description", "Path to a local audio file. Preferred over `audio_base64`; absolute paths avoid working-directory ambiguity."}}},
+                        {"audio_base64",  {{"type", "string"}, {"description", "Base64-encoded audio data. Used when `audio_path` is not provided."}}},
                         {"filename",      {{"type", "string"}, {"description", "Original audio filename, used as an input-format hint."}}},
                         {"language",      {{"type", "string"}, {"description", "Optional source language hint."}}},
                         {"prompt",        {{"type", "string"}, {"description", "Optional text prompt to guide transcription."}}},
                         {"response_format", {{"type", "string"},
                                              {"enum", json::array({"json", "text", "srt", "verbose_json", "vtt"})}, {"description", "Transcription response format."}}},
                         {"temperature",   {{"type", "number"}, {"description", "Sampling temperature for transcription."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success returns two `text` content blocks: the transcript, then the "
+                         "JSON-stringified full transcription response."
+                        },
                     }},
                 }},
             },
@@ -1279,13 +1307,23 @@ std::vector<McpTool> McpServer::build_tools() {
                         {"output_path", {{"type", "string"},
                                          {"description", "Exact path of the PNG file to write, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Relative paths resolve against the sandbox root; absolute paths must stay within it. Written as named (overwrites if it already exists). Only valid when n == 1."}}},
                         {"output_dir",  {{"type", "string"},
-                                         {"description", "Directory to write generated images into, inside the MCP image sandbox. Filenames are auto-generated and unique (image_<token>_<i>.png); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it."}}},
+                                         {"description", "Directory to write generated images into, inside the MCP image sandbox. Filenames are auto-generated and unique (image_{token}_{index}.png); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it."}}},
                         {"size",   {{"type", "string"}, {"description", "Requested image size as WIDTHxHEIGHT, for example 512x512."}}},
                         {"n",      {{"type", "integer"}, {"minimum", 1}, {"description", "Number of images to generate."}}},
                         {"negative_prompt", {{"type", "string"}, {"description", "Text describing content to avoid in the generated image."}}},
                         {"seed",   {{"type", "integer"}, {"description", "Optional random seed for reproducible generation."}}},
                         {"steps",  {{"type", "integer"}, {"description", "Number of diffusion sampling steps."}}},
                         {"cfg_scale", {{"type", "number"}, {"description", "Classifier-free guidance scale."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Without `output_path` or `output_dir`, success returns one native MCP `image` "
+                         "content block per generated PNG. With disk output, success returns a summary "
+                         "`text` block, optional per-image path blocks when multiple files are written, "
+                         "and a final JSON-stringified `paths` object in a `text` block."
+                        },
                     }},
                 }},
             },
@@ -1322,7 +1360,7 @@ std::vector<McpTool> McpServer::build_tools() {
                                             {"description", "Permit downloading the default collection when none is downloaded. Defaults to false."}}},
                         {"messages",    {{"type", "array"}, {"items", {{"type", "object"}}}, {"description", "Conversation messages in OpenAI chat format."}}},
                         {"output_dir",  {{"type", "string"},
-                                         {"description", "Directory to write produced artifacts into, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_<token>_<i>.<ext>); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks."}}},
+                                         {"description", "Directory to write produced artifacts into, inside the MCP image sandbox (<cache_dir>/mcp-images or LEMONADE_MCP_IMAGE_DIR). Filenames are auto-generated and unique (omni_{token}_{index}.{ext}); the returned paths tell you the exact names. Relative paths resolve against the sandbox root; absolute paths must stay within it. PREFER this to inline base64 when caller and server share a filesystem. Omit to receive artifacts inline as MCP content blocks."}}},
                         {"temperature", {{"type", "number"}, {"description", "Sampling temperature for the planner LLM."}}},
                         {"top_p",       {{"type", "number"}, {"description", "Nucleus sampling probability for the planner LLM."}}},
                         {"max_tokens",  {{"type", "integer"}, {"description", "Maximum number of planner output tokens."}}},
@@ -1332,6 +1370,17 @@ std::vector<McpTool> McpServer::build_tools() {
                         {"tool_choice", {{"description", "auto | none | required | {type: function, ...}"}}},
                         {"response_format", {{"type", "object"}, {"description", "OpenAI-compatible response format configuration for the planner."}}},
                         {"chat_template_kwargs", {{"type", "object"}, {"description", "Additional chat-template arguments forwarded to the planner LLM."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "Success always starts with one `text` block containing the final text. Inline "
+                         "mode then appends native MCP `image` and `audio` blocks for artifacts. Disk "
+                         "mode instead appends one `text` block per artifact path plus a final "
+                         "JSON-stringified `paths` object. If application tool calls are emitted, a "
+                         "final `text` block prefixed with `tool_calls: ` is appended."
+                        },
                     }},
                 }},
             },
@@ -1353,6 +1402,19 @@ std::vector<McpTool> McpServer::build_tools() {
                     {"properties", {
                         {"page", {{"type", "string"},
                                   {"description", "Optional. Page id from the listing, e.g. 'api/lemonade'. Omit to list."}}},
+                    }},
+                }},
+                {"_meta", {
+                    {"lemonade/result", {
+                        {"description",
+                         "With `page`, success returns one `text` block containing the raw bundled "
+                         "Markdown page. With no arguments, success normally returns a summary `text` "
+                         "block followed by a JSON-stringified `pages` object containing `id`, `title`, "
+                         "and `bytes` for each page; if no bundled documentation is installed, it "
+                         "returns one explanatory `text` block instead. Unknown pages return `isError: "
+                         "true` with one explanatory `text` block. The same bundled documentation is "
+                         "also available through `GET /v1/docs`."
+                        },
                     }},
                 }},
             },

@@ -57,8 +57,23 @@ def tools_list(port: int) -> list[dict]:
     return tools
 
 
-def md(text: object) -> str:
-    return str(text).replace("|", "\\|").replace("\n", " ")
+def md_text(text: object) -> str:
+    """Render prose without letting raw <...> disappear as HTML.
+
+    Backtick-delimited inline-code spans are left alone; outside them, HTML
+    metacharacters are escaped. This keeps values such as image_<token>.png
+    visible while preserving intentionally formatted `code` spans.
+    """
+    parts = str(text).replace("\n", " ").split("`")
+    for index in range(0, len(parts), 2):
+        parts[index] = (
+            parts[index].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+    return "`".join(parts)
+
+
+def md_cell(text: object) -> str:
+    return md_text(text).replace("|", "\\|")
 
 
 def compact_schema(schema: dict) -> str:
@@ -77,7 +92,26 @@ def render_tool(tool: dict) -> str:
     if not isinstance(schema, dict) or schema.get("type") != "object":
         raise RuntimeError(f"{name}: inputSchema must be an object schema")
 
-    lines = [f"### `{name}`", "", description, ""]
+    meta = tool.get("_meta")
+    if not isinstance(meta, dict):
+        raise RuntimeError(f"{name}: missing _meta object")
+    result_contract = meta.get("lemonade/result")
+    if not isinstance(result_contract, dict):
+        raise RuntimeError(f"{name}: missing _meta.lemonade/result contract")
+    result_description = result_contract.get("description")
+    if not isinstance(result_description, str) or not result_description.strip():
+        raise RuntimeError(f"{name}: missing resultDescription")
+
+    lines = [
+        f"### `{name}`",
+        "",
+        md_text(description),
+        "",
+        "**Returns**",
+        "",
+        md_text(result_description),
+        "",
+    ]
     annotations = tool.get("annotations")
     if annotations is not None:
         if not isinstance(annotations, dict):
@@ -107,10 +141,10 @@ def render_tool(tool: dict) -> str:
             arg_description = arg_schema.get("description")
             if not isinstance(arg_description, str) or not arg_description.strip():
                 raise RuntimeError(f"{name}.{arg}: missing description")
-            desc = md(arg_description)
-            shape = md(f"`{compact_schema(arg_schema)}`")
+            desc = md_cell(arg_description)
+            shape = md_cell(f"`{compact_schema(arg_schema)}`")
             lines.append(
-                f"| `{md(arg)}` | {'yes' if arg in required else 'no'} | {shape} | {desc} |"
+                f"| `{md_cell(arg)}` | {'yes' if arg in required else 'no'} | {shape} | {desc} |"
             )
         lines.append("")
     else:

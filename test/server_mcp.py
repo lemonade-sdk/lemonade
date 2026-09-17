@@ -3,11 +3,13 @@ Integration tests for the MCP gateway endpoint (POST /mcp).
 
 Requires a Lemonade server to already be running on port 13305.
 
-Covers the JSON-RPC 2.0 envelope plus the four tools exposed by the gateway:
+Covers the JSON-RPC 2.0 envelope plus the pre-existing MCP tool catalog:
 - lemonade_list_models
 - lemonade_chat
 - lemonade_transcribe_audio   (smoke-tested via schema only; needs Whisper)
 - lemonade_generate_image     (smoke-tested via schema only; needs SD)
+- lemonade_omni
+- lemonade_docs
 
 The "live" chat tool uses a small model so the suite stays fast.
 
@@ -239,8 +241,35 @@ class McpGatewayTests(ServerTestBase):
         self.assertTrue(expected.issubset(names), f"missing tools: {expected - names}")
         for tool in tools:
             self.assertIn("description", tool)
+            self.assertIsInstance(tool["description"], str)
+            self.assertTrue(tool["description"].strip())
             self.assertIn("inputSchema", tool)
             self.assertEqual(tool["inputSchema"]["type"], "object")
+
+            meta = tool.get("_meta", {})
+            result_contract = meta.get("lemonade/result", {})
+            result_description = result_contract.get("description", "")
+            self.assertIsInstance(
+                result_description,
+                str,
+                f"{tool['name']}: missing result description",
+            )
+            self.assertTrue(
+                result_description.strip(),
+                f"{tool['name']}: missing result description",
+            )
+
+            for arg, arg_schema in tool["inputSchema"].get("properties", {}).items():
+                arg_description = arg_schema.get("description", "")
+                self.assertIsInstance(
+                    arg_description,
+                    str,
+                    f"{tool['name']}.{arg}: missing argument description",
+                )
+                self.assertTrue(
+                    arg_description.strip(),
+                    f"{tool['name']}.{arg}: missing argument description",
+                )
 
         # lemonade_omni's only required arg is `messages`; `model` is optional
         # so callers can fall back to the default (LMX-Omni-5.5B-Lite).
