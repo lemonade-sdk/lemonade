@@ -1,0 +1,88 @@
+name: 'Start lemond (systemd emulation)'
+description: >-
+  Launch the installed lemond binary the way its systemd unit would, without
+  systemd. Parses the installed lemond.service for its Directory= and
+  Environment= settings, recreates those directories, and runs lemond as the
+  lemonade service user so path resolution matches a real service install.
+inputs:
+  port:
+    description: 'Port to serve on'
+    required: false
+    default: '13305'
+  log-name:
+    description: 'Log file name under RUNNER_TEMP (so capture-server-logs can find it)'
+    required: false
+    default: 'lemonade-server.log'
+runs:
+  using: "composite"
+  steps:
+    - name: Start lemond as the service user
+      shell: bash
+      run: |
+        set -e
+        PORT="${{ inputs.port }}"
+        LOG="$RUNNER_TEMP/${{ inputs.log-name }}"
+
+        UNIT=/usr/lib/systemd/system/lemond.service
+        [ -f "$UNIT" ] || UNIT=/lib/systemd/system/lemond.service
+        if [ ! -f "$UNIT" ]; then
+          echo "ERROR: lemond.service unit not found (looked in /usr/lib and /lib)"
+          exit 1
+        fi
+        echo "Emulating systemd environment from $UNIT"
+
+        # systemd derives these absolute paths from the *Directory= names and
+        # exports STATE_DIRECTORY / CACHE_DIRECTORY / RUNTIME_DIRECTORY. Mirror it.
+        state_name=$(grep -oP '^StateDirectory=\K.*'   "$UNIT" | head -n1 || true)
+        cache_name=$(grep -oP '^CacheDirectory=\K.*'   "$UNIT" | head -n1 || true)
+        run_name=$(grep   -oP '^RuntimeDirectory=\K.*' "$UNIT" | head -n1 || true)
+
+        env_args=()
+        [ -n "$state_name" ] && STATE_DIR="/var/lib/$state_name"   && env_args+=( "STATE_DIRECTORY=$STATE_DIR" )
+        [ -n "$cache_name" ] && CACHE_DIR="/var/cache/$cache_name" && env_args+=( "CACHE_DIRECTORY=$CACHE_DIR" )
+        [ -n "$run_name"   ] && RUN_DIR="/run/$run_name"           && env_args+=( "RUNTIME_DIRECTORY=$RUN_DIR" )
+
+        # HOME must match the service user's passwd home (path resolution uses it).
+        HOME_DIR=$(getent passwd lemonade | cut -d: -f6)
+        [ -n "$HOME_DIR" ] || HOME_DIR="${STATE_DIR:-/var/lib/lemonade}"
+        env_args+=( "HOME=$HOME_DIR" )
+
+        # Forward every Environment= entry from the unit (e.g. HF_HOME=...).
+        hf_home=""
+        while IFS= read -r line; do
+          [ -n "$line" ] || continue
+          env_args+=( "$line" )
+          case "$line" in HF_HOME=*) hf_home="${line#HF_HOME=}" ;; esac
+        done < <(grep -oP '^Environment=\K.*' "$UNIT" || true)
+
+        # Recreate the writable dirs systemd would provision on start.
+        for d in "$STATE_DIR" "$CACHE_DIR" "$RUN_DIR" "$hf_home"; do
+          [ -n "$d" ] || continue
+          mkdir -p "$d"
+          chown -R lemonade:lemonade "$d" 2>/dev/null || true
+        done
+
+        echo "Launching: runuser -u lemonade -- env ${env_args[*]} /usr/bin/lemond --port $PORT"
+        runuser -u lemonade -- env "${env_args[@]}" /usr/bin/lemond --port "$PORT" > "$LOG" 2>&1 &
+        LEMOND_PID=$!
+        echo "LEMOND_PID=$LEMOND_PID" >> "$GITHUB_ENV"
+
+        for i in $(seq 1 30); do
+          if curl -sf "http://127.0.0.1:$PORT/live" > /dev/null 2>&1; then
+            echo "lemond is healthy on port $PORT (PID $LEMOND_PID)"
+            echo "LEMONADE_PORT=$PORT" >> "$GITHUB_ENV"
+            echo "LEMONADE_HOST=127.0.0.1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          if ! kill -0 "$LEMOND_PID" 2>/dev/null; then
+            echo "ERROR: lemond exited before becoming ready"
+            echo "=== log ==="
+            cat "$LOG" 2>/dev/null || true
+            exit 1
+          fi
+          echo "Waiting for lemond... ($i/30)"
+          sleep 2
+        done
+        echo "ERROR: lemond did not become ready in time"
+        tail -50 "$LOG" 2>/dev/null || true
+        exit 1
