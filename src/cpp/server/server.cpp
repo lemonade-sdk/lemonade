@@ -5685,6 +5685,8 @@ void Server::handle_responses(const httplib::Request& req, httplib::Response& re
         // Check if streaming is requested
         bool is_streaming = request_json.contains("stream") && request_json["stream"].get<bool>();
 
+        normalize_thinking_controls(request_json);
+
         if (is_streaming) {
             try {
                 // Re-serialize so any collection.router model rewrite reaches the backend.
