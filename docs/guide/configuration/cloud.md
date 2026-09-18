@@ -139,7 +139,8 @@ Env vars always win. If you `POST /v1/cloud/auth` while the env var is set, the 
 
 - **Public name** — `<provider>.<cleaned_upstream_id>` after stripping `accounts/<x>/models/` wrappers and deduplicating leading provider segments.
 - **Capability labels** — `vision`, `tool-calling`, `reasoning`, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.
-- **Context window** — from `context_length`, when reported.
+- **Context window** — from `context_length`, `max_context_length`, or provider-specific nested limits (such as `top_provider.context_length`), when reported.
+- **Completion limit** — maximum output/completion tokens (from `max_completion_tokens`, `max_output_tokens`, or `top_provider.max_completion_tokens`), surfaced as `max_output_tokens` and `max_completion_tokens` on `/v1/models` when reported.
 - **Per-million-token cost** — USD per 1M input/output tokens, from OpenRouter (per-token × 1e6) or Together (per-1M), when reported. Surfaced on `/v1/models` for display, and attached to `collection.router` decisions as illustrative `outputs.estimated_cost` (not a billing figure).
 
 Discovery runs at every cache build (server startup, install, auth) and is best-effort: an unreachable provider logs a warning and is skipped without blocking the rest of the catalog.

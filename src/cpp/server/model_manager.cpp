@@ -189,6 +189,9 @@ static std::string describe_illegal_labels(const std::string& model_name,
 // Order is most-specific to most-historical.
 
 static void populate_model_metadata(ModelInfo& info) {
+    if (info.recipe == "cloud") {
+        return;
+    }
     info.max_context_window = 0;
     if (!info.downloaded) return;
 

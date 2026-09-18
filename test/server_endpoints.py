@@ -105,7 +105,7 @@ def _lemond_health_ok(port, headers):
 
 
 @contextlib.contextmanager
-def _running_lemond(config=None, cache_prefix="lemond_test_"):
+def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
     """Spawn lemond on a free port with the given config.json body.
 
     Skips the calling test when no daemon binary is available. Yields
@@ -127,14 +127,18 @@ def _running_lemond(config=None, cache_prefix="lemond_test_"):
     with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump({"config_version": 2, **(config or {})}, f)
 
+    spawn_env = os.environ.copy()
+    if extra_env:
+        spawn_env.update(extra_env)
+
     proc = None
     try:
         with open(log_path, "w", encoding="utf-8") as log:
             proc = subprocess.Popen(
-                [lemond_binary, cache_dir, "--port", str(port)],
+                [lemond_binary, cache_dir, "--port", str(port), "--no-broadcast"],
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                env=os.environ.copy(),
+                env=spawn_env,
             )
         yield proc, port, headers, log_path
     finally:
@@ -2067,7 +2071,14 @@ class EndpointTests(ServerTestBase):
         class _FakeProvider(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 if self.path.rstrip("/").endswith("/models"):
-                    data = [{"id": uid, "object": "model"} for uid in upstream_ids]
+                    data = []
+                    for item in upstream_ids:
+                        if isinstance(item, dict):
+                            entry = dict(item)
+                            entry.setdefault("object", "model")
+                            data.append(entry)
+                        else:
+                            data.append({"id": item, "object": "model"})
                     payload = _json.dumps({"object": "list", "data": data}).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -2163,8 +2174,18 @@ class EndpointTests(ServerTestBase):
                 },
             }
 
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id],
+            [mock_model],
             chat_handler=chat_response,
         )
 
@@ -2221,17 +2242,23 @@ class EndpointTests(ServerTestBase):
             self.assertTrue(auth_data["auth_state"]["runtime_key_set"])
             self.assertEqual(auth_data["models_discovered"], 1)
 
-            # (4) /models now lists the discovered cloud model.
+            # (4) /models now lists the discovered cloud model with parsed limits.
             models = requests.get(
                 f"{self.base_url}/models",
                 timeout=TIMEOUT_DEFAULT,
             ).json()
-            ids = [m["id"] for m in models.get("data", [])]
-            self.assertIn(
-                public_name,
-                ids,
-                f"Discovered cloud model should appear in /models; got {ids}",
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
             )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Discovered cloud model should appear in /models; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(cloud_entry.get("max_context_window"), 1310720)
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
 
             # (5) Round-trip chat completion through the mock.
             resp = requests.post(
@@ -2804,6 +2831,75 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
         print("[OK] Cloud refresh is idempotent — re-auth produces no duplicates")
+
+    def test_012w_cloud_startup_preserves_discovered_limits(self):
+        """A cloud provider configured in config.json with an API key in env
+        is discovered on startup during build_cache(), and its context and token
+        limits are preserved through populate_model_metadata()."""
+        provider = "startupcloud"
+        upstream_id = "vendor/startup-model"
+        public_name = f"{provider}.{upstream_id}"
+
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
+        base_url, stop_provider = self._start_mock_cloud_provider([mock_model])
+        self.addCleanup(stop_provider)
+
+        cfg = {
+            "cloud_providers": [
+                {
+                    "name": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                }
+            ]
+        }
+        extra_env = {
+            f"LEMONADE_{provider.upper()}_API_KEY": "dummy-key",
+        }
+
+        with _running_lemond(
+            config=cfg,
+            cache_prefix="lemond_cloud_startup_",
+            extra_env=extra_env,
+        ) as (proc, port, headers, log_path):
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            models_resp = requests.get(
+                f"http://localhost:{port}/api/v1/models",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_resp.status_code, 200, models_resp.text)
+            models = models_resp.json()
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
+            )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Cloud model should be discovered on startup; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(
+                cloud_entry.get("max_context_window"),
+                1310720,
+                "Startup build_cache() must preserve max_context_window through populate_model_metadata",
+            )
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
+        print("[OK] Cloud startup build_cache() preserved discovered limits")
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
