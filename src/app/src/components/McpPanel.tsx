@@ -5,6 +5,7 @@ import api, {
   McpServerState,
   friendlyErrorMessage,
 } from '../api';
+import { translate, useI18n } from '../i18n';
 
 const MCP_PROTOCOL_VERSION = '2025-11-25';
 const CLIENT_VERSION = '0.1.0';
@@ -58,20 +59,21 @@ export interface McpPanelProps {
   isActive: boolean;
 }
 
-function toolInputMetadata(inputSchema?: Record<string, unknown>): string {
-  if (!inputSchema) return 'Input schema unavailable';
+function toolInputMetadata(inputSchema: Record<string, unknown> | undefined, locale: Parameters<typeof translate>[1]): string {
+  if (!inputSchema) return translate('Input schema unavailable', locale);
   const properties = inputSchema.properties;
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
-    return 'No input parameters';
+    return translate('No input parameters', locale);
   }
 
   const inputCount = Object.keys(properties).length;
-  if (inputCount === 0) return 'No input parameters';
+  if (inputCount === 0) return translate('No input parameters', locale);
 
   const required = Array.isArray(inputSchema.required)
     ? inputSchema.required.filter(value => typeof value === 'string').length
     : 0;
-  return `${inputCount} input${inputCount === 1 ? '' : 's'}${required ? ` · ${required} required` : ''}`;
+  return translate('{count} input parameters', locale, { count: inputCount })
+    + (required ? ` · ${translate('{count} required', locale, { count: required })}` : '');
 }
 
 function mcpHeaders(sessionId?: string, protocolVersion?: string): Record<string, string> {
@@ -219,6 +221,7 @@ function transportLabel(server: McpServerState): string {
 }
 
 const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
+  const { locale, t } = useI18n();
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>('idle');
   const [gatewayTools, setGatewayTools] = useState<GatewayTool[]>([]);
   const [gatewayError, setGatewayError] = useState('');
@@ -335,9 +338,9 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     return () => abortRef.current?.abort();
   }, [connectionStatus, isActive, loadGatewayTools]);
 
-  const gatewayLabel = gatewayStatus === 'connected' ? 'Connected'
-    : gatewayStatus === 'checking' ? 'Checking…'
-      : gatewayStatus === 'unavailable' ? 'Unavailable' : 'Not checked';
+  const gatewayLabel = gatewayStatus === 'connected' ? t('Connected')
+    : gatewayStatus === 'checking' ? t('Checking…')
+      : gatewayStatus === 'unavailable' ? t('Unavailable') : t('Not checked');
   const connectedExternal = useMemo(() => servers.filter(server => server.connected).length, [servers]);
 
   const resetForm = (nextDraft: ServerDraft = EMPTY_DRAFT) => {
@@ -426,48 +429,47 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
   }, [draft.transport, draft.url]);
 
   return (
-    <section className="connect__section connect__section--mcp" aria-label="MCP Gateway" data-mcp-panel>
+    <section className="connect__section connect__section--mcp" aria-label={t('MCP Gateway')} data-mcp-panel>
       <p className="connect__hint">
-        Lemonade works in both directions: its built-in tools are exposed as a Streamable HTTP MCP server,
-        while Chat can use tools from connected HTTP endpoints or local MCP processes.
+        {t('Lemonade works in both directions: its built-in tools are exposed as a Streamable HTTP MCP server, while Chat can use tools from connected HTTP endpoints or local MCP processes.')}
       </p>
 
       <div className="mcp-panel">
         <section className="mcp-panel__card" aria-labelledby="lemonade-mcp-title">
           <div className="mcp-panel__card-header">
-            <div><h3 id="lemonade-mcp-title">Lemon-Tools MCP server</h3><p>Use Lemonade from Claude, VS Code, Cursor, MCP Inspector, or another MCP client.</p></div>
+            <div><h3 id="lemonade-mcp-title">{t('Lemon-Tools MCP server')}</h3><p>{t('Use Lemonade from Claude, VS Code, Cursor, MCP Inspector, or another MCP client.')}</p></div>
             <div className={`mcp-panel__status mcp-panel__status--${gatewayStatus}`} role="status" aria-live="polite" aria-atomic="true" data-mcp-status><span className="mcp-panel__status-dot" />{gatewayLabel}</div>
           </div>
           <div className="mcp-panel__url-copy-row">
-            <input id="mcp-endpoint-display" className="mcp-panel__url-input" value={mcpUrl} readOnly aria-label="Lemon-Tools MCP endpoint URL" />
-            <button type="button" className="btn btn--ghost mcp-panel__copy-btn" aria-label="Copy MCP endpoint URL to clipboard" onClick={() => void copyEndpoint()}>Copy</button>
-            <button type="button" className="btn btn--ghost" aria-label="Refresh MCP tools list" onClick={() => void loadGatewayTools()} disabled={gatewayStatus === 'checking'}>Refresh</button>
+            <input id="mcp-endpoint-display" className="mcp-panel__url-input" value={mcpUrl} readOnly aria-label={t('Lemon-Tools MCP endpoint URL')} />
+            <button type="button" className="btn btn--ghost mcp-panel__copy-btn" aria-label={t('Copy MCP endpoint URL to clipboard')} onClick={() => void copyEndpoint()}>{t('Copy')}</button>
+            <button type="button" className="btn btn--ghost" aria-label={t('Refresh MCP tools list')} onClick={() => void loadGatewayTools()} disabled={gatewayStatus === 'checking'}>{t('Refresh')}</button>
           </div>
           <div className="sr-only" role="status" aria-live="polite" aria-atomic="true" data-mcp-copy-live>{copyNotice}</div>
-          {gatewayError && <div className="connect__error" role="alert" data-mcp-tools-error>Could not load MCP tools: {gatewayError}</div>}
+          {gatewayError && <div className="connect__error" role="alert" data-mcp-tools-error>{t('Could not load MCP tools: {error}', { error: gatewayError })}</div>}
           {gatewayStatus === 'connected' && gatewayTools.length > 0 ? (
             <details className="mcp-panel__tool-disclosure">
-              <summary>Tools ({gatewayTools.length})</summary>
-              <ul className="mcp-panel__tool-list" aria-label="Lemon-Tools MCP tools" data-mcp-tools-list>
+              <summary>{t('Tools ({count})', { count: gatewayTools.length })}</summary>
+              <ul className="mcp-panel__tool-list" aria-label={t('Lemon-Tools MCP tools')} data-mcp-tools-list>
                 {gatewayTools.map(tool => (
                   <li key={tool.name} className="mcp-panel__tool-row">
                     <div className="mcp-panel__tool-heading">
                       <code className="mcp-panel__tool-name">{tool.name}</code>
-                      <span className="mcp-panel__tool-meta">{toolInputMetadata(tool.inputSchema)}</span>
+                      <span className="mcp-panel__tool-meta">{toolInputMetadata(tool.inputSchema, locale)}</span>
                     </div>
                     {tool.description && <p className="mcp-panel__tool-description">{tool.description}</p>}
                   </li>
                 ))}
               </ul>
             </details>
-          ) : gatewayStatus === 'connected' ? <p className="connect__empty">No tools returned.</p> : null}
+          ) : gatewayStatus === 'connected' ? <p className="connect__empty">{t('No tools returned.')}</p> : null}
         </section>
 
         <section className="mcp-panel__card" aria-labelledby="external-mcp-title">
           <div className="mcp-panel__card-header">
             <div>
-              <h3 id="external-mcp-title">External MCP servers</h3>
-              <p>{connectedExternal}/{servers.length} connected · HTTP endpoints and local processes · select up to four for Chat.</p>
+              <h3 id="external-mcp-title">{t('External MCP servers')}</h3>
+              <p>{t('{connected} of {total} connected · HTTP endpoints and local processes · select up to four for Chat.', { connected: connectedExternal, total: servers.length })}</p>
             </div>
             {secure === true && adminAccess === 'ok' && (
               <button
@@ -479,32 +481,29 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                 }}
                 disabled={connectionStatus !== 'connected'}
               >
-                {showForm ? 'Cancel' : 'Add server'}
+                {showForm ? t('Cancel') : t('Add server')}
               </button>
             )}
           </div>
 
           {secure === null || (secure === true && adminAccess === 'checking') ? (
-            <p className="connect__empty">Checking MCP administration access…</p>
+            <p className="connect__empty">{t('Checking MCP administration access…')}</p>
           ) : secure === false ? (
             <div className="connect__notice mcp-panel__security-warning" role="note" data-mcp-security-warning>
-              <p><strong>External MCP servers are unavailable on this server.</strong></p>
+              <p><strong>{t('External MCP servers are unavailable on this server.')}</strong></p>
               <p>
-                Due to security constraints, using external MCP servers requires your server to be set up with either a
-                general API key (<code>LEMONADE_API_KEY</code>) or a dedicated admin API key (<code>LEMONADE_ADMIN_API_KEY</code>).
-                Please set the respective environment variable in your Lemonade Server launch script, then restart the
-                server to use this feature.
+                {t('Due to security constraints, using external MCP servers requires your server to be set up with either a general API key (LEMONADE_API_KEY) or a dedicated admin API key (LEMONADE_ADMIN_API_KEY). Please set the respective environment variable in your Lemonade Server launch script, then restart the server to use this feature.')}
               </p>
             </div>
           ) : adminAccess === 'unavailable' ? (
             <div className="connect__notice mcp-panel__host-unavailable" role="alert" data-mcp-host-unavailable>
-              <p>{hostError || 'MCP administration is currently unavailable.'}</p>
+              <p>{hostError || t('MCP administration is currently unavailable.')}</p>
             </div>
           ) : adminAccess === 'needs-admin' ? (
             <div className="mcp-panel__admin-auth" data-mcp-admin-auth>
               <div>
-                <label htmlFor="mcp-admin-key">Admin API key</label>
-                <p>Server requires admin API key to access external MCP feature setup.</p>
+                <label htmlFor="mcp-admin-key">{t('Admin API key')}</label>
+                <p>{t('Server requires admin API key to access external MCP feature setup.')}</p>
               </div>
               <div className="mcp-panel__admin-auth-controls">
                 <input
@@ -514,9 +513,9 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                   value={adminKeyDraft}
                   onChange={event => setAdminKeyDraft(event.target.value)}
                   onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void applyAdminKey(); } }}
-                  placeholder="Admin API key"
+                  placeholder={t('Admin API key')}
                 />
-                <button type="button" className="btn btn--primary" onClick={() => void applyAdminKey()} disabled={connectionStatus !== 'connected' || hostLoading || !adminKeyDraft.trim()}>Apply</button>
+                <button type="button" className="btn btn--primary" onClick={() => void applyAdminKey()} disabled={connectionStatus !== 'connected' || hostLoading || !adminKeyDraft.trim()}>{t('Apply')}</button>
               </div>
               {adminKeyNotice && <div className="connect__notice" role="status">{adminKeyNotice}</div>}
               {hostError && <div className="connect__error" role="alert">{hostError}</div>}
@@ -526,7 +525,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
               {showForm && (
                 <form className="mcp-server-form" onSubmit={saveServer}>
                   <fieldset className="mcp-server-form__transport mcp-server-form__wide">
-                    <legend>Connection type</legend>
+                    <legend>{t('Connection type')}</legend>
                     <div className="mcp-transport-options">
                       <label className={`mcp-transport-option${draft.transport === 'streamable-http' ? ' is-selected' : ''}`}>
                         <input
@@ -536,7 +535,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                           checked={draft.transport === 'streamable-http'}
                           onChange={() => setDraft(current => ({ ...current, transport: 'streamable-http' }))}
                         />
-                        <span><strong>HTTP endpoint</strong><small>Recommended · connect to an MCP server already running in another app or service.</small></span>
+                        <span><strong>{t('HTTP endpoint')}</strong><small>{t('Recommended · connect to an MCP server already running in another app or service.')}</small></span>
                       </label>
                       <label className={`mcp-transport-option${draft.transport === 'stdio' ? ' is-selected' : ''}`}>
                         <input
@@ -546,18 +545,18 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                           checked={draft.transport === 'stdio'}
                           onChange={() => setDraft(current => ({ ...current, transport: 'stdio' }))}
                         />
-                        <span><strong>Local process</strong><small>Let Lemonade start and supervise a command on this machine.</small></span>
+                        <span><strong>{t('Local process')}</strong><small>{t('Let Lemonade start and supervise a command on this machine.')}</small></span>
                       </label>
                     </div>
                   </fieldset>
 
-                  <label><span>Name</span><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} placeholder={draft.transport === 'streamable-http' ? 'MyMCP' : 'Filesystem'} /></label>
-                  <label><span>Timeout (ms)</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.timeoutMs} onChange={event => setDraft(current => ({ ...current, timeoutMs: event.target.value.replace(/\D/g, '') }))} /></label>
+                  <label><span>{t('Name')}</span><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value }))} placeholder={draft.transport === 'streamable-http' ? 'MyMCP' : 'Filesystem'} /></label>
+                  <label><span>{t('Timeout (ms)')}</span><input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.timeoutMs} onChange={event => setDraft(current => ({ ...current, timeoutMs: event.target.value.replace(/\D/g, '') }))} /></label>
 
                   {draft.transport === 'streamable-http' ? (
                     <>
                       <label className="mcp-server-form__wide">
-                        <span>Endpoint URL</span>
+                        <span>{t('Endpoint URL')}</span>
                         <input
                           type="url"
                           value={draft.url}
@@ -565,18 +564,18 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                           placeholder="http://127.0.0.1:3000/mcp"
                           autoComplete="url"
                         />
-                        <small>Use the single Streamable HTTP endpoint exposed by the external application.</small>
+                        <small>{t('Use the single Streamable HTTP endpoint exposed by the external application.')}</small>
                       </label>
                       <label>
-                        <span>Authentication</span>
+                        <span>{t('Authentication')}</span>
                         <select value={draft.authentication} onChange={event => setDraft(current => ({ ...current, authentication: event.target.value as HttpAuthentication }))}>
-                          <option value="none">None</option>
-                          <option value="bearer-env">Bearer token from environment</option>
+                          <option value="none">{t('None')}</option>
+                          <option value="bearer-env">{t('Bearer token from environment')}</option>
                         </select>
                       </label>
                       {draft.authentication === 'bearer-env' && (
                         <label>
-                          <span>Token environment variable</span>
+                          <span>{t('Token environment variable')}</span>
                           <input
                             value={draft.tokenEnvironmentVariable}
                             onChange={event => setDraft(current => ({ ...current, tokenEnvironmentVariable: event.target.value }))}
@@ -586,44 +585,44 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                         </label>
                       )}
                       <details className="mcp-server-form__advanced mcp-server-form__wide">
-                        <summary>Advanced HTTP settings</summary>
+                        <summary>{t('Advanced HTTP settings')}</summary>
                         <label className="mcp-server-form__checkbox">
                           <input
                             type="checkbox"
                             checked={draft.allowInsecureHttp}
                             onChange={event => setDraft(current => ({ ...current, allowInsecureHttp: event.target.checked }))}
                           />
-                          <span>Allow unencrypted HTTP to a non-local address</span>
+                          <span>{t('Allow unencrypted HTTP to a non-local address')}</span>
                         </label>
-                        <p>Keep this off unless the endpoint is on a trusted private network. Localhost HTTP remains allowed.</p>
+                        <p>{t('Keep this off unless the endpoint is on a trusted private network. Localhost HTTP remains allowed.')}</p>
                       </details>
                       {nonLocalPlainHttp && !draft.allowInsecureHttp && (
-                        <div className="connect__notice mcp-server-form__wide" role="note">This endpoint needs HTTPS, or the explicit insecure HTTP option above.</div>
+                        <div className="connect__notice mcp-server-form__wide" role="note">{t('This endpoint needs HTTPS, or the explicit insecure HTTP option above.')}</div>
                       )}
-                      <p className="mcp-server-form__note">Bearer tokens are read from the desktop app environment when connecting. Raw credentials are never stored.</p>
+                      <p className="mcp-server-form__note">{t('Bearer tokens are read from the desktop app environment when connecting. Raw credentials are never stored.')}</p>
                     </>
                   ) : (
                     <>
-                      <label><span>Command</span><input value={draft.command} onChange={event => setDraft(current => ({ ...current, command: event.target.value }))} placeholder="npx" /></label>
-                      <label><span>Working directory · optional</span><input value={draft.workingDir} onChange={event => setDraft(current => ({ ...current, workingDir: event.target.value }))} /></label>
-                      <label className="mcp-server-form__wide"><span>Arguments · one per line</span><textarea value={draft.args} onChange={event => setDraft(current => ({ ...current, args: event.target.value }))} placeholder={'-y\n@modelcontextprotocol/server-filesystem\n/home/user/projects'} rows={4} /></label>
-                      <label className="mcp-server-form__wide"><span>Environment references · one <code>{'KEY=${KEY}'}</code> per line</span><textarea value={draft.env} onChange={event => setDraft(current => ({ ...current, env: event.target.value }))} placeholder="GITHUB_TOKEN=${GITHUB_TOKEN}" rows={3} /></label>
-                      <p className="mcp-server-form__note">The desktop app starts this command locally. Environment values must use references, and the referenced variables must exist in the desktop app environment.</p>
+                      <label><span>{t('Command')}</span><input value={draft.command} onChange={event => setDraft(current => ({ ...current, command: event.target.value }))} placeholder="npx" /></label>
+                      <label><span>{t('Working directory · optional')}</span><input value={draft.workingDir} onChange={event => setDraft(current => ({ ...current, workingDir: event.target.value }))} /></label>
+                      <label className="mcp-server-form__wide"><span>{t('Arguments · one per line')}</span><textarea value={draft.args} onChange={event => setDraft(current => ({ ...current, args: event.target.value }))} placeholder={'-y\n@modelcontextprotocol/server-filesystem\n/home/user/projects'} rows={4} /></label>
+                      <label className="mcp-server-form__wide"><span>{t('Environment references · one')} <code>{'KEY=${KEY}'}</code> {t('per line')}</span><textarea value={draft.env} onChange={event => setDraft(current => ({ ...current, env: event.target.value }))} placeholder="GITHUB_TOKEN=${GITHUB_TOKEN}" rows={3} /></label>
+                      <p className="mcp-server-form__note">{t('The desktop app starts this command locally. Environment values must use references, and the referenced variables must exist in the desktop app environment.')}</p>
                     </>
                   )}
 
                   {formError && <div className="connect__error mcp-server-form__wide" role="alert">{formError}</div>}
                   {testNotice && <div className="connect__notice mcp-server-form__wide" role="status">{testNotice}</div>}
                   <div className="mcp-server-form__actions mcp-server-form__wide">
-                    <button className="btn btn--ghost" type="button" onClick={() => void testServer()} disabled={Boolean(busyId)}>{busyId === '__test__' ? 'Testing…' : 'Test connection'}</button>
-                    <button className="btn btn--primary" type="submit" disabled={Boolean(busyId)}>{busyId && busyId !== '__test__' ? 'Saving…' : 'Save and connect'}</button>
+                    <button className="btn btn--ghost" type="button" onClick={() => void testServer()} disabled={Boolean(busyId)}>{busyId === '__test__' ? t('Testing…') : t('Test connection')}</button>
+                    <button className="btn btn--primary" type="submit" disabled={Boolean(busyId)}>{busyId && busyId !== '__test__' ? t('Saving…') : t('Save and connect')}</button>
                   </div>
                 </form>
               )}
 
               {hostError && <div className="connect__error" role="alert">{hostError}</div>}
-              {hostLoading ? <p className="connect__empty">Loading MCP servers…</p> : servers.length === 0 ? (
-                <p className="connect__empty">No external MCP server configured. Add an HTTP endpoint or a local process; built-in Lemonade tools remain available in Chat.</p>
+              {hostLoading ? <p className="connect__empty">{t('Loading MCP servers…')}</p> : servers.length === 0 ? (
+                <p className="connect__empty">{t('No external MCP server configured. Add an HTTP endpoint or a local process; built-in Lemonade tools remain available in Chat.')}</p>
               ) : (
                 <div className="mcp-server-list">
                   {servers.map(server => (
@@ -631,20 +630,20 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                       <div className="mcp-server-card__main">
                         <span className={`mcp-panel__status-dot${server.connected ? ' is-connected' : ''}`} aria-hidden="true" />
                         <div>
-                          <div className="mcp-server-card__heading"><strong>{server.name}</strong><span>{transportLabel(server)}</span></div>
+                          <div className="mcp-server-card__heading"><strong>{server.name}</strong><span>{t(transportLabel(server))}</span></div>
                           <code>{server.transport === 'streamable-http' ? server.url : [server.command, ...(server.args || [])].filter(Boolean).join(' ')}</code>
                           <small>{server.connected ? `${server.tools?.length || 0} tools · protocol ${server.protocol_version || 'unknown'}` : server.last_error || server.status}</small>
                         </div>
                       </div>
                       {server.tools && server.tools.length > 0 && (
                         <details className="mcp-panel__tool-disclosure">
-                          <summary>Tools ({server.tools.length})</summary>
+                          <summary>{t('Tools ({count})', { count: server.tools.length })}</summary>
                           <ul className="mcp-panel__tool-list" aria-label={`${server.name} tools`}>
                             {server.tools.map(tool => (
                               <li key={tool.name} className="mcp-panel__tool-row">
                                 <div className="mcp-panel__tool-heading">
                                   <code className="mcp-panel__tool-name">{tool.name}</code>
-                                  <span className="mcp-panel__tool-meta">{toolInputMetadata(tool.inputSchema)}</span>
+                                  <span className="mcp-panel__tool-meta">{toolInputMetadata(tool.inputSchema, locale)}</span>
                                 </div>
                                 {tool.title && tool.title !== tool.name && <strong className="mcp-panel__tool-title">{tool.title}</strong>}
                                 {tool.description && <p className="mcp-panel__tool-description">{tool.description}</p>}
@@ -654,11 +653,11 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
                         </details>
                       )}
                       <div className="mcp-server-card__actions">
-                        <button type="button" className="btn btn--ghost" onClick={() => { resetForm(draftFromServer(server)); setShowForm(true); }}>Edit</button>
+                        <button type="button" className="btn btn--ghost" onClick={() => { resetForm(draftFromServer(server)); setShowForm(true); }}>{t('Edit')}</button>
                         {server.connected ? (
-                          <><button type="button" className="btn btn--ghost" onClick={() => void runServerAction(server.id, 'refresh')} disabled={busyId === server.id}>Refresh tools</button><button type="button" className="btn btn--ghost" onClick={() => void runServerAction(server.id, 'disconnect')} disabled={busyId === server.id}>Disconnect</button></>
-                        ) : <button type="button" className="btn btn--primary" onClick={() => void runServerAction(server.id, 'connect')} disabled={busyId === server.id}>Connect</button>}
-                        <button type="button" className="btn btn--danger" onClick={() => void runServerAction(server.id, 'remove')} disabled={busyId === server.id}>Remove</button>
+                          <><button type="button" className="btn btn--ghost" onClick={() => void runServerAction(server.id, 'refresh')} disabled={busyId === server.id}>{t('Refresh tools')}</button><button type="button" className="btn btn--ghost" onClick={() => void runServerAction(server.id, 'disconnect')} disabled={busyId === server.id}>{t('Disconnect')}</button></>
+                        ) : <button type="button" className="btn btn--primary" onClick={() => void runServerAction(server.id, 'connect')} disabled={busyId === server.id}>{t('Connect')}</button>}
+                        <button type="button" className="btn btn--danger" onClick={() => void runServerAction(server.id, 'remove')} disabled={busyId === server.id}>{t('Remove')}</button>
                       </div>
                     </article>
                   ))}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from './Icon';
+import { useI18n } from '../i18n';
 import type { IconName } from './Icon';
 
 interface WorkspaceRailHeaderProps {
@@ -20,34 +21,38 @@ const WorkspaceRailHeader: React.FC<WorkspaceRailHeaderProps> = ({
   collapsed,
   onToggle,
   onMobileClose,
-}) => (
-  <div className={`workspace-rail__header workspace-rail__header--${purpose}`}>
-    <span className="workspace-rail__context" aria-hidden="true">
-      <Icon name={icon ?? (purpose === 'filter' ? 'funnel' : purpose === 'history' ? 'clock' : 'layers')} size={12} />
-      <strong className="workspace-rail__title">{title}</strong>
-    </span>
-    <button
-      type="button"
-      className="workspace-rail__toggle"
-      onClick={onToggle}
-      aria-expanded={!collapsed}
-      aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sidebarLabel} sidebar`}
-      title={`${collapsed ? 'Expand' : 'Collapse'} ${sidebarLabel} sidebar`}
-    >
-      <Icon name={collapsed ? 'panel-left-open' : 'panel-left-close'} size={17} aria-hidden="true" />
-    </button>
-    {onMobileClose && (
+}) => {
+  const { t } = useI18n();
+  const translatedSidebarLabel = t(sidebarLabel);
+  return (
+    <div className={`workspace-rail__header workspace-rail__header--${purpose}`}>
+      <span className="workspace-rail__context" aria-hidden="true">
+        <Icon name={icon ?? (purpose === 'filter' ? 'funnel' : purpose === 'history' ? 'clock' : 'layers')} size={12} />
+        <strong className="workspace-rail__title">{t(title)}</strong>
+      </span>
       <button
         type="button"
-        className="workspace-rail__mobile-close"
-        onClick={onMobileClose}
-        aria-label={`Close ${sidebarLabel} panel`}
-        title="Close panel"
+        className="workspace-rail__toggle"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        aria-label={`${t(collapsed ? 'Expand' : 'Collapse')} ${translatedSidebarLabel} ${t('sidebar')}`}
+        title={`${t(collapsed ? 'Expand' : 'Collapse')} ${translatedSidebarLabel} ${t('sidebar')}`}
       >
-        <Icon name="x" size={17} aria-hidden="true" />
+        <Icon name={collapsed ? 'panel-left-open' : 'panel-left-close'} size={17} aria-hidden="true" />
       </button>
-    )}
-  </div>
-);
+      {onMobileClose && (
+        <button
+          type="button"
+          className="workspace-rail__mobile-close"
+          onClick={onMobileClose}
+          aria-label={`${t('Close panel')}: ${translatedSidebarLabel}`}
+          title={t('Close panel')}
+        >
+          <Icon name="x" size={17} aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+};
 
 export default WorkspaceRailHeader;
