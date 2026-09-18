@@ -38,7 +38,7 @@ curl -s http://localhost:13305/mcp \
 
 - **Model selection and downloads.** For chat, transcription, and image tools, omitting `model` first reuses a compatible loaded model, then a compatible already-downloaded model. If neither exists, the tool returns `isError: true` unless `allow_download: true` is supplied, in which case the tool may use its default model. `lemonade_omni` follows the same local-first principle for already-downloaded Omni collections. Use `lemonade_list_models` instead of guessing hardware-specific model variants; it reflects what the running server supports, and unsupported-model errors point callers toward compatible alternatives.
 - **Reasoning chat.** `lemonade_chat` disables thinking by default so small `max_tokens` budgets are not consumed entirely by reasoning. Set `chat_template_kwargs.enable_thinking=true` to opt in. If a backend returns reasoning content but no normal content, the tool surfaces the reasoning text rather than an empty result.
-- **Sandboxed media output.** `lemonade_generate_image` and `lemonade_omni` confine disk writes to the shared MCP media sandbox. The default root is `<cache_dir>/mcp-images`; set `LEMONADE_MCP_IMAGE_DIR` to an absolute path to override it. Relative output paths resolve inside the sandbox, and absolute paths must already be inside it. `..` traversal and symlink escapes are rejected. Directory output uses collision-resistant names such as `image_{token}_{index}.png` and `omni_{token}_{index}.{ext}`. `lemonade_generate_image` also supports `output_path`, which writes the exact caller-selected filename and may replace an existing file. Omitting disk output returns native MCP image/audio content blocks where applicable; disk output is preferred for clients that do not render native media blocks or when avoiding large inline base64 payloads.
+- **Sandboxed media output.** `lemonade_generate_image` and `lemonade_omni` confine disk writes to the shared MCP media sandbox. The default root is `<cache_dir>/mcp-images`; set `LEMONADE_MCP_IMAGE_DIR` to an absolute path to override it. Relative output paths are resolved against the sandbox root; absolute paths are accepted only if they resolve within it. Paths that escape the sandbox, including via `..` traversal or symlinks, are rejected. Directory output uses collision-resistant names such as `image_{token}_{index}.png` and `omni_{token}_{index}.{ext}`. `lemonade_generate_image` also supports `output_path`, which writes the exact caller-selected filename and may replace an existing file. Omitting disk output returns native MCP image/audio content blocks where applicable; disk output is preferred for clients that do not render native media blocks or when avoiding large inline base64 payloads.
 - **Omni collections.** `lemonade_omni` runs the server's collection orchestrator; see the [Lemonade Omni documentation](../dev/lemonade-omni.md) for the collection model and component behavior.
 
 <!--
@@ -93,7 +93,7 @@ Transcribe an audio clip with a Whisper-class model. The Lemonade MCP server alw
 
 **Returns**
 
-Success returns two `text` content blocks: the transcript, then the JSON-stringified full transcription response.
+Success returns two `text` content blocks: the transcript, then the JSON-stringified full transcription response, including timestamps or segments when provided by the backend.
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|
@@ -135,7 +135,7 @@ Multimodal turn against a Lemonade Omni collection (one tool call -&gt; text + i
 
 **Returns**
 
-Success always starts with one `text` block containing the final text. Inline mode then appends native MCP `image` and `audio` blocks for artifacts. Disk mode instead appends one `text` block per artifact path plus a final JSON-stringified `paths` object. If application tool calls are emitted, a final `text` block prefixed with `tool_calls: ` is appended.
+Success always starts with one `text` block containing the final text. Artifacts follow in the order they were produced. Inline mode then appends one native MCP `image` or `audio` block per artifact. Disk mode instead appends one `text` block per artifact path in the same order, plus a final JSON-stringified `paths` object. If application tool calls are emitted, a final `text` block prefixed with `tool_calls: ` is appended.
 
 | Argument | Required | Schema | Description |
 |---|:---:|---|---|

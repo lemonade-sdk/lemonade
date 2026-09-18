@@ -1266,7 +1266,8 @@ std::vector<McpTool> McpServer::build_tools() {
                     {"lemonade/result", {
                         {"description",
                          "Success returns two `text` content blocks: the transcript, then the "
-                         "JSON-stringified full transcription response."
+                         "JSON-stringified full transcription response, including timestamps "
+                         "or segments when provided by the backend."
                         },
                     }},
                 }},
@@ -1375,11 +1376,12 @@ std::vector<McpTool> McpServer::build_tools() {
                 {"_meta", {
                     {"lemonade/result", {
                         {"description",
-                         "Success always starts with one `text` block containing the final text. Inline "
-                         "mode then appends native MCP `image` and `audio` blocks for artifacts. Disk "
-                         "mode instead appends one `text` block per artifact path plus a final "
-                         "JSON-stringified `paths` object. If application tool calls are emitted, a "
-                         "final `text` block prefixed with `tool_calls: ` is appended."
+                         "Success always starts with one `text` block containing the final text. Artifacts "
+                         "follow in the order they were produced. Inline mode then appends one native MCP "
+                         "`image` or `audio` block per artifact. Disk mode instead appends one `text` block "
+                         "per artifact path in the same order, plus a final JSON-stringified `paths` object. "
+                         "If application tool calls are emitted, a final `text` block prefixed with "
+                         "`tool_calls: ` is appended."
                         },
                     }},
                 }},
