@@ -421,6 +421,30 @@ class McpGatewayTests(ServerTestBase):
         self.assertIn("$.n", message)
         self.assertIn("value must be >= 1", message)
 
+    def test_021c_tools_call_optional_null_does_not_preempt_validation(self):
+        """Optional null args must remain handler-compatible, as before the registry."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 53,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": None,
+                        "prompt": "validation test",
+                        "n": 0,
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertNotIn("$.model", message)
+        self.assertIn("$.n", message)
+        self.assertIn("value must be >= 1", message)
+
     def test_022_omni_rejects_non_collection_model(self):
         """
         lemonade_omni must reject a plain LLM (recipe != collection.omni) with

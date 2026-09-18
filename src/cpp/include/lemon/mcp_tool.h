@@ -159,10 +159,23 @@ private:
                     throw std::invalid_argument(path + ": schema properties must be an object");
                 }
                 for (const auto& item : properties_it->items()) {
-                    if (value.contains(item.key())) {
-                        validate_value(
-                            value.at(item.key()), item.value(), path + "." + item.key());
+                    if (!value.contains(item.key())) continue;
+                    const auto& property_value = value.at(item.key());
+                    if (property_value.is_null()) {
+                        bool is_required = false;
+                        if (required_it != schema.end()) {
+                            for (const auto& required : *required_it) {
+                                if (required.is_string() &&
+                                    required.get<std::string>() == item.key()) {
+                                    is_required = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!is_required) continue;
                     }
+                    validate_value(
+                        property_value, item.value(), path + "." + item.key());
                 }
             }
         }
