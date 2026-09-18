@@ -1335,7 +1335,7 @@ file(GLOB_RECURSE RESOURCE_FILES
 # source of truth (the desktop app imports them directly). Stage a copy into the
 # resources tree so the C++ server reads the same file via get_resource_path.
 set(TOOL_DEFINITIONS_SRC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/renderer/utils/toolDefinitions.json")
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/app/src/tools/toolDefinitions.json")
 
 # Scoped to docs/api: the rest of docs/ is the published website, not API reference.
 file(GLOB API_DOC_FILES CONFIGURE_DEPENDS
