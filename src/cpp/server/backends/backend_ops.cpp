@@ -29,12 +29,29 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
     fs::path model_cache_path_fs = path_from_utf8(ctx.model_cache_path);
 
     if (!ctx.variant.empty()) {
+        auto is_uncommitted_snapshot_file = [](const fs::path& candidate,
+                                               const fs::path& snapshots_path) {
+            const fs::path relative = candidate.lexically_relative(snapshots_path);
+            if (relative.empty()) {
+                return false;
+            }
+
+            auto first = relative.begin();
+            if (first == relative.end() || *first == "." || *first == "..") {
+                return false;
+            }
+
+            return hf_cache::exists(snapshots_path / *first / ".download_manifest.json");
+        };
+
         // Prefer refs/main for auxiliary checkpoints too (e.g. mmproj) so
         // companion files stay on the active snapshot as the main model.
+        const fs::path snapshots_path = model_cache_path_fs / "snapshots";
         fs::path active_snapshot = hf_cache::active_snapshot_path(model_cache_path_fs);
         if (!active_snapshot.empty()) {
             fs::path direct_variant_path = active_snapshot / path_from_utf8(ctx.variant);
-            if (hf_cache::exists(direct_variant_path)) {
+            if (hf_cache::exists(direct_variant_path) &&
+                !is_uncommitted_snapshot_file(direct_variant_path, snapshots_path)) {
                 return path_to_utf8(direct_variant_path);
             }
             std::error_code ec;
@@ -42,12 +59,14 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
                  fs::recursive_directory_iterator(active_snapshot, hf_cache::dir_options(), ec)) {
                 if (ec) break;
                 if (entry.is_regular_file(ec)) {
-                    if (entry.path().filename().string() == ctx.variant) {
+                    if (entry.path().filename().string() == ctx.variant &&
+                        !is_uncommitted_snapshot_file(entry.path(), snapshots_path)) {
                         return path_to_utf8(entry.path());
                     }
                 } else if (entry.is_directory(ec)) {
                     fs::path variant_path = entry.path() / path_from_utf8(ctx.variant);
-                    if (hf_cache::exists(variant_path)) {
+                    if (hf_cache::exists(variant_path) &&
+                        !is_uncommitted_snapshot_file(variant_path, snapshots_path)) {
                         return path_to_utf8(variant_path);
                     }
                 }
@@ -60,12 +79,14 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
             for (const auto& entry :
                  fs::recursive_directory_iterator(model_cache_path_fs, hf_cache::dir_options())) {
                 if (entry.is_regular_file()) {
-                    if (entry.path().filename().string() == ctx.variant) {
+                    if (entry.path().filename().string() == ctx.variant &&
+                        !is_uncommitted_snapshot_file(entry.path(), snapshots_path)) {
                         return path_to_utf8(entry.path());
                     }
                 } else if (entry.is_directory()) {
                     fs::path variant_path = entry.path() / path_from_utf8(ctx.variant);
-                    if (hf_cache::exists(variant_path)) {
+                    if (hf_cache::exists(variant_path) &&
+                        !is_uncommitted_snapshot_file(variant_path, snapshots_path)) {
                         return path_to_utf8(variant_path);
                     }
                 }
@@ -77,15 +98,18 @@ std::string BackendOps::resolve_checkpoint_path(const ModelInfo& info,
             std::string main_cache_path =
                 ctx.hf_cache + "/" + hf_cache::repo_id_to_cache_dir_name(ctx.main_repo_id, ctx.registry_source);
             fs::path main_cache_path_fs = path_from_utf8(main_cache_path);
+            const fs::path main_snapshots_path = main_cache_path_fs / "snapshots";
             if (fs::exists(main_cache_path_fs)) {
                 for (const auto& entry : fs::recursive_directory_iterator(main_cache_path_fs)) {
                     if (entry.is_regular_file()) {
-                        if (entry.path().filename().string() == ctx.variant) {
+                        if (entry.path().filename().string() == ctx.variant &&
+                            !is_uncommitted_snapshot_file(entry.path(), main_snapshots_path)) {
                             return path_to_utf8(entry.path());
                         }
                     } else if (entry.is_directory()) {
                         fs::path variant_path = entry.path() / path_from_utf8(ctx.variant);
-                        if (fs::exists(variant_path)) {
+                        if (fs::exists(variant_path) &&
+                            !is_uncommitted_snapshot_file(variant_path, main_snapshots_path)) {
                             return path_to_utf8(variant_path);
                         }
                     }
