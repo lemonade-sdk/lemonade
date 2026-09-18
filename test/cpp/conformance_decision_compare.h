@@ -17,13 +17,13 @@
 namespace lemon {
 namespace conformance {
 
-// Applies to every trace score. A semantic_similarity score is computed (dot product,
-// square roots, a division), so its last bits can differ across CI's x86/ARM runners.
-// Classifier and llm-router scores are copied from the stub answers and are exact in
-// practice, but a trace entry only names `classifier:<id>`, not the classifier type,
-// so the margin cannot be narrowed to the computed ones. A blanket margin this small
-// hides nothing that matters: a score difference under it cannot move a score across a
-// threshold without also flipping `result`, which is compared exactly.
+// Applies only to a computed trace score. A semantic_similarity score is computed
+// (dot product, square roots, a division), so its last bits can differ across CI's
+// x86/ARM runners. Classifier and llm-router scores are copied from the stub answers,
+// so they are exact and are compared exactly -- a trace score is part of the recorded
+// contract, not just an input to `result`. A trace entry names `classifier:<id>` and
+// not the classifier type, so the caller names the computed conditions; see
+// `computed_score_conditions` on compare_decision.
 inline constexpr double kScoreTolerance = 1e-12;
 
 namespace detail {
@@ -56,9 +56,9 @@ inline bool both_carry(const nlohmann::json& expected, const nlohmann::json& pro
 }
 
 // Compares one field and reports it when it differs. `tolerance` is empty for every
-// field but a trace `score`; the rest are strings, booleans or recorded JSON and must
-// match exactly. Each field carries its own tolerance, so a second computed field
-// would not disturb this one.
+// field but a computed trace `score`; the rest are strings, booleans or recorded JSON
+// and must match exactly. Each field carries its own tolerance, so a second computed
+// field would not disturb this one.
 inline void compare_field(const nlohmann::json& expected, const nlohmann::json& produced,
                           const char* name, const std::string& prefix,
                           const std::optional<double>& tolerance,
@@ -98,10 +98,20 @@ inline void report_unexpected_fields(const nlohmann::json& expected,
 }
 
 inline void compare_trace_entry(const nlohmann::json& expected, const nlohmann::json& produced,
-                                const std::string& path, std::vector<std::string>& out) {
+                                const std::string& path,
+                                const std::set<std::string>& computed_score_conditions,
+                                std::vector<std::string>& out) {
+    // The entry's own condition decides whether its score is computed. It is compared
+    // exactly just below, so a case naming the wrong condition fails on that field
+    // rather than borrowing another condition's margin.
+    const std::optional<double> score_tolerance =
+        computed_score_conditions.count(expected.value("condition", std::string())) > 0
+            ? std::optional<double>(kScoreTolerance)
+            : std::nullopt;
+
     compare_field(expected, produced, "condition", path, std::nullopt, out);
     compare_field(expected, produced, "result", path, std::nullopt, out);
-    compare_field(expected, produced, "score", path, kScoreTolerance, out);
+    compare_field(expected, produced, "score", path, score_tolerance, out);
     compare_field(expected, produced, "label", path, std::nullopt, out);
     compare_field(expected, produced, "rationale", path, std::nullopt, out);
 
@@ -111,6 +121,7 @@ inline void compare_trace_entry(const nlohmann::json& expected, const nlohmann::
 }
 
 inline void compare_trace(const nlohmann::json& expected, const nlohmann::json& produced,
+                          const std::set<std::string>& computed_score_conditions,
                           std::vector<std::string>& out) {
     if (!both_carry(expected, produced, "trace", "", out)) return;
 
@@ -131,16 +142,21 @@ inline void compare_trace(const nlohmann::json& expected, const nlohmann::json& 
             out.push_back(path + ": expected a JSON object on both sides");
             continue;
         }
-        compare_trace_entry(expected_trace[i], produced_trace[i], path, out);
+        compare_trace_entry(expected_trace[i], produced_trace[i], path,
+                            computed_score_conditions, out);
     }
 }
 
 } // namespace detail
 
 // Every way `produced` differs from the recorded `expected` decision; empty when
-// they match.
-inline std::vector<std::string> compare_decision(const nlohmann::json& expected,
-                                                 const nlohmann::json& produced) {
+// they match. `computed_score_conditions` names the trace conditions whose score is
+// computed rather than copied from a stub answer (`classifier:<id>` for every
+// semantic_similarity classifier in the policy); only those get kScoreTolerance. An
+// empty set compares every score exactly.
+inline std::vector<std::string> compare_decision(
+    const nlohmann::json& expected, const nlohmann::json& produced,
+    const std::set<std::string>& computed_score_conditions = {}) {
     std::vector<std::string> out;
     if (!expected.is_object() || !produced.is_object()) {
         out.push_back("decision: expected a JSON object on both sides");
@@ -152,7 +168,7 @@ inline std::vector<std::string> compare_decision(const nlohmann::json& expected,
     detail::compare_field(expected, produced, "matched_rule", "", std::nullopt, out);
     detail::compare_field(expected, produced, "default_used", "", std::nullopt, out);
     detail::compare_field(expected, produced, "outputs", "", std::nullopt, out);
-    detail::compare_trace(expected, produced, out);
+    detail::compare_trace(expected, produced, computed_score_conditions, out);
 
     detail::report_missing_fields(
         expected, produced, {"version", "route_to", "matched_rule", "default_used", "outputs"}, "",

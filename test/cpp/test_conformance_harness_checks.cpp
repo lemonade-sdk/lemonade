@@ -164,16 +164,31 @@ static void test_compare_decision(TestResult& r) {
 
 static void test_compare_trace(TestResult& r) {
     using lemon::conformance::compare_decision;
+    const std::set<std::string> computed = {"classifier:topic"};
     const json entry = {{"condition", "classifier:topic"}, {"result", true}, {"score", 0.5}};
     json near = entry;
     near["score"] = 0.5 + 1e-13;
-    r.expect("score within tolerance matches",
-             compare_decision(with_trace(entry), with_trace(near)).empty());
+    r.expect("computed score within tolerance matches",
+             compare_decision(with_trace(entry), with_trace(near), computed).empty());
 
     json far = entry;
     far["score"] = 0.5 + 1e-6;
-    r.expect("score beyond tolerance reported",
-             says(compare_decision(with_trace(entry), with_trace(far)),
+    r.expect("computed score beyond tolerance reported",
+             says(compare_decision(with_trace(entry), with_trace(far), computed),
+                  "trace[0].score: expected"));
+
+    // The margin belongs to the cosine, not to the trace. A score the case copied from
+    // a stub answer is exact, so the same delta that the computed score absorbs must
+    // fail here.
+    r.expect("stub-fed score is compared exactly",
+             says(compare_decision(with_trace(entry), with_trace(near), {}),
+                  "trace[0].score: expected"));
+
+    const json other = {{"condition", "classifier:other"}, {"result", true}, {"score", 0.5}};
+    json other_near = other;
+    other_near["score"] = 0.5 + 1e-13;
+    r.expect("a condition outside the computed set gets no margin",
+             says(compare_decision(with_trace(other), with_trace(other_near), computed),
                   "trace[0].score: expected"));
 
     r.expect("trace length mismatch reported",

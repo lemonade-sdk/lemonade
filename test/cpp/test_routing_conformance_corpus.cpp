@@ -406,6 +406,21 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
     return row;
 }
 
+// The trace conditions whose score the engine computes instead of copying from a stub
+// answer. Only a semantic_similarity score goes through a cosine, so only it can differ
+// in its last bits between CI runners; every other score is compared exactly. Built per
+// policy because an id like `topic` names a semantic_similarity classifier in one tier
+// and a plain `classifier` in another.
+static std::set<std::string> computed_score_conditions(const RoutePolicy& policy) {
+    std::set<std::string> conditions;
+    for (const auto& entry : policy.classifiers) {
+        if (entry.second && entry.second->type() == "semantic_similarity") {
+            conditions.insert("classifier:" + entry.first);
+        }
+    }
+    return conditions;
+}
+
 static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContext& request_context,
                      const lemon::testing::FakeClassifierServices& fake, const json& row,
                      const std::string& name) {
@@ -415,7 +430,8 @@ static void run_case(const RoutingPolicyEngine& engine, const lemon::RouteContex
     const json& expected = row.at("decision");
 
     const std::vector<std::string> mismatches =
-        lemon::conformance::compare_decision(expected, produced);
+        lemon::conformance::compare_decision(expected, produced,
+                                             computed_score_conditions(engine.policy()));
 
     // A backend call the case did not stub means the decision rests on a
     // placeholder default, so it fails regardless of whether the fields matched.

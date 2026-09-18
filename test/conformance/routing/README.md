@@ -31,15 +31,13 @@ key order and formatting do not matter. It checks these fields:
 | `outputs` | The matched rule's `outputs` object, copied as is (`{}` otherwise). |
 | `trace` | Only when the request sets `route_trace: true`: one entry per evaluated condition, with `condition`, `result`, and optionally `score`, `label`, `rationale`. |
 
-Every value must match exactly, with one exception: a trace `score` may differ by
-up to `1e-12`. Only the semantic-similarity score is actually computed (a cosine:
-dot product, square roots, a division), and its last bits can differ between the
-x86 and ARM CI runners. Classifier and LLM-router scores are copied from the stub
-answers and are exact in practice, but a trace entry does not say which
-classifier type produced it, so the same small margin applies to every score.
-Applying it everywhere loses no coverage: a difference that small cannot move a
-score across a threshold without also flipping `result`, which is compared
-exactly.
+Every value must match exactly, with one exception: a `semantic_similarity` trace
+`score` may differ by up to `1e-12`. That score is computed (a cosine: dot
+product, square roots, a division), and its last bits can differ between the x86
+and ARM CI runners. Classifier and LLM-router scores are copied from the stub
+answers, so they are compared exactly. A trace entry does not say which
+classifier type produced it, so the runner reads the types off the policy and
+tells the comparer which `classifier:<id>` conditions to allow the margin for.
 
 A field that neither side has, or that the comparison does not know about, is a
 failure too. This catches drift between the serializer and the runner.
