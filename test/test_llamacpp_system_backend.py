@@ -90,7 +90,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/v1/chat/completions":
+        if self.path not in ("/v1/chat/completions", "/v1/responses"):
             self.send_error(404)
             return
 
@@ -99,6 +99,22 @@ class Handler(BaseHTTPRequestHandler):
         if capture_path:
             with open(capture_path, "w", encoding="utf-8") as handle:
                 handle.write(body)
+
+        if self.path == "/v1/responses":
+            self._send_json(
+                {
+                    "id": "resp-mock",
+                    "object": "response",
+                    "output": [
+                        {
+                            "type": "message",
+                            "role": "assistant",
+                            "content": [{"type": "output_text", "text": "hello"}],
+                        }
+                    ],
+                }
+            )
+            return
 
         control = {}
         if control_path:
@@ -485,6 +501,154 @@ class LlamaCppSystemBackendTests(unittest.TestCase):
             "/no_think\nSay hello.",
         )
         self.assertNotIn("thinking", forwarded_request)
+        self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006b_ollama_think_false_reaches_the_backend(self):
+        """Ollama's think:false must arrive as llama.cpp's native controls."""
+        response = requests.post(
+            f"http://localhost:{PORT}/api/chat",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "stream": False,
+                "think": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(forwarded_request["reasoning_effort"], "none")
+        self.assertIs(
+            forwarded_request["chat_template_kwargs"]["enable_thinking"], False
+        )
+        self.assertEqual(
+            forwarded_request["messages"][-1]["content"],
+            "/no_think\nSay hello.",
+        )
+        self.assertNotIn("enable_thinking", forwarded_request)
+        self.assertNotIn("think", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006c_ollama_think_level_maps_to_reasoning_effort(self):
+        """A gpt-oss effort level is not a boolean and must not disable thinking."""
+        response = requests.post(
+            f"http://localhost:{PORT}/api/chat",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "stream": False,
+                "think": "low",
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(forwarded_request["reasoning_effort"], "low")
+        self.assertEqual(forwarded_request["messages"][-1]["content"], "Say hello.")
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006d_anthropic_thinking_disabled_reaches_the_backend(self):
+        """Anthropic's thinking.type=disabled must arrive as native controls."""
+        response = requests.post(
+            f"http://localhost:{PORT}/v1/messages",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "max_tokens": 8,
+                "thinking": {"type": "disabled"},
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(forwarded_request["reasoning_effort"], "none")
+        self.assertIs(
+            forwarded_request["chat_template_kwargs"]["enable_thinking"], False
+        )
+        self.assertEqual(
+            forwarded_request["messages"][-1]["content"],
+            "/no_think\nSay hello.",
+        )
+        self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006e_mcp_chat_disables_thinking_by_default(self):
+        """MCP's lemonade_chat tool must also route through the translation."""
+        response = requests.post(
+            f"http://localhost:{PORT}/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_chat",
+                    "arguments": {
+                        "model": ENDPOINT_TEST_MODEL,
+                        "messages": [{"role": "user", "content": "Say hello."}],
+                    },
+                },
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertNotIn("error", body, body)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(forwarded_request["reasoning_effort"], "none")
+        self.assertIs(
+            forwarded_request["chat_template_kwargs"]["enable_thinking"], False
+        )
+        self.assertEqual(
+            forwarded_request["messages"][-1]["content"],
+            "/no_think\nSay hello.",
+        )
+        self.assertNotIn("enable_thinking", forwarded_request)
+
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"), "System backend only supported on Linux"
+    )
+    def test_006f_responses_thinking_disabled_reaches_the_backend(self):
+        """/v1/responses must also translate enable_thinking into native controls."""
+        response = requests.post(
+            f"http://localhost:{PORT}/api/v1/responses",
+            json={
+                "model": ENDPOINT_TEST_MODEL,
+                "input": "Say hello.",
+                "max_output_tokens": 8,
+                "enable_thinking": False,
+            },
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with open(self.capture_path, "r", encoding="utf-8") as handle:
+            forwarded_request = json.load(handle)
+
+        self.assertEqual(forwarded_request["reasoning_effort"], "none")
+        self.assertIs(
+            forwarded_request["chat_template_kwargs"]["enable_thinking"], False
+        )
         self.assertNotIn("enable_thinking", forwarded_request)
 
     @unittest.skipUnless(
