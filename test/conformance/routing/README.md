@@ -372,7 +372,6 @@ and `consent equals: "denied"`; `consent exists: false`; `region exists: true`;
 | No `consent` key is sent, so `exists: false` matches. | `metadata-exists-false` |
 | `region: "eu-west"` is present and non-blank, so `exists: true` matches. | `metadata-exists-true` |
 | `consent: "   "` is whitespace only and counts as absent, so `exists: false` matches. | `metadata-whitespace-counts-absent` |
-| `region: 5` is a number. Only string values are kept when the request is parsed, so the key counts as absent and `exists: true` misses. The request schema allows strings only; this pins how the engine handles a request that breaks that. | `metadata-non-string-value-dropped` |
 | With `route_trace`, the first rule's `any` stops at its first matching child, so the trace has one entry `{"condition": "metadata", "result": true}`. | `metadata-trace` |
 
 **`input_forms`** — `keywords_any: ["escalate"]` then
