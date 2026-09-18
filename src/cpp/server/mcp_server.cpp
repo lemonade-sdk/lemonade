@@ -22,6 +22,7 @@
 #include "lemon/collection_orchestrator.h"
 #include "lemon/model_types.h"
 #include "lemon/models/store_snapshot.h"
+#include "lemon/thinking_controls.h"
 #include "lemon/utils/json_utils.h"
 #include "lemon/utils/path_utils.h"
 #include "lemon/version.h"
@@ -484,8 +485,9 @@ json McpServer::tool_chat(const json& arguments) {
     // <think> blocks, leaving content empty. Disable thinking by default;
     // callers can opt back in via chat_template_kwargs.enable_thinking=true.
     if (!openai_request.contains("chat_template_kwargs")) {
-        openai_request["chat_template_kwargs"] = {{"enable_thinking", false}};
+        openai_request["enable_thinking"] = false;
     }
+    normalize_thinking_controls(openai_request);
 
     json response = router_->chat_completion(openai_request);
     if (response.contains("error")) {
