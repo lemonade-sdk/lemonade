@@ -3336,6 +3336,13 @@ if(BUILD_TESTING AND EXISTS "${_CLOUD_PROVIDER_REGISTRY_CONFIG_TEST_SRC}")
     add_cpp_ci_test(CloudProviderRegistryConfigTest CI ON COMMAND test_cloud_provider_registry_config)
 endif()
 
+set(_THINKING_CONTROLS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_thinking_controls.cpp")
+if(BUILD_TESTING AND EXISTS "${_THINKING_CONTROLS_TEST_SRC}")
+    add_executable(test_thinking_controls test/cpp/test_thinking_controls.cpp)
+    target_link_libraries(test_thinking_controls PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ThinkingControlsTest CI ON COMMAND test_thinking_controls)
+endif()
+
 set(_ANTHROPIC_ERROR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_anthropic_error.cpp")
 if(BUILD_TESTING AND EXISTS "${_ANTHROPIC_ERROR_TEST_SRC}")
     add_executable(test_anthropic_error test/cpp/test_anthropic_error.cpp)
