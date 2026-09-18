@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <functional>
 #include <stdexcept>
 #include <string>
@@ -50,10 +51,136 @@ public:
     }
 
     nlohmann::json call(const nlohmann::json& arguments) const {
+        try {
+            validate_value(arguments, descriptor_["inputSchema"], "$");
+        } catch (const std::invalid_argument& e) {
+            throw std::invalid_argument(
+                "Invalid arguments for MCP tool '" + name() + "': " + e.what());
+        }
         return handler_(arguments);
     }
 
 private:
+    // Validate the JSON-Schema subset used by the current MCP descriptors.
+    // This keeps the advertised contract on tools/list on the actual call path.
+    static bool is_json_integer(const nlohmann::json& value) {
+        if (value.is_number_integer() || value.is_number_unsigned()) {
+            return true;
+        }
+        if (!value.is_number_float()) {
+            return false;
+        }
+        const double number = value.get<double>();
+        return std::isfinite(number) && std::floor(number) == number;
+    }
+
+    static bool matches_type(const nlohmann::json& value, const std::string& type) {
+        if (type == "object") return value.is_object();
+        if (type == "array") return value.is_array();
+        if (type == "string") return value.is_string();
+        if (type == "boolean") return value.is_boolean();
+        if (type == "number") return value.is_number();
+        if (type == "integer") return is_json_integer(value);
+        if (type == "null") return value.is_null();
+        throw std::invalid_argument("unsupported schema type '" + type + "'");
+    }
+
+    static void validate_value(const nlohmann::json& value,
+                               const nlohmann::json& schema,
+                               const std::string& path) {
+        if (!schema.is_object()) {
+            throw std::invalid_argument(path + ": schema must be an object");
+        }
+
+        const auto type_it = schema.find("type");
+        if (type_it != schema.end()) {
+            if (!type_it->is_string()) {
+                throw std::invalid_argument(path + ": schema type must be a string");
+            }
+            const std::string expected = type_it->get<std::string>();
+            if (!matches_type(value, expected)) {
+                throw std::invalid_argument(
+                    path + ": expected " + expected + ", got " + value.type_name());
+            }
+        }
+
+        const auto enum_it = schema.find("enum");
+        if (enum_it != schema.end()) {
+            if (!enum_it->is_array()) {
+                throw std::invalid_argument(path + ": schema enum must be an array");
+            }
+            bool matched = false;
+            for (const auto& candidate : *enum_it) {
+                if (value == candidate) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) {
+                throw std::invalid_argument(
+                    path + ": value is not one of " + enum_it->dump());
+            }
+        }
+
+        const auto minimum_it = schema.find("minimum");
+        if (minimum_it != schema.end()) {
+            if (!minimum_it->is_number()) {
+                throw std::invalid_argument(path + ": schema minimum must be numeric");
+            }
+            if (value.is_number() &&
+                value.get<double>() < minimum_it->get<double>()) {
+                throw std::invalid_argument(
+                    path + ": value must be >= " + minimum_it->dump());
+            }
+        }
+
+        if (value.is_object()) {
+            const auto required_it = schema.find("required");
+            if (required_it != schema.end()) {
+                if (!required_it->is_array()) {
+                    throw std::invalid_argument(path + ": schema required must be an array");
+                }
+                for (const auto& required : *required_it) {
+                    if (!required.is_string()) {
+                        throw std::invalid_argument(
+                            path + ": schema required entries must be strings");
+                    }
+                    const std::string key = required.get<std::string>();
+                    if (!value.contains(key)) {
+                        throw std::invalid_argument(
+                            path + ": missing required property '" + key + "'");
+                    }
+                }
+            }
+
+            const auto properties_it = schema.find("properties");
+            if (properties_it != schema.end()) {
+                if (!properties_it->is_object()) {
+                    throw std::invalid_argument(path + ": schema properties must be an object");
+                }
+                for (const auto& item : properties_it->items()) {
+                    if (value.contains(item.key())) {
+                        validate_value(
+                            value.at(item.key()), item.value(), path + "." + item.key());
+                    }
+                }
+            }
+        }
+
+        if (value.is_array()) {
+            const auto items_it = schema.find("items");
+            if (items_it != schema.end()) {
+                if (!items_it->is_object()) {
+                    throw std::invalid_argument(path + ": schema items must be an object");
+                }
+                for (std::size_t i = 0; i < value.size(); ++i) {
+                    validate_value(value[i], *items_it,
+                                   path + "[" + std::to_string(i) + "]");
+                }
+            }
+        }
+    }
+
     nlohmann::json descriptor_;
     Handler handler_;
 };

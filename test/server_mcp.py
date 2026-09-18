@@ -375,6 +375,52 @@ class McpGatewayTests(ServerTestBase):
         body = response.json()
         self.assertTrue(body["result"]["isError"])
 
+    def test_021a_tools_call_rejects_wrong_argument_type(self):
+        """Schema validation must reject wrong types before the tool handler runs."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 51,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": "definitely-not-a-real-model",
+                        "prompt": "validation test",
+                        "n": "many",
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertIn("$.n", message)
+        self.assertIn("expected integer", message)
+
+    def test_021b_tools_call_rejects_value_below_minimum(self):
+        """Schema validation must enforce numeric minimum constraints."""
+        response = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": 52,
+                "method": "tools/call",
+                "params": {
+                    "name": "lemonade_generate_image",
+                    "arguments": {
+                        "model": "definitely-not-a-real-model",
+                        "prompt": "validation test",
+                        "n": 0,
+                    },
+                },
+            }
+        )
+        body = response.json()
+        self.assertTrue(body["result"]["isError"], msg=str(body))
+        message = body["result"]["content"][0]["text"]
+        self.assertIn("$.n", message)
+        self.assertIn("value must be >= 1", message)
+
     def test_022_omni_rejects_non_collection_model(self):
         """
         lemonade_omni must reject a plain LLM (recipe != collection.omni) with
