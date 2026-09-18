@@ -36,10 +36,8 @@ namespace backends {
  * with a resolvable key, and again whenever a new key is supplied or a
  * provider is installed.
  *
- * Scope: chat-only (chat/completions and completions on OpenAI v1). Other
- * modalities — embeddings, audio, reranking, image — are intentionally not
- * served. discover_models() filters its result to chat-capable ids so the
- * router never sees a cloud model it cannot dispatch.
+ * Scope: OpenAI-compatible chat/completions, completions, and
+ * images/generations. Image editing and variations are not served.
  *
  * Wire format: OpenAI v1 — chat/completions, completions, models. Auth header
  * name/prefix is configurable per provider (default Authorization: Bearer),
@@ -47,7 +45,7 @@ namespace backends {
  * named key header. Streaming via SSE. Providers registered with a non-openai
  * wire_format are rejected here and relayed from /v1/messages instead.
  */
-class CloudServer : public WrappedServer {
+class CloudServer : public WrappedServer, public IImageServer {
 public:
     CloudServer(const std::string& provider,
                 const std::string& log_level,
@@ -70,6 +68,10 @@ public:
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
     json responses(const json& request) override;
+
+    json image_generations(const json& request) override;
+    json image_edits(const json& request) override;
+    json image_variations(const json& request) override;
 
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -155,6 +157,7 @@ private:
     std::string upstream_model_; // provider's model id (from ModelInfo.checkpoint())
     CloudProviderRegistry* registry_ = nullptr;  // Not owned
     bool loaded_ = false;
+    bool image_model_ = false;
 };
 
 namespace cloud {
