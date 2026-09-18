@@ -149,6 +149,21 @@ inline std::string gfx_target_version_to_arch(const std::string& gfx_target_vers
     return std::string(buf);
 }
 
+// Keeps the ISA visible next to the driver's marketing name, since users match it
+// against the arch targets backends are published for. Either half may be missing:
+// the marketing name needs a driver that reports one, and the ISA needs a
+// recognizable gfx_target_version.
+inline std::string gpu_display_name(const std::string& marketing_name,
+                                    const std::string& arch) {
+    if (marketing_name.empty()) {
+        return arch;
+    }
+    if (arch.empty() || marketing_name == arch) {
+        return marketing_name;
+    }
+    return marketing_name + " (" + arch + ")";
+}
+
 // Reads the amdgpu driver's own per-device accounting under `kfd_nodes_dir` (KFD
 // topology) and `drm_dir` (/sys/class/drm). Both are world-readable, unlike the libdrm
 // probe elsewhere in this file's callers, which needs O_RDWR on a render node and so

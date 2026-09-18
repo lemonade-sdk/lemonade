@@ -20,6 +20,7 @@ using lemon::system_info_detail::compute_cap_to_sm;
 using lemon::system_info_detail::cuda_supported_archs;
 using lemon::system_info_detail::device_matches_constraint;
 using lemon::system_info_detail::gfx_target_version_to_arch;
+using lemon::system_info_detail::gpu_display_name;
 using lemon::system_info_detail::identify_cuda_arch_from_name;
 using lemon::system_info_detail::rocm_device_memory_from_sysfs;
 
@@ -338,6 +339,24 @@ int main() {
             "an empty topology goes unreported",
             sysfs, "gfx1151", false);
     }
+
+    failures += !expect_string(
+        "a marketing name keeps the ISA alongside it",
+        gpu_display_name("AMD Radeon RX 9070 XT", "gfx1201"),
+        "AMD Radeon RX 9070 XT (gfx1201)");
+    failures += !expect_string(
+        "no marketing name leaves the ISA alone",
+        gpu_display_name("", "gfx1201"), "gfx1201");
+    failures += !expect_string(
+        "an unrecognized ISA leaves the marketing name alone",
+        gpu_display_name("AMD Radeon RX 9070 XT", ""),
+        "AMD Radeon RX 9070 XT");
+    failures += !expect_string(
+        "a driver that reports the ISA as its marketing name is not doubled up",
+        gpu_display_name("gfx1201", "gfx1201"), "gfx1201");
+    failures += !expect_string(
+        "neither half available yields an empty name",
+        gpu_display_name("", ""), "");
 
     std::printf("\n%d failures\n", failures);
     return failures == 0 ? 0 : 1;

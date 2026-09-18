@@ -105,7 +105,7 @@ def _lemond_health_ok(port, headers):
 
 
 @contextlib.contextmanager
-def _running_lemond(config=None, cache_prefix="lemond_test_"):
+def _running_lemond(config=None, cache_prefix="lemond_test_", extra_env=None):
     """Spawn lemond on a free port with the given config.json body.
 
     Skips the calling test when no daemon binary is available. Yields
@@ -127,14 +127,18 @@ def _running_lemond(config=None, cache_prefix="lemond_test_"):
     with open(os.path.join(cache_dir, "config.json"), "w", encoding="utf-8") as f:
         json.dump({"config_version": 2, **(config or {})}, f)
 
+    spawn_env = os.environ.copy()
+    if extra_env:
+        spawn_env.update(extra_env)
+
     proc = None
     try:
         with open(log_path, "w", encoding="utf-8") as log:
             proc = subprocess.Popen(
-                [lemond_binary, cache_dir, "--port", str(port)],
+                [lemond_binary, cache_dir, "--port", str(port), "--no-broadcast"],
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                env=os.environ.copy(),
+                env=spawn_env,
             )
         yield proc, port, headers, log_path
     finally:
@@ -2067,7 +2071,14 @@ class EndpointTests(ServerTestBase):
         class _FakeProvider(BaseHTTPRequestHandler):
             def do_GET(self):  # noqa: N802
                 if self.path.rstrip("/").endswith("/models"):
-                    data = [{"id": uid, "object": "model"} for uid in upstream_ids]
+                    data = []
+                    for item in upstream_ids:
+                        if isinstance(item, dict):
+                            entry = dict(item)
+                            entry.setdefault("object", "model")
+                            data.append(entry)
+                        else:
+                            data.append({"id": item, "object": "model"})
                     payload = _json.dumps({"object": "list", "data": data}).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -2163,8 +2174,18 @@ class EndpointTests(ServerTestBase):
                 },
             }
 
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
         base_url, stop_provider = self._start_mock_cloud_provider(
-            [upstream_id],
+            [mock_model],
             chat_handler=chat_response,
         )
 
@@ -2221,17 +2242,23 @@ class EndpointTests(ServerTestBase):
             self.assertTrue(auth_data["auth_state"]["runtime_key_set"])
             self.assertEqual(auth_data["models_discovered"], 1)
 
-            # (4) /models now lists the discovered cloud model.
+            # (4) /models now lists the discovered cloud model with parsed limits.
             models = requests.get(
                 f"{self.base_url}/models",
                 timeout=TIMEOUT_DEFAULT,
             ).json()
-            ids = [m["id"] for m in models.get("data", [])]
-            self.assertIn(
-                public_name,
-                ids,
-                f"Discovered cloud model should appear in /models; got {ids}",
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
             )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Discovered cloud model should appear in /models; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(cloud_entry.get("max_context_window"), 1310720)
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
 
             # (5) Round-trip chat completion through the mock.
             resp = requests.post(
@@ -2804,6 +2831,75 @@ class EndpointTests(ServerTestBase):
                 timeout=TIMEOUT_DEFAULT,
             )
         print("[OK] Cloud refresh is idempotent — re-auth produces no duplicates")
+
+    def test_012w_cloud_startup_preserves_discovered_limits(self):
+        """A cloud provider configured in config.json with an API key in env
+        is discovered on startup during build_cache(), and its context and token
+        limits are preserved through populate_model_metadata()."""
+        provider = "startupcloud"
+        upstream_id = "vendor/startup-model"
+        public_name = f"{provider}.{upstream_id}"
+
+        mock_model = {
+            "id": upstream_id,
+            "object": "model",
+            "context_length": 1310720,
+            "top_provider": {
+                "context_length": 1048576,
+                "max_completion_tokens": 943718,
+            },
+        }
+
+        base_url, stop_provider = self._start_mock_cloud_provider([mock_model])
+        self.addCleanup(stop_provider)
+
+        cfg = {
+            "cloud_providers": [
+                {
+                    "name": provider,
+                    "base_url": base_url,
+                    "allow_insecure_http": True,
+                }
+            ]
+        }
+        extra_env = {
+            f"LEMONADE_{provider.upper()}_API_KEY": "dummy-key",
+        }
+
+        with _running_lemond(
+            config=cfg,
+            cache_prefix="lemond_cloud_startup_",
+            extra_env=extra_env,
+        ) as (proc, port, headers, log_path):
+            self.assertTrue(
+                _wait_until_healthy(proc, port, headers),
+                f"lemond never became healthy on port {port} (see {log_path})",
+            )
+
+            models_resp = requests.get(
+                f"http://localhost:{port}/api/v1/models",
+                headers=headers,
+                timeout=TIMEOUT_DEFAULT,
+            )
+            self.assertEqual(models_resp.status_code, 200, models_resp.text)
+            models = models_resp.json()
+            cloud_entry = next(
+                (m for m in models.get("data", []) if m.get("id") == public_name),
+                None,
+            )
+            self.assertIsNotNone(
+                cloud_entry,
+                f"Cloud model should be discovered on startup; got {models.get('data', [])}",
+            )
+            self.assertEqual(cloud_entry.get("context_length"), 1310720)
+            self.assertEqual(
+                cloud_entry.get("max_context_window"),
+                1310720,
+                "Startup build_cache() must preserve max_context_window through populate_model_metadata",
+            )
+            self.assertEqual(cloud_entry.get("max_output_tokens"), 943718)
+            self.assertEqual(cloud_entry.get("max_completion_tokens"), 943718)
+        print("[OK] Cloud startup build_cache() preserved discovered limits")
 
     def test_013_unload_specific_model(self):
         """Test unloading a specific model by name."""
@@ -7300,11 +7396,39 @@ class EndpointTests(ServerTestBase):
             )
             self.assertIsInstance(v["sharded"], bool)
             self.assertIsInstance(v["size_bytes"], int)
+            self.assertGreater(
+                v["size_bytes"],
+                0,
+                f"Variant '{v.get('name')}' has no file size metadata",
+            )
 
         print(
             f"[OK] Valid checkpoint returned {len(variants)} variant(s): "
             f"{[v['name'] for v in variants]}"
         )
+
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_incompatible_gguf(self):
+        """A GGUF repository without a model architecture is not a llama.cpp model."""
+        checkpoint = "stduhpf/Krea-2-Turbo-GGUF"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for incompatible checkpoint, got "
+            f"{response.status_code}: {response.text}",
+        )
+        error = response.json().get("error", "")
+        self.assertIn("not compatible with llama.cpp", error)
+        self.assertIn("does not declare a model architecture", error)
+        print("[OK] Incompatible GGUF checkpoint was rejected before download")
 
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.
@@ -8393,6 +8517,119 @@ class EndpointTests(ServerTestBase):
             print(
                 "[OK] /internal/set applies download_rate_limit at runtime "
                 "and persists it"
+            )
+
+    def test_060_docs_index(self):
+        """GET /docs returns an index of the bundled documentation (#1700)."""
+        response = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/json", response.headers.get("Content-Type", ""))
+
+        body = response.json()
+        self.assertIn("version", body)
+        self.assertEqual(body["format"], "text/markdown")
+        self.assertGreater(len(body["docs"]), 0)
+
+        for entry in body["docs"]:
+            for field in ("id", "title", "url", "bytes"):
+                self.assertIn(field, entry)
+
+        ids = [entry["id"] for entry in body["docs"]]
+        self.assertIn("api/lemonade", ids)
+        self.assertEqual(ids, sorted(ids))
+
+    def test_061_docs_index_quad_prefix(self):
+        """The index is served on all four prefixes and echoes the one used."""
+        prefixes = ["/api/v0", "/api/v1", "/v0", "/v1"]
+        id_sets = []
+        for prefix in prefixes:
+            response = requests.get(
+                f"http://localhost:{PORT}{prefix}/docs", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{prefix}/docs did not return 200"
+            )
+            body = response.json()
+            for entry in body["docs"]:
+                self.assertEqual(
+                    entry["url"],
+                    f"{prefix}/docs/{entry['id']}",
+                    f"{prefix}/docs returned a url for another prefix",
+                )
+            id_sets.append(sorted(entry["id"] for entry in body["docs"]))
+
+        for ids in id_sets[1:]:
+            self.assertEqual(ids, id_sets[0], "docs index differs between prefixes")
+
+    def test_062_docs_pages_are_fetchable(self):
+        """Every url the index advertises serves that document as markdown."""
+        index = requests.get(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT).json()
+
+        for entry in index["docs"]:
+            response = requests.get(
+                f"http://localhost:{PORT}{entry['url']}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(
+                response.status_code, 200, f"{entry['url']} did not return 200"
+            )
+            self.assertIn("text/markdown", response.headers.get("Content-Type", ""))
+            self.assertGreater(len(response.text), 0)
+
+        lemonade = requests.get(
+            f"{self.base_url}/docs/api/lemonade", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(lemonade.status_code, 200)
+        self.assertIn("# Lemonade API", lemonade.text)
+
+    def test_063_docs_page_not_found(self):
+        """Unknown documents and path traversal both 404 rather than leaking files.
+
+        Traversal is percent-encoded because HTTP clients resolve a literal ".."
+        before sending, which would never reach the server's guard.
+        """
+        for path in (
+            "/docs/api/does-not-exist",
+            "/docs/%2e%2e/%2e%2e/CMakeLists.txt",
+            "/docs/api/%2e%2e/%2e%2e/%2e%2e/CMakeLists.txt",
+        ):
+            response = requests.get(f"{self.base_url}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(response.status_code, 404, f"{path} was not rejected")
+
+    def test_064_docs_endpoint_rejects_post(self):
+        """POST /docs is not a defined route, consistent with other GET-only endpoints."""
+        response = requests.post(f"{self.base_url}/docs", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(response.status_code, 404)
+
+    def test_065_unversioned_docs_returns_404_and_not_spa(self):
+        """GET /docs and /docs/ return 404; with web-app resources present, /docs-example falls through to SPA."""
+        server_origin = f"http://localhost:{PORT}"
+
+        # 1. Unconditional /docs subtree rejection
+        for path in ["/docs", "/docs/", "/docs/api/lemonade"]:
+            res = requests.get(f"{server_origin}{path}", timeout=TIMEOUT_DEFAULT)
+            self.assertEqual(res.status_code, 404, f"{path} did not return 404")
+            self.assertIn("application/json", res.headers.get("Content-Type", ""))
+            self.assertIn("For API documentation, use /v1/docs", res.text)
+
+        # 2. Determine web-app availability independently to test SPA fallback
+        root_res = requests.get(f"{server_origin}/", timeout=TIMEOUT_DEFAULT)
+        self.assertEqual(root_res.status_code, 200)
+        self.assertIn("text/html", root_res.headers.get("Content-Type", ""))
+        has_web_app = (
+            "window.api" in root_res.text or '<div id="root">' in root_res.text
+        )
+
+        spa_res = requests.get(f"{server_origin}/docs-example", timeout=TIMEOUT_DEFAULT)
+        if has_web_app:
+            self.assertEqual(
+                spa_res.status_code, 200, "/docs-example failed to reach SPA fallback"
+            )
+            self.assertIn("text/html", spa_res.headers.get("Content-Type", ""))
+        else:
+            self.assertEqual(
+                spa_res.status_code,
+                404,
+                "/docs-example returned unexpected status without web app",
             )
 
 
