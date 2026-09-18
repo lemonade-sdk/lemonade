@@ -51,6 +51,24 @@ inline std::vector<std::string> unknown_service_names(const nlohmann::json& serv
     return unknown;
 }
 
+// The runner reads two request fields with nlohmann's value(), which throws when the
+// key is present with another type. Uncaught, that aborts the whole run and the rows
+// after it never execute, so the types are checked here and the row fails on its own.
+// Returns one message per mistyped field, in a fixed order.
+inline std::vector<std::string> mistyped_request_fields(const nlohmann::json& request) {
+    std::vector<std::string> wrong;
+    if (!request.is_object()) return wrong;
+    const auto route_trace = request.find("route_trace");
+    if (route_trace != request.end() && !route_trace->is_boolean()) {
+        wrong.push_back("route_trace must be a boolean");
+    }
+    const auto model = request.find("model");
+    if (model != request.end() && !model->is_string()) {
+        wrong.push_back("model must be a string");
+    }
+    return wrong;
+}
+
 // nlohmann keeps only the last of two identically-named keys, so a file that
 // declares the same key twice inside one object parses cleanly and the first value
 // is silently lost — a repeated policy name, default_model, rules or decision would

@@ -54,6 +54,29 @@ static void test_unknown_service_names(TestResult& r) {
     r.expect("unknown service rejected", unknown.size() == 1 && unknown.front() == "rerank");
 }
 
+static void test_mistyped_request_fields(TestResult& r) {
+    using lemon::conformance::mistyped_request_fields;
+
+    r.expect("well-typed request accepted",
+             mistyped_request_fields(json{{"model", "router"}, {"route_trace", true}}).empty());
+    r.expect("both fields may be absent", mistyped_request_fields(json::object()).empty());
+
+    // value() throws on these, which would abort the run instead of failing the case.
+    const std::vector<std::string> trace =
+        mistyped_request_fields(json{{"model", "router"}, {"route_trace", "yes"}});
+    r.expect("non-boolean route_trace rejected",
+             trace.size() == 1 && trace.front() == "route_trace must be a boolean");
+
+    const std::vector<std::string> model = mistyped_request_fields(json{{"model", 5}});
+    r.expect("non-string model rejected",
+             model.size() == 1 && model.front() == "model must be a string");
+
+    r.expect("both mistyped fields reported",
+             mistyped_request_fields(json{{"model", 5}, {"route_trace", 1}}).size() == 2);
+    r.expect("non-object request has no fields to check",
+             mistyped_request_fields(json::array()).empty());
+}
+
 static void test_duplicate_object_keys(TestResult& r) {
     using lemon::conformance::duplicate_object_keys;
 
@@ -214,6 +237,7 @@ int main() {
 
     test_unknown_row_keys(r);
     test_unknown_service_names(r);
+    test_mistyped_request_fields(r);
     test_duplicate_object_keys(r);
     test_name_chars_ok(r);
     test_check_case_name(r);

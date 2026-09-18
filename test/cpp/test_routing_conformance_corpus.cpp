@@ -336,8 +336,9 @@ static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
 }
 
 // One case per non-blank line. A row must be an object carrying a request and a
-// decision, name a policy_name, hold no key outside the allowlist, declare no key
-// twice inside any of its objects, and have a case_name unique within its policy:
+// decision, type the request fields the runner reads, name a policy_name, hold no key
+// outside the allowlist, declare no key twice inside any of its objects, and have a
+// case_name unique within its policy:
 // the coverage matrix maps one behavior to one named case, and (policy_name,
 // case_name) is that case's identity. `seen_by_policy` tracks the case_names
 // already accepted under each policy_name.
@@ -364,6 +365,14 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
     if (!row.is_object() || !row.contains("request") || !row.contains("decision") ||
         !row["request"].is_object() || !row["decision"].is_object()) {
         check(where + " has object request+decision", false);
+        return std::nullopt;
+    }
+    const std::vector<std::string> mistyped =
+        lemon::conformance::mistyped_request_fields(row["request"]);
+    for (const auto& field : mistyped) {
+        check(where + " request." + field, false);
+    }
+    if (!mistyped.empty()) {
         return std::nullopt;
     }
     const std::vector<std::string> unknown_keys = lemon::conformance::unknown_row_keys(row);
