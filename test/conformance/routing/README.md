@@ -62,7 +62,8 @@ One directory per schema major, one directory per tier inside it, exactly two
 files per tier. The runner enforces this layout strictly. Each of the following is
 a hard failure:
 
-- a stray file or an extra directory;
+- a file at the corpus root other than `README.md`;
+- a stray file or an extra directory inside a version or tier directory;
 - a missing `policies.json` or `cases.jsonl`;
 - a policy whose `version` does not match the directory name;
 - a policy no case uses, or a case naming a policy that does not exist;

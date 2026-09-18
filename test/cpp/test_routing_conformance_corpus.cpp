@@ -138,11 +138,17 @@ static bool is_valid_tier_dir(const fs::path& tier_dir, const fs::path& root) {
 static std::vector<fs::path> find_tier_dirs(const fs::path& root) {
     std::vector<fs::path> dirs;
     std::error_code ec;
-    // Files directly under the root are docs (README.md), not corpus content.
     const DirEntries root_entries = list_entries(root, ec);
     if (ec) {
         fail(root.generic_string() + ": is readable", ec.message());
         return dirs;
+    }
+    // README.md is the only file that belongs at the root. Anything else there is a
+    // corpus file dropped one level too high, where no tier would ever read it.
+    for (const auto& stray : root_entries.non_dirs) {
+        if (stray.filename() != "README.md") {
+            check(rel_label(stray, root) + ": is README.md", false);
+        }
     }
     for (const auto& version : root_entries.dirs) {
         std::error_code vec;
