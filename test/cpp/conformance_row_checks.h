@@ -51,21 +51,51 @@ inline std::vector<std::string> unknown_service_names(const nlohmann::json& serv
     return unknown;
 }
 
-// nlohmann keeps only the last of two identically-named keys, so a policies.json
-// declaring the same policy name twice parses cleanly and every case silently runs
-// against whichever copy came last. Takes the raw file text and returns the
-// top-level names that appear more than once, in the order they first repeat.
-inline std::vector<std::string> duplicate_policy_names(const std::string& text) {
-    std::set<std::string> seen;
+// nlohmann keeps only the last of two identically-named keys, so a file that
+// declares the same key twice inside one object parses cleanly and the first value
+// is silently lost — a repeated policy name, default_model, rules or decision would
+// pass unnoticed. Takes the raw file text and returns the dotted path of every key
+// that repeats inside its own object, at any depth, in the order the repeats
+// appear. Array elements are not indexed, so a key repeated inside a rule of a
+// "rules" array reads "rules.decision".
+inline std::vector<std::string> duplicate_object_keys(const std::string& text) {
+    struct Scope {
+        std::string label;
+        std::set<std::string> keys;
+    };
+    std::vector<Scope> scopes;
     std::vector<std::string> duplicates;
+    std::string pending_key;
     nlohmann::json::parser_callback_t collect =
-        [&](int depth, nlohmann::json::parse_event_t event, nlohmann::json& parsed) {
-            if (event == nlohmann::json::parse_event_t::key && depth == 1) {
-                const std::string name = parsed.get<std::string>();
-                if (!seen.insert(name).second &&
-                    std::find(duplicates.begin(), duplicates.end(), name) == duplicates.end()) {
-                    duplicates.push_back(name);
+        [&](int, nlohmann::json::parse_event_t event, nlohmann::json& parsed) {
+            switch (event) {
+                case nlohmann::json::parse_event_t::object_start:
+                case nlohmann::json::parse_event_t::array_start:
+                    scopes.push_back({pending_key, {}});
+                    pending_key.clear();
+                    break;
+                case nlohmann::json::parse_event_t::object_end:
+                case nlohmann::json::parse_event_t::array_end:
+                    if (!scopes.empty()) scopes.pop_back();
+                    break;
+                case nlohmann::json::parse_event_t::key: {
+                    const std::string name = parsed.get<std::string>();
+                    if (!scopes.empty() && !scopes.back().keys.insert(name).second) {
+                        std::string path;
+                        for (const auto& scope : scopes) {
+                            if (!scope.label.empty()) path += scope.label + ".";
+                        }
+                        path += name;
+                        if (std::find(duplicates.begin(), duplicates.end(), path) ==
+                            duplicates.end()) {
+                            duplicates.push_back(path);
+                        }
+                    }
+                    pending_key = name;
+                    break;
                 }
+                default:
+                    break;
             }
             return true;
         };

@@ -267,9 +267,12 @@ static void report_mismatch(const json& expected, const json& produced,
 }
 
 // A tier's policies.json is a name -> policy map; a case selects one by its
-// policy_name, so a name declared twice makes that selection ambiguous. The version
-// directory name (the tier's parent) is the schema major every policy must declare,
-// so a policy under the wrong version cannot pass unnoticed. Read once per tier.
+// policy_name, so a name declared twice makes that selection ambiguous. A key
+// declared twice deeper in the file (a second default_model, say) is just as bad:
+// nlohmann keeps the last one, so the file would not say what it routes with. The
+// version directory name (the tier's parent) is the schema major every policy must
+// declare, so a policy under the wrong version cannot pass unnoticed. Read once per
+// tier.
 static std::optional<json> load_policies_json(const fs::path& tier_dir, const std::string& rel) {
     json policies_json;
     std::string text;
@@ -284,9 +287,9 @@ static std::optional<json> load_policies_json(const fs::path& tier_dir, const st
         check(rel + ": policies.json is a non-empty name -> policy map", false);
         return std::nullopt;
     }
-    const std::vector<std::string> duplicates = lemon::conformance::duplicate_policy_names(text);
-    for (const auto& name : duplicates) {
-        check(rel + ": policies.json declares '" + name + "' once", false);
+    const std::vector<std::string> duplicates = lemon::conformance::duplicate_object_keys(text);
+    for (const auto& path : duplicates) {
+        check(rel + ": policies.json declares '" + path + "' once", false);
     }
     if (!duplicates.empty()) return std::nullopt;
     const std::string directory_version = tier_dir.parent_path().filename().string();
@@ -327,10 +330,11 @@ static std::optional<RoutingPolicyEngine> compile_engine(RoutePolicy policy,
 }
 
 // One case per non-blank line. A row must be an object carrying a request and a
-// decision, name a policy_name, hold no key outside the allowlist, and have a
-// case_name unique within its policy: the coverage matrix maps one behavior to one
-// named case, and (policy_name, case_name) is that case's identity. `seen_by_policy`
-// tracks the case_names already accepted under each policy_name.
+// decision, name a policy_name, hold no key outside the allowlist, declare no key
+// twice inside any of its objects, and have a case_name unique within its policy:
+// the coverage matrix maps one behavior to one named case, and (policy_name,
+// case_name) is that case's identity. `seen_by_policy` tracks the case_names
+// already accepted under each policy_name.
 static std::optional<json> read_case_row(const std::string& line, const std::string& rel, int line_no,
                                          std::map<std::string, std::set<std::string>>& seen_by_policy) {
     const std::string where = rel + ": cases.jsonl line " + std::to_string(line_no);
@@ -340,6 +344,15 @@ static std::optional<json> read_case_row(const std::string& line, const std::str
         row = json::parse(line);
     } catch (const std::exception& e) {
         fail(where + " parses", e.what());
+        return std::nullopt;
+    }
+    // Checked on the raw line: nlohmann has already dropped all but the last of two
+    // identically-named keys by the time the row is a json object.
+    const std::vector<std::string> duplicates = lemon::conformance::duplicate_object_keys(line);
+    for (const auto& path : duplicates) {
+        check(where + " declares '" + path + "' once", false);
+    }
+    if (!duplicates.empty()) {
         return std::nullopt;
     }
     if (!row.is_object() || !row.contains("request") || !row.contains("decision") ||

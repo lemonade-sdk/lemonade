@@ -1,10 +1,10 @@
 // Self-test for the conformance corpus runner's pure row guards (#2425).
 //
 // The runner rejects malformed cases.jsonl rows (unknown key, missing/duplicate
-// name, unknown service) and a policies.json that declares a policy name twice.
-// These guards protect the whole corpus, so a regression that quietly stopped
-// rejecting bad input would let coverage erode while CI stayed green. This locks
-// the pure checks in memory — no fixtures, no second corpus.
+// name, unknown service) and any corpus file that declares the same key twice
+// inside one object. These guards protect the whole corpus, so a regression that
+// quietly stopped rejecting bad input would let coverage erode while CI stayed
+// green. This locks the pure checks in memory — no fixtures, no second corpus.
 
 #include "conformance_decision_compare.h"
 #include "conformance_row_checks.h"
@@ -54,23 +54,38 @@ static void test_unknown_service_names(TestResult& r) {
     r.expect("unknown service rejected", unknown.size() == 1 && unknown.front() == "rerank");
 }
 
-static void test_duplicate_policy_names(TestResult& r) {
-    using lemon::conformance::duplicate_policy_names;
+static void test_duplicate_object_keys(TestResult& r) {
+    using lemon::conformance::duplicate_object_keys;
 
     r.expect("distinct names accepted",
-             duplicate_policy_names(R"({"a": {}, "b": {}})").empty());
+             duplicate_object_keys(R"({"a": {}, "b": {}})").empty());
 
-    const std::vector<std::string> dup = duplicate_policy_names(R"({"a": {}, "b": {}, "a": {}})");
+    const std::vector<std::string> dup = duplicate_object_keys(R"({"a": {}, "b": {}, "a": {}})");
     r.expect("repeated name reported", dup.size() == 1 && dup.front() == "a");
 
     r.expect("a name repeated twice is reported once",
-             duplicate_policy_names(R"({"a": {}, "a": {}, "a": {}})").size() == 1);
+             duplicate_object_keys(R"({"a": {}, "a": {}, "a": {}})").size() == 1);
 
-    // Only the policy names are checked; keys inside a policy are the parser's business.
-    r.expect("repeated key inside a policy ignored",
-             duplicate_policy_names(R"({"a": {"x": 1, "x": 2}})").empty());
+    const std::vector<std::string> nested = duplicate_object_keys(R"({"a": {"x": 1, "x": 2}})");
+    r.expect("repeated key inside a policy reported by path",
+             nested.size() == 1 && nested.front() == "a.x");
 
-    r.expect("unparsable text reports nothing", duplicate_policy_names("{").empty());
+    const std::vector<std::string> deep =
+        duplicate_object_keys(R"({"a": {"rules": [{"decision": 1, "decision": 2}]}})");
+    r.expect("repeated key inside an array element reported",
+             deep.size() == 1 && deep.front() == "a.rules.decision");
+
+    // The same name under two different parents is two distinct keys.
+    r.expect("same name in sibling objects accepted",
+             duplicate_object_keys(R"({"a": {"x": 1}, "b": {"x": 2}})").empty());
+
+    // A cases.jsonl row is checked the same way.
+    const std::vector<std::string> row =
+        duplicate_object_keys(R"({"case_name": "c", "request": {"model": "m", "model": "n"}})");
+    r.expect("repeated key in a case row reported",
+             row.size() == 1 && row.front() == "request.model");
+
+    r.expect("unparsable text reports nothing", duplicate_object_keys("{").empty());
 }
 
 static void test_name_chars_ok(TestResult& r) {
@@ -184,7 +199,7 @@ int main() {
 
     test_unknown_row_keys(r);
     test_unknown_service_names(r);
-    test_duplicate_policy_names(r);
+    test_duplicate_object_keys(r);
     test_name_chars_ok(r);
     test_check_case_name(r);
     test_compare_decision(r);

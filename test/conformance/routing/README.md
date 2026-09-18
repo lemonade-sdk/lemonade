@@ -59,10 +59,17 @@ test/conformance/routing/
 ```
 
 One directory per schema major, one directory per tier inside it, exactly two
-files per tier. The runner enforces this layout strictly. Any stray file, extra
-directory, missing file, policy name declared twice in the same `policies.json`,
-policy whose `version` does not match the directory name, policy no case uses, or
-case naming an unknown policy is a hard failure.
+files per tier. The runner enforces this layout strictly. Each of the following is
+a hard failure:
+
+- a stray file or an extra directory;
+- a missing `policies.json` or `cases.jsonl`;
+- a policy whose `version` does not match the directory name;
+- a policy no case uses, or a case naming a policy that does not exist;
+- the same key declared twice inside one object, anywhere in either file. The JSON
+  parser keeps only the last value, so a repeated `default_model` would drop the
+  first one without a word.
+
 Strictness is deliberate: a corpus that silently loses cases is worse than one
 that fails.
 
@@ -103,8 +110,9 @@ Each non-blank line of `cases.jsonl` is one JSON object:
 | `services` | Model-backed cases only: the fake backend's answers (below). |
 | `note` | Optional. Why the decision is what it is. Ignored by the runner. |
 
-Any other key fails the case. The runner reports a case as
-`<major>/<tier>::<policy_name>::<case_name>`, for example
+Any other key fails the case, and so does the same key declared twice inside one
+object of the row — the first value would be lost silently. The runner reports a
+case as `<major>/<tier>::<policy_name>::<case_name>`, for example
 `1/l3::classifier_band::band-inside`.
 
 A `note` is strongly encouraged. The best notes say which alternative behavior
