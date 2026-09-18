@@ -1,0 +1,186 @@
+{
+  "classifier_all_combinator": {
+    "version": "1",
+    "model_name": "user.Classifier-AllCombinator",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelX", "ModelY", "ModelZ", "ModelW"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "clsX", "type": "classifier", "model": "ModelX", "labels": ["code"] },
+        { "id": "clsY", "type": "classifier", "model": "ModelY", "labels": ["code"] },
+        { "id": "clsZ", "type": "classifier", "model": "ModelZ", "labels": ["code"], "on_error": "match_true" },
+        { "id": "clsW", "type": "classifier", "model": "ModelW", "labels": ["code"] }
+      ],
+      "rules": [
+        { "id": "all-X-Y", "match": { "all": [
+          { "classifier": "clsX", "label": "code", "min_score": 0.5 },
+          { "classifier": "clsY", "label": "code", "min_score": 0.5 }
+        ] }, "route_to": "CodingLLM" },
+        { "id": "all-Z-W", "match": { "all": [
+          { "classifier": "clsZ", "label": "code", "min_score": 0.5 },
+          { "classifier": "clsW", "label": "code", "min_score": 0.5 }
+        ] }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_band": {
+    "version": "1",
+    "model_name": "user.Classifier-Band",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "TopicModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code", "math", "algebra"] }
+      ],
+      "rules": [
+        { "id": "code-band", "match": { "classifier": "topic", "label": "code", "min_score": 0.4, "max_score": 0.7 }, "route_to": "CodingLLM" },
+        { "id": "math-default-band", "match": { "classifier": "topic", "label": "math" }, "route_to": "MathLLM" },
+        { "id": "algebra-point", "match": { "classifier": "topic", "label": "algebra", "min_score": 0.8, "max_score": 0.8 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_combinator_match_true": {
+    "version": "1",
+    "model_name": "user.Classifier-Combinator-MatchTrue",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelMtAny", "ModelSib", "ModelMtNot"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "clsMtAny", "type": "classifier", "model": "ModelMtAny", "labels": ["code"], "on_error": "match_true" },
+        { "id": "clsSib", "type": "classifier", "model": "ModelSib", "labels": ["code"] },
+        { "id": "clsMtNot", "type": "classifier", "model": "ModelMtNot", "labels": ["code"], "on_error": "match_true" }
+      ],
+      "rules": [
+        { "id": "any-mt", "match": { "any": [
+          { "classifier": "clsMtAny", "label": "code", "min_score": 0.5 },
+          { "classifier": "clsSib", "label": "code", "min_score": 0.5 }
+        ] }, "route_to": "CodingLLM" },
+        { "id": "not-mt", "match": { "not": { "classifier": "clsMtNot", "label": "code", "min_score": 0.5 } }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_implicit_label": {
+    "version": "1",
+    "model_name": "user.Classifier-ImplicitLabel",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "CategoryModel", "LabellessModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "categorical", "type": "classifier", "model": "CategoryModel", "labels": ["code", "math"], "default_label": "code" },
+        { "id": "labelless", "type": "classifier", "model": "LabellessModel" }
+      ],
+      "rules": [
+        { "id": "categorical-rule", "match": { "classifier": "categorical", "min_score": 0.5 }, "route_to": "CodingLLM" },
+        { "id": "labelless-rule", "match": { "classifier": "labelless", "min_score": 0.5 }, "route_to": "MathLLM" },
+        { "id": "explicit-label-rule", "match": { "classifier": "categorical", "label": "math", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_label_selection": {
+    "version": "1",
+    "model_name": "user.Classifier-LabelSelection",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "TopicModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code", "math"] }
+      ],
+      "rules": [
+        { "id": "code-rule", "match": { "classifier": "topic", "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
+        { "id": "math-rule", "match": { "classifier": "topic", "label": "math", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_max_only_band": {
+    "version": "1",
+    "model_name": "user.Classifier-MaxOnlyBand",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "TopicModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "topic", "type": "classifier", "model": "TopicModel", "labels": ["code"] }
+      ],
+      "rules": [
+        { "id": "code-max-only", "match": { "classifier": "topic", "label": "code", "max_score": 0.3 }, "route_to": "CodingLLM" }
+      ]
+    }
+  },
+  "classifier_nested_combinator": {
+    "version": "1",
+    "model_name": "user.Classifier-NestedCombinator",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelP", "ModelQ", "ModelR", "ModelS"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "clsP", "type": "classifier", "model": "ModelP", "labels": ["code"] },
+        { "id": "clsQ", "type": "classifier", "model": "ModelQ", "labels": ["code"] },
+        { "id": "clsR", "type": "classifier", "model": "ModelR", "labels": ["code"] },
+        { "id": "clsS", "type": "classifier", "model": "ModelS", "labels": ["code"] }
+      ],
+      "rules": [
+        { "id": "not-any-P-Q", "match": { "not": { "any": [
+          { "classifier": "clsP", "label": "code", "min_score": 0.5 },
+          { "classifier": "clsQ", "label": "code", "min_score": 0.5 }
+        ] } }, "route_to": "CodingLLM" },
+        { "id": "any-not-R-S", "match": { "any": [
+          { "not": { "classifier": "clsR", "label": "code", "min_score": 0.5 } },
+          { "classifier": "clsS", "label": "code", "min_score": 0.5 }
+        ] }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_on_error": {
+    "version": "1",
+    "model_name": "user.Classifier-OnError",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "FailOpenModel", "FailClosedModel"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "fail_open", "type": "classifier", "model": "FailOpenModel", "labels": ["code"] },
+        { "id": "fail_closed", "type": "classifier", "model": "FailClosedModel", "labels": ["code"], "on_error": "match_true" }
+      ],
+      "rules": [
+        { "id": "open-rule", "match": { "classifier": "fail_open", "label": "code", "min_score": 0.5 }, "route_to": "CodingLLM" },
+        { "id": "closed-rule", "match": { "classifier": "fail_closed", "label": "code", "min_score": 0.5 }, "route_to": "MathLLM" }
+      ]
+    }
+  },
+  "classifier_on_error_in_combinator": {
+    "version": "1",
+    "model_name": "user.Classifier-OnError-Combinator",
+    "recipe": "collection.router",
+    "components": ["MathLLM", "CodingLLM", "DefaultLLM", "ModelA", "ModelB", "ModelC"],
+    "routing": {
+      "candidates": ["MathLLM", "CodingLLM", "DefaultLLM"],
+      "default_model": "DefaultLLM",
+      "classifiers": [
+        { "id": "clsA", "type": "classifier", "model": "ModelA", "labels": ["code"] },
+        { "id": "clsB", "type": "classifier", "model": "ModelB", "labels": ["code"] },
+        { "id": "clsC", "type": "classifier", "model": "ModelC", "labels": ["code"] }
+      ],
+      "rules": [
+        { "id": "not-A", "match": { "not": { "classifier": "clsA", "label": "code", "min_score": 0.5 } }, "route_to": "CodingLLM" },
+        { "id": "any-B-C", "match": { "any": [
+          { "classifier": "clsB", "label": "code", "min_score": 0.5 },
+          { "classifier": "clsC", "label": "code", "min_score": 0.5 }
+        ] }, "route_to": "MathLLM" }
+      ]
+    }
+  }
+}
