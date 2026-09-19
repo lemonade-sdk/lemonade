@@ -39,11 +39,6 @@ public:
     json audio_transcriptions(const json& request) override;
 
 private:
-    // NPU compiled cache handling
-    void download_npu_compiled_cache(const std::string& model_path,
-                                      const ModelInfo& model_info,
-                                      bool do_not_upgrade);
-
     // Audio file handling
     std::string save_audio_to_temp(const std::string& audio_data,
                                     const std::string& filename);

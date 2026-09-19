@@ -6,7 +6,6 @@ Tests the /audio/transcriptions endpoint (HTTP) and the
 
 Usage:
     python server_whisper.py --wrapped-server whispercpp --backend cpu
-    python server_whisper.py --wrapped-server whispercpp --backend npu
     python server_whisper.py --wrapped-server whispercpp --backend vulkan
     python server_whisper.py --wrapped-server flm
     python server_whisper.py --cli-binary /path/to/lemonade
@@ -430,63 +429,6 @@ class WhisperTests(ServerTestBase):
             f"Expected 400 or 422 for missing model, got {response.status_code}. Response: {response.text}",
         )
         print(f"[OK] Correctly rejected request without model: {response.status_code}")
-
-    @skip_if_unsupported("rai_cache")
-    def test_005_transcription_npu_backend(self):
-        """Test NPU backend with automatic .rai cache download."""
-        whispercpp_backend = _get_whispercpp_backend()
-
-        # Skip if a different backend was specified via CLI
-        if whispercpp_backend and whispercpp_backend != "npu":
-            self.skipTest(f"Skipping NPU test (testing {whispercpp_backend} backend)")
-            return
-
-        model = _get_whisper_model()
-        print("\n[INFO] Testing NPU backend (requires NPU hardware)")
-
-        # Load model with NPU backend
-        load_response = requests.post(
-            f"{self.base_url}/load",
-            json={
-                "model_name": model,
-                "whispercpp_backend": "npu",
-            },
-            timeout=TIMEOUT_MODEL_OPERATION,
-        )
-
-        if load_response.status_code != 200:
-            print(f"[SKIP] NPU backend not available: {load_response.text}")
-            self.skipTest("NPU backend not available (NPU hardware required)")
-            return
-
-        print(f"[OK] Model loaded with NPU backend")
-
-        # Verify transcription works with NPU backend
-        with open(self._test_audio_path, "rb") as audio_file:
-            files = {"file": ("test_speech.wav", audio_file, "audio/wav")}
-            data = {"model": model, "response_format": "json"}
-
-            print(f"[INFO] Testing NPU transcription")
-            response = requests.post(
-                f"{self.base_url}/audio/transcriptions",
-                files=files,
-                data=data,
-                timeout=TIMEOUT_MODEL_OPERATION,
-            )
-
-        self.assertEqual(
-            response.status_code,
-            200,
-            f"NPU transcription failed with status {response.status_code}: {response.text}",
-        )
-
-        result = response.json()
-        self.assertIn("text", result, "Response should contain 'text' field")
-        self.assertGreater(
-            len(result["text"]), 0, "NPU transcription should not be empty"
-        )
-
-        print(f"[OK] NPU transcription result: {result['text']}")
 
     # =========================================================================
     # WebSocket Realtime Transcription Tests

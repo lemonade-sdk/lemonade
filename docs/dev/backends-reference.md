@@ -24,7 +24,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `thinksound` | ThinkSound | yes | no | cuda, rocm, vulkan |
 | `trellis` | TRELLIS.2 | yes | no | cuda, rocm, vulkan |
 | `vllm` | vLLM ROCm (experimental) | yes | yes | rocm |
-| `whispercpp` | Whisper.cpp | yes | no | cpu, metal, npu, rocm, vulkan |
+| `whispercpp` | Whisper.cpp | yes | no | cpu, metal, rocm, vulkan |
 <!-- END GENERATED: backends-overview -->
 
 ## Support matrix
@@ -68,7 +68,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
-| `whispercpp` | npu | windows | amd_npu (XDNA2) |
 | `whispercpp` | metal | macos | metal |
 | `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
 | `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |

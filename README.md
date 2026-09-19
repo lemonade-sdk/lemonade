@@ -209,13 +209,8 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td>Linux</td>
     </tr>
     <tr>
-      <td rowspan="6"><strong>Speech-to-text</strong></td>
-      <td rowspan="5"><code>whispercpp</code></td>
-      <td><code>npu</code></td>
-      <td>XDNA2 NPU</td>
-      <td>Windows</td>
-    </tr>
-    <tr>
+      <td rowspan="5"><strong>Speech-to-text</strong></td>
+      <td rowspan="4"><code>whispercpp</code></td>
       <td><code>metal</code></td>
       <td>Apple Silicon GPU</td>
       <td>macOS</td>
