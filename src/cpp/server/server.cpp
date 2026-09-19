@@ -5188,9 +5188,10 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         normalize_and_resolve_request_model(request_json);
 
         bool refine = request_json.value("refine", false);
-        std::string pixel_upscaler = request_json.value("pixel_upscaler", "");
+        std::string upscale_model = request_json.value("upscale_model", "");
         request_json.erase("upscale");
         request_json.erase("refine");
+        request_json.erase("upscale_model");
 
         // Validate required fields
         if (!request_json.contains("prompt")) {
@@ -5227,7 +5228,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         }
 
         // Fall back to recipe options when the request doesn't set them.
-        if (!refine || pixel_upscaler.empty()) {
+        if (!refine || upscale_model.empty()) {
             try {
                 auto info = model_manager_->get_model_info(requested_model);
                 if (!refine) {
@@ -5236,10 +5237,10 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
                         refine = true;
                     }
                 }
-                if (pixel_upscaler.empty()) {
-                    auto opt = info.recipe_options.get_option("pixel_upscaler");
+                if (upscale_model.empty()) {
+                    auto opt = info.recipe_options.get_option("upscale_model");
                     if (opt.is_string() && !opt.get<std::string>().empty()) {
-                        pixel_upscaler = opt.get<std::string>();
+                        upscale_model = opt.get<std::string>();
                     }
                 }
             } catch (const std::exception&) {}
@@ -5261,7 +5262,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
             }
             bool skip_upscale = request_json.value("skip_implicit_upscaling", false);
             apply_upscale_if_configured(requested_model, response, skip_upscale,
-                                        pixel_upscaler);
+                                        upscale_model);
             res.set_content(response.dump(), "application/json");
         }
 
@@ -5489,8 +5490,8 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
 
         std::string edit_model_name = request_json["model"].get<std::string>();
         bool edit_refine = parse_bool_form_field(req.form, "refine");
-        std::string edit_pixel_upscaler =
-            req.form.has_field("pixel_upscaler") ? req.form.get_field("pixel_upscaler") : "";
+        std::string edit_upscale_model =
+            req.form.has_field("upscale_model") ? req.form.get_field("upscale_model") : "";
         if (edit_refine) {
             try {
                 if (model_manager_->get_model_info(edit_model_name).recipe == "thenoise") {
@@ -5505,7 +5506,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         }
         apply_upscale_if_configured(edit_model_name, response,
                                     parse_bool_form_field(req.form, "skip_implicit_upscaling"),
-                                    edit_pixel_upscaler);
+                                    edit_upscale_model);
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -5555,8 +5556,8 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
 
         std::string var_model_name = request_json["model"].get<std::string>();
         bool var_refine = parse_bool_form_field(req.form, "refine");
-        std::string var_pixel_upscaler =
-            req.form.has_field("pixel_upscaler") ? req.form.get_field("pixel_upscaler") : "";
+        std::string var_upscale_model =
+            req.form.has_field("upscale_model") ? req.form.get_field("upscale_model") : "";
         if (var_refine) {
             try {
                 if (model_manager_->get_model_info(var_model_name).recipe == "thenoise") {
@@ -5571,7 +5572,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         }
         apply_upscale_if_configured(var_model_name, response,
                                     parse_bool_form_field(req.form, "skip_implicit_upscaling"),
-                                    var_pixel_upscaler);
+                                    var_upscale_model);
         res.set_content(response.dump(), "application/json");
 
     } catch (const nlohmann::json::exception& e) {
@@ -5597,12 +5598,12 @@ void Server::apply_upscale_if_configured(
     const std::string& model_name,
     nlohmann::json& response,
     bool skip_upscale_request,
-    const std::string& pixel_upscaler_override) {
-    std::string upscale_model_name = pixel_upscaler_override;
+    const std::string& upscale_model_override) {
+    std::string upscale_model_name = upscale_model_override;
     if (upscale_model_name.empty()) {
         try {
             auto info = model_manager_->get_model_info(model_name);
-            auto upscale_opt = info.recipe_options.get_option("pixel_upscaler");
+            auto upscale_opt = info.recipe_options.get_option("upscale_model");
             if (upscale_opt.is_string() && !upscale_opt.get<std::string>().empty()) {
                 upscale_model_name = upscale_opt.get<std::string>();
             }
@@ -5742,12 +5743,9 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::string upscale_model_name = request_json.value("model", "");
         if (upscale_model_name.empty()) {
-            upscale_model_name = request_json.value("pixel_upscaler", "");
-        }
-        if (upscale_model_name.empty()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "Missing 'model' (or 'pixel_upscaler') field"},
+                {"message", "Missing 'model' field"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
