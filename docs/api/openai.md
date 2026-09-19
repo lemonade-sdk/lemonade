@@ -827,7 +827,8 @@ Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model 
 | Parameter | Required | Description | Status |
 |-----------|----------|-------------|--------|
 | `image` | Yes | Base64-encoded PNG image to upscale. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
-| `model` | Yes | The upscaling model to use, as a registry model name with the `upscaling` label (e.g., `RealESRGAN-x4plus`). Both `sd-cpp` and `thenoise` upscalers are supported; the correct backend CLI is selected from the model's recipe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `model` | Yes (or `upscale_model`) | The upscaling model to use, as a registry model name with the `upscaling` label (e.g., `RealESRGAN-x4plus`). Both `sd-cpp` and `thenoise` upscalers are supported; the correct backend CLI is selected from the model's recipe. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
+| `upscale_model` | No | Alias for `model`, matching the recipe option name. | <sub>![Status](https://img.shields.io/badge/available-green)</sub> |
 
 ### Example request
 
