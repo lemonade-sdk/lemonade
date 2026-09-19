@@ -149,7 +149,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `cfg_scale` | — | SIZE | 7.0 | Classifier-free guidance scale |
 | `width` | — | SIZE | 512 | Output image width |
 | `height` | — | SIZE | 512 | Output image height |
-| `pixel_upscaler` | — | MODEL | "" | ESRGAN upscaler to apply after generation (set model options, not in-chat) |
+| `upscale_model` | — | MODEL | "" | ESRGAN upscaler to apply after generation (set model options, not in-chat) |
 | `sampling_method` | — | ARGS | "" | Sampling method |
 | `flow_shift` | — | SIZE | 0.0 | Flow shift |
 
@@ -169,7 +169,6 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sharpening` | — | SIZE | 0.0 | RCAS sharpening strength (0.0-1.0) |
 | `lora_specs` | — | ARGS | "" | Comma-separated LoRA specs, e.g. "style:0.8,sub/detail:0.5" |
 | `refine` | — | BOOL | false | Run native latent-space 2x refine during generation (forwarded as upscale=true) |
-| `pixel_upscaler` | — | MODEL | "" | Upscaler model passed through to the backend for native upscaling during generation |
 
 #### `thinksound` — ThinkSound
 
