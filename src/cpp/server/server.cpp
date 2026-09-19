@@ -5743,9 +5743,12 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 
         std::string upscale_model_name = request_json.value("model", "");
         if (upscale_model_name.empty()) {
+            upscale_model_name = request_json.value("upscale_model", "");
+        }
+        if (upscale_model_name.empty()) {
             res.status = 400;
             nlohmann::json error = {{"error", {
-                {"message", "Missing 'model' field"},
+                {"message", "Missing 'model' (or 'upscale_model') field"},
                 {"type", "invalid_request_error"}
             }}};
             res.set_content(error.dump(), "application/json");
