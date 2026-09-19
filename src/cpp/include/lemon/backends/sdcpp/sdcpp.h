@@ -32,6 +32,7 @@ inline const BackendDescriptor descriptor = {
         {"cfg_scale", "", 7.0, "SIZE", "Classifier-free guidance scale", "Stable Diffusion Options"},
         {"width", "", 512, "SIZE", "Output image width", "Stable Diffusion Options"},
         {"height", "", 512, "SIZE", "Output image height", "Stable Diffusion Options"},
+        {"upscale_model", "", "", "MODEL", "ESRGAN upscaler to apply after generation (set model options, not in-chat)", "Stable Diffusion Options"},
         {"sampling_method", "", "", "ARGS", "Sampling method", "Stable Diffusion Options"},
         {"flow_shift", "", 0.0, "SIZE", "Flow shift", "Stable Diffusion Options"},
     },
