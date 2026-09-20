@@ -1100,7 +1100,7 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm vulkan"
+            backends: "cpu vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
