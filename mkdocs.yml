@@ -81,6 +81,8 @@ nav:
   - Development:
     - Overview: dev/README.md
     - Philosophy: dev/philosophy.md
+    - AI Content Policy: dev/ai-content-policy.md
+    - Spec Driven Development Policy: dev/spec-driven-dev.md
     - Working Groups: dev/working-groups/README.md
     - Contribute: dev/contribute.md
     - Documentation Guide: dev/documentation.md
@@ -101,6 +103,8 @@ nav:
     - Claude Code: integrations/claude-code.md
     - CodeGPT: integrations/codeGPT.md
     - Continue: integrations/continue.md
+    - Interviewer: integrations/interviewer.md
+    - Junie: integrations/junie.md
     - LangChain: integrations/langchain.md
     - Lemon Zest: integrations/lemon-zest.md
     - Mindcraft: integrations/mindcraft.md

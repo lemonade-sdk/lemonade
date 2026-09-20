@@ -30,14 +30,11 @@ jobs:
         working-directory: src/app
         run: npm run typecheck
       - name: Run app regression tests
-        # do not run for GUI3 until there is a proper npm only regression test
-        run: echo "Regression tests skipped for GUI3"
-        # run: node test/app/run-app-regression-tests.cjs
+        run: node test/app/run-app-regression-tests.cjs
 
   backend-docs-drift:
-    # The backend reference doc (docs/dev/backends-reference.md) is generated from
-    # the self-describing backend descriptors. Build lemond, regenerate, and fail
-    # if the committed doc is stale — the same guarantee a lint provides.
+    # Server reference docs are generated from live self-describing endpoints.
+    # Build lemond, regenerate, and fail if committed docs are stale.
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-backend-docs-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
@@ -64,6 +61,8 @@ jobs:
         run: cmake --build --preset default --target lemond
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
+      - name: Check MCP reference docs are up to date
+        run: python3 docs/tools/gen_mcp_boilerplate.py --check
 
   pre-commit:
     runs-on: ubuntu-latest
@@ -80,6 +79,9 @@ jobs:
       - run: pip install pre-commit
       - name: Run the comment-slop unit tests
         run: python -m unittest test.test_comment_slop -v
+
+      - name: Run the version and source archive unit tests
+        run: python -m unittest test.test_version test.test_source_archive -v
 
       - name: Run pre-commit on the changed files
         # Scoped to what the change touches; running repo-wide would fail on drift that
@@ -107,6 +109,25 @@ jobs:
             --from-ref "$BASE" \
             --to-ref HEAD \
             --show-diff-on-failure
+
+  vendored-asset-integrity:
+    # The vendored 3D viewer (src/app/src/renderer/vendor/model-viewer.min.js) is a
+    # pristine upstream bundle with no SRI hash a webpack import can carry. Pin its
+    # SHA-256 and fail on drift — an accidental edit, corrupted download, or tampered
+    # blob. This is a drift guard, not a true SRI replacement (the sidecar checksum
+    # can change alongside the file in the same commit).
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-vendored-asset-integrity-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify vendored asset hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd src/app/src/renderer/vendor
+          sha256sum -c model-viewer.min.js.sha256
 
   markdown-link-check:
     runs-on: ubuntu-latest
