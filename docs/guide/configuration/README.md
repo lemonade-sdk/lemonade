@@ -46,6 +46,8 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "allowed_origins": "",
   "auto_check_model_updates": true,
+  "auto_evict": false,
+  "auto_evict_threshold_pct": 0.9,
   "auto_update_models": false,
   "broadcast": true,
   "cloud_providers": [],
@@ -106,7 +108,6 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   "openmoss": {
     "backend": "auto",
     "cuda_bin": "builtin",
-    "rocm_bin": "builtin",
     "vulkan_bin": "builtin"
   },
   "port": 13305,
