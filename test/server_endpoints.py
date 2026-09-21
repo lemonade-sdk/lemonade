@@ -7070,6 +7070,68 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021yb_extra_hf_cache_layout_recovers_repo_name(self):
+        """Naming rule: a `snapshots/<commit>` folder in a Hugging Face or
+        ModelScope cache is named after its repo (#3618), and the commit folder
+        it answered to before keeps resolving."""
+        active = "aaaa111122223333444455556666777788889999"
+        stale = "bbbb111122223333444455556666777788889999"
+        modelscope = "cccc111122223333444455556666777788889999"
+        dangling = "dddd111122223333444455556666777788889999"
+
+        extra_dir = self._make_extra_models_dir(
+            "hf_cache",
+            {
+                # The repo the user pulled, plus an older revision left behind.
+                f"models--lemontest--Cachelayout-7B-GGUF/snapshots/{active}"
+                "/Cachelayout-7B-Q4_K_M.gguf": None,
+                f"models--lemontest--Cachelayout-7B-GGUF/snapshots/{stale}"
+                "/Cachelayout-7B-Q4_K_M.gguf": None,
+                "models--lemontest--Cachelayout-7B-GGUF/refs/main": active,
+                # ModelScope caches carry their own prefix.
+                f"modelscope--models--lemontest--Msonly-3B-GGUF/snapshots/{modelscope}"
+                "/Msonly-3B-Q4_K_M.gguf": None,
+                "modelscope--models--lemontest--Msonly-3B-GGUF/refs/main": modelscope,
+                # Boundaries: each of these only resembles a cache.
+                "models--lemontest--Plainfolder-GGUF/model.gguf": None,
+                "projects/snapshots/deadbeef1234/model.gguf": None,
+                f"models--lemontest--Dangling-GGUF/snapshots/{dangling}"
+                "/Dangling-Q4_K_M.gguf": None,
+                "models--lemontest--Dangling-GGUF/refs/main": "9999ffff",
+            },
+        )
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+            cache = "models--lemontest--Cachelayout-7B-GGUF/snapshots"
+            expected = {
+                f"{cache}/{active}": "Cachelayout-7B-GGUF",
+                f"modelscope--models--lemontest--Msonly-3B-GGUF"
+                f"/snapshots/{modelscope}": "Msonly-3B-GGUF",
+                # Only the commit refs/main points at takes the repo name.
+                f"{cache}/{stale}": stale,
+                # Boundaries keep ordinary folder naming.
+                "models--lemontest--Plainfolder-GGUF": "models--lemontest--Plainfolder-GGUF",
+                "projects/snapshots/deadbeef1234": "deadbeef1234",
+                f"models--lemontest--Dangling-GGUF/snapshots/{dangling}": dangling,
+            }
+            for path, name in expected.items():
+                self.assertEqual(found.get(path), name, f"{path} -> {found}")
+
+            # The commit folder resolved before the repo name was recovered,
+            # so it has to keep resolving.
+            legacy = requests.get(
+                f"{self.base_url}/models/{active}", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 200, "commit folder must resolve")
+            self.assertEqual(legacy.json()["id"], "Cachelayout-7B-GGUF")
+
+            print("[OK] cache folders are named after their repo")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously

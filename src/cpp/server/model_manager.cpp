@@ -1163,6 +1163,34 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
+// A model kept in Hugging Face cache layout lives at
+// <models--org--repo>/snapshots/<commit>, so the folder holding its GGUF files
+// is named after an opaque commit hash. Recover the repo from the cache
+// directory, but only for the commit refs/main points at, so two revisions of
+// one repo cannot both claim the same model id.
+static bool hf_cache_snapshot_repo(const fs::path& dir_path, std::string* repo) {
+    if (dir_path.parent_path().filename() != "snapshots") return false;
+
+    const fs::path cache_root = dir_path.parent_path().parent_path();
+    const std::string cache_dir_name = cache_root.filename().string();
+    std::string encoded;
+    if (cache_dir_name.rfind("modelscope--models--", 0) == 0) {
+        encoded = cache_dir_name.substr(sizeof("modelscope--models--") - 1);
+    } else if (cache_dir_name.rfind("models--", 0) == 0) {
+        encoded = cache_dir_name.substr(sizeof("models--") - 1);
+    } else {
+        return false;
+    }
+
+    if (read_hf_ref_main(cache_root) != dir_path.filename().string()) return false;
+
+    // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo". Only the
+    // first separator is the org boundary; the rest belongs to the repo name.
+    const size_t sep = encoded.find("--");
+    *repo = sep == std::string::npos ? encoded : encoded.substr(sep + 2);
+    return !repo->empty();
+}
+
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
 // newcomer with its folder keeps both and leaves the first model's id alone.
@@ -1384,7 +1412,12 @@ void ModelManager::discover_extra_models_in_directory(
     std::map<std::string, ModelInfo>& discovered,
     const fs::path& search_path) const {
 
-    std::string dir_name = dir_path.filename().string();
+    const std::string folder_name = dir_path.filename().string();
+    std::string dir_name = folder_name;
+    std::string hf_repo;
+    if (hf_cache_snapshot_repo(dir_path, &hf_repo)) {
+        dir_name = hf_repo;
+    }
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
@@ -1473,8 +1506,8 @@ void ModelManager::discover_extra_models_in_directory(
 
             // Keep the old folder name working in requests without listing it.
             if (path == main_model_path) {
-                info.input_aliases.push_back(dir_name);
-                info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
+                info.input_aliases.push_back(folder_name);
+                info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + folder_name);
             }
 
             add_extra_model(discovered, visible_extra_variant_name(v), dir_path,
@@ -1501,6 +1534,10 @@ void ModelManager::discover_extra_models_in_directory(
         }
         lemon::backends::ensure_deployment_label(info.labels, EXTRA_MODEL_RECIPE);
         info.type = get_model_type_from_labels(info.labels);
+        if (folder_name != dir_name) {
+            info.input_aliases.push_back(folder_name);
+            info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + folder_name);
+        }
         add_extra_model(discovered, dir_name, dir_path, std::move(info),
                         deployment_label.empty()
                             ? nullptr
