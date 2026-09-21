@@ -6507,6 +6507,42 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    def _make_extra_models_dir(self, name, layout):
+        """Build an extra_models_dir whose tree is spelled out by `layout`.
+
+        Keys are the '/'-separated paths to create under it, so the directory
+        shape under test is readable at the call site. A None value writes a
+        stub GGUF; a string is written verbatim, which is how a Hugging Face
+        cache 'refs/main' pointer is declared.
+        """
+        extra_dir = tempfile.mkdtemp(prefix=f"lemon_extra_{name}_")
+        for relative, contents in layout.items():
+            path = os.path.join(extra_dir, *relative.split("/"))
+            if contents is None:
+                self._write_stub_gguf_file(path)
+            else:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    f.write(contents)
+        return extra_dir
+
+    def _discovered_extra_models(self, extra_dir):
+        """Map each discovered extra model's checkpoint, written the same way
+        `_make_extra_models_dir` spells its layout, to the id it was listed
+        under. A folder model's checkpoint is its folder, so the returned keys
+        line up with the layout the test declared."""
+        response = requests.get(
+            f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        return {
+            os.path.relpath(model["checkpoint"], extra_dir).replace(os.sep, "/"): model[
+                "id"
+            ]
+            for model in response.json()["data"]
+            if model.get("source") == "extra_models_dir"
+        }
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -6964,31 +7000,42 @@ class EndpointTests(ServerTestBase):
 
     def test_021y_extra_identical_filenames_in_two_folders_stay_distinct(self):
         """Two folders holding the same variant filenames keep every model."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_collision_")
-        expected = []
-        for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF"):
-            for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf"):
-                path = os.path.join(extra_dir, folder, name)
-                self._write_stub_gguf_file(path)
-                expected.append(path)
+        extra_dir = self._make_extra_models_dir(
+            "collision",
+            {
+                f"{folder}/{name}": None
+                for folder in ("Llama-Local-GGUF", "Mistral-Local-GGUF")
+                for name in ("model-Q4_K_M.gguf", "model-Q8_0.gguf")
+            },
+        )
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            found = {
-                model["id"]: model["checkpoint"]
-                for model in models_response.json()["data"]
-                if model.get("checkpoint") in expected
-            }
+            found = self._discovered_extra_models(extra_dir)
 
             # Four files, four models: no folder may overwrite another's entry.
             self.assertEqual(
-                len(found), len(expected), f"expected 4 models, got {found}"
+                sorted(found),
+                [
+                    "Llama-Local-GGUF/model-Q4_K_M.gguf",
+                    "Llama-Local-GGUF/model-Q8_0.gguf",
+                    "Mistral-Local-GGUF/model-Q4_K_M.gguf",
+                    "Mistral-Local-GGUF/model-Q8_0.gguf",
+                ],
+                f"expected 4 models, got {found}",
             )
-            self.assertEqual(sorted(found.values()), sorted(expected))
+
+            # The second folder found is qualified with its own folder name.
+            self.assertEqual(
+                sorted(found.values()),
+                [
+                    "Mistral-Local-GGUF-model-Q4_K_M",
+                    "Mistral-Local-GGUF-model-Q8_0",
+                    "model-Q4_K_M",
+                    "model-Q8_0",
+                ],
+                f"unexpected ids: {sorted(found.values())}",
+            )
 
             print("[OK] identical filenames in two extra folders stay distinct")
         finally:
@@ -6997,29 +7044,25 @@ class EndpointTests(ServerTestBase):
 
     def test_021ya_extra_same_quant_non_shard_files_remain_separate(self):
         """An -imatrix file beside the plain one is a second model, not a shard."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_imatrix_")
-        model_dir = os.path.join(extra_dir, "Local-Imatrix-GGUF")
-        plain = os.path.join(model_dir, "Model-Q4_K_M.gguf")
-        imatrix = os.path.join(model_dir, "Model-Q4_K_M-imatrix.gguf")
-        self._write_stub_gguf_file(plain)
-        self._write_stub_gguf_file(imatrix)
+        extra_dir = self._make_extra_models_dir(
+            "imatrix",
+            {
+                "Local-Imatrix-GGUF/Model-Q4_K_M.gguf": None,
+                "Local-Imatrix-GGUF/Model-Q4_K_M-imatrix.gguf": None,
+            },
+        )
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models_by_id = {
-                model["id"]: model for model in models_response.json()["data"]
-            }
+            found = self._discovered_extra_models(extra_dir)
 
             # Sharing a quant token is not enough to make them one sharded model.
-            self.assertIn("Model-Q4_K_M", models_by_id)
-            self.assertIn("Model-Q4_K_M-imatrix", models_by_id)
-            self.assertEqual(models_by_id["Model-Q4_K_M"]["checkpoint"], plain)
             self.assertEqual(
-                models_by_id["Model-Q4_K_M-imatrix"]["checkpoint"], imatrix
+                found.get("Local-Imatrix-GGUF/Model-Q4_K_M.gguf"), "Model-Q4_K_M"
+            )
+            self.assertEqual(
+                found.get("Local-Imatrix-GGUF/Model-Q4_K_M-imatrix.gguf"),
+                "Model-Q4_K_M-imatrix",
             )
 
             print("[OK] same-quant non-shard files remain separate models")
