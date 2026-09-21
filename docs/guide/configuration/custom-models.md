@@ -1,10 +1,20 @@
 # Add a Custom Model
 
-This guide explains every supported way to add a custom model to Lemonade Server. Start with the CLI workflows below unless you specifically need to hand-edit `user_models.json` or `recipe_options.json`.
+This guide explains every supported way to add a custom model to Lemonade Server, and documents the files and naming rules behind them.
 
-## Choose a Workflow
+There are three ways to get a model into Lemonade:
 
-### Pull from Hugging Face or ModelScope
+| Option | Use when | What happens |
+|--------|----------|--------------|
+| [Pull a model](#pull-a-model) | The model is published on Hugging Face or ModelScope | Lemonade downloads it into your model store and registers it |
+| [Point at a folder of GGUFs](#model-naming-spec) | You already have GGUF files on disk, or share a library with LM Studio or llama.cpp | Lemonade lists them where they sit and downloads nothing |
+| [Edit the JSON files by hand](#configuration-files) | You need full control over a definition and can restart `lemond` | You describe the model yourself in `user_models.json` |
+
+Pulling covers most cases and has several front ends that all end in the same registration; pick one under [Pull a Model](#pull-a-model).
+
+## Pull a Model
+
+### Pull by Hugging Face or ModelScope Checkpoint
 
 A source-less pull uses the server's configured `default_model_source` (shipped default: Hugging Face), so existing commands keep working unchanged:
 
@@ -51,13 +61,15 @@ Hugging Face snapshots use the immutable commit returned by the Hub. ModelScope 
 
 The desktop app's manual model form exposes the same source selector. The browse/search catalog remains Hugging Face-backed in this first version; ModelScope models can be added by repository ID through the manual form, CLI, or API.
 
-### Register with explicit CLI flags
+### Pull with an Explicit Recipe and Checkpoints
 
-Use a `user.*` name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
+Give the model a name plus `--checkpoint` and `--recipe` when you need full control: multiple checkpoints, a non-default recipe, or custom labels.
 
 ```bash
 lemonade pull user.NAME --source SOURCE --checkpoint TYPE CHECKPOINT --recipe RECIPE [--label LABEL ...]
 ```
+
+The `user.` prefix is optional; the CLI adds it when you leave it off.
 
 Examples:
 
@@ -91,7 +103,7 @@ Supported registration flags:
 | `--label LABEL` | Add a label to the new model. Repeatable. Valid labels include `chat`, `coding`, `dflash`, `embeddings`, `hot`, `mtp`, `reasoning`, `reranking`, `tool-calling`, `vision`. When no [deployment label](../../api/openai.md#model-labels) is given, the recipe's default is added — `chat` for `llamacpp`, `flm`, `ryzenai-llm` and `vllm`; `transcription` for `whispercpp`; `image` for `sd-cpp`; and so on. |
 | `--components MODEL [MODEL ...]` | Components for an omni collection (see below). Use with `--recipe collection.omni`. |
 
-### Register an omni collection
+### Pull an Omni Collection
 
 A collection is a meta-model made up of components. An **omni collection** is the recipe type behind [Lemonade Omni Models](../../dev/lemonade-omni.md) — registered with `recipe: "collection.omni"`.
 
@@ -105,7 +117,7 @@ lemonade pull user.MyKit \
 
 `lemonade load user.MyKit` loads every component. `lemonade delete user.MyKit` removes only the collection entry; component files stay on disk.
 
-### Register a custom Omni Model from the desktop app
+### Build an Omni Model in the Desktop App
 
 The desktop app offers a UI-driven path to register the same `recipe: "collection.omni"` entry — useful when you want to swap in a different planner LLM or a different image/ASR/TTS backbone without waiting for a new built-in [Lemonade Omni Model](../../dev/lemonade-omni.md) to ship.
 
@@ -132,7 +144,50 @@ If a component model is deleted later, the Omni Model entry remains registered b
 
 The editor also exposes a **System Prompt** field, pre-filled with the shipped default so you can see the text you'd be replacing. Edit it to override the default for this collection only; the override stays a *template* — both the `{tool_list}` and `{tool_guidance}` placeholders are **required** in any custom prompt and the editor blocks save/export when either is missing, because the server expands them at runtime based on which components are present. A collection whose textarea matches the default — or that has been reset via **Reset to default** — stores no override and keeps tracking whatever the global default is at runtime.
 
-### Share a collection: export, import, and model registries
+### Pull from the API
+
+The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.MyModel",
+        "recipe": "llamacpp",
+        "source": "modelscope",
+        "checkpoint": "org/repo:Q4_0"
+    }'
+```
+
+For multi-file models, send `checkpoints`:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.Gemma-3-4b",
+        "recipe": "llamacpp",
+        "checkpoints": {
+            "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
+            "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
+        },
+        "labels": ["vision"]
+    }'
+```
+
+For an omni collection, send `components`:
+
+```bash
+curl -X POST http://localhost:13305/v1/pull \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model_name": "user.MyKit",
+        "recipe": "collection.omni",
+        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
+    }'
+```
+
+## Share a Collection Between Machines
 
 `lemonade export <collection>` (and the desktop app's Export button) writes a *collection file*: the
 collection's [`/v1/models/{model_id}`](../../api/openai.md#get-v1modelsmodel_id) object normalized into
@@ -193,72 +248,6 @@ Example collection file:
 }
 ```
 
-### Register via API
-
-The `/v1/pull` endpoint accepts the same model registration fields as the CLI. Set `source` to `huggingface` or `modelscope`; when omitted, the server's configured `default_model_source` applies. The server canonicalizes and persists the resolved value for later update checks. Use this when integrating Lemonade into another app or script:
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model_name": "user.MyModel",
-        "recipe": "llamacpp",
-        "source": "modelscope",
-        "checkpoint": "org/repo:Q4_0"
-    }'
-```
-
-For multi-file models, send `checkpoints`:
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model_name": "user.Gemma-3-4b",
-        "recipe": "llamacpp",
-        "checkpoints": {
-            "main": "ggml-org/gemma-3-4b-it-GGUF:Q4_K_M",
-            "mmproj": "ggml-org/gemma-3-4b-it-GGUF:mmproj-model-f16.gguf"
-        },
-        "labels": ["vision"]
-    }'
-```
-
-For an omni collection, send `components`:
-
-```bash
-curl -X POST http://localhost:13305/v1/pull \
-    -H "Content-Type: application/json" \
-    -d '{
-        "model_name": "user.MyKit",
-        "recipe": "collection.omni",
-        "components": ["Qwen3-0.6B-GGUF", "Whisper-Tiny", "SD-Turbo"]
-    }'
-```
-
-### Edit JSON files directly
-
-Advanced users can edit `user_models.json` and `recipe_options.json` directly, however you must restart lemond for the changes to take effect. The rest of this guide documents those files and gives complete examples.
-
-## Overview
-
-Custom model configuration involves two files, both located in the Lemonade config directory:
-
-| File | Purpose |
-|------|---------|
-| `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
-| `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
-
-If you used an installer from a Lemonade release, the config directory is typically:
-
-| OS | Config directory |
-|----|------------------|
-| Linux systemd install | `/var/lib/lemonade` |
-| Windows | `%USERPROFILE%\.config\lemonade` |
-| macOS system install | `/Library/Application Support/lemonade/.config` |
-
-For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
-
 ## Model naming spec
 
 Lemonade tracks three sources of models. Every model has a **canonical ID** of the form `<source>.<bare-name>`:
@@ -266,7 +255,7 @@ Lemonade tracks three sources of models. Every model has a **canonical ID** of t
 | Canonical ID    | Source                                                                   |
 |-----------------|--------------------------------------------------------------------------|
 | `user.NAME`     | Model registered via `lemonade pull` (entry in `user_models.json`)       |
-| `extra.NAME`    | Model imported by dropping a GGUF in `--extra-models-dir`                |
+| `extra.NAME`    | Model imported from `extra_models_dir`, see [Imported models](#model-naming-spec) |
 | `builtin.NAME`  | Model compiled into Lemonade's built-in catalog (`server_models.json`)   |
 
 The **bare name** `NAME` is an alias that always resolves to whichever source wins precedence for that name. Precedence is **registered > imported > built-in**.
@@ -290,6 +279,8 @@ Anywhere a model name is accepted (request bodies, CLI args, URL path parameters
 - `builtin.NAME` — always the built-in model (404 if none)
 
 `lemonade pull` rejects model names starting with `extra.` or `builtin.` since those prefixes are reserved.
+
+An imported model also answers to names derived from the directory layout around it, so a name keeps working after that layout changes. See [model naming spec](#model-naming-spec).
 
 ### CLI vs. GUI display
 
@@ -356,6 +347,25 @@ Every registered alias is exposed as an independent model entry in `/v1/models`,
 | built-in `Bar` + registered `Bar` + extra `Bar` | `Bar`, `extra.Bar`, `builtin.Bar`                      | `Bar`/`user.Bar` → user; `extra.Bar` → extra; `builtin.Bar` → built-in       |
 | built-in `Baz` + extra `Baz`                    | `Baz`, `builtin.Baz`                                   | `Baz`/`extra.Baz` → extra; `builtin.Baz` → built-in                          |
 | registered `MyModel` only                       | `MyModel`                                              | `MyModel`/`user.MyModel` → user; `builtin.MyModel` → 404                     |
+
+## Configuration files
+
+Everything above is backed by two JSON files, both located in the Lemonade config directory. The next two sections document them field by field. You can edit them by hand; restart `lemond` for the changes to take effect.
+
+| File | Purpose |
+|------|---------|
+| `user_models.json` | Model registry — defines what models are available (checkpoint, recipe, etc.) |
+| `recipe_options.json` | Per-model settings — configures how models run (context size, backend, etc.) |
+
+If you used an installer from a Lemonade release, the config directory is typically:
+
+| OS | Config directory |
+|----|------------------|
+| Linux systemd install | `/var/lib/lemonade` |
+| Windows | `%USERPROFILE%\.config\lemonade` |
+| macOS system install | `/Library/Application Support/lemonade/.config` |
+
+For a standalone `lemond` executable, the default config directory is `~/.config/lemonade`. Pass an explicit `config_dir` positional argument if you want persistent JSON files somewhere else; `cache_dir` only controls downloaded/runtime data.
 
 ## `user_models.json` Reference
 
@@ -440,7 +450,7 @@ A collection bundles several already-registered models so they can be loaded, pu
 
 Components must already be registered (built-in models, or other `user.*` entries earlier in this file). Loading the collection (`lemonade load user.MyKit`) loads each component; deleting the collection removes only the collection entry, leaving components on disk.
 
-The equivalent CLI registration is shown in [Register an omni collection](#register-an-omni-collection).
+The equivalent CLI registration is shown in [Pull an Omni Collection](#pull-an-omni-collection).
 
 ### Image defaults
 
@@ -519,7 +529,7 @@ This file configures per-model runtime settings. Each key is a **canonical model
 }
 ```
 
-(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for an `--extra-models-dir` GGUF.)
+(Use `builtin.NAME` here if you're overriding a built-in model's defaults, or `extra.NAME` for a GGUF imported from [`extra_models_dir`](#model-naming-spec).)
 
 Then load the model:
 ```bash
