@@ -7208,6 +7208,53 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021ye_extra_hf_cache_live_revision_owns_the_plain_names(self):
+        """Naming rule: names follow the revision refs/main points at, whatever
+        order the revisions are discovered in, and each commit keeps resolving."""
+        superseded = "aaaa111122223333444455556666777788889999"
+        live = "bbbb111122223333444455556666777788889999"
+        repo_dir = "models--lemontest--Revision-7B-GGUF"
+        layout = {f"{repo_dir}/refs/main": live}
+        for commit in (superseded, live):
+            layout[f"{repo_dir}/snapshots/{commit}/Revision-7B-Q4_K_M.gguf"] = None
+            layout[f"{repo_dir}/snapshots/{commit}/Revision-7B-Q8_0.gguf"] = None
+        extra_dir = self._make_extra_models_dir("hf_cache_revisions", layout)
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+            self.assertEqual(
+                sorted(found.values()),
+                sorted(
+                    [
+                        "Revision-7B-Q4_K_M",
+                        "Revision-7B-Q8_0",
+                        f"{superseded}-Revision-7B-Q4_K_M",
+                        f"{superseded}-Revision-7B-Q8_0",
+                    ]
+                ),
+                f"the live revision must own the plain names: {found}",
+            )
+            # The superseded revision sorts first, so this fails if discovery
+            # order decides the winner instead of refs/main.
+            self.assertEqual(
+                found.get(f"{repo_dir}/snapshots/{live}/Revision-7B-Q4_K_M.gguf"),
+                "Revision-7B-Q4_K_M",
+            )
+
+            for commit in (live, superseded):
+                response = requests.get(
+                    f"{self.base_url}/models/{commit}", timeout=TIMEOUT_DEFAULT
+                )
+                self.assertEqual(
+                    response.status_code, 200, f"{commit} folder must keep resolving"
+                )
+
+            print("[OK] the live cache revision owns the plain names")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously

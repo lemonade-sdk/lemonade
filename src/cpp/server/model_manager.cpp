@@ -1168,10 +1168,12 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 // files are named after an opaque commit hash. The repo identity is recovered
 // from the cache directory and kept separate from the folder's own name.
 struct HfCacheSnapshot {
-    bool active = false;    // refs/main points at the revision this folder is in
+    bool active = false;      // refs/main points at the revision this folder is in
+    bool superseded = false;  // another revision of this cache is the live one
     std::string org;
     std::string repo;
-    std::string subfolder;  // folder below snapshots/<commit>, empty at the snapshot itself
+    std::string commit;
+    std::string subfolder;    // folder below snapshots/<commit>, empty at the snapshot itself
 };
 
 static HfCacheSnapshot hf_cache_snapshot(const fs::path& dir_path,
@@ -1210,9 +1212,13 @@ static HfCacheSnapshot hf_cache_snapshot(const fs::path& dir_path,
     }
     if (out.repo.empty()) return out;
 
-    if (read_hf_ref_main(cache_root) != snapshot_dir.filename().string()) return out;
-    out.active = true;
+    out.commit = snapshot_dir.filename().string();
     if (dir_path != snapshot_dir) out.subfolder = dir_path.filename().string();
+
+    const std::string ref = read_hf_ref_main(cache_root);
+    out.active = !ref.empty() && ref == out.commit;
+    out.superseded = !out.active && !ref.empty() &&
+                     safe_exists(cache_root / "snapshots" / ref);
     return out;
 }
 
@@ -1444,11 +1450,16 @@ void ModelManager::discover_extra_models_in_directory(
     // Renaming a model after its cache repo would leave the commit hash as the
     // collision qualifier, so use the org that already distinguishes the two.
     std::string qualifier;
+    std::string superseded_prefix;
     const HfCacheSnapshot snap = hf_cache_snapshot(dir_path, search_path);
     if (snap.active) {
         dir_name = snap.subfolder.empty() ? snap.repo
                                           : snap.repo + "-" + snap.subfolder;
         qualifier = snap.org;
+    } else if (snap.superseded) {
+        // Names the live revision uses stay with it, whatever order the two
+        // revisions are discovered in.
+        superseded_prefix = snap.commit + "-";
     }
     if (qualifier.empty()) qualifier = dir_name;
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
@@ -1518,7 +1529,9 @@ void ModelManager::discover_extra_models_in_directory(
             if (it == model_file_by_name.end()) continue;
 
             const fs::path& path = it->second;
-            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + visible_extra_variant_name(v);
+            const std::string variant_name =
+                superseded_prefix + visible_extra_variant_name(v);
+            std::string variant_id = std::string(EXTRA_MODEL_PREFIX) + variant_name;
 
             ModelInfo info = init_extra_model_info(variant_id);
             info.checkpoints["main"] = path.string();
@@ -1543,7 +1556,7 @@ void ModelManager::discover_extra_models_in_directory(
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + folder_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), qualifier,
+            add_extra_model(discovered, variant_name, qualifier,
                             std::move(info), deployment_label.empty()
                                 ? nullptr
                                 : &reserved_extra_model_ids());
