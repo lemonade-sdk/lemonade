@@ -18,7 +18,7 @@ Contents:
 `lemond`'s configuration has two properties, `models_dir` and `extra_models_dir`, that determine where `lemond` will look when listing, pulling, and loading models.
 
 - `models_dir` is the primary model store, where `lemond` will `pull` models to.
-- `extra_models_dir` is a search path for GGUF models (chat, embedding, or reranking) that can be imported into `lemond`.
+- `extra_models_dir` is a search path for GGUF models that can be imported into `lemond`.
 
 ### Sharing Models With Other Apps
 
@@ -156,19 +156,9 @@ Which should return:
 my_custom_model                         Yes                 N/A       llamacpp
 ```
 
-> Note: a name is the filename without `.gguf`. Every imported model has the canonical id `extra.<name>`, which is always accepted as input, and is listed under its bare name unless a registered model claims that name.
+> Tip: `extra_models_dir` can be a relative path inside your app's package, which is how you ship GGUFs that are not on a registry.
 
-> Tip: `extra_models_dir` can be a relative path to any location within your app's package, or any absolute path on your user's system. It searches recursively and can import many GGUFs from a single directory tree.
-
-A name comes from the directory layout around the file, so readable names come out of any layout. For example, `extra_models_dir` can point at:
-
-- A folder of loose GGUF files
-- An LM Studio library
-- A Hugging Face or ModelScope cache
-
-The folder a model sits in also selects how it runs: the reserved top-level directories are `chat`, `embeddings`, and `reranking`, and anything else defaults to chat.
-
-For the full rules, see [Imported models (`extra_models_dir`)](../guide/configuration/custom-models.md#imported-models-extra_models_dir) in the custom model guide.
+For how imported models are named and run, see [Imported models (`extra_models_dir`)](../guide/configuration/custom-models.md#imported-models-extra_models_dir) in the custom model guide.
 
 ## Customization
 
