@@ -770,7 +770,7 @@ Files written by `lemonade export` (and the desktop app's Export button) are imp
 This works for regular models and collections alike; exported collection files additionally
 carry `components` plus a `models` array embedding each component's definition (see the
 `models` parameter above). For the file format and the export/import/Hugging Face workflows,
-see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
+see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-model-registries).
 
 ### Streaming Response (stream=true)
 
