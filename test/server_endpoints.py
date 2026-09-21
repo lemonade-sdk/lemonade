@@ -6507,6 +6507,42 @@ class EndpointTests(ServerTestBase):
             f.write(struct.pack("<Q", 0))  # tensor_count
             f.write(struct.pack("<Q", 0))  # kv_count
 
+    def _make_extra_models_dir(self, name, layout):
+        """Build an extra_models_dir whose tree is spelled out by `layout`.
+
+        Keys are the '/'-separated paths to create under it, so the directory
+        shape under test is readable at the call site. A None value writes a
+        stub GGUF; a string is written verbatim, which is how a Hugging Face
+        cache 'refs/main' pointer is declared.
+        """
+        extra_dir = tempfile.mkdtemp(prefix=f"lemon_extra_{name}_")
+        for relative, contents in layout.items():
+            path = os.path.join(extra_dir, *relative.split("/"))
+            if contents is None:
+                self._write_stub_gguf_file(path)
+            else:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w") as f:
+                    f.write(contents)
+        return extra_dir
+
+    def _discovered_extra_models(self, extra_dir):
+        """Map each discovered extra model's checkpoint, written the same way
+        `_make_extra_models_dir` spells its layout, to the id it was listed
+        under. A folder model's checkpoint is its folder, so the returned keys
+        line up with the layout the test declared."""
+        response = requests.get(
+            f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+        )
+        self.assertEqual(response.status_code, 200)
+        return {
+            os.path.relpath(model["checkpoint"], extra_dir).replace(os.sep, "/"): model[
+                "id"
+            ]
+            for model in response.json()["data"]
+            if model.get("source") == "extra_models_dir"
+        }
+
     def test_021g_naming_spec_three_way_collision(self):
         """Naming spec: built-in + user.* + extra.* all sharing a bare name.
 
@@ -7028,61 +7064,215 @@ class EndpointTests(ServerTestBase):
             shutil.rmtree(extra_dir, ignore_errors=True)
 
     def test_021yb_extra_hf_cache_layout_recovers_repo_name(self):
-        """Regression test for #3618: a model kept in Hugging Face cache layout
-        is named after its repo, not the snapshots/<commit> folder it sits in."""
-        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_hf_cache_")
+        """Regression test for #3618: a model kept in Hugging Face or ModelScope
+        cache layout is named after its repo, not the snapshots/<commit> folder
+        it sits in."""
         active = "aaaa111122223333444455556666777788889999"
         stale = "bbbb111122223333444455556666777788889999"
+        other = "cccc111122223333444455556666777788889999"
+        modelscope = "dddd111122223333444455556666777788889999"
 
-        repo_dir = os.path.join(extra_dir, "models--lemontest--Cachelayout-7B-GGUF")
-        active_gguf = os.path.join(
-            repo_dir, "snapshots", active, "Cachelayout-7B-Q4_K_M.gguf"
+        extra_dir = self._make_extra_models_dir(
+            "hf_cache",
+            {
+                # The repo the user actually pulled, plus an older revision of
+                # it left behind in the same cache directory.
+                f"models--lemontest--Cachelayout-7B-GGUF/snapshots/{active}"
+                "/Cachelayout-7B-Q4_K_M.gguf": None,
+                f"models--lemontest--Cachelayout-7B-GGUF/snapshots/{stale}"
+                "/Cachelayout-7B-Q4_K_M.gguf": None,
+                "models--lemontest--Cachelayout-7B-GGUF/refs/main": active,
+                # A second org shipping the same repo name.
+                f"models--otherorg--Cachelayout-7B-GGUF/snapshots/{other}"
+                "/Cachelayout-7B-Q4_K_M.gguf": None,
+                "models--otherorg--Cachelayout-7B-GGUF/refs/main": other,
+                # ModelScope caches carry their own prefix.
+                f"modelscope--models--lemontest--Msonly-3B-GGUF/snapshots/{modelscope}"
+                "/Msonly-3B-Q4_K_M.gguf": None,
+                "modelscope--models--lemontest--Msonly-3B-GGUF/refs/main": modelscope,
+                # A folder that merely starts with "models--" is not a cache.
+                "models--lemontest--Plainfolder-GGUF/model.gguf": None,
+            },
         )
-        stale_gguf = os.path.join(
-            repo_dir, "snapshots", stale, "Cachelayout-7B-Q4_K_M.gguf"
-        )
-        self._write_stub_gguf_file(active_gguf)
-        self._write_stub_gguf_file(stale_gguf)
-        os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
-        with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
-            f.write(active)
-
-        # A folder that merely starts with "models--" is not a cache.
-        plain_folder = "models--lemontest--Plainfolder-GGUF"
-        self._write_stub_gguf_file(os.path.join(extra_dir, plain_folder, "model.gguf"))
 
         prior_dir = self._set_extra_models_dir(extra_dir)
         try:
-            models_response = requests.get(
-                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
-            )
-            self.assertEqual(models_response.status_code, 200)
-            models = models_response.json()["data"]
-            id_by_checkpoint = {m.get("checkpoint"): m["id"] for m in models}
-            ids = set(id_by_checkpoint.values())
+            found = self._discovered_extra_models(extra_dir)
 
             self.assertEqual(
-                id_by_checkpoint.get(os.path.dirname(active_gguf)),
+                found.get(f"models--lemontest--Cachelayout-7B-GGUF/snapshots/{active}"),
                 "Cachelayout-7B-GGUF",
-                f"active snapshot must be named after its repo: {sorted(ids)}",
+                f"active snapshot must be named after its repo: {found}",
             )
-            self.assertNotIn(active, ids, "no model may be named after a commit hash")
-
-            # Only the commit refs/main points at earns the repo name, so a second
-            # revision of the same repo cannot claim the same id.
             self.assertEqual(
-                id_by_checkpoint.get(os.path.dirname(stale_gguf)),
+                found.get(
+                    f"modelscope--models--lemontest--Msonly-3B-GGUF"
+                    f"/snapshots/{modelscope}"
+                ),
+                "Msonly-3B-GGUF",
+                f"ModelScope caches recover their repo too: {found}",
+            )
+            self.assertNotIn(
+                active, set(found.values()), "no model may be named after a commit"
+            )
+
+            # Only the commit refs/main points at earns the repo name, so a
+            # second revision of the same repo cannot claim the same id.
+            self.assertEqual(
+                found.get(f"models--lemontest--Cachelayout-7B-GGUF/snapshots/{stale}"),
                 stale,
                 "a non-active snapshot must keep its folder name",
             )
 
+            # Repos sort by cache directory, so lemontest claims the bare name
+            # and otherorg is qualified with its org rather than lost.
             self.assertEqual(
-                id_by_checkpoint.get(os.path.join(extra_dir, plain_folder)),
-                plain_folder,
+                found.get(f"models--otherorg--Cachelayout-7B-GGUF/snapshots/{other}"),
+                "otherorg-Cachelayout-7B-GGUF",
+                f"a second org keeps a readable id: {found}",
+            )
+
+            self.assertEqual(
+                found.get("models--lemontest--Plainfolder-GGUF"),
+                "models--lemontest--Plainfolder-GGUF",
                 "a plain 'models--*' folder must keep its folder name",
             )
 
-            print("[OK] HF cache layout models are named after their repo")
+            print("[OK] HF and ModelScope cache layouts are named after their repo")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021yc_extra_lmstudio_layout_names_models_after_their_repo(self):
+        """LM Studio stores models at <publisher>/<repo>/<file>.gguf, so the
+        publisher folder must group models without becoming one itself."""
+        extra_dir = self._make_extra_models_dir(
+            "lmstudio",
+            {
+                "lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"
+                "/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf": None,
+                # The same repo republished by two publishers, which is routine
+                # in an LM Studio library.
+                "bartowski/Phi-4-GGUF/Phi-4-Q4_K_M.gguf": None,
+                "lmstudio-community/Phi-4-GGUF/Phi-4-Q4_K_M.gguf": None,
+            },
+        )
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+
+            self.assertEqual(
+                found.get("lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF"),
+                "Meta-Llama-3.1-8B-Instruct-GGUF",
+                f"a model is named after its repo folder, not its publisher: {found}",
+            )
+
+            # Publishers sort alphabetically, so bartowski claims the bare name
+            # and the duplicate is qualified with its publisher.
+            self.assertEqual(
+                found.get("bartowski/Phi-4-GGUF"),
+                "Phi-4-GGUF",
+                f"expected the first publisher to keep the bare id: {found}",
+            )
+            self.assertEqual(
+                found.get("lmstudio-community/Phi-4-GGUF"),
+                "lmstudio-community-Phi-4-GGUF",
+                f"a duplicated repo is qualified with its publisher: {found}",
+            )
+
+            ids = set(found.values())
+            self.assertNotIn("bartowski", ids, "a publisher folder is not a model")
+            self.assertNotIn(
+                "lmstudio-community", ids, "a publisher folder is not a model"
+            )
+
+            print("[OK] LM Studio layout names models after their repo folder")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021yd_extra_unconventional_layouts_stay_discoverable(self):
+        """A hand-organized directory: deep nesting, spaces and dots in folder
+        names, and GGUFs sitting at several depths of one tree."""
+        extra_dir = self._make_extra_models_dir(
+            "unconventional",
+            {
+                "Big Models/archive 2026/my finetune v1.2/final-Q5_K_M.gguf": None,
+                "Zephyr-7B.gguf": None,
+                "archive/Zephyr-7B/Zephyr-7B-Q4_K_M.gguf": None,
+                "loose-folder/model.gguf": None,
+            },
+        )
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+
+            self.assertEqual(
+                found.get("Big Models/archive 2026/my finetune v1.2"),
+                "my finetune v1.2",
+                f"a deeply nested folder is named after itself: {found}",
+            )
+            self.assertEqual(
+                found.get("Zephyr-7B.gguf"),
+                "Zephyr-7B",
+                f"a root file keeps the short id: {found}",
+            )
+            self.assertEqual(
+                found.get("archive/Zephyr-7B"),
+                "archive-Zephyr-7B",
+                f"a folder losing to a root file is qualified with its parent: {found}",
+            )
+            self.assertEqual(
+                found.get("loose-folder"),
+                "loose-folder",
+                f"a single-file folder is named after the folder: {found}",
+            )
+
+            print("[OK] unconventional extra_models_dir layouts stay discoverable")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
+    def test_021ye_extra_snapshot_dirs_outside_a_cache_keep_folder_names(self):
+        """Repo-name recovery must not fire on anything that merely resembles a
+        Hugging Face cache."""
+        dangling = "1111aaaa2222bbbb3333cccc4444dddd5555eeee"
+        extra_dir = self._make_extra_models_dir(
+            "snapshot_lookalikes",
+            {
+                # A 'snapshots' folder with no models--* cache above it.
+                "projects/snapshots/deadbeef1234/model.gguf": None,
+                # A real cache whose refs/main points at a revision that is not
+                # on disk, so no snapshot here is the active one.
+                f"models--lemontest--Dangling-GGUF/snapshots/{dangling}"
+                "/Dangling-Q4_K_M.gguf": None,
+                "models--lemontest--Dangling-GGUF/refs/main": "9999ffff",
+            },
+        )
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+
+            self.assertEqual(
+                found.get("projects/snapshots/deadbeef1234"),
+                "deadbeef1234",
+                f"'snapshots' alone does not make a Hugging Face cache: {found}",
+            )
+            self.assertEqual(
+                found.get(f"models--lemontest--Dangling-GGUF/snapshots/{dangling}"),
+                dangling,
+                f"no snapshot claims the repo name when refs/main dangles: {found}",
+            )
+            self.assertNotIn(
+                "Dangling-GGUF",
+                set(found.values()),
+                "an unreferenced snapshot must not claim the repo name",
+            )
+
+            print("[OK] snapshot lookalikes keep their folder names")
         finally:
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)

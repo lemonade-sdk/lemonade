@@ -1422,12 +1422,19 @@ void ModelManager::discover_extra_models_in_directory(
     const fs::path& search_path) const {
 
     std::string dir_name = dir_path.filename().string();
-    std::string qualifier = dir_name;
+
+    // A colliding id is qualified with the folder that groups this model: its
+    // Hugging Face org, or the folder above it (an LM Studio publisher). Both
+    // beat repeating the model's own folder name back at the user.
+    std::string qualifier;
     std::string hf_org, hf_repo;
     if (hf_cache_snapshot_repo(dir_path, &hf_org, &hf_repo)) {
         dir_name = hf_repo;
-        if (!hf_org.empty()) qualifier = hf_org;
+        qualifier = hf_org;
+    } else if (dir_path.parent_path() != search_path) {
+        qualifier = dir_path.parent_path().filename().string();
     }
+    if (qualifier.empty()) qualifier = dir_name;
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;

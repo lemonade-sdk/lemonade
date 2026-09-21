@@ -46,7 +46,7 @@ A model moved in with its Hugging Face cache layout intact sits under `models--<
 |---------------------|------------|
 | `models--unsloth--Qwen3-8B-GGUF/snapshots/<commit>/*.gguf` | `extra.Qwen3-8B-GGUF` |
 
-Only the commit `refs/main` points at takes the repo name, so a second revision of the same repo cannot claim the same id; other revisions keep their commit-hash folder name. When two orgs ship the same repo name, the second one found is qualified with its org (`extra.<org>-<repo>`). A `models--*` folder with no `snapshots/` layout is an ordinary directory and keeps its folder name. The same applies to `modelscope--models--<org>--<repo>`.
+Only the commit `refs/main` points at takes the repo name, so a second revision of the same repo cannot claim the same id; other revisions keep their commit-hash folder name. A `models--*` folder with no `snapshots/` layout is an ordinary directory and keeps its folder name. The same applies to `modelscope--models--<org>--<repo>`.
 
 ### Directory-Based Models
 
@@ -127,7 +127,9 @@ The `extra.` prefix ensures discovered models never conflict with registered mod
 - Registered: `Qwen3-Coder-30B-A3B-Instruct-GGUF` (from `server_models.json`)
 - Discovered: `extra.Qwen3-Coder-30B-A3B-Instruct-GGUF` (from `--extra-models-dir`)
 
-Two scanned directories can contain identically named GGUF files. The first model found keeps the plain name; the second is qualified with its directory name, so neither is lost:
+A colliding model is qualified with the folder that groups it: its Hugging Face org, or the folder above it. An LM Studio library keeps each model at `<publisher>/<repo>/<file>.gguf`, so two publishers shipping one repo name list as `extra.<repo>` and `extra.<publisher>-<repo>`. A folder directly inside `extra_models_dir` has no grouping folder, so it is qualified with its own name.
+
+Two scanned directories can contain identically named GGUF files. The first model found keeps the plain name; the second is qualified, so neither is lost:
 
 | File | Model Name |
 |------|------------|
