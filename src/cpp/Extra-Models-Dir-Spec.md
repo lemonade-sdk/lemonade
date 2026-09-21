@@ -38,6 +38,16 @@ All discovered models are prefixed with `extra.` to prevent naming conflicts wit
 
 This allows users to have both a registered model (e.g., `Qwen3-Coder-30B-A3B-Instruct-GGUF`) and a custom GGUF variant (e.g., `extra.Qwen3-Coder-30B-A3B-Instruct-GGUF`) without conflict.
 
+### Hugging Face Cache Layout
+
+A model moved in with its Hugging Face cache layout intact sits under `models--<org>--<repo>/snapshots/<commit>/`, so the folder holding its files is a commit hash. Such a folder is named after its repo instead:
+
+| Directory Structure | Model Name |
+|---------------------|------------|
+| `models--unsloth--Qwen3-8B-GGUF/snapshots/<commit>/*.gguf` | `extra.Qwen3-8B-GGUF` |
+
+Only the commit `refs/main` points at takes the repo name, so a second revision of the same repo cannot claim the same id; other revisions keep their commit-hash folder name. When two orgs ship the same repo name, the second one found is qualified with its org (`extra.<org>-<repo>`). A `models--*` folder with no `snapshots/` layout is an ordinary directory and keeps its folder name. The same applies to `modelscope--models--<org>--<repo>`.
+
 ### Directory-Based Models
 
 A subdirectory holding several distinct model variants is listed as one model per variant, so every version in the folder can be selected:

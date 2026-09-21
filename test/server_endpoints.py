@@ -7027,6 +7027,66 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021yb_extra_hf_cache_layout_recovers_repo_name(self):
+        """Regression test for #3618: a model kept in Hugging Face cache layout
+        is named after its repo, not the snapshots/<commit> folder it sits in."""
+        extra_dir = tempfile.mkdtemp(prefix="lemon_extra_hf_cache_")
+        active = "aaaa111122223333444455556666777788889999"
+        stale = "bbbb111122223333444455556666777788889999"
+
+        repo_dir = os.path.join(extra_dir, "models--lemontest--Cachelayout-7B-GGUF")
+        active_gguf = os.path.join(
+            repo_dir, "snapshots", active, "Cachelayout-7B-Q4_K_M.gguf"
+        )
+        stale_gguf = os.path.join(
+            repo_dir, "snapshots", stale, "Cachelayout-7B-Q4_K_M.gguf"
+        )
+        self._write_stub_gguf_file(active_gguf)
+        self._write_stub_gguf_file(stale_gguf)
+        os.makedirs(os.path.join(repo_dir, "refs"), exist_ok=True)
+        with open(os.path.join(repo_dir, "refs", "main"), "w") as f:
+            f.write(active)
+
+        # A folder that merely starts with "models--" is not a cache.
+        plain_folder = "models--lemontest--Plainfolder-GGUF"
+        self._write_stub_gguf_file(os.path.join(extra_dir, plain_folder, "model.gguf"))
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            models_response = requests.get(
+                f"{self.base_url}/models?show_all=true", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(models_response.status_code, 200)
+            models = models_response.json()["data"]
+            id_by_checkpoint = {m.get("checkpoint"): m["id"] for m in models}
+            ids = set(id_by_checkpoint.values())
+
+            self.assertEqual(
+                id_by_checkpoint.get(os.path.dirname(active_gguf)),
+                "Cachelayout-7B-GGUF",
+                f"active snapshot must be named after its repo: {sorted(ids)}",
+            )
+            self.assertNotIn(active, ids, "no model may be named after a commit hash")
+
+            # Only the commit refs/main points at earns the repo name, so a second
+            # revision of the same repo cannot claim the same id.
+            self.assertEqual(
+                id_by_checkpoint.get(os.path.dirname(stale_gguf)),
+                stale,
+                "a non-active snapshot must keep its folder name",
+            )
+
+            self.assertEqual(
+                id_by_checkpoint.get(os.path.join(extra_dir, plain_folder)),
+                plain_folder,
+                "a plain 'models--*' folder must keep its folder name",
+            )
+
+            print("[OK] HF cache layout models are named after their repo")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously
