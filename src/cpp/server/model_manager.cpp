@@ -1163,17 +1163,32 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
     return info;
 }
 
-// A model kept in Hugging Face cache layout lives at
-// <models--org--repo>/snapshots/<commit>, so the folder holding its GGUF files
-// is named after an opaque commit hash. Recover the repo from the cache
-// directory, but only for the commit refs/main points at, so two revisions of
-// one repo cannot both claim the same model id.
-static bool hf_cache_snapshot_repo(const fs::path& dir_path,
-                                   std::string* org,
-                                   std::string* repo) {
-    if (dir_path.parent_path().filename() != "snapshots") return false;
+// A model kept in Hugging Face cache layout lives under
+// <models--org--repo>/snapshots/<commit>/, so the folders holding its GGUF
+// files are named after an opaque commit hash. The repo identity is recovered
+// from the cache directory and kept separate from the folder's own name.
+struct HfCacheSnapshot {
+    bool active = false;    // refs/main points at the revision this folder is in
+    std::string org;
+    std::string repo;
+    std::string subfolder;  // folder below snapshots/<commit>, empty at the snapshot itself
+};
 
-    const fs::path cache_root = dir_path.parent_path().parent_path();
+static HfCacheSnapshot hf_cache_snapshot(const fs::path& dir_path,
+                                         const fs::path& search_path) {
+    HfCacheSnapshot out;
+
+    fs::path snapshot_dir;
+    for (fs::path cur = dir_path; cur.has_filename(); cur = cur.parent_path()) {
+        if (cur.parent_path().filename() == "snapshots") {
+            snapshot_dir = cur;
+            break;
+        }
+        if (cur == search_path) break;
+    }
+    if (snapshot_dir.empty()) return out;
+
+    const fs::path cache_root = snapshot_dir.parent_path().parent_path();
     const std::string cache_dir_name = cache_root.filename().string();
     std::string encoded;
     if (cache_dir_name.rfind("modelscope--models--", 0) == 0) {
@@ -1181,22 +1196,24 @@ static bool hf_cache_snapshot_repo(const fs::path& dir_path,
     } else if (cache_dir_name.rfind("models--", 0) == 0) {
         encoded = cache_dir_name.substr(sizeof("models--") - 1);
     } else {
-        return false;
+        return out;
     }
-
-    if (read_hf_ref_main(cache_root) != dir_path.filename().string()) return false;
 
     // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo". Only the
     // first separator is the org boundary; the rest belongs to the repo name.
     const size_t sep = encoded.find("--");
     if (sep == std::string::npos) {
-        org->clear();
-        *repo = encoded;
+        out.repo = encoded;
     } else {
-        *org = encoded.substr(0, sep);
-        *repo = encoded.substr(sep + 2);
+        out.org = encoded.substr(0, sep);
+        out.repo = encoded.substr(sep + 2);
     }
-    return !repo->empty();
+    if (out.repo.empty()) return out;
+
+    if (read_hf_ref_main(cache_root) != snapshot_dir.filename().string()) return out;
+    out.active = true;
+    if (dir_path != snapshot_dir) out.subfolder = dir_path.filename().string();
+    return out;
 }
 
 // Record a discovered model without ever overwriting one already found. Two
@@ -1427,10 +1444,11 @@ void ModelManager::discover_extra_models_in_directory(
     // Renaming a model after its cache repo would leave the commit hash as the
     // collision qualifier, so use the org that already distinguishes the two.
     std::string qualifier;
-    std::string hf_org, hf_repo;
-    if (hf_cache_snapshot_repo(dir_path, &hf_org, &hf_repo)) {
-        dir_name = hf_repo;
-        qualifier = hf_org;
+    const HfCacheSnapshot snap = hf_cache_snapshot(dir_path, search_path);
+    if (snap.active) {
+        dir_name = snap.subfolder.empty() ? snap.repo
+                                          : snap.repo + "-" + snap.subfolder;
+        qualifier = snap.org;
     }
     if (qualifier.empty()) qualifier = dir_name;
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);

@@ -7169,6 +7169,45 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021yd_extra_hf_cache_subfolder_takes_the_repo_name(self):
+        """Naming rule: a cache whose GGUFs sit in quantization subfolders names
+        them <repo>-<folder>, and the subfolder name keeps resolving."""
+        commit = "cccc111122223333444455556666777788889999"
+        repo_dir = "models--lemontest--Subfolder-235B-GGUF"
+        extra_dir = self._make_extra_models_dir(
+            "hf_cache_subfolder",
+            {
+                f"{repo_dir}/snapshots/{commit}/Q4_K_M"
+                "/Subfolder-235B-Q4_K_M-00001-of-00002.gguf": None,
+                f"{repo_dir}/snapshots/{commit}/Q4_K_M"
+                "/Subfolder-235B-Q4_K_M-00002-of-00002.gguf": None,
+                f"{repo_dir}/snapshots/{commit}/Q8_0/Subfolder-235B-Q8_0.gguf": None,
+                f"{repo_dir}/refs/main": commit,
+            },
+        )
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+            self.assertEqual(
+                sorted(found.values()),
+                ["Subfolder-235B-GGUF-Q4_K_M", "Subfolder-235B-GGUF-Q8_0"],
+                f"a quantization subfolder carries the repo name: {found}",
+            )
+
+            # A bare Q8_0 is what this answered to before, and would collide
+            # with every other repo shipping that folder.
+            legacy = requests.get(
+                f"{self.base_url}/models/Q8_0", timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(legacy.status_code, 200, "Q8_0 must keep resolving")
+            self.assertEqual(legacy.json()["id"], "Subfolder-235B-GGUF-Q8_0")
+
+            print("[OK] cache subfolders carry the repo name")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously
