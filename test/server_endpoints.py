@@ -7132,6 +7132,43 @@ class EndpointTests(ServerTestBase):
             self._set_extra_models_dir(prior_dir)
             shutil.rmtree(extra_dir, ignore_errors=True)
 
+    def test_021yc_extra_hf_cache_collision_qualifies_with_the_org(self):
+        """Naming rule: two orgs shipping one repo name both stay readable,
+        because the second is qualified with its org rather than its commit."""
+        first = "aaaa111122223333444455556666777788889999"
+        second = "bbbb111122223333444455556666777788889999"
+        extra_dir = self._make_extra_models_dir(
+            "hf_cache_orgs",
+            {
+                f"models--alpha--Collide-7B-GGUF/snapshots/{first}"
+                "/Collide-7B-Q4_K_M.gguf": None,
+                "models--alpha--Collide-7B-GGUF/refs/main": first,
+                f"models--beta--Collide-7B-GGUF/snapshots/{second}"
+                "/Collide-7B-Q4_K_M.gguf": None,
+                "models--beta--Collide-7B-GGUF/refs/main": second,
+            },
+        )
+
+        prior_dir = self._set_extra_models_dir(extra_dir)
+        try:
+            found = self._discovered_extra_models(extra_dir)
+            # Caches sort by directory, so alpha claims the bare name.
+            self.assertEqual(
+                found.get(f"models--alpha--Collide-7B-GGUF/snapshots/{first}"),
+                "Collide-7B-GGUF",
+                f"{found}",
+            )
+            self.assertEqual(
+                found.get(f"models--beta--Collide-7B-GGUF/snapshots/{second}"),
+                "beta-Collide-7B-GGUF",
+                f"the second org is qualified with its org, not its commit: {found}",
+            )
+
+            print("[OK] a cache collision is qualified with the org")
+        finally:
+            self._set_extra_models_dir(prior_dir)
+            shutil.rmtree(extra_dir, ignore_errors=True)
+
     def test_021r_openai_chat_extra_models_precedence(self):
         """Regression test for #2014: OpenAI API resolves aliases to local files, shadowing built-ins."""
         # Use a built-in model name to prove precedence and alias resolution simultaneously

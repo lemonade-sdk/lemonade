@@ -1168,7 +1168,9 @@ ModelInfo ModelManager::init_extra_model_info(const std::string& name) const {
 // is named after an opaque commit hash. Recover the repo from the cache
 // directory, but only for the commit refs/main points at, so two revisions of
 // one repo cannot both claim the same model id.
-static bool hf_cache_snapshot_repo(const fs::path& dir_path, std::string* repo) {
+static bool hf_cache_snapshot_repo(const fs::path& dir_path,
+                                   std::string* org,
+                                   std::string* repo) {
     if (dir_path.parent_path().filename() != "snapshots") return false;
 
     const fs::path cache_root = dir_path.parent_path().parent_path();
@@ -1187,22 +1189,28 @@ static bool hf_cache_snapshot_repo(const fs::path& dir_path, std::string* repo) 
     // registry_repo_cache_dir_name() encodes "org/repo" as "org--repo". Only the
     // first separator is the org boundary; the rest belongs to the repo name.
     const size_t sep = encoded.find("--");
-    *repo = sep == std::string::npos ? encoded : encoded.substr(sep + 2);
+    if (sep == std::string::npos) {
+        org->clear();
+        *repo = encoded;
+    } else {
+        *org = encoded.substr(0, sep);
+        *repo = encoded.substr(sep + 2);
+    }
     return !repo->empty();
 }
 
 // Record a discovered model without ever overwriting one already found. Two
 // extra_models_dir folders can hold identically named files; qualifying the
-// newcomer with its folder keeps both and leaves the first model's id alone.
+// newcomer keeps both and leaves the first model's id alone.
 static void add_extra_model(std::map<std::string, ModelInfo>& discovered,
                             const std::string& base_name,
-                            const fs::path& folder,
+                            const std::string& qualifier,
                             ModelInfo info,
                             const std::set<std::string>* reserved_ids = nullptr) {
     const std::string prefix(EXTRA_MODEL_PREFIX);
     std::string id = prefix + base_name;
     if (discovered.count(id) || (reserved_ids && reserved_ids->count(id))) {
-        const std::string qualified = folder.filename().string() + "-" + base_name;
+        const std::string qualified = qualifier + "-" + base_name;
         id = prefix + qualified;
         for (int n = 2; discovered.count(id); ++n) {
             id = prefix + qualified + "-" + std::to_string(n);
@@ -1337,7 +1345,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + deployment_label);
         }
 
-        add_extra_model(discovered, base_name, gguf_path.parent_path(),
+        add_extra_model(discovered, base_name,
+                        gguf_path.parent_path().filename().string(),
                         std::move(info), deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
@@ -1414,10 +1423,16 @@ void ModelManager::discover_extra_models_in_directory(
 
     const std::string folder_name = dir_path.filename().string();
     std::string dir_name = folder_name;
-    std::string hf_repo;
-    if (hf_cache_snapshot_repo(dir_path, &hf_repo)) {
+
+    // Renaming a model after its cache repo would leave the commit hash as the
+    // collision qualifier, so use the org that already distinguishes the two.
+    std::string qualifier;
+    std::string hf_org, hf_repo;
+    if (hf_cache_snapshot_repo(dir_path, &hf_org, &hf_repo)) {
         dir_name = hf_repo;
+        qualifier = hf_org;
     }
+    if (qualifier.empty()) qualifier = dir_name;
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
     fs::path main_model_path; // File the old folder-based discovery would have selected.
     std::vector<fs::path> mmproj_files;
@@ -1510,7 +1525,7 @@ void ModelManager::discover_extra_models_in_directory(
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + folder_name);
             }
 
-            add_extra_model(discovered, visible_extra_variant_name(v), dir_path,
+            add_extra_model(discovered, visible_extra_variant_name(v), qualifier,
                             std::move(info), deployment_label.empty()
                                 ? nullptr
                                 : &reserved_extra_model_ids());
@@ -1538,7 +1553,7 @@ void ModelManager::discover_extra_models_in_directory(
             info.input_aliases.push_back(folder_name);
             info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + folder_name);
         }
-        add_extra_model(discovered, dir_name, dir_path, std::move(info),
+        add_extra_model(discovered, dir_name, qualifier, std::move(info),
                         deployment_label.empty()
                             ? nullptr
                             : &reserved_extra_model_ids());
