@@ -535,13 +535,20 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
     auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
     session::apply_forwardable_session(headers);
 
+    auto cancel_token = current_request_cancel_context();
+    if (cancel_token.cancelled()) {
+        LOG(WARNING, "CloudServer") << "Client request already cancelled before forwarding cloud request; aborting." << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
+    }
+
     try {
         auto response = utils::HttpClient::post(
             url,
             request.dump(),
             headers,
             timeout_seconds,
-            creds.policy);
+            creds.policy,
+            cancel_token);
         if (response.status_code == 200) {
             // Return the body unchanged so the server.cpp handler picks up the
             // `usage` telemetry like every other backend.
@@ -562,6 +569,9 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
                 {"response", error_details}
             }
         );
+    } catch (const utils::HttpClientCancellationException& e) {
+        LOG(WARNING, "CloudServer") << "Cloud request aborted due to client disconnect: " << e.what() << std::endl;
+        return ErrorResponse::create("Request cancelled by client", ErrorType::INVALID_REQUEST);
     } catch (const std::exception& e) {
         return ErrorResponse::from_exception(NetworkException(e.what()));
     }

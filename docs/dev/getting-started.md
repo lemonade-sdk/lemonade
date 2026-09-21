@@ -859,6 +859,7 @@ The C++ implementation is tested using the existing Python test suite.
 |-----------|-------------|
 | `server_cli2.py` | CLI commands (version, status, list, export, backends, pull, import, load, unload, run, launch, delete) |
 | `server_endpoints.py` | HTTP endpoints (health, models, pull, load, unload, system-info, stats) |
+| `server_cancellation.py` | Client disconnect robustness (server stays healthy; prompt-abort regression lives in `test_request_cancellation`) |
 | `server_llm.py` | LLM inference (chat completions, embeddings, reranking) |
 | `server_whisper.py` | Audio transcription (whisper models) |
 | `server_sd.py` | Image generation (Stable Diffusion, ~2-3 min per image on CPU) |
@@ -870,6 +871,9 @@ python test/server_cli2.py
 
 # Endpoint tests (no inference backend needed)
 python test/server_endpoints.py
+
+# Client disconnect robustness tests (health checks; prompt-abort regression lives in the C++ suite)
+python test/server_cancellation.py
 
 # LLM tests (specify wrapped server and backend)
 python test/server_llm.py --wrapped-server llamacpp --backend vulkan
