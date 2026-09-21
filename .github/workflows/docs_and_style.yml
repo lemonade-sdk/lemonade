@@ -136,15 +136,14 @@ jobs:
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@v5
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+      - name: Check Markdown links and heading anchors
+        uses: lycheeverse/lychee-action@v2
         with:
-          node-version: '20'
-      - name: Install markdown-link-check
-        run: npm install -g markdown-link-check
-      - name: Check Markdown links
-        shell: bash
-        run: |
-          set -euo pipefail
-          find . -type f -name "*.md" -not -path "./node_modules/*" -print0 | \
-            xargs -0 -P 4 -n 1 markdown-link-check -c .github/workflows/mlc_config.json
+          # --include-fragments is the reason this replaced markdown-link-check,
+          # which resolved the file in `guide.md#a-heading` and never checked the
+          # fragment, so a reworded heading broke inbound links silently.
+          args: >-
+            --offline --include-fragments --no-progress
+            --exclude-path node_modules --exclude-path build
+            './**/*.md'
+          fail: true

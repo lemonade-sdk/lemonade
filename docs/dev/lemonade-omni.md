@@ -88,4 +88,4 @@ python examples/lemonade_tools.py "Say hello world out loud"
 
 You can build your own omni model from registered models — see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app) in the custom models guide. The planner LLM must carry the `tool-calling` label, and each modality must have a downloaded model whose `labels` include the matching entry from the [tools table](#available-tools).
 
-To distribute a custom omni model to other machines or via Hugging Face, see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-hugging-face).
+To distribute a custom omni model to other machines or via Hugging Face, see [Share a collection](../guide/configuration/custom-models.md#share-a-collection-export-import-and-model-registries).
