@@ -82,7 +82,7 @@
     "rocm": "b0001"
   },
   "therock": {
-    "version": "7.14.0",
+    "version": "10.0.0",
     "architectures": [
       "gfx908",
       "gfx90a",
