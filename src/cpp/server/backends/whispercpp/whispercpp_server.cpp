@@ -323,11 +323,13 @@ void WhisperServer::load(const std::string& model_name,
     }
 #endif
 
+    bool inherit_output = (log_level_ == "info") || is_debug();
+    auto load_start = std::chrono::steady_clock::now();
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
         args,
         "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
+        inherit_output,
         false,  // filter_health_logs
         env_vars
     );
@@ -344,6 +346,9 @@ void WhisperServer::load(const std::string& model_name,
         throw std::runtime_error("whisper-server failed to start or become ready");
     }
 
+    auto load_end = std::chrono::steady_clock::now();
+    load_time_ms_ = std::chrono::duration<double, std::milli>(load_end - load_start).count();
+    LOG(INFO, "WhisperServer") << "whisper_print_timings:     load time = " << std::fixed << std::setprecision(2) << load_time_ms_ << " ms" << std::endl;
     LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
 }
 
@@ -522,13 +527,18 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
     // caused long-form audio (~35+ min on slower backends) to fail regardless of
     // the user's configuration.
     utils::HttpResponse res;
+    double infer_ms = 0.0;
     {
         std::lock_guard<std::mutex> lock(inference_mutex_);
+        auto infer_start = std::chrono::steady_clock::now();
         res = utils::HttpClient::post_multipart(
             url,
             fields,
             0,
             utils::HttpSecurityPolicy::TrustedLoopback);
+        auto infer_end = std::chrono::steady_clock::now();
+        infer_ms = std::chrono::duration<double, std::milli>(infer_end - infer_start).count();
+        LOG(INFO, "WhisperServer") << "whisper_print_timings:    total time = " << std::fixed << std::setprecision(2) << infer_ms << " ms" << std::endl;
     }
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
@@ -539,7 +549,12 @@ json WhisperServer::forward_multipart_audio_request(const std::string& file_path
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    return audio::interpret_transcription_body(res.body, response_format);
+    json result = audio::interpret_transcription_body(res.body, response_format);
+    result["timings"] = {
+        {"load_time_ms", load_time_ms_},
+        {"inference_time_ms", infer_ms}
+    };
+    return result;
 }
 
 json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
@@ -579,13 +594,18 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
     // See the note on the file-path variant above: 0 inherits the configured
     // global timeout so long transcriptions aren't artificially capped at 300s.
     utils::HttpResponse res;
+    double infer_ms = 0.0;
     {
         std::lock_guard<std::mutex> lock(inference_mutex_);
+        auto infer_start = std::chrono::steady_clock::now();
         res = utils::HttpClient::post_multipart(
             url,
             fields,
             0,
             utils::HttpSecurityPolicy::TrustedLoopback);
+        auto infer_end = std::chrono::steady_clock::now();
+        infer_ms = std::chrono::duration<double, std::milli>(infer_end - infer_start).count();
+        LOG(INFO, "WhisperServer") << "whisper_print_timings:    total time = " << std::fixed << std::setprecision(2) << infer_ms << " ms" << std::endl;
     }
 
     LOG(DEBUG, "WhisperServer") << "Response status: " << res.status_code << std::endl;
@@ -595,7 +615,12 @@ json WhisperServer::forward_multipart_audio_data(const std::string& audio_data,
                                 std::to_string(res.status_code) + ": " + res.body);
     }
 
-    return audio::interpret_transcription_body(res.body, response_format);
+    json result = audio::interpret_transcription_body(res.body, response_format);
+    result["timings"] = {
+        {"load_time_ms", load_time_ms_},
+        {"inference_time_ms", infer_ms}
+    };
+    return result;
 }
 
 // ITranscriptionServer implementation

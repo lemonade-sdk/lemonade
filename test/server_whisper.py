@@ -171,6 +171,11 @@ class WhisperTests(ServerTestBase):
         )
         self.assertGreater(len(result["text"]), 0, "Transcription should not be empty")
 
+        if "timings" in result:
+            t = result["timings"]
+            print(
+                f"[TIMING] load_time_ms={t.get('load_time_ms', 'n/a'):.2f}  inference_time_ms={t.get('inference_time_ms', 'n/a'):.2f}"
+            )
         print(f"[OK] Transcription result: {result['text']}")
 
     def test_002_transcription_with_language(self):
@@ -205,6 +210,11 @@ class WhisperTests(ServerTestBase):
         self.assertIn("text", result, "Response should contain 'text' field")
         self.assertGreater(len(result["text"]), 0, "Transcription should not be empty")
 
+        if "timings" in result:
+            t = result["timings"]
+            print(
+                f"[TIMING] load_time_ms={t.get('load_time_ms', 'n/a'):.2f}  inference_time_ms={t.get('inference_time_ms', 'n/a'):.2f}"
+            )
         print(f"[OK] Transcription with language=en: {result['text']}")
 
     def test_002a_omitted_language_auto_detects(self):
@@ -486,6 +496,11 @@ class WhisperTests(ServerTestBase):
             len(result["text"]), 0, "NPU transcription should not be empty"
         )
 
+        if "timings" in result:
+            t = result["timings"]
+            print(
+                f"[TIMING] load_time_ms={t.get('load_time_ms', 'n/a'):.2f}  inference_time_ms={t.get('inference_time_ms', 'n/a'):.2f}"
+            )
         print(f"[OK] NPU transcription result: {result['text']}")
 
     # =========================================================================
