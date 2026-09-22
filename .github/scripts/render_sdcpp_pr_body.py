@@ -207,7 +207,7 @@ def render_body(
     lines = [
         "This updates Lemonade's existing `sd-cpp` backend pins using the appropriate release stream for each backend.",
         "",
-        f"- Base sd-cpp release (`leejet/stable-diffusion.cpp`): `{args.base_release}`",
+        f"- Base sd-cpp release (`lemonade-sdk/stable-diffusion.cpp`): `{args.base_release}`",
         f"- CUDA sd-cpp release (`lemonade-sdk/stable-diffusion.cpp`): `{args.cuda_release}`",
         f"- Updated base pins: `{', '.join(base_backends)}` -> `{args.base_release}`",
         f"- Updated CUDA pins: `{', '.join(cuda_backends)}` -> `{args.cuda_release}`",
@@ -216,7 +216,7 @@ def render_body(
         + (f"`{', '.join(unvalidated)}`" if unvalidated else "none"),
         f"- Timing: `{timing_scope}`; per-image timings are listed below.",
         "",
-        "CUDA assets are resolved independently from the Lemonade fork. They do not need to share the same tag as the upstream leejet release.",
+        "CUDA assets use a separate release stream in the Lemonade fork and do not need to share the base release tag.",
         "",
         "Validated with the same prompt and seed on each available runner:",
         "",
