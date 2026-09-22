@@ -11,7 +11,7 @@ permissions:
 jobs:
   routing-schema-tests:
     name: Routing schema + fixtures
-    runs-on: ${{ github.event_name == 'push' && fromJSON('["self-hosted", "Linux", "strix-halo", "devlab-dispatch"]') || 'ubuntu-latest' }}
+    runs-on: [self-hosted, Linux, strix-halo, devlab-dispatch]
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
