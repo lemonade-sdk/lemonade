@@ -5,12 +5,12 @@
 #include "lemon/backends/backend_registry.h"  // spec_for() — descriptor->install spec, no server includes
 #include "lemon/model_manager.h"  // For DownloadProgress, DownloadProgressCallback
 
-#include "lemon/utils/github_api.h"
-#include "lemon/utils/path_utils.h"
-#include "lemon/utils/json_utils.h"
-#include "lemon/utils/http_client.h"
-#include "lemon/utils/process_manager.h"
 #include "lemon/utils/archive_platform.h"
+#include "lemon/utils/github_api.h"
+#include "lemon/utils/http_client.h"
+#include "lemon/utils/json_utils.h"
+#include "lemon/utils/path_utils.h"
+#include "lemon/utils/process_manager.h"
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -1640,7 +1640,7 @@ namespace lemon::backends {
         std::string platform = "linux";
 #endif
         std::string filename = "therock-dist-" + platform + "-" + url_variant + "-" + version + ".tar.gz";
-        std::string url = "https://repo.amd.com/rocm/tarball-multi-arch/" + filename;
+        std::string url = "https://stable.repo.amd.com/rocm/core/tarball/" + filename;
 
         fs::path cache_dir = get_backend_download_cache_dir();
         std::string tarball_path = (cache_dir / filename).string();
