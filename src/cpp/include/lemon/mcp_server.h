@@ -4,10 +4,12 @@
 #include <memory>
 #include <string>
 #include <variant>
+#include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "mcp_tool.h"
 #include "model_manager.h"
 #include "router.h"
 
@@ -44,6 +46,7 @@ private:
     json tool_generate_image(const json& arguments);
     json tool_omni(const json& arguments);
     json tool_list_models(const json& arguments);
+    json tool_docs(const json& arguments);
 
     // Resolve which model a tool should use when `model` is omitted. Precedence:
     //   1. an explicit `model` argument always wins;
@@ -71,11 +74,12 @@ private:
     static json make_needs_model_result(const char* type_str,
                                          const char* default_model,
                                          const std::string& name_hint);
-    static json tools_descriptor();
+    std::vector<McpTool> build_tools();
 
     Router* router_;
     ModelManager* model_manager_;
     EnsureLoadedFn ensure_loaded_;
+    std::vector<McpTool> tools_;
 };
 
 }  // namespace lemon

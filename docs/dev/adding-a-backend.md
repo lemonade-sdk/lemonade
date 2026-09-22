@@ -129,7 +129,7 @@ Add the test to CI in both matrices of `.github/workflows/cpp_server_build_test_
   script: server_<modality>.py
   extra_args: "--wrapped-server <recipe>"
   backends: "vulkan rocm"
-  runner: [Linux, vulkan, rocm, lemon-prod]
+  runner: [Linux, X64, vulkan, rocm, lemon-prod]
 ```
 
 If your backend uses ROCm via TheRock, add its recipe to `_THEROCK_RECIPES` in `test/utils/server_base.py`. Otherwise a cold runner folds the one-time TheRock download into the first request's timeout instead of `TIMEOUT_ROCM_INSTALL`, and the ROCm job flakes.
