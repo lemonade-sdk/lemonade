@@ -1,0 +1,150 @@
+import datetime
+import re
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from tools import version
+
+UTC = datetime.timezone.utc
+
+
+class CutoffTests(unittest.TestCase):
+    def test_workflow_cron_matches_the_cutoff(self):
+        workflow = Path(__file__).resolve().parents[1] / (
+            ".github/workflows/create-release-branch.yml"
+        )
+        match = re.search(
+            r'cron:\s*"(\d+) (\d+) \* \* (\d+)"', workflow.read_text(encoding="utf-8")
+        )
+        self.assertIsNotNone(match)
+        minute, hour, cron_weekday = (int(field) for field in match.groups())
+        self.assertEqual(minute, 0)
+        self.assertEqual(hour, version.CUTOFF_HOUR)
+        self.assertEqual(cron_weekday, (version.CUTOFF_WEEKDAY + 1) % 7)
+
+
+class ReleaseWeekTests(unittest.TestCase):
+    def test_before_cutoff_targets_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 15, 59, tzinfo=UTC)
+        self.assertEqual(version.upcoming_release_week(now), (2026, 38))
+
+    def test_at_cutoff_targets_week_after_next(self):
+        now = datetime.datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
+        self.assertEqual(version.upcoming_release_week(now), (2026, 39))
+
+    def test_iso_year_follows_release_date(self):
+        now = datetime.datetime(2026, 12, 30, 17, 0, tzinfo=UTC)
+        self.assertEqual(version.upcoming_release_week(now), (2027, 2))
+
+
+class ReleaseBranchNameTests(unittest.TestCase):
+    def test_at_cutoff_names_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2026.38")
+
+    def test_late_cutoff_day_run_still_names_next_week(self):
+        now = datetime.datetime(2026, 9, 9, 16, 45, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2026.38")
+
+    def test_before_cutoff_names_the_branch_cut_last_week(self):
+        now = datetime.datetime(2026, 9, 9, 15, 59, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2026.37")
+
+    def test_branch_week_matches_dev_version_week_before_cutoff(self):
+        just_before = datetime.datetime(2026, 9, 9, 15, 59, tzinfo=UTC)
+        at_cutoff = datetime.datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
+        year, week = version.upcoming_release_week(just_before)
+        self.assertEqual(
+            version.release_branch_name(at_cutoff), f"release-v{year}.{week}"
+        )
+
+    def test_iso_year_follows_release_date(self):
+        now = datetime.datetime(2026, 12, 30, 16, 0, tzinfo=UTC)
+        self.assertEqual(version.release_branch_name(now), "release-v2027.1")
+
+
+class VersionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.repo = Path(self.temp_dir.name)
+        self.git("init", "-b", "main")
+        self.git("config", "user.email", "version-test@example.com")
+        self.git("config", "user.name", "Version Test")
+        self.commit("initial")
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def git(self, *args):
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.repo,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ).stdout.strip()
+
+    def commit(self, message):
+        marker = self.repo / "marker"
+        marker.write_text(message, encoding="utf-8")
+        self.git("add", "marker")
+        self.git("commit", "-m", message)
+
+    def test_without_git_falls_back_to_dated_placeholder(self):
+        now = datetime.datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+        with tempfile.TemporaryDirectory() as plain_dir:
+            self.assertEqual(
+                version.get_version(Path(plain_dir), now), "2026.39.0~0.nogit"
+            )
+
+    def test_version_file_overrides_git(self):
+        (self.repo / ".version").write_text("vcustom-version\n", encoding="utf-8")
+        self.assertEqual(version.get_version(self.repo), "vcustom-version")
+
+    def test_non_candidate_version_contains_count_and_hash(self):
+        now = datetime.datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
+        expected_hash = self.git("rev-parse", "--short=8", "HEAD")
+        self.assertEqual(
+            version.get_version(self.repo, now), f"2026.39.0~1.{expected_hash}"
+        )
+
+    def test_release_branch_counts_commits_after_main(self):
+        self.git("checkout", "-b", "release-v2026.38")
+        self.commit("candidate one")
+        self.commit("candidate two")
+        self.assertEqual(version.get_version(self.repo), "2026.38.2")
+
+    def test_release_branch_continues_from_existing_tag(self):
+        self.git("checkout", "-b", "release-v2026.38")
+        self.commit("candidate one")
+        self.git("tag", "v2026.38.1")
+        self.git("checkout", "main")
+        self.git("merge", "--no-ff", "-s", "ours", "release-v2026.38")
+        self.git("checkout", "release-v2026.38")
+        self.commit("hotfix")
+        self.assertEqual(version.get_version(self.repo), "2026.38.2")
+
+    def test_exact_release_tag_works_in_detached_checkout(self):
+        self.git("tag", "v2026.38.4")
+        self.git("checkout", "--detach")
+        with mock.patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(version.get_version(self.repo), "2026.38.4")
+
+    def test_github_branch_name_works_in_detached_checkout(self):
+        self.git("checkout", "-b", "release-v2026.38")
+        self.commit("candidate one")
+        self.git("checkout", "--detach")
+        environment = {
+            "GITHUB_REF_NAME": "release-v2026.38",
+            "GITHUB_REF_TYPE": "branch",
+        }
+        with mock.patch.dict("os.environ", environment, clear=True):
+            self.assertEqual(version.get_version(self.repo), "2026.38.1")
+
+
+if __name__ == "__main__":
+    unittest.main()
