@@ -1495,7 +1495,7 @@ namespace lemon::backends {
             utils::path_to_utf8(venv_dir / "bin" / "python");
 #endif
 
-        const std::string index_url = "https://repo.amd.com/rocm/whl-multi-arch/";
+        const std::string index_url = "https://stable.repo.amd.com/rocm/whl-next/";
         const std::string spec =
             "rocm[libraries,device-" + arch + "]==" + version;
 
