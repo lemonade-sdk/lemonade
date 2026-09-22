@@ -2,8 +2,6 @@
 
 A native desktop GUI for interacting with the Lemonade Server.
 
-For the end-user workflow, see the [GUI3 app guide](../guide/gui3.md).
-
 ## Overview
 
 This app provides a native desktop experience for managing models and chatting with LLMs running on `lemond`. It connects to the server via HTTP API and offers a modern, resizable panel-based interface.
@@ -14,8 +12,8 @@ It is built with **Tauri v2**, which embeds the operating system's native webvie
 - Model management (list, pull, load/unload)
 - Chat interface with markdown/code rendering and LaTeX support
 - Real-time server log viewer
-- Persistent client preferences and server-owned model load settings
-- Custom frameless window controls
+- Persistent layout and inference settings
+- Custom frameless window with zoom controls
 - `lemonade://` deep-link protocol handler
 - UDP beacon discovery to find a running `lemond` server on the local machine
 
@@ -25,8 +23,7 @@ The Tauri desktop app is a **thin client** for a separately-running `lemond` ser
 
 Consequences that callers of this code need to know about:
 
-- **Per-client local state.** Layout sizes, theme, base URL, an optionally remembered API key, chat history, and request-time chat sampling belong to the GUI client. Native host settings live in `~/.config/lemonade/app_settings.json`; browser-capable preferences use scoped web storage.
-- **Server-owned configuration.** Persistent per-model load options from **Models > Configuration**, memory and eviction settings, model directories, and cloud-provider definitions are read from and written to `lemond`. Multiple clients connected to one server therefore share them. Cloud API keys remain environment-backed or ephemeral in server memory and are never written to `config.json`.
+- **Per-client local state.** All user-tunable state (inference params, layout sizes, zoom, base URL, API key) lives in `~/.config/lemonade/app_settings.json` on the client, owned by the Rust host (`src-tauri/src/settings.rs`). It is **never** stored or proxied through `lemond`, because two clients against the same server must be able to hold different preferences.
 - **The desktop app does not manage `lemond`'s lifecycle.** The server is started independently — on Windows by `LemonadeServer.exe` (auto-started via the startup folder, tray icon always visible), on Linux/macOS by the user or a service. The Tauri app is opened on demand and must not add itself to autostart, spawn `lemond` as a subprocess, or assume `lemond` is on the same machine.
 - **Discovery is best-effort local + explicit remote.** `beacon.rs` listens for a UDP broadcast emitted by a local `lemond` to auto-populate the base URL. For remote-server use, the user sets `baseURL` + `apiKey` in settings and the client talks to that endpoint directly.
 
@@ -40,16 +37,17 @@ src/app/
 ├── assets/                        # Icons, logos
 │
 ├── src/
-│   ├── index.tsx                  # Renderer entry (imports tauriShim first)
-│   ├── tauriShim.ts               # Installs window.api → Tauri invoke() bridge
-│   ├── App.tsx                    # Root component and workspace orchestration
-│   ├── api.ts                     # HTTP client and normalized server state
-│   ├── modelConfiguration.ts      # Client sampling and load-option resolution
-│   ├── components/                # Chat, Models, Backends, Monitor, Settings
-│   ├── features/                  # Feature-specific state and helpers
-│   ├── hooks/                     # Shared React hooks
-│   ├── styles/                    # Tokens and renderer styles
-│   └── tools/                     # MCP and Omni tool definitions
+│   ├── global.d.ts                # window.api type declaration
+│   └── renderer/                  # React UI (TypeScript)
+│       ├── index.tsx              # Renderer entry (imports tauriShim first)
+│       ├── tauriShim.ts           # Installs window.api → Tauri invoke() bridge
+│       ├── App.tsx                # Root component, layout orchestration
+│       ├── TitleBar.tsx           # Custom window controls
+│       ├── ModelManager.tsx       # Model list and actions
+│       ├── ChatWindow.tsx         # LLM chat interface
+│       ├── LogsWindow.tsx         # Server log viewer
+│       ├── SettingsPanel.tsx      # Inference parameters
+│       └── utils/                 # API helpers and config
 │
 └── src-tauri/                     # Rust host (Tauri backend)
     ├── Cargo.toml                 # Rust dependencies
@@ -68,7 +66,7 @@ src/app/
         └── webview_shim.rs        # Per-platform webview hooks (mic permission, link interception)
 ```
 
-> Server API calls are not proxied through Rust. The renderer uses `api.ts` to call the configured `lemond` endpoint directly; `App.tsx` owns the shared health, model, and system-information lifecycle.
+> `/health`, `/system-stats`, and `/system-info` are NOT proxied through Rust. The renderer fetches them directly via `serverConfig.fetch(...)`; see `StatusBar.tsx` and `AboutModal.tsx`.
 
 ## Architecture
 
@@ -98,60 +96,29 @@ src/app/
 - **Windows only:** WebView2 runtime (pre-installed on Windows 10 1803+ and Windows 11).
 - **macOS only:** No extra dependencies — WKWebView ships with the OS.
 
-## Building locally
-
-### Browser client (non-Tauri)
-The CMake build is the recommended way to build the server and GUI clients with
-the repository's current configuration. Run the setup script from the
-repository root, then build the server and browser client:
-
-```powershell
-.\setup.ps1
-cmake --build --preset windows
-```
-
-Start the built server before opening a GUI:
-
-```powershell
-.\build\Release\lemond.exe
-```
-
-On macOS or Linux, configure and build with:
-
-```bash
-./setup.sh
-cmake --build --preset default
-./build/lemond
-```
-
-The browser client does not require Rust or the Tauri target. The platform
-build commands above build it automatically when `BUILD_WEB_APP` is enabled
-(the default). Open `http://127.0.0.1:13305/app` in a browser after starting
-`lemond`; `/web-app` remains available for backward compatibility. If a
-Lemonade Server is already running, build the GUI without starting another
-instance on port `13305`.
-
-### Desktop client (Tauri)
-
-To build the Tauri desktop client after the server is built and running:
-
-```bash
-cmake --build --preset windows --target tauri-app  # Windows
-cmake --build --preset default --target tauri-app  # macOS / Linux
-```
-
-With Visual Studio 2026, use the `vs18` preset instead of `windows`. The
-Windows executable is `build\app\lemonade-app.exe`; on macOS the application
-bundle is `build/app/lemonade-app.app`; on Linux the executable is
-`build/app/lemonade-app`.
-
-For renderer-only or Tauri development, install the frontend dependencies and
-use the scripts below from `src/app`:
+## Building
 
 ```bash
 cd src/app
+
+# Install webpack + Tauri CLI dependencies
 npm ci
+
+# Run in dev mode (opens a window, hot-reloads webpack)
 npm run dev
+
+# Production build (single binary, no OS bundles)
+npm run build -- --no-bundle
+
+# Production build with platform bundles (macOS .app, Linux .deb/.rpm, Windows MSI/NSIS)
+npm run build
+```
+
+The preferred path for shipping is through CMake, which stages the Tauri output alongside the rest of the server:
+
+```bash
+cmake --build --preset default --target tauri-app      # Linux / macOS
+cmake --build --preset windows --target tauri-app      # Windows
 ```
 
 ## Development Scripts
@@ -167,7 +134,7 @@ npm run watch:renderer         # Webpack watch mode for the renderer only
 
 ## Testing custom Omni Models
 
-The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app)) has both an automated smoke test and a manual checklist.
+The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#build-an-omni-model-in-the-desktop-app)) has both an automated smoke test and a manual checklist.
 
 ### Automated unit test
 

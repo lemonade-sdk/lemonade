@@ -1,4 +1,4 @@
-# GUI3 app
+# GUI3 Beta app
 
 GUI3 is Lemonade's graphical client for finding models, configuring inference,
 and using a Lemonade Server. The desktop and browser builds share the same
@@ -6,7 +6,8 @@ React interface. The server owns model files, loaded models, backends, and
 persistent load configuration; each GUI client owns its connection, layout,
 chat history, and chat preferences.
 
-To build GUI3 from source, start with the [developer app guide](../dev/app.md#building-locally).
+This guide describes the GUI3 beta experience. To build GUI3 from source, start
+with the [developer app guide](../dev/app.md#building).
 
 ![GUI3 Chat workspace](https://raw.githubusercontent.com/lemonade-sdk/assets/39bdd476eced437d135a971d893a99f917117a64/docs/guides/gui3-guide/01-chat.png)
 
