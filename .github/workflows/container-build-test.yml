@@ -46,7 +46,7 @@ jobs:
             platform: linux/arm64
             runner: ubuntu-24.04-arm
 
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && matrix.arch == 'amd64' && fromJSON('["self-hosted", "Linux", "strix-halo", "devlab-dispatch"]') || matrix.runner }}
+    runs-on: ${{ matrix.arch == 'amd64' && fromJSON('["self-hosted", "Linux", "strix-halo", "devlab-dispatch"]') || matrix.runner }}
     timeout-minutes: 90
 
     steps:
