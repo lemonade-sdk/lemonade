@@ -17,6 +17,23 @@ identify the controls described in the text.*
 The Chat view shows the workspace navigation (**1**), selected model (**2**),
 and **Effective settings** button (**3**).
 
+## Build GUI3 Beta from source
+
+On Windows, clone the current GUI3 beta branch, configure the repository, and
+build the Tauri desktop app:
+
+```powershell
+git clone --branch kpoineal-sync-main-backend https://github.com/lemonade-sdk/lemonade.git
+cd lemonade
+.\setup.ps1
+cmake --build --preset windows --target tauri-app --parallel 4
+```
+
+The build requires Node.js 20 or later, Rust/Cargo, Visual Studio with CMake,
+and WebView2. The executable is written to
+`build\app\lemonade-app.exe`; start `lemond.exe` separately before launching
+the desktop app.
+
 ## Open the app
 
 When building from source, configure and build the repository first. Start the
