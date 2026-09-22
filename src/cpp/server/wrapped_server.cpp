@@ -427,7 +427,10 @@ utils::ContainerWorkload workload_for(const ContainerTarget& target,
     workload.profile_id = target.profile_id.empty() ? backends::default_profile_id(target.variant)
                                                     : target.profile_id;
     workload.model_paths = target.model_paths;
-    workload.command.push_back(target.entry);
+    workload.env = target.env;
+    if (!target.entry.empty()) {
+        workload.command.push_back(target.entry);
+    }
     workload.command.insert(workload.command.end(), argv.begin(), argv.end());
     workload.port = port;
     workload.inherit_output = inherit_output;

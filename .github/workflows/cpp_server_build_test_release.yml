@@ -1299,7 +1299,7 @@ jobs:
           # macOS. The runner needs podman or docker; without one the backend
           # reports action_required and the job fails on the first load.
           #
-          # A --lite run: enough to prove the integration works. ds4
+          # A --lite run: enough to prove the integration works. ds4 and halogen
           # have no row at all, since their smallest published models are 81 GB
           # and 121 GiB, which is not a merge-queue download. Both are verified
           # by hand on Strix Halo hardware.

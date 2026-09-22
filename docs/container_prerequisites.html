@@ -24,8 +24,8 @@
       <div class="install-section">
         <h2>Why this page</h2>
         <p>
-          Two Lemonade backends run inside OCI containers rather than as downloaded
-          binaries: <code>rocmfpx</code> and <code>ds4</code>.
+          Three Lemonade backends run inside OCI containers rather than as downloaded
+          binaries: <code>rocmfpx</code>, <code>ds4</code> and <code>halogen</code>.
           They are prebuilt images that bundle a complete ROCm or Vulkan stack, which is what
           makes them work on hardware where a plain binary would not.
         </p>
@@ -271,7 +271,29 @@
           that is usually the wrong trade: they reach the same unified memory through GTT whether
           the carve-out is large or small, and the reserved block comes straight out of the file
           cache that large mapped checkpoints read through. Setting the option back to Auto or its
-          minimum (about 512 MiB) costs the GPU nothing as long as GTT is sized as above.
+          minimum (about 512 MiB) is what the Halogen authors recommend, and it costs the GPU
+          nothing as long as GTT is sized as above.
+        </p>
+      </div>
+
+      <div class="install-section" id="halogen-kernel">
+        <h2>Kernel too old for Halogen</h2>
+        <p>
+          The <code>halogen</code> backend needs Linux <strong>7.0 or newer</strong>, which is
+          ahead of what most distributions ship today. Check your kernel:
+        </p>
+        <div class="code-block">
+          <code>uname -r</code>
+        </div>
+        <p>
+          If it is older than 7.0, there is no workaround: Halogen's memory path depends on
+          kernel support that is not backported. Wait for your distribution to ship a 7.x
+          kernel, or use <code>rocmfpx</code> or llama.cpp's <code>nathanw</code> build in the meantime -
+          they run on the same GPU with no kernel floor beyond the CWSR fix.
+        </p>
+        <p class="option-note">
+          Halogen also needs about 130 GB of free disk for its checkpoint bundle, and enough
+          GPU memory to hold it. See the GTT section above.
         </p>
       </div>
 

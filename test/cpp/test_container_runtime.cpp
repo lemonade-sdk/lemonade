@@ -190,6 +190,14 @@ void test_ds4_profile() {
     expect(drop >= 0 && add > drop, "cap-add follows cap-drop so it survives");
 }
 
+void test_halogen_profile() {
+    ContainerRunSpec spec = sample_spec();
+    spec.profile = ContainerRuntime::device_profile("halogen-strix-halo");
+    const auto args = spec.to_argv(podman_engine());
+    expect(contains(args, "--ipc=host"), "halogen needs host IPC");
+    expect(contains(args, "--ulimit memlock=-1:-1"), "halogen needs unlimited memlock");
+}
+
 void test_profile_env() {
     ContainerRunSpec spec = sample_spec();
     spec.profile = ContainerRuntime::device_profile("amd-rocm-hipblaslt");
@@ -472,6 +480,7 @@ int main() {
     test_volume_mounts();
     test_keep_groups_translation();
     test_ds4_profile();
+    test_halogen_profile();
     test_profile_env();
     test_group_resolution();
     test_unknown_profile_is_empty();

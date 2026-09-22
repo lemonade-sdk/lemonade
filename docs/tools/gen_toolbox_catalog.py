@@ -15,13 +15,13 @@ Three jobs, one per subcommand:
             (the CI drift gate); ``--write`` moves the digests forward (the
             weekly refresh PR).
 
-  models    Regenerate the DS4 entries of server_models.json from
+  models    Regenerate the DS4 and Halogen entries of server_models.json from
             the catalog. These are a deterministic mapping, so they are owned by
             this script and marked with ``catalog_source``. The ROCmFPX entries
             are a human's pick of one GGUF per model family and are left alone.
 
   report    Diff the catalog against what Lemonade ships: new or retired toolbox
-            tags, new models, changed launch defaults.
+            tags, new models, changed launch defaults, changed Halogen bundles.
             Prints a Markdown summary for a PR body. Never edits anything.
 
 Usage:
@@ -75,6 +75,10 @@ NAME_OVERRIDES = {
     "ds4-glm-5-3-flash-q2-gguf": "GLM-5.3-Flash-Q2-DS4",
     "ds4-glm-5-3-flash-q4-k-gguf": "GLM-5.3-Flash-Q4_K-DS4",
     "ds4-deepseek-v4-1-flash-q2-gguf": "DeepSeek-V4.1-Flash-Q2-DS4",
+    "qwen38-flash-next-w4b-quality": "Qwen3.8-Flash-Next-Halogen",
+    "qwen38-flash-next-w4b-speed": "Qwen3.8-Flash-Next-Speed-Halogen",
+    "qwen38-flash-next-w4b-quality-vision": "Qwen3.8-Flash-Next-Vision-Halogen",
+    "qwen38-flash-next-w4b-speed-vision": "Qwen3.8-Flash-Next-Speed-Vision-Halogen",
 }
 
 USER_AGENT = {"User-Agent": "lemonade-toolbox-catalog/1.0"}
@@ -304,12 +308,53 @@ def ds4_entries(models):
     return entries
 
 
+def halogen_entries(models):
+    entries = collections.OrderedDict()
+    for model in models["backends"]["halogen"]["models"]:
+        name = NAME_OVERRIDES.get(model["id"], "Halogen-" + slugify(model["id"]))
+        files = {item["path"]: item["size_bytes"] for item in model.get("files", [])}
+        total_gb = round(sum(files.values()) / 1e9, 2)
+
+        entry = collections.OrderedDict(
+            [
+                ("checkpoint", f"{model['repo']}:{model['checkpoint']}"),
+                ("recipe", "halogen"),
+                ("suggested", bool(model.get("recommended"))),
+                (
+                    "labels",
+                    ["chat", "reasoning"]
+                    + (["vision"] if model.get("vision_tower") else []),
+                ),
+                ("size", total_gb),
+                # min_resident_gb is what must fit in the GPU's own pool. For
+                # Halogen that is the KV pool, measured at 7.2 GiB for the
+                # 262144-position pool it settles on. The checkpoint is mapped
+                # from disk, and the 68 GiB of weights it locks are host RAM,
+                # which the engine gates itself at startup with a far more
+                # precise message than a size filter could give.
+                ("min_resident_gb", 8.0),
+                ("halogen_overlay", model["overlay"]),
+                ("halogen_tokenizer", model.get("tokenizer_dir", "tokenizer")),
+                # Recorded for provenance: Lemonade's downloader tracks the repo's
+                # default branch, so this is what the catalog validated against
+                # rather than a pin Lemonade can enforce today.
+                ("halogen_revision", model.get("revision", "")),
+            ]
+        )
+        if model.get("vision_tower"):
+            entry["halogen_vision_tower"] = model["vision_tower"]
+        entry[CATALOG_MARKER] = CATALOG_MARKER_VALUE
+        entries[name] = entry
+    return entries
+
+
 def command_models(args):
     _, models = load_catalog(args.catalog_dir)
     registry = load_json(SERVER_MODELS)
 
     generated = collections.OrderedDict()
     generated.update(ds4_entries(models))
+    generated.update(halogen_entries(models))
 
     owned = {
         name
@@ -387,8 +432,8 @@ def command_report(args):
     print("\n### Pinned tags the catalog does not list\n")
     print(
         "Either the catalog retired the tag, or Lemonade pins it deliberately "
-        "(the catalog tracks one DS4 image per platform). `pins --check` is what "
-        "proves a tag still exists.\n"
+        "(the catalog tracks one DS4 image per platform, and its Halogen pin trails "
+        "Peonist's releases). `pins --check` is what proves a tag still exists.\n"
     )
     catalog_images = {
         tuple(toolbox["image"].rsplit(":", 1))
@@ -443,7 +488,9 @@ def main():
     )
     pins.set_defaults(func=command_pins)
 
-    models = subparsers.add_parser("models", help="Regenerate DS4 registry entries")
+    models = subparsers.add_parser(
+        "models", help="Regenerate DS4 and Halogen registry entries"
+    )
     models.add_argument("--write", action="store_true", help="Write the entries")
     models.add_argument(
         "--check", action="store_true", help="Exit non-zero if entries are stale"

@@ -89,11 +89,16 @@ struct HostTarget {
 };
 
 struct ContainerTarget {
-    std::string entry;  // the server's name on the image's PATH, i.e. argv[0]
+    // The server's name on the image's PATH, i.e. argv[0]. An image whose own
+    // entrypoint takes no argv leaves this empty.
+    std::string entry;
     std::string recipe;
     std::string variant;
     std::string profile_id;  // "" = derive from the variant name
     std::vector<std::string> model_paths;  // see utils::ContainerWorkload
+    // A value equal to one of model_paths is rewritten to the path inside, so an
+    // engine configured through the environment never spells one itself.
+    std::vector<std::pair<std::string, std::string>> env;
 };
 
 using LaunchTarget = std::variant<HostTarget, ContainerTarget>;

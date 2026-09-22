@@ -7,9 +7,11 @@ Some Lemonade backends run inside OCI container images instead of downloaded bin
 | `rocmfpx` | `rocmfpx` | ROCm FPX: a llama.cpp fork adding FP4/FP6/FP8 weights and MTP | Strix Halo (gfx1151) |
 | `llamacpp` | `nathanw` | Nathan W's Vulkan performance build of llama.cpp | Strix Halo (gfx1151) |
 | `ds4` | `ds4` | antirez's DwarfStar4 for the DeepSeek V4 family | Strix Halo, Radeon AI PRO R9700 |
+| `halogen` | `halogen` | Peonist's Halogen Flash engine | Strix Halo only |
 
-The images come from [Donato Capitella's toolbox project](https://github.com/kyuz0/amd-strix-halo-toolboxes).
-They bundle a complete ROCm or Vulkan stack, which is how they run engine builds that a plain binary release cannot deliver for
+The images come from [Donato Capitella's toolbox project](https://github.com/kyuz0/amd-strix-halo-toolboxes)
+and, for Halogen, from [Peonist](https://github.com/peonist-ai). They bundle a complete ROCm or
+Vulkan stack, which is how they run engine builds that a plain binary release cannot deliver for
 this hardware. Which collection an image is published in is packaging, so it does not appear in
 Lemonade: what you pick is an engine, and for `nathanw`, a build of one.
 
@@ -158,9 +160,44 @@ on each model entry.
 Expect single-digit tokens per second. The model is streaming from an SSD, and that is the trade
 being made to run an 80 GB mixture-of-experts at all.
 
+## Halogen
+
+`halogen` runs one model family: Qwen3.8-Flash-Next, as a 115 GiB HGN checkpoint plus a small
+overlay that selects a quality or speed profile, optionally with a vision tower. It is configured
+entirely through `HALOGEN_*` environment variables rather than a command line, and it is closed
+source.
+
+It has two requirements the other backends do not:
+
+- **Linux 7.0 or newer.** There is no workaround; the memory path is not backported.
+- **About 121 GiB of free disk.** All four Halogen entries share one download: the checkpoint and
+  tokenizer are common, and the overlays and vision tower are small.
+
+The checkpoint itself does not have to fit in memory. Halogen maps it read-only and registers the
+mapping with the GPU rather than copying it. What must fit in the GPU's own pool is the KV pool,
+measured at 7.2 GiB for the 262144-position pool it settles on here; the 68 GiB of weights it
+locks are host RAM. The server measures that budget at startup and lowers the pool itself when the
+configured one will not fit, so Lemonade deliberately leaves `HALOGEN_KV_POOL_POSITIONS` unset.
+
+The context is left to the engine for the same reason: an HGN checkpoint carries none of the
+architecture metadata Lemonade's auto-tuning reads, so on `ctx_size: -1` (the default) Halogen
+starts at its native 262144 and fits the pool to the memory it measures. Setting `ctx_size`
+explicitly overrides that, and Lemonade then lowers the server's default `max_tokens` to match,
+because a request reserves prompt plus `max_tokens` against the context.
+
+Measured on a 128 GB Strix Halo with the carve-out minimized: 96.5 GiB held in all, listening 92
+seconds after launch, and around 45 tokens per second, which is roughly three times what the
+the llama.cpp forks reach on the same machine.
+
+One hardware note worth acting on: if your BIOS carves a fixed block of memory out for the iGPU,
+Halogen does not need it. It reaches the same unified memory through GTT either way, and the
+carve-out is taken before the kernel boots, so it comes straight out of the file cache the mapped
+checkpoint reads through. Setting the UMA frame buffer to Auto or its minimum is upstream's
+recommendation.
+
 ## These are reasoning models
 
-Every model the ROCmFPX and DS4 entries point at reasons before it answers. That is worth
+Every model the ROCmFPX, DS4 and Halogen entries point at reasons before it answers. That is worth
 knowing because of how it interacts with `max_tokens`: the reasoning is spent out of the same
 budget, and it arrives as `reasoning_content` rather than `content`. Ask for 16 tokens and you can
 get an empty `content`, a populated `reasoning_content`, and `finish_reason: length`.
@@ -176,8 +213,9 @@ here first. Give these models room, or turn reasoning off per request with
 |--------|--------|-------|
 | ROCmFP4 / ROCmI4 quantizations of Qwen3.8-27B and Qwopus3.6-27B | `rocmfpx` | Community conversions; the uploader is named in each entry |
 | DeepSeek V4 Flash, DeepSeek V4.1 Flash, GLM 5.3 Flash | `ds4` | Translated from the upstream catalog |
+| Qwen3.8-Flash-Next W4B, four overlay/vision combinations | `halogen` | All four share one checkpoint download |
 
-The DS4 entries are generated from the upstream catalog by
+The DS4 and Halogen entries are generated from the upstream catalog by
 `docs/tools/gen_toolbox_catalog.py` and carry `catalog_source: ai-toolbox-cockpit`. The ROCm FPX
 picks are curated by hand - one quantization per model family - because choosing among a
 community uploader's variants is a judgment call, not a mapping. `nathanw` has no models of its
@@ -187,5 +225,6 @@ own: it runs whatever the `llamacpp` recipe already lists.
 
 - None of this works from inside Lemonade's own Docker image: a container cannot launch sibling
   containers without privileges that image does not request.
-- Neither the toolbox repository nor the cockpit carries a license file. Lemonade pulls public images and translates public catalog data; it vendors no code.
+- Neither the toolbox repository nor the cockpit carries a license file, and Halogen is closed
+  source. Lemonade pulls public images and translates public catalog data; it vendors no code.
 - Donato's DS4 build tracks his performance branch, which may drift from antirez's main.

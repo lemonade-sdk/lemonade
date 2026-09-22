@@ -112,6 +112,13 @@ CAPABILITIES = {
                 "llm": "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4",
             },
         },
+        "halogen": {
+            "backends": ["rocm"],
+            "supports": {"chat_completions": True},
+            "test_models": {
+                "llm": "Qwen3.8-Flash-Next-Halogen",
+            },
+        },
         "ryzenai": {
             "backends": ["cpu", "hybrid", "npu"],
             "supports": {

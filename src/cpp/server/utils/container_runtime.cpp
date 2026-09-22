@@ -128,6 +128,12 @@ const std::map<std::string, DeviceProfile>& profile_table() {
             "ds4-rocm", {"/dev/dri", "/dev/kfd"}, {"video", "render"},
             {}, {}, {"SYS_PTRACE"}, /*ipc_host=*/true,
             /*memlock_unlimited=*/false};
+        // Halogen registers its mapped checkpoint with the GPU, which pins the
+        // pages for as long as the model is loaded, and shares the mapping
+        // across its worker processes.
+        t["halogen-strix-halo"] = DeviceProfile{
+            "halogen-strix-halo", {"/dev/dri", "/dev/kfd"}, {"video", "render"},
+            {}, {}, {}, /*ipc_host=*/true, /*memlock_unlimited=*/true};
         return t;
     }();
     return table;

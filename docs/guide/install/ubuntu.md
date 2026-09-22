@@ -21,7 +21,7 @@ To build from source, see the [development](../../dev/README.md) guide.
 
 ## Optional: container runtime
 
-The `rocmfpx` and `ds4` backends run inside OCI container images, so they need
+The `rocmfpx`, `ds4` and `halogen` backends run inside OCI container images, so they need
 podman (preferred) or docker on the host. Nothing else does. See
 [Container Backends](../configuration/container-backends.md).
 
