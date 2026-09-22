@@ -30,12 +30,7 @@ jobs:
         working-directory: src/app
         run: npm run typecheck
       - name: Run app regression tests
-        run: |
-          if [ -f src/app/src/renderer/utils/collectionModels.ts ]; then
-            node test/app/run-app-regression-tests.cjs
-          else
-            echo "Skipping legacy app regression tests; this branch uses the GUI3 frontend layout."
-          fi
+        run: node test/app/run-app-regression-tests.cjs
 
   backend-docs-drift:
     # Server reference docs are generated from live self-describing endpoints.
