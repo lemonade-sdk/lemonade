@@ -195,7 +195,7 @@ Smaller LLMs can produce simple pages with tasteful styling and basic interactiv
 
 ### Image Generation
 
-Open WebUI supports [image generation](https://docs.openwebui.com/features/image-generation-and-editing/usage/) using Stable Diffusion [models](https://lemonade-server.ai/models.html) through Lemonade Server.
+Open WebUI supports [image generation](https://docs.openwebui.com/features/chat-conversations/image-generation-and-editing/usage/) using Stable Diffusion [models](https://lemonade-server.ai/models.html) through Lemonade Server.
 
 **Configuring Image Generation**
 
@@ -230,7 +230,7 @@ This mode uses tool calling for image generation and is recommended for high-qua
     1. Go to Admin > Settings > Models and choose your model.
     2. Go to `Advanced Parameters` and toggle `Function Calling` to `Native`.
 
-    > Note: Open WebUI recommends using native mode only for high-quality models. See [Tool Calling Modes](https://docs.openwebui.com/features/plugin/tools/#tool-calling-modes-default-vs-native) for more information. (try out >30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)
+    > Note: Native is the default tool-calling mode in Open WebUI as of v0.10.0. The former Default mode is now called Legacy. Use a model that supports tool calling. See [Tool Calling Modes](https://docs.openwebui.com/features/extensibility/plugin/tools/) for more information. (try out >30B models like GPT-OSS-120B, GLM-4.7-Flash or Qwen-3-Next-80B-A3B)
 
 2. The LLM will automatically call the image generation tool when appropriate based on your prompts.
 

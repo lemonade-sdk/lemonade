@@ -55,6 +55,8 @@ def generate_markdown(apps: list) -> str:
         name = app.get("name", "Unknown")
         logo = app.get("logo", "")
         link = app.get("links", {}).get("guide") or app.get("links", {}).get("app", "#")
+        if app.get("id") == "gaia":
+            link = "https://github.com/amd/gaia"
         guide_url = urlsplit(link)
         if guide_url.hostname == "lemonade-server.ai":
             guide_name = guide_url.path.rstrip("/").rsplit("/", 1)[-1]
