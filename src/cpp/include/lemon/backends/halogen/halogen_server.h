@@ -27,6 +27,7 @@ public:
 
     json chat_completion(const json& request) override;
     json completion(const json& request) override;
+    json responses(const json& request) override;
 };
 
 class HalogenOps : public ContainerBackendOps {
@@ -34,6 +35,7 @@ public:
     HalogenOps() : ContainerBackendOps("halogen") {}
 
     InstallCheck check_install(const std::string& backend, bool binary_found) const override;
+    void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const override;
     std::optional<UnavailableState> classify_unavailable(
         const std::string& backend, const std::string& install_error,
         const std::string& default_install_command) const override;

@@ -106,23 +106,59 @@ CAPABILITIES = {
             },
         },
         # Reasoning models, turned off for the run as rocmfpx is (see
-        # _build_runtime_config). Neither engine has a launch flag for it, and
-        # each reads a different request field.
+        # _build_runtime_config). Neither engine has a launch flag for it, so
+        # each request carries Lemonade's own switch.
         "ds4": {
             "backends": ["rocm"],
-            "supports": {"chat_completions": True},
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "static_max_context_window": True,
+            },
             "test_models": {
                 "llm": "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4",
             },
-            "chat_extra_body": {"thinking": {"type": "disabled"}},
+            "chat_extra_body": {"enable_thinking": False},
+            "responses_extra_body": {"reasoning": {"effort": "none"}},
         },
         "halogen": {
             "backends": ["rocm"],
-            "supports": {"chat_completions": True},
+            "supports": {
+                "chat_completions": True,
+                "chat_completions_streaming": True,
+                "chat_completions_async": True,
+                "completions": True,
+                "completions_streaming": True,
+                "completions_async": True,
+                "responses_api": True,
+                "responses_api_streaming": True,
+                "tool_calls": True,
+                "tool_calls_streaming": True,
+                "multi_model": True,
+                "stop_parameter": True,
+                "static_max_context_window": True,
+            },
             "test_models": {
                 "llm": "Qwen3.8-Flash-Next-Halogen",
             },
-            "chat_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
+            "chat_extra_body": {"enable_thinking": False},
+            # Only a launch-time default turns off thinking on Halogen's
+            # Responses API, so the request reasons briefly and gets room to
+            # finish.
+            "responses_extra_body": {
+                "reasoning": {"effort": "minimal"},
+                "max_output_tokens": 512,
+            },
         },
         "ryzenai": {
             "backends": ["cpu", "hybrid", "npu"],
@@ -452,9 +488,10 @@ def get_test_model(
     )
 
 
-def get_chat_extra_body() -> dict:
-    """Request fields the current wrapped server needs on every chat completion."""
-    return get_capabilities().get("chat_extra_body", {})
+def get_extra_body(api: str) -> dict:
+    """Request fields the current wrapped server needs on every `api` request
+    ("chat" or "responses")."""
+    return get_capabilities().get(f"{api}_extra_body", {})
 
 
 def skip_if_unsupported(feature: str):

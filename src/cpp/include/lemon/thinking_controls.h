@@ -34,10 +34,10 @@ bool strip_handled_thinking_fields(json& request_json);
 
 // Normalize Lemonade's backend-neutral thinking intent into request controls
 // understood by reasoning-capable OpenAI-compatible backends. When disabling,
-// this sets `reasoning_effort: "none"` and, when possible,
-// `chat_template_kwargs.enable_thinking: false`, while retaining `/no_think`
-// as a compatibility fallback. The client-facing fields are then stripped.
-// Returns true if the request was modified.
-bool normalize_thinking_controls(json& request_json);
+// this merges in `backend_fields` when the backend names its own; otherwise
+// it sets `reasoning_effort: "none"`, `chat_template_kwargs.enable_thinking:
+// false` where possible, and prepends `/no_think`. The client-facing fields
+// are then stripped. Returns true if the request was modified.
+bool normalize_thinking_controls(json& request_json, const json& backend_fields = nullptr);
 
 } // namespace lemon

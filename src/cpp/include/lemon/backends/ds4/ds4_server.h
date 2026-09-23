@@ -28,13 +28,15 @@ public:
     json responses(const json& request) override;
 };
 
-// Carries DS4's migration off the binary build it used to install.
+// DS4's install side: the migration off the binary build it used to install,
+// and the context window its GGUF declares.
 class Ds4Ops : public ContainerBackendOps {
 public:
     Ds4Ops() : ContainerBackendOps("ds4") {}
     bool install(const std::string& backend, bool force,
                  DownloadProgressCallback progress) const override;
     bool uninstall(const std::string& backend) const override;
+    void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const override;
 
     // DS4 used to install a ds4-server binary from lemonade-sdk/ds4-rocm. That
     // build is gone; nothing will ever launch it again, so it is removed rather

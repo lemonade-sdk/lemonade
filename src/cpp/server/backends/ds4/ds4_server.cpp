@@ -4,6 +4,7 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backends/container_backend.h"
+#include "lemon/gguf_reader.h"
 #include "lemon/model_manager.h"
 #include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
@@ -186,6 +187,19 @@ std::string Ds4Ops::remove_legacy_binary_install() {
     LOG(INFO, "DS4") << "Removed the superseded ds4-server binary install at " << install_dir
                      << "; DS4 now runs from a container image" << std::endl;
     return install_dir;
+}
+
+void Ds4Ops::populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {
+    (void)ctx;
+    const std::string gguf_path = info.resolved_path();
+    std::error_code ec;
+    if (gguf_path.empty() || !fs::exists(gguf_path, ec)) {
+        return;
+    }
+    GgufMetadata meta;
+    if (read_gguf_metadata(meta, gguf_path)) {
+        info.max_context_window = meta.context_length;
+    }
 }
 
 bool Ds4Ops::install(const std::string& backend, bool force,

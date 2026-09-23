@@ -45,6 +45,8 @@ inline const BackendDescriptor descriptor = {
     // than a resident one. What must fit in the GPU's pool is the KV pool and
     // the overlay, which is what each model entry's min_resident_gb records.
     /*streams_model_from_storage*/ true,
+    /*disable_thinking*/
+    nlohmann::json{{"chat_template_kwargs", {{"enable_thinking", false}}}},
 };
 
 // The checkpoint is registered with the GPU as a read-only file mapping, and

@@ -93,11 +93,16 @@ bool strip_handled_thinking_fields(json& request_json) {
     return modified;
 }
 
-bool normalize_thinking_controls(json& request_json) {
+bool normalize_thinking_controls(json& request_json, const json& backend_fields) {
     bool modified = false;
     if (should_disable_thinking(request_json)) {
-        modified = apply_native_disable_thinking_controls(request_json) || modified;
-        modified = prepend_no_think_to_last_user_message(request_json) || modified;
+        if (backend_fields.is_object()) {
+            request_json.merge_patch(backend_fields);
+            modified = true;
+        } else {
+            modified = apply_native_disable_thinking_controls(request_json) || modified;
+            modified = prepend_no_think_to_last_user_message(request_json) || modified;
+        }
     }
     modified = strip_handled_thinking_fields(request_json) || modified;
     return modified;

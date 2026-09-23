@@ -62,6 +62,7 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ true,
+    /*disable_thinking*/ nlohmann::json{{"reasoning_effort", "none"}},
 };
 
 }  // namespace ds4

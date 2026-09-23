@@ -62,6 +62,11 @@ bool kernel_supports_halogen() {
 
 }  // namespace halogen
 
+void HalogenOps::populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {
+    (void)ctx;
+    info.max_context_window = kNativeContext;
+}
+
 BackendOps::InstallCheck HalogenOps::check_install(const std::string& backend,
                                                    bool binary_found) const {
     if (!halogen::kernel_supports_halogen()) {
@@ -224,6 +229,10 @@ json HalogenServer::chat_completion(const json& request) {
 
 json HalogenServer::completion(const json& request) {
     return forward_request("/v1/completions", request);
+}
+
+json HalogenServer::responses(const json& request) {
+    return forward_request("/v1/responses", request);
 }
 
 namespace halogen {

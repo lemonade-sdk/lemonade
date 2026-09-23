@@ -37,7 +37,7 @@ from utils.server_base import (
 )
 from utils.capabilities import (
     skip_if_unsupported,
-    get_chat_extra_body,
+    get_extra_body,
     get_test_model,
     get_capabilities,
     supports,
@@ -136,7 +136,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             max_completion_tokens=10,
             stream=False,
-            extra_body=get_chat_extra_body(),
+            extra_body=get_extra_body("chat"),
         )
 
         print(f"Response: {completion.choices[0].message.content}")
@@ -191,7 +191,7 @@ class LLMTests(ServerTestBase):
                     ],
                     "max_tokens": 8,
                     "stream": False,
-                    **get_chat_extra_body(),
+                    **get_extra_body("chat"),
                 },
                 headers=headers,
                 timeout=TIMEOUT_MODEL_OPERATION,
@@ -244,7 +244,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             stream=True,
             max_completion_tokens=10,
-            extra_body=get_chat_extra_body(),
+            extra_body=get_extra_body("chat"),
         )
 
         complete_response = ""
@@ -278,7 +278,7 @@ class LLMTests(ServerTestBase):
                 messages=self.messages,
                 stream=True,
                 max_completion_tokens=10,
-                extra_body=get_chat_extra_body(),
+                extra_body=get_extra_body("chat"),
             )
 
             complete_response = ""
@@ -394,6 +394,7 @@ class LLMTests(ServerTestBase):
             stream=False,
             temperature=0.0,
             max_output_tokens=10,
+            extra_body=get_extra_body("responses"),
         )
 
         print(f"Response: {response.output[0].content[0].text}")
@@ -421,6 +422,7 @@ class LLMTests(ServerTestBase):
             stream=True,
             temperature=0.0,
             max_output_tokens=10,
+            extra_body=get_extra_body("responses"),
         )
 
         complete_response = ""
@@ -437,7 +439,8 @@ class LLMTests(ServerTestBase):
             elif event.type == "response.output_text.delta":
                 complete_response += event.delta
                 print(event.delta, end="")
-            elif event.type == "response.completed":
+            # A response cut off by max_output_tokens ends as incomplete.
+            elif event.type in ("response.completed", "response.incomplete"):
                 self.assertEqual(
                     event.response.output[0].content[0].text,
                     complete_response,
@@ -448,7 +451,7 @@ class LLMTests(ServerTestBase):
             last_event_type = event.type
 
         print()
-        self.assertEqual(last_event_type, "response.completed")
+        self.assertIn(last_event_type, ("response.completed", "response.incomplete"))
         self.assertGreater(len(complete_response), 0)
 
     # =========================================================================
@@ -488,6 +491,7 @@ class LLMTests(ServerTestBase):
             messages=messages,
             stop=["2."],  # Stop before the second item
             max_completion_tokens=50,
+            extra_body=get_extra_body("chat"),
         )
 
         response = completion.choices[0].message.content
@@ -540,7 +544,8 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
-            max_completion_tokens=50,
+            max_completion_tokens=300,
+            extra_body=get_extra_body("chat"),
         )
 
         tool_calls = getattr(completion.choices[0].message, "tool_calls", None)
@@ -564,7 +569,8 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
-            max_completion_tokens=50,
+            max_completion_tokens=300,
+            extra_body=get_extra_body("chat"),
             stream=True,
         )
 

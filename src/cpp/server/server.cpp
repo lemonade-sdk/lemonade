@@ -4007,7 +4007,11 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 
         // OpenCode and other OpenAI-compatible clients may send thinking=false
         // instead of Lemonade's enable_thinking=false.
-        normalize_thinking_controls(request_json);
+        const auto* chat_backend = model_manager_->model_exists(model_to_check)
+            ? backends::descriptor_for(model_manager_->get_model_info(model_to_check).recipe)
+            : nullptr;
+        normalize_thinking_controls(request_json,
+                                    chat_backend ? chat_backend->disable_thinking : json());
 
         if (is_streaming) {
             try {

@@ -119,6 +119,12 @@ struct BackendDescriptor {
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
 
+    // The request fields that turn this engine's thinking off, merged into a
+    // chat request that asks for it. Null applies the generic controls plus
+    // the `/no_think` prompt fallback, which an engine with its own fields
+    // would read as the user's text.
+    nlohmann::json disable_thinking = nullptr;
+
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {
         return config_section.empty() ? recipe : config_section;
