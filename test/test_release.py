@@ -2,6 +2,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tools import release
 
@@ -95,13 +96,40 @@ class ReleaseHelperTests(unittest.TestCase):
             "Lemonade {tag}",
             assume_yes=True,
             dry_run=False,
-            sign=False,
         )
         self.assertIn("v2026.38.3", self.git("tag", "--list").splitlines())
         pushed = self.run_cmd(
             "git", "ls-remote", "--tags", str(self.remote), "v2026.38.3", cwd=self.repo
         )
         self.assertIn("v2026.38.3", pushed)
+
+    def test_signed_tag_failure_explains_how_to_proceed(self):
+        self.push_release_branch("release-v2026.38", 3)
+        original_git = release.git
+
+        def fake_git(*args, **kwargs):
+            if args[:2] == ("tag", "--sign"):
+                raise subprocess.CalledProcessError(
+                    128,
+                    ["git", *args],
+                    stderr="gpg failed to sign the data",
+                )
+            return original_git(*args, **kwargs)
+
+        with mock.patch.object(release, "git", side_effect=fake_git):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "Configure git tag signing or rerun without --sign",
+            ):
+                release.create_release(
+                    self.repo,
+                    "origin",
+                    None,
+                    "Lemonade {tag}",
+                    assume_yes=True,
+                    dry_run=False,
+                    sign=True,
+                )
 
     def test_existing_tag_is_rejected(self):
         self.push_release_branch("release-v2026.38", 3)
