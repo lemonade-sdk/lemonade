@@ -4,7 +4,7 @@ Lemonade's documentation is a first-class part of the product. Per our [philosop
 
 This guide covers style, structure, and the contribution process for both community authors and AI-assisted contributions.
 
-Documentation under `docs/` is built with [Zensical](https://zensical.org/) (configured via [`mkdocs.yml`](https://github.com/lemonade-sdk/lemonade/blob/main/mkdocs.yml), whose schema it inherits from MkDocs Material) into the site hosted at [lemonade-server.ai/docs](https://lemonade-server.ai/docs). Add new documents to the `nav` section of `mkdocs.yml`: pages left out of `nav` are still built and reachable by URL, but don't appear in the site's navigation sidebar. To preview locally, `pip install -r docs/assets/docs_requirements.txt` and run `zensical serve`.
+Documentation under `docs/` is built with [Zensical](https://zensical.org/) (configured via `mkdocs.yml`, whose schema it inherits from MkDocs Material) into the site hosted at [lemonade-server.ai](https://lemonade-server.ai). Add new documents to the `nav` section of `mkdocs.yml`: pages left out of `nav` are still built and reachable by URL, but don't appear in the site's navigation sidebar. To preview locally, `pip install -r docs/assets/docs_requirements.txt` and run `zensical serve`.
 
 - [Principles](#principles)
 - [Voice and Tone](#voice-and-tone)
@@ -110,6 +110,10 @@ Add a ToC only if the document has **5 or more H2 sections**. Use a plain markdo
 ---
 
 ## Formatting
+
+### Links
+
+Link to documentation in this repository using relative Markdown file paths, including the `.md` extension (for example, `../guide/install/windows.md`). Avoid published website URLs and hardcoded `blob/main` URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. Use the same convention in generated documentation.
 
 ### Code blocks
 
