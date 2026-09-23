@@ -366,16 +366,23 @@ lemonade config set extra_models_dir="/home/you/.lmstudio/models"
 
 ### Model Naming Scheme
 
-A model's name comes from the directory layout around its files.
+A model's name comes from the directory layout around its files. First, we detect if a directory is a Hugging Face or ModelScope cache repo (e.g., HF/MS; a folder named `models--<org>--<repo>` or `modelscope--models--<org>--<repo>`), or not. There are separate rules for naming models in these HF/MS caches vs. non-HF/MS (e.g., LM Studio, user defined folders).
+
+These notes apply to both:
+
+- Files whose names declare the same shard series are one model, as in `model-Q4_K_M-00001-of-00003.gguf`, and its name drops the shard suffix. The `-`, `.`, and `_` separators are accepted before the shard index.
+- An `mmproj` file joins the model in its folder.
+- Names are assigned in a fixed order: files at the search root, then files in reserved directories, then folders, each group in sorted path order. A model at the search root keeps its name when a directory is reserved later.
+- Every imported model is also addressable as `extra.<name>`; see the [model naming spec](#model-naming-spec). [Model aliases](#model-aliases-aliasesjson) are a separate feature that you define yourself in `aliases.json`.
+
+#### Non-HF/MS folders
 
 | What is on disk | Name |
 |---|---|
 | A `.gguf` file at the search root, or in a reserved directory | the filename without `.gguf` |
 | A folder holding one model | the folder name |
-| A folder holding several models | one name per model, each from its filename |
-| A folder in the Hugging Face or ModelScope cache revision that `refs/main` points at | the repo name, or `<repo>-<folder>` when the GGUFs sit in a subfolder |
-| A folder holding several models in a superseded revision of that cache | each name prefixed with that revision's commit |
-| A name another imported model already took | the name, qualified with its Hugging Face org, or with its own folder |
+| A folder holding several quantization variants | one name per variant, each from its filename |
+| A name another imported model already took | the name, qualified with its own folder, then `-2`, `-3` if that is also taken |
 
 For example:
 
@@ -387,20 +394,34 @@ For example:
 | `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M-00001-of-00002.gguf` and `Qwen3-8B-Q4_K_M-00002-of-00002.gguf` | `Qwen3-8B-GGUF` |
 | `Qwen3-8B-GGUF/` holding `Qwen3-8B-Q4_K_M.gguf` and `mmproj-Qwen3-8B-f16.gguf` | `Qwen3-8B-GGUF` |
 | `Mixtral-GGUF/` holding a two-shard `Mixtral-Q4_K_M` set and a two-shard `Mixtral-Q8_0` set | `Mixtral-Q4_K_M`, `Mixtral-Q8_0` |
-| `models--unsloth--Qwen3-8B-GGUF/snapshots/<commit>/Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-GGUF` |
-| `models--unsloth--Qwen3-235B-GGUF/snapshots/<commit>/Q4_K_M/` holding a shard set | `Qwen3-235B-GGUF-Q4_K_M` |
-| a cache holding a live `snapshots/<new>/` and a superseded `snapshots/<old>/`, each with `Repo-Q4_K_M.gguf` and `Repo-Q8_0.gguf` | `Repo-Q4_K_M`, `Repo-Q8_0`, `<old>-Repo-Q4_K_M`, `<old>-Repo-Q8_0` |
-| `models--bartowski--Collide-7B-GGUF/` and `models--unsloth--Collide-7B-GGUF/`, each with an active `snapshots/<commit>/Collide-7B-Q4_K_M.gguf` | `Collide-7B-GGUF`, `unsloth-Collide-7B-GGUF` |
 | `Llama-Local-GGUF/` and `Mistral-Local-GGUF/`, each holding `model-Q4_K_M.gguf` and `model-Q8_0.gguf` | `model-Q4_K_M`, `model-Q8_0`, `Mistral-Local-GGUF-model-Q4_K_M`, `Mistral-Local-GGUF-model-Q8_0` |
 
 Notes:
 
+- Adding a second quantization variant to a folder renames the first model, as rows two and three show. The folder name keeps resolving and points at the first model alphabetically, so a request that used it still works. A model file that sorts earlier takes that pointer over, so name a specific model in scripts you intend to keep. When several folders share a name, the first in the order above owns it, in both its plain and `extra.` forms.
+
+#### HF/MS caches
+
+| What is on disk | Name |
+|---|---|
+| One model in the revision that `refs/main` points at | the repo name, or `<repo>-<folder>` when the GGUFs sit in a subfolder |
+| Several models in that revision | one name per model, each from its filename |
+| Several models in a superseded revision | each name prefixed with that revision's commit |
+| A name another imported model already took | the name, qualified with its org or namespace |
+
+For example:
+
+| Layout | Names |
+|---|---|
+| `models--unsloth--Qwen3-8B-GGUF/snapshots/<commit>/Qwen3-8B-Q4_K_M.gguf` | `Qwen3-8B-GGUF` |
+| `models--unsloth--Qwen3-235B-GGUF/snapshots/<commit>/Q4_K_M/` holding a shard set | `Qwen3-235B-GGUF-Q4_K_M` |
+| a cache holding a live `snapshots/<new>/` and a superseded `snapshots/<old>/`, each with `Repo-Q4_K_M.gguf` and `Repo-Q8_0.gguf` | `Repo-Q4_K_M`, `Repo-Q8_0`, `<old>-Repo-Q4_K_M`, `<old>-Repo-Q8_0` |
+| `models--bartowski--Collide-7B-GGUF/` and `models--unsloth--Collide-7B-GGUF/`, each with an active `snapshots/<commit>/Collide-7B-Q4_K_M.gguf` | `Collide-7B-GGUF`, `unsloth-Collide-7B-GGUF` |
+
+Notes:
+
 - A cache can hold several revisions. Names follow the revision `refs/main` points at, so updating a model moves its name to the new revision.
-- Files whose names declare the same shard series are one model, as in `model-Q4_K_M-00001-of-00003.gguf`, and its name drops the shard suffix. The `-`, `.`, and `_` separators are accepted before the shard index.
-- An `mmproj` file joins the model beside it.
-- Adding a second model file to a folder renames the first model, as rows two and three show. The folder name keeps resolving and points at the first model alphabetically, so a request that used it still works. A model file that sorts earlier takes that pointer over, so name a specific model in scripts you intend to keep.
-- Names are assigned in a fixed order: files at the search root, then files in reserved directories, then folders, each group in sorted path order. A model at the search root keeps its name when a directory is reserved later.
-- Every imported model is also addressable as `extra.<name>`; see the [model naming spec](#model-naming-spec). [Model aliases](#model-aliases-aliasesjson) are a separate feature that you define yourself in `aliases.json`.
+- Unlike non-HF/MS folders, a cache folder's name does not keep resolving after the folder's models are renamed.
 
 ### Choosing how an imported model runs
 
