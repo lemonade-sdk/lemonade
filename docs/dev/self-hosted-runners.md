@@ -39,7 +39,7 @@ These describe *what a runner can do*. A workflow should request only the capabi
 |-------|---------|-----------------------------------|
 | `vulkan` | Runner can execute Vulkan GPU workloads | llama.cpp Vulkan backend, whisper.cpp Vulkan backend |
 | `rocm` | Runner can execute ROCm GPU workloads | llama.cpp ROCm backend, stable-diffusion.cpp ROCm backend |
-| `cuda` | Runner can execute CUDA GPU workloads | TBD |
+| `cuda` | Runner can execute CUDA GPU workloads | llama.cpp CUDA backend (`validate_llamacpp.yml`, `validate-linux-arm64` job) |
 | `xdna2` | Runner has a Ryzen AI 300/400 series NPU | `ryzenai` backend, `flm` (FastFlowLM) backend |
 
 A job that exercises more than one backend should request all the labels it needs (e.g., `[Windows, X64, vulkan, rocm, lemon-prod]` for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry *every* label in the `runs-on` list.

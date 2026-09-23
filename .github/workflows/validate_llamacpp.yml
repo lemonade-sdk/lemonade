@@ -428,6 +428,121 @@ jobs:
             build/resources/
           retention-days: 7
 
+  build-linux-arm64:
+    name: Build (Linux ARM64)
+    needs: [get-latest-releases, verify-release-assets]
+    # Label a PR `ci:upgrades` to opt it back in.
+    if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Update backend_versions.json
+        if: needs.get-latest-releases.result == 'success'
+        shell: bash
+        env:
+          LLAMACPP_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_release }}
+          LLAMACPP_ROCM_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_rocm_release }}
+          LLAMACPP_LEMONADE_RELEASE: ${{ needs.get-latest-releases.outputs.llamacpp_lemonade_release }}
+          LLAMACPP_GGML_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.ggml_update_backends }}
+          LLAMACPP_ROCM_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.rocm_update_backends }}
+          LLAMACPP_LEMONADE_UPDATE_BACKENDS: ${{ needs.verify-release-assets.outputs.lemonade_update_backends }}
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          RELEASE_RE = re.compile(r"^b[0-9]+$")
+
+          def parse_csv(value):
+              return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+          def update(section, release, backends):
+              if not backends:
+                  return []
+              if not RELEASE_RE.match(release):
+                  raise SystemExit(f"Invalid llama.cpp release tag: {release}")
+              changed = []
+              for key in backends:
+                  if key not in section:
+                      raise SystemExit(f"Refusing to create missing llamacpp.{key}")
+                  if not isinstance(section[key], str):
+                      raise SystemExit(f"llamacpp.{key} must be a string")
+                  old = section[key]
+                  section[key] = release
+                  changed.append((key, old, release))
+              return changed
+
+          path = Path("src/cpp/resources/backend_versions.json")
+          data = json.loads(path.read_text(encoding="utf-8"))
+          section = data.get("llamacpp")
+          if not isinstance(section, dict):
+              raise SystemExit("backend_versions.json is missing a llamacpp object")
+
+          changes = []
+          changes += update(section, os.environ["LLAMACPP_RELEASE"], parse_csv(os.environ.get("LLAMACPP_GGML_UPDATE_BACKENDS", "")))
+          changes += update(section, os.environ["LLAMACPP_ROCM_RELEASE"], parse_csv(os.environ.get("LLAMACPP_ROCM_UPDATE_BACKENDS", "")))
+          changes += update(section, os.environ["LLAMACPP_LEMONADE_RELEASE"], parse_csv(os.environ.get("LLAMACPP_LEMONADE_UPDATE_BACKENDS", "")))
+
+          path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+          print("Updated llamacpp backend versions:")
+          if changes:
+              for key, old, new in changes:
+                  print(f"  llamacpp.{key}: {old} -> {new}")
+          else:
+              print("  none")
+          PY
+
+      - name: Install build dependencies
+        run: |
+          set -e
+          # The Ubuntu ports mirror occasionally serves a package index that
+          # is briefly out of sync with its pool (esp. on arm64 runners),
+          # causing 404s on individual .deb files. Retry a few times.
+          success=false
+          for i in 1 2 3; do
+            if sudo apt-get update && \
+                sudo apt-get install -y cmake ninja-build g++ pkg-config libssl-dev libdrm-dev; then
+              success=true
+              break
+            fi
+            echo "apt-get failed (attempt $i/3), retrying..."
+            sleep 10
+          done
+          $success
+
+      - name: Build lemond
+        run: |
+          set -euo pipefail
+          echo "Building Lemonade server binary..."
+          if [ -d build ]; then rm -rf build; fi
+          # The validation drives lemond over HTTP and never invokes the CLI,
+          # so lemond is the only target it needs.
+          cmake --preset default -DBUILD_WEB_APP=OFF
+          cmake --build --preset default --target lemond
+          if [ ! -f build/lemond ]; then
+            echo "ERROR: lemond not found!"
+            exit 1
+          fi
+          echo "Build successful!"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: llamacpp-build-linux-arm64
+          path: |
+            build/lemond
+            build/resources/
+          retention-days: 7
+
   # ========================================================================
   # Validate backends on self-hosted runner
   # ========================================================================
@@ -893,11 +1008,166 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   # ========================================================================
+  # Validate CUDA on the ARM64 self-hosted runner (DGX Spark)
+  # ========================================================================
+  validate-linux-arm64:
+    name: Validate cuda (Linux ARM64)
+    needs: [get-latest-releases, build-linux-arm64]
+    if: always() && needs.build-linux-arm64.result == 'success'
+    runs-on: [self-hosted, Linux, ARM64, cuda, lemon-prod]
+    steps:
+      - name: Capture CUDA runner configuration
+        shell: bash
+        run: |
+          set +e
+
+          out_dir="$RUNNER_TEMP/cuda-runner-config"
+          mkdir -p "$out_dir"
+
+          {
+            echo "RunnerName: $RUNNER_NAME"
+            uname -a
+          } > "$out_dir/system.txt"
+
+          if command -v nvidia-smi >/dev/null 2>&1; then
+            nvidia-smi > "$out_dir/nvidia-smi.txt" 2>&1
+          else
+            echo "nvidia-smi was not found in PATH." > "$out_dir/nvidia-smi-unavailable.txt"
+          fi
+
+          echo "=== Runner configuration ==="
+          cat "$out_dir/system.txt"
+          cat "$out_dir/nvidia-smi.txt" 2>/dev/null
+
+          # Environment collection should never make validation fail.
+          exit 0
+
+      - name: Upload CUDA runner configuration
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cuda-runner-config
+          path: ${{ runner.temp }}/cuda-runner-config/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
+      - name: Cleanup processes
+        uses: ./.github/actions/cleanup-processes-linux
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: llamacpp-build-linux-arm64
+          path: build
+
+      - name: Verify binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x build/lemond
+          if [ ! -f build/lemond ]; then
+            echo "ERROR: lemond not found!"
+            exit 1
+          fi
+          ./build/lemond --version
+          echo "Binaries verified!"
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Run validation with lemond
+        shell: bash
+        run: |
+          set -uo pipefail
+          port=13305
+          lemond_exe="$(pwd)/build/lemond"
+          backend="cuda"
+          logs_dir="server-logs-$backend"
+          cache_dir="$(pwd)/ci-cache-$backend"
+          venv_python=".venv/bin/python"
+
+          mkdir -p "$logs_dir" "$cache_dir"
+
+          stdout_log="$logs_dir/lemond.stdout.log"
+          stderr_log="$logs_dir/lemond.stderr.log"
+
+          # Do not benchmark while another known inference process is active.
+          if pgrep -f 'lemond|llama-server|lemonade' >/dev/null 2>&1; then
+            echo "::error::Runner is not idle: $(pgrep -af 'lemond|llama-server|lemonade')"
+            exit 1
+          fi
+
+          if ss -ltn "( sport = :$port )" 2>/dev/null | grep -q "$port"; then
+            echo "::error::Port $port is already in use."
+            exit 1
+          fi
+
+          "$lemond_exe" "$cache_dir" --port "$port" --host 127.0.0.1 \
+            > "$stdout_log" 2> "$stderr_log" &
+          lemond_pid=$!
+          echo "Started lemond PID $lemond_pid"
+
+          validation_args=(
+            "test/validate_llamacpp.py"
+            "--backend" "$backend"
+            "--port" "$port"
+            "--output" "llamacpp_validation_$backend.json"
+            "--logs-dir" "$logs_dir"
+          )
+
+          if [ "${LITE_MODE}" = "true" ]; then
+            validation_args+=("--lite")
+          fi
+
+          "$venv_python" "${validation_args[@]}"
+          validation_exit_code=$?
+
+          # Graceful shutdown, then force-kill any stragglers.
+          curl -sf -X POST "http://127.0.0.1:$port/internal/shutdown" --max-time 10 >/dev/null 2>&1 || true
+          for _ in $(seq 1 10); do
+            kill -0 "$lemond_pid" 2>/dev/null || break
+            sleep 1
+          done
+          kill -0 "$lemond_pid" 2>/dev/null && kill -9 "$lemond_pid" 2>/dev/null || true
+          pkill -9 -f "$cache_dir/.*llama-server" 2>/dev/null || true
+
+          exit $validation_exit_code
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-results-cuda
+          path: llamacpp_validation_cuda.json
+          retention-days: 30
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: server-logs-cuda
+          path: server-logs-cuda/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
+  # ========================================================================
   # Create PR if both validations passed (schedule or workflow_dispatch only)
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, verify-release-assets, validate]
+    needs: [get-latest-releases, verify-release-assets, validate, validate-linux-arm64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -905,6 +1175,7 @@ jobs:
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
       needs.validate.result == 'success' &&
+      needs.validate-linux-arm64.result == 'success' &&
       needs.verify-release-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
@@ -1134,7 +1405,7 @@ jobs:
   # to run on ordinary pull request pushes.
   validation-gate:
     name: llama.cpp validation
-    needs: [build, validate]
+    needs: [build, validate, build-linux-arm64, validate-linux-arm64]
     if: always()
     runs-on: ubuntu-latest
     steps:
