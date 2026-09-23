@@ -311,6 +311,15 @@ private:
     bool extract_image_from_form(const httplib::Request& req, httplib::Response& res, nlohmann::json& out);
     bool load_image_model(const nlohmann::json& request_json, httplib::Response& res);
 
+    // Resolve the refine / upscale_model flags, falling back to the model's
+    // recipe options. When refine is enabled it is forwarded to the backend
+    // as "refine"; backends that don't support it ignore the field.
+    void resolve_refine_options(
+        const std::string& model_name,
+        nlohmann::json& request_json,
+        bool& refine,
+        std::string& upscale_model);
+
     // Auto-upscale response image(s) per the model's "upscale_model" recipe
     // option, or upscale_model_override. Failed upscales leave the original
     // image in place; skip_upscale_request forces the pass-through.
