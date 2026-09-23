@@ -61,7 +61,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | linux | amd_gpu (gfx1150, gfx1151, gfx1152) |
+| `thenoise` | rocm | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
@@ -230,6 +230,10 @@ Lemonade does not inject `max_audio_frames` into OpenMOSS speech requests. OpenM
 Voice design is opt-in through the `voice_design_description` extension and is never inferred from `voice`, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending `"voice": "default"` gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries `reference_wav_b64`. Request fields are read with a type-checking accessor rather than `json::value()`, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.
 
 `MOSS-SoundEffect` uses the same recipe but is an audio-generation model: `audio_generations()` forwards to the backend's `/sfx` endpoint, accepting `duration`/`cfg` as aliases for `seconds`/`cfg_scale`.
+
+### llama.cpp (`llamacpp`)
+
+Lemonade launches `llama-server` with `--parallel 1` and leaves the upstream `--cache-ram` host prompt cache at its default. `LlamaCppServer` does not override `downsize()`: slot `erase` frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.
 
 ### Model downloads
 

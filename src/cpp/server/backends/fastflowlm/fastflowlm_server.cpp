@@ -70,7 +70,8 @@ FastFlowLMServer::~FastFlowLMServer() {
     unload();
 }
 
-std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade) {
+std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool do_not_upgrade,
+                                             RemoteRegistrySource source) {
     LOG(INFO, "FastFlowLM") << "Pulling model with FLM: " << checkpoint << std::endl;
 
     std::string flm_path = get_flm_path();
@@ -78,10 +79,8 @@ std::string FastFlowLMServer::download_model(const std::string& checkpoint, bool
         throw std::runtime_error("FLM not found");
     }
 
-    std::vector<std::string> args = {"pull", checkpoint};
-    if (!do_not_upgrade) {
-        args.push_back("--force");
-    }
+    std::vector<std::string> args = fastflowlm::flm_pull_arguments(
+        checkpoint, do_not_upgrade, source);
 
     LOG(INFO, "ProcessManager") << "Starting process: \"" << flm_path << "\"";
     for (const auto& arg : args) {
@@ -176,7 +175,11 @@ void FastFlowLMServer::load(const std::string& model_name,
             "\nVisit " + DRIVER_INSTALL_URL + " for driver installation instructions.");
     }
 
-    download_model(model_info.checkpoint(), do_not_upgrade);
+    RemoteRegistrySource source = model_manager_
+        ? model_manager_->download_source_for(model_info)
+        : RemoteRegistrySource::HuggingFace;
+
+    download_model(model_info.checkpoint(), do_not_upgrade, source);
 
     port_ = choose_port();
 
@@ -480,8 +483,11 @@ public:
     }
 
     void download_model(const ModelInfo& info, bool do_not_upgrade, DownloadProgressCallback progress,
-                        const BackendOpsContext&) const override {
-        flm_download(info.checkpoint(), do_not_upgrade, progress);
+                        const BackendOpsContext& ctx) const override {
+        RemoteRegistrySource source = ctx.model_manager
+            ? ctx.model_manager->download_source_for(info)
+            : RemoteRegistrySource::HuggingFace;
+        flm_download(info.checkpoint(), do_not_upgrade, progress, source);
     }
 
     bool invalidates_cache_after_download() const override { return true; }

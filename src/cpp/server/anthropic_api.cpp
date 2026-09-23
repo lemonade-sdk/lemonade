@@ -5,6 +5,7 @@
 #include "lemon/error_types.h"
 #include "lemon/ollama_api.h"
 #include "lemon/utils/http_client.h"
+#include "lemon/utils/session_utils.h"
 #include <iostream>
 #include <sstream>
 #include <chrono>
@@ -300,6 +301,7 @@ static AnthropicUpstreamMatch resolve_anthropic_upstream(ModelManager* model_man
             upstream.headers[lower] += "," + value;
         }
     }
+    session::apply_forwardable_session(upstream.headers);
     upstream.policy = backends::CloudServer::discovery_policy(base_url, allow_insecure_http);
     upstream.body = forwarded.dump();
     match.upstream = std::move(upstream);

@@ -976,6 +976,15 @@
         ],
         "size": 18.6
     },
+    "Meta-Llama-3.1-8B-Instruct-HRX": {
+        "checkpoint": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+        "recipe": "llamacpp-hrx",
+        "suggested": true,
+        "labels": [
+            "chat"
+        ],
+        "size": 4.92
+    },
     "Qwen3-Coder-30B-A3B-Instruct-GGUF": {
         "checkpoint": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp",
@@ -1671,7 +1680,7 @@
         "size": 11.6
     },
     "gpt-oss-120b-mxfp-GGUF": {
-        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:*",
+        "checkpoint": "ggml-org/gpt-oss-120b-GGUF:gpt-oss-120b-MXFP4.gguf",
         "recipe": "llamacpp",
         "suggested": true,
         "labels": [
@@ -2253,7 +2262,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 16.1,
         "image_defaults": {
@@ -2272,7 +2282,8 @@
         "recipe": "thenoise",
         "suggested": true,
         "labels": [
-            "image"
+            "image",
+            "edit"
         ],
         "size": 32.5,
         "image_defaults": {
