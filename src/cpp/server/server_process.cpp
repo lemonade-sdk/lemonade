@@ -67,14 +67,14 @@ std::string NativeProcess::start(const ServerCommand& command, bool inherit_outp
 ContainerProcess::ContainerProcess(std::string recipe, std::string backend, std::string model)
     : recipe_(std::move(recipe)),
       backend_(std::move(backend)),
-      model_(std::move(model)),
-      name_(ContainerManager::container_name(recipe_, backend_)) {}
+      model_(std::move(model)) {}
 
 std::string ContainerProcess::start(const ServerCommand& command, bool inherit_output) {
     auto& manager = ContainerManager::global();
 
     utils::ContainerRunSpec spec;
     spec.image = backends::pinned_image_or_throw(recipe_, backend_);
+    name_ = ContainerManager::container_name(recipe_, backend_, command.port);
     spec.name = name_;
     const std::string label = ContainerManager::managed_label();
     spec.labels = {{label + ".recipe", recipe_},

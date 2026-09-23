@@ -158,10 +158,9 @@ std::pair<std::string, std::vector<std::string>> ContainerManager::invocation(
 const char* ContainerManager::managed_label() { return kManagedLabel; }
 
 std::string ContainerManager::container_name(const std::string& recipe,
-                                             const std::string& backend) {
-    std::string name = std::string(kManagedPrefix) + sanitize_name_token(recipe);
-    if (!backend.empty()) name += "-" + sanitize_name_token(backend);
-    return name;
+                                             const std::string& backend, int port) {
+    return std::string(kManagedPrefix) + sanitize_name_token(recipe) + "-" +
+           sanitize_name_token(backend) + "-" + std::to_string(port);
 }
 
 std::string ContainerManager::host_group_gid(const std::string& name) {

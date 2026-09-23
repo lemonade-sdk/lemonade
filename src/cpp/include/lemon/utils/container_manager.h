@@ -213,7 +213,8 @@ public:
 
     // Container name for humans reading `ps`. Ownership is the label, not the
     // name.
-    static std::string container_name(const std::string& recipe, const std::string& backend);
+    static std::string container_name(const std::string& recipe, const std::string& backend,
+                                      int port);
     // The bare label every managed container carries.
     static const char* managed_label();
 
