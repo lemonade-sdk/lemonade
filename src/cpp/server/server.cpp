@@ -5228,31 +5228,7 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
         }
 
         // Fall back to recipe options when the request doesn't set them.
-        if (!refine || upscale_model.empty()) {
-            try {
-                auto info = model_manager_->get_model_info(requested_model);
-                if (!refine) {
-                    auto opt = info.recipe_options.get_option("refine");
-                    if (opt.is_boolean() && opt.get<bool>()) {
-                        refine = true;
-                    }
-                }
-                if (upscale_model.empty()) {
-                    auto opt = info.recipe_options.get_option("upscale_model");
-                    if (opt.is_string() && !opt.get<std::string>().empty()) {
-                        upscale_model = opt.get<std::string>();
-                    }
-                }
-            } catch (const std::exception&) {}
-        }
-
-        if (refine) {
-            try {
-                if (model_manager_->get_model_info(requested_model).recipe == "thenoise") {
-                    request_json["upscale"] = true;
-                }
-            } catch (const std::exception&) {}
-        }
+        resolve_refine_options(requested_model, request_json, refine, upscale_model);
 
         {
             auto response = router_->image_generations(request_json);
@@ -5492,13 +5468,7 @@ void Server::handle_image_edits(const httplib::Request& req, httplib::Response& 
         bool edit_refine = parse_bool_form_field(req.form, "refine");
         std::string edit_upscale_model =
             req.form.has_field("upscale_model") ? req.form.get_field("upscale_model") : "";
-        if (edit_refine) {
-            try {
-                if (model_manager_->get_model_info(edit_model_name).recipe == "thenoise") {
-                    request_json["upscale"] = true;
-                }
-            } catch (const std::exception&) {}
-        }
+        resolve_refine_options(edit_model_name, request_json, edit_refine, edit_upscale_model);
         auto response = router_->image_edits(request_json);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image edits backend error: " << response.dump() << std::endl;
@@ -5558,13 +5528,7 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
         bool var_refine = parse_bool_form_field(req.form, "refine");
         std::string var_upscale_model =
             req.form.has_field("upscale_model") ? req.form.get_field("upscale_model") : "";
-        if (var_refine) {
-            try {
-                if (model_manager_->get_model_info(var_model_name).recipe == "thenoise") {
-                    request_json["upscale"] = true;
-                }
-            } catch (const std::exception&) {}
-        }
+        resolve_refine_options(var_model_name, request_json, var_refine, var_upscale_model);
         auto response = router_->image_variations(request_json);
         if (response.contains("error")) {
             LOG(ERROR, "Server") << "Image variations backend error: " << response.dump() << std::endl;
@@ -5591,6 +5555,33 @@ void Server::handle_image_variations(const httplib::Request& req, httplib::Respo
             {"type", "server_error"}
         }}};
         res.set_content(error.dump(), "application/json");
+    }
+}
+
+void Server::resolve_refine_options(
+    const std::string& model_name,
+    nlohmann::json& request_json,
+    bool& refine,
+    std::string& upscale_model) {
+    if (!refine || upscale_model.empty()) {
+        try {
+            auto info = model_manager_->get_model_info(model_name);
+            if (!refine) {
+                auto opt = info.recipe_options.get_option("refine");
+                if (opt.is_boolean() && opt.get<bool>()) {
+                    refine = true;
+                }
+            }
+            if (upscale_model.empty()) {
+                auto opt = info.recipe_options.get_option("upscale_model");
+                if (opt.is_string() && !opt.get<std::string>().empty()) {
+                    upscale_model = opt.get<std::string>();
+                }
+            }
+        } catch (const std::exception&) {}
+    }
+    if (refine) {
+        request_json["refine"] = true;
     }
 }
 

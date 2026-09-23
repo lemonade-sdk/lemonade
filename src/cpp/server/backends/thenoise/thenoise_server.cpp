@@ -319,6 +319,12 @@ json TheNoiseServer::build_request(const json& request) const {
         body["sharpening"] = sharpening;
     }
 
+    // refine -> native latent-space 2x upscale
+    bool refine = resolve_bool("refine", recipe_options_.get_option("refine"));
+    if (refine) {
+        body["upscale"] = true;
+    }
+
     // lora_specs: config/recipe stores a comma-separated string; forward as an
     // array. A client request may pass an array or a string directly.
     if (request.contains("lora_specs") && request["lora_specs"].is_array()) {
