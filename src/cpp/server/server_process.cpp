@@ -74,7 +74,7 @@ std::string ContainerProcess::start(const ServerCommand& command, bool inherit_o
 
     utils::ContainerRunSpec spec;
     spec.image = backends::pinned_image_or_throw(recipe_, backend_);
-    name_ = ContainerManager::container_name(recipe_, backend_, command.port);
+    name_ = ContainerManager::container_name(recipe_, backend_, model_);
     spec.name = name_;
     const std::string label = ContainerManager::managed_label();
     spec.labels = {{label + ".recipe", recipe_},

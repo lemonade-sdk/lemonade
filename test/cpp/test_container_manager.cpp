@@ -70,7 +70,7 @@ ContainerManager::Info docker_info() {
 
 ContainerRunSpec sample_spec() {
     ContainerRunSpec spec;
-    spec.name = "lemonade-rocmfpx-rocmfpx-8123";
+    spec.name = "lemonade-rocmfpx-rocmfpx-Qwen3.8-27B-ROCmFP4-FAST";
     spec.image.repository = "docker.io/kyuz0/amd-strix-halo-toolboxes";
     spec.image.digest = "sha256:abc";
     spec.image.devices = {"/dev/dri", "/dev/kfd"};
@@ -80,7 +80,7 @@ ContainerRunSpec sample_spec() {
     spec.groups = {"keep-groups"};
     spec.mounts.push_back({"/home/u/.cache/huggingface/hub/blobs/deadbeef",
                            "/mnt/models/model.gguf", true});
-    spec.network = "lemonade-rocmfpx-rocmfpx-8123";
+    spec.network = "lemonade-rocmfpx-rocmfpx-Qwen3.8-27B-ROCmFP4-FAST";
     spec.host_port = 8123;
     spec.container_port = 8123;
     spec.command = {"llama-server", "-m", "/mnt/models/model.gguf"};
@@ -96,7 +96,7 @@ void test_run_args() {
     expect(args[0] == "run", "run args start with run");
     expect(contains(args, "--rm"), "container is removed on exit");
     expect(contains(args, "--init"), "a PID 1 reaper is installed");
-    expect(contains(args, "--name lemonade-rocmfpx-rocmfpx-8123"), "container is named");
+    expect(contains(args, "--name lemonade-rocmfpx-rocmfpx-Qwen3.8-27B-ROCmFP4-FAST"), "container is named");
     expect(contains(args, "--label ai.lemonade "), "ownership label is set");
     expect(contains(args, "--label ai.lemonade.recipe=rocmfpx"), "recipe label is set");
     expect(contains(args, "--label ai.lemonade.backend=rocmfpx"), "backend label is set");
@@ -106,7 +106,7 @@ void test_run_args() {
     expect(contains(args, "--security-opt=label=disable"), "SELinux separation off");
     expect(!contains(args, "seccomp=unconfined"), "the tool's default seccomp profile applies");
     expect(contains(args, "--pull=never"), "run never pulls");
-    expect(contains(args, "--network=lemonade-rocmfpx-rocmfpx-8123"),
+    expect(contains(args, "--network=lemonade-rocmfpx-rocmfpx-Qwen3.8-27B-ROCmFP4-FAST"),
            "container joins its own private network");
     expect(contains(args, "--device /dev/kfd"), "kfd passed through");
     expect(contains(args, "--device /dev/dri"), "dri passed through");
@@ -151,7 +151,7 @@ void test_docker_is_reached_by_address() {
     ContainerRunSpec spec = sample_spec();
     spec.publish_port = false;
     const auto args = ContainerManager::build_run_args(spec, ContainerTool::Docker);
-    expect(contains(args, "--network=lemonade-rocmfpx-rocmfpx-8123") && !contains(args, "-p "),
+    expect(contains(args, "--network=lemonade-rocmfpx-rocmfpx-Qwen3.8-27B-ROCmFP4-FAST") && !contains(args, "-p "),
            "docker on an internal network publishes nothing");
 }
 
@@ -206,19 +206,20 @@ void test_image_refs() {
     untagged.tag = "v1";
     expect(untagged.pinned_ref() == "example/img:v1", "no digest falls back to the tag");
 
-    expect(join(ContainerManager::build_stop_args("lemonade-ds4-rocm-8123", 10)) ==
-               "stop --time 10 lemonade-ds4-rocm-8123",
+    expect(join(ContainerManager::build_stop_args("lemonade-ds4-rocm-DeepSeek-V4-Flash-IQ2XXS-DS4", 10)) ==
+               "stop --time 10 lemonade-ds4-rocm-DeepSeek-V4-Flash-IQ2XXS-DS4",
            "stop is by container name with a grace period");
 }
 
 void test_container_names() {
-    expect(ContainerManager::container_name("llamacpp", "nathanw", 8001) ==
-               "lemonade-llamacpp-nathanw-8001",
-           "container name is lemonade-<recipe>-<backend>-<port>");
-    expect(ContainerManager::container_name("llamacpp", "nathanw", 8001) !=
-               ContainerManager::container_name("llamacpp", "nathanw", 8002),
+    expect(ContainerManager::container_name("llamacpp", "nathanw", "Qwen3-4B-GGUF") ==
+               "lemonade-llamacpp-nathanw-Qwen3-4B-GGUF",
+           "container name is lemonade-<recipe>-<backend>-<model>");
+    expect(ContainerManager::container_name("llamacpp", "nathanw", "LFM2-1.2B-GGUF") !=
+               ContainerManager::container_name("llamacpp", "nathanw", "Qwen3-0.6B-GGUF"),
            "two models on one backend get different containers");
-    expect(ContainerManager::container_name("we/ird", "a b", 8001) == "lemonade-we-ird-a-b-8001",
+    expect(ContainerManager::container_name("we/ird", "a b", "user.M:1") ==
+               "lemonade-we-ird-a-b-user.M-1",
            "unsafe characters are replaced");
     expect(std::string(ContainerManager::managed_label()) == "ai.lemonade",
            "managed label is what sweep filters on");
@@ -311,7 +312,7 @@ struct FakeTool {
                       int) -> CommandResult {
             calls.push_back({executable, args});
             if (!args.empty() && args[0] == "version") return {0, "9.9.9"};
-            if (!args.empty() && args[0] == "ps") return {0, "lemonade-ds4-rocm-8123\nlemonade-x\n"};
+            if (!args.empty() && args[0] == "ps") return {0, "lemonade-ds4-rocm-DeepSeek-V4-Flash-IQ2XXS-DS4\nlemonade-x\n"};
             return next;
         };
     }

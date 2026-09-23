@@ -37,6 +37,7 @@ from utils.server_base import (
 )
 from utils.capabilities import (
     skip_if_unsupported,
+    get_chat_extra_body,
     get_test_model,
     get_capabilities,
     supports,
@@ -135,6 +136,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             max_completion_tokens=10,
             stream=False,
+            extra_body=get_chat_extra_body(),
         )
 
         print(f"Response: {completion.choices[0].message.content}")
@@ -189,6 +191,7 @@ class LLMTests(ServerTestBase):
                     ],
                     "max_tokens": 8,
                     "stream": False,
+                    **get_chat_extra_body(),
                 },
                 headers=headers,
                 timeout=TIMEOUT_MODEL_OPERATION,
@@ -241,6 +244,7 @@ class LLMTests(ServerTestBase):
             messages=self.messages,
             stream=True,
             max_completion_tokens=10,
+            extra_body=get_chat_extra_body(),
         )
 
         complete_response = ""
@@ -274,6 +278,7 @@ class LLMTests(ServerTestBase):
                 messages=self.messages,
                 stream=True,
                 max_completion_tokens=10,
+                extra_body=get_chat_extra_body(),
             )
 
             complete_response = ""

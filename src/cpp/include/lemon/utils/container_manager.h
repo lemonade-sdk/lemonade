@@ -212,9 +212,10 @@ public:
     static std::vector<std::string> build_stop_args(const std::string& name, int timeout_seconds);
 
     // Container name for humans reading `ps`. Ownership is the label, not the
-    // name.
+    // name. The router loads each model at most once, so the model makes it
+    // unique; a port would not, since docker's ports stay free on the host.
     static std::string container_name(const std::string& recipe, const std::string& backend,
-                                      int port);
+                                      const std::string& model);
     // The bare label every managed container carries.
     static const char* managed_label();
 

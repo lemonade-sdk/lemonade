@@ -105,12 +105,16 @@ CAPABILITIES = {
                 "llm": "Qwen3.8-27B-ROCmFP4-FAST",
             },
         },
+        # Reasoning models, turned off for the run as rocmfpx is (see
+        # _build_runtime_config). Neither engine has a launch flag for it, and
+        # each reads a different request field.
         "ds4": {
             "backends": ["rocm"],
             "supports": {"chat_completions": True},
             "test_models": {
                 "llm": "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4",
             },
+            "chat_extra_body": {"thinking": {"type": "disabled"}},
         },
         "halogen": {
             "backends": ["rocm"],
@@ -118,6 +122,7 @@ CAPABILITIES = {
             "test_models": {
                 "llm": "Qwen3.8-Flash-Next-Halogen",
             },
+            "chat_extra_body": {"chat_template_kwargs": {"enable_thinking": False}},
         },
         "ryzenai": {
             "backends": ["cpu", "hybrid", "npu"],
@@ -445,6 +450,11 @@ def get_test_model(
     raise ValueError(
         f"No test model found for type '{model_type}' with wrapped_server='{wrapped_server}', backend='{backend}'"
     )
+
+
+def get_chat_extra_body() -> dict:
+    """Request fields the current wrapped server needs on every chat completion."""
+    return get_capabilities().get("chat_extra_body", {})
 
 
 def skip_if_unsupported(feature: str):
