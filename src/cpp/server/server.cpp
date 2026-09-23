@@ -5189,7 +5189,6 @@ void Server::handle_image_generations(const httplib::Request& req, httplib::Resp
 
         bool refine = request_json.value("refine", false);
         std::string upscale_model = request_json.value("upscale_model", "");
-        request_json.erase("upscale");
         request_json.erase("refine");
         request_json.erase("upscale_model");
 
