@@ -366,7 +366,7 @@ lemonade config set extra_models_dir="/home/you/.lmstudio/models"
 
 ### Model Naming Scheme
 
-A model's name comes from the directory layout around its files. First, we detect if a directory is a Hugging Face or ModelScope cache repo (e.g., HF/MS; a folder named `models--<org>--<repo>` or `modelscope--models--<org>--<repo>`), or not. There are separate rules for naming models in these HF/MS caches vs. non-HF/MS (e.g., LM Studio, user defined folders).
+A model's name comes from the directory layout around its files. A path uses the Hugging Face / ModelScope cache rules only when its GGUFs are inside a recognized cache layout such as `models--<org>--<repo>/snapshots/<commit>/...` or `modelscope--models--<org>--<repo>/snapshots/<commit>/...`. A folder merely named like a cache repo is not sufficient. All other paths use the non-HF/MS rules below.
 
 These notes apply to both:
 
@@ -405,8 +405,9 @@ Notes:
 | What is on disk | Name |
 |---|---|
 | One model in the revision that `refs/main` points at | the repo name, or `<repo>-<folder>` when the GGUFs sit in a subfolder |
-| Several models in that revision | one name per model, each from its filename |
-| Several models in a superseded revision | each name prefixed with that revision's commit |
+| Several quantization variants in that revision | one name per variant, each from its filename |
+| One model in a superseded revision | the active-style name prefixed with that revision's commit: `<commit>-<repo>` or `<commit>-<repo>-<folder>` |
+| Several quantization variants in a superseded revision | one name per variant, each from its filename and prefixed with that revision's commit |
 | A name another imported model already took | the name, qualified with its org or namespace |
 
 For example:
