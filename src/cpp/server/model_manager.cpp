@@ -1263,6 +1263,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
 
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
+    // The first model to keep a folder name owns it in both its bare and
+    // extra. forms; resolving each form separately could split them.
     std::set<std::string> folder_ids_kept;
     auto add_standalone_model = [&](const std::vector<fs::path>& model_files,
                                     const std::string& deployment_label,
@@ -1372,7 +1374,8 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
                   [](const fs::path& lhs, const fs::path& rhs) {
                       return lhs.generic_string() < rhs.generic_string();
                   });
-        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path);
+        discover_extra_models_in_directory(dir_path, gguf_files, discovered, search_path,
+                                           folder_ids_kept);
     }
 
     LOG(INFO, "ModelManager") << "Discovered " << discovered.size() << " models from extra directory" << std::endl;
@@ -1384,7 +1387,8 @@ void ModelManager::discover_extra_models_in_directory(
     const fs::path& dir_path,
     const std::vector<fs::path>& gguf_files,
     std::map<std::string, ModelInfo>& discovered,
-    const fs::path& search_path) const {
+    const fs::path& search_path,
+    std::set<std::string>& folder_ids_kept) const {
 
     std::string dir_name = dir_path.filename().string();
     const std::string deployment_label = extra_model_deployment_label(dir_path, search_path);
@@ -1474,7 +1478,7 @@ void ModelManager::discover_extra_models_in_directory(
             info.type = get_model_type_from_labels(info.labels);
 
             // Keep the old folder name working in requests without listing it.
-            if (path == main_model_path) {
+            if (path == main_model_path && folder_ids_kept.insert(dir_name).second) {
                 info.input_aliases.push_back(dir_name);
                 info.input_aliases.push_back(std::string(EXTRA_MODEL_PREFIX) + dir_name);
             }
