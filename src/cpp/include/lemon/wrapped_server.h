@@ -9,7 +9,6 @@
 #include <thread>
 #include <atomic>
 #include <stdexcept>
-#include <variant>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
 #include "utils/process_manager.h"
@@ -21,6 +20,7 @@
 #include "recipe_options.h"
 #include "streaming_proxy.h"
 #include "backends/backend_descriptor.h"
+#include "server_process.h"
 
 namespace lemon {
 
@@ -81,33 +81,11 @@ struct Telemetry {
     }
 };
 
-// Where a backend's server argv runs.
-struct HostTarget {
-    std::string binary;
-    std::vector<std::pair<std::string, std::string>> env;
-    std::string working_dir;
-};
-
-struct ContainerTarget {
-    // The server's name on the image's PATH, i.e. argv[0]. An image whose own
-    // entrypoint takes no argv leaves this empty.
-    std::string entry;
-    std::string recipe;
-    std::string variant;
-    std::string profile_id;  // "" = derive from the variant name
-    std::vector<std::string> model_paths;  // see utils::ContainerWorkload
-    // A value equal to one of model_paths is rewritten to the path inside, so an
-    // engine configured through the environment never spells one itself.
-    std::vector<std::pair<std::string, std::string>> env;
-};
-
-using LaunchTarget = std::variant<HostTarget, ContainerTarget>;
-
 class WrappedServer : public ICompletionServer {
 public:
     WrappedServer(const std::string& server_name, const std::string& log_level,
                   ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
-        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
+        : server_name_(server_name), port_(0), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
           last_access_time_(std::chrono::steady_clock::now()),
           state_(ModelState::LOADING),
@@ -431,7 +409,7 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         return ctx_size_auto_;
     }
-    int get_process_id() const { return get_process_handle_snapshot().pid; }
+    int get_process_id() const;
     std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
 
@@ -604,35 +582,15 @@ protected:
         }}};
     }
 
-    static bool has_process_handle(const ProcessHandle& handle);
-    ProcessHandle get_process_handle_snapshot() const;
-    void set_process_handle(ProcessHandle handle,
-                            const std::string& executable,
-                            const std::vector<std::string>& args);
-    // Publish the complete externally-observable child-process identity under
-    // one process_mutex_ critical section. Used by backends that choose a
-    // transient port before adopting the child (OpenMOSS process swaps).
-    void set_process_state(ProcessHandle handle, int port,
-                           const std::string& executable,
-                           const std::vector<std::string>& args);
-    ProcessHandle consume_process_handle_for_cleanup();
-
-    // The only place the host and container paths differ, so a backend builds
-    // one argv for both and picks a target at the end of load(). Blocks until
-    // `health_endpoint` answers, and throws with the container's own output
-    // attached when it does not.
-    void launch(std::vector<std::string> argv, const LaunchTarget& target,
-                const std::string& health_endpoint, long timeout_seconds = 600,
-                bool inherit_output = false);
-
-    // Stop whatever launch() started. Safe to call when nothing is running.
-    void stop_child();
+    // Starts `command` in `process` on port_ and blocks until its ready
+    // endpoint answers. Throws, with the server stopped, when it never does.
+    void start_server(std::unique_ptr<ServerProcess> process, ServerCommand command,
+                      bool inherit_output, long timeout_seconds = 600);
+    // Stops the watchdog and the server. Safe to call when nothing is running.
+    void stop_server();
 
     // Choose an available port
     int choose_port();
-
-    // Wait for server to be ready (can be overridden for custom health checks)
-    virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
     // Configure/start the generic backend watchdog. Non-streaming requests are
     // always monitored so a hung backend becomes a reload+retry delay instead
@@ -653,27 +611,14 @@ protected:
                                    const std::vector<utils::MultipartField>& fields,
                                    long timeout_seconds = 0);
 
-    // Validate that the process is running (platform-agnostic check)
-    bool is_process_running() const;
-
-    std::string get_base_url() const {
-        return "http://" + backend_host_ + ":" + std::to_string(get_backend_port());
-    }
-
-    // Loopback by default; a container launch resolves it to the container's own
-    // address when the engine cannot publish a port.
-    void set_backend_host(const std::string& host) { backend_host_ = host; }
+    std::string get_base_url() const;
 
     json create_watchdog_reset_response() const;
 
     std::string server_name_;
     int port_;
     std::string backend_host_ = "127.0.0.1";
-    ProcessHandle process_handle_;
-    std::vector<std::string> launch_command_;
-    // Set when launch() ran the child in a container. The container is not a
-    // child of lemond, so stopping it needs its name, not the client's handle.
-    std::string container_name_;
+    std::unique_ptr<ServerProcess> process_;
     mutable std::mutex process_mutex_;
     Telemetry telemetry_;
     std::string log_level_;
@@ -723,6 +668,9 @@ private:
     void end_backend_request(BackendRequestKind kind);
     void backend_watchdog_loop();
     bool has_backend_process_exited() const;
+    bool process_running() const;
+    std::unique_ptr<ServerProcess> take_process();
+    bool wait_for_ready(const std::string& endpoint, long timeout_seconds);
 
     mutable std::mutex watchdog_mutex_;
     std::condition_variable watchdog_cv_;

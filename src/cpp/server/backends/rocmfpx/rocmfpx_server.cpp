@@ -10,7 +10,7 @@ namespace lemon {
 namespace backends {
 
 namespace {
-constexpr const char* kVariant = "rocmfpx";
+constexpr const char* kBackend = "rocmfpx";
 }  // namespace
 
 RocmFpxServer::RocmFpxServer(const std::string& log_level, ModelManager* model_manager,
@@ -24,16 +24,14 @@ RocmFpxServer::~RocmFpxServer() {
 }
 
 LlamaCppServer::LlamaLaunch RocmFpxServer::launch_profile(const RecipeOptions& options) const {
-    (void)options;  // this recipe has exactly one variant, so nothing to select
+    (void)options;  // this recipe has exactly one backend, so nothing to select
     const rocmfpx::LaunchDefaults tuned = rocmfpx::launch_defaults();
 
     LlamaLaunch launch;
     launch.recipe = rocmfpx::descriptor.recipe;
-    launch.variant = kVariant;
+    launch.backend = kBackend;
     launch.args_option = "rocmfpx_args";
     launch.reserved_flags = &rocmfpx::reserved_custom_arg_flags();
-    launch.containerized = true;
-    launch.profile_id = "amd-rocm";
     launch.batch_size = tuned.batch_size;
     launch.ubatch_size = tuned.ubatch_size;
     launch.flash_attention = tuned.flash_attention;

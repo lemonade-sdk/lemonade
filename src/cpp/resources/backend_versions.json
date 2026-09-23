@@ -62,6 +62,9 @@
         "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
         "tag": "vulkan-radv-performance",
         "digest": "sha256:42630818d084f3fa712a06a8fd2259338361e52f1c36720cb3b75639686bac03",
+        "devices": [
+          "/dev/dri"
+        ],
         "channel": "experimental",
         "compressed_bytes": 606169183
       }
@@ -77,6 +80,10 @@
         "repository": "docker.io/kyuz0/amd-strix-halo-toolboxes",
         "tag": "rocm-10.0-rocmfpx",
         "digest": "sha256:02da5f5c60202bade700a1e2c032ad367fc2b524ef0b2ac60a8ff55611a88054",
+        "devices": [
+          "/dev/dri",
+          "/dev/kfd"
+        ],
         "channel": "experimental",
         "compressed_bytes": 1389977330
       }
@@ -103,6 +110,14 @@
         "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
         "tag": "rocm-10.0",
         "digest": "sha256:6d181d74fb6b1e4b64fb3ba1974052299e975e5c5722b8ade9dc1e7b120f38fe",
+        "devices": [
+          "/dev/dri",
+          "/dev/kfd"
+        ],
+        "cap_add": [
+          "SYS_PTRACE"
+        ],
+        "ipc_host": true,
         "channel": "stable",
         "compressed_bytes": 1404887954
       },
@@ -110,6 +125,14 @@
         "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
         "tag": "gfx1201-rocm-7.14",
         "digest": "sha256:548f085ff16efb7000d822cef1a658c72d1cdb784ea5d1abeaed4eb3eeb28301",
+        "devices": [
+          "/dev/dri",
+          "/dev/kfd"
+        ],
+        "cap_add": [
+          "SYS_PTRACE"
+        ],
+        "ipc_host": true,
         "channel": "stable",
         "compressed_bytes": 722731830
       }
@@ -245,6 +268,12 @@
         "repository": "ghcr.io/peonist-ai/halogen-flash-server",
         "tag": "0.6.2",
         "digest": "sha256:25478f5fd4cf8a900b36c26363c30455946d283af1cbf804541adeccd34488e9",
+        "devices": [
+          "/dev/dri",
+          "/dev/kfd"
+        ],
+        "ipc_host": true,
+        "memlock_unlimited": true,
         "channel": "experimental",
         "compressed_bytes": 908263424
       }

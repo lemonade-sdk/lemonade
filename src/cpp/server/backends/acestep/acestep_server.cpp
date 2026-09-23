@@ -154,27 +154,15 @@ void AceStepServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "acestep-server") << "Starting " << exe_path << " on port " << port_ << std::endl;
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path, args, "", is_debug(), false, env_vars);
-    set_process_handle(started_handle, exe_path, args);
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start acestep-server process");
-    }
-    LOG(INFO, "acestep-server") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("acestep-server failed to start or become ready");
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    start_server(std::make_unique<NativeProcess>(), command, is_debug());
 }
 
 void AceStepServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "acestep-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 bool AceStepServer::run_job(const std::string& path, const std::string& body,

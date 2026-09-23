@@ -523,18 +523,16 @@ void VLLMServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled vLLM environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    set_process_handle(ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
-                       executable, args);
-
-    // vLLM can take longer to start (loading model, compiling kernels)
-    if (!wait_for_ready("/health", HttpClient::get_default_timeout())) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
-        cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
-        max_model_len_ = 0;
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    try {
+        // vLLM can take longer to start (loading model, compiling kernels)
+        start_server(std::make_unique<NativeProcess>(), command,
+                     (log_level_ == "info") || is_debug(), HttpClient::get_default_timeout());
+    } catch (const std::exception&) {
+        unload();
         std::string err = "vllm-server failed to start within timeout";
         // A common cause on gfx1151 is a kernel without the CWSR fix, which makes
         // any GPU dispatch hang or fault. Point users to the docs in that case.
@@ -549,13 +547,8 @@ void VLLMServer::load(const std::string& model_name,
 }
 
 void VLLMServer::unload() {
-    stop_backend_watchdog();
     LOG(INFO, "vLLM") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        ProcessManager::stop_process(handle);
-    }
+    stop_server();
     cleanup_vllm_rocm_shim_dir(rocm_shim_dir_);
     max_model_len_ = 0;
 }

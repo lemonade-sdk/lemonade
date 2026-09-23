@@ -1,8 +1,6 @@
 #include <lemon/wrapped_server.h>
 #include <lemon/utils/process_manager.h>
 #include <lemon/utils/http_client.h>
-#include <lemon/backends/container_backend.h>
-#include <lemon/utils/container_runtime.h>
 #include <lemon/streaming_proxy.h>
 #include <lemon/error_types.h>
 #include <httplib.h>
@@ -172,48 +170,20 @@ WrappedServer::BackendRequestScope::~BackendRequestScope() {
     server_.end_backend_request(kind_);
 }
 
-bool WrappedServer::has_process_handle(const ProcessHandle& handle) {
-#ifdef _WIN32
-    return handle.handle != nullptr;
-#else
-    return handle.pid > 0;
-#endif
-}
-
-ProcessHandle WrappedServer::get_process_handle_snapshot() const {
+int WrappedServer::get_process_id() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
-    return process_handle_;
-}
-
-void WrappedServer::set_process_handle(ProcessHandle handle,
-                                       const std::string& executable,
-                                       const std::vector<std::string>& args) {
-    std::lock_guard<std::mutex> lock(process_mutex_);
-    process_handle_ = handle;
-    launch_command_.clear();
-    launch_command_.push_back(executable);
-    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
-}
-
-void WrappedServer::set_process_state(ProcessHandle handle, int port,
-                                      const std::string& executable,
-                                      const std::vector<std::string>& args) {
-    std::lock_guard<std::mutex> lock(process_mutex_);
-    process_handle_ = handle;
-    port_ = port;
-    launch_command_.clear();
-    launch_command_.push_back(executable);
-    launch_command_.insert(launch_command_.end(), args.begin(), args.end());
+    return process_ ? process_->pid() : 0;
 }
 
 std::vector<std::string> WrappedServer::get_launch_command() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
-    return launch_command_;
+    return process_ ? process_->command_line() : std::vector<std::string>{};
 }
 
 WrappedServer::ProcessInfo WrappedServer::get_process_info() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
-    return {process_handle_.pid, launch_command_};
+    if (!process_) return {};
+    return {process_->pid(), process_->command_line()};
 }
 
 int WrappedServer::get_backend_port() const {
@@ -221,33 +191,42 @@ int WrappedServer::get_backend_port() const {
     return port_;
 }
 
-ProcessHandle WrappedServer::consume_process_handle_for_cleanup() {
+std::string WrappedServer::get_base_url() const {
     std::lock_guard<std::mutex> lock(process_mutex_);
-    ProcessHandle handle = process_handle_;
-    process_handle_ = {nullptr, 0};
+    return "http://" + backend_host_ + ":" + std::to_string(port_);
+}
+
+std::unique_ptr<ServerProcess> WrappedServer::take_process() {
+    std::lock_guard<std::mutex> lock(process_mutex_);
     port_ = 0;
-    launch_command_.clear();
-    return handle;
+    backend_host_ = "127.0.0.1";
+    return std::move(process_);
 }
 
 bool WrappedServer::is_backend_alive() const {
     if (watchdog_triggered_.load(std::memory_order_acquire)) {
         return false;
     }
-    const ProcessHandle handle = get_process_handle_snapshot();
-    return has_process_handle(handle) && utils::ProcessManager::is_running(handle);
+    return process_running();
+}
+
+bool WrappedServer::process_running() const {
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return process_ && process_->running();
 }
 
 std::string WrappedServer::get_backend_health_state() const {
     if (watchdog_triggered_.load(std::memory_order_acquire)) {
         return "watchdog_reset";
     }
-    const ProcessHandle handle = get_process_handle_snapshot();
-    if (!has_process_handle(handle)) {
-        return "stopped";
-    }
-    if (!utils::ProcessManager::is_running(handle)) {
-        return "exited";
+    {
+        std::lock_guard<std::mutex> lock(process_mutex_);
+        if (!process_) {
+            return "stopped";
+        }
+        if (!process_->running()) {
+            return "exited";
+        }
     }
     if (active_backend_requests_.load(std::memory_order_acquire) > 0) {
         return "busy";
@@ -401,99 +380,45 @@ void WrappedServer::stop_backend_watchdog() {
 }
 
 bool WrappedServer::has_backend_process_exited() const {
-    const ProcessHandle handle = get_process_handle_snapshot();
-    if (!has_process_handle(handle)) {
-        return false;
-    }
-
-    // Check the owned process handle/PID without probing the backend HTTP
-    // endpoint. This is intentionally cheap and applies to idle, streaming, and
-    // long-running non-streaming requests alike. It lets us detect a crashed or
-    // zombie child without killing legitimate slow work such as image generation.
-    return !utils::ProcessManager::is_running(handle);
+    // A process check rather than an HTTP probe, so it applies to idle,
+    // streaming and long-running non-streaming requests alike. It detects a
+    // crashed or zombie child without killing slow work such as image generation.
+    std::lock_guard<std::mutex> lock(process_mutex_);
+    return process_ && !process_->running();
 }
 
 
-namespace {
-
-utils::ContainerWorkload workload_for(const ContainerTarget& target,
-                                      std::vector<std::string> argv, int port,
-                                      bool inherit_output) {
-    utils::ContainerWorkload workload;
-    workload.recipe = target.recipe;
-    workload.variant = target.variant;
-    workload.name = utils::ContainerRuntime::container_name(target.recipe, target.variant);
-    workload.image = backends::pinned_image_or_throw(target.recipe, target.variant);
-    workload.profile_id = target.profile_id.empty() ? backends::default_profile_id(target.variant)
-                                                    : target.profile_id;
-    workload.model_paths = target.model_paths;
-    workload.env = target.env;
-    if (!target.entry.empty()) {
-        workload.command.push_back(target.entry);
-    }
-    workload.command.insert(workload.command.end(), argv.begin(), argv.end());
-    workload.port = port;
-    workload.inherit_output = inherit_output;
-    return workload;
-}
-
-}  // namespace
-
-void WrappedServer::launch(std::vector<std::string> argv, const LaunchTarget& target,
-                           const std::string& health_endpoint, long timeout_seconds,
-                           bool inherit_output) {
-    // Both branches answer the same question, "what did I start and where do I
-    // reach it", so everything after them is shared.
-    utils::RunningChild child;
-    if (const auto* host = std::get_if<HostTarget>(&target)) {
-        child.executable = host->binary;
-        child.args = std::move(argv);
-        child.host = "127.0.0.1";
-        child.port = port_;
-        child.client = utils::ProcessManager::start_process(
-            child.executable, child.args, host->working_dir, inherit_output, true, host->env);
-    } else {
-        child = utils::ContainerRuntime::global().start(workload_for(
-            std::get<ContainerTarget>(target), std::move(argv), port_, inherit_output));
-    }
-
+void WrappedServer::start_server(std::unique_ptr<ServerProcess> process, ServerCommand command,
+                                 bool inherit_output, long timeout_seconds) {
+    ServerProcess& started = *process;
     {
         std::lock_guard<std::mutex> lock(process_mutex_);
-        container_name_ = child.container;
+        process_ = std::move(process);
+        command.port = port_;
     }
-    set_backend_host(child.host);
-    set_process_handle(child.client, child.executable, child.args);
-
-    if (wait_for_ready(health_endpoint, timeout_seconds)) {
-        return;
+    std::string host;
+    try {
+        host = started.start(command, inherit_output);
+    } catch (...) {
+        stop_server();
+        throw;
     }
-
-    // The container's own output is the only account of why it never answered;
-    // the client process only ever reports that the engine exited.
-    std::string logs;
-    if (!child.container.empty()) {
-        logs = utils::ContainerRuntime::global().container_logs(child.container);
-    }
-    stop_child();
-    throw std::runtime_error(server_name_ + " failed to start within timeout" +
-                             (logs.empty() ? "" : "\n" + logs));
-}
-
-void WrappedServer::stop_child() {
-    std::string container;
     {
         std::lock_guard<std::mutex> lock(process_mutex_);
-        container.swap(container_name_);
-    }
-    // Before the client, not after: SIGKILL is not proxied into the container,
-    // which would leave it holding the GPU.
-    if (!container.empty()) {
-        utils::ContainerRuntime::global().stop(container);
+        backend_host_ = host;
     }
 
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        utils::ProcessManager::stop_process(handle);
+    if (!wait_for_ready(command.ready_endpoint, timeout_seconds)) {
+        stop_server();
+        throw std::runtime_error(server_name_ + " failed to start");
+    }
+    start_backend_watchdog(command.ready_endpoint);
+}
+
+void WrappedServer::stop_server() {
+    stop_backend_watchdog();
+    if (auto process = take_process()) {
+        process->stop();
     }
 }
 
@@ -507,37 +432,17 @@ void WrappedServer::request_backend_reset_from_watchdog(const std::string& reaso
         watchdog_reset_reason_ = reason;
     }
 
-    std::string container;
-    {
-        std::lock_guard<std::mutex> lock(process_mutex_);
-        container.swap(container_name_);
-    }
-    if (!container.empty()) {
-        utils::ContainerRuntime::global().stop(container);
-    }
-
-    // Consume the lifecycle handle exactly once. This prevents later status
-    // checks or backend-specific unload() from reaping/closing the same child
-    // again, and it immediately removes the stale PID/port from status output.
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-
-    if (has_process_handle(handle)) {
-        if (utils::ProcessManager::is_running(handle)) {
-            LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
-                                          << reason << "; terminating and reaping backend process PID "
-                                          << handle.pid << std::endl;
-            utils::ProcessManager::stop_process(handle);
-        } else {
-            const int exit_code = utils::ProcessManager::reap_process(handle);
-            LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
-                                          << reason << "; reaped exited backend process PID "
-                                          << handle.pid << " (exit_code=" << exit_code << ")"
-                                          << std::endl;
-        }
+    // Take the process exactly once, so a later status check or unload() cannot
+    // stop the same child again, and its stale PID and port leave status output
+    // immediately.
+    if (auto process = take_process()) {
+        LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
+                                      << reason << "; stopping backend process PID "
+                                      << process->pid() << std::endl;
+        process->stop();
     } else {
         LOG(ERROR, "BackendWatchdog") << server_name_ << " backend marked unavailable: "
-                                      << reason << "; no process handle to reap"
-                                      << std::endl;
+                                      << reason << "; no process to stop" << std::endl;
     }
 
     watchdog_cv_.notify_all();
@@ -606,8 +511,7 @@ void WrappedServer::backend_watchdog_loop() {
         const std::string health_url = get_base_url() + policy.health_endpoint;
         lock.unlock();
 
-        const ProcessHandle handle = get_process_handle_snapshot();
-        if (!has_process_handle(handle) || !utils::ProcessManager::is_running(handle)) {
+        if (!process_running()) {
             request_backend_reset_from_watchdog("backend process exited during an active request");
             break;
         }
@@ -652,7 +556,8 @@ int WrappedServer::choose_port() {
     return chosen_port;
 }
 
-bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds, long poll_interval_ms) {
+bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_seconds) {
+    constexpr long poll_interval_ms = 100;
     const std::string normalized_endpoint = normalize_endpoint(endpoint);
     std::string health_url = get_base_url() + normalized_endpoint;
 
@@ -668,23 +573,12 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 
     for (int i = 0; i < max_attempts; i++) {
         if (load_cancel_ && load_cancel_->load()) {
-            const ProcessHandle h = consume_process_handle_for_cleanup();
-            if (has_process_handle(h)) utils::ProcessManager::stop_process(h);
             LOG(WARNING, "WrappedServer") << server_name_ << " load cancelled" << std::endl;
             return false;
         }
 
-        // Check if process is still running. If it already exited, consume and
-        // reap the owned handle here so the caller cannot later signal a stale
-        // PID while cleaning up a failed startup.
-        const ProcessHandle handle = get_process_handle_snapshot();
-        if (!has_process_handle(handle) || !utils::ProcessManager::is_running(handle)) {
-            const ProcessHandle exited_handle = consume_process_handle_for_cleanup();
-            int exit_code = has_process_handle(exited_handle)
-                ? utils::ProcessManager::reap_process(exited_handle)
-                : -1;
-            LOG(ERROR, "WrappedServer") << server_name_ << " process has terminated with exit code: "
-                     << exit_code << std::endl;
+        if (!process_running()) {
+            LOG(ERROR, "WrappedServer") << server_name_ << " process has terminated" << std::endl;
             LOG(ERROR, "WrappedServer") << "This usually means:" << std::endl;
             LOG(ERROR, "WrappedServer") << "  - Missing required drivers or dependencies" << std::endl;
             LOG(ERROR, "WrappedServer") << "  - Incompatible model file" << std::endl;
@@ -696,7 +590,6 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
         if (utils::HttpClient::is_reachable(
                 health_url, 1, utils::HttpSecurityPolicy::TrustedLoopback)) {
             LOG(INFO, "WrappedServer") << server_name_ + " is ready!" << std::endl;
-            start_backend_watchdog(normalized_endpoint);
             return true;
         }
 
@@ -710,10 +603,6 @@ bool WrappedServer::wait_for_ready(const std::string& endpoint, long timeout_sec
 
     LOG(ERROR, "WrappedServer") << server_name_ + " failed to start within timeout" << std::endl;
     return false;
-}
-
-bool WrappedServer::is_process_running() const {
-    return is_backend_alive();
 }
 
 json WrappedServer::forward_get_request(const std::string& endpoint, long timeout_seconds) {

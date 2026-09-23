@@ -383,37 +383,16 @@ void SDServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        process_exe_path,
-        args,
-        working_dir,
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, process_exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start sd-server process");
-    }
-
-    LOG(INFO, "SDServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/")) {
-        unload();
-        throw std::runtime_error("sd-server failed to start or become ready");
-    }
-
-    LOG(INFO, "SDServer") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
+    ServerCommand command;
+    command.program = process_exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.ready_endpoint = "/";
+    start_server(std::make_unique<NativeProcess>(working_dir), command, is_debug());
 }
 
 void SDServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "SDServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 json SDServer::build_extra_args(const json& request, bool include_flow_shift) const {

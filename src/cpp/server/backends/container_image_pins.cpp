@@ -26,54 +26,45 @@ const json& versions() {
     return data;
 }
 
-utils::ContainerImageRef parse_ref(const json& node) {
-    utils::ContainerImageRef ref;
-    if (!node.is_object()) return ref;
-    ref.repository = node.value("repository", "");
-    ref.tag = node.value("tag", "");
-    ref.digest = node.value("digest", "");
-    ref.channel = node.value("channel", "stable");
-    return ref;
+utils::ContainerImage parse_image(const json& node) {
+    utils::ContainerImage image;
+    if (!node.is_object()) return image;
+    image.repository = node.value("repository", "");
+    image.tag = node.value("tag", "");
+    image.digest = node.value("digest", "");
+    image.channel = node.value("channel", "stable");
+    image.devices = node.value("devices", std::vector<std::string>{});
+    for (const auto& [key, value] : node.value("env", json::object()).items()) {
+        image.env.emplace_back(key, value.get<std::string>());
+    }
+    image.cap_add = node.value("cap_add", std::vector<std::string>{});
+    image.ipc_host = node.value("ipc_host", false);
+    image.memlock_unlimited = node.value("memlock_unlimited", false);
+    return image;
 }
 
 }  // namespace
 
-bool recipe_is_image_backed(const std::string& recipe) {
-    const auto* descriptor = descriptor_for(recipe);
-    return descriptor && descriptor->image_backed;
-}
-
 bool backend_is_image_backed(const std::string& recipe, const std::string& backend) {
-    if (recipe_is_image_backed(recipe)) return true;
     const json& data = versions();
-    if (!data.contains(recipe) || !data[recipe].is_object()) return false;
-    const json& recipe_node = data[recipe];
-    if (!recipe_node.contains(backend) || !recipe_node[backend].is_object()) return false;
-    const json& node = recipe_node[backend];
-    if (node.contains("repository")) return true;
-    for (auto it = node.begin(); it != node.end(); ++it) {
-        if (it.value().is_object() && it.value().contains("repository")) return true;
+    if (!data.contains(recipe) || !data[recipe].contains(backend)) return false;
+    const json& arches = data[recipe][backend];
+    if (!arches.is_object()) return false;
+    for (const auto& [arch, image] : arches.items()) {
+        if (image.is_object() && image.contains("repository")) return true;
     }
     return false;
 }
 
-utils::ContainerImageRef image_pin(const std::string& recipe, const std::string& variant,
-                                   const std::string& arch) {
-    const json& data = versions();
-    if (!data.contains(recipe) || !data[recipe].is_object()) return {};
-    const json& recipe_node = data[recipe];
-    if (!recipe_node.contains(variant) || !recipe_node[variant].is_object()) return {};
-
-    const json& variant_node = recipe_node[variant];
-    if (variant_node.contains("repository")) {
-        return parse_ref(variant_node);  // arch-agnostic pin
-    }
-    if (arch.empty() || !variant_node.contains(arch)) return {};
-    return parse_ref(variant_node[arch]);
+utils::ContainerImage image_pin(const std::string& recipe, const std::string& backend,
+                                const std::string& arch) {
+    if (arch.empty() || !backend_is_image_backed(recipe, backend)) return {};
+    const json& arches = versions()[recipe][backend];
+    return arches.contains(arch) ? parse_image(arches[arch]) : utils::ContainerImage{};
 }
 
-utils::ContainerImageRef image_pin(const std::string& recipe, const std::string& variant) {
-    return image_pin(recipe, variant, SystemInfo::get_rocm_arch());
+utils::ContainerImage image_pin(const std::string& recipe, const std::string& backend) {
+    return image_pin(recipe, backend, SystemInfo::get_rocm_arch());
 }
 
 std::string short_digest(const std::string& digest) {
@@ -83,8 +74,8 @@ std::string short_digest(const std::string& digest) {
     return hex.size() > 12 ? hex.substr(0, 12) : hex;
 }
 
-std::string expected_image_digest(const std::string& recipe, const std::string& variant) {
-    return short_digest(image_pin(recipe, variant).digest);
+std::string expected_image_digest(const std::string& recipe, const std::string& backend) {
+    return short_digest(image_pin(recipe, backend).digest);
 }
 
 std::vector<ImagePin> all_image_pins() {
@@ -93,35 +84,27 @@ std::vector<ImagePin> all_image_pins() {
     for (const auto* descriptor : all_descriptors()) {
         const std::string& recipe = descriptor->recipe;
         if (!data.contains(recipe) || !data[recipe].is_object()) continue;
-        for (auto variant_it = data[recipe].begin(); variant_it != data[recipe].end();
-             ++variant_it) {
-            if (!variant_it.value().is_object()) continue;
-            if (!backend_is_image_backed(recipe, variant_it.key())) continue;
-            if (variant_it.value().contains("repository")) {
-                pins.push_back({recipe, variant_it.key(), "", parse_ref(variant_it.value())});
-                continue;
-            }
-            for (auto arch_it = variant_it.value().begin(); arch_it != variant_it.value().end();
-                 ++arch_it) {
-                if (!arch_it.value().is_object()) continue;
-                pins.push_back(
-                    {recipe, variant_it.key(), arch_it.key(), parse_ref(arch_it.value())});
+        for (const auto& [backend, arches] : data[recipe].items()) {
+            if (!backend_is_image_backed(recipe, backend)) continue;
+            for (const auto& [arch, image] : arches.items()) {
+                if (image.is_object()) pins.push_back({recipe, backend, arch, parse_image(image)});
             }
         }
     }
     return pins;
 }
 
-std::string registry_url(const utils::ContainerImageRef& ref) {
-    if (!ref.valid()) return "";
+std::string registry_url(const utils::ContainerImage& image) {
+    if (!image.valid()) return "";
+    const std::string& repository = image.repository;
     const std::string kDockerIo = "docker.io/";
     const std::string kGhcr = "ghcr.io/";
-    if (ref.repository.rfind(kDockerIo, 0) == 0) {
-        return "https://hub.docker.com/r/" + ref.repository.substr(kDockerIo.size()) + "/tags";
+    if (repository.rfind(kDockerIo, 0) == 0) {
+        return "https://hub.docker.com/r/" + repository.substr(kDockerIo.size()) + "/tags";
     }
-    if (ref.repository.rfind(kGhcr, 0) == 0) {
-        return "https://github.com/" + ref.repository.substr(kGhcr.size()) + "/pkgs/container/" +
-               ref.repository.substr(ref.repository.find_last_of('/') + 1);
+    if (repository.rfind(kGhcr, 0) == 0) {
+        return "https://github.com/" + repository.substr(kGhcr.size()) + "/pkgs/container/" +
+               repository.substr(repository.find_last_of('/') + 1);
     }
     return "";
 }

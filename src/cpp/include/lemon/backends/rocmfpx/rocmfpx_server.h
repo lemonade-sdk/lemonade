@@ -44,10 +44,6 @@ public:
     InstallCheck check_install(const std::string& backend, bool binary_found) const override {
         return ContainerBackendOps::check_install(backend, binary_found);
     }
-    std::string profile_id(const std::string& variant) const override {
-        (void)variant;
-        return "amd-rocm";
-    }
 };
 
 namespace rocmfpx {

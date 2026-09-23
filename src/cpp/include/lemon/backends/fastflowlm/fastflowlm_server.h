@@ -41,9 +41,6 @@ public:
     // ITranscriptionServer implementation
     json audio_transcriptions(const json& request) override;
 
-    // FLM uses /api/tags for readiness check instead of /health
-    bool wait_for_ready();
-
     // Override to transform model name to checkpoint for FLM
     void forward_streaming_request(const std::string& endpoint,
                                    const std::string& request_body,
@@ -55,8 +52,6 @@ public:
 private:
     // Get the path to the flm executable from the install directory
     std::string get_flm_path();
-
-    bool is_loaded_ = false;
 };
 
 namespace fastflowlm {

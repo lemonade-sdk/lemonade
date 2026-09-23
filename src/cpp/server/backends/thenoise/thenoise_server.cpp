@@ -146,41 +146,16 @@ void TheNoiseServer::load(const std::string& model_name,
     }
 
     // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
-    std::vector<std::pair<std::string, std::string>> env_vars;
-
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start thenoise process");
-    }
-
-    LOG(INFO, "TheNoise") << "Process started with PID: " << started_handle.pid << std::endl;
-
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
     // thenoise compiles the DiT with torch.compile on first load, which can take
     // several minutes; give it a generous startup window.
-    if (!wait_for_ready("/health", 1800)) {
-        unload();
-        throw std::runtime_error("thenoise failed to start or become ready");
-    }
-
-    LOG(INFO, "TheNoise") << "Server is ready at http://127.0.0.1:" << get_backend_port() << std::endl;
+    start_server(std::make_unique<NativeProcess>(), command, is_debug(), 1800);
 }
 
 void TheNoiseServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "TheNoise") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
     image_defaults_ = ImageDefaults{};
 }
 

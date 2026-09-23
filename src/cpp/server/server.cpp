@@ -18,7 +18,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/cloud/cloud_server.h"
 #include "lemon/backends/container_backend.h"
-#include "lemon/utils/container_runtime.h"
+#include "lemon/utils/container_manager.h"
 #include "lemon/backends/container_image_pins.h"
 #include "lemon/backends/sdcpp/sdcpp_server.h"
 #include "lemon/backends/thenoise/thenoise_server.h"
@@ -402,9 +402,9 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
 
-    // No-op without a container runtime. A killed lemond leaves GPU-holding
-    // containers behind; they carry the managed label, so this clears them.
-    if (const int swept = utils::ContainerRuntime::global().sweep_managed_containers()) {
+    // A killed lemond leaves GPU-holding containers behind; they carry the
+    // managed label, so this clears them.
+    if (const int swept = utils::ContainerManager::global().sweep_managed_containers()) {
         LOG(INFO, "Container") << "Swept " << swept << " stale Lemonade container(s)" << std::endl;
     }
 
@@ -8110,7 +8110,7 @@ void Server::handle_install_dry_run(const httplib::Request& req, httplib::Respon
             SystemInfo::set_rocm_arch_override(requested_arch);
         }
 
-        // Image-backed recipes have no release asset to resolve. Report the pin
+        // Container backends have no release asset to resolve. Report the pin
         // they would install instead of failing with a missing-version error
         // that reads like a broken registry. The equivalent staleness check for
         // them is `gen_toolbox_catalog.py pins --check`.

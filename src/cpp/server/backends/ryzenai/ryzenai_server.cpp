@@ -90,50 +90,18 @@ void RyzenAIServer::load(const std::string& model_name,
         args.push_back("--verbose");
     }
 
-    LOG(DEBUG, "RyzenAI") << "Starting: \"" << ryzenai_server_path << "\"";
-    for (const auto& arg : args) {
-        LOG(DEBUG, "RyzenAI") << " \"" << arg << "\"";
-    }
-    LOG(DEBUG, "RyzenAI") << std::endl;
-
-    // Start the process (filter health check spam)
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        ryzenai_server_path,
-        args,
-        "",
-        is_debug(),
-        true
-    );
-    set_process_handle(started_handle, ryzenai_server_path, args);
-
-    if (!utils::ProcessManager::is_running(started_handle)) {
-        throw std::runtime_error("Failed to start ryzenai-server process");
-    }
-
-    LOG(DEBUG, "ProcessManager") << "Process started successfully, PID: "
-                << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            utils::ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("RyzenAI-Server failed to start (check logs for details)");
-    }
+    ServerCommand command;
+    command.program = ryzenai_server_path;
+    command.args = std::move(args);
+    start_server(std::make_unique<NativeProcess>(), command, is_debug());
 
     is_loaded_ = true;
     LOG(INFO, "RyzenAI") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void RyzenAIServer::unload() {
-    stop_backend_watchdog();
     LOG(DEBUG, "RyzenAI") << "Unloading model..." << std::endl;
-
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        utils::ProcessManager::stop_process(handle);
-    }
-
+    stop_server();
     is_loaded_ = false;
     model_path_.clear();
 }

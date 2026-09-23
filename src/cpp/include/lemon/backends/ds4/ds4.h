@@ -62,7 +62,6 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ true,
-    /*image_backed*/    true,
 };
 
 }  // namespace ds4

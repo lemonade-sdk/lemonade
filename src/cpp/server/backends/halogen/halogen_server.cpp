@@ -26,7 +26,7 @@ namespace backends {
 
 namespace {
 
-constexpr const char* kVariant = "rocm";
+constexpr const char* kBackend = "rocm";
 constexpr int kNativeContext = 262144;
 // The image's own built-in chat budget, which it applies when nothing overrides it.
 constexpr int kDefaultMaxTokens = 8192;
@@ -167,7 +167,7 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
     }
 
     device_type_ = DEVICE_GPU;
-    backend_manager_->install_backend(halogen::descriptor.recipe, kVariant);
+    backend_manager_->install_backend(halogen::descriptor.recipe, kBackend);
 
     port_ = choose_port();
 
@@ -176,51 +176,46 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
     const std::string vision_tower_path =
         vision_tower.empty() ? std::string() : (bundle_dir / vision_tower).string();
 
-    ContainerTarget target;
-    target.entry = "";  // the image's entrypoint takes no argv
-    target.recipe = halogen::descriptor.recipe;
-    target.variant = kVariant;
-    target.profile_id = "halogen-strix-halo";
-    target.model_paths = {checkpoint_path, overlay_path, tokenizer_path};
-    if (!vision_tower_path.empty()) {
-        target.model_paths.push_back(vision_tower_path);
-    }
-
-    target.env.push_back({"HALOGEN_CHECKPOINT", checkpoint_path});
-    target.env.push_back({"HALOGEN_CK_OVERLAY", overlay_path});
-    target.env.push_back({"HALOGEN_TOKENIZER", tokenizer_path});
-    target.env.push_back({"HALOGEN_API_PORT", std::to_string(port_)});
+    ServerCommand command;
+    command.model_files = {checkpoint_path, overlay_path, tokenizer_path, vision_tower_path};
+    command.env = {
+        {"HALOGEN_CHECKPOINT", checkpoint_path},
+        {"HALOGEN_CK_OVERLAY", overlay_path},
+        {"HALOGEN_TOKENIZER", tokenizer_path},
+        {"HALOGEN_API_PORT", std::to_string(port_)},
+    };
     if (ctx_size > 0) {
-        target.env.push_back({"HALOGEN_CTX", std::to_string(ctx_size)});
+        command.env.push_back({"HALOGEN_CTX", std::to_string(ctx_size)});
         // A request reserves prompt + max_tokens against the context, and the
         // image's built-in chat budget is 8192. Narrowing the context without
         // narrowing that budget rejects every request that omits max_tokens,
         // which is most OpenAI clients.
-        target.env.push_back({"HALOGEN_MAX_TOKENS_DEFAULT",
-                              std::to_string((std::min)(ctx_size / 2, kDefaultMaxTokens))});
+        command.env.push_back({"HALOGEN_MAX_TOKENS_DEFAULT",
+                               std::to_string((std::min)(ctx_size / 2, kDefaultMaxTokens))});
     }
     // HALOGEN_KV_POOL_POSITIONS is deliberately left unset: the engine sizes the
     // pool from the memory the OS reports and lowers it when the configured one
     // will not fit. A host that carves a large block out for the iGPU in
     // firmware leaves it too little to work with, and the answer there is the
     // firmware setting, not a smaller pool - see the prerequisites page.
-    target.env.push_back({"HALOGEN_PROMPT_CACHE", "2"});
+    command.env.push_back({"HALOGEN_PROMPT_CACHE", "2"});
     if (!vision_tower_path.empty()) {
-        target.env.push_back({"HALOGEN_VISION_TOWER", vision_tower_path});
+        command.env.push_back({"HALOGEN_VISION_TOWER", vision_tower_path});
     }
+    // Halogen maps a 115 GiB checkpoint before it binds, so readiness takes far
+    // longer than a GGUF load; /v1/models is the cheapest always-on route.
+    command.ready_endpoint = "/v1/models";
 
     LOG(INFO, "Halogen") << "Starting " << model_name << " on port " << port_ << std::endl;
 
-    // Halogen maps a 115 GiB checkpoint before it binds, so readiness takes far
-    // longer than a GGUF load; /v1/models is the cheapest always-on route.
-    launch({}, target, "/v1/models",
-           (std::max)(kStartupTimeoutSeconds, HttpClient::get_default_timeout()),
-           (log_level_ == "info") || is_debug());
+    start_server(
+        std::make_unique<ContainerProcess>(halogen::descriptor.recipe, kBackend, model_name),
+        command, (log_level_ == "info") || is_debug(),
+        (std::max)(kStartupTimeoutSeconds, HttpClient::get_default_timeout()));
 }
 
 void HalogenServer::unload() {
-    stop_backend_watchdog();
-    stop_child();
+    stop_server();
 }
 
 json HalogenServer::chat_completion(const json& request) {

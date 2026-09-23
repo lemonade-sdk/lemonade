@@ -323,37 +323,15 @@ void WhisperServer::load(const std::string& model_name,
     }
 #endif
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start whisper-server process");
-    }
-
-    LOG(INFO, "WhisperServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("whisper-server failed to start or become ready");
-    }
-
-    LOG(INFO, "WhisperServer") << "Server is ready!" << std::endl;
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    start_server(std::make_unique<NativeProcess>(), command, is_debug());
 }
 
 void WhisperServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "WhisperServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 // ICompletionServer implementation - not supported for Whisper

@@ -988,6 +988,7 @@ set(SOURCES_CORE
     src/cpp/server/model_registry.cpp
     src/cpp/server/hf_variants.cpp
     src/cpp/server/wrapped_server.cpp
+    src/cpp/server/server_process.cpp
     src/cpp/server/streaming_proxy.cpp
     src/cpp/server/system_info.cpp
     src/cpp/server/recipe_options.cpp
@@ -1004,7 +1005,7 @@ set(SOURCES_CORE
     src/cpp/server/log_stream.cpp
     src/cpp/server/api_docs.cpp
     src/cpp/server/prometheus_metrics.cpp
-    src/cpp/server/utils/container_runtime.cpp
+    src/cpp/server/utils/container_manager.cpp
     src/cpp/server/utils/http_client.cpp
     src/cpp/server/utils/json_utils.cpp
     src/cpp/server/utils/process_manager.cpp
@@ -3246,18 +3247,18 @@ if(BUILD_TESTING AND EXISTS "${_VLLM_CDNA_TEST_SRC}")
     add_cpp_ci_test(VllmCdnaGatingTest CI OFF COMMAND test_vllm_cdna_gating)
 endif()
 
-# container runtime layer: argv construction, HF-cache path rewriting, container
-# naming and the managed-prefix sweep. Runs against an injected fake engine, so
-# it needs no podman/docker on the machine.
-set(_CONTAINER_RUNTIME_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_runtime.cpp")
-if(BUILD_TESTING AND EXISTS "${_CONTAINER_RUNTIME_TEST_SRC}")
-    add_executable(test_container_runtime test/cpp/test_container_runtime.cpp)
-    target_link_libraries(test_container_runtime PRIVATE lemonade-server-core)
-    add_cpp_ci_test(ContainerRuntimeTest CI ON COMMAND test_container_runtime)
+# ContainerManager: run command construction, HF-cache path rewriting, container
+# naming and the managed-label sweep. Runs against an injected fake podman or
+# docker, so it needs neither on the machine.
+set(_CONTAINER_MANAGER_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_manager.cpp")
+if(BUILD_TESTING AND EXISTS "${_CONTAINER_MANAGER_TEST_SRC}")
+    add_executable(test_container_manager test/cpp/test_container_manager.cpp)
+    target_link_libraries(test_container_manager PRIVATE lemonade-server-core)
+    add_cpp_ci_test(ContainerManagerTest CI ON COMMAND test_container_manager)
 endif()
 
-# Image-backed recipes: every variant in a descriptor's support rows must have a
-# committed digest pin for each arch it claims, and nothing else may declare one.
+# Container backends: every backend in a descriptor's support rows that has an
+# image entry must have a committed digest pin for each arch it claims.
 set(_IMAGE_PINS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_container_image_pins.cpp")
 if(BUILD_TESTING AND EXISTS "${_IMAGE_PINS_TEST_SRC}")
     add_executable(test_container_image_pins test/cpp/test_container_image_pins.cpp)
@@ -3419,8 +3420,8 @@ if(BUILD_TESTING AND EXISTS "${_ROUTING_HELPER_RECONCILE_TEST_SRC}")
     add_cpp_ci_test(RoutingHelperReconcileTest CI ON COMMAND test_routing_helper_reconcile)
 endif()
 
-# Launch command bookkeeping: the command recorded at spawn must keep describing
-# the process currently held, so a restart replaces it and cleanup erases it.
+# start_server: a server that never becomes ready is stopped and leaves no pid,
+# command or port behind in /health.
 set(_LAUNCH_COMMAND_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_launch_command.cpp")
 if(BUILD_TESTING AND EXISTS "${_LAUNCH_COMMAND_TEST_SRC}")
     add_executable(test_launch_command test/cpp/test_launch_command.cpp)

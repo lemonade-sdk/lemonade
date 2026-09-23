@@ -28,14 +28,6 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
     return kReserved;
 }
 
-// Device passthrough profile for a containerized backend. Stated rather than
-// derived from the name: "nathanw" is a Vulkan build whose name says nothing
-// about that, and a name-prefix rule would silently hand it the ROCm profile.
-inline const char* container_profile_for(const std::string& backend) {
-    (void)backend;
-    return "vulkan";
-}
-
 // The llamacpp backend descriptor (plain data). Header-only `inline const` so it
 // links into both the lemonade CLI and lemond without a separate source file.
 inline const BackendDescriptor descriptor = {

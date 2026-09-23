@@ -20,7 +20,7 @@ namespace lemon {
 namespace backends {
 
 namespace {
-constexpr const char* kVariant = "rocm";
+constexpr const char* kBackend = "rocm";
 
 // ds4-server streams an 80 GB+ MoE off disk and binds only once it is loaded,
 // so readiness is bounded by storage bandwidth rather than by anything
@@ -85,7 +85,7 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     }
 
     device_type_ = DEVICE_GPU;
-    backend_manager_->install_backend(ds4::descriptor.recipe, kVariant);
+    backend_manager_->install_backend(ds4::descriptor.recipe, kBackend);
 
     port_ = choose_port();
 
@@ -140,24 +140,21 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
         args.insert(args.end(), custom_args.begin(), custom_args.end());
     }
 
-    ContainerTarget target;
-    target.entry = "ds4-server";
-    target.recipe = ds4::descriptor.recipe;
-    target.variant = kVariant;
-    target.profile_id = "ds4-rocm";
-    target.model_paths.push_back(gguf_path);
-
+    ServerCommand command;
+    command.program = "ds4-server";
+    command.args = std::move(args);
+    command.model_files = {gguf_path};
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
     // cheapest always-on route and doubles as the watchdog probe.
-    launch(std::move(args), target, "/v1/models",
-           (std::max)(kStartupTimeoutSeconds, HttpClient::get_default_timeout()),
-           (log_level_ == "info") || (log_level_ == "debug"));
+    command.ready_endpoint = "/v1/models";
+    start_server(std::make_unique<ContainerProcess>(ds4::descriptor.recipe, kBackend, model_name),
+                 command, (log_level_ == "info") || is_debug(),
+                 (std::max)(kStartupTimeoutSeconds, HttpClient::get_default_timeout()));
 }
 
 void Ds4Server::unload() {
-    stop_backend_watchdog();
-    stop_child();
+    stop_server();
 }
 
 json Ds4Server::chat_completion(const json& request) {
@@ -175,7 +172,7 @@ json Ds4Server::responses(const json& request) {
 std::string Ds4Ops::remove_legacy_binary_install() {
     // Pre-container DS4 unpacked lemonade-sdk/ds4-rocm here.
     const std::string install_dir =
-        BackendUtils::get_install_directory(ds4::descriptor.recipe, kVariant);
+        BackendUtils::get_install_directory(ds4::descriptor.recipe, kBackend);
     std::error_code ec;
     if (!fs::exists(install_dir, ec)) {
         return "";

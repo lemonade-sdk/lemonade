@@ -203,18 +203,13 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         args.insert(args.end(), custom_args_vec.begin(), custom_args_vec.end());
     }
 
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        executable, args, "", inherit_output, false, {});
-    set_process_handle(started_handle, executable, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start ort-server process");
-    }
-    LOG(INFO, "OnnxRuntimeServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
+    ServerCommand command;
+    command.program = executable;
+    command.args = args;
+    try {
+        start_server(std::make_unique<NativeProcess>(), command,
+                     (log_level_ == "info") || is_debug());
+    } catch (const std::exception&) {
         // The subprocess's stderr is invisible when lemond runs windowless (CI,
         // tray), so a startup failure would otherwise surface only as "not
         // ready". Re-run it briefly to capture the reason it refused the model.
@@ -222,17 +217,10 @@ void OnnxRuntimeServer::load(const std::string& model_name,
         throw std::runtime_error("ort-server failed to start or become ready" +
                                  (details.empty() ? "" : ": " + details));
     }
-    start_backend_watchdog("/health");
-    LOG(INFO, "OnnxRuntimeServer") << "Server is ready!" << std::endl;
 }
 
 void OnnxRuntimeServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "OnnxRuntimeServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 json OnnxRuntimeServer::forward_classify(const std::string& text, const json& params) {

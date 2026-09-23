@@ -246,14 +246,9 @@ LlamaCppServer::LlamaLaunch LlamaCppServer::launch_profile(const RecipeOptions& 
 
     LlamaLaunch launch;
     launch.recipe = llamacpp::descriptor.recipe;
-    launch.variant = resolve_llamacpp_backend(chosen);
+    launch.backend = resolve_llamacpp_backend(chosen);
     launch.args_option = "llamacpp_args";
     launch.reserved_flags = &llamacpp::reserved_custom_arg_flags();
-    // One llama.cpp build ships as an OCI image rather than a release asset.
-    launch.containerized = backends::backend_is_image_backed(launch.recipe, launch.variant);
-    if (launch.containerized) {
-        launch.profile_id = llamacpp::container_profile_for(launch.variant);
-    }
     return launch;
 }
 
@@ -266,7 +261,9 @@ void LlamaCppServer::load(const std::string& model_name,
     LOG(DEBUG, "LlamaCpp") << "Per-model settings: " << options.to_log_string() << std::endl;
 
     const LlamaLaunch recipe_launch = launch_profile(options);
-    const std::string& llamacpp_backend = recipe_launch.variant;
+    const std::string& llamacpp_backend = recipe_launch.backend;
+    const bool containerized =
+        backends::backend_is_image_backed(recipe_launch.recipe, llamacpp_backend);
 
     int ctx_size = options.get_option("ctx_size");
     std::string llamacpp_device = string_option(options, "llamacpp_device");
@@ -285,7 +282,7 @@ void LlamaCppServer::load(const std::string& model_name,
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
     const bool hf_load = model_info.extra<bool>("hf_load", false);
-    if (hf_load && recipe_launch.containerized) {
+    if (hf_load && containerized) {
         throw std::runtime_error(
             recipe_launch.recipe +
             ": this model lets llama-server fetch its own weights, which a container cannot do "
@@ -307,7 +304,7 @@ void LlamaCppServer::load(const std::string& model_name,
     port_ = choose_port();
 
     std::string executable;
-    if (!recipe_launch.containerized) {
+    if (!containerized) {
         executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
     }
 
@@ -344,7 +341,7 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
-    if (recipe_launch.containerized) {
+    if (containerized) {
         // Inside the container this is its own namespace; the only way in is the
         // engine's loopback publication or its private network address.
         push_arg(args, reserved_flags, "--host", "0.0.0.0");
@@ -429,17 +426,16 @@ void LlamaCppServer::load(const std::string& model_name,
 
     const bool inherit_llama_output = (log_level_ == "info") || is_debug();
 
-    if (recipe_launch.containerized) {
-        ContainerTarget target;
-        target.entry = "llama-server";
-        target.recipe = recipe_launch.recipe;
-        target.variant = recipe_launch.variant;
-        target.profile_id = recipe_launch.profile_id;
-        target.model_paths.push_back(gguf_path);
-        if (!mmproj_path.empty()) target.model_paths.push_back(mmproj_path);
-        if (use_draft_checkpoint) target.model_paths.push_back(draft_path);
+    ServerCommand command;
+    command.args = std::move(args);
 
-        launch(std::move(args), target, "/health", 600, inherit_llama_output);
+    if (containerized) {
+        command.program = "llama-server";
+        command.model_files = {gguf_path, mmproj_path};
+        if (use_draft_checkpoint) command.model_files.push_back(draft_path);
+        start_server(std::make_unique<ContainerProcess>(recipe_launch.recipe, llamacpp_backend,
+                                                        model_name),
+                     command, inherit_llama_output);
         LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
         return;
     }
@@ -607,19 +603,15 @@ void LlamaCppServer::load(const std::string& model_name,
     working_dir = path_to_utf8(executable_path.parent_path());
 #endif
 
-    HostTarget target;
-    target.binary = process_executable;
-    target.env = env_vars;
-    target.working_dir = working_dir;
-
-    launch(std::move(args), target, "/health", 600, inherit_llama_output);
+    command.program = process_executable;
+    command.env = std::move(env_vars);
+    start_server(std::make_unique<NativeProcess>(working_dir), command, inherit_llama_output);
     LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
 }
 
 void LlamaCppServer::unload() {
-    stop_backend_watchdog();
     LOG(INFO, "LlamaCpp") << "Unloading model..." << std::endl;
-    stop_child();
+    stop_server();
 }
 
 bool LlamaCppServer::downsize() {

@@ -1,13 +1,12 @@
-// Proves the recorded launch command always describes the process currently in
-// process_handle_, and that /health reads both halves as one snapshot rather
-// than two independently locked reads. Neither half is reachable from /health:
-// a restart replacing the previous command needs a backend to be started twice
-// (in production, a watchdog reset), and cleanup erasing it is invisible because
-// Router::get_all_loaded_models() drops dead backends before it builds any JSON.
+// Proves the launch command /health reports describes the server process
+// WrappedServer currently owns, and that a server that never becomes ready is
+// stopped and leaves nothing behind in that report.
 
 #include "lemon/wrapped_server.h"
 
 #include <cstdio>
+#include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -24,19 +23,31 @@ void check(const std::string& what, bool ok) {
 
 namespace lemon {
 
-// Minimal WrappedServer that never spawns a subprocess. Only load()/unload() are
-// pure virtual; set_process_handle() and the cleanup consumer are protected, so
-// the stub republishes them for the test.
+// Records its command line without starting anything, so it is never running
+// and never becomes ready.
+class FakeProcess : public ServerProcess {
+public:
+    explicit FakeProcess(bool* stopped) : stopped_(stopped) {}
+
+    std::string start(const ServerCommand& command, bool) override {
+        command_line_ = {command.program};
+        command_line_.insert(command_line_.end(), command.args.begin(), command.args.end());
+        return "127.0.0.1";
+    }
+    void stop() override { *stopped_ = true; }
+
+private:
+    bool* stopped_;
+};
+
 class StubWrappedServer : public WrappedServer {
 public:
     StubWrappedServer() : WrappedServer("stub", "error", nullptr, nullptr) {}
 
     void load(const std::string&, const ModelInfo&, const RecipeOptions&, bool) override {}
+    void unload() override { stop_server(); }
 
-    void unload() override {}
-
-    using WrappedServer::consume_process_handle_for_cleanup;
-    using WrappedServer::set_process_handle;
+    using WrappedServer::start_server;
 };
 
 }  // namespace lemon
@@ -44,37 +55,28 @@ public:
 int main() {
     lemon::StubWrappedServer server;
 
-    // No real child process is started, so the handle stays empty on every
-    // platform: has_process_handle() is false for both {nullptr} and {pid 0}.
-    const lemon::ProcessHandle handle{nullptr, 0};
-
     check("a server that never started reports no command",
           server.get_process_info().launch_command.empty());
 
-    server.set_process_handle(handle, "llama-server.exe",
-                              {"-m", "model.gguf", "--ctx-size", "8192"});
-    const std::vector<std::string> first = server.get_process_info().launch_command;
-    check("executable lands at index 0",
-          !first.empty() && first[0] == "llama-server.exe");
-    check("arguments follow the executable in order",
-          first == std::vector<std::string>({"llama-server.exe", "-m", "model.gguf",
-                                             "--ctx-size", "8192"}));
-    check("the standalone accessor agrees with the snapshot",
-          server.get_launch_command() == first &&
-              server.get_process_id() == server.get_process_info().pid);
+    bool stopped = false;
+    lemon::ServerCommand command;
+    command.program = "llama-server.exe";
+    command.args = {"-m", "model.gguf", "--ctx-size", "8192"};
+    command.port = 8082;
 
-    // What a watchdog reset does: same object, second process, new port.
-    server.set_process_handle(handle, "llama-server.exe",
-                              {"-m", "model.gguf", "--port", "8082"});
-    check("a restart replaces the previous command instead of appending",
-          server.get_process_info().launch_command ==
-              std::vector<std::string>({"llama-server.exe", "-m", "model.gguf",
-                                        "--port", "8082"}));
+    bool threw = false;
+    try {
+        server.start_server(std::make_unique<lemon::FakeProcess>(&stopped), command, 1);
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    check("a server that never becomes ready fails the load", threw);
+    check("a server that never becomes ready is stopped", stopped);
 
-    server.consume_process_handle_for_cleanup();
     const lemon::WrappedServer::ProcessInfo cleaned = server.get_process_info();
-    check("cleanup erases pid and command in the same snapshot",
+    check("the failed server leaves no pid or command behind",
           cleaned.pid == 0 && cleaned.launch_command.empty());
+    check("the failed server leaves no port behind", server.get_backend_port() == 0);
 
     if (failures == 0) {
         std::printf("\nAll launch command checks passed.\n");

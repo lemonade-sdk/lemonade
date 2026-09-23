@@ -64,7 +64,6 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ false,
-    /*image_backed*/    true,
 };
 
 // Launch defaults carried over from the upstream catalog's calibrated serving

@@ -160,38 +160,16 @@ void MoonshineServer::load(const std::string& model_name,
     // Prevent system/user Python packages from leaking into the bundled environment
     env_vars.push_back({"PYTHONNOUSERSITE", "1"});
 
-    bool inherit_output = (log_level_ == "info") || is_debug();
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        executable,
-        args,
-        "",     // working_dir
-        inherit_output,
-        false,  // filter_health_logs
-        env_vars
-    );
-    set_process_handle(started_handle, executable, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start moonshine-server process");
-    }
-
-    LOG(INFO, "MoonshineServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/health")) {
-        unload();
-        throw std::runtime_error("moonshine-server failed to start or become ready");
-    }
-
-    LOG(INFO, "MoonshineServer") << "Server is ready!" << std::endl;
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    start_server(std::make_unique<NativeProcess>(), command,
+                 (log_level_ == "info") || is_debug());
 }
 
 void MoonshineServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "MoonshineServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
     tcp_port_ = 0;
 }
 

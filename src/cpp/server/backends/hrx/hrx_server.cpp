@@ -118,34 +118,13 @@ void HrxServer::load(const std::string& model_name,
 
     const int ctx_size = options.get_option("ctx_size");
     const std::string hrx_args = options.get_option("hrx_args");
-    const int backend_port = choose_port();
-    const std::string executable =
-        BackendUtils::get_backend_binary_path(*hrx::spec(), "hrx");
-    const std::vector<std::string> argv =
-        hrx::build_server_argv(gguf_path, ctx_size, backend_port, hrx_args);
-    const std::vector<std::pair<std::string, std::string>> environment =
-        hrx::build_server_environment();
-
-    const bool info_logging_enabled = log_level_ == "info";
-    const bool inherit_output = info_logging_enabled || is_debug();
-    set_process_handle(
-        utils::ProcessManager::start_process(
-            executable,
-            argv,
-            "",
-            inherit_output,
-            true,
-            environment),
-        executable,
-        argv);
-
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            utils::ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("HRX llama-server failed to start");
-    }
+    choose_port();
+    ServerCommand command;
+    command.program = BackendUtils::get_backend_binary_path(*hrx::spec(), "hrx");
+    command.args = hrx::build_server_argv(gguf_path, ctx_size, port_, hrx_args);
+    command.env = hrx::build_server_environment();
+    start_server(std::make_unique<NativeProcess>(), command,
+                 (log_level_ == "info") || is_debug());
 
     LOG(DEBUG, "HRX") << "Model loaded on port "
                        << get_backend_port() << std::endl;

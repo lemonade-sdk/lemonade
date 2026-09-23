@@ -28,16 +28,10 @@ public:
     json responses(const json& request) override;
 };
 
-// DS4's container needs host IPC and SYS_PTRACE on top of the shared ROCm
-// passthrough, so it names its own device profile. It also carries the
-// migration off the binary build it used to install.
+// Carries DS4's migration off the binary build it used to install.
 class Ds4Ops : public ContainerBackendOps {
 public:
     Ds4Ops() : ContainerBackendOps("ds4") {}
-    std::string profile_id(const std::string& variant) const override {
-        (void)variant;
-        return "ds4-rocm";
-    }
     bool install(const std::string& backend, bool force,
                  DownloadProgressCallback progress) const override;
     bool uninstall(const std::string& backend) const override;

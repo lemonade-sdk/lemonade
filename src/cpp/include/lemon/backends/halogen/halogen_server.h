@@ -33,10 +33,6 @@ class HalogenOps : public ContainerBackendOps {
 public:
     HalogenOps() : ContainerBackendOps("halogen") {}
 
-    std::string profile_id(const std::string& variant) const override {
-        (void)variant;
-        return "halogen-strix-halo";
-    }
     InstallCheck check_install(const std::string& backend, bool binary_found) const override;
     std::optional<UnavailableState> classify_unavailable(
         const std::string& backend, const std::string& install_error,

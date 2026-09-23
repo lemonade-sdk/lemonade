@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "lemon/backends/backend_ops.h"
-#include "lemon/utils/container_runtime.h"
+#include "lemon/utils/container_manager.h"
 
 namespace lemon {
 namespace backends {
@@ -32,26 +32,19 @@ public:
         const std::string& default_install_command) const override;
     std::string artifact_url(const std::string& backend) const override;
 
-    // Device passthrough profile for a variant. The default maps the variant
-    // name onto the catalog profiles (rocm* -> amd-rocm, vulkan* -> vulkan);
-    // a backend with its own requirements overrides it.
-    virtual std::string profile_id(const std::string& variant) const;
-
 protected:
     std::string recipe_;
 };
-
-// The device profile a variant needs, using the default name-based mapping.
-std::string default_profile_id(const std::string& variant);
 
 // ---------------------------------------------------------------------------
 // Run side
 // ---------------------------------------------------------------------------
 
-// The pinned image for (recipe, variant) on this host. Throws when the recipe
-// publishes nothing for this GPU, which is the only answer a caller can act on.
-utils::ContainerImageRef pinned_image_or_throw(const std::string& recipe,
-                                               const std::string& variant);
+// image_pin() for this host, throwing instead when the result cannot run here:
+// nothing is published for this GPU, a listed device is unusable, or the digest
+// has not been pulled.
+utils::ContainerImage pinned_image_or_throw(const std::string& recipe,
+                                            const std::string& backend);
 
 }  // namespace backends
 }  // namespace lemon

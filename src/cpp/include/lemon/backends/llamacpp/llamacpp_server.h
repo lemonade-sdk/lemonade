@@ -57,16 +57,14 @@ public:
     json tokenize(const json& request) override;
 
 protected:
-    // How a recipe launches llama-server. The variants that ship as an OCI
+    // How a recipe launches llama-server. The backends that ship as an OCI
     // image run the same binary, so they differ only in where it runs and which
     // tuning flags the recipe pins; the rest of load() is shared.
     struct LlamaLaunch {
         std::string recipe;
-        std::string variant;
+        std::string backend;
         std::string args_option = "llamacpp_args";
         const std::set<std::string>* reserved_flags = nullptr;
-        bool containerized = false;
-        std::string profile_id;  // container only; "" derives from the variant
         // 0 / false leaves the flag off, which is llama-server's own default.
         int batch_size = 0;
         int ubatch_size = 0;

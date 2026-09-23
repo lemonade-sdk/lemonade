@@ -201,52 +201,23 @@ void OpenMossServer::load(const std::string& model_name,
     start_speech_process();
 }
 
-OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
-    Subprocess proc;
-    proc.port = utils::ProcessManager::find_free_port(8001);
-    if (proc.port <= 0) {
-        throw std::runtime_error("Failed to find an available port");
-    }
-
-    proc.args = {
-        "--model", model_path,
-        "--host", "127.0.0.1",
-        "--port", std::to_string(proc.port),
-    };
-    proc.args.push_back("--no-webui");
-
-    LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << proc.port << std::endl;
-    proc.handle = utils::ProcessManager::start_process(
-        exe_path_, proc.args, "", is_debug(), false, env_vars_);
-    if (!has_process_handle(proc.handle)) {
-        throw std::runtime_error("Failed to start openmoss-server process");
-    }
-    return proc;
-}
-
-void OpenMossServer::stop_speech_process() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "openmoss-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+std::vector<std::string> OpenMossServer::server_args(const std::string& model_path, int port) {
+    return {"--model", model_path, "--host", "127.0.0.1", "--port", std::to_string(port),
+            "--no-webui"};
 }
 
 void OpenMossServer::start_speech_process(long timeout_seconds) {
-    Subprocess proc = spawn(model_path_);
-    set_process_state(proc.handle, proc.port, exe_path_, proc.args);
-    LOG(INFO, "openmoss-server") << "Process started with PID: " << proc.handle.pid << std::endl;
-
-    if (!wait_for_ready("/health", timeout_seconds)) {
-        stop_speech_process();
-        throw std::runtime_error("openmoss-server failed to start or become ready");
-    }
+    choose_port();
+    ServerCommand command;
+    command.program = exe_path_;
+    command.args = server_args(model_path_, port_);
+    command.env = env_vars_;
+    start_server(std::make_unique<NativeProcess>(), command, is_debug(), timeout_seconds);
 }
 
 void OpenMossServer::unload() {
     std::unique_lock<std::shared_mutex> lock(request_mutex_);
-    stop_speech_process();
+    stop_server();
     reference_cache_.clear();
 }
 
@@ -261,7 +232,7 @@ std::string OpenMossServer::design_reference_sample(
         + std::chrono::seconds(kVoiceDesignDeadlineSeconds);
     ProcessSwapGuard swap_guard(process_swap_in_progress_);
     LOG(INFO, "openmoss-server") << "Designing reference voice for: " << voice_description << std::endl;
-    stop_speech_process();
+    stop_server();
 
     std::string sample;
     try {
@@ -289,21 +260,28 @@ std::string OpenMossServer::design_reference_sample(
 std::string OpenMossServer::render_reference_sample(
     const std::string& voice_description, httplib::DataSink& sink,
     std::chrono::steady_clock::time_point deadline) {
-    Subprocess designer = spawn(voicegen_path_);
+    const int port = utils::ProcessManager::find_free_port(8001);
+    if (port <= 0) {
+        throw std::runtime_error("Failed to find an available port");
+    }
+    ServerCommand command;
+    command.program = exe_path_;
+    command.args = server_args(voicegen_path_, port);
+    command.env = env_vars_;
+
+    // Runs beside the speech server only while it renders this sample.
+    NativeProcess designer;
+    designer.start(command, is_debug());
     std::string sample;
     try {
-        const std::string base = "http://127.0.0.1:" + std::to_string(designer.port);
+        const std::string base = "http://127.0.0.1:" + std::to_string(port);
         bool ready = false;
         while (!ready && std::chrono::steady_clock::now() < deadline) {
             if (client_cancelled(sink)) {
                 throw std::runtime_error("voice design cancelled by client");
             }
-            if (!utils::ProcessManager::is_running(designer.handle)) {
-                const int exit_code = utils::ProcessManager::reap_process(designer.handle);
-                designer.handle = ProcessHandle{};
-                throw std::runtime_error(
-                    "voice-design backend exited during startup with code "
-                    + std::to_string(exit_code));
+            if (!designer.running()) {
+                throw std::runtime_error("voice-design backend exited during startup");
             }
             try {
                 const long health_timeout = std::min<long>(2, remaining_seconds(deadline));
@@ -364,12 +342,10 @@ std::string OpenMossServer::render_reference_sample(
         }
         sample = utils::JsonUtils::base64_encode(response_body);
     } catch (...) {
-        if (has_process_handle(designer.handle)) {
-            utils::ProcessManager::stop_process(designer.handle);
-        }
+        designer.stop();
         throw;
     }
-    utils::ProcessManager::stop_process(designer.handle);
+    designer.stop();
     LOG(INFO, "openmoss-server") << "Voice-design subprocess released" << std::endl;
     return sample;
 }

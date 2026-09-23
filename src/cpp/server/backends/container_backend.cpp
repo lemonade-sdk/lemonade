@@ -10,26 +10,44 @@
 namespace lemon {
 namespace backends {
 
-using utils::ContainerRuntime;
+using utils::ContainerManager;
 
-utils::ContainerImageRef pinned_image_or_throw(const std::string& recipe,
-                                               const std::string& variant) {
-    const utils::ContainerImageRef ref = image_pin(recipe, variant);
-    if (!ref.valid()) {
+namespace {
+
+utils::ContainerImage published_image_or_throw(const std::string& recipe,
+                                               const std::string& backend) {
+    utils::ContainerImage image = image_pin(recipe, backend);
+    if (!image.valid()) {
         const std::string arch = SystemInfo::get_rocm_arch();
-        throw std::runtime_error(recipe + ":" + variant + " publishes no toolbox image for " +
+        throw std::runtime_error(recipe + ":" + backend + " publishes no toolbox image for " +
                                  (arch.empty() ? std::string("this GPU") : arch));
     }
-    return ref;
+    return image;
 }
 
-std::string default_profile_id(const std::string& variant) {
-    if (variant.rfind("vulkan", 0) == 0) return "vulkan";
-    return "amd-rocm";
+// Why this host cannot run `image` right now, or "" when it can.
+std::string run_problem(const utils::ContainerImage& image) {
+    auto& manager = ContainerManager::global();
+    const auto readiness = manager.check_readiness(image.devices);
+    if (!readiness.ok()) {
+        return readiness.message + " See " +
+               utils::container_prerequisites_url(readiness.remediation_id);
+    }
+    if (!manager.has_image_digest(image.repository, image.digest)) {
+        return "Toolbox image " + image.tagged_ref() + " has not been pulled.";
+    }
+    return "";
 }
 
-std::string ContainerBackendOps::profile_id(const std::string& variant) const {
-    return default_profile_id(variant);
+}  // namespace
+
+utils::ContainerImage pinned_image_or_throw(const std::string& recipe,
+                                            const std::string& backend) {
+    utils::ContainerImage image = published_image_or_throw(recipe, backend);
+    if (const std::string problem = run_problem(image); !problem.empty()) {
+        throw std::runtime_error(problem);
+    }
+    return image;
 }
 
 std::string ContainerBackendOps::artifact_url(const std::string& backend) const {
@@ -38,48 +56,38 @@ std::string ContainerBackendOps::artifact_url(const std::string& backend) const 
 
 BackendOps::InstallCheck ContainerBackendOps::check_install(const std::string& backend,
                                                             bool binary_found) const {
-    (void)binary_found;  // there is no managed binary on disk for an image backend
+    (void)binary_found;  // a container backend has no binary on disk
 
-    const utils::ContainerImageRef ref = image_pin(recipe_, backend);
-    if (!ref.valid()) {
+    const utils::ContainerImage image = image_pin(recipe_, backend);
+    if (!image.valid()) {
         const std::string arch = SystemInfo::get_rocm_arch();
         return {false, "No toolbox image is published for " +
                            (arch.empty() ? std::string("this GPU") : arch)};
     }
 
-    auto& runtime = ContainerRuntime::global();
-    const auto readiness = runtime.check_readiness(ContainerRuntime::device_profile(
-        profile_id(backend)));
-    if (!readiness.ok()) {
-        return {false, readiness.message};
-    }
-
-    if (!runtime.has_image_digest(ref.repository, ref.digest)) {
-        return {false, "Toolbox image " + ref.tagged_ref() + " has not been pulled."};
-    }
-    return {true, ""};
+    const std::string problem = run_problem(image);
+    return {problem.empty(), problem};
 }
 
 std::string ContainerBackendOps::resolve_version(const std::string& backend,
                                                  const std::string& file_version) const {
-    (void)file_version;  // image backends keep no version.txt
-    const utils::ContainerImageRef ref = image_pin(recipe_, backend);
-    if (!ref.valid()) return "";
-    auto& runtime = ContainerRuntime::global();
-    // Variants of one recipe are usually tags of the same repository, so report
-    // this variant's own pinned digest when it is present. Falling back to
+    (void)file_version;  // a container backend keeps no version.txt
+    const utils::ContainerImage image = image_pin(recipe_, backend);
+    if (!image.valid()) return "";
+    auto& manager = ContainerManager::global();
+    // Backends of one recipe are usually tags of the same repository, so report
+    // this backend's own pinned digest when it is present. Falling back to
     // whatever else that repository has locally is what makes an out-of-date
     // pull read as update_required rather than as installed.
-    if (runtime.has_image_digest(ref.repository, ref.digest)) return short_digest(ref.digest);
-    return short_digest(runtime.installed_digest(ref.repository));
+    if (manager.has_image_digest(image.repository, image.digest)) return short_digest(image.digest);
+    return short_digest(manager.installed_digest(image.repository));
 }
 
 std::optional<BackendOps::UnavailableState> ContainerBackendOps::classify_unavailable(
     const std::string& backend, const std::string& install_error,
     const std::string& default_install_command) const {
-    auto& runtime = ContainerRuntime::global();
     const auto readiness =
-        runtime.check_readiness(ContainerRuntime::device_profile(profile_id(backend)));
+        ContainerManager::global().check_readiness(image_pin(recipe_, backend).devices);
     if (!readiness.ok()) {
         UnavailableState state;
         state.state = "action_required";
@@ -107,21 +115,20 @@ std::optional<BackendOps::UnavailableState> ContainerBackendOps::classify_unavai
 
 bool ContainerBackendOps::install(const std::string& backend, bool force,
                                   DownloadProgressCallback progress) const {
-    const utils::ContainerImageRef ref = pinned_image_or_throw(recipe_, backend);
-    auto& runtime = ContainerRuntime::global();
+    const utils::ContainerImage image = published_image_or_throw(recipe_, backend);
+    auto& manager = ContainerManager::global();
 
-    const auto readiness =
-        runtime.check_readiness(ContainerRuntime::device_profile(profile_id(backend)));
-    if (readiness.state == utils::ContainerReadiness::NoEngine ||
-        readiness.state == utils::ContainerReadiness::EngineUnreachable) {
+    const auto readiness = manager.check_readiness(image.devices);
+    if (readiness.state == utils::ContainerReadiness::NoContainerTool ||
+        readiness.state == utils::ContainerReadiness::ContainerToolUnreachable) {
         throw std::runtime_error(readiness.message + " See " +
                                  utils::container_prerequisites_url(readiness.remediation_id));
     }
 
-    if (!force && runtime.has_image_digest(ref.repository, ref.digest)) {
+    if (!force && manager.has_image_digest(image.repository, image.digest)) {
         if (progress) {
             DownloadProgress p;
-            p.file = ref.tagged_ref();
+            p.file = image.tagged_ref();
             p.file_index = 1;
             p.total_files = 1;
             p.percent = 100;
@@ -133,20 +140,20 @@ bool ContainerBackendOps::install(const std::string& backend, bool force,
 
     if (auto* cfg = RuntimeConfig::global()) {
         if (cfg->offline() || cfg->no_fetch_executables()) {
-            throw std::runtime_error("Cannot pull " + ref.tagged_ref() + ": " +
+            throw std::runtime_error("Cannot pull " + image.tagged_ref() + ": " +
                                      (cfg->offline() ? "offline mode"
                                                      : "fetching executable artifacts is disabled"));
         }
     }
 
-    runtime.pull(ref, progress);
+    manager.pull(image, progress);
     return true;
 }
 
 bool ContainerBackendOps::uninstall(const std::string& backend) const {
-    const utils::ContainerImageRef ref = image_pin(recipe_, backend);
-    if (!ref.valid()) return true;  // nothing pinned for this host; nothing to remove
-    ContainerRuntime::global().remove_image(ref);
+    const utils::ContainerImage image = image_pin(recipe_, backend);
+    if (!image.valid()) return true;  // nothing pinned for this host; nothing to remove
+    ContainerManager::global().remove_image(image);
     return true;
 }
 
