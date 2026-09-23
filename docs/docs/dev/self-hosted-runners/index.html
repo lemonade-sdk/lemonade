@@ -1063,6 +1063,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../working-groups/" class="md-nav__link">
         
   
@@ -1477,6 +1533,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#architecture-label" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Architecture label
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#hardware-labels" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1877,6 +1944,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -2595,6 +2690,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#architecture-label" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Architecture label
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#hardware-labels" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2783,7 +2889,7 @@
 <p>A "runner" is a computer that has installed GitHub's runner software, which runs a service that makes the laptop available to run GitHub Actions. In turn, Actions are defined by Workflows, which specify when the Action should run (manual trigger, CI, CD, etc.) and what the Action does (run tests, build packages, run an experiment, etc.).</p>
 <p>You can read about all this here: <a href="https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners">GitHub: About self-hosted runners</a>.</p>
 <h2 id="runner-labels">Runner Labels</h2>
-<p>Workflows target self-hosted runners by the labels the runner carries. We use two kinds of labels:</p>
+<p>Workflows target self-hosted runners by the labels the runner carries. We use three kinds of labels, plus the architecture label GitHub applies automatically:</p>
 <h3 id="pool-membership-label">Pool membership label</h3>
 <table>
 <thead>
@@ -2795,7 +2901,7 @@
 <tbody>
 <tr>
 <td><code>lemon-prod</code></td>
-<td>Runner is a production lemonade-sdk runner. <strong>Every production self-hosted runner job must include this label.</strong> It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes) that happen to share capability labels. Special-purpose runners (e.g. <code>repo-manager</code>) use their own dedicated labels and intentionally omit <code>lemon-prod</code>.</td>
+<td>Runner is a production lemonade-sdk runner. <strong>Every production self-hosted runner job must include this label.</strong> It acts as a hard gate that prevents jobs from landing on non-lemonade machines (e.g. personal developer boxes) that happen to share capability labels.</td>
 </tr>
 </tbody>
 </table>
@@ -2833,8 +2939,10 @@
 </tr>
 </tbody>
 </table>
-<p>A job that exercises more than one backend should request all the labels it needs (e.g., <code>[Windows, vulkan, rocm, lemon-prod]</code> for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry <em>every</em> label in the <code>runs-on</code> list.</p>
+<p>A job that exercises more than one backend should request all the labels it needs (e.g., <code>[Windows, X64, vulkan, rocm, lemon-prod]</code> for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry <em>every</em> label in the <code>runs-on</code> list.</p>
 <p>CPU-only jobs should target GitHub-hosted runners when possible.</p>
+<h3 id="architecture-label">Architecture label</h3>
+<p>GitHub registers every self-hosted runner with an architecture label (<code>X64</code>, <code>ARM64</code>, or <code>ARM</code>) alongside its OS label (<code>Linux</code>, <code>Windows</code>, <code>macOS</code>). <strong>Every self-hosted <code>runs-on</code> list must include one of these architecture labels.</strong> The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is <code>[self-hosted, Linux, ARM64, cuda, lemon-prod]</code>), so a job that only asks for <code>[self-hosted, Linux, lemon-prod]</code> can be scheduled onto either and fail with a binary or package built for the other architecture.</p>
 <h3 id="hardware-labels">Hardware labels</h3>
 <p>These pin a job to a specific hardware class when a capability label alone isn't enough to distinguish it. Combine them with a capability label.</p>
 <table>
@@ -2872,6 +2980,10 @@
 <tr>
 <td>Strix Halo</td>
 <td><code>lemon-prod</code>, <code>xdna2</code>, <code>rocm</code>, <code>stx-halo</code></td>
+</tr>
+<tr>
+<td>DGX Spark (ARM64 + CUDA)</td>
+<td><code>lemon-prod</code>, <code>cuda</code></td>
 </tr>
 </tbody>
 </table>
@@ -2962,7 +3074,8 @@
 </ul>
 </li>
 <li>Avoid triggering your workflow before anyone has had a chance to review it against these guidelines. To avoid triggers, do not include <code>on: pull request:</code> in your workflow until after a reviewer has signed off.</li>
-<li><strong>Always include <code>lemon-prod</code></strong> in every <em>production</em> self-hosted <code>runs-on</code> list (see <a href="#pool-membership-label">Pool membership label</a>). For example, <code>runs-on: [Windows, xdna2, lemon-prod]</code> for NPU work, <code>runs-on: [Linux, vulkan, rocm, lemon-prod]</code> for a job that exercises both GPU backends. CPU-only self-hosted jobs use <code>[self-hosted, Windows, lemon-prod]</code> / <code>[self-hosted, Linux, lemon-prod]</code>, but prefer GitHub-hosted runners (<code>windows-latest</code>, <code>ubuntu-latest</code>) for CPU-only work when possible. Special-purpose runners with their own dedicated labels (e.g. <code>[self-hosted, linux, repo-manager]</code>) are the exception and should not include <code>lemon-prod</code>.</li>
+<li><strong>Always include <code>lemon-prod</code></strong> in every <em>production</em> self-hosted <code>runs-on</code> list (see <a href="#pool-membership-label">Pool membership label</a>). For example, <code>runs-on: [Windows, X64, xdna2, lemon-prod]</code> for NPU work, <code>runs-on: [Linux, X64, vulkan, rocm, lemon-prod]</code> for a job that exercises both GPU backends. CPU-only self-hosted jobs use <code>[self-hosted, Windows, X64, lemon-prod]</code> / <code>[self-hosted, Linux, X64, lemon-prod]</code>, but prefer GitHub-hosted runners (<code>windows-latest</code>, <code>ubuntu-latest</code>) for CPU-only work when possible.</li>
+<li><strong>Always include an architecture label</strong> (<code>X64</code> or <code>ARM64</code>) in every self-hosted <code>runs-on</code> list, Windows included (see <a href="#architecture-label">Architecture label</a>). Without it a job can land on a machine of the wrong architecture.</li>
 <li>Be very considerate about installing software on to the runners:<ul>
 <li>Installing software into the CWD (e.g., a path of <code>.\</code>) is always ok, because that will end up in <code>C:\actions-runner\_work\REPO</code>, which is always wiped between tests.</li>
 <li>Installing software into <code>AppData</code>, <code>Program Files</code>, etc. is not advisable because that software will persist across tests. See the <a href="#new-runner-setup">setup</a> section to see which software is already expected on the system.</li>

@@ -1063,6 +1063,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../working-groups/" class="md-nav__link">
         
   
@@ -1765,6 +1821,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -2672,7 +2756,7 @@
 <span class="w">  </span><span class="nt">script</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">server_&lt;modality&gt;.py</span>
 <span class="w">  </span><span class="nt">extra_args</span><span class="p">:</span><span class="w"> </span><span class="s">"--wrapped-server</span><span class="nv"> </span><span class="s">&lt;recipe&gt;"</span>
 <span class="w">  </span><span class="nt">backends</span><span class="p">:</span><span class="w"> </span><span class="s">"vulkan</span><span class="nv"> </span><span class="s">rocm"</span>
-<span class="w">  </span><span class="nt">runner</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">vulkan</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rocm</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lemon-prod</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">runner</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">Linux</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">X64</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">vulkan</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">rocm</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">lemon-prod</span><span class="p p-Indicator">]</span>
 </code></pre></div>
 <p>If your backend uses ROCm via TheRock, add its recipe to <code>_THEROCK_RECIPES</code> in <code>test/utils/server_base.py</code>. Otherwise a cold runner folds the one-time TheRock download into the first request's timeout instead of <code>TIMEOUT_ROCM_INSTALL</code>, and the ROCm job flakes.</p>
 <h2 id="adding-a-new-endpoint-or-capability">Adding a new endpoint or capability</h2>

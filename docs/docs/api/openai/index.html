@@ -1061,6 +1061,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/working-groups/" class="md-nav__link">
         
   
@@ -1627,6 +1683,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -4898,10 +4982,9 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 </ul>
 <h2 id="post-v1imagesgenerations"><code>POST /v1/images/generations</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Image Generation API. You provide a text prompt and receive a generated image. This API uses <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> as the backend.</p>
+<p>Image Generation API. You provide a text prompt and receive a generated image.</p>
 <blockquote>
-<p><strong>Note:</strong> Image generation uses Stable Diffusion models. Available models include <code>SD-Turbo</code> (fast, ~4 steps), <code>SDXL-Turbo</code>, <code>SD-1.5</code>, and <code>SDXL-Base-1.0</code>.</p>
-<p><strong>Performance:</strong> CPU inference takes ~4-5 minutes per image. GPU (Vulkan) is faster but may have compatibility issues with some hardware.</p>
+<p><strong>Performance:</strong> CPU inference takes ~4-5 minutes per image. GPU (ROCm) is significantly faster.</p>
 </blockquote>
 <h3 id="parameters_5">Parameters</h3>
 <table>
@@ -4923,7 +5006,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>model</code></td>
 <td>Yes</td>
-<td>The Stable Diffusion model to use (e.g., <code>SD-Turbo</code>, <code>SDXL-Turbo</code>).</td>
+<td>The diffusion model to use (e.g., <code>SD-Turbo</code>, <code>Krea-2-Turbo</code>).</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -4983,7 +5066,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 </div>
 <h2 id="post-v1imagesedits"><code>POST /v1/images/edits</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image. This API uses <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> as the backend.</p>
+<p>Image Editing API. You provide a source image and a text prompt describing the desired change, and receive an edited image.</p>
 <blockquote>
 <p><strong>Note:</strong> This endpoint accepts <code>multipart/form-data</code> requests (not JSON). Use editing-capable models such as <code>Flux-2-Klein-4B</code> or <code>SD-Turbo</code>.</p>
 <p><strong>Performance:</strong> CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.</p>
@@ -5002,7 +5085,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>model</code></td>
 <td>Yes</td>
-<td>The Stable Diffusion model to use (e.g., <code>Flux-2-Klein-4B</code>, <code>SD-Turbo</code>).</td>
+<td>The diffusion model to use (e.g., <code>Flux-2-Klein-4B</code>, <code>SD-Turbo</code>).</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 <tr>
@@ -5124,7 +5207,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <hr />
 <h2 id="post-v1imagesvariations"><code>POST /v1/images/variations</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Image Variations API. You provide a source image and receive a variation of it. This API uses <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> as the backend.</p>
+<p>Image Variations API. You provide a source image and receive a variation of it.</p>
 <blockquote>
 <p><strong>Note:</strong> This endpoint accepts <code>multipart/form-data</code> requests (not JSON). Unlike <code>/images/edits</code>, a <code>prompt</code> parameter is not supported and will be ignored — the model generates a variation based solely on the input image.</p>
 <p><strong>Performance:</strong> CPU inference takes several minutes per image. GPU (ROCm) is significantly faster.</p>
@@ -5210,9 +5293,8 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <hr />
 <h2 id="post-v1imagesupscale"><code>POST /v1/images/upscale</code></h2>
 <p><sub><img alt="Status" src="https://img.shields.io/badge/status-fully_available-green" /></sub></p>
-<p>Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive a 4x upscaled image. This API uses the <code>sd-cli</code> binary from <a href="https://github.com/leejet/stable-diffusion.cpp">stable-diffusion.cpp</a> to perform super-resolution.</p>
+<p>Image Upscaling API. You provide a base64-encoded image and a Real-ESRGAN model name, and receive an upscaled image. The upscale factor depends on the selected model, and it is usually reflected in its name.</p>
 <blockquote>
-<p><strong>Note:</strong> Available upscale models are <code>RealESRGAN-x4plus</code> (general-purpose, 64 MB) and <code>RealESRGAN-x4plus-anime</code> (optimized for anime-style art, 17 MB). Both produce a 4x resolution increase (e.g., 256x256 → 1024x1024).</p>
 <p><strong>Note:</strong> Unlike <code>/images/edits</code> and <code>/images/variations</code>, this endpoint accepts a JSON body (not multipart/form-data). The image must be provided as a base64-encoded string.</p>
 </blockquote>
 <h3 id="parameters_8">Parameters</h3>
@@ -5235,7 +5317,7 @@ python<span class="w"> </span>examples/realtime_transcription.py<span class="w">
 <tr>
 <td><code>model</code></td>
 <td>Yes</td>
-<td>The ESRGAN model to use (e.g., <code>RealESRGAN-x4plus</code>, <code>RealESRGAN-x4plus-anime</code>).</td>
+<td>The ESRGAN model to use (e.g., <code>RealESRGAN-x4plus</code>, <code>Remacri-4x-TheNoise</code>).</td>
 <td><sub><img alt="Status" src="https://img.shields.io/badge/available-green" /></sub></td>
 </tr>
 </tbody>

@@ -67,6 +67,12 @@
         <loc>https://lemonade-server.ai/dev/philosophy/</loc>
       </url>
       <url>
+        <loc>https://lemonade-server.ai/dev/ai-content-policy/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/dev/spec-driven-dev/</loc>
+      </url>
+      <url>
         <loc>https://lemonade-server.ai/dev/working-groups/</loc>
       </url>
       <url>
@@ -122,6 +128,9 @@
       </url>
       <url>
         <loc>https://lemonade-server.ai/integrations/continue/</loc>
+      </url>
+      <url>
+        <loc>https://lemonade-server.ai/integrations/interviewer/</loc>
       </url>
       <url>
         <loc>https://lemonade-server.ai/integrations/langchain/</loc>

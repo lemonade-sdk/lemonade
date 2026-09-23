@@ -1213,6 +1213,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/working-groups/" class="md-nav__link">
         
   
@@ -1779,6 +1835,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -2573,6 +2657,32 @@
 <h2 id="quick-start-with-docker">Quick Start with Docker</h2>
 <blockquote>
 <p>You may need additional configuration depending on your environment.</p>
+</blockquote>
+<p>Images are published to <code>ghcr.io/lemonade-sdk/lemonade-server</code> under three rolling tags:</p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>latest</code></td>
+<td>The current stable release.</td>
+</tr>
+<tr>
+<td><code>candidate</code></td>
+<td>The current release candidate, rebuilt on every push to the release branch.</td>
+</tr>
+<tr>
+<td><code>edge</code></td>
+<td>The tip of <code>main</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Every stable release also has a <code>v&lt;version&gt;</code> tag and every candidate a <code>candidate-v&lt;version&gt;</code> tag.</p>
+<blockquote>
 <p><strong>Security note</strong></p>
 <p>The container runs <code>lemond</code> as an unprivileged user and binds <code>0.0.0.0</code>
 <em>inside</em> the container (required for Docker port publishing to work). The

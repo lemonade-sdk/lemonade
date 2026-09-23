@@ -1061,6 +1061,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../dev/ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dev/spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../dev/working-groups/" class="md-nav__link">
         
   
@@ -1647,6 +1703,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../integrations/langchain/" class="md-nav__link">
         
   
@@ -2132,6 +2216,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lemonade_docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemonade_docs</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2565,6 +2660,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lemonade_docs" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>lemonade_docs</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2769,6 +2875,16 @@
 <p>When <code>output_dir</code> is omitted, artifacts are inlined as MCP content blocks: <code>{"type":"image", "data":"&lt;base64&gt;", "mimeType":"image/png"}</code> and <code>{"type":"audio", "data":"&lt;base64&gt;", "mimeType":"audio/mpeg"}</code>.</p>
 <p>If the planner emits app-defined tool calls (those you passed in via <code>tools</code>/<code>tool_choice</code>), an extra text block <code>tool_calls: &lt;json&gt;</code> is appended, matching <code>lemonade_chat</code>'s passthrough semantics.</p>
 <p>Passing a non-collection model (e.g. a plain LLM) returns <code>isError: true</code> with a hint to use <code>lemonade_chat</code>.</p>
+<h3 id="lemonade_docs"><code>lemonade_docs</code></h3>
+<p>Read the server's own API reference. Call with no arguments to list the pages this server ships, then pass <code>page</code> to read one as markdown. The pages are bundled with the server, so they match the running version and work offline.</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lemonade_docs"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"arguments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"page"</span><span class="p">:</span><span class="w"> </span><span class="s2">"api/lemonade"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The listing returns a summary text block plus a JSON-stringified block with <code>{pages: [{id, title, bytes}]}</code>. <code>page</code> takes an <code>id</code> from that listing; unknown pages return <code>"isError": true</code>. The same content is available over HTTP at <a href=".././lemonade/#get-v1docs"><code>GET /v1/docs</code></a>.</p>
 <h2 id="error-model">Error model</h2>
 <table>
 <thead>

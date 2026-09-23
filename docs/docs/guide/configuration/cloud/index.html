@@ -996,6 +996,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#session-continuity-headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session continuity headers
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#authentication-precedence" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1209,6 +1220,62 @@
     
   
     Philosophy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
   
 
     
@@ -1795,6 +1862,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -2540,6 +2635,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#session-continuity-headers" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Session continuity headers
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#authentication-precedence" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2672,6 +2778,14 @@ lemonade<span class="w"> </span>run<span class="w"> </span>fireworks.kimi-k2p5
 <span class="s1">  }'</span>
 </code></pre></div>
 <p>No special headers, no per-request credentials — <code>lemond</code> resolves the key from its registry and forwards the request transparently.</p>
+<h2 id="session-continuity-headers">Session continuity headers</h2>
+<p>Some providers key their prompt cache on a per-session identifier the client supplies as an HTTP header (for example, OpenCode sends <code>x-opencode-session</code>). When a request carries a well-known session header, Lemonade relays it upstream <strong>verbatim</strong> — the same header name that arrived is re-sent with the resolved value — so the provider can maintain cache continuity across the Lemonade hop:</p>
+<ul>
+<li>If the client sends <code>x-opencode-session</code>, the provider receives <code>x-opencode-session</code>.</li>
+<li>If the client sends <code>x-session-id</code>, the provider receives <code>x-session-id</code>.</li>
+<li>Requests with no recognized session header are forwarded unchanged.</li>
+</ul>
+<p>The relay uses the built-in well-known session header allowlist only (<code>x-opencode-session</code>, <code>x-session-id</code>, <code>x-client-session-id</code>, <code>mcp-session-id</code>, <code>x-conversation-id</code>, <code>session-id</code>). Headers you configure for telemetry correlation via <code>telemetry.session.headers.id</code> are <strong>not</strong> sent to external providers, so internal identifiers never leave your network. Discovery (<code>GET &lt;base_url&gt;/models</code>) never carries a session header, since it is an administrative catalog query rather than inference.</p>
 <h2 id="authentication-precedence">Authentication precedence</h2>
 <p>When <code>lemond</code> needs an API key for a provider, it resolves it in this order:</p>
 <ol>

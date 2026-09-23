@@ -1063,6 +1063,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../working-groups/" class="md-nav__link">
         
   
@@ -1519,6 +1575,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#llamacpp-llamacpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        llama.cpp (<code>llamacpp</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#model-downloads" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -1931,6 +1998,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -2831,6 +2926,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#llamacpp-llamacpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        llama.cpp (<code>llamacpp</code>)
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#model-downloads" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3199,7 +3305,7 @@ the generator instead. Prose outside the markers is preserved. -->
 <td><code>thenoise</code></td>
 <td>rocm</td>
 <td>linux</td>
-<td>amd_gpu (gfx1150, gfx1151, gfx1152)</td>
+<td>amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X)</td>
 </tr>
 <tr>
 <td><code>thinksound</code></td>
@@ -3788,6 +3894,8 @@ per-architecture restriction is enforced by the backend's install gate.</p>
 <p>Lemonade does not inject <code>max_audio_frames</code> into OpenMOSS speech requests. OpenMOSS v0.3 owns this policy: its VoiceGenerator derives a text-based duration window when needed, while MOSS-TTS/MOSS-TTSD keep their reference-aware/native stop behavior. Keeping that distinction in the backend avoids truncating conditioned or multi-speaker speech.</p>
 <p>Voice design is opt-in through the <code>voice_design_description</code> extension and is never inferred from <code>voice</code>, which keeps its OpenAI-compatible meaning and is forwarded as an instruction. A client sending <code>"voice": "default"</code> gets speech rather than a design run for a voice literally named "default". The field is ignored when the request already carries <code>reference_wav_b64</code>. Request fields are read with a type-checking accessor rather than <code>json::value()</code>, which throws on a type mismatch instead of falling back to the default and would turn a client's wrong-typed field into a 500.</p>
 <p><code>MOSS-SoundEffect</code> uses the same recipe but is an audio-generation model: <code>audio_generations()</code> forwards to the backend's <code>/sfx</code> endpoint, accepting <code>duration</code>/<code>cfg</code> as aliases for <code>seconds</code>/<code>cfg_scale</code>.</p>
+<h3 id="llamacpp-llamacpp">llama.cpp (<code>llamacpp</code>)</h3>
+<p>Lemonade launches <code>llama-server</code> with <code>--parallel 1</code> and leaves the upstream <code>--cache-ram</code> host prompt cache at its default. <code>LlamaCppServer</code> does not override <code>downsize()</code>: slot <code>erase</code> frees no device memory (the KV buffer is allocated once at model load) and discards the slot's KV state without going through the host-cache save path, so soft idle leaves the slot resident and a resumed conversation reuses its cached prefix.</p>
 <h3 id="model-downloads">Model downloads</h3>
 <p>A checkpoint file can be reached twice during a registry download: once because the backend's <code>select_checkpoint_files</code> claimed it alongside the main weight, and again because it is also declared as its own checkpoint role (the OpenMOSS <code>.extras.gguf</code> sidecars are both). The same bytes either way, so <code>download_from_registry</code> collapses duplicates before counting, or the progress total overshoots.</p>
 <h3 id="backend-auto-selection">Backend auto-selection</h3>

@@ -1235,6 +1235,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../dev/ai-content-policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AI Content Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../dev/spec-driven-dev/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Spec Driven Development Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../dev/working-groups/" class="md-nav__link">
         
   
@@ -1801,6 +1857,34 @@
     
   
     Continue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../integrations/interviewer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interviewer
   
 
     
@@ -2695,7 +2779,7 @@ lemonade config set auto_evict_threshold_pct=0.90   # yield VRAM at 90% global u
 <p>A background monitor samples global VRAM usage (NVIDIA via <code>nvidia-smi</code>, AMD via sysfs on Linux). When usage crosses <code>auto_evict_threshold_pct</code>, the eviction engine frees the most disposable model. When <code>auto_evict</code> is disabled, no VRAM polling occurs.</p>
 <p><strong>Tiered degradation.</strong> Idle models degrade in two stages rather than a binary loaded/unloaded:</p>
 <ol>
-<li><strong>Soft idle (downsize):</strong> after <code>downsize_idle_timeout</code> seconds idle, the KV cache/context is cleared to free dynamic memory while base weights stay resident. The next request transparently restores it.</li>
+<li><strong>Soft idle (downsize):</strong> after <code>downsize_idle_timeout</code> seconds idle, the backend is asked to release dynamic memory while base weights stay resident. What this frees is backend-specific; for llama.cpp it is a no-op that leaves the prompt cache intact. The next request transparently restores the model to <code>ready</code>.</li>
 <li><strong>Hard idle / pressure (evict):</strong> after <code>evict_idle_timeout</code> seconds idle, or under VRAM pressure, the model is fully unloaded (VRAM released; the weights file stays in the OS page cache for a fast reload).</li>
 </ol>
 <p><strong>Load-time-weighted scoring.</strong> Under pressure, the engine evicts by:</p>
