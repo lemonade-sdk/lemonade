@@ -98,7 +98,7 @@ Use a bulleted list with one item per breaking change. Keep it concise and link 
 
 Tag the exact commit that produced the tested candidate. The tag must be `v<year>.<week>.<number>` and must match that candidate's build version. Pushing the tag is the human gate that starts stable publication; do not create release tags for candidates that should remain only in the candidate/prerelease channels.
 
-Use `tools/release.py` to do this deterministically. It fetches the release branches, selects the newest `release-v*` branch, computes the version from that branch's tip with the same logic as the build (`tools/version.py`), and — after you confirm — creates a signed tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong `number`.
+Use `tools/release.py` to do this deterministically. It fetches the release branches, selects the newest `release-v*` branch, computes the version from that branch's tip with the same logic as the build (`tools/version.py`), and — after you confirm — creates an annotated tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong `number`.
 
 ```bash
 # Promote the newest active release branch
@@ -109,9 +109,12 @@ python tools/release.py release-v2026.34
 
 # Preview the tag it would create without pushing anything
 python tools/release.py --dry-run
+
+# Opt into a signed tag when your git signing setup is available
+python tools/release.py --sign
 ```
 
-It prints the selected branch, commit, and computed version, then prompts `Create and push v<year>.<week>.<number>?` before tagging. Because the version is derived from the branch, you cannot promote a candidate by typing the wrong number.
+It prints the selected branch, commit, and computed version, then prompts `Create and push v<year>.<week>.<number>?` before tagging. Because the version is derived from the branch, you cannot promote a candidate by typing the wrong number. Signed tags remain available via `--sign` for operators who have git tag signing configured locally.
 
 The [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) creates the stable GitHub release and publishes the stable artifacts.
 
