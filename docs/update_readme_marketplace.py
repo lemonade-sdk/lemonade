@@ -8,6 +8,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 from urllib.error import URLError
 
@@ -54,6 +55,18 @@ def generate_markdown(apps: list) -> str:
         name = app.get("name", "Unknown")
         logo = app.get("logo", "")
         link = app.get("links", {}).get("guide") or app.get("links", {}).get("app", "#")
+        if app.get("id") == "gaia":
+            link = "https://github.com/amd/gaia"
+        guide_url = urlsplit(link)
+        if guide_url.hostname == "lemonade-server.ai":
+            guide_name = guide_url.path.rstrip("/").rsplit("/", 1)[-1]
+            guide = Path("docs/integrations") / f"{guide_name}.md"
+            if (README_PATH.parent / guide).is_file():
+                link = f"./{guide.as_posix()}"
+                if guide_url.fragment:
+                    link += f"#{guide_url.fragment}"
+            else:
+                link = "./docs/integrations/README.md"
 
         if logo:
             icon_html = f'<a href="{link}" title="{name}"><img src="{logo}" alt="{name}" width="60" /></a>'

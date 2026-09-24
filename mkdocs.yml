@@ -15,7 +15,7 @@
 #   zensical serve
 
 site_name: Lemonade Server Documentation
-site_url: https://lemonade-server.ai/
+site_url: https://lemonade-server.ai/docs/
 site_description: Lemonade Server is a lightweight, open-source local LLM server that allows you to run and manage multiple AI applications on your local machine. It provides a simple CLI for managing applications and supports various LLMs, making it easy to deploy and use AI models locally.
 
 edit_uri: README.md
