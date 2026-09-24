@@ -23,6 +23,15 @@ namespace {
 
 constexpr const char* kModelsMountRoot = "/mnt/models";
 
+std::string join_command_line(const std::vector<std::string>& args) {
+    std::string out;
+    for (const auto& arg : args) {
+        if (!out.empty()) out += ' ';
+        out += arg.find_first_of(" \t\"'") == std::string::npos ? arg : "'" + arg + "'";
+    }
+    return out;
+}
+
 bool has_handle(const utils::ProcessHandle& handle) {
 #ifdef _WIN32
     return handle.handle != nullptr;
@@ -148,9 +157,9 @@ std::string ContainerProcess::start(const ServerCommand& command, bool inherit_o
     for (auto& arg : spec.command) rewrite(arg);
     for (auto& entry : spec.env) rewrite(entry.second);
 
-    LOG(INFO, "Container") << "Starting " << spec.image.tagged_ref() << " as " << name_
-                           << " on port " << command.port << std::endl;
     command_line_ = manager.run_command(spec);
+    LOG(INFO, "Container") << "Starting " << name_ << ": " << join_command_line(command_line_)
+                           << std::endl;
     spawn("", inherit_output, {});
 
     if (spec.publish_port) return "127.0.0.1";
