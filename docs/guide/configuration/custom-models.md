@@ -435,7 +435,9 @@ extra_models_dir/
 └── reranking/
 ```
 
-Files directly inside a reserved directory are listed as separate models, except where numbered shard names declare that they belong together. Nested folder models and per-variant models inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat.
+`Files directly inside a reserved directory are listed as separate models, except where numbered shard names declare that they belong together. Nested folder models and per-variant models inherit the mode of their reserved top-level directory. Models at the root or under any other directory default to chat. The folder's old name, such as `extra.embeddings`, still works and points to its first file alphabetically.`
+
+---
 
 Reserved names must match exactly. `embeddings` is reserved; `Embedding`, `embedding`, and `embeddings 2` are ordinary directories. The mode comes from the top-level directory name alone, so `embeddings/bge-reranker-v2.gguf` is an embedding model.
 
