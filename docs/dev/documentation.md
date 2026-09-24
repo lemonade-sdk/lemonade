@@ -111,6 +111,10 @@ Add a ToC only if the document has **5 or more H2 sections**. Use a plain markdo
 
 ## Formatting
 
+### Links
+
+Link to documentation in this repository using relative Markdown file paths, including the `.md` extension (for example, `../guide/install/windows.md`). Avoid published website URLs and hardcoded `blob/main` URLs for these links. Relative paths keep the source and destination on the same branch or tag; the website is published separately at release boundaries. Use the same convention in generated documentation. For repository-only files outside `docs/`, use explicit GitHub URLs so links also work on the published website.
+
 ### Code blocks
 
 Always include a language tag.
@@ -266,14 +270,6 @@ AI tools can draft documentation faster than most people can type. That speed co
 ### Disclosing AI assistance
 
 You are not required to disclose that AI helped draft your documentation PR, but you *are* responsible for its accuracy. "The AI wrote it" is not a response to a correctness review comment.
-
-If you use an AI tool to generate review comments on a documentation PR, label them clearly so human reviewers can weigh them appropriately:
-
-```
-[AI-assisted review] The parameter description in the table doesn't mention the default value.
-```
-
----
 
 ## Community Contribution Process
 

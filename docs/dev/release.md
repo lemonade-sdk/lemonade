@@ -6,101 +6,116 @@ This guide documents the end-to-end process of releasing Lemonade.
 
 Lemonade has built its brand on quality and ease-of-use. Do not release a new Lemonade version if this is compromised in any way.
 
-The repo-manager workflow runs automatically on every push to `main` or a release branch and publishes a live release dashboard at [https://lemonade-server.ai/repo-manager](https://lemonade-server.ai/repo-manager). Use to assess whether the release is ready to ship. It also maintains three GitHub issues for the upcoming release (described in the steps below); these are updated automatically on each push.
+## Release Cadence and Channels
 
-## Release Cadence
+Lemonade operates on a weekly release cadence. A release candidate is branched from `main` at the cutoff time, which is every Wednesday at 16:00 UTC, and tested by the community for the following week. A release admin decides whether to promote a tested candidate to the stable channels.
 
-Lemonade operates on a weekly release cadence, with new releases coming out each Wednesday morning. Each release is managed by a core maintainer on a rotating basis.
+Release candidates are published for Ubuntu, Windows, Docker, macOS, Fedora, and Debian. The PPA and Snap use the `candidate` channel, and GitHub marks the release as a prerelease. Builds from `main` continue to go to the `bleeding-edge` channels. Stable releases use the `stable` PPA and Snap channels and the `latest` GitHub and Docker channels.
 
-It is highly recommended that any PR targeting a particular release be in a highly-reviewed state by Monday morning on the week of that release. Maintainers reserve the right to postpone merging any PR until after the release, in order to prioritize quality.
+Any PR intended for the next release should be merged before the cutoff time. A commit merged after the cutoff belongs to the following release cycle. Maintainers may postpone merging a PR to protect release quality.
 
-We suggest creating the release branch on the Tuesday before the release to provide time for testing before the Wednesday release.
+## Versioning
 
-## Step 1: Update the Version
+Lemonade versions have the deterministic format `year.week.number`:
 
-The single source of truth for Lemonade's version number is [near the top of CMakeLists.txt](https://github.com/lemonade-sdk/lemonade/blob/20126a43e38aae5c71a8a34d205cd913917e4466/CMakeLists.txt#L8). This number must be updated prior to creating a release.
+- `year` is the four-digit year of the release.
+- `week` is the ISO week in which the stable release is scheduled.
+- `number` is the number of commits added to the release branch since it was created. It starts at `0` and increases monotonically. Each number identifies exactly one artifact, whether or not that artifact is promoted to stable.
 
-Version numbers should always have the format `major.minor.patch`.
+Release branches omit the final component and are named `release-v<year>.<week>`. For example, a branch created on September 9, 2026 for the following week's release is named `release-v2026.38`. Its first candidate is `v2026.38.0`; one fix on the release branch produces `v2026.38.1`. If `v2026.38.1` is promoted to stable and later needs a hotfix, the next artifact is `v2026.38.2`.
 
-Decide the new version number using these criteria:
-- `major` release: Must include either a feature that fundamentally changes how people see Lemonade or highly disruptive breaking changes (we try to avoid those now...)
-    - Discuss with other core maintainers before changing the major version.
-    - Examples of past major releases: changing from Python to C++, adding NPU support on Linux.
-- `minor` release: Includes at least one headlining feature with broad appeal.
-    - Most releases are `minor` releases because code velocity on this project is high enough that a new headline feature lands every couple of days.
-- `patch` release: release only contains fixes or less-visible features.
-    - `patch` releases are rare, and typically only happen if a serious bug needs to be fixed right after a `major`/`minor` release.
+Windows MSI versions use a two-digit year because MSI version fields do not support the four-digit value. For example, Lemonade `2026.38.1` has MSI version `26.38.1`.
 
-## Step 2: Create the Release Branch
+The version is calculated at build time rather than stored in `CMakeLists.txt`. Non-candidate builds, including source builds, PR checks, and `bleeding-edge` artifacts, use:
 
-Each release is developed and tagged from a dedicated release branch, not from `main`. Create the branch from the tip of `main` once the release is ready to stabilize:
-
-```bash
-git checkout main
-git pull
-git checkout -b release-vX.Y.Z
-git push origin release-vX.Y.Z
+```text
+year.week.0~<commit-count>.<short-hash>
 ```
 
-Once the branch is pushed, repo-manager will automatically create three GitHub issues for this release:
+The week is the release week the commit would enter. Before the cutoff time, this is the following week; after the cutoff, it is the week after that. For example, a build from `main` on September 10, 2026 could be `2026.39.0~1595.ff22950d`.
 
-- **`Release vX.Y.Z final checklist`** — a prioritized (P1/P2/P3) checklist of things to verify before shipping, with a machine-generated verdict (`Ready` / `Needs Attention`). Work through the P1 items before tagging.
-- **`vX.Y.Z release notes`** — Headline and Breaking Changes sections pre-populated from the commit history. Review and edit before tagging; the release action pulls directly from this issue.
-- **`vX.Y.Z announcement`** — a full Discord announcement draft with per-feature sections and contributor shoutouts. Review and edit before posting.
+A source tree may contain a `.version` file to override the calculated version. Release source archives include this file so unpacked source retains the version of the artifact from which it came.
 
-All three issues are re-synced automatically on every subsequent push to the release branch. If you leave comments on those issues the system will take your feedback into account when regenerating the issue content.
+## repo-manager
 
-### Managing the Release Branch
+We have an AI-assisted tool called `repo-manager` that reviews every commit as it lands on `main` and summarizes these into a final release checklist for testers. This data doesn't replace human judgement, but can help to identify areas for testing. `repo-manager` also produces draft release notes and a Discord announcement for each release. It stores all of that as files in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing), which is rendered as a live release dashboard at [https://testing.lemonade-server.ai](https://testing.lemonade-server.ai).
 
-Two situations arise while the release branch is open:
+## Release Lifecycle
 
-**Backport a fix from `main` to the release branch** (most common — a fix merged to main that should also land in this release):
+### 1. Create and Publish the First Candidate
+
+At the cutoff time every week, automation creates `release-v<year>.<week>` from the tip of `main`, where the year and week identify the following week's release. The initial branch build is candidate `.0`.
+
+Every push to a `release-v*` branch produces the next candidate and publishes it to the candidate/prerelease channels. The same workflow runs repo-manager over the branch before it creates the release, so every candidate, and every stable release, comes with:
+
+- **The dashboard:** a checklist of what this release changed and what to exercise on each platform, drawn from the reviews of the commits in it.
+- **`releases/v<year>.<week>/notes.md`:** the Headline and Breaking Changes sections the release action puts on the release page.
+- **`releases/v<year>.<week>/announcement.md`:** a Discord announcement draft with feature sections and contributor shoutouts.
+
+Every later push to the branch regenerates the files from the new commit range, except that a file you have edited yourself is kept and never overwritten.
+
+### 2. Test the Candidate
+
+The release admin moderates the `#release-candidate` Discord channel, announces each candidate, and tells volunteers what needs testing. The admin also monitors issues with the `candidate` label and triages them against the project's supported use cases and quality standards.
+
+At minimum, each platform needs someone to install or upgrade to the candidate and exercise it. Testing normal production workloads is encouraged. Candidate testers should back up their configuration and models before installing a candidate, especially when a release includes a schema migration or another breaking change.
+
+When testing finds a problem, choose one of these outcomes:
+
+1. **Fix in a future release:** If the problem is minor and non-breaking, record it and fix it on `main` for a later release.
+2. **Hotfix:** Merge a minimal fix into `main`, then cherry-pick that commit into the release branch. Never develop a fix only on the release branch.
+3. **Revert:** If a blocking problem would be too complex to fix safely during the release cycle, revert the responsible commit or commits from both `main` and the release branch. The change must return to PR review before it can land again.
+
+Pushing a hotfix or revert to the release branch automatically publishes a new candidate with an incremented `number`. If an automated cherry-pick conflicts, stop and resolve the situation through the normal reviewed development process; do not introduce release-only code.
+
+When testing exposes a missing automated test, file an issue or RFC to add that coverage so the same class of regression is caught in CI.
+
+### 3. Decide Whether to Release
+
+Stable publication is always a human decision. Before tagging a candidate:
+
+- Read this release's page on [the dashboard](https://testing.lemonade-server.ai), which collects the checklist and the reviews of every commit in the release.
+- Review the candidate feedback and all open issues carrying the `candidate` label.
+- Review and edit `notes.md` as described below.
+
+If blocking issues remain at 19:00 UTC on Friday, skip that week's stable release by leaving the release branch untagged. Hold a postmortem to decide whether the review, testing, or release policy needs adjustment. Candidate artifacts keep their existing versions; version numbers are never reused.
+
+### 4. Review the Release Notes
+
+Edit `releases/v<year>.<week>/notes.md` in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing). repo-manager pre-populates the **Headline** and **Breaking Changes** sections from the commit history, and stops regenerating the file once you have edited it. Review and edit before tagging, because the release action pulls these sections directly into the GitHub release page.
+
+#### Headline
+
+The headline section starts with `## Headline` and contains a single-depth bulleted list. The website at https://lemonade-server.ai parses this section, so preserve that format.
+
+List the three to five most noteworthy aspects of the release. Keep each item concise, with no special formatting, links, or shoutouts.
+
+#### Breaking Changes
+
+Use a bulleted list with one item per breaking change. Keep it concise and link to a wiki article when users need migration instructions.
+
+### 5. Promote a Candidate to Stable
+
+Tag the exact commit that produced the tested candidate. The tag must be `v<year>.<week>.<number>` and must match that candidate's build version. Pushing the tag is the human gate that starts stable publication; do not create release tags for candidates that should remain only in the candidate/prerelease channels.
+
+Use `tools/release.py` to do this deterministically. It fetches the release branches, selects the newest `release-v*` branch, computes the version from that branch's tip with the same logic as the build (`tools/version.py`), and — after you confirm — creates a signed tag on that exact commit and pushes it. It refuses to proceed if the computed tag already exists or if the branch advanced between selection and push, which prevents accidentally tagging the wrong `number`.
 
 ```bash
-# Find the squash-merge commit SHA on main
-git log main --oneline | head -10
+# Promote the newest active release branch
+python tools/release.py
 
-git checkout release-vX.Y.Z
-git cherry-pick <commit-sha>
-git push origin release-vX.Y.Z
+# Promote an explicit older branch (hotfix)
+python tools/release.py release-v2026.34
+
+# Preview the tag it would create without pushing anything
+python tools/release.py --dry-run
 ```
 
-The release branch has no squash-merge PR requirement, so a direct push works fine.
+It prints the selected branch, commit, and computed version, then prompts `Create and push v<year>.<week>.<number>?` before tagging. Because the version is derived from the branch, you cannot promote a candidate by typing the wrong number.
 
-**Forward-port a commit from the release branch back to `main`** (rare — a fix made directly on the release branch that was never on main):
+The [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) creates the stable GitHub release and publishes the stable artifacts.
 
-Because `main` requires squash merges for PRs, **do not use a PR** — it would collapse the cherry-picked commit into a squash commit, destroying authorship and history. Push directly with an admin bypass instead:
-
-```bash
-git checkout main
-git pull
-git cherry-pick <commit-sha-from-release-branch>
-git push origin main   # requires admin "bypass branch protections" permission
-```
-
-Confirm with the team before pushing directly to `main`.
-
-## Step 3: Push a Tag
-
-Before tagging, check the **`Release vX.Y.Z final checklist`** issue. All P1 items should be resolved and the verdict should read `Ready`.
-
-Lemonade releases are automatically created by the [cpp_server_build_test_release.yml workflow](https://github.com/lemonade-sdk/lemonade/blob/main/.github/workflows/cpp_server_build_test_release.yml) final step, which is triggered by pushing a tag that matches the `v*` pattern. The tag must match the pattern `v<major>.<minor>.<patch>`, i.e., the value from CMakeLists.txt with a leading `v`.
-
-Let's say you're releasing v10.8.0, this will trigger the release action:
-
-```bash
-# Make sure you are tagging the right commit!
-git checkout release-v10.8.0
-git pull
-
-git tag v10.8.0
-
-git push origin v10.8.0
-```
-
-Example action from v10.7.0: https://github.com/lemonade-sdk/lemonade/actions/runs/27283434473/job/80590025966
-
-## Step 4: Windows Signing
+### 6. Approve Windows Signing
 
 Lemonade .msi artifacts are signed by SignPath.io under their SignPath Foundation program. Thank you SignPath!
 
@@ -116,77 +131,32 @@ You can view the signing request here: https://app.signpath.io/Web/8103545b-7814
 
 You must click the link, sign in, and press `Approve`.
 
-## Step 5: Release Action Finishes
+### 7. Wait for the Release Action
 
-Wait for the `cpp_server_build_test_release.yml` action to complete successfully. Sometimes it doesn't, because of a false negative on a test or because we renamed a workflow step or release artifact and forgot to update the release step.
+Wait for the `cpp_server_build_test_release.yml` action to complete successfully. If a failure is transient, rerun the failed job. If code needs to change, fix it on `main` and use the hotfix process to create and test a new candidate. Do not move or force-push an existing release tag: each version identifies exactly one artifact.
 
-If it fails, ideally you can press "rerun" on the job and get success.
-
-If you need to fix the code, push the fix to the release branch. Then move the tag to the new head and force push it to origin:
-
-```bash
-git checkout release-vX.Y.Z
-# ... make fix, commit ...
-git push origin release-vX.Y.Z
-git tag -f vX.Y.Z
-git push origin vX.Y.Z --force
-```
-
-## Step 6: Reconcile the Tag into `main`
-
-The tag lives on `release-vX.Y.Z`, so it isn't reachable from `main`, and `git describe --tags` on `main` reports the *previous* release — feeding a stale version into the Debian/PPA build (`prepare-debian-build`) and `test_release_notes.yml`. Link it in with an `ours` merge (records the ancestry only, changes no files).
-
-First confirm **every release-branch fix is forward-ported to `main`** — `-s ours` silently drops anything that isn't (see Step 2's forward-port guidance).
-
-```bash
-git checkout main
-git pull
-git merge -s ours --no-ff vX.Y.Z -m "chore: link vX.Y.Z into main history for git describe"
-git push origin main
-git describe --tags --abbrev=0   # expect vX.Y.Z; `git diff origin/main HEAD` should be empty
-```
-
-The push is blocked by `main`'s classic branch protection (PR / merge queue / status checks). You need the repo **Admin** role, and the rule must have *Do not allow bypassing the above settings* unchecked (Settings → Branches → Branch protection rules → `main`); admins then push directly.
-
-**IMPORTANT:** re-enable *Do not allow bypassing the above settings* as soon as you're done with this step.
-
-## Step 7: Update the Release Notes
-
-Open the **`vX.Y.Z release notes`** GitHub issue. Repo-manager has pre-populated the **Headline** and **Breaking Changes** sections from the commit history. Review and edit them — the release action pulls these sections directly from this issue to build the GitHub release page.
-
-You may also need to manually edit the GitHub release after it publishes to:
+After publication, you may need to edit the GitHub release to:
 - add co-author contributors who were missing
 - add deprecation notices
 - add/remove links to release artifacts that we forgot to update in the release workflow.
 
 DO NOT add or replace release artifacts, as this would break the chain of custody for the release and damage our credibility with users.
 
-### Headline
+### 8. Post the Discord Announcement
 
-The headline section starts with `## Headline` and contains a single-depth bulleted list. The website at https://lemonade-server.ai parses this section, so the format must be preserved.
+Open `releases/v<year>.<week>/announcement.md` in [lemonade-testing](https://github.com/lemonade-sdk/lemonade-testing). repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits there so they are kept, and post it in `#announcements` on the Lemonade Discord.
 
-The list should be the 3-5 most noteworthy aspects of the release. Keep items concise; no special formatting or links, no shoutouts.
+Use `@everyone` for the regular weekly release and `@release` for a hotfix.
 
-### Breaking Changes
+The auto-generated announcement uses people's GitHub usernames for shoutouts. Translate those to Discord usernames to the best of your ability before posting.
 
-Bulleted list with one item per breaking change. Keep it concise, and link to a wiki article for migration if more details are needed.
-
-## Step 8: Discord Announcement
-
-Open the **`vX.Y.Z announcement`** GitHub issue. Repo-manager has drafted a full announcement with per-feature sections and contributor shoutouts. Review it, make any edits, and post it in `#announcements` on the Lemonade Discord.
-
-- Major and Minor releases: `@everyone`
-- Patch releases: `@release`
-
-The auto-generated announcement uses people's github usernames for shoutouts. Please try to translate those to Discord usernames to the best of your ability before posting.
-
-## Step 9: Social Media
+## Social Media
 
 Not required, but it is always good to promote the new release online.
 
 ### Reddit
 
-There are two kinds of Reddit posts we typically do. It's ok to do both for a single release, but in that case post one on Wednesday and one 2+ days later.
+There are two kinds of Reddit posts we typically do. It's okay to do both for a single release, but in that case publish one on release day and the other at least two days later.
 
 **Release Update**
 

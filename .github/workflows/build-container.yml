@@ -19,6 +19,7 @@ on:
       - .ubuntu/Dockerfile
       - .dockerignore
       - contrib/debian/**
+      - tools/version.py
       - .github/workflows/build-container.yml
 
 concurrency:
@@ -50,6 +51,13 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Stamp version
+        run: |
+          VERSION=$(python3 tools/version.py)
+          printf '%s\n' "$VERSION" > .version
 
       # Only the publish path needs arm64, and emulating it on a PR would cost
       # far more than the Dockerfile change being verified.

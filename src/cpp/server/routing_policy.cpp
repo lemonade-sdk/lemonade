@@ -354,8 +354,10 @@ private:
             {"chars", request.params.chars},
             {"metadata", std::move(metadata)},
         };
-        // Withheld entirely (not just disclaimed) unless the policy actually
-        // has a use for these fields — see expose_request_features_.
+        // Withheld entirely (not just disclaimed) unless expose_request_features_
+        // is set. When constructed through the policy parser this is only the
+        // routing.router sugar's synthesized classifier; the make_classifier(s)
+        // helpers default it to true for direct callers.
         if (expose_request_features_) {
             payload["has_tools"] = request.params.has_tools;
             payload["has_images"] = request.params.has_images;

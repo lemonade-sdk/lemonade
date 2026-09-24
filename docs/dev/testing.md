@@ -73,7 +73,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/app-regression/*.test.cjs` regression test where practical |
 | Fixes a bug | A numbered regression test in whichever suite above owns the surface |
 | Changes a persisted JSON format | A schema-version assertion in the owning suite, so accidental format bumps are caught |
-| Docs only | No tests; `markdown-link-check` must pass |
+| Docs only | No tests; the Lychee link/anchor check must pass |
 
 ---
 
@@ -149,7 +149,7 @@ Packaging, distro, PPA, backend-validation, self-hosted inference and most macOS
 
 | Group | Gate check | Opt in on a PR with |
 |---|---|---|
-| Fedora RPM, Debian 13, Arch, openSUSE, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Linux distro builds`, `Launchpad PPA builds` | `ci:distros` |
+| Fedora RPM, Debian 13, Launchpad PPA, `Build Lemonade Desktop Installer` | `Packaging builds`, `Launchpad PPA builds` | `ci:distros` |
 | macOS `.dmg`, `Test CLI/Endpoints (macos-latest)`, `Test Embeddable (macOS)`, `Test .dmg - macOS inference` | `macOS builds` | `ci:macos` |
 | llama.cpp, vLLM, stable-diffusion.cpp validation | `llama.cpp validation`, `vLLM validation`, `stable-diffusion.cpp validation` | `ci:upgrades` |
 | `Test .exe - *` and `Test .deb - *` inference suites on the self-hosted rigs | `Inference backend tests` | `ci:backends` |

@@ -194,6 +194,11 @@ ENDPOINT_TEST_MODEL_CTX_SIZE = 2048
 # Model for tool-calling tests (must have native tool-calling support in its chat template)
 TOOL_CALLING_MODEL = "Qwen3-4B-Instruct-2507-GGUF"
 
+# Context to pin tool-calling test models to. Their native context is 256k, and
+# auto-tuning that alongside another resident LLM overcommits the 48 GB unified
+# memory on the ROCm CI runners.
+TOOL_CALLING_CTX_SIZE = 4096
+
 # Secondary model for multi-model testing (small, fast to load)
 MULTI_MODEL_SECONDARY = "Tiny-Test-Model-GGUF"
 

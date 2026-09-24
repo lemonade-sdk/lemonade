@@ -7,6 +7,8 @@ body:
       value: |
         Have an idea for how to make Lemonade better? We'd love to hear it!
 
+        Please write this request in your own words, per the [AI content policy](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/ai-content-policy.md).
+
   - type: textarea
     id: description
     attributes:

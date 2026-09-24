@@ -2,6 +2,7 @@
 // collection.router policy loading (#2383).
 
 #include "lemon/model_manager.h"
+#include "lemon/routing_policy.h"
 #include "lemon/utils/path_utils.h"
 
 #include <chrono>
@@ -286,6 +287,185 @@ static void test_backend_capability_over_chat_indicator(ModelManager& manager) {
           !manager.validate_collection_request("user.RouterKit", llama_clf_bare).has_value());
 }
 
+// What #2748 actually promises is that the REST of the policy keeps working,
+// not merely that parsing did not abort. Evaluate the parsed policy with no
+// classifier backend wired up -- the runtime situation on a host missing the
+// hardware -- and assert the unrelated keyword rule still routes while the
+// classifier rule falls back through its on_error (match_false by default).
+static void check_unrelated_rules_survive(const char* label,
+                                          const lemon::ModelInfo& info) {
+    if (info.route_policy == nullptr) {
+        check(label, false);
+        return;
+    }
+    lemon::RoutingPolicyEngine engine(*info.route_policy, lemon::ClassifierServices{});
+
+    lemon::RouteContext code;
+    code.input = "def foo(): pass";
+    code.params.chars = code.input.size();
+    const lemon::Decision code_decision = engine.route(code, /*want_trace=*/false);
+
+    lemon::RouteContext plain;
+    plain.input = "hello there";
+    plain.params.chars = plain.input.size();
+    const lemon::Decision plain_decision = engine.route(plain, /*want_trace=*/false);
+
+    check(label,
+          code_decision.route_to == "remote" &&
+          code_decision.matched_rule == "code-remote" &&
+          !code_decision.default_used &&
+          plain_decision.route_to == "local" &&
+          plain_decision.default_used);
+}
+
+// #2748: a classifier needing unavailable hardware (ryzenai-llm) must not
+// drop the whole policy -- only that classifier fails, at evaluate() time,
+// via its own on_error. Registered standalone since register_user_model
+// doesn't auto-register a collection's inline `models[]`.
+static void test_filtered_classifier_component_does_not_drop_policy(ModelManager& manager) {
+    manager.register_user_model(
+        "user.npu-clf",
+        json{{"model_name", "user.npu-clf"}, {"recipe", "ryzenai-llm"},
+             {"checkpoint", "example/npu-clf"}});
+    check("npu-clf is actually hardware-filtered on this host (test premise)",
+          !manager.model_exists("user.npu-clf"));
+
+    json doc = {
+        {"model_name", "user.RouterFiltered"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "user.npu-clf"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "user.npu-clf"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFiltered", doc);
+
+    auto info = manager.get_model_info("user.RouterFiltered");
+    check("router policy still parses when a classifier component is "
+          "hardware-filtered (#2748)",
+          info.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, with the component named canonically (#2748)",
+        info);
+}
+
+// #2748 follow-up: `components` lists the canonical id, classifier
+// references the bare name -- the opposite pairing from the test above.
+static void test_filtered_classifier_bare_name_resolves_through_alias(ModelManager& manager) {
+    manager.register_user_model(
+        "user.npu-clf2",
+        json{{"model_name", "user.npu-clf2"}, {"recipe", "ryzenai-llm"},
+             {"checkpoint", "example/npu-clf2"}});
+    check("npu-clf2 is actually hardware-filtered on this host (test premise)",
+          !manager.model_exists("user.npu-clf2"));
+
+    json doc = {
+        {"model_name", "user.RouterFilteredBare"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "user.npu-clf2"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "npu-clf2"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFilteredBare", doc);
+
+    auto info = manager.get_model_info("user.RouterFilteredBare");
+    check("router policy still parses when the classifier references the "
+          "filtered component by its bare name (#2748)",
+          info.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, via the bare-name alias (#2748)",
+        info);
+}
+
+// #2748 follow-up: builtin.<X> is a distinct alias form from the bare name,
+// added only by compute_model_alias_maps()'s builtin.<X> pass. Uses a real
+// builtin (ryzenai-llm, reliably filtered on any non-NPU CI host) so no
+// registration is needed to test it.
+static void test_filtered_classifier_builtin_prefixed_alias_resolves(ModelManager& manager) {
+    check("Qwen2.5-0.5B-Instruct-CPU is actually hardware-filtered on this "
+          "host (test premise)",
+          !manager.model_exists("Qwen2.5-0.5B-Instruct-CPU"));
+
+    json doc = {
+        {"model_name", "user.RouterFilteredBuiltin"},
+        {"version", "1"},
+        {"recipe", "collection.router"},
+        {"components", {"local", "remote", "Qwen2.5-0.5B-Instruct-CPU"}},
+        {"routing", {
+            {"candidates", {"local", "remote"}},
+            {"default_model", "local"},
+            {"classifiers", {{
+                {"id", "clf"},
+                {"type", "classifier"},
+                {"model", "builtin.Qwen2.5-0.5B-Instruct-CPU"},
+                {"labels", {"A", "B"}},
+                {"default_label", "A"},
+            }}},
+            {"rules", {{
+                {"id", "clf-rule"},
+                {"match", {{"classifier", "clf"}, {"min_score", 0.5}}},
+                {"route_to", "local"},
+            }, {
+                {"id", "code-remote"},
+                {"match", {{"keywords_any", {"def ", "stack trace"}}}},
+                {"route_to", "remote"},
+            }}},
+        }},
+    };
+
+    manager.register_user_model("user.RouterFilteredBuiltin", doc);
+
+    auto info2 = manager.get_model_info("user.RouterFilteredBuiltin");
+    check("router policy still parses when the classifier references a "
+          "filtered builtin via its builtin.<X> alias (#2748)",
+          info2.route_policy != nullptr);
+    check_unrelated_rules_survive(
+        "deterministic rule still routes and the filtered classifier's rule "
+        "falls back, via the builtin.<X> alias (#2748)",
+        info2);
+}
+
 static void test_register_preserves_routing(ModelManager& manager) {
     json doc = valid_router_collection();
     manager.register_user_model("user.RouterKit", doc);
@@ -304,6 +484,9 @@ int main() {
     test_rejects_bad_routing(manager);
     test_inline_capability_matches_registration(manager);
     test_backend_capability_over_chat_indicator(manager);
+    test_filtered_classifier_component_does_not_drop_policy(manager);
+    test_filtered_classifier_bare_name_resolves_through_alias(manager);
+    test_filtered_classifier_builtin_prefixed_alias_resolves(manager);
     test_register_preserves_routing(manager);
 
     fs::remove_all(temp);
