@@ -126,7 +126,7 @@ Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whis
 
 Use `lemonade pull` or the built-in **Model Manager** to download models. Custom GGUF/ONNX models can be pulled from Hugging Face or ModelScope, with their source retained for future updates.
 
-**[Browse all built-in models →](https://lemonade-server.ai/models.html)**
+**[Browse the included model catalog →](https://lemonade-server.ai/models.html)**
 
 <br clear="right"/>
 
