@@ -1061,7 +1061,7 @@ jobs:
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan"
-            runner: [Windows, X64, vulkan, stx-halo, lemon-prod]
+            runner: [Windows, X64, vulkan, strix-halo, xsj-dispatch, lemon-prod]
           - name: ryzenai
             script: server_llm.py
             extra_args: "--wrapped-server ryzenai"
@@ -1076,7 +1076,7 @@ jobs:
             script: server_whisper.py
             extra_args: "--wrapped-server whispercpp"
             backends: "cpu npu rocm"
-            runner: [Windows, X64, stx-halo, lemon-prod]
+            runner: [Windows, X64, strix-halo, xsj-dispatch, lemon-prod]
           - name: flm-whisper
             script: server_whisper.py
             extra_args: "--wrapped-server flm"
@@ -1335,12 +1335,12 @@ jobs:
             script: server_llm.py
             extra_args: "--wrapped-server llamacpp-hrx"
             backends: "hrx"
-            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
+            runner: [Linux, X64, rocm, strix-halo, xsj-dispatch, lemon-prod]
           - name: omni
             script: server_omni.py
             extra_args: "--wrapped-server llamacpp"
             backends: "vulkan"
-            runner: [Linux, X64, vulkan, stx-halo, lemon-prod]
+            runner: [Linux, X64, vulkan, strix-halo, xsj-dispatch, lemon-prod]
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
@@ -1350,7 +1350,7 @@ jobs:
             script: server_thenoise.py
             extra_args: "--wrapped-server thenoise"
             backends: "rocm"
-            runner: [Linux, X64, rocm, stx-halo, lemon-prod]
+            runner: [Linux, X64, rocm, strix-halo, xsj-dispatch, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
             extra_args: "--wrapped-server thinksound"
@@ -2736,7 +2736,7 @@ jobs:
     # exist and describe the same commit range; regenerating them would only reword what the
     # release admin already read. The release job tolerates this job being skipped.
     if: startsWith(github.ref, 'refs/heads/release-v')
-    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    runs-on: [self-hosted, strix-halo, Linux, X64, xsj-dispatch, lemon-prod]
     timeout-minutes: 180
     # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
     # repository's pull requests and issues.
