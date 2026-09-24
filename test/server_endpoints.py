@@ -6960,6 +6960,17 @@ class EndpointTests(ServerTestBase):
         try:
             found = self._discovered_extra_models(extra_dir)
 
+            # `found` is keyed by checkpoint, so it would collapse one file
+            # listed under two ids; count the raw listings too.
+            extra_ids = sorted(
+                model_id
+                for model_id, model in self._listed_models().items()
+                if model.get("source") == "extra_models_dir"
+            )
+            self.assertEqual(
+                len(extra_ids), 4, f"expected 4 extra listings, got {extra_ids}"
+            )
+
             # Four files, four models: no folder may overwrite another's entry.
             self.assertEqual(
                 sorted(found),
