@@ -50,7 +50,7 @@ jobs:
     name: Review ${{ matrix.sha }}
     needs: list-commits
     if: needs.list-commits.outputs.shas != '[]'
-    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    runs-on: [self-hosted, strix-halo, Linux, X64, xsj-dispatch, lemon-prod]
     timeout-minutes: 120
     strategy:
       fail-fast: false
