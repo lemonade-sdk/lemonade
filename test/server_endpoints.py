@@ -7430,6 +7430,29 @@ class EndpointTests(ServerTestBase):
         self.assertIn("does not declare a model architecture", error)
         print("[OK] Incompatible GGUF checkpoint was rejected before download")
 
+    @unittest.skipUnless(
+        os.environ.get("LEMONADE_INTEGRATION_TESTS") == "1",
+        "Skipped: set LEMONADE_INTEGRATION_TESTS=1 to run live HuggingFace tests",
+    )
+    def test_033_pull_variants_rejects_repo_without_supported_files(self):
+        """A repository with no GGUF, ONNX or Omni files is a 400, not a server error."""
+        checkpoint = "Qwen/Qwen1.5-0.5B-Chat"
+        response = requests.get(
+            f"{self.base_url}/pull/variants",
+            params={"checkpoint": checkpoint},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(
+            response.status_code,
+            400,
+            f"Expected 400 for a repository without supported files, got "
+            f"{response.status_code}: {response.text}",
+        )
+        self.assertIn(
+            "No supported model files found", response.json().get("error", "")
+        )
+        print("[OK] Repository without supported files was rejected with 400")
+
     def test_035_second_lemond_on_busy_port_exits_nonzero(self):
         """A second lemond on an in-use port must refuse to start and exit non-zero.
 
