@@ -336,6 +336,60 @@ static void test_inline_component_type_regression_pair() {
     }
 }
 
+// routing.capacity (#2959) is optional and strictly validated: it reshapes
+// every routing decision, so a nonsensical value must be rejected loudly
+// rather than clamped.
+static void test_capacity_settings() {
+    const json base = fixture("l1_keywords.json");
+
+    RoutePolicy defaults = lemon::parse_route_policy_collection(base);
+    check("absent capacity keeps the default margin",
+          defaults.capacity.safety_margin == 1.25);
+    check("absent capacity keeps the default headroom",
+          defaults.capacity.generation_headroom == 1024);
+
+    json tuned = base;
+    tuned["routing"]["capacity"] = {{"safety_margin", 1.0},
+                                    {"generation_headroom", 4096}};
+    RoutePolicy parsed = lemon::parse_route_policy_collection(tuned);
+    check("capacity.safety_margin is parsed",
+          parsed.capacity.safety_margin == 1.0);
+    check("capacity.generation_headroom is parsed",
+          parsed.capacity.generation_headroom == 4096);
+
+    json partial = base;
+    partial["routing"]["capacity"] = {{"generation_headroom", 0}};
+    RoutePolicy partial_parsed = lemon::parse_route_policy_collection(partial);
+    check("a partial capacity block leaves the other default intact",
+          partial_parsed.capacity.safety_margin == 1.25 &&
+              partial_parsed.capacity.generation_headroom == 0);
+
+    json bad_margin = base;
+    bad_margin["routing"]["capacity"] = {{"safety_margin", 0.5}};
+    check("a margin below 1.0 is rejected",
+          throws_with(bad_margin, "safety_margin must be a number >= 1.0"));
+
+    json bad_margin_type = base;
+    bad_margin_type["routing"]["capacity"] = {{"safety_margin", "1.5"}};
+    check("a non-numeric margin is rejected",
+          throws_with(bad_margin_type, "safety_margin must be a number >= 1.0"));
+
+    json bad_headroom = base;
+    bad_headroom["routing"]["capacity"] = {{"generation_headroom", -1}};
+    check("a negative headroom is rejected",
+          throws_with(bad_headroom, "generation_headroom must be a non-negative integer"));
+
+    json bad_headroom_type = base;
+    bad_headroom_type["routing"]["capacity"] = {{"generation_headroom", 1.5}};
+    check("a fractional headroom is rejected",
+          throws_with(bad_headroom_type, "generation_headroom must be a non-negative integer"));
+
+    json unknown = base;
+    unknown["routing"]["capacity"] = {{"margin", 2}};
+    check("an unknown capacity key is rejected",
+          throws_with(unknown, "routing.capacity contains unknown key 'margin'"));
+}
+
 static void test_schema_parser_key_parity() {
     json schema = load_json_file(ROUTING_SCHEMA_FILE);
     check_keys("root keys match schema",
@@ -344,6 +398,9 @@ static void test_schema_parser_key_parity() {
     check_keys("routing keys match schema",
                lemon::routing_block_keys(),
                schema_property_keys(schema["$defs"]["routing"]["properties"]));
+    check_keys("capacity keys match schema",
+               lemon::routing_capacity_keys(),
+               schema_property_keys(schema["$defs"]["capacity_settings"]["properties"]));
     check_keys("router sugar keys match schema",
                lemon::routing_router_keys(),
                schema_property_keys(schema["$defs"]["router_sugar"]["properties"]));
@@ -408,6 +465,7 @@ int main() {
     test_router_sugar_desugars_and_canonicalizes();
     test_classifier_capability_validation();
     test_inline_component_type_regression_pair();
+    test_capacity_settings();
     test_schema_parser_key_parity();
     test_collect_policy_helper_models();
 

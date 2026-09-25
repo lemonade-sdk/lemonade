@@ -455,6 +455,36 @@ json parse_classifier_configs(const json& routing,
     return resolved;
 }
 
+// routing.capacity is optional; an absent block leaves the documented defaults
+// in place. Both knobs are validated strictly rather than silently clamped: a
+// nonsensical margin would quietly reshape every routing decision.
+CapacitySettings parse_capacity(const json& routing) {
+    CapacitySettings capacity;
+    if (!routing.contains("capacity")) {
+        return capacity;
+    }
+    const json& value = routing.at("capacity");
+    reject_unknown_keys(value, routing_capacity_keys(), "routing.capacity");
+
+    if (value.contains("safety_margin")) {
+        const json& margin = value.at("safety_margin");
+        if (!margin.is_number() || margin.get<double>() < 1.0) {
+            throw std::invalid_argument(
+                "routing.capacity.safety_margin must be a number >= 1.0");
+        }
+        capacity.safety_margin = margin.get<double>();
+    }
+    if (value.contains("generation_headroom")) {
+        const json& headroom = value.at("generation_headroom");
+        if (!headroom.is_number_integer() || headroom.get<int64_t>() < 0) {
+            throw std::invalid_argument(
+                "routing.capacity.generation_headroom must be a non-negative integer");
+        }
+        capacity.generation_headroom = headroom.get<int64_t>();
+    }
+    return capacity;
+}
+
 std::string parse_default_model(const json& routing,
                                 const std::vector<std::string>& candidates,
                                 const std::set<std::string>& declared,
@@ -526,7 +556,13 @@ const std::set<std::string>& routing_policy_root_keys() {
 
 const std::set<std::string>& routing_block_keys() {
     static const std::set<std::string> keys = {
-        "candidates", "default_model", "router", "classifiers", "rules"};
+        "candidates", "default_model", "router", "classifiers", "rules", "capacity"};
+    return keys;
+}
+
+const std::set<std::string>& routing_capacity_keys() {
+    static const std::set<std::string> keys = {
+        "safety_margin", "generation_headroom"};
     return keys;
 }
 
@@ -647,6 +683,7 @@ RoutePolicy parse_route_policy_collection(const json& collection_json,
     RoutePolicy policy;
     policy.candidates = parse_candidates(routing, declared, options);
     policy.default_model = parse_default_model(routing, policy.candidates, declared, options);
+    policy.capacity = parse_capacity(routing);
 
     // Desugar the L0a `routing.router` sugar into explicit classifiers + rules
     // before the normal parse path runs. Everything downstream sees the core
