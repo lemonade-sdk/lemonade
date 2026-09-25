@@ -1,16 +1,12 @@
 #include "lemon/model_manager.h"
 #include "lemon/model_registry.h"
-#include "lemon/utils/path_utils.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstdio>
-#include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
 using lemon::ModelManager;
 using lemon::RegistryFile;
 using lemon::RemoteRegistrySource;
@@ -21,14 +17,6 @@ static int g_failures = 0;
 static void check(const char* name, bool ok) {
     std::printf("[%s] %s\n", ok ? "PASS" : "FAIL", name);
     if (!ok) ++g_failures;
-}
-
-static fs::path make_temp_dir() {
-    fs::path dir = fs::temp_directory_path();
-    dir /= "model_registry_" +
-           std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    fs::create_directories(dir);
-    return dir;
 }
 
 static void test_source_parsing_and_cache_names() {
@@ -244,9 +232,6 @@ static void test_huggingface_compatibility_metadata_policy() {
 }
 
 static void test_registration_persists_remote_provenance() {
-    fs::path temp = make_temp_dir();
-    lemon::utils::set_cache_dir(temp.string());
-
     ModelManager manager;
     manager.register_user_model("user.FromModelScope", json{
         {"source", "modelscope"},
@@ -266,8 +251,6 @@ static void test_registration_persists_remote_provenance() {
     auto local = manager.get_model_info("user.LocalMirror");
     check("local origin and remote provenance can coexist",
           local.source == "local_upload" && local.registry_source == "modelscope");
-
-    fs::remove_all(temp);
 }
 
 int main() {
