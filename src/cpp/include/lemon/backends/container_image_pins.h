@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "lemon/utils/container_manager.h"
 
 namespace lemon {
@@ -15,6 +17,10 @@ struct ImagePin {
     std::string arch;     // GPU ISA the pin applies to, e.g. "gfx1151"
     utils::ContainerImage image;
 };
+
+// One per-arch entry as an image. An entry missing a required field, or
+// published outside docker.io/kyuz0 and ghcr.io/peonist-ai, is invalid.
+utils::ContainerImage image_from_entry(const nlohmann::json& entry);
 
 // The pinned image for (recipe, backend) on `arch`. Returns an invalid image
 // when that combination is not published. Container backends key their
@@ -32,7 +38,7 @@ utils::ContainerImage image_pin(const std::string& recipe, const std::string& ba
 // version resolution branch on.
 bool backend_is_image_backed(const std::string& recipe, const std::string& backend);
 
-// Every committed pin, for the refresh workflow and the drift check.
+// Every committed pin.
 std::vector<ImagePin> all_image_pins();
 
 // The digest a backend is pinned to on this host, or "" when unpinned. This is

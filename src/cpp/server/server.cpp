@@ -402,11 +402,13 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
 
+#ifdef __linux__
     // A killed lemond leaves GPU-holding containers behind; they carry the
     // managed label, so this clears them.
     if (const int swept = utils::ContainerManager::global().sweep_managed_containers()) {
         LOG(INFO, "Container") << "Swept " << swept << " stale Lemonade container(s)" << std::endl;
     }
+#endif
 
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),

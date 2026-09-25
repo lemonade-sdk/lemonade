@@ -49,11 +49,6 @@ inline const BackendDescriptor descriptor = {
     nlohmann::json{{"chat_template_kwargs", {{"enable_thinking", false}}}},
 };
 
-// The checkpoint is registered with the GPU as a read-only file mapping, and
-// that registration needs kernel support that is not backported. Upstream
-// reports every working install on 7.0.0 or later.
-constexpr int kMinKernelMajor = 7;
-
 }  // namespace halogen
 }  // namespace backends
 }  // namespace lemon

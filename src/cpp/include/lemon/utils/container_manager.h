@@ -1,6 +1,8 @@
 #pragma once
 
+#include <chrono>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -18,20 +20,15 @@ enum class ContainerTool { None, Podman, Docker };
 
 // Where lemond itself is running relative to podman or docker. Everything but
 // Native means the container tool lives outside lemond's own filesystem and
-// process namespace, so its calls, mount sources and port reachability are
-// translated.
+// process namespace, so its calls and mount sources are translated.
 enum class HostTransport {
     Native,     // podman or docker on PATH, same namespace as lemond
     Toolbox,    // Fedora Toolbox / Distrobox: the tool runs on the host via flatpak-spawn
-    Container,  // lemond is itself a container talking to a bind-mounted socket
-    Snap,       // strictly confined snap driving the Docker snap's daemon
+    Container,  // the Lemonade Docker image, talking to a socket mounted into it
+    Snap,       // the lemonade-server snap, talking through its podman or docker plug
 };
 
 const char* host_transport_name(HostTransport transport);
-
-// URL of the container prerequisites page, optionally anchored at the section
-// that fixes a ReadinessResult's `remediation_id`.
-std::string container_prerequisites_url(const std::string& remediation_id = "");
 
 // One per-arch object of a container backend's backend_versions.json entry: the
 // pinned image and the hardware access its container gets. `tag` is for
@@ -41,22 +38,15 @@ struct ContainerImage {
     std::string repository;
     std::string tag;
     std::string digest;
-    std::string channel;  // "stable" | "experimental"
     std::vector<std::string> devices;
     std::vector<std::pair<std::string, std::string>> env;
     std::vector<std::string> cap_add;
     bool ipc_host = false;
     bool memlock_unlimited = false;
 
-    bool valid() const { return !repository.empty(); }
-    std::string pinned_ref() const {
-        if (!digest.empty()) return repository + "@" + digest;
-        if (!tag.empty()) return repository + ":" + tag;
-        return repository;
-    }
-    std::string tagged_ref() const {
-        return tag.empty() ? repository : repository + ":" + tag;
-    }
+    bool valid() const { return !repository.empty() && !digest.empty(); }
+    std::string pinned_ref() const { return repository + "@" + digest; }
+    std::string tagged_ref() const { return repository + ":" + tag; }
 };
 
 struct ContainerMount {
@@ -65,7 +55,6 @@ struct ContainerMount {
     bool read_only = true;
     // Set when host_path names a volume rather than a host path. The tool then
     // mounts `volume_subpath` inside that volume; "" is the whole volume.
-    // Docker calls this volume-subpath, podman subpath.
     bool volume = false;
     std::string volume_subpath;
 };
@@ -75,35 +64,23 @@ struct ContainerRunSpec {
     std::string name;
     ContainerImage image;
     std::vector<std::pair<std::string, std::string>> labels;
-    std::vector<std::string> groups;  // numeric gids, or podman's keep-groups
     std::vector<ContainerMount> mounts;
-    std::vector<std::pair<std::string, std::string>> env;  // on top of the image's
+    // On top of the image's env; a key here replaces the image's value.
+    std::vector<std::pair<std::string, std::string>> env;
     std::string network;  // a network name, or "container:<id>"
-    bool publish_port = true;
-    int host_port = 0;
-    int container_port = 0;
+    int port = 0;
     std::vector<std::string> command;  // argv appended after the image
 };
 
-// Why a container backend cannot run right now. Each value maps to a section
-// id on the container prerequisites doc page, so /system-info can hand the user
-// a link that lands on the fix for their specific problem.
-enum class ContainerReadiness {
-    Ready,
-    NoContainerTool,
-    ContainerToolUnreachable,
-    NoKfd,
-    NoRenderNode,
-    NoGroupMembership,
-    NoHostMountMapping,
-};
-
+// The first failing setup check for a container backend. `message` is the
+// check's "fails when" text and `action` the commands that fix it, one per line.
 struct ReadinessResult {
-    ContainerReadiness state = ContainerReadiness::Ready;
+    bool ok = true;
     std::string message;
-    std::string remediation_id;  // anchor on the prerequisites page
-
-    bool ok() const { return state == ContainerReadiness::Ready; }
+    std::string action;
+    // False when the tool itself cannot be reached, so nothing, not even a
+    // pull, can run.
+    bool tool_usable = true;
 };
 
 struct CommandResult {
@@ -118,14 +95,12 @@ using CommandRunner = std::function<CommandResult(const std::string& executable,
                                                   int timeout_seconds)>;
 
 // The one podman/docker wrapper in lemond, and the only code that invokes
-// either tool.
+// either tool. Safe to call from concurrent request handlers.
 class ContainerManager {
 public:
-    // What ContainerManager found when it probed for podman and docker.
     struct Info {
         ContainerTool tool = ContainerTool::None;
-        std::string executable;  // absolute path, as resolved on PATH
-        std::string version;
+        std::string executable;
 
         std::string name() const {
             switch (tool) {
@@ -145,22 +120,19 @@ public:
     // --- podman/docker discovery -------------------------------------------
     HostTransport transport() const { return transport_; }
     static HostTransport detect_transport();
-    // Podman first, then docker, each verified by a call that reaches its
-    // daemon or socket. Cached.
-    const std::optional<Info>& info();
+    // The tool this host uses: podman when it is installed, docker otherwise.
+    // What counts as installed depends on the host (see is_installed).
+    std::optional<Info> info();
     // The executable and leading argv for this transport. In a toolbox that is
-    // `flatpak-spawn --host <tool>`; a podman reached over a socket gets
-    // `--remote`.
+    // `flatpak-spawn --host <tool>`; podman gets `--remote` when CONTAINER_HOST
+    // names its socket.
     std::pair<std::string, std::vector<std::string>> invocation(const Info& info) const;
-    // Container transport: the id of the container lemond runs in, from the
-    // tool's own view, or "" when it cannot be determined.
+    // Container transport: the id of the container lemond runs in, or "" when
+    // it cannot inspect itself.
     std::string self_container_id();
-    // Container transport: lemond's own mounts as (host source -> path inside
-    // lemond's container).
-    const std::vector<ContainerMount>& self_mounts();
 
-    // Can this host give a container access to `devices`? Returns the first
-    // blocking problem.
+    // The setup checks for this host, in order, stopping at the first failure.
+    // Rerun on every call, so a fix takes effect without a restart.
     ReadinessResult check_readiness(const std::vector<std::string>& devices);
 
     // --- run command ---------------------------------------------------------
@@ -168,10 +140,6 @@ public:
     // `container_path`, with its source translated for the host.
     ContainerMount host_mount(const std::string& visible_path,
                               const std::string& container_path);
-    // The --group-add values that give a container access to `devices`: the
-    // user's own groups under podman, the host's video and render gids under
-    // docker.
-    std::vector<std::string> group_adds(const std::vector<std::string>& devices);
     // The complete command line that runs `spec`, starting with the executable.
     std::vector<std::string> run_command(const ContainerRunSpec& spec);
 
@@ -192,41 +160,42 @@ public:
     // killing the client: SIGKILL is not forwarded into the container, which
     // would go on holding the GPU.
     void stop(const std::string& name);
-    void stop_container(const std::string& name, int timeout_seconds = 10);
     void remove_container(const std::string& name);
     // The container's address on its network, or "" while it has none yet.
     std::string container_address(const std::string& name);
     // Idempotent; `--internal`, carrying the managed label.
     void ensure_isolated_network(const std::string& name);
     void remove_network(const std::string& name);
-    std::vector<std::string> list_managed_networks();
-    std::vector<std::string> list_managed_containers();
-    // Removes every container and private network carrying the managed label,
-    // so a killed lemond does not leave GPU-holding containers behind.
+    // Removes every container, stopped ones included, and every private
+    // network carrying the managed label.
     int sweep_managed_containers();
 
     // --- pure helpers (no podman or docker needed) ----------------------------
+    // Every Podman and Docker difference in the run command lives here.
     static std::vector<std::string> build_run_args(const ContainerRunSpec& spec,
                                                    ContainerTool tool);
+    // True when lemond reaches the server at 127.0.0.1:<port>, false when at
+    // the container's address on its private network.
+    static bool connects_on_loopback(const ContainerRunSpec& spec, ContainerTool tool);
     static std::vector<std::string> build_pull_args(const ContainerImage& image);
     static std::vector<std::string> build_stop_args(const std::string& name, int timeout_seconds);
 
     // Container name for humans reading `ps`. Ownership is the label, not the
     // name. The router loads each model at most once, so the model makes it
-    // unique; a port would not, since docker's ports stay free on the host.
+    // unique.
     static std::string container_name(const std::string& recipe, const std::string& backend,
                                       const std::string& model);
-    // The bare label every managed container carries.
     static const char* managed_label();
 
     // Host gid for a group name as a decimal string, or "" when undefined.
     // `--group-add <name>` resolves against the image's group file, which may
-    // not define the name or may map it to a different gid than the device
-    // node checks.
+    // not define the name or may map it to a different gid than the host's.
     static std::string host_group_gid(const std::string& name);
 
-    // Parse `<tool> --version` output into a bare version string.
-    static std::string parse_version(const std::string& output);
+    // The command that installs podman on the distribution an os-release file
+    // describes, matched on ID, then each word of ID_LIKE.
+    static std::string podman_install_command(const std::string& os_release_text);
+
     // Digests for `repository` in `<tool> images --digests` output, whose lines
     // are "<repository>@<digest>".
     static std::vector<std::string> parse_repo_digests(const std::string& output,
@@ -252,15 +221,23 @@ private:
     CommandResult run(const std::vector<std::string>& args, int timeout_seconds);
     CommandResult invoke(const Info& info, const std::vector<std::string>& args,
                          int timeout_seconds);
-    std::optional<Info> probe(ContainerTool tool, const std::string& binary);
+    bool is_installed(ContainerTool tool);
+    bool reachable(const Info& info);
+    bool started_by_service() const;
+    std::string install_command() const;
+    void probe_self();
+    std::optional<Info> select_tool();
 
     CommandRunner runner_;
     HostTransport transport_;
+    std::recursive_mutex mutex_;
     std::optional<Info> info_;
-    bool info_probed_ = false;
     bool self_probed_ = false;
     std::string self_id_;
     std::vector<ContainerMount> self_mounts_;
+    std::vector<std::string> readiness_devices_;
+    std::optional<ReadinessResult> readiness_;
+    std::chrono::steady_clock::time_point readiness_time_;
 };
 
 }  // namespace utils

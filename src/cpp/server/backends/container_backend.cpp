@@ -29,10 +29,7 @@ utils::ContainerImage published_image_or_throw(const std::string& recipe,
 std::string run_problem(const utils::ContainerImage& image) {
     auto& manager = ContainerManager::global();
     const auto readiness = manager.check_readiness(image.devices);
-    if (!readiness.ok()) {
-        return readiness.message + " See " +
-               utils::container_prerequisites_url(readiness.remediation_id);
-    }
+    if (!readiness.ok) return readiness.message;
     if (!manager.has_image_digest(image.repository, image.digest)) {
         return "Toolbox image " + image.tagged_ref() + " has not been pulled.";
     }
@@ -88,11 +85,11 @@ std::optional<BackendOps::UnavailableState> ContainerBackendOps::classify_unavai
     const std::string& default_install_command) const {
     const auto readiness =
         ContainerManager::global().check_readiness(image_pin(recipe_, backend).devices);
-    if (!readiness.ok()) {
+    if (!readiness.ok) {
         UnavailableState state;
         state.state = "action_required";
         state.message = readiness.message;
-        state.action = utils::container_prerequisites_url(readiness.remediation_id);
+        state.action = readiness.action;
         return state;
     }
 
@@ -119,10 +116,8 @@ bool ContainerBackendOps::install(const std::string& backend, bool force,
     auto& manager = ContainerManager::global();
 
     const auto readiness = manager.check_readiness(image.devices);
-    if (readiness.state == utils::ContainerReadiness::NoContainerTool ||
-        readiness.state == utils::ContainerReadiness::ContainerToolUnreachable) {
-        throw std::runtime_error(readiness.message + " See " +
-                                 utils::container_prerequisites_url(readiness.remediation_id));
+    if (!readiness.tool_usable) {
+        throw std::runtime_error(readiness.message);
     }
 
     if (!force && manager.has_image_digest(image.repository, image.digest)) {

@@ -2,7 +2,6 @@
 #include "lemon/backends/halogen/halogen.h"
 
 #include <algorithm>
-#include <cstdlib>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -13,10 +12,6 @@
 #include "lemon/backends/container_backend.h"
 #include "lemon/model_manager.h"
 #include "lemon/utils/http_client.h"
-
-#ifndef _WIN32
-#include <sys/utsname.h>
-#endif
 
 namespace fs = std::filesystem;
 using namespace lemon::utils;
@@ -43,52 +38,9 @@ bool has_suffix(const std::string& value, const std::string& suffix) {
 
 }  // namespace
 
-namespace halogen {
-
-int running_kernel_major() {
-#ifdef _WIN32
-    return 0;
-#else
-    struct utsname info;
-    if (uname(&info) != 0) return 0;
-    return std::atoi(info.release);
-#endif
-}
-
-bool kernel_supports_halogen() {
-    const int major = running_kernel_major();
-    return major == 0 || major >= kMinKernelMajor;  // unknown kernel is not a hard block
-}
-
-}  // namespace halogen
-
 void HalogenOps::populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const {
     (void)ctx;
     info.max_context_window = kNativeContext;
-}
-
-BackendOps::InstallCheck HalogenOps::check_install(const std::string& backend,
-                                                   bool binary_found) const {
-    if (!halogen::kernel_supports_halogen()) {
-        return {false, "Halogen needs Linux kernel " +
-                           std::to_string(halogen::kMinKernelMajor) + ".0 or newer; this host runs " +
-                           std::to_string(halogen::running_kernel_major()) + ".x"};
-    }
-    return ContainerBackendOps::check_install(backend, binary_found);
-}
-
-std::optional<BackendOps::UnavailableState> HalogenOps::classify_unavailable(
-    const std::string& backend, const std::string& install_error,
-    const std::string& default_install_command) const {
-    if (!halogen::kernel_supports_halogen()) {
-        UnavailableState state;
-        state.state = "action_required";
-        state.message = install_error;
-        state.action = utils::container_prerequisites_url("halogen-kernel");
-        return state;
-    }
-    return ContainerBackendOps::classify_unavailable(backend, install_error,
-                                                     default_install_command);
 }
 
 std::optional<std::vector<std::string>> HalogenOps::select_checkpoint_files(
@@ -124,13 +76,6 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
                          const RecipeOptions& options, bool do_not_upgrade) {
     (void)do_not_upgrade;  // install_backend() is a no-op once the pinned digest is present
 
-    if (!halogen::kernel_supports_halogen()) {
-        throw std::runtime_error("Halogen needs Linux kernel " +
-                                 std::to_string(halogen::kMinKernelMajor) +
-                                 ".0 or newer. See " +
-                                 utils::container_prerequisites_url("halogen-kernel"));
-    }
-
     const std::string checkpoint_path = model_info.resolved_path("main");
     if (checkpoint_path.empty() || !fs::exists(checkpoint_path)) {
         throw std::runtime_error("halogen: HGN checkpoint not found for model '" + model_name +
@@ -162,9 +107,8 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
 
     // Auto-tune sizes a context from GGUF architecture metadata against the GPU
     // pool. An HGN checkpoint carries no such metadata and Halogen keeps its KV
-    // in host RAM, so that estimate describes neither the model nor the device.
-    // Left alone the engine defaults to its native context and fits the KV pool
-    // downward against the memory it measures, which is the better answer.
+    // in host RAM, so that estimate describes neither the model nor the device;
+    // the image entry's HALOGEN_CTX applies instead.
     const json ctx_json = options.get_option("ctx_size");
     int ctx_size = (!ctx_size_is_auto() && ctx_json.is_number()) ? ctx_json.get<int>() : 0;
     if (ctx_size > kNativeContext) {
@@ -198,12 +142,6 @@ void HalogenServer::load(const std::string& model_name, const ModelInfo& model_i
         command.env.push_back({"HALOGEN_MAX_TOKENS_DEFAULT",
                                std::to_string((std::min)(ctx_size / 2, kDefaultMaxTokens))});
     }
-    // HALOGEN_KV_POOL_POSITIONS is deliberately left unset: the engine sizes the
-    // pool from the memory the OS reports and lowers it when the configured one
-    // will not fit. A host that carves a large block out for the iGPU in
-    // firmware leaves it too little to work with, and the answer there is the
-    // firmware setting, not a smaller pool - see the prerequisites page.
-    command.env.push_back({"HALOGEN_PROMPT_CACHE", "2"});
     if (!vision_tower_path.empty()) {
         command.env.push_back({"HALOGEN_VISION_TOWER", vision_tower_path});
     }

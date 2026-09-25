@@ -18,7 +18,7 @@
 
 #ifndef _WIN32
 #include <grp.h>
-#include <sys/stat.h>
+#include <pwd.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -31,11 +31,16 @@ namespace utils {
 namespace {
 
 constexpr const char* kManagedPrefix = "lemonade-";
-constexpr const char* kPrerequisitesUrl = "https://lemonade-server.ai/container_prerequisites.html";
 constexpr const char* kManagedLabel = "ai.lemonade";
 constexpr const char* kKfdTopologyNodes = "/sys/devices/virtual/kfd/kfd/topology/nodes";
+constexpr const char* kServiceAccount = "lemonade";
+constexpr const char* kPodmanSocket = "/run/podman/podman.sock";
+constexpr const char* kDockerSocket = "/var/run/docker.sock";
+constexpr const char* kDockerImageGuide =
+    "https://lemonade-server.ai/docs/guide/install/docker/#container-backends";
 constexpr int kShortCommandTimeout = 30;
 constexpr int kPullTimeout = 3600;
+constexpr auto kReadinessReuse = std::chrono::seconds(2);
 
 std::string trim(const std::string& value) {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -71,16 +76,43 @@ std::string env_or_empty(const char* name) {
     return value ? std::string(value) : std::string();
 }
 
-#ifndef _WIN32
-bool caller_in_group(gid_t gid) {
-    if (::getgid() == gid || ::getegid() == gid) return true;
-    const int count = ::getgroups(0, nullptr);
-    if (count <= 0) return false;
-    std::vector<gid_t> groups(static_cast<size_t>(count));
-    if (::getgroups(count, groups.data()) < 0) return false;
-    return std::find(groups.begin(), groups.end(), gid) != groups.end();
+std::string read_file(const std::string& path) {
+    std::ifstream in(path);
+    std::stringstream buffer;
+    buffer << in.rdbuf();
+    return buffer.str();
 }
+
+// True when this process belongs to every one of the video and render groups
+// the host defines. Rootless podman carries only real group membership into
+// its user namespace, so an ACL that logind grants the seat owner does not
+// count.
+bool in_video_and_render() {
+#ifdef _WIN32
+    return true;
+#else
+    const int count = ::getgroups(0, nullptr);
+    std::vector<gid_t> groups(static_cast<size_t>(count > 0 ? count : 0));
+    if (count > 0 && ::getgroups(count, groups.data()) < 0) groups.clear();
+    for (const char* name : {"video", "render"}) {
+        const struct group* entry = ::getgrnam(name);
+        if (!entry) continue;
+        const gid_t gid = entry->gr_gid;
+        if (::getgid() == gid || ::getegid() == gid) continue;
+        if (std::find(groups.begin(), groups.end(), gid) == groups.end()) return false;
+    }
+    return true;
 #endif
+}
+
+ReadinessResult failure(std::string message, std::string action, bool tool_usable) {
+    ReadinessResult result;
+    result.ok = false;
+    result.message = std::move(message);
+    result.action = std::move(action);
+    result.tool_usable = tool_usable;
+    return result;
+}
 
 CommandResult default_runner(const std::string& executable,
                              const std::vector<std::string>& args,
@@ -100,11 +132,6 @@ CommandResult default_runner(const std::string& executable,
 }
 
 }  // namespace
-
-std::string container_prerequisites_url(const std::string& remediation_id) {
-    return remediation_id.empty() ? std::string(kPrerequisitesUrl)
-                                  : std::string(kPrerequisitesUrl) + "#" + remediation_id;
-}
 
 const char* host_transport_name(HostTransport transport) {
     switch (transport) {
@@ -143,15 +170,16 @@ std::pair<std::string, std::vector<std::string>> ContainerManager::invocation(
     std::vector<std::string> prefix;
     std::string executable = info.executable;
     if (transport_ == HostTransport::Toolbox) {
-        const std::string spawn = find_executable_in_path("flatpak-spawn");
-        if (!spawn.empty()) {
-            prefix = {"--host", info.name()};
-            executable = spawn;
-        }
+        executable = find_executable_in_path("flatpak-spawn");
+        if (executable.empty()) executable = "flatpak-spawn";
+        prefix = {"--host", info.name()};
     }
-    if (info.tool == ContainerTool::Podman && !env_or_empty("CONTAINER_HOST").empty()) {
-        prefix.push_back("--remote");
-    }
+    // The Docker image and the snap bundle only a podman client, which has to
+    // reach the host's podman over its socket.
+    const bool remote = !env_or_empty("CONTAINER_HOST").empty() ||
+                        transport_ == HostTransport::Container ||
+                        transport_ == HostTransport::Snap;
+    if (info.tool == ContainerTool::Podman && remote) prefix.push_back("--remote");
     return {executable, prefix};
 }
 
@@ -176,17 +204,33 @@ std::string ContainerManager::host_group_gid(const std::string& name) {
 #endif
 }
 
-std::string ContainerManager::parse_version(const std::string& output) {
-    // "podman version 5.3.1" / "Docker version 29.7.2, build a7dcaa6"
-    for (const auto& line : split_lines(output)) {
-        const auto pos = line.find("version ");
-        if (pos == std::string::npos) continue;
-        std::string rest = trim(line.substr(pos + 8));
-        const auto cut = rest.find_first_of(", ");
-        if (cut != std::string::npos) rest = rest.substr(0, cut);
-        if (!rest.empty()) return rest;
+std::string ContainerManager::podman_install_command(const std::string& os_release_text) {
+    std::string id;
+    std::string id_like;
+    for (const auto& line : split_lines(os_release_text)) {
+        const auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        const std::string key = line.substr(0, eq);
+        std::string value = line.substr(eq + 1);
+        if (value.size() >= 2 && (value.front() == '"' || value.front() == '\'') &&
+            value.back() == value.front()) {
+            value = value.substr(1, value.size() - 2);
+        }
+        if (key == "ID") id = value;
+        if (key == "ID_LIKE") id_like = value;
     }
-    return "";
+
+    std::vector<std::string> candidates;
+    if (!id.empty()) candidates.push_back(id);
+    std::istringstream words(id_like);
+    for (std::string word; words >> word;) candidates.push_back(word);
+
+    for (const auto& candidate : candidates) {
+        if (candidate == "debian") return "sudo apt install podman";
+        if (candidate == "fedora") return "sudo dnf install podman";
+        if (candidate == "arch") return "sudo pacman -S podman";
+    }
+    return "Install Podman with the host's package manager";
 }
 
 std::vector<std::string> ContainerManager::parse_repo_digests(const std::string& output,
@@ -305,6 +349,11 @@ std::vector<std::string> ContainerManager::build_stop_args(const std::string& na
     return {"stop", "--time", std::to_string(timeout_seconds), name};
 }
 
+bool ContainerManager::connects_on_loopback(const ContainerRunSpec& spec, ContainerTool tool) {
+    const bool shared_namespace = spec.network.rfind("container:", 0) == 0;
+    return shared_namespace || tool == ContainerTool::Podman;
+}
+
 std::vector<std::string> ContainerManager::build_run_args(const ContainerRunSpec& spec,
                                                           ContainerTool tool) {
     std::vector<std::string> args = {"run", "--rm", "--init", "--name", spec.name,
@@ -326,9 +375,20 @@ std::vector<std::string> ContainerManager::build_run_args(const ContainerRunSpec
         args.push_back("--device");
         args.push_back(device);
     }
-    for (const auto& group : spec.groups) {
-        args.push_back("--group-add");
-        args.push_back(group);
+    if (!spec.image.devices.empty()) {
+        if (tool == ContainerTool::Podman) {
+            args.push_back("--group-add");
+            args.push_back("keep-groups");
+        } else {
+            // Docker resolves a group name in the image's /etc/group, so the
+            // host's numbers are what match the device nodes.
+            for (const char* group : {"video", "render"}) {
+                const std::string gid = host_group_gid(group);
+                if (gid.empty()) continue;
+                args.push_back("--group-add");
+                args.push_back(gid);
+            }
+        }
     }
     for (const auto& cap : spec.image.cap_add) {
         args.push_back("--cap-add");
@@ -360,23 +420,25 @@ std::vector<std::string> ContainerManager::build_run_args(const ContainerRunSpec
 
     args.push_back("--env");
     args.push_back("HOME=/tmp");
-    for (const auto* env : {&spec.image.env, &spec.env}) {
-        for (const auto& [key, value] : *env) {
-            args.push_back("--env");
-            args.push_back(key + "=" + value);
-        }
+    for (const auto& [key, value] : spec.image.env) {
+        const bool replaced = std::any_of(spec.env.begin(), spec.env.end(),
+                                          [&key](const auto& entry) { return entry.first == key; });
+        if (replaced) continue;
+        args.push_back("--env");
+        args.push_back(key + "=" + value);
+    }
+    for (const auto& [key, value] : spec.env) {
+        args.push_back("--env");
+        args.push_back(key + "=" + value);
     }
 
-    // A shared network namespace (container:<id>) already exposes the port on
-    // lemond's own loopback, and both tools refuse -p there.
+    // Docker publishes no port from an --internal network, and a shared
+    // network namespace already exposes the port on lemond's own loopback.
     const bool shared_namespace = spec.network.rfind("container:", 0) == 0;
-    if (spec.publish_port && !shared_namespace && spec.host_port > 0 &&
-        spec.container_port > 0) {
-        // Loopback only: the container port is Lemonade's to proxy, never a
-        // second externally reachable inference endpoint.
+    if (tool == ContainerTool::Podman && !shared_namespace && spec.port > 0) {
+        const std::string port = std::to_string(spec.port);
         args.push_back("-p");
-        args.push_back("127.0.0.1:" + std::to_string(spec.host_port) + ":" +
-                       std::to_string(spec.container_port));
+        args.push_back("127.0.0.1:" + port + ":" + port);
     }
 
     args.push_back(spec.image.pinned_ref());
@@ -392,75 +454,82 @@ CommandResult ContainerManager::invoke(const Info& info, const std::vector<std::
 }
 
 CommandResult ContainerManager::run(const std::vector<std::string>& args, int timeout_seconds) {
-    const auto& found = info();
+    const auto found = info();
     if (!found) {
-        throw std::runtime_error("No container tool found (looked for podman, then docker)");
+        throw std::runtime_error("Neither podman nor docker is installed");
     }
     return invoke(*found, args, timeout_seconds);
 }
 
-std::optional<ContainerManager::Info> ContainerManager::probe(ContainerTool tool,
-                                                              const std::string& binary) {
-    std::string path;
-    if (transport_ == HostTransport::Toolbox) {
-        // The tool lives on the host; inside the toolbox only flatpak-spawn has
-        // to exist.
-        if (find_executable_in_path("flatpak-spawn").empty()) return std::nullopt;
-        path = binary;
-    } else {
-        path = find_executable_in_path(binary);
-        if (path.empty()) return std::nullopt;
+bool ContainerManager::is_installed(ContainerTool tool) {
+    const std::string name = tool == ContainerTool::Podman ? "podman" : "docker";
+    switch (transport_) {
+        case HostTransport::Native:
+            return !find_executable_in_path(name).empty();
+        case HostTransport::Toolbox: {
+            const std::string spawn = find_executable_in_path("flatpak-spawn");
+            if (spawn.empty()) return false;
+            return runner_(spawn, {"--host", "sh", "-c", "command -v " + name},
+                           kShortCommandTimeout)
+                       .exit_code == 0;
+        }
+        case HostTransport::Container:
+            return fs::exists(tool == ContainerTool::Podman ? kPodmanSocket : kDockerSocket);
+        case HostTransport::Snap:
+            return runner_("snapctl", {"is-connected", name}, kShortCommandTimeout).exit_code == 0;
     }
-
-    Info found;
-    found.tool = tool;
-    found.executable = path;
-
-    // `version` (not `--version`) round-trips to the daemon or socket, so a
-    // docker CLI that cannot reach dockerd is reported as absent here rather
-    // than failing later inside load().
-    const CommandResult result =
-        invoke(found, {"version", "--format", "{{.Client.Version}}"}, kShortCommandTimeout);
-    if (result.exit_code != 0) {
-        LOG(DEBUG, "Container") << binary << " found at " << path
-                                << " but is not usable: " << trim(result.output) << std::endl;
-        return std::nullopt;
-    }
-    found.version = trim(result.output);
-    if (found.version.empty()) {
-        const CommandResult fallback = invoke(found, {"--version"}, kShortCommandTimeout);
-        found.version = parse_version(fallback.output);
-    }
-    return found;
+    return false;
 }
 
-const std::optional<ContainerManager::Info>& ContainerManager::info() {
-    if (info_probed_) return info_;
-    info_probed_ = true;
-
-    if (auto podman = probe(ContainerTool::Podman, "podman")) {
-        info_ = podman;
-    } else if (auto docker = probe(ContainerTool::Docker, "docker")) {
-        info_ = docker;
+std::optional<ContainerManager::Info> ContainerManager::select_tool() {
+    for (const ContainerTool tool : {ContainerTool::Podman, ContainerTool::Docker}) {
+        if (!is_installed(tool)) continue;
+        Info found;
+        found.tool = tool;
+        found.executable = found.name();
+        return found;
     }
-    if (info_) {
-        LOG(INFO, "Container") << "Using " << info_->name() << " " << info_->version << " at "
-                               << info_->executable << " (" << host_transport_name(transport_)
-                               << " transport)" << std::endl;
+    return std::nullopt;
+}
+
+std::optional<ContainerManager::Info> ContainerManager::info() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (!info_) {
+        info_ = select_tool();
+        if (info_) {
+            LOG(INFO, "Container") << "Using " << info_->name() << " ("
+                                   << host_transport_name(transport_) << " host)" << std::endl;
+        }
     }
     return info_;
 }
 
-std::string ContainerManager::self_container_id() {
-    if (transport_ != HostTransport::Container) return "";
-    if (!self_probed_) self_mounts();
-    return self_id_;
+bool ContainerManager::reachable(const Info& info) {
+    return invoke(info, {"version"}, kShortCommandTimeout).exit_code == 0;
 }
 
-const std::vector<ContainerMount>& ContainerManager::self_mounts() {
-    if (self_probed_ || transport_ != HostTransport::Container) return self_mounts_;
+bool ContainerManager::started_by_service() const {
+#ifdef _WIN32
+    return false;
+#else
+    if (transport_ != HostTransport::Native) return false;
+    const struct passwd* entry = ::getpwuid(::geteuid());
+    return entry && std::string(entry->pw_name) == kServiceAccount;
+#endif
+}
+
+std::string ContainerManager::install_command() const {
+    std::string path = "/etc/os-release";
+    if (transport_ == HostTransport::Snap) path = "/var/lib/snapd/hostfs/etc/os-release";
+    if (transport_ == HostTransport::Toolbox) path = "/run/host/etc/os-release";
+    return podman_install_command(read_file(path));
+}
+
+void ContainerManager::probe_self() {
+    if (transport_ != HostTransport::Container) return;
+    if (self_probed_ && !self_id_.empty()) return;
     self_probed_ = true;
-    if (!info()) return self_mounts_;
+    if (!info()) return;
 
     // The container's hostname is its short id unless the deployment
     // overrode it, in which case HOSTNAME is inspectable only if it is the
@@ -484,131 +553,114 @@ const std::vector<ContainerMount>& ContainerManager::self_mounts() {
         if (mounts.exit_code == 0) self_mounts_ = parse_self_mounts(mounts.output);
         break;
     }
-    if (self_id_.empty()) {
-        LOG(WARNING, "Container")
-            << "lemond is running in a container but cannot inspect itself through podman or "
-               "docker; model mounts cannot be translated to host paths" << std::endl;
-    }
-    return self_mounts_;
+}
+
+std::string ContainerManager::self_container_id() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    probe_self();
+    return self_id_;
 }
 
 ReadinessResult ContainerManager::check_readiness(const std::vector<std::string>& devices) {
-    if (!info()) {
-        if (transport_ == HostTransport::Container) {
-            return {ContainerReadiness::ContainerToolUnreachable,
-                    "lemond is running in a container with no podman or docker socket "
-                    "mounted, so it cannot launch toolbox containers.",
-                    "engine-socket"};
-        }
-        if (transport_ == HostTransport::Snap) {
-            return {ContainerReadiness::ContainerToolUnreachable,
-                    "The lemonade snap is not connected to the Docker snap's daemon.",
-                    "snap-docker-plug"};
-        }
-        if (find_executable_in_path("podman").empty() &&
-            find_executable_in_path("docker").empty()) {
-            return {ContainerReadiness::NoContainerTool,
-                    "No container tool found. Install podman (preferred) or docker.",
-                    "no-container-runtime"};
-        }
-        return {ContainerReadiness::ContainerToolUnreachable,
-                "A container tool is installed but not usable by this user "
-                "(the daemon or socket did not answer).",
-                "runtime-permissions"};
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    const auto now = std::chrono::steady_clock::now();
+    if (readiness_ && readiness_devices_ == devices && now - readiness_time_ < kReadinessReuse) {
+        return *readiness_;
     }
 
-    if (transport_ == HostTransport::Container) {
-        // The host's device nodes and groups are invisible from in here. What
-        // can be checked is the self-inspection that model mounts rely on.
-        if (self_container_id().empty()) {
-            return {ContainerReadiness::NoHostMountMapping,
-                    "lemond cannot inspect its own container through the podman or docker "
-                    "socket, so model files cannot be mounted into toolbox containers.",
-                    "engine-socket"};
-        }
-        return {};
-    }
-    if (transport_ == HostTransport::Toolbox) {
-        // The toolbox shares the host's /dev and the user's groups, and the
-        // permission check happens on the host, so trust the tool.
-        return {};
+    const auto previous = info_;
+    info_ = select_tool();
+    if (info_ && (!previous || previous->tool != info_->tool)) {
+        LOG(INFO, "Container") << "Using " << info_->name() << " ("
+                               << host_transport_name(transport_) << " host)" << std::endl;
     }
 
-    for (const auto& device : devices) {
-        if (fs::exists(device)) continue;
-        if (device == "/dev/kfd") {
-            return {ContainerReadiness::NoKfd,
-                    "/dev/kfd is missing. The amdgpu kernel driver is not loaded, or this "
-                    "kernel has no KFD support.",
-                    "kfd-missing"};
-        }
-        return {ContainerReadiness::NoRenderNode,
-                device + " is missing, so the GPU cannot be passed into a container.",
-                "render-node-missing"};
-    }
+    const bool service = started_by_service();
+    const bool podman = !info_ || info_->tool == ContainerTool::Podman;
+    ReadinessResult result;
 
-#ifndef _WIN32
-    // logind grants the seat owner access to these nodes via a POSIX ACL, which
-    // access() honors. An ACL is attached to a uid, and rootless podman runs in
-    // a user namespace where that uid does not exist, so only real group
-    // membership survives there.
-    const bool needs_real_groups = info_->tool == ContainerTool::Podman;
-
-    for (const auto& device : devices) {
-        // /dev/dri is a directory that both tools accept as "every device under
-        // here". The directory itself is world-readable and nobody-writable, so
-        // the character devices inside it are what has to be openable.
-        std::vector<std::string> nodes;
-        if (fs::is_directory(device)) {
-            std::error_code ec;
-            for (const auto& entry : fs::directory_iterator(device, ec)) {
-                if (fs::is_character_file(entry.path(), ec)) {
-                    nodes.push_back(entry.path().string());
+    switch (transport_) {
+        case HostTransport::Native:
+            if (podman) {
+                if (!info_) {
+                    result = failure("podman is not on PATH", install_command(), false);
+                } else if (service && !reachable(*info_)) {
+                    result = failure("/run/lemonade-podman.sock does not answer",
+                                     "sudo systemctl enable --now lemonade-podman.socket", false);
+                } else if (!devices.empty() && !in_video_and_render()) {
+                    result = service ? failure("lemonade is not in both video and render",
+                                               "sudo usermod -aG video,render lemonade\n"
+                                               "sudo systemctl restart lemond",
+                                               true)
+                                     : failure("The user's account is not in both video and render",
+                                               "sudo usermod -aG video,render $USER\n"
+                                               "Log out and back in",
+                                               true);
+                }
+            } else if (!reachable(*info_)) {
+                result = service ? failure("The Docker daemon refuses lemonade",
+                                           "sudo usermod -aG docker lemonade\n"
+                                           "sudo systemctl restart lemond",
+                                           false)
+                                 : failure("The Docker daemon refuses the user's account",
+                                           "sudo usermod -aG docker $USER\n"
+                                           "Log out and back in",
+                                           false);
+            }
+            break;
+        case HostTransport::Snap:
+            if (podman) {
+                if (!info_) {
+                    result = failure("Neither the podman plug nor the docker plug is connected",
+                                     install_command() +
+                                         "\nsudo systemctl enable --now podman.socket\n"
+                                         "sudo snap connect lemonade-server:podman :podman",
+                                     false);
+                } else if (!reachable(*info_)) {
+                    result = failure("/run/podman/podman.sock does not answer",
+                                     "sudo systemctl enable --now podman.socket", false);
+                }
+            } else if (!reachable(*info_)) {
+                result = failure("The docker snap's daemon does not answer",
+                                 "sudo snap start docker", false);
+            }
+            break;
+        case HostTransport::Container:
+            if (!info_) {
+                result = failure(
+                    "No socket is mounted at /run/podman/podman.sock or /var/run/docker.sock",
+                    kDockerImageGuide, false);
+            } else if (!reachable(*info_)) {
+                result = failure(std::string(podman ? kPodmanSocket : kDockerSocket) +
+                                     " does not answer",
+                                 kDockerImageGuide, false);
+            } else {
+                self_probed_ = false;
+                probe_self();
+                if (self_id_.empty()) {
+                    result = failure("lemond cannot inspect its own container through the socket",
+                                     kDockerImageGuide, true);
                 }
             }
-            if (nodes.empty()) {
-                return {ContainerReadiness::NoRenderNode,
-                        device + " contains no device nodes, so the GPU cannot be passed into "
-                                 "a container.",
-                        "render-node-missing"};
-            }
-        } else {
-            nodes.push_back(device);
-        }
-
-        // /dev/dri holds both the privileged card node and the unprivileged
-        // render node, and only the render node is needed for compute.
-        bool usable = false;
-        for (const auto& node : nodes) {
-            if (needs_real_groups) {
-                struct stat node_info;
-                if (::stat(node.c_str(), &node_info) != 0) continue;
-                if (caller_in_group(node_info.st_gid)) {
-                    usable = true;
-                    break;
+            break;
+        case HostTransport::Toolbox:
+            if (podman) {
+                if (!info_) {
+                    result = failure("podman is not on the host's PATH", install_command(), false);
                 }
-            } else if (::access(node.c_str(), R_OK | W_OK) == 0) {
-                usable = true;
-                break;
+            } else if (!reachable(*info_)) {
+                result = failure("The Docker daemon refuses the user's host account",
+                                 "sudo usermod -aG docker $USER\n"
+                                 "Log out and back in",
+                                 false);
             }
-        }
-        if (usable) continue;
-
-        if (needs_real_groups) {
-            return {ContainerReadiness::NoGroupMembership,
-                    "Rootless podman cannot pass access to " + device +
-                        " through: this user is not a member of the group that owns it. "
-                        "Add the user to the 'video' and 'render' groups and log back in.",
-                    "group-membership"};
-        }
-        return {ContainerReadiness::NoGroupMembership,
-                "This user cannot open " + device +
-                    ". Add the user to the 'video' and 'render' groups and log back in.",
-                "group-membership"};
+            break;
     }
-#endif
 
-    return {};
+    readiness_ = result;
+    readiness_devices_ = devices;
+    readiness_time_ = now;
+    return result;
 }
 
 ContainerMount ContainerManager::host_mount(const std::string& visible_path,
@@ -628,10 +680,12 @@ ContainerMount ContainerManager::host_mount(const std::string& visible_path,
             return mount;
         }
         case HostTransport::Container: {
+            std::lock_guard<std::recursive_mutex> lock(mutex_);
+            probe_self();
             // The longest matching self-mount wins: its container path is the
             // prefix to strip and its host source the prefix to add.
             const ContainerMount* best = nullptr;
-            for (const auto& self_mount : self_mounts()) {
+            for (const auto& self_mount : self_mounts_) {
                 const std::string& prefix = self_mount.container_path;
                 if (visible_path.rfind(prefix, 0) != 0) continue;
                 if (visible_path.size() > prefix.size() && visible_path[prefix.size()] != '/' &&
@@ -644,8 +698,7 @@ ContainerMount ContainerManager::host_mount(const std::string& visible_path,
                 throw std::runtime_error(
                     "'" + visible_path +
                     "' is not inside any volume mounted into lemond's container, so podman or "
-                    "docker on the host cannot mount it. See " +
-                    container_prerequisites_url("engine-socket"));
+                    "docker on the host cannot mount it");
             }
             std::string suffix = visible_path.substr(best->container_path.size());
             if (!suffix.empty() && suffix.front() == '/') suffix.erase(0, 1);
@@ -662,23 +715,10 @@ ContainerMount ContainerManager::host_mount(const std::string& visible_path,
     return mount;
 }
 
-std::vector<std::string> ContainerManager::group_adds(const std::vector<std::string>& devices) {
-    if (devices.empty()) return {};
-    const auto& found = info();
-    if (found && found->tool == ContainerTool::Podman) return {"keep-groups"};
-    std::vector<std::string> gids;
-    for (const char* group : {"video", "render"}) {
-        const std::string gid = host_group_gid(group);
-        if (!gid.empty()) gids.push_back(gid);
-    }
-    return gids;
-}
-
 std::vector<std::string> ContainerManager::run_command(const ContainerRunSpec& spec) {
-    const auto& found = info();
+    const auto found = info();
     if (!found) {
-        throw std::runtime_error("No container tool found. See " +
-                                 container_prerequisites_url("no-container-runtime"));
+        throw std::runtime_error("Neither podman nor docker is installed");
     }
     auto [executable, command] = invocation(*found);
     command.insert(command.begin(), executable);
@@ -712,11 +752,11 @@ std::string ContainerManager::installed_digest(const std::string& repository) {
 
 void ContainerManager::pull(const ContainerImage& image, DownloadProgressCallback progress) {
     if (!image.valid()) {
-        throw std::runtime_error("Cannot pull an image with no repository");
+        throw std::runtime_error("Cannot pull an image with no repository or digest");
     }
-    const auto& found = info();
+    const auto found = info();
     if (!found) {
-        throw std::runtime_error("No container tool found (looked for podman, then docker)");
+        throw std::runtime_error("Neither podman nor docker is installed");
     }
 
     LOG(INFO, "Container") << "Pulling " << image.pinned_ref() << std::endl;
@@ -748,20 +788,16 @@ void ContainerManager::remove_image(const ContainerImage& image) {
 
 void ContainerManager::stop(const std::string& name) {
     if (name.empty() || !info()) return;
-    stop_container(name);
-    // --rm detaches the container from its network asynchronously, so remove it
-    // explicitly first or the network is still in use.
-    remove_container(name);
-    remove_network(name);
-}
-
-void ContainerManager::stop_container(const std::string& name, int timeout_seconds) {
-    if (name.empty() || !info()) return;
-    const CommandResult result = run(build_stop_args(name, timeout_seconds), timeout_seconds + 15);
+    constexpr int kStopSeconds = 10;
+    const CommandResult result = run(build_stop_args(name, kStopSeconds), kStopSeconds + 15);
     if (result.exit_code != 0) {
         LOG(DEBUG, "Container") << "stop " << name << " returned " << result.exit_code << ": "
                                 << trim(result.output) << std::endl;
     }
+    // --rm detaches the container from its network asynchronously, so remove it
+    // explicitly first or the network is still in use.
+    remove_container(name);
+    remove_network(name);
 }
 
 void ContainerManager::remove_container(const std::string& name) {
@@ -810,36 +846,23 @@ void ContainerManager::remove_network(const std::string& name) {
     LOG(WARNING, "Container") << "Could not remove network " << name << std::endl;
 }
 
-std::vector<std::string> ContainerManager::list_managed_networks() {
-    if (!info()) return {};
-    const CommandResult result =
-        run({"network", "ls", "--filter", std::string("label=") + kManagedLabel, "--format",
-             "{{.Name}}"},
-            kShortCommandTimeout);
-    if (result.exit_code != 0) return {};
-    return split_lines(result.output);
-}
-
-std::vector<std::string> ContainerManager::list_managed_containers() {
-    if (!info()) return {};
-    const CommandResult result =
-        run({"ps", "--all", "--filter", std::string("label=") + kManagedLabel, "--format",
-             "{{.Names}}"},
-            kShortCommandTimeout);
-    if (result.exit_code != 0) return {};
-    return split_lines(result.output);
-}
-
 int ContainerManager::sweep_managed_containers() {
     if (!info()) return 0;
+    const std::string filter = std::string("label=") + kManagedLabel;
     int removed = 0;
-    for (const auto& name : list_managed_containers()) {
-        LOG(INFO, "Container") << "Removing stale container " << name << std::endl;
-        remove_container(name);
-        ++removed;
+    const CommandResult containers =
+        run({"ps", "--all", "--filter", filter, "--format", "{{.Names}}"}, kShortCommandTimeout);
+    if (containers.exit_code == 0) {
+        for (const auto& name : split_lines(containers.output)) {
+            LOG(INFO, "Container") << "Removing stale container " << name << std::endl;
+            remove_container(name);
+            ++removed;
+        }
     }
-    for (const auto& name : list_managed_networks()) {
-        remove_network(name);
+    const CommandResult networks =
+        run({"network", "ls", "--filter", filter, "--format", "{{.Name}}"}, kShortCommandTimeout);
+    if (networks.exit_code == 0) {
+        for (const auto& name : split_lines(networks.output)) remove_network(name);
     }
     return removed;
 }

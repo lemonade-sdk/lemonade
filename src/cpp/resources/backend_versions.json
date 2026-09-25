@@ -64,9 +64,7 @@
         "digest": "sha256:42630818d084f3fa712a06a8fd2259338361e52f1c36720cb3b75639686bac03",
         "devices": [
           "/dev/dri"
-        ],
-        "channel": "experimental",
-        "compressed_bytes": 606169183
+        ]
       }
     }
   },
@@ -83,9 +81,7 @@
         "devices": [
           "/dev/dri",
           "/dev/kfd"
-        ],
-        "channel": "experimental",
-        "compressed_bytes": 1389977330
+        ]
       }
     }
   },
@@ -117,9 +113,7 @@
         "cap_add": [
           "SYS_PTRACE"
         ],
-        "ipc_host": true,
-        "channel": "stable",
-        "compressed_bytes": 1404887954
+        "ipc_host": true
       },
       "gfx1201": {
         "repository": "docker.io/kyuz0/strix-halo-ds4-toolbox",
@@ -132,9 +126,7 @@
         "cap_add": [
           "SYS_PTRACE"
         ],
-        "ipc_host": true,
-        "channel": "stable",
-        "compressed_bytes": 722731830
+        "ipc_host": true
       }
     }
   },
@@ -272,10 +264,14 @@
           "/dev/dri",
           "/dev/kfd"
         ],
+        "env": {
+          "HALOGEN_CTX": "262144",
+          "HALOGEN_KV_POOL_POSITIONS": "524288",
+          "HALOGEN_KV_SLOTS": "4",
+          "HALOGEN_PROMPT_CACHE": "2"
+        },
         "ipc_host": true,
-        "memlock_unlimited": true,
-        "channel": "experimental",
-        "compressed_bytes": 908263424
+        "memlock_unlimited": true
       }
     }
   },

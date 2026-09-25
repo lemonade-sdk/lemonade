@@ -1,5 +1,6 @@
 #include "lemon/backends/container_image_pins.h"
 
+#include <lemon/utils/aixlog.hpp>
 #include <nlohmann/json.hpp>
 
 #include "lemon/backends/backend_descriptor_registry.h"
@@ -26,15 +27,36 @@ const json& versions() {
     return data;
 }
 
-utils::ContainerImage parse_image(const json& node) {
+bool allowed_repository(const std::string& repository) {
+    for (const char* prefix : {"docker.io/kyuz0/", "ghcr.io/peonist-ai/"}) {
+        if (repository.rfind(prefix, 0) == 0) return true;
+    }
+    return false;
+}
+
+}  // namespace
+
+utils::ContainerImage image_from_entry(const json& node) {
+    if (!node.is_object()) return {};
+    for (const char* field : {"repository", "tag", "digest", "devices"}) {
+        if (!node.contains(field)) {
+            LOG(ERROR, "Container") << "Image entry is missing '" << field << "': " << node.dump()
+                                    << std::endl;
+            return {};
+        }
+    }
     utils::ContainerImage image;
-    if (!node.is_object()) return image;
     image.repository = node.value("repository", "");
+    if (!allowed_repository(image.repository)) {
+        LOG(ERROR, "Container") << "Image repository " << image.repository
+                                << " is not in the allowed list" << std::endl;
+        return {};
+    }
     image.tag = node.value("tag", "");
     image.digest = node.value("digest", "");
-    image.channel = node.value("channel", "stable");
     image.devices = node.value("devices", std::vector<std::string>{});
-    for (const auto& [key, value] : node.value("env", json::object()).items()) {
+    const json env = node.value("env", json::object());
+    for (const auto& [key, value] : env.items()) {
         image.env.emplace_back(key, value.get<std::string>());
     }
     image.cap_add = node.value("cap_add", std::vector<std::string>{});
@@ -42,8 +64,6 @@ utils::ContainerImage parse_image(const json& node) {
     image.memlock_unlimited = node.value("memlock_unlimited", false);
     return image;
 }
-
-}  // namespace
 
 bool backend_is_image_backed(const std::string& recipe, const std::string& backend) {
     const json& data = versions();
@@ -60,7 +80,7 @@ utils::ContainerImage image_pin(const std::string& recipe, const std::string& ba
                                 const std::string& arch) {
     if (arch.empty() || !backend_is_image_backed(recipe, backend)) return {};
     const json& arches = versions()[recipe][backend];
-    return arches.contains(arch) ? parse_image(arches[arch]) : utils::ContainerImage{};
+    return arches.contains(arch) ? image_from_entry(arches[arch]) : utils::ContainerImage{};
 }
 
 utils::ContainerImage image_pin(const std::string& recipe, const std::string& backend) {
@@ -87,7 +107,7 @@ std::vector<ImagePin> all_image_pins() {
         for (const auto& [backend, arches] : data[recipe].items()) {
             if (!backend_is_image_backed(recipe, backend)) continue;
             for (const auto& [arch, image] : arches.items()) {
-                if (image.is_object()) pins.push_back({recipe, backend, arch, parse_image(image)});
+                if (image.is_object()) pins.push_back({recipe, backend, arch, image_from_entry(image)});
             }
         }
     }

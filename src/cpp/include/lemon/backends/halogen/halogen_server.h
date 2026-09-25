@@ -34,11 +34,7 @@ class HalogenOps : public ContainerBackendOps {
 public:
     HalogenOps() : ContainerBackendOps("halogen") {}
 
-    InstallCheck check_install(const std::string& backend, bool binary_found) const override;
     void populate_metadata(ModelInfo& info, const BackendOpsContext& ctx) const override;
-    std::optional<UnavailableState> classify_unavailable(
-        const std::string& backend, const std::string& install_error,
-        const std::string& default_install_command) const override;
     std::optional<std::vector<std::string>> select_checkpoint_files(
         const std::string& main_variant,
         const std::vector<std::string>& repo_files) const override;
@@ -49,11 +45,6 @@ std::unique_ptr<WrappedServer> create(const BackendContext& ctx);
 const BackendSpec* spec();
 const BackendOps* ops();
 constexpr uint32_t capabilities() { return capability_mask_of<HalogenServer>(); }
-
-// Running kernel major version, or 0 when it cannot be read. Exposed for tests.
-int running_kernel_major();
-// True when the host kernel is new enough for Halogen's memory path.
-bool kernel_supports_halogen();
 }  // namespace halogen
 
 }  // namespace backends

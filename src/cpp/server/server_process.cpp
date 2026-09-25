@@ -90,9 +90,7 @@ std::string ContainerProcess::start(const ServerCommand& command, bool inherit_o
                    {label + ".backend", backend_},
                    {label + ".model", model_},
                    {label + ".port", std::to_string(command.port)}};
-    spec.groups = manager.group_adds(spec.image.devices);
-    spec.host_port = command.port;
-    spec.container_port = command.port;
+    spec.port = command.port;
     spec.env = command.env;
 
     const auto& devices = spec.image.devices;
@@ -107,16 +105,13 @@ std::string ContainerProcess::start(const ServerCommand& command, bool inherit_o
 
     // Inside a container lemond's loopback is its own network namespace, so the
     // server joins it. Everywhere else it gets a private internal network with
-    // no route out. Docker cannot publish a port from such a network but the
-    // host can reach the container's address on it; podman is the reverse.
+    // no route out.
     const std::string self_id = manager.self_container_id();
     if (!self_id.empty()) {
         spec.network = "container:" + self_id;
-        spec.publish_port = false;
     } else {
         manager.ensure_isolated_network(name_);
         spec.network = name_;
-        spec.publish_port = manager.info()->tool == utils::ContainerTool::Podman;
     }
 
     // Each model file is resolved through the Hugging Face cache's symlinks and
@@ -162,7 +157,8 @@ std::string ContainerProcess::start(const ServerCommand& command, bool inherit_o
                            << std::endl;
     spawn("", inherit_output, {});
 
-    if (spec.publish_port) return "127.0.0.1";
+    const auto tool = manager.info();
+    if (tool && ContainerManager::connects_on_loopback(spec, tool->tool)) return "127.0.0.1";
 
     // podman or docker attaches the container's address asynchronously.
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);

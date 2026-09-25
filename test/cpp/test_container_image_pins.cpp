@@ -1,8 +1,8 @@
-// Proves every committed image pin lines up with a descriptor support row. A
-// support row with no pin resolves to "publishes no image for <arch>" at load
-// time; a pin with no support row is dead weight the refresh workflow would keep
-// bumping. Running in a container is per backend, not per recipe: llamacpp
-// ships release binaries with one container backend among them.
+// Proves every committed image pin is a valid entry and lines up with a
+// descriptor support row. A support row with no pin resolves to "publishes no
+// image for <arch>" at load time. Running in a container is per backend, not
+// per recipe: llamacpp ships release binaries with one container backend among
+// them.
 //
 // Build with: cmake --build --preset default --target test_container_image_pins
 // Run with: ctest --test-dir build -R '^ContainerImagePinsTest$' --output-on-failure
@@ -11,6 +11,7 @@
 #include "lemon/backends/container_image_pins.h"
 
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <map>
 #include <set>
 #include <string>
@@ -18,6 +19,7 @@
 using lemon::backends::all_descriptors;
 using lemon::backends::all_image_pins;
 using lemon::backends::backend_is_image_backed;
+using lemon::backends::image_from_entry;
 using lemon::backends::image_pin;
 
 namespace {
@@ -53,8 +55,9 @@ int main() {
         expect(!pin.image.repository.empty(), label + " names a repository");
         expect(!pin.image.tag.empty(), label + " records the tag it was resolved from");
         expect(is_sha256(pin.image.digest), label + " pins a sha256 digest");
-        expect(pin.image.channel == "stable" || pin.image.channel == "experimental",
-               label + " declares a known channel");
+        expect(pin.image.repository.rfind("docker.io/kyuz0/", 0) == 0 ||
+                   pin.image.repository.rfind("ghcr.io/peonist-ai/", 0) == 0,
+               label + " is published from an allowed repository");
         expect(pin.image.pinned_ref() == pin.image.repository + "@" + pin.image.digest,
                label + " resolves to a digest reference");
         expect(!pin.image.devices.empty(), label + " lists the devices its container opens");
@@ -77,6 +80,29 @@ int main() {
             }
         }
     }
+
+    const auto halogen = image_pin("halogen", "rocm", "gfx1151");
+    const decltype(halogen.env) halogen_env = {{"HALOGEN_CTX", "262144"},
+                                               {"HALOGEN_KV_POOL_POSITIONS", "524288"},
+                                               {"HALOGEN_KV_SLOTS", "4"},
+                                               {"HALOGEN_PROMPT_CACHE", "2"}};
+    expect(halogen.env == halogen_env, "halogen:rocm carries Cockpit's engine settings");
+    expect(halogen.ipc_host && halogen.memlock_unlimited, "halogen:rocm shares IPC and memlock");
+
+    const nlohmann::json good = {{"repository", "docker.io/kyuz0/amd-strix-halo-toolboxes"},
+                                 {"tag", "rocm-10.0"},
+                                 {"digest", "sha256:abc"},
+                                 {"devices", {"/dev/dri"}}};
+    expect(image_from_entry(good).valid(), "a complete entry from an allowed repository parses");
+    for (const char* field : {"repository", "tag", "digest", "devices"}) {
+        nlohmann::json missing = good;
+        missing.erase(field);
+        expect(!image_from_entry(missing).valid(),
+               std::string("an entry without '") + field + "' is rejected");
+    }
+    nlohmann::json elsewhere = good;
+    elsewhere["repository"] = "docker.io/someone-else/llama";
+    expect(!image_from_entry(elsewhere).valid(), "an entry outside the allowed repositories is rejected");
 
     for (const auto& leftover : pinned) {
         expect(false, "pin " + leftover + " has no matching descriptor support row");

@@ -442,7 +442,7 @@ class LLMTests(ServerTestBase):
             # A response cut off by max_output_tokens ends as incomplete.
             elif event.type in ("response.completed", "response.incomplete"):
                 self.assertEqual(
-                    event.response.output[0].content[0].text,
+                    event.response.output_text,
                     complete_response,
                     "Complete response should match streamed response",
                 )
@@ -544,6 +544,7 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
+            temperature=0.0,
             max_completion_tokens=300,
             extra_body=get_extra_body("chat"),
         )
@@ -569,6 +570,7 @@ class LLMTests(ServerTestBase):
                 }
             ],
             tools=[SAMPLE_TOOL],
+            temperature=0.0,
             max_completion_tokens=300,
             extra_body=get_extra_body("chat"),
             stream=True,
