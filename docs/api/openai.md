@@ -1174,7 +1174,7 @@ Returns a single model object with the same fields as described in the [models l
   "labels": ["reasoning"],
   "recipe_options": {
     "ctx_size": 8192,
-    "llamacpp_args": "--no-mmap",
+    "llamacpp_args": "--load-mode none",
     "llamacpp_backend": "rocm"
   }
 }

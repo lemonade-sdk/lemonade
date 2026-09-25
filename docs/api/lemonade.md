@@ -409,14 +409,14 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
 
 ### Response format
 
-`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--no-mmap` saved and the context size left automatic:
+`effective` is the exact request body a [`POST /v1/load`](#post-v1load) for this model uses right now, with every option the recipe accepts resolved through the full priority chain. `defaults` is what a reset model would get. For `llamacpp`, with `--load-mode none` saved and the context size left automatic:
 
 ```json
 {
   "model_name": "Qwen3-0.6B-GGUF",
   "recipe": "llamacpp",
   "saved": {
-    "llamacpp_args": "--no-mmap"
+    "llamacpp_args": "--load-mode none"
   },
   "effective": {
     "auto_evict": null,
@@ -424,7 +424,7 @@ curl http://localhost:13305/v1/models/Qwen3-0.6B-GGUF/options
     "downsize_idle_timeout": 60,
     "evict_idle_timeout": 300,
     "evict_weight_factor": 1.0,
-    "llamacpp_args": "--no-mmap",
+    "llamacpp_args": "--load-mode none",
     "llamacpp_backend": "vulkan",
     "llamacpp_device": "",
     "merge_args": true,
@@ -1196,7 +1196,7 @@ curl -X POST http://localhost:13305/v1/load \
     "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "rocm",
-    "llamacpp_args": "--flash-attn on --no-mmap"
+    "llamacpp_args": "--flash-attn on --load-mode none"
   }'
 ```
 
@@ -1209,7 +1209,7 @@ curl -X POST http://localhost:13305/v1/load \
     "model_name": "Qwen3-0.6B-GGUF",
     "ctx_size": 8192,
     "llamacpp_backend": "vulkan",
-    "llamacpp_args": "--no-context-shift --no-mmap",
+    "llamacpp_args": "--no-context-shift --load-mode none",
     "save_options": true
   }'
 ```
@@ -1539,11 +1539,11 @@ curl http://localhost:13305/v1/health
         "-m", "~/.cache/huggingface/hub/models--nomic-ai--nomic-embed-text-v1-GGUF/.../nomic-embed-text-v1.Q4_K_S.gguf",
         "--ctx-size", "8192",
         "--port", "8002",
-        "--no-mmap"
+        "--load-mode none"
       ],
       "recipe_options": {
         "ctx_size": 8192,
-        "llamacpp_args": "--no-mmap",
+        "llamacpp_args": "--load-mode none",
         "llamacpp_backend": "rocm"
       },
       "backend_url": "http://127.0.0.1:8002/v1"
