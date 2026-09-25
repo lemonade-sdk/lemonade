@@ -10,6 +10,7 @@ body:
         Before you start:
 
         - **Write in proportion to the change.** A minor feature, such as a new flag on a CLI subcommand, needs far less detail than a proposal for a new working group.
+        - **Follow the [spec writing guide](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/spec-writing.md)** for structure and precision.
         - **The [AI content policy](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/ai-content-policy.md) strictly applies here.** Important decisions in Lemonade are made through human-to-human discourse.
 
         After you post, tag the relevant [maintainers](https://github.com/lemonade-sdk/lemonade/blob/main/docs/dev/contribute.md#maintainers) and share the RFC in the `#dev` channel on [Discord](https://discord.gg/5xXzkMu8Zk).
