@@ -1,0 +1,69 @@
+# Everything a repo-manager job needs, so that it installs nothing on the runner.
+# To upgrade any of these, edit the version here: merging that publishes a new image
+# (.github/workflows/build-repo-manager-container.yml) and the next job picks it up.
+FROM ubuntu:24.04
+
+LABEL org.opencontainers.image.description="repo-manager, the pi coding agent it drives, a lemond to serve their model, and the GitHub CLI"
+LABEL org.opencontainers.image.source="https://github.com/lemonade-sdk/lemonade"
+
+ARG REPO_MANAGER_VERSION=v1.0.3
+ARG LEMONADE_VERSION=11.9.0
+ARG GH_CLI_VERSION=2.101.0
+ARG NODE_VERSION=22.20.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Vulkan userspace only; the kernel side arrives as the /dev/dri the job passes in.
+# Without it llama.cpp falls back to CPU, where a 35B model turns a review into an
+# overnight job.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    jq \
+    libatomic1 \
+    libcurl4 \
+    libdrm2 \
+    libgomp1 \
+    libreadline8 \
+    libssl3 \
+    libvulkan1 \
+    mesa-vulkan-drivers \
+    python3 \
+    python3-venv \
+    vulkan-tools \
+    xz-utils \
+    zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sfL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+    | tar -xJ --strip-components=1 -C /usr/local \
+    && node --version
+
+RUN curl -sfL "https://github.com/cli/cli/releases/download/v${GH_CLI_VERSION}/gh_${GH_CLI_VERSION}_linux_amd64.tar.gz" \
+    | tar -xz --strip-components=1 -C /usr/local \
+    && gh --version
+
+ENV PATH="/opt/repo-manager/bin:${PATH}"
+RUN python3 -m venv /opt/repo-manager \
+    && /opt/repo-manager/bin/pip install --quiet --disable-pip-version-check \
+       "git+https://github.com/lemonade-sdk/repo-manager.git@${REPO_MANAGER_VERSION}" \
+    && repo-manager --version
+
+# pi is pinned by repo-manager rather than by us: it ships the version it was tested
+# against. `pi` on npm is a different package; this one installs its binary as `pi`.
+RUN PI_VERSION="$(repo-manager pi version)" \
+    && test -n "$PI_VERSION" \
+    && npm install -g --no-fund --no-audit "@earendil-works/pi-coding-agent@${PI_VERSION}" \
+    && pi --version
+
+ENV LEMOND=/opt/lemonade/lemond
+RUN mkdir -p /opt/lemonade \
+    && curl -sfL "https://github.com/lemonade-sdk/lemonade/releases/download/v${LEMONADE_VERSION}/lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-x64.tar.gz" \
+    | tar -xz --strip-components=1 -C /opt/lemonade \
+    && chmod +x "$LEMOND" \
+    && "$LEMOND" --version
+
+# lemond resolves get_runtime_dir() from this.
+RUN mkdir -p /run/lemonade
+ENV XDG_RUNTIME_DIR=/run/lemonade

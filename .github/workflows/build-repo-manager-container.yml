@@ -1,0 +1,84 @@
+name: Publish the repo-manager Container
+
+on:
+  # Weekly, so the base image's security updates land without anyone asking.
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+  # A version bump is an edit to the Dockerfile; publish what it describes as soon as it
+  # lands, so the next repo-manager job picks it up.
+  push:
+    branches:
+      - main
+    paths:
+      - .github/actions/repo-manager/Dockerfile
+      - .github/workflows/build-repo-manager-container.yml
+  # Build without publishing, because nothing else exercises the Dockerfile before the
+  # self-hosted jobs that depend on it do.
+  pull_request:
+    paths:
+      - .github/actions/repo-manager/Dockerfile
+      - .github/workflows/build-repo-manager-container.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-repo-manager-container:
+    name: Build the repo-manager image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/lemonade-sdk/lemonade/repo-manager
+          # Jobs run `latest`; the sha tag is there to roll one back to.
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v5
+        with:
+          # The action's own directory: it holds the Dockerfile and nothing large.
+          context: .github/actions/repo-manager
+          # The lemonade build this image carries is an x64 one, and every runner that
+          # runs repo-manager is X64.
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ github.event_name == 'pull_request' && 'lemonade-repo-manager:test' || steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Same reasoning as the build-environment image: the layer cache lives in the
+          # registry rather than in the 10 GB Actions cache the Windows installer jobs
+          # depend on.
+          cache-from: type=registry,ref=ghcr.io/lemonade-sdk/lemonade/repo-manager:buildcache
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=registry,mode=max,ref=ghcr.io/lemonade-sdk/lemonade/repo-manager:buildcache' || '' }}
+
+      - name: Verify the image carries the tools
+        # On the publish path this pulls the tag that was just pushed, so what is checked
+        # is what the self-hosted jobs will run.
+        shell: bash
+        env:
+          IMAGE: ${{ github.event_name == 'pull_request' && 'lemonade-repo-manager:test' || 'ghcr.io/lemonade-sdk/lemonade/repo-manager:latest' }}
+        run: |
+          set -euo pipefail
+          docker run --rm "$IMAGE" bash -c 'repo-manager --version && pi --version && gh --version && "$LEMOND" --version'
