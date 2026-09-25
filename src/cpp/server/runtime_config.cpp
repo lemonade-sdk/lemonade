@@ -571,8 +571,12 @@ int RuntimeConfig::telemetry_max_queue_capacity() const {
     return get_int_opt(nullptr, {"telemetry", "max_queue_capacity"}, 1000);
 }
 
-int RuntimeConfig::telemetry_max_attribute_length() const {
-    return get_int_opt(nullptr, {"telemetry", "max_attribute_length"}, 4096);
+int64_t RuntimeConfig::telemetry_max_queue_bytes() const {
+    return get_int64_opt(nullptr, {"telemetry", "max_queue_bytes"}, 134217728);
+}
+
+int64_t RuntimeConfig::telemetry_max_attribute_length() const {
+    return get_int64_opt(nullptr, {"telemetry", "max_attribute_length"}, 0);
 }
 
 std::string RuntimeConfig::telemetry_otlp_endpoint() const {
@@ -941,7 +945,7 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
             "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
-            "max_queue_capacity", "max_attribute_length", "otlp", "session"
+            "max_queue_capacity", "max_queue_bytes", "max_attribute_length", "otlp", "session"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
@@ -971,12 +975,28 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
                 throw std::invalid_argument("'telemetry.max_queue_capacity' must be > 0");
             }
         }
+        if (value.contains("max_queue_bytes")) {
+            if (!value["max_queue_bytes"].is_number_integer()) {
+                throw std::invalid_argument("'telemetry.max_queue_bytes' must be an integer");
+            }
+            try {
+                if (value["max_queue_bytes"].get<int64_t>() < 0) {
+                    throw std::invalid_argument("'telemetry.max_queue_bytes' must be >= 0");
+                }
+            } catch (const json::out_of_range&) {
+                throw std::invalid_argument("'telemetry.max_queue_bytes' must be >= 0");
+            }
+        }
         if (value.contains("max_attribute_length")) {
             if (!value["max_attribute_length"].is_number_integer()) {
                 throw std::invalid_argument("'telemetry.max_attribute_length' must be an integer");
             }
-            if (value["max_attribute_length"].get<int>() <= 0) {
-                throw std::invalid_argument("'telemetry.max_attribute_length' must be > 0");
+            try {
+                if (value["max_attribute_length"].get<int64_t>() < 0) {
+                    throw std::invalid_argument("'telemetry.max_attribute_length' must be >= 0");
+                }
+            } catch (const json::out_of_range&) {
+                throw std::invalid_argument("'telemetry.max_attribute_length' must be >= 0");
             }
         }
         if (value.contains("otlp")) {
@@ -1344,6 +1364,25 @@ int RuntimeConfig::get_int_opt(const char* env_name, const std::vector<std::stri
     try {
         if (current->is_number_integer()) return current->get<int>();
         if (current->is_string()) return std::stoi(current->get<std::string>());
+    } catch (...) {}
+    return default_val;
+}
+
+int64_t RuntimeConfig::get_int64_opt(const char* env_name, const std::vector<std::string>& path, int64_t default_val) const {
+    if (env_name) {
+        if (const char* env = std::getenv(env_name)) {
+            try { return std::stoll(env); } catch (...) {}
+        }
+    }
+    std::shared_lock lock(mutex_);
+    const json* current = &config_;
+    for (const auto& key : path) {
+        if (!current->is_object() || !current->contains(key)) return default_val;
+        current = &((*current)[key]);
+    }
+    try {
+        if (current->is_number_integer()) return current->get<int64_t>();
+        if (current->is_string()) return std::stoll(current->get<std::string>());
     } catch (...) {}
     return default_val;
 }
