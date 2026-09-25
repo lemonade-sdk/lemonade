@@ -1078,7 +1078,7 @@ curl 'http://localhost:13305/v1/pull/variants?checkpoint=unsloth/Qwen3-8B-GGUF'
 
 | Status | Cause |
 |--------|-------|
-| 400 | `checkpoint` query parameter missing or malformed (must contain `/`). |
+| 400 | `checkpoint` query parameter missing or malformed (must contain `/`), or the repository has no supported model files or is not compatible with llama.cpp. |
 | 404 | Hugging Face returned 404 for the checkpoint. |
 | 500 | Other transport or parsing failures; the response body contains an `error` message. |
 

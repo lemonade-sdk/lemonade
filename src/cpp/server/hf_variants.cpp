@@ -488,7 +488,7 @@ nlohmann::json fetch_pull_variants(const std::string& checkpoint,
 
     auto vset = enumerate_gguf_variants(repo_files, file_sizes);
     if (vset.variants.empty()) {
-        throw std::runtime_error(
+        throw std::invalid_argument(
             "No supported model files found in repository " + checkpoint +
             ". Supported repository types: GGUF models (*.gguf), ONNX RyzenAI models, and "
             "Lemonade Omni collections (a '" + manifest_filename +
