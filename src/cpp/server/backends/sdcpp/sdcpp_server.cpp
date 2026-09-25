@@ -88,7 +88,7 @@ int generate_random_seed() {
 
 InstallParams SDServer::get_install_params(const std::string& backend, const std::string& version) {
     InstallParams params;
-    params.repo = "leejet/stable-diffusion.cpp";
+    params.repo = "lemonade-sdk/stable-diffusion.cpp";
     std::string resolved_backend = resolve_sdcpp_backend(backend);
 
     // Transform generated sd.cpp versions for asset names:
@@ -127,13 +127,11 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
                 SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
-#ifdef _WIN32
-        params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
-#elif defined(__linux__)
+#ifdef __linux__
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
                   get_therock_version() + ".zip";
 #else
-        throw std::runtime_error("ROCm sd.cpp only supported on Windows and Linux");
+        throw std::runtime_error("ROCm sd.cpp only supported on Linux");
 #endif
         } else if (resolved_backend == "vulkan") {
     #ifdef _WIN32
@@ -144,7 +142,6 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
         throw std::runtime_error("Vulkan sd.cpp only supported on Windows and Linux");
     #endif
     } else if (is_cuda_backend(resolved_backend)) {
-        params.repo = "lemonade-sdk/stable-diffusion.cpp";
         std::string target_arch = SystemInfo::get_cuda_arch();
         if (target_arch.empty()) {
             throw std::runtime_error(

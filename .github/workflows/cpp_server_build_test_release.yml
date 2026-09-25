@@ -1100,7 +1100,7 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm vulkan"
+            backends: "cpu vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
@@ -1209,17 +1209,17 @@ jobs:
         with:
           matrix-name: ${{ matrix.name }}
 
-      - name: Install and Verify Lemonade Server
-        uses: ./.github/actions/install-lemonade-server-msi
-        with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
+
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
@@ -2019,6 +2019,9 @@ jobs:
           echo "Running WebSocket auth tests..."
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
+          echo "Running tray supervisor watchdog test..."
+          .venv/bin/python test/test_tray_supervisor_watchdog.py
+          echo "Tray supervisor watchdog test PASSED!"
 
       - name: Test log rotation
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -2452,6 +2455,7 @@ jobs:
           $VENV_PYTHON test/test_websocket_idle.py
           $VENV_PYTHON test/server_websocket_auth.py
           $VENV_PYTHON test/test_tray_https.py
+          $VENV_PYTHON test/test_tray_supervisor_watchdog.py --lemond-binary "$LEMOND_BINARY"
           $VENV_PYTHON test/server_jobs.py --lemond-binary "$LEMOND_BINARY"
 
       - name: Test router

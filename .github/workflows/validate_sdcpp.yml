@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Optional upstream leejet tag, e.g. master-714-db48014. Empty = latest."
+        description: "Optional lemonade-sdk tag, e.g. master-714-db48014. Empty = latest."
         required: false
         type: string
       cuda_release:
@@ -27,10 +27,9 @@ env:
   PYTHONIOENCODING: utf-8
   HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  SDCPP_REPO: leejet/stable-diffusion.cpp
+  SDCPP_REPO: lemonade-sdk/stable-diffusion.cpp
   SDCPP_CUDA_REPO: lemonade-sdk/stable-diffusion.cpp
-  # Non-CUDA assets are published by leejet. CUDA assets are published by the
-  # lemonade-sdk fork and may intentionally be on a different release tag.
+  # CUDA assets may intentionally be published under a different release tag.
   SDCPP_BASE_UPDATE_BACKENDS: cpu,vulkan,rocm-stable,metal
   SDCPP_CUDA_UPDATE_BACKENDS: cuda
   SDCPP_VALIDATED_LABELS: cpu,vulkan,rocm-stable
@@ -74,9 +73,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Only the auto-update runs resolve upstream releases. Everywhere else
+          # Only the auto-update runs resolve new releases. Everywhere else
           # the build validates the pins committed in backend_versions.json, so a
-          # bad upstream release can't fail a merge or hide a broken pin.
+          # bad release can't fail a merge or hide a broken pin.
           UPDATE_RUN=false
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             UPDATE_RUN=true
@@ -213,14 +212,12 @@ jobs:
             {"label":"cpu","backend":"cpu","channel":"",
              "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
             {"label":"vulkan","backend":"vulkan","channel":"",
-             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]},
-            {"label":"rocm-stable","backend":"rocm","channel":"stable",
-             "runner":["self-hosted","Windows","X64","stx-halo","rocm","lemon-prod"]}
+             "runner":["self-hosted","Windows","X64","stx-halo","vulkan","lemon-prod"]}
           ]'
 
           # cpp_server_build_test_release.yml already exercises sd-cpp on CPU
           # before merge, so the CPU leg only earns its ~17 minutes when it is
-          # qualifying an upstream release for the update PR.
+          # qualifying a release for the update PR.
           case "${EVENT_NAME}" in
             schedule|workflow_dispatch) matrix=$(jq -c '.' <<<"$legs") ;;
             *) matrix=$(jq -c '[.[] | select(.label != "cpu")]' <<<"$legs") ;;

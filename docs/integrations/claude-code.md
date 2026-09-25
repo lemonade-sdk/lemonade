@@ -85,4 +85,4 @@ For more launch examples and full option details, see:
 `docs/lemonade-cli.md`
 
 For Claude Code product details, see Anthropic's docs:
-https://docs.anthropic.com/en/docs/agents-and-tools/claude-code
+https://code.claude.com/docs/en/overview
