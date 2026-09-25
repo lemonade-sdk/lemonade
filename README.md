@@ -40,7 +40,7 @@ Lemonade comes in two flavors:
 2. **Get Models**: Browse and download with the [Model Manager](#model-library)
 3. **Generate**: Try models with the built-in interfaces for chat, image gen, speech gen, and more
 4. **Mobile**: Take your lemonade to go: [iOS](https://apps.apple.com/us/app/lemonade-mobile/id6757372210) · [Android](https://play.google.com/store/apps/details?id=com.lemonade.mobile.chat.ai&pli=1) · [Source](https://github.com/lemonade-sdk/lemonade-mobile)
-5. **Connect**: Use Lemonade with your [favorite apps](https://github.com/lemonade-sdk/marketplace):
+5. **Connect**: Use Lemonade with your [favorite apps](https://lemonade-server.ai/marketplace):
 
 <!-- MARKETPLACE_START -->
 <p align="center">
@@ -126,7 +126,7 @@ Lemonade supports a wide variety of LLMs (**GGUF**, **FLM**, and **ONNX**), whis
 
 Use `lemonade pull` or the built-in **Model Manager** to download models. Custom GGUF/ONNX models can be pulled from Hugging Face or ModelScope, with their source retained for future updates.
 
-**[Browse the built-in model registry →](./src/cpp/resources/server_models.json)**
+**[Browse the included model catalog →](https://lemonade-server.ai/models.html)**
 
 <br clear="right"/>
 
