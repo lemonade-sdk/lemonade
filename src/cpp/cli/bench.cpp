@@ -6,6 +6,7 @@
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/model_types.h"
 #include <CLI/CLI.hpp>
+#include <lemon/utils/http_client.h>
 #include <lemon/utils/json_utils.h>
 #include <lemon/utils/path_utils.h>
 #include <algorithm>
@@ -36,6 +37,85 @@ std::string get_timestamp_iso() {
     char buf[64];
     std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
     return std::string(buf);
+}
+
+static const char* const kBenchSubmitUrl = "https://bench.lemonade-server.ai/api/benchmarks";
+
+static bool validate_benchmark_schema(const json& benchmark, std::string& error) {
+    if (!benchmark.is_object()) {
+        error = "benchmark must be a JSON object";
+        return false;
+    }
+    if (!benchmark.contains("timestamp") || !benchmark["timestamp"].is_string()) {
+        error = "missing 'timestamp' (string)";
+        return false;
+    }
+    if (!benchmark.contains("hardware") || !benchmark["hardware"].is_object()) {
+        error = "missing 'hardware' (object)";
+        return false;
+    }
+    if (!benchmark.contains("models") || !benchmark["models"].is_array() || benchmark["models"].empty()) {
+        error = "missing 'models' (non-empty array)";
+        return false;
+    }
+    for (const auto& model : benchmark["models"]) {
+        if (!model.is_object() || !model.contains("model") || !model["model"].is_string()) {
+            error = "each model must have a string 'model' field";
+            return false;
+        }
+        if (!model.contains("results") || !model["results"].is_array()) {
+            error = "model '" + model.value("model", "") + "' missing 'results' (array)";
+            return false;
+        }
+        for (const auto& result : model["results"]) {
+            if (!result.is_object() || !result.contains("recipe") || !result["recipe"].is_string()) {
+                error = "each result must have a string 'recipe' field";
+                return false;
+            }
+            if (!result.contains("scenarios") || !result["scenarios"].is_array()) {
+                error = "result '" + result.value("recipe", "") + "' missing 'scenarios' (array)";
+                return false;
+            }
+            for (const auto& scenario : result["scenarios"]) {
+                if (!scenario.is_object() || !scenario.contains("name") || !scenario["name"].is_string()) {
+                    error = "each scenario must have a string 'name' field";
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+static bool submit_benchmark(const json& benchmark, std::string& error) {
+    try {
+        json bench_wrap;
+        bench_wrap["benchmark"] = benchmark;
+        auto resp = lemon::utils::HttpClient::post(
+            kBenchSubmitUrl,
+            bench_wrap.dump(),
+            {{"Content-Type", "application/json"}},
+            60);
+        if (resp.status_code >= 200 && resp.status_code < 300) {
+            return true;
+        }
+        error = "benchmark service returned HTTP " + std::to_string(resp.status_code) + ": " + resp.body;
+        return false;
+    } catch (const std::exception& e) {
+        error = e.what();
+        return false;
+    }
+}
+
+static void maybe_submit_results(const BenchConfig& config, const json& output) {
+    if (!config.submit) return;
+    std::cout << "Submitting benchmark results to " << kBenchSubmitUrl << "..." << std::endl;
+    std::string error;
+    if (submit_benchmark(output, error)) {
+        std::cout << "Benchmark results submitted successfully." << std::endl;
+    } else {
+        std::cerr << "Failed to submit benchmark results: " << error << std::endl;
+    }
 }
 
 template<typename T>
@@ -902,6 +982,35 @@ static ModelSetSummary compute_model_set_summary(
 }
 
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config) {
+    // Submitting an already-saved benchmark file is a standalone operation.
+    if (!config.submit_file.empty()) {
+        std::ifstream file(config.submit_file);
+        if (!file.is_open()) {
+            std::cerr << "Error: Could not open benchmark file: " << config.submit_file << std::endl;
+            return 1;
+        }
+        json benchmark;
+        try {
+            benchmark = json::parse(file);
+        } catch (const json::exception& e) {
+            std::cerr << "Error: Failed to parse benchmark file " << config.submit_file << ": "
+                      << e.what() << std::endl;
+            return 1;
+        }
+        std::string error;
+        if (!validate_benchmark_schema(benchmark, error)) {
+            std::cerr << "Error: Invalid benchmark file " << config.submit_file << ": " << error << std::endl;
+            return 1;
+        }
+        std::cout << "Submitting benchmark results to " << kBenchSubmitUrl << "..." << std::endl;
+        if (submit_benchmark(benchmark, error)) {
+            std::cout << "Benchmark results submitted successfully." << std::endl;
+            return 0;
+        }
+        std::cerr << "Failed to submit benchmark results: " << error << std::endl;
+        return 1;
+    }
+
     if (config.models.empty()) {
         std::cerr << "Error: At least one model must be provided." << std::endl;
         return 1;
@@ -1126,6 +1235,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
             for (const auto& mr : by_model)
                 output["models"].push_back(to_json(mr.results, mr.model, mr.timestamp, config, mr.model_info));
 
+            maybe_submit_results(config, output);
+
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
                 std::ofstream out(config.output_file);
@@ -1214,6 +1325,8 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
                 output["models"].push_back(build_comparison_json(*c.results, c.model, c.timestamp,
                                                                   config, c.model_info, c.previous_for_model, c.deltas));
 
+            maybe_submit_results(config, output);
+
             std::string json_str = output.dump(2);
             if (!config.output_file.empty()) {
                 std::ofstream out(config.output_file);
@@ -1254,7 +1367,7 @@ CLI::App* register_bench_command(CLI::App& parent,
     CLI::App* cmd = parent.add_subcommand("bench", "Benchmark model performance for different model types")
         ->group("Model management");
     cmd->add_option("models", opts.models, "One or more model names to benchmark")
-        ->required()->type_name("MODEL")->expected(1, -1);
+        ->type_name("MODEL")->expected(1, -1);
     cmd->add_option("--backend", opts.backends, "Backend to test (e.g., vulkan, metal, cpu). Repeat for multiple.")
         ->type_name("BACKEND")->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--ctx-size", opts.ctx_sizes, "Context size to test. Repeat for multiple sizes.")
@@ -1270,6 +1383,8 @@ CLI::App* register_bench_command(CLI::App& parent,
     cmd->add_option("--scenario-dir", opts.scenario_dir, "Load all .json scenario files from a directory")->type_name("DIR");
     cmd->add_flag("--json", opts.json_output, "Output results as JSON");
     cmd->add_option("--output", output_file, "Write results to file (in addition to stdout)")->type_name("FILE");
+    cmd->add_flag("--submit", opts.submit, "Submit results to the Lemonade benchmark service (implies --json)");
+    cmd->add_option("--submit-file", opts.submit_file, "Submit an already-saved benchmark JSON file")->type_name("FILE");
     cmd->add_option("--compare", opts.compare_file, "Compare results against a previously saved JSON file")->type_name("FILE");
     cmd->add_flag("--auto-pull", opts.auto_pull, "Automatically pull the model if not downloaded");
     cmd->add_flag("--no-memory", opts.no_memory, "Disable VRAM/RAM tracking");
@@ -1314,6 +1429,9 @@ BenchConfig build_bench_config(const std::string& output_file,
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
     config.timeout = cli.timeout * 1000;
+    config.submit = cli.submit;
+    config.submit_file = cli.submit_file;
+    if (config.submit) config.json_output = true;
     return config;
 }
 
