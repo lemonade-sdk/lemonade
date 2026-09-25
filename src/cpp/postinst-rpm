@@ -14,13 +14,8 @@ chown lemonade:lemonade /opt/var/lib/lemonade > /dev/null 2>&1 || true
 
 usermod -a -G render lemonade > /dev/null 2>&1 || true
 
-# Rootless Podman for the container-backed recipes needs subordinate uid/gid
-# ranges and a per-user runtime directory for the service user.
-if ! grep -q "^lemonade:" /etc/subuid 2>/dev/null; then
-    usermod --add-subuids 200000-265535 --add-subgids 200000-265535 lemonade > /dev/null 2>&1 || true
-fi
-if command -v loginctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
-    loginctl enable-linger lemonade > /dev/null 2>&1 || true
+if command -v systemd-sysusers > /dev/null 2>&1; then
+    systemd-sysusers lemonade.conf > /dev/null 2>&1 || true
 fi
 
 if getent group systemd-journal > /dev/null 2>&1; then
@@ -29,6 +24,8 @@ fi
 
 if command -v systemctl > /dev/null 2>&1 && [ -d /run/systemd/system ]; then
     systemctl daemon-reload > /dev/null 2>&1 || true
+
+    systemctl enable --now lemonade-podman.socket > /dev/null 2>&1 || true
 
     # Handle migration from lemonade-server.service to lemond.service during upgrade
     # In RPM, $1=2 means upgrade (new package count after transaction)

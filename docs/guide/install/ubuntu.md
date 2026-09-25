@@ -21,13 +21,27 @@ To build from source, see the [development](../../dev/README.md) guide.
 
 ## Optional: container runtime
 
-The `rocmfpx`, `ds4` and `halogen` backends run inside OCI container images, so they need
-podman (preferred) or docker on the host. Nothing else does. See
-[Container Backends](../configuration/container-backends.md).
+The `rocmfpx:rocmfpx`, `llamacpp:nathanw`, `ds4:rocm` and `halogen:rocm` backends run inside OCI
+container images, so they need Podman (preferred) or Docker on the host.
 
-```
-sudo apt install podman
-```
+=== "Stable PPA"
+
+    The package installs and enables `lemonade-podman.socket`, through which `lemond.service`
+    reaches Podman, so installing Podman is the only step:
+
+    ```
+    sudo apt install podman
+    ```
+
+=== "Snap"
+
+    ```
+    sudo apt install podman
+    sudo systemctl enable --now podman.socket
+    sudo snap connect lemonade-server:podman :podman
+    ```
+
+See [Container Backends](../configuration/container-backends.md) for Docker and other setups.
 
 ## Step 2: Choose your frontend
 

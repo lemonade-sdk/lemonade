@@ -1,0 +1,9 @@
+[Unit]
+ConditionPathExists=/usr/bin/podman
+
+[Service]
+User=lemonade
+RuntimeDirectory=lemonade-podman
+Environment=XDG_RUNTIME_DIR=%t/lemonade-podman
+ExecStartPre=+/bin/sh -c 'grep -q "^lemonade:" /etc/subuid || usermod --add-subuids 200000-265535 --add-subgids 200000-265535 lemonade'
+ExecStart=/usr/bin/podman system service --time=60

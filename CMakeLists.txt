@@ -1967,29 +1967,27 @@ if(UNIX AND NOT APPLE)
         @ONLY
     )
 
-    # Install systemd service file
-    install(FILES ${CMAKE_BINARY_DIR}/lemond.service
+    # Install systemd unit files
+    install(FILES
+        ${CMAKE_BINARY_DIR}/lemond.service
+        ${CMAKE_SOURCE_DIR}/data/lemonade-podman.socket
+        ${CMAKE_SOURCE_DIR}/data/lemonade-podman.service
         DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
     )
     # Create symlinks in standard systemd search paths only if not installing to /usr
     # (if prefix is /usr, the service is already in the standard location)
     if(NOT CMAKE_INSTALL_PREFIX STREQUAL "/usr")
-        lemonade_install_systemd_symlink(
-            "/usr/lib/systemd/system/lemond.service"
-            "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service"
-        )
+        foreach(_unit lemond.service lemonade-podman.socket lemonade-podman.service)
+            lemonade_install_systemd_symlink(
+                "/usr/lib/systemd/system/${_unit}"
+                "${CMAKE_INSTALL_PREFIX}/lib/systemd/system/${_unit}"
+            )
+        endforeach()
         lemonade_install_systemd_symlink(
             "/usr/lib/systemd/user/lemond.service"
             "${CMAKE_INSTALL_PREFIX}/lib/systemd/user/lemond.service"
         )
     endif()
-
-    # Drop-in that lets the system service run rootless Podman for the
-    # container-backed recipes; see data/lemond-containers.conf.
-    install(FILES ${CMAKE_SOURCE_DIR}/data/lemond-containers.conf
-        DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system/lemond.service.d
-        RENAME containers.conf
-    )
 
     # Install sysusers.d snippet so the 'lemonade' system user is created
     install(FILES ${CMAKE_SOURCE_DIR}/data/lemonade.sysusers

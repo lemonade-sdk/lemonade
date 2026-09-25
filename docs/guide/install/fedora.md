@@ -36,10 +36,13 @@ Once the service is running, open [http://localhost:13305](http://localhost:1330
 
 ## Optional: container runtime
 
-The `rocmfpx`, `ds4` and `halogen` backends run inside OCI container images, so they need
-podman (preferred) or docker on the host. Nothing else does. See
-[Container Backends](../configuration/container-backends.md).
+The `rocmfpx:rocmfpx`, `llamacpp:nathanw`, `ds4:rocm` and `halogen:rocm` backends run inside OCI
+container images, so they need Podman (preferred) or Docker on the host. The package installs and
+enables `lemonade-podman.socket`, through which `lemond.service` reaches Podman, so installing
+Podman is the only step:
 
 ```bash
 sudo dnf install podman
 ```
+
+See [Container Backends](../configuration/container-backends.md) for Docker and other setups.

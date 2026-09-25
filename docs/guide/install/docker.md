@@ -129,37 +129,6 @@ docker run -d \
 >
 > Then use the numbers, e.g. `--group-add 992 --group-add 44`.
 
-### Toolbox backends from the Docker image
-
-The container-backed recipes (`rocmfpx`, `ds4`, `llamacpp:nathanw`) run as sibling containers
-that Lemonade starts through the host's container engine. The Lemonade image does not include an
-engine of its own; mount the host's engine socket into it. With rootless podman on the host:
-
-```bash
-docker run -d \
-  --name lemonade-server \
-  -p 13305:13305 \
-  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
-  -v lemonade-llama:/opt/lemonade/llama \
-  -v lemonade-data:/opt/lemonade/.cache/lemonade \
-  -v lemonade-config:/opt/lemonade/.config/lemonade \
-  -v /run/user/$(id -u)/podman/podman.sock:/run/podman/podman.sock \
-  -e CONTAINER_HOST=unix:///run/podman/podman.sock \
-  --device=/dev/kfd \
-  --device=/dev/dri \
-  --group-add video \
-  --group-add render \
-  ghcr.io/lemonade-sdk/lemonade-server:latest
-```
-
-With Docker on the host, mount `/var/run/docker.sock:/var/run/docker.sock` instead of the podman
-socket and drop the `CONTAINER_HOST` line. Lemonade inspects its own container to find the host
-side of the model cache, so nothing else is configured. The toolbox containers join Lemonade's
-network namespace and are reachable only from it.
-
-> Whoever can reach the engine socket can start any container that engine can. A rootless podman
-> socket is the safer grant: it is a user-level socket rather than root's.
-
 ### Docker Run with AMD GPU Passthrough using ROCm on WSL
 
 Make sure you follow install steps described in [ROCm for WSL](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/wsl/howto_wsl.html)
@@ -261,6 +230,68 @@ curl http://localhost:13305/api/v1/models
 ```
 
 You should receive a response listing available models.
+
+## Container Backends
+
+The [container backends](../configuration/container-backends.md) (`rocmfpx:rocmfpx`,
+`llamacpp:nathanw`, `ds4:rocm` and `halogen:rocm`) run as sibling containers that Lemonade starts
+through Podman or Docker on the host. The Lemonade image ships the `podman` and `docker` CLIs and
+sets `CONTAINER_HOST=unix:///run/podman/podman.sock`. You mount the host's socket into it, and
+start the Lemonade container with the same tool: Lemonade inspects its own container through that
+socket to find the host side of the model cache, and each backend container joins its network
+namespace.
+
+Whoever can reach the socket can start any container that tool can. A rootless Podman socket is
+the narrower grant, because it belongs to your account rather than to root.
+
+### With Podman
+
+On the host, enable your account's Podman socket and add your account to `video` and `render`:
+
+```bash
+systemctl --user enable --now podman.socket
+sudo usermod -aG video,render $USER
+```
+
+Log out and back in, then start Lemonade with your socket mounted at `/run/podman/podman.sock`:
+
+```bash
+podman run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-data:/opt/lemonade/.cache/lemonade \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
+  -v /run/user/$(id -u)/podman/podman.sock:/run/podman/podman.sock \
+  --userns=keep-id:uid=10001,gid=10001 \
+  --security-opt label=disable \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+`--userns=keep-id:uid=10001,gid=10001` runs the image's `lemonade` user as your account, which
+owns the socket. `--security-opt label=disable` lets the container open the socket on SELinux
+hosts such as Fedora.
+
+### With Docker
+
+Docker needs no group changes on the host. Start Lemonade with the host's Docker socket mounted:
+
+```bash
+docker run -d \
+  --name lemonade-server \
+  -p 13305:13305 \
+  -v lemonade-cache:/opt/lemonade/.cache/huggingface \
+  -v lemonade-llama:/opt/lemonade/llama \
+  -v lemonade-data:/opt/lemonade/.cache/lemonade \
+  -v lemonade-config:/opt/lemonade/.config/lemonade \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --group-add "$(getent group docker | cut -d: -f3)" \
+  ghcr.io/lemonade-sdk/lemonade-server:latest
+```
+
+`--group-add` gives the image's `lemonade` user the host's `docker` group, which owns the socket.
+Mounting a model from a named volume needs Docker Engine 26 or newer.
 
 <br>
 

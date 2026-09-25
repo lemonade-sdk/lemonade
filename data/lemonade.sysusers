@@ -1,2 +1,4 @@
 #Type Name      ID  GECOS              Home directory     Shell
 u     lemonade  -   "Lemonade Server"  /var/lib/lemonade  -
+m     lemonade  video
+m     lemonade  render

@@ -21,6 +21,7 @@ WorkingDirectory=%S/lemonade
 # LEMONADE_ADMIN_API_KEY) can be set via `systemctl edit lemond` drop-ins or the
 # optional environment file below.
 EnvironmentFile=-/etc/default/lemond
+Environment=CONTAINER_HOST=unix:///run/lemonade-podman.sock
 ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/lemond
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

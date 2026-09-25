@@ -1,0 +1,7 @@
+[Socket]
+ListenStream=/run/lemonade-podman.sock
+SocketUser=lemonade
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target

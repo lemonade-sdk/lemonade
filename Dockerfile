@@ -34,6 +34,11 @@ RUN echo "=== Build directory contents ===" && \
     echo "=== Checking for resources ===" && \
     find build/ -name "*.json" -o -name "resources" -type d
 
+# docker.io also ships the daemon and containerd; only the CLI is kept.
+FROM ubuntu:24.04 AS docker-cli
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
 # # ============================================================
 # # 2. Runtime stage — small, clean image
 # # ============================================================
@@ -55,6 +60,13 @@ RUN apt-get update && apt-get install -y \
     libatomic1 \
     libreadline8 \
     && rm -rf /var/lib/apt/lists/*
+
+# Container backends run on the host's Podman or Docker through a mounted socket.
+RUN apt-get update && apt-get install -y --no-install-recommends podman-remote \
+    && ln -s podman-remote /usr/bin/podman \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=docker-cli /usr/bin/docker /usr/bin/docker
+ENV CONTAINER_HOST=unix:///run/podman/podman.sock
 
 # Run as an unprivileged user; lemond never needs root at runtime.
 RUN useradd -r -u 10001 -s /usr/sbin/nologin lemonade
