@@ -7,10 +7,6 @@ on:
         description: 'Run in lite mode (smallest model only)'
         type: boolean
         default: false
-      update_pins:
-        description: 'Resolve the newest upstream vllm-rocm release instead of validating the committed pin'
-        type: boolean
-        default: false
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   merge_group:
@@ -41,7 +37,7 @@ jobs:
     # Only the auto-update runs resolve upstream releases. Everywhere else the
     # build validates the pins committed in backend_versions.json, so a bad
     # upstream release can't fail a merge or hide a broken pin.
-    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.update_pins)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       vllm_rocm_release: ${{ steps.vllm_rocm.outputs.release }}
@@ -77,21 +73,12 @@ jobs:
         run: |
           set -e
           python3 - << 'PY'
-          import json, os, re, sys
+          import json, os
           path = "src/cpp/resources/backend_versions.json"
           with open(path) as f:
               data = json.load(f)
           release = os.environ["VLLM_ROCM_RELEASE"]
           old = data["vllm"].get("rocm", "")
-          # vllm-rocm publishes one release per GPU target, so releases/latest is
-          # whichever target shipped most recently and may be off the RDNA line.
-          # vllm.rocm is the bare base the host appends its own -gfxNNNN to; an
-          # already-suffixed value here installs cross-arch or fails the guard in
-          # VLLMServer::get_install_params. Per-arch pins belong in
-          # rocm_arch_overrides, so leave the committed base alone.
-          if re.search(r"-(gfx[0-9a-fA-FxX]+)$", release):
-              print(f"vllm.rocm: keeping {old}; {release} is arch-specific")
-              sys.exit(0)
           data["vllm"]["rocm"] = release
           with open(path, "w") as f:
               json.dump(data, f, indent=2)
@@ -279,7 +266,6 @@ jobs:
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.get-latest-releases.result == 'success' &&
       needs.validate.result == 'success'
     steps:
       - uses: actions/checkout@v5
