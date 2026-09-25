@@ -127,7 +127,9 @@ InstallParams SDServer::get_install_params(const std::string& backend, const std
                 SystemInfo::get_unsupported_backend_error("sd-cpp", "rocm")
             );
         }
-#ifdef __linux__
+#ifdef _WIN32
+        params.filename = "sd-" + short_version + "-bin-win-rocm-" + get_therock_version() + "-x64.zip";
+#elif defined(__linux__)
         params.filename = "sd-" + short_version + "-bin-Linux-Ubuntu-24.04-x86_64-rocm-" +
                   get_therock_version() + ".zip";
 #else
