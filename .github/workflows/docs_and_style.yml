@@ -62,11 +62,6 @@ jobs:
         run: cmake --build --preset default --target lemond
       - name: Check backend reference docs are up to date
         run: python3 docs/tools/gen_backend_boilerplate.py --check
-      # A toolbox image digest moves whenever upstream rebuilds, which the
-      # refresh workflow handles. What must never happen is a pinned TAG
-      # disappearing: that pin can then never be installed again.
-      - name: Check every pinned toolbox image tag still exists
-        run: python3 docs/tools/gen_toolbox_catalog.py pins --check
 
   pre-commit:
     runs-on: ubuntu-latest

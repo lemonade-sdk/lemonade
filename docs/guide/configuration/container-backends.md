@@ -104,10 +104,6 @@ rebuilt whenever their upstream moves - often daily - so a tag alone would mean 
 the same Lemonade release running different code. The tag is recorded next to the digest for
 readability only.
 
-A consequence worth knowing: a pinned image trails upstream by up to a week plus review time.
-Digests move through a scheduled PR (`.github/workflows/toolbox_refresh.yml`), never
-automatically.
-
 `lemonade backends install rocmfpx:rocmfpx` pulls the pinned digest;
 `lemonade backends uninstall rocmfpx:rocmfpx` removes the image. The same two commands work for
 `llamacpp:nathanw`. The "installed version" Lemonade reports for these backends is the digest
@@ -212,12 +208,10 @@ here first. Give these models room, or turn reasoning off per request with
 | Models | Recipe | Notes |
 |--------|--------|-------|
 | ROCmFP4 / ROCmI4 quantizations of Qwen3.8-27B and Qwopus3.6-27B | `rocmfpx` | Community conversions; the uploader is named in each entry |
-| DeepSeek V4 Flash, DeepSeek V4.1 Flash, GLM 5.3 Flash | `ds4` | Translated from the upstream catalog |
+| DeepSeek V4 Flash, DeepSeek V4.1 Flash, GLM 5.3 Flash | `ds4` | Taken from the AI Toolbox Cockpit catalog |
 | Qwen3.8-Flash-Next W4B, four overlay/vision combinations | `halogen` | All four share one checkpoint download |
 
-The DS4 and Halogen entries are generated from the upstream catalog by
-`docs/tools/gen_toolbox_catalog.py` and carry `catalog_source: ai-toolbox-cockpit`. The ROCm FPX
-picks are curated by hand - one quantization per model family - because choosing among a
+The ROCm FPX picks are curated by hand - one quantization per model family - because choosing among a
 community uploader's variants is a judgment call, not a mapping. `nathanw` has no models of its
 own: it runs whatever the `llamacpp` recipe already lists.
 

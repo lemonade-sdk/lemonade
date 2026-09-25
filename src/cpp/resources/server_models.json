@@ -2568,8 +2568,7 @@
         "min_resident_gb": 16.0,
         "recipe_options": {
             "ctx_size": 262144
-        },
-        "catalog_source": "ai-toolbox-cockpit"
+        }
     },
     "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed-0731.gguf",
@@ -2583,8 +2582,7 @@
         "min_resident_gb": 16.0,
         "recipe_options": {
             "ds4_args": "--prefill-chunk 2048"
-        },
-        "catalog_source": "ai-toolbox-cockpit"
+        }
     },
     "DeepSeek-V4-Flash-Q4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf",
@@ -2598,8 +2596,7 @@
         "min_resident_gb": 16.0,
         "recipe_options": {
             "ds4_args": "--dist-prefill-chunk 512 --dist-prefill-window 2"
-        },
-        "catalog_source": "ai-toolbox-cockpit"
+        }
     },
     "DeepSeek-V4-Flash-MXFP4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf",
@@ -2610,8 +2607,7 @@
             "reasoning"
         ],
         "size": 156.0,
-        "min_resident_gb": 16.0,
-        "catalog_source": "ai-toolbox-cockpit"
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8.gguf",
@@ -2626,8 +2622,7 @@
         "min_resident_gb": 16.0,
         "recipe_options": {
             "ctx_size": 262144
-        },
-        "catalog_source": "ai-toolbox-cockpit"
+        }
     },
     "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8.gguf",
@@ -2639,8 +2634,7 @@
             "vision"
         ],
         "size": 91.0,
-        "min_resident_gb": 16.0,
-        "catalog_source": "ai-toolbox-cockpit"
+        "min_resident_gb": 16.0
     },
     "DeepSeek-V4-Flash-Vision-MXFP4-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out.gguf",
@@ -2652,8 +2646,7 @@
             "vision"
         ],
         "size": 145.0,
-        "min_resident_gb": 16.0,
-        "catalog_source": "ai-toolbox-cockpit"
+        "min_resident_gb": 16.0
     },
     "GLM-5.3-Flash-Q2-DS4": {
         "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q2.gguf",
@@ -2667,8 +2660,7 @@
         "min_resident_gb": 16.0,
         "recipe_options": {
             "ctx_size": 262144
-        },
-        "catalog_source": "ai-toolbox-cockpit"
+        }
     },
     "GLM-5.3-Flash-Q4_K-DS4": {
         "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q4_K.gguf",
@@ -2682,8 +2674,7 @@
         "min_resident_gb": 16.0,
         "recipe_options": {
             "ctx_size": 4096
-        },
-        "catalog_source": "ai-toolbox-cockpit"
+        }
     },
     "DeepSeek-V4.1-Flash-Q2-DS4": {
         "checkpoint": "antirez/deepseek-v4.1-flash-gguf:DeepSeek-V4.1-Flash-Q2.gguf",
@@ -2694,8 +2685,7 @@
             "reasoning"
         ],
         "size": 365.71,
-        "min_resident_gb": 16.0,
-        "catalog_source": "ai-toolbox-cockpit"
+        "min_resident_gb": 16.0
     },
     "Qwen3.8-27B-ROCmFP4-FAST": {
         "checkpoint": "julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:Qwen3.8-27B-ROCmFP4-FAST.gguf",
@@ -2779,8 +2769,7 @@
         "min_resident_gb": 8.0,
         "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
         "halogen_tokenizer": "tokenizer",
-        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "catalog_source": "ai-toolbox-cockpit"
+        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef"
     },
     "Qwen3.8-Flash-Next-Speed-Halogen": {
         "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
@@ -2794,8 +2783,7 @@
         "min_resident_gb": 8.0,
         "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
         "halogen_tokenizer": "tokenizer",
-        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "catalog_source": "ai-toolbox-cockpit"
+        "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef"
     },
     "Qwen3.8-Flash-Next-Vision-Halogen": {
         "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
@@ -2811,8 +2799,7 @@
         "halogen_overlay": "qwen38-flash-next-w4b.overlay.hgn",
         "halogen_tokenizer": "tokenizer",
         "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "halogen_vision_tower": "qwen38-flash-next-vision.hgn",
-        "catalog_source": "ai-toolbox-cockpit"
+        "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
     },
     "Qwen3.8-Flash-Next-Speed-Vision-Halogen": {
         "checkpoint": "peonist-ai/halogen-qwen3.8-flash-next:qwen38-flash-next-w4b.hgn",
@@ -2828,7 +2815,6 @@
         "halogen_overlay": "qwen38-flash-next-w4b.overlay-speed.hgn",
         "halogen_tokenizer": "tokenizer",
         "halogen_revision": "ac23b1b223b4e9192d27c22367d4dbacf2b595ef",
-        "halogen_vision_tower": "qwen38-flash-next-vision.hgn",
-        "catalog_source": "ai-toolbox-cockpit"
+        "halogen_vision_tower": "qwen38-flash-next-vision.hgn"
     }
 }
