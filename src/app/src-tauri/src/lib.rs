@@ -12,7 +12,7 @@ pub mod webview_shim;
 use tauri::{Emitter, Manager, WindowEvent};
 
 #[cfg(target_os = "windows")]
-const ELECTRON_WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../../assets/favicon.ico");
+const WINDOWS_ICON_BYTES: &[u8] = include_bytes!("../icons/icon.ico");
 
 fn parse_protocol_url(raw: &str) -> Option<serde_json::Value> {
     // lemonade://open?view=dashboard/logs&model=foo
@@ -135,7 +135,7 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 {
                     let icon =
-                        tauri::image::Image::from_bytes(ELECTRON_WINDOWS_ICON_BYTES)?;
+                        tauri::image::Image::from_bytes(WINDOWS_ICON_BYTES)?;
                     window.set_icon(icon)?;
                 }
 
