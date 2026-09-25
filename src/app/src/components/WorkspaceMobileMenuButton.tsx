@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from './Icon';
+import { useI18n } from '../i18n';
 
 interface WorkspaceMobileMenuButtonProps {
   menuLabel: string;
@@ -15,18 +16,21 @@ const WorkspaceMobileMenuButton: React.FC<WorkspaceMobileMenuButtonProps> = ({
   expanded,
   onClick,
   triggerRef,
-}) => (
-  <button
-    ref={triggerRef}
-    type="button"
-    className="workspace-mobile-menu-button"
-    aria-label={menuLabel}
-    aria-expanded={expanded}
-    aria-controls={panelId}
-    onClick={onClick}
-  >
-    <Icon name="menu" size={18} aria-hidden="true" />
-  </button>
-);
+}) => {
+  const { t } = useI18n();
+  return (
+    <button
+      ref={triggerRef}
+      type="button"
+      className="workspace-mobile-menu-button"
+      aria-label={t(menuLabel)}
+      aria-expanded={expanded}
+      aria-controls={panelId}
+      onClick={onClick}
+    >
+      <Icon name="menu" size={18} aria-hidden="true" />
+    </button>
+  );
+};
 
 export default WorkspaceMobileMenuButton;

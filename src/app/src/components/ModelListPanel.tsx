@@ -28,6 +28,7 @@ import {
 } from './WorkspacePanels';
 import { backendCompactLabel, backendLabel } from '../modelPresentation';
 import { recipeBackendOptionName } from '../features/backends/recipeMetadata';
+import { useI18n } from '../i18n';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
 
@@ -235,8 +236,8 @@ const BACKEND_STATE_MESSAGES: Record<string, string> = {
   unsupported: 'Engine unsupported',
 };
 
-function backendReadinessMessage(readiness: ModelBackendReadiness): string {
-  return BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention';
+function backendReadinessMessage(readiness: ModelBackendReadiness, translate: (key: string) => string): string {
+  return translate(BACKEND_STATE_MESSAGES[readiness.state || ''] || 'Engine needs attention');
 }
 
 type FilterTab = 'all' | 'llm' | 'omni' | 'router' | 'image' | 'audio' | 'audio-generation' | 'tts' | 'model3d' | 'embedding' | 'classification';
@@ -480,6 +481,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
   registryZoneTop,
   systemInfo = null,
 }) => {
+  const { t } = useI18n();
   const [sortBy, setSortBy] = useState<SortBy>('name');
   const listRef = useRef<HTMLUListElement>(null);
   const defaultSearchRef = useRef<HTMLInputElement>(null);
@@ -609,11 +611,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       ? modelBackendReadiness(model, systemInfo)
       : null;
     const readinessLabel = status === 'running'
-      ? 'Backend active; model is running.'
+      ? t('Backend active; model is running.')
       : status === 'downloading'
-        ? `Model download in progress${downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.'}`
+        ? t('Model download in progress{progress}', { progress: downloadPct != null ? ` (${downloadPct.toFixed(0)}%).` : '.' })
         : status === 'available'
-          ? 'Model is available to download.'
+          ? t('Model is available to download.')
           : backendReadiness?.label;
 
     // Only a row doing something, or asking for something, says so. Being
@@ -626,11 +628,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
           ? 'attention'
           : undefined;
     const statusText = rowStatus === 'busy'
-      ? `Downloading${downloadPct != null ? ` ${downloadPct.toFixed(0)}%` : '…'}`
+      ? t('Downloading{progress}', { progress: downloadPct != null ? ` ${downloadPct.toFixed(0)}%` : '…' })
       : rowStatus === 'attention'
-        ? backendReadinessMessage(backendReadiness!)
+        ? backendReadinessMessage(backendReadiness!, t)
         : rowStatus === 'live'
-          ? 'Running'
+          ? t('Running')
           : undefined;
     const meta = model.size != null && model.size > 0 ? listFmtSize(model.size) : undefined;
     const secondaryTags = capTags.filter(tag => tag !== (primaryCapability as string));
@@ -672,7 +674,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         onKeyDown={onToggleFavorite ? e => handleItemKeyDown(e, mId) : undefined}
         action={onToggleFavorite ? {
           icon: 'star',
-          label: favorited ? `Remove ${displayName} from favorites (F)` : `Add ${displayName} to favorites (F)`,
+          label: favorited ? t('Remove {name} from favorites (F)', { name: displayName }) : t('Add {name} to favorites (F)', { name: displayName }),
           onClick: () => onToggleFavorite(mId),
           pointerOnly: true,
           active: favorited,
@@ -685,10 +687,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     <WorkspaceListPanel
       className="model-list-panel"
       headerClassName="manager__title"
-      title="Models"
-      subtitle={`${flatList.length} ${flatList.length === 1 ? 'model' : 'models'}`}
+      title={t('Models')}
+      subtitle={t('{count} models', { count: flatList.length })}
       actions={(
-        <WorkspaceActionGroup label="Model list actions">
+        <WorkspaceActionGroup label={t('Model list actions')}>
           {onOpenCustomModels && (
             <WorkspaceActionButton
               appearance="primary"
@@ -696,8 +698,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="compose"
               iconOnly
               onClick={onOpenCustomModels}
-              aria-label="Open custom models"
-              title="Manage custom models"
+              aria-label={t('Open custom models')}
+              title={t('Manage custom models')}
             />
           )}
           {onOpenRouter && (
@@ -706,8 +708,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="router"
               iconOnly
               onClick={onOpenRouter}
-              aria-label="Open router editor"
-              title="Create or edit a model router"
+              aria-label={t('Open router editor')}
+              title={t('Create or edit a model router')}
             />
           )}
           {onUpdateAllModels && (
@@ -716,8 +718,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               icon="rotate-ccw"
               iconOnly
               onClick={onUpdateAllModels}
-              aria-label="Update all models"
-              title="Update all downloaded models"
+              aria-label={t('Update all models')}
+              title={t('Update all downloaded models')}
             />
           )}
 
@@ -727,7 +729,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       {/* Search bar */}
       <div className="model-list-panel__search-row">
-        <label htmlFor="model-list-search" className="sr-only">Search models</label>
+        <label htmlFor="model-list-search" className="sr-only">{t('Search models')}</label>
         <div className="model-list-panel__search-wrap">
           <Icon name="search" size={14} aria-hidden="true" className="model-list-panel__search-icon" />
           <input
@@ -736,10 +738,10 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
             role="searchbox"
             type="text"
               className="model-list-panel__search-input manager__search-input"
-            placeholder={onlineSearchEnabled ? 'Search local and online catalogs…' : 'Search local catalogs…'}
+            placeholder={onlineSearchEnabled ? t('Search local and online catalogs…') : t('Search local catalogs…')}
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
-            aria-label="Search models"
+            aria-label={t('Search models')}
             autoComplete="off"
           />
           {searchQuery && (
@@ -747,7 +749,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
               type="button"
               className="model-list-panel__search-clear"
               onClick={() => onSearchChange('')}
-              aria-label="Clear search"
+              aria-label={t('Clear search')}
             >×</button>
           )}
         </div>
@@ -755,23 +757,23 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
 
       {/* Sort control */}
       <div className="model-list-panel__sort-row">
-        <label htmlFor="model-list-sort" className="model-list-panel__sort-label">Sort</label>
+        <label htmlFor="model-list-sort" className="model-list-panel__sort-label">{t('Sort')}</label>
         <select
           id="model-list-sort"
           className="model-list-panel__sort-select"
           value={sortBy}
           onChange={e => setSortBy(e.target.value as SortBy)}
-          aria-label="Sort models by"
+          aria-label={t('Sort models by')}
         >
-          <option value="name">Name (A–Z)</option>
-          <option value="size">Size (largest first)</option>
-          <option value="last-used">Last used</option>
-          <option value="downloads">Download count</option>
+          <option value="name">{t('Name (A–Z)')}</option>
+          <option value="size">{t('Size (largest first)')}</option>
+          <option value="last-used">{t('Last used')}</option>
+          <option value="downloads">{t('Download count')}</option>
         </select>
       </div>
 
       <span className="sr-only model-list-panel__count" aria-live="polite" aria-atomic="true">
-        {flatList.length} model{flatList.length !== 1 ? 's' : ''}
+        {t(flatList.length === 1 ? '{count} model' : '{count} models', { count: flatList.length })}
         {taskFilters && taskFilters.size > 0 && ` (${Array.from(taskFilters).map(task => FILTER_TABS.find(item => item.key === task)?.label || task).join(', ')})`}
       </span>
 
@@ -783,13 +785,13 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
       <WorkspaceList
         listRef={listRef}
         className="model-list-panel__list"
-        label="Model list"
+        label={t('Model list')}
         tabIndex={flatList.some(e => e.model && listModelName(e.model) === selectedModelId) ? -1 : 0}
         onRowActivate={onSelectModel}
         activateOnMove
       >
         {listSections.map(section => (
-          <WorkspaceListGroup key={section.key} label={section.label} count={section.entries.length}>
+          <WorkspaceListGroup key={section.key} label={t(section.label)} count={section.entries.length}>
             {section.entries.map(renderModelRow)}
           </WorkspaceListGroup>
         ))}
@@ -801,7 +803,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         {flatList.length === 0 && searchQuery && !registryZoneTop && (
           <li className="model-list-panel__empty manager__empty" aria-live="polite">
             <Icon name="search" size={18} aria-hidden="true" />
-            <span>No models match your search.</span>
+            <span>{t('No models match your search.')}</span>
           </li>
         )}
       </WorkspaceList>
