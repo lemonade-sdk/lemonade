@@ -3315,8 +3315,11 @@ ${finalText}`
 
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
-      ? `Loading ${modelPreparation.modelName} for chat…`
-      : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`)
+      ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
+      : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
+        model: modelPreparation.modelName,
+        progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+      }))
     : supportsChatAudioInput && modeSupportsChatCompletions
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
@@ -3587,8 +3590,11 @@ ${finalText}`
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       {modelPreparation.phase === 'loading'
-                        ? `Loading ${modelPreparation.modelName} for chat…`
-                        : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
+                        ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
+                        : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
+                          model: modelPreparation.modelName,
+                          progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+                        })}
                     </div>
                   </div>
                 </article>
@@ -3982,9 +3988,9 @@ ${finalText}`
           </div>
         )}
         {currentCapability === 'tts' && isOpenMossTts && (
-          <div className="composer__capability-settings composer__openmoss-settings" aria-label="OpenMOSS voice settings">
+          <div className="composer__capability-settings composer__openmoss-settings" aria-label={t('OpenMOSS voice settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Voice mode</span>
+              <span>{t('Voice mode')}</span>
               <select
                 value={openMossSettings.mode}
                 onChange={event => {
@@ -3994,19 +4000,19 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="plain">Plain</option>
-                <option value="describe">Describe voice</option>
-                <option value="clone">Clone WAV sample</option>
+                <option value="plain">{t('Plain')}</option>
+                <option value="describe">{t('Describe voice')}</option>
+                <option value="clone">{t('Clone WAV sample')}</option>
               </select>
             </label>
             <label className="composer__openmoss-description">
               <span>
                 {openMossSettings.mode === 'describe'
-                  ? 'Voice description'
+                  ? t('Voice description')
                   : openMossSettings.mode === 'clone'
-                    ? 'Style note'
-                    : 'Voice style'}
-                <small>{openMossSettings.mode === 'clone' ? 'optional' : 'optional instruction'}</small>
+                    ? t('Style note')
+                    : t('Voice style')}
+                <small>{openMossSettings.mode === 'clone' ? t('optional') : t('optional instruction')}</small>
               </span>
               <input
                 type="text"
@@ -4027,17 +4033,17 @@ ${finalText}`
             >
               {openMossSettings.mode === 'describe'
                 ? openMossDescribeUnavailable
-                  ? 'Install MOSS-VoiceGen to enable described voices.'
+                  ? t('Install MOSS-VoiceGen to enable described voices.')
                   : openMossCloneModel
-                    ? `Voice design: ${openMossVoiceDesignModel} → speech: ${openMossCloneModel}`
-                    : `Using ${openMossVoiceDesignModel} directly for described speech.`
+                    ? t('Voice design: {design} → speech: {speech}', { design: openMossVoiceDesignModel, speech: openMossCloneModel })
+                    : t('Using {model} directly for described speech.', { model: openMossVoiceDesignModel })
                 : openMossSettings.mode === 'clone'
                   ? !openMossCloneModel
-                    ? 'Install OpenMOSS-TTS to clone a WAV voice sample.'
+                    ? t('Install OpenMOSS-TTS to clone a WAV voice sample.')
                     : pendingAudioFiles.length > 0
-                      ? `Voice sample ready: ${pendingAudioFiles[0].name}`
-                      : 'Attach one WAV voice sample with the paperclip below.'
-                  : 'The selected OpenMOSS model receives the optional voice style directly.'}
+                      ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
+                      : t('Attach one WAV voice sample with the paperclip below.')
+                  : t('The selected OpenMOSS model receives the optional voice style directly.')}
             </div>
           </div>
         )}
@@ -4883,7 +4889,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
           </button>
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
-              <Icon name="tts" size={13} /> Read aloud
+              <Icon name="tts" size={13} /> {t('Read aloud')}
             </button>
           )}
           {onRetry && (

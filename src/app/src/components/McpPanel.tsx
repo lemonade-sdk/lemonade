@@ -72,7 +72,7 @@ function toolInputMetadata(inputSchema: Record<string, unknown> | undefined, loc
   const required = Array.isArray(inputSchema.required)
     ? inputSchema.required.filter(value => typeof value === 'string').length
     : 0;
-  return translate('{count} input parameters', locale, { count: inputCount })
+  return translate(inputCount === 1 ? '1 input' : '{count} input parameters', locale, { count: inputCount })
     + (required ? ` · ${translate('{count} required', locale, { count: required })}` : '');
 }
 
@@ -334,7 +334,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
     setSecure(flag === false ? false : true);
     void loadGatewayTools();
     setAdminAccess('unavailable');
-    setHostError('External MCP connections are temporarily unavailable while the local GUI client is being introduced.');
+    setHostError('');
     return () => abortRef.current?.abort();
   }, [connectionStatus, isActive, loadGatewayTools]);
 
@@ -497,7 +497,7 @@ const McpPanel: React.FC<McpPanelProps> = ({ connectionStatus, isActive }) => {
             </div>
           ) : adminAccess === 'unavailable' ? (
             <div className="connect__notice mcp-panel__host-unavailable" role="alert" data-mcp-host-unavailable>
-              <p>{hostError || t('MCP administration is currently unavailable.')}</p>
+              <p>{hostError || t('External MCP connections are temporarily unavailable while the local GUI client is being introduced.')}</p>
             </div>
           ) : adminAccess === 'needs-admin' ? (
             <div className="mcp-panel__admin-auth" data-mcp-admin-auth>

@@ -741,7 +741,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('README unavailable for this model.')}</p>
       </div>
     );
   }
@@ -789,7 +789,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('README unavailable for this model.')}</p>
       </div>
     );
   }
