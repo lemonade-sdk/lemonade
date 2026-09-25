@@ -67,6 +67,7 @@ private:
     std::string model_path_;
     std::filesystem::path temp_dir_;  // Directory for temporary audio files
     std::mutex inference_mutex_;
+    double load_time_ms_ = 0.0;
 };
 
 namespace whispercpp {
