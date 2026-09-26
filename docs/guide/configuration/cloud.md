@@ -22,7 +22,7 @@ Then install the provider once:
 lemonade cloud install fireworks --base-url https://api.fireworks.ai/inference/v1
 ```
 
-That's it. `lemond` discovers Fireworks's chat-capable models, registers them under the `fireworks.` namespace, and surfaces them in `/v1/models`:
+That's it. `lemond` discovers compatible models, registers them under the `fireworks.` namespace, and surfaces them in `/v1/models`:
 
 ```bash
 lemonade list | grep fireworks
@@ -113,6 +113,23 @@ curl -X POST http://localhost:13305/v1/chat/completions \
 
 No special headers, no per-request credentials — `lemond` resolves the key from its registry and forwards the request transparently.
 
+### Image generation
+
+Providers exposing the OpenAI-compatible `POST <base_url>/images/generations` endpoint can also serve image models. Discovered image models have the `image` label, so selecting one in the desktop app opens Image mode. The cloud provider runs inference; no local image backend or model download is required.
+
+For example, for a provider named `nexus` that lists `Flux-2-Klein-9B-GGUF`:
+
+```json
+{
+  "model": "nexus.Flux-2-Klein-9B-GGUF",
+  "prompt": "An orange cat sitting by a window",
+  "size": "256x256",
+  "response_format": "b64_json"
+}
+```
+
+Send this body to Lemonade's `/v1/images/generations`. Lemonade forwards the upstream model ID and request options using the provider's existing server-side credentials. Supported sizes, sampling options, pricing, and response formats depend on the provider. Image editing, variations, and image output through chat-shaped APIs are not supported by this cloud backend.
+
 ## Session continuity headers
 
 Some providers key their prompt cache on a per-session identifier the client supplies as an HTTP header (for example, OpenCode sends `x-opencode-session`). When a request carries a well-known session header, Lemonade relays it upstream **verbatim** — the same header name that arrived is re-sent with the resolved value — so the provider can maintain cache continuity across the Lemonade hop:
@@ -135,7 +152,7 @@ Env vars always win. If you `POST /v1/cloud/auth` while the env var is set, the 
 
 ## How discovery works
 
-`lemond` calls `GET <base_url>/models` for each installed provider with a resolvable key, then filters the results to chat-capable models (using `supports_chat`, `capabilities`, `architecture.modality`, `type`, or id-pattern fallback depending on the provider). For each model it captures:
+`lemond` calls `GET <base_url>/models` for each installed provider with a resolvable key, then filters the results to supported chat and image models. Discovery uses provider metadata where available and case-insensitive model-name patterns as a fallback. Chat-shaped image APIs are excluded. For each model it captures:
 
 - **Public name** — `<provider>.<cleaned_upstream_id>` after stripping `accounts/<x>/models/` wrappers and deduplicating leading provider segments.
 - **Capability labels** — `vision`, `tool-calling`, `reasoning`, normalized from each provider's divergent metadata into Lemonade's shared vocabulary.
@@ -161,7 +178,7 @@ A common admin pattern: set `LEMONADE_FIREWORKS_API_KEY` in the systemd / Docker
 | Provider installed but `models_discovered: 0` in `system-info` | No resolvable key — env var missing or runtime key not POSTed. |
 | `POST /v1/cloud/auth` returns 409 | Env var is set for that provider. Unset it or use the env-var value going forward. |
 | Chat returns "No API key for cloud provider X" | Same as above — check `LEMONADE_<PROVIDER>_API_KEY` is exported in `lemond`'s environment, not your shell. |
-| Cloud model missing from `/v1/models` | Provider doesn't expose it as chat-capable, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
+| Cloud model missing from `/v1/models` | Provider doesn't expose a supported chat or image model, or discovery failed. Check `lemond` logs for warnings from the `Cloud` component. |
 | Chat completions returns "speaks the 'anthropic' wire format" | The provider was installed with `--wire-format anthropic`; send the request to `POST /v1/messages` instead. With `stream: true` this arrives as an SSE error frame on a `200`, not a `400`. |
 | An `anthropic` provider 401s with a valid key | It likely expects `x-api-key` rather than the default `Authorization: Bearer `. Re-install with `--auth-header-name x-api-key --auth-header-prefix ""`. With `stream: true` on `/v1/messages` the `401` appears as an SSE `error` event on a `200`, so check the event body rather than the status code. |
 

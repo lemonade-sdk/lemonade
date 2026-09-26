@@ -25,7 +25,10 @@ namespace backends {
 namespace {
 
 bool id_contains(const std::string& id, const std::string& needle) {
-    return id.find(needle) != std::string::npos;
+    std::string lower_id = id;
+    std::transform(lower_id.begin(), lower_id.end(), lower_id.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+    return lower_id.find(needle) != std::string::npos;
 }
 
 // Id-pattern fallback for /v1/models entries that don't publish capability
@@ -122,8 +125,40 @@ bool is_chat_model(const json& m) {
     return infer_type(m["id"].get<std::string>()) == ModelType::LLM;
 }
 
-std::vector<std::string> chat_labels() {
-    return {"cloud", "chat"};
+bool is_image_model(const json& m) {
+    if (!m.is_object() || !m.contains("id") || !m["id"].is_string()) {
+        return false;
+    }
+
+    if (m.contains("type") && m["type"].is_string()) {
+        return m["type"] == "image" || m["type"] == "image-generation"
+            || m["type"] == "text-to-image";
+    }
+    if (m.contains("capabilities") && m["capabilities"].is_array()) {
+        for (const auto& cap : m["capabilities"]) {
+            if (cap == "images.generations" || cap == "image-generation"
+                || cap == "text-to-image") {
+                return true;
+            }
+        }
+        return false;
+    }
+    // These catalog shapes use chat APIs unless an image endpoint is explicit.
+    if (m.contains("kind") && m["kind"] == "FLUMINA_BASE_MODEL") {
+        return false;
+    }
+    if (m.contains("architecture") && m["architecture"].is_object()) {
+        const auto& arch = m["architecture"];
+        if (arch.contains("modality") && arch["modality"].is_string()
+            && arch["modality"].get<std::string>().find("->") != std::string::npos) {
+            return false;
+        }
+    }
+    if (m.contains("supports_chat") && m["supports_chat"] == true) {
+        return false;
+    }
+    const std::string id = m["id"].get<std::string>();
+    return infer_type(id) == ModelType::IMAGE && !id_contains(id, "sora");
 }
 
 // Detect capability labels (vision / tool-calling / reasoning) from a
@@ -384,6 +419,7 @@ void CloudServer::load(const std::string& model_name,
     // already-loaded models. We just record the upstream model id so the
     // per-request handlers know what to rewrite "model" to before forwarding.
     upstream_model_ = model_info.checkpoint();
+    image_model_ = model_info.type == ModelType::IMAGE;
     LOG(INFO, "Cloud") << "Cloud provider: " << provider_
                        << ", upstream model: " << upstream_model_ << std::endl;
     loaded_ = true;
@@ -394,6 +430,7 @@ void CloudServer::unload() {
         LOG(INFO, "Cloud") << "Unloading cloud model: " << model_name_ << std::endl;
     }
     loaded_ = false;
+    image_model_ = false;
 }
 
 bool CloudServer::is_backend_alive() const {
@@ -568,6 +605,11 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
 }
 
 json CloudServer::chat_completion(const json& request) {
+    if (image_model_) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Chat completion", "cloud image model")
+        );
+    }
     if (wire_format_mismatch()) {
         return wire_format_error();
     }
@@ -576,6 +618,11 @@ json CloudServer::chat_completion(const json& request) {
 }
 
 json CloudServer::completion(const json& request) {
+    if (image_model_) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Text completion", "cloud image model")
+        );
+    }
     if (wire_format_mismatch()) {
         return wire_format_error();
     }
@@ -586,6 +633,32 @@ json CloudServer::completion(const json& request) {
 json CloudServer::responses(const json& /*request*/) {
     return ErrorResponse::from_exception(
         UnsupportedOperationException("Responses API", "cloud (" + provider_ + ")")
+    );
+}
+
+json CloudServer::image_generations(const json& request) {
+    if (wire_format_mismatch()) {
+        return wire_format_error();
+    }
+    if (!image_model_) {
+        return ErrorResponse::from_exception(
+            UnsupportedOperationException("Image generation", "cloud chat model")
+        );
+    }
+    json modified = request;
+    modified["model"] = upstream_model_;
+    return post_with_auth("/images/generations", modified, resolve_creds(), 600);
+}
+
+json CloudServer::image_edits(const json& /*request*/) {
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Image editing", "cloud (" + provider_ + ")")
+    );
+}
+
+json CloudServer::image_variations(const json& /*request*/) {
+    return ErrorResponse::from_exception(
+        UnsupportedOperationException("Image variations", "cloud (" + provider_ + ")")
     );
 }
 
@@ -631,6 +704,17 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
             message, ErrorType::UNSUPPORTED_OPERATION,
             {{"provider", provider_},
              {"wire_format", registry_->wire_format_for(provider_)}});
+        sink.write(error_msg.c_str(), error_msg.size());
+        sink.done();
+        if (telemetry_callback) {
+            telemetry_callback(error_telemetry(message));
+        }
+        return;
+    }
+
+    if (image_model_) {
+        const std::string message = "Use images/generations for a cloud image model";
+        const std::string error_msg = sse_error(message, "unsupported_operation");
         sink.write(error_msg.c_str(), error_msg.size());
         sink.done();
         if (telemetry_callback) {
@@ -1054,9 +1138,9 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
     }
 
     for (const auto& m : *model_array) {
-        // Chat-only by design; embeddings/audio/reranking/image belong in
-        // sibling backends with diverging wire formats.
-        if (!is_chat_model(m)) {
+        const bool image_model = is_image_model(m);
+        if ((image_model && wire_format != "openai")
+            || (!image_model && !is_chat_model(m))) {
             continue;
         }
         std::string upstream_id = m["id"].get<std::string>();
@@ -1071,11 +1155,13 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
         info.suggested = true;
         info.downloaded = true;  // Cloud models have no local artifacts.
         info.size = 0.0;
-        info.type = ModelType::LLM;
+        info.type = image_model ? ModelType::IMAGE : ModelType::LLM;
         info.device = DEVICE_NONE;
-        info.labels = chat_labels();
-        for (auto& cap : capability_labels(m)) {
-            info.labels.push_back(std::move(cap));
+        info.labels = {"cloud", image_model ? "image" : "chat"};
+        if (!image_model) {
+            for (auto& cap : capability_labels(m)) {
+                info.labels.push_back(std::move(cap));
+            }
         }
         // Display-only metadata; never affects routing.
         const auto limits = parse_cloud_limits(m);
