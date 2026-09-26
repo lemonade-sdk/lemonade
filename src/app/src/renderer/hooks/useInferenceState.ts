@@ -8,7 +8,7 @@ export type Modality = 'llm' | 'embedding' | 'reranking' | 'transcription' | 'im
 interface RunPreFlightOptions {
   modelName: string;
   modelsData: ModelsData;
-  onError: (msg: string) => void;
+  onError: (msg: string, error?: unknown) => void;
 }
 
 export function useInferenceState() {
@@ -44,7 +44,7 @@ export function useInferenceState() {
       setPhaseSync('idle');
       setActiveModality(null);
       if (error instanceof DownloadAbortError) return false;
-      onError(error.message || 'Failed to prepare model for inference.');
+      onError(error.message || 'Failed to prepare model for inference.', error);
       return false;
     }
 
