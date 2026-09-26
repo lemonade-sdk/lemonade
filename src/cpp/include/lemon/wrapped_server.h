@@ -462,6 +462,7 @@ public:
 
     // Default to an "unsupported" error so non-chat backends (TTS, image,
     // transcription) inherit a sensible response instead of stubbing each one.
+    virtual void validate_chat_request(const json& request) const {}
     virtual json chat_completion(const json& request) override {
         return unsupported_capability_error("chat completion");
     }
