@@ -443,8 +443,19 @@ public:
 
     void set_load_cancel_flag(std::atomic<bool>* f) { load_cancel_ = f; }
 
-    static void set_request_cancel_flag(std::atomic<bool>* f);
-    static std::atomic<bool>* current_request_cancel();
+    class RequestCancelScope {
+    public:
+        explicit RequestCancelScope(const utils::RequestCancelToken& token);
+        ~RequestCancelScope();
+
+        RequestCancelScope(const RequestCancelScope&) = delete;
+        RequestCancelScope& operator=(const RequestCancelScope&) = delete;
+
+    private:
+        utils::RequestCancelToken prev_token_;
+    };
+
+    static utils::RequestCancelToken current_request_cancel_context();
 
     // Downsize the model on soft idle (e.g., clear KV cache). Returns true if the
     // downsize succeeded (or was a no-op), false if the backend operation failed.
@@ -610,7 +621,9 @@ protected:
     void set_watchdog_health_endpoint(const std::string& endpoint);
 
     // Common method to forward requests to the wrapped server (non-streaming)
-    json forward_request(const std::string& endpoint, const json& request, long timeout_seconds = 0);
+    json forward_request(const std::string& endpoint,
+                         const json& request,
+                         long timeout_seconds = 0);
 
     json forward_get_request(const std::string& endpoint, long timeout_seconds = 0);
 

@@ -312,10 +312,17 @@ static size_t write_file_callback(void* ptr, size_t size, size_t nmemb, void* st
     return written;
 }
 
-static int cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
-                                    curl_off_t) {
-    auto* flag = static_cast<std::atomic<bool>*>(clientp);
-    return (flag && flag->load()) ? 1 : 0;
+static int post_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t, curl_off_t,
+                                         curl_off_t) {
+    if (!clientp) return 0;
+    auto* token = static_cast<const RequestCancelToken*>(clientp);
+    try {
+        return token->cancelled();
+    } catch (...) {
+        // Never allow a C++ exception to cross libcurl's C callback boundary.
+        // Failing closed is safer than leaving an orphaned upstream request.
+        return 1;
+    }
 }
 
 static int stream_cancel_xferinfo_callback(void* clientp, curl_off_t, curl_off_t,
@@ -563,7 +570,7 @@ HttpResponse HttpClient::post(const std::string& url,
                               const std::map<std::string, std::string>& headers,
                               long timeout_seconds,
                               HttpSecurityPolicy policy,
-                              std::atomic<bool>* cancel_flag) {
+                              const RequestCancelToken& cancel) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -587,9 +594,9 @@ HttpResponse HttpClient::post(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, kConnectTimeoutSeconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
 
-    if (cancel_flag) {
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     }
 
@@ -620,7 +627,10 @@ HttpResponse HttpClient::post(const std::string& url,
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_slist_free_all(header_list);
         curl_easy_cleanup(curl);
-        throw std::runtime_error(error);
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            throw HttpClientCancellationException(res, error);
+        }
+        throw HttpClientException(res, error);
     }
 
     long response_code;
@@ -637,7 +647,8 @@ HttpResponse HttpClient::post(const std::string& url,
 HttpResponse HttpClient::post_multipart(const std::string& url,
                                          const std::vector<MultipartField>& fields,
                                          long timeout_seconds,
-                                         HttpSecurityPolicy policy) {
+                                         HttpSecurityPolicy policy,
+                                         const RequestCancelToken& cancel) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -664,6 +675,11 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
+    if (cancel.flag != nullptr || cancel.should_cancel != nullptr) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, post_cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &cancel);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
     if (!apply_http_security_policy(curl, policy, false)) {
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
@@ -679,7 +695,10 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
         std::string error = "CURL error: " + std::string(curl_easy_strerror(res));
         curl_mime_free(mime);
         curl_easy_cleanup(curl);
-        throw std::runtime_error(error);
+        if (res == CURLE_ABORTED_BY_CALLBACK) {
+            throw HttpClientCancellationException(res, error);
+        }
+        throw HttpClientException(res, error);
     }
 
     long response_code;
