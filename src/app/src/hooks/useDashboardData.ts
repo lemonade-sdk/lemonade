@@ -62,6 +62,7 @@ export interface SlotLiveTps {
 /* ── Smoothing ─────────────────────────────────────────────── */
 
 const WINDOW_MS = 5000;     // 5-second sliding window for TPS averaging
+const LIVE_TIMING_TTL_MS = 2500;
 
 const ATTACK_ALPHA = 1.0;
 const RELEASE_ALPHA = 0.5;
@@ -297,6 +298,10 @@ export function useDashboardData(isActive = true): DashboardData {
           isActive: live?.isActive || s.is_processing,
         });
       }
+      const currentSlotIds = new Set(slotData.map(s => s.id));
+      for (const slotId of targetSlotRef.current.keys()) {
+        if (!currentSlotIds.has(slotId)) targetSlotRef.current.delete(slotId);
+      }
 
       const activeSlots = slotData.filter(s => {
         const live = perSlotLive.get(s.id);
@@ -367,7 +372,7 @@ export function useDashboardData(isActive = true): DashboardData {
 
   /* ── Live throughput from log WebSocket ───────────────────── */
 
-  const liveSlotTps = useRef(new Map<number, { tg: number; pp: number }>());
+  const liveSlotTps = useRef(new Map<number, { tg: number; pp: number; seenAt: number }>());
   const lastLivePushRef = useRef(0);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
@@ -400,15 +405,18 @@ export function useDashboardData(isActive = true): DashboardData {
           const t = parseTimingLine(entry.line);
           if (!t) return;
 
+          const now = Date.now();
           const map = liveSlotTps.current;
-          map.set(t.slotId, { tg: t.tg ?? 0, pp: t.pp ?? 0 });
+          map.set(t.slotId, { tg: t.tg ?? 0, pp: t.pp ?? 0, seenAt: now });
+          for (const [slotId, timing] of map) {
+            if (now - timing.seenAt > LIVE_TIMING_TTL_MS) map.delete(slotId);
+          }
 
           const c = countersRef.current;
           if (t.decoded != null && t.decoded > 0) {
             c.totalTokensGenerated += t.decoded;
           }
 
-          const now = Date.now();
           if (now - lastLivePushRef.current < 1000) return;
           lastLivePushRef.current = now;
 
@@ -430,7 +438,6 @@ export function useDashboardData(isActive = true): DashboardData {
             if (existing) {
               existing.tps = smoothTarget(existing.tps, v.tg);
               existing.ppTps = smoothTarget(existing.ppTps, v.pp);
-              existing.isActive = v.tg > 0.05 || v.pp > 0.05;
             }
           }
         },
