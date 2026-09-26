@@ -11,7 +11,11 @@ namespace thenoise {
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "thenoise",
     /*display_name*/    "TheNoise ROCm",
+#ifdef _WIN32
+    /*binary*/          "thenoise.bat",
+#else
     /*binary*/          "thenoise",
+#endif
     /*config_section*/  "thenoise",
     /*default_device*/  DEVICE_GPU,
     /*slot_policy*/     SlotPolicy::Standard,
@@ -34,7 +38,7 @@ inline const BackendDescriptor descriptor = {
         {"lora_specs", "", "", "ARGS", "Comma-separated LoRA specs, e.g. \"style:0.8,sub/detail:0.5\"", "TheNoise Options"},
     },
     /*support*/ {
-        {"rocm", {"linux"}, {{"amd_gpu", {"gfx103X", "gfx110X", "gfx120X", "gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm families"},
+        {"rocm", {"linux", "windows"}, {{"amd_gpu", {"gfx103X", "gfx110X", "gfx120X", "gfx1150", "gfx1151", "gfx1152"}}}, "Supported AMD ROCm families"},
     },
     /*supported_modes*/ {"image"},
     /*required_checkpoints*/ {"main"},  // text_encoder+vae validated together in load()
