@@ -153,6 +153,12 @@ namespace lemon::backends {
         /** Directory holding the lemonade-managed ROCm wheel venv for arch/version. */
         static std::string get_therock_wheel_dir(const std::string& arch, const std::string& version);
 
+        /** True when a wheel install would place rocBLAS's files past the depth
+         *  it can load from (measured: 174 chars works, 175 faults). Always
+         *  false off Windows. */
+        static bool therock_wheel_path_too_long(const std::string& arch,
+                                                const std::string& version);
+
         /** True when the pip-wheel runtime for arch/version is still usable. See impl for liveness check vs tarball fallback. */
         static bool therock_wheel_runtime_alive(const std::string& arch,
                                                 const std::string& version);
@@ -192,8 +198,9 @@ namespace lemon::backends {
          *  get_therock_lib_paths). Returns "" for empty input. */
         static std::string join_runtime_dirs(const std::vector<std::string>& dirs);
 
-        /** Stage TheRock's amdhip64_7.dll next to a ROCm backend exe, unless
-         *  System32 already ships a newer runtime. No-op off Windows. */
+        /** Stage TheRock's HIP runtime set (the amdhip64 and amd_comgr DLLs)
+         *  next to a ROCm backend exe, so the loader cannot mix it with the
+         *  display driver's copies in System32. No-op off Windows. */
         static bool stage_therock_hip_runtime(const std::string& rocm_arch,
                                               const fs::path& target_dir);
 
