@@ -6,9 +6,12 @@
  * The tokeniser is a port of `parse_custom_args` / `build_custom_args_map` in
  * `src/cpp/include/lemon/utils/custom_args.h`. It is deliberately
  * bug-compatible with that implementation — including the way `keep_quotes`
- * wraps the whole accumulated token rather than just the quoted run — because
- * lemond parses the string this panel sends, and a client that disagreed about
- * where a token ends would show one thing and load another.
+ * wraps the whole accumulated token rather than just the quoted run, and the
+ * way newline characters are treated as argument separators (the storage keeps
+ * them so a field can read one flag per line, while the argv built from the
+ * same string sees them as whitespace) — because lemond parses the string this
+ * panel sends, and a client that disagreed about where a token ends would show
+ * one thing and load another.
  */
 
 export type ArgFieldKind = 'number' | 'text';
@@ -87,34 +90,56 @@ export function detailSamplerFields(specs: ArgFieldSpec[]): ArgFieldSpec[] {
   return specs.filter(spec => !spec.axis);
 }
 
-export function parseCustomArgs(customArgs: string): string[] {
-  const result: string[] = [];
-  if (!customArgs) return result;
+/** A token paired with the raw whitespace that preceded it, so the freeform
+    remainder can be rebuilt with the line breaks the author typed instead of a
+    reflowed single line. A token is unquoted ` \n \r`-delimited; `keep_quotes`
+    wraps the whole accumulated token (bug-compat with the C++ port). */
+interface ArgSegment {
+  sep: string;
+  token: string;
+}
 
-  let current = '';
-  let inQuotes = false;
-  let quoteChar = '';
+function lexCustomArgs(customArgs: string): ArgSegment[] {
+  const segments: ArgSegment[] = [];
+  if (!customArgs) return segments;
 
-  for (const c of customArgs) {
-    if (!inQuotes && (c === '"' || c === "'")) {
-      inQuotes = true;
-      quoteChar = c;
-    } else if (inQuotes && c === quoteChar) {
-      inQuotes = false;
-      current = quoteChar + current + quoteChar;
-      quoteChar = '';
-    } else if (!inQuotes && c === ' ') {
-      if (current) {
-        result.push(current);
-        current = '';
+  const isBreak = (c: string) => c === ' ' || c === '\n' || c === '\r';
+  const n = customArgs.length;
+  let i = 0;
+  while (i < n) {
+    const sepStart = i;
+    while (i < n && isBreak(customArgs[i])) i++;
+    const sep = customArgs.slice(sepStart, i);
+    if (i >= n) break;
+
+    let current = '';
+    let inQuotes = false;
+    let quoteChar = '';
+    while (i < n) {
+      const c = customArgs[i];
+      if (!inQuotes && isBreak(c)) break;
+      if (!inQuotes && (c === '"' || c === "'")) {
+        inQuotes = true;
+        quoteChar = c;
+        i++;
+        continue;
       }
-    } else {
+      if (inQuotes && c === quoteChar) {
+        inQuotes = false;
+        current = quoteChar + current + quoteChar;
+        i++;
+        continue;
+      }
       current += c;
+      i++;
     }
+    if (current) segments.push({ sep, token: current });
   }
+  return segments;
+}
 
-  if (current) result.push(current);
-  return result;
+export function parseCustomArgs(customArgs: string): string[] {
+  return lexCustomArgs(customArgs).map(segment => segment.token);
 }
 
 /** A complete negative number is a value, not a flag. */
@@ -171,7 +196,8 @@ export interface SplitArgs {
  */
 export function splitSamplerArgs(specs: ArgFieldSpec[], args: string): SplitArgs {
   const samplerFlags = new Set(specs.map(spec => spec.flag));
-  const tokens = parseCustomArgs(args);
+  const segments = lexCustomArgs(args);
+  const tokens = segments.map(segment => segment.token);
   const fields: Record<string, string> = {};
   const claimedByRest = new Set<string>();
   const extracted = new Set<string>();
@@ -186,17 +212,21 @@ export function splitSamplerArgs(specs: ArgFieldSpec[], args: string): SplitArgs
     }
   }
 
-  // The remainder keeps the order it was written in. Rebuilding it from the
-  // sorted map would rewrite the freeform field under the cursor of whoever is
-  // typing in it.
-  const rest: string[] = [];
+  // The remainder keeps the order it was written in and the line breaks the
+  // author typed: kept segments are rejoined with their own whitespace, not a
+  // single space. Rebuilding it from the sorted map would rewrite the freeform
+  // field under the cursor of whoever is typing in it.
+  let rest = '';
   let dropping = false;
-  for (const token of tokens) {
+  let kept = false;
+  for (const { sep, token } of segments) {
     if (token.startsWith('-') && !isNegativeNumber(token)) dropping = extracted.has(token);
-    if (!dropping) rest.push(token);
+    if (dropping) continue;
+    rest += kept ? sep + token : token;
+    kept = true;
   }
 
-  return { fields, rest: rest.join(' '), claimedByRest };
+  return { fields, rest, claimedByRest };
 }
 
 /** Field order is stable and the remainder is appended verbatim, so a value

@@ -239,17 +239,30 @@ interface LoadSettingsDraft {
     rather than the saved layer with the default hiding behind it. The exception
     is a field whose control already offers the resolved value as a labelled
     choice of its own: seeding those would select a value their option list
-    deliberately omits, so the caller names them. */
+    deliberately omits, so the caller names them.
+    A backend args field is seeded from both layers at once: its typed sampler
+    fields come from the resolved value (so arch/model default tuning stays
+    filled in and, under `merge_args=false`, still applied on load), while the
+    freeform remainder comes from the saved value so the line breaks the author
+    typed are shown rather than the space-joined merge lemond rebuilds. */
 function draftFromResolvedOptions(
   managedKeys: Array<keyof RecipeOptions>,
   saved: RecipeOptions,
   effective: RecipeOptions,
   offersResolvedValue: (key: keyof RecipeOptions) => boolean,
+  samplerSpecsForArgs?: (name: string) => ArgFieldSpec[] | null,
 ): LoadSettingsDraft {
   const recipe: Record<string, string> = {};
   for (const key of managedKeys) {
     const name = String(key);
     if (name === 'ctx_size') continue;
+    const specs = samplerSpecsForArgs?.(name);
+    if (specs) {
+      const fields = splitSamplerArgs(specs, fieldValue(effective[key])).fields;
+      const freeform = splitSamplerArgs(specs, fieldValue(saved[key])).rest;
+      recipe[name] = composeSamplerArgs(specs, fields, freeform);
+      continue;
+    }
     recipe[name] = fieldValue((offersResolvedValue(key) ? saved : effective)[key]);
   }
   const ctxRaw = effective.ctx_size ?? saved.ctx_size;
@@ -1431,6 +1444,14 @@ const ModelConfigurationTab: React.FC<{
   const offersResolvedValue = useCallback((key: keyof RecipeOptions) => key === 'voice'
     || recipeOptionIsBackend(systemInfo, activeRecipe, String(key))
     || recipeOptionIsDevice(systemInfo, activeRecipe, String(key)), [activeRecipe, systemInfo]);
+  // An args field is seeded as typed sampler fields (resolved) plus a freeform
+  // remainder (saved raw), so its sampler steppers show lemond's tuning while
+  // the freeform box keeps the author's line breaks. Non-args keys get null.
+  const samplerSpecsForArgs = useCallback((name: string): ArgFieldSpec[] | null => (
+    systemInfo && recipeOptionIsArgs(systemInfo, activeRecipe, name)
+      ? samplerFieldsForRecipe(activeRecipe)
+      : null
+  ), [activeRecipe, systemInfo]);
   const knownVoiceOptions = useMemo(() => knownVoiceOptionsForModel(model), [model]);
   const knownVoiceIds = useMemo(() => new Set(knownVoiceOptions.map(option => option.id.toLowerCase())), [knownVoiceOptions]);
 
@@ -1459,8 +1480,8 @@ const ModelConfigurationTab: React.FC<{
     setServerDefaultRecipeOptions(defaults);
     const resolved = Number(result.resolved_ctx_size);
     setResolvedCtxSize(Number.isFinite(resolved) && resolved > 0 ? resolved : null);
-    if (syncDraft) applyDraft(draftFromResolvedOptions(recipeKeys, saved, effective, offersResolvedValue));
-  }, [applyDraft, offersResolvedValue, recipeKeys]);
+    if (syncDraft) applyDraft(draftFromResolvedOptions(recipeKeys, saved, effective, offersResolvedValue, samplerSpecsForArgs));
+  }, [applyDraft, offersResolvedValue, recipeKeys, samplerSpecsForArgs]);
 
   // Read through a ref: a save refreshes the model list, which hands this
   // component a new model object, and re-running the fetch on that would
@@ -1499,8 +1520,8 @@ const ModelConfigurationTab: React.FC<{
   }, [name, systemInfoSettled]);
 
   const savedLoadSettings = useMemo(
-    () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue),
-    [offersResolvedValue, recipeKeys, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
+    () => draftFromResolvedOptions(recipeKeys, serverSavedRecipeOptions, serverEffectiveRecipeOptions, offersResolvedValue, samplerSpecsForArgs),
+    [offersResolvedValue, recipeKeys, samplerSpecsForArgs, serverEffectiveRecipeOptions, serverSavedRecipeOptions],
   );
   const hasLoadSettingChanges = ctxSizeDraft !== savedLoadSettings.ctxSize
     || !draftFieldsEqual(recipeKeys, recipeDraft, savedLoadSettings.recipe);
@@ -1650,7 +1671,7 @@ const ModelConfigurationTab: React.FC<{
   // Defaults are already in hand from lemond, so this only refills the form:
   // nothing is written until the user saves, and Discard still goes back.
   const resetConfig = () => {
-    applyDraft(draftFromResolvedOptions(recipeKeys, {}, serverDefaultRecipeOptions, offersResolvedValue));
+    applyDraft(draftFromResolvedOptions(recipeKeys, {}, serverDefaultRecipeOptions, offersResolvedValue, samplerSpecsForArgs));
     setNotice(hasSavedOptions
       ? 'Showing lemond defaults. Load uses them now; Save clears your saved settings.'
       : 'Already using lemond defaults.');
