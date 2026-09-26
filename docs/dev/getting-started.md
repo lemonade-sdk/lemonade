@@ -452,7 +452,6 @@ The notarization process will:
 src/cpp/
 ├── CPackRPM.cmake              # RPM packaging configuration
 ├── DOCKER_GUIDE.md             # Docker containerization guide
-├── Extra-Models-Dir-Spec.md    # Extra models directory specification
 ├── Multi-Model-Spec.md         # Multi-model loading specification
 ├── postinst                    # Debian package post-install script
 ├── postinst-full               # Debian package post-install script (full version)
