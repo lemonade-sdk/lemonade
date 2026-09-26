@@ -383,6 +383,12 @@ void LlamaCppServer::load(const std::string& model_name,
     if (supports_embeddings) {
         LOG(INFO, "LlamaCpp") << "Model supports embeddings, adding --embeddings flag" << std::endl;
         push_arg(args, reserved_flags, "--embeddings");
+        // A non-causal embedding model has to see the whole input in one micro batch, so the
+        // batch sizes bound the input, not the context size.
+        push_arg(args, reserved_flags, "--batch-size", std::to_string(ctx_size),
+                 std::vector<std::string>{"-b"});
+        push_arg(args, reserved_flags, "--ubatch-size", std::to_string(ctx_size),
+                 std::vector<std::string>{"-ub"});
     }
     push_reserved(reserved_flags, "--embeddings", std::vector<std::string>{"--embedding"});
 
