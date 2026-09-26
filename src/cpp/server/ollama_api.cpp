@@ -2,6 +2,7 @@
 #include "lemon/error_types.h"
 #include "lemon/model_types.h"
 #include "lemon/runtime_config.h"
+#include "lemon/thinking_controls.h"
 #include <iostream>
 #include <lemon/utils/aixlog.hpp>
 #include <sstream>
@@ -483,13 +484,20 @@ json OllamaApi::convert_ollama_to_openai_chat(const json& ollama_request) {
         openai_req["response_format"] = {{"type", "json_object"}};
     }
 
-    // Map think parameter → enable_thinking (controls reasoning output)
+    // Ollama's `think` is a bool, or a gpt-oss effort level
+    // ("low"/"medium"/"high") that maps 1:1 onto reasoning_effort.
     if (ollama_request.contains("think")) {
-        openai_req["enable_thinking"] = ollama_request["think"];
+        if (ollama_request["think"].is_string()) {
+            openai_req["reasoning_effort"] = ollama_request["think"];
+        } else {
+            openai_req["enable_thinking"] = ollama_request["think"];
+        }
     }
 
     // Stream flag is handled by the caller
     openai_req["stream"] = false;
+
+    normalize_thinking_controls(openai_req);
 
     return openai_req;
 }
