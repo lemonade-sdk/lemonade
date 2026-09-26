@@ -1,3 +1,5 @@
+#include "../utils/wmi_helper.h"
+#include <lemon/gpu_adapter_memory.h>
 #include <lemon/system_metrics_platform.h>
 #include <windows.h>
 #include <cmath>
@@ -66,8 +68,11 @@ public:
     }
 
     double get_vram_usage_gb() override {
-        // VRAM monitoring not implemented for Windows
-        return -1.0;
+        wmi::WMIConnection conn;
+        if (!conn.is_valid()) return -1.0;
+
+        return single_physical_gpu_dedicated_gb(wmi::get_physical_gpu_count(conn),
+                                                wmi::get_gpu_adapter_memory(conn));
     }
 
     double get_npu_utilization() override {
