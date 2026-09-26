@@ -187,9 +187,7 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
     "args": "",
     "backend": "auto",
     "cpu_args": "",
-    "cpu_bin": "builtin",
-    "npu_args": "",
-    "npu_bin": "builtin"
+    "cpu_bin": "builtin"
   }
 }
 ```

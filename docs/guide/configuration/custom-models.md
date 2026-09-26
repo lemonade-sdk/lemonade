@@ -235,8 +235,7 @@ Example collection file:
             "model_name": "Whisper-Tiny",
             "recipe": "whispercpp",
             "checkpoints": {
-                "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
-                "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+                "main": "ggerganov/whisper.cpp:ggml-tiny.bin"
             },
             "labels": ["transcription", "realtime-transcription"],
             "recipe_options": {},
@@ -412,17 +411,18 @@ The `checkpoint` field uses the format `org/repo:variant`:
 
 ### Multi-file models
 
-For models that require multiple files (e.g., Whisper models with NPU cache, or Flux image models with separate VAE/text encoder), use `checkpoints` instead of `checkpoint`:
+For models that require multiple files (e.g., Flux image models with separate VAE/text encoder), use `checkpoints` instead of `checkpoint`:
 
 ```json
 {
-    "My-Whisper-Model": {
+    "My-Flux-Model": {
         "checkpoints": {
-            "main": "ggerganov/whisper.cpp:ggml-tiny.bin",
-            "npu_cache": "amd/whisper-tiny-onnx-npu:ggml-tiny-encoder-vitisai.rai"
+            "main": "org/repo:flux1-schnell-q4_0.gguf",
+            "text_encoder": "org/repo:t5xxl_fp16.safetensors",
+            "vae": "org/repo:ae.safetensors"
         },
-        "recipe": "whispercpp",
-        "size": 0.075
+        "recipe": "sd-cpp",
+        "size": 10.0
     }
 }
 ```
@@ -432,7 +432,6 @@ Supported checkpoint keys:
 | Key | Used by | Description |
 |-----|---------|-------------|
 | `main` | All | Primary model file |
-| `npu_cache` | whispercpp | NPU-accelerated encoder cache |
 | `text_encoder` | sd-cpp | Text encoder for image generation models |
 | `vae` | sd-cpp | VAE for image generation models |
 
