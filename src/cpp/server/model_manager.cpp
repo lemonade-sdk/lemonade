@@ -1261,13 +1261,6 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
         return discovered;
     }
 
-    // Root files claim their short id first, so adding a reserved directory
-    // never renames an extra model that already exists.
-    std::sort(standalone_files.begin(), standalone_files.end(),
-              [](const fs::path& lhs, const fs::path& rhs) {
-                  return lhs.generic_string() < rhs.generic_string();
-              });
-
     // A directory used to be listed as a single model named after itself.
     // Reserving one splits it into separate models, so keep the old id resolving.
     std::set<std::string> folder_ids_kept;
@@ -1315,18 +1308,14 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
                             : &reserved_extra_model_ids());
     };
 
-    for (const auto& gguf_path : standalone_files) {
-        if (gguf_reader_detail::contains_ignore_case(
-                gguf_path.filename().string(), "mmproj")) continue;
-        add_standalone_model({gguf_path}, "");
-    }
-
-    for (auto& [category_path, files] : category_files) {
+    // Files sitting directly in a directory are separate models, except where
+    // numbered shard names declare that they belong together.
+    auto group_logical_models = [](std::vector<fs::path> files,
+                                   std::vector<fs::path>& mmproj_files) {
         std::sort(files.begin(), files.end(),
                   [](const fs::path& lhs, const fs::path& rhs) {
                       return lhs.generic_string() < rhs.generic_string();
                   });
-        std::vector<fs::path> mmproj_files;
         std::vector<std::vector<fs::path>> logical_models;
         std::map<std::pair<std::string, int>, size_t> shard_groups;
 
@@ -1353,6 +1342,19 @@ std::map<std::string, ModelInfo> ModelManager::discover_extra_models() const {
                   [](const auto& lhs, const auto& rhs) {
                       return lhs.front().generic_string() < rhs.front().generic_string();
                   });
+        return logical_models;
+    };
+
+    // Root files claim their short id first, so adding a reserved directory
+    // never renames an extra model that already exists.
+    std::vector<fs::path> root_mmproj_files;
+    for (const auto& model_files : group_logical_models(standalone_files, root_mmproj_files)) {
+        add_standalone_model(model_files, "");
+    }
+
+    for (const auto& [category_path, files] : category_files) {
+        std::vector<fs::path> mmproj_files;
+        const auto logical_models = group_logical_models(files, mmproj_files);
 
         const std::string deployment_label = category_path.filename().string();
         const fs::path direct_mmproj = logical_models.size() == 1 && !mmproj_files.empty()
