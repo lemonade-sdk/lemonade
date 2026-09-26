@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import AddModelPanel, { ModelInstallData } from '../AddModelPanel';
 import { useModels } from '../hooks/useModels';
+import { getModelJSONName, installModelFromForm, installModelFromJSON, readModelJSONFile } from '../utils/addModel';
 import { getModelDisplayName } from '../utils/modelDisplayName';
 import { serverFetch } from '../utils/serverConfig';
 import {
@@ -540,8 +542,12 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
   const [confirmLlm, setConfirmLlm] = useState(false);
   const [confirmLlmTarget, setConfirmLlmTarget] = useState<'quick' | 'rules' | null>(null);
   const [lossyAcknowledged, setLossyAcknowledged] = useState(false);
+  const [newModelMenuOpen, setNewModelMenuOpen] = useState(false);
+  const [showAddModel, setShowAddModel] = useState(false);
+  const [pendingCandidate, setPendingCandidate] = useState<string | null>(null);
   const ruleSeqRef = useRef(0);
   const clfSeqRef = useRef(0);
+  const newModelFileRef = useRef<HTMLInputElement>(null);
 
   // Seed sequence counters from loaded rules/classifiers so newly generated IDs
   // never collide with existing ones (e.g. rule-1 already present on edit-open).
@@ -678,6 +684,35 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
     });
     setError(null);
   };
+
+  const handleNewModelInstall = (data: ModelInstallData) => {
+    setShowAddModel(false);
+    setPendingCandidate(installModelFromForm(data));
+  };
+
+  const handleNewModelFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const json = await readModelJSONFile(file);
+    if (!json) { showError('That file is not valid JSON.'); return; }
+    installModelFromJSON(json);
+    setPendingCandidate(getModelJSONName(json));
+  };
+
+  // A model registered from this panel only becomes selectable once the server
+  // reports it, one `modelsUpdated` refresh after the pull finishes - so hold
+  // the id and adopt it when it appears.
+  useEffect(() => {
+    if (!pendingCandidate) return;
+    if (candidateOptions.some(o => o.id === pendingCandidate)) {
+      if (!draft.candidates.includes(pendingCandidate)) toggleCandidate(pendingCandidate);
+      setPendingCandidate(null);
+    } else if (modelsData[pendingCandidate]) {
+      showWarning(`"${displayName(pendingCandidate)}" was added, but it cannot answer chat requests, so it was not added as a candidate.`);
+      setPendingCandidate(null);
+    }
+  }, [pendingCandidate, candidateOptions, modelsData, draft.candidates]);
 
   const addClassifier = () => {
     const id = nextClassifierId();
@@ -824,12 +859,34 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
         </div>
 
         <div className="form-section">
-          <label className="form-label">
-            Candidate Models *
-            <span className="settings-description" style={{ marginLeft: 6 }}>- the LLMs that can answer requests</span>
-          </label>
+          <div className="router-candidates-header">
+            <label className="form-label">
+              Candidate Models *
+              <span className="settings-description" style={{ marginLeft: 6 }}>- the LLMs that can answer requests</span>
+            </label>
+            <div className="router-new-model-wrap">
+              <button type="button" className="router-new-model-btn" onClick={() => setNewModelMenuOpen(v => !v)}>
+                + New Model
+              </button>
+              {newModelMenuOpen && (
+                <>
+                  <div className="router-new-model-backdrop" onClick={() => setNewModelMenuOpen(false)} />
+                  <div className="router-new-model-menu">
+                    <button type="button" className="router-new-model-item"
+                      onClick={() => { setNewModelMenuOpen(false); setShowAddModel(true); }}>
+                      Manually
+                    </button>
+                    <button type="button" className="router-new-model-item"
+                      onClick={() => { setNewModelMenuOpen(false); newModelFileRef.current?.click(); }}>
+                      From JSON
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
           {candidateOptions.length === 0 ? (
-            <div className="collection-role-empty">No compatible models found. Pull or register LLM models first.</div>
+            <div className="collection-role-empty">No compatible models found. Pull an LLM, or register one with + New Model.</div>
           ) : (
             <>
               <ModelCheckboxList
@@ -848,6 +905,11 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
                 </span>
               )}
             </>
+          )}
+          {pendingCandidate && (
+            <span className="settings-description" style={{ display: 'block', marginTop: 4 }}>
+              Adding "{displayName(pendingCandidate)}" - it joins the candidate list once the server has registered it.
+            </span>
           )}
         </div>
 
@@ -1120,6 +1182,23 @@ const RouterCollectionPanel: React.FC<RouterCollectionPanelProps> = ({
           </div>
           <pre className="router-json-preview-body">{previewJson}</pre>
         </div>
+      )}
+
+      <input
+        ref={newModelFileRef}
+        type="file"
+        accept=".json,application/json"
+        className="collection-import-input"
+        onChange={handleNewModelFile}
+      />
+
+      {showAddModel && createPortal(
+        <div className="settings-overlay" onMouseDown={(e: React.MouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) setShowAddModel(false); }}>
+          <div className="settings-modal" onMouseDown={(e: React.MouseEvent) => e.stopPropagation()}>
+            <AddModelPanel onClose={() => setShowAddModel(false)} onInstall={handleNewModelInstall} />
+          </div>
+        </div>,
+        document.body,
       )}
 
       {error && <div className="router-panel-error">{error}</div>}
