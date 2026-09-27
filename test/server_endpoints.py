@@ -8632,6 +8632,30 @@ class EndpointTests(ServerTestBase):
                 "/docs-example returned unexpected status without web app",
             )
 
+    def test_066_backend_bin_and_args_keys_must_name_a_real_variant(self):
+        """/internal/set rejects *_bin / *_args keys that name no backend variant."""
+        config_url = f"http://localhost:{PORT}/internal/config"
+        set_url = f"http://localhost:{PORT}/internal/set"
+
+        for key in ("flm_bin", "foo_args"):
+            bad = requests.post(
+                set_url, json={"flm": {key: "builtin"}}, timeout=TIMEOUT_DEFAULT
+            )
+            self.assertEqual(bad.status_code, 400, bad.text)
+            self.assertIn(f"Unknown key: 'flm.{key}'", bad.text)
+
+        config = requests.get(config_url, timeout=TIMEOUT_DEFAULT).json()
+        self.assertNotIn("flm_bin", config.get("flm", {}))
+        self.assertNotIn("foo_args", config.get("flm", {}))
+
+        prior = config.get("llamacpp", {}).get("vulkan_bin", "builtin")
+        resp = requests.post(
+            set_url,
+            json={"llamacpp": {"vulkan_bin": prior}},
+            timeout=TIMEOUT_DEFAULT,
+        )
+        self.assertEqual(resp.status_code, 200, f"/internal/set failed: {resp.text}")
+
 
 if __name__ == "__main__":
     run_server_tests(EndpointTests, "ENDPOINT TESTS")
