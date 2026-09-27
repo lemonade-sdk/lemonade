@@ -7,11 +7,13 @@
 #include "lemon/streaming_proxy.h"
 #include "lemon/utils/http_client.h"
 #include "lemon/utils/json_utils.h"
+#include "lemon/utils/session_utils.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <curl/curl.h>
+#include <limits>
 #include <map>
 #include <string_view>
 #include <utility>
@@ -240,6 +242,7 @@ std::pair<double, double> parse_cloud_cost(const json& m) {
     return cost;
 }
 
+
 // Build the user-facing model name "<provider>.<cleaned_upstream_id>" by
 // applying two content-pattern cleanup rules (no provider-specific code).
 // Example: provider="fireworks", id="accounts/fireworks/models/deepseek-v4-pro"
@@ -272,6 +275,78 @@ std::string build_public_name(const std::string& provider, const std::string& up
 }
 
 } // namespace
+
+std::pair<int64_t, int64_t> CloudServer::parse_cloud_limits(const json& m) {
+    if (!m.is_object()) {
+        return {0, 0};
+    }
+
+    auto to_int64 = [](const json& v) -> int64_t {
+        if (v.is_number_integer() || v.is_number_unsigned()) {
+            return v.get<int64_t>();
+        }
+        if (v.is_number_float()) {
+            double d = v.get<double>();
+            if (std::isfinite(d) && d > 0 &&
+                d < static_cast<double>(std::numeric_limits<int64_t>::max())) {
+                return static_cast<int64_t>(d);
+            }
+            return 0;
+        }
+        if (v.is_string()) {
+            try {
+                const std::string s = v.get<std::string>();
+                size_t idx = 0;
+                long long val = std::stoll(s, &idx);
+                if (idx == s.size() && val > 0) {
+                    return static_cast<int64_t>(val);
+                }
+            } catch (...) {}
+        }
+        return 0;
+    };
+
+    std::vector<const json*> cap_scopes{&m};
+    auto top_it = m.find("top_provider");
+    if (top_it != m.end() && top_it->is_object()) {
+        cap_scopes.push_back(&*top_it);
+    }
+
+    auto find_first_positive = [&](const std::vector<const json*>& scopes,
+                                   std::initializer_list<const char*> keys) -> int64_t {
+        for (const json* scope : scopes) {
+            for (const char* key : keys) {
+                auto it = scope->find(key);
+                if (it != scope->end()) {
+                    int64_t val = to_int64(*it);
+                    if (val > 0) return val;
+                }
+            }
+        }
+        return 0;
+    };
+
+    int64_t ctx = find_first_positive(
+        cap_scopes,
+        {"context_length", "max_context_length", "context_window", "max_context_window"});
+    int64_t max_out = find_first_positive(
+        cap_scopes,
+        {"max_completion_tokens", "max_output_tokens", "max_tokens"});
+
+    auto req_it = m.find("per_request_limits");
+    if (req_it != m.end() && req_it->is_object()) {
+        const std::vector<const json*> req_scope{&*req_it};
+        int64_t req_out = find_first_positive(
+            req_scope,
+            {"completion_tokens", "max_completion_tokens", "max_output_tokens", "max_tokens"});
+
+        if (req_out > 0) {
+            max_out = (max_out > 0) ? std::min(max_out, req_out) : req_out;
+        }
+    }
+
+    return {ctx, max_out};
+}
 
 CloudServer::CloudServer(const std::string& provider,
                          const std::string& log_level,
@@ -457,7 +532,8 @@ json CloudServer::post_with_auth(const std::string& path, const json& request,
         return missing_creds_error();
     }
     std::string url = upstream_url(creds.base_url, path);
-    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
 
     try {
         auto response = utils::HttpClient::post(
@@ -615,7 +691,8 @@ void CloudServer::forward_streaming_request(const std::string& endpoint,
 
     std::string url = upstream_url(creds.base_url, endpoint);
 
-    const auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    auto headers = upstream_headers(creds.auth_header, creds.api_key, "openai");
+    session::apply_forwardable_session(headers);
 
     try {
         if (sse) {
@@ -1001,9 +1078,9 @@ std::vector<ModelInfo> CloudServer::discover_models(const std::string& provider,
             info.labels.push_back(std::move(cap));
         }
         // Display-only metadata; never affects routing.
-        if (m.contains("context_length") && m["context_length"].is_number_integer()) {
-            info.max_context_window = m["context_length"].get<int64_t>();
-        }
+        const auto limits = parse_cloud_limits(m);
+        info.max_context_window = limits.first;
+        info.max_output_tokens = limits.second;
         const auto cost = parse_cloud_cost(m);
         info.cost_input_per_million = cost.first;
         info.cost_output_per_million = cost.second;
