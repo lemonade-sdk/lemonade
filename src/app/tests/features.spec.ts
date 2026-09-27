@@ -2199,9 +2199,29 @@ test.describe('Lemonade UI — Feature Parity', () => {
     await panel.getByRole('button', { name: 'Increase Presence penalty' }).click();
     await expect(field('Presence penalty')).toHaveValue('0.05');
 
+    // Editing the freeform remainder must preserve both spacing and the caret.
+    const freeformArgs = field('Additional backend CLI arguments');
+    const editableArgs = '--spec-draft-n-max 3 -b 4096 -ub 1024';
+    await freeformArgs.fill(editableArgs);
+    const valueStart = editableArgs.indexOf('4096');
+    await freeformArgs.evaluate((element, start) => {
+      (element as HTMLTextAreaElement).setSelectionRange(start, start + 4);
+    }, valueStart);
+    await freeformArgs.press('Backspace');
+    await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b  -ub 1024');
+    await expect.poll(() => freeformArgs.evaluate(element => (
+      element as HTMLTextAreaElement
+    ).selectionStart)).toBe(valueStart);
+    await freeformArgs.pressSequentially('2048');
+    await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b 2048 -ub 1024');
+
+    await freeformArgs.press('End');
+    await freeformArgs.press('Space');
+    await expect(freeformArgs).toHaveValue('--spec-draft-n-max 3 -b 2048 -ub 1024 ');
+
     // An unknown flag stays in the freeform field, in the order it was typed.
-    await field('Additional backend CLI arguments').fill('--zeta 1 --no-mmap');
-    await expect(field('Additional backend CLI arguments')).toHaveValue('--zeta 1 --no-mmap');
+    await freeformArgs.fill('--zeta 1 --no-mmap');
+    await expect(freeformArgs).toHaveValue('--zeta 1 --no-mmap');
 
     await page.getByRole('button', { name: `Load ${modelName}` }).click();
     await expect.poll(() => loadRequestBody?.model_name).toBe(modelName);
