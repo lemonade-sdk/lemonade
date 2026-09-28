@@ -2128,19 +2128,14 @@ std::string SystemInfo::vllm_rocm_version_override(const std::string& asset_fami
     return "";
 }
 
-// On a heterogeneous AMD host (mixed gfx generations) ROCR_VISIBLE_DEVICES pins the HIP
-// runtime to a specific subset of the physical GPUs, but Lemonade's device detection still
-// enumerates every GPU the KFD driver exposes. Picking the first-discrete-by-name (as below)
-// can then select the wrong ISA family's lib set (e.g. the gfx1201 TheRock) while the model
-// actually runs on a different pinned GPU (gfx1100), so the vision encoder's GEMM hits a
-// missing rocBLAS TensileLibrary.dat for the real arch and the backend hangs until the
-// watchdog reaps it.
-//
-// ROCR/HIP orders its devices by PCI BDF ascending, which is exactly the order of the KFD
-// topology nodes sorted by their `location_id` (a packed domain:bus:device:function). So
-// ROCR device N == the Nth GPU KFD node in location_id order. This maps a visible index to
-// its gfx arch by reading the KFD topology at runtime. Returns "" when ROCR_VISIBLE_DEVICES
-// is unset/empty or the index can't be resolved, in which case the caller falls back to the
+// On a heterogeneous AMD host ROCR_VISIBLE_DEVICES pins the HIP runtime to a subset of the
+// physical GPUs, but the device detection below still enumerates every GPU KFD exposes, so
+// the first-discrete-by-name pick can select the wrong ISA family's lib set (e.g. the
+// gfx1201 TheRock) while the model runs on a pinned gfx1100 GPU. ROCR/HIP orders devices by
+// PCI BDF ascending, which is exactly the KFD topology nodes sorted by `location_id`, so
+// ROCR device N == the Nth GPU node in location_id order; this maps a visible index to its
+// gfx arch by reading the KFD topology at runtime. Returns "" when ROCR_VISIBLE_DEVICES is
+// unset/empty or the index can't be resolved, in which case the caller falls back to the
 // existing first-discrete-wins behavior.
 static std::string rocm_arch_for_visible_devices() {
     const char* visible = std::getenv("ROCR_VISIBLE_DEVICES");
