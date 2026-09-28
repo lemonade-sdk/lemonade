@@ -208,6 +208,9 @@ struct BenchCliOptions {
     std::vector<std::string> sdcpp_args;
     std::vector<std::string> whispercpp_args;
     int timeout = 300;
+    // Bench a bring-your-own OpenAI server directly, bypassing lemond: skip
+    // pull/system-info/load/system-stats and POST straight to <base_url>/...
+    std::string base_url;
 };
 
 // ============================================================
@@ -234,6 +237,10 @@ struct BenchConfig {
     // Each recipe can have multiple arg sets; all combinations are benchmarked.
     std::map<std::string, std::vector<std::string>> backend_args;
     int timeout = 300;
+    // When set, bench a bring-your-own OpenAI server at this base URL directly,
+    // bypassing lemond (no pull/system-info/load/system-stats). Empty = normal
+    // lemond-routed benchmarking.
+    std::string base_url;
 };
 
 // Main entry point for bench command

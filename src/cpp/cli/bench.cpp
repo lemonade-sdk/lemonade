@@ -17,6 +17,7 @@
 #include <iostream>
 #include <map>
 #include <numeric>
+#include <tuple>
 #include <unordered_set>
 
 namespace lemon_cli {
@@ -901,6 +902,150 @@ static ModelSetSummary compute_model_set_summary(
     return summary;
 }
 
+// Split a base URL like "http://127.0.0.1:8731/v1" into a client target
+// ("http://127.0.0.1:8731") and a path prefix ("/v1"). The path prefix is what
+// lets us hit a bring-your-own OpenAI server whose routes are /v1/... rather
+// than lemond's /api/v1/... . An empty/"/" path yields no prefix.
+static void split_base_url(const std::string& base_url, std::string& out_target,
+                           std::string& out_path_prefix) {
+    std::string s = base_url;
+    size_t scheme = s.find("://");
+    size_t host_start = (scheme == std::string::npos) ? 0 : scheme + 3;
+    size_t slash = s.find('/', host_start);
+    if (slash == std::string::npos) {
+        out_target = s;
+        out_path_prefix = "";
+    } else {
+        out_target = s.substr(0, slash);
+        out_path_prefix = s.substr(slash);
+    }
+    // Normalize: drop a lone trailing slash so prefix + "/chat/completions" is clean.
+    while (out_path_prefix.size() > 1 && out_path_prefix.back() == '/')
+        out_path_prefix.pop_back();
+    if (out_path_prefix == "/") out_path_prefix = "";
+}
+
+// Map a lemond strategy endpoint (/api/v1/chat/completions) to the BYO server's
+// route (<prefix>/chat/completions). Recognizes the OpenAI-shaped suffixes bench
+// uses; anything else is passed through unchanged under the prefix.
+static std::string raw_endpoint_for(const std::string& lemond_endpoint,
+                                    const std::string& path_prefix) {
+    static const std::vector<std::string> suffixes = {
+        "/chat/completions", "/completions", "/embeddings", "/images/generations"};
+    for (const auto& suf : suffixes) {
+        if (lemond_endpoint.size() >= suf.size() &&
+            lemond_endpoint.compare(lemond_endpoint.size() - suf.size(), suf.size(), suf) == 0) {
+            return path_prefix + suf;
+        }
+    }
+    return path_prefix + lemond_endpoint;
+}
+
+// Run all scenarios against a bring-your-own OpenAI endpoint, bypassing lemond.
+// No pull, no system-info, no /load, no /unload, no VRAM stats — just fire the
+// OpenAI request and measure. See split_base_url / raw_endpoint_for.
+static int handle_bench_raw_endpoint(const BenchConfig& config,
+                                     const std::vector<std::string>& unique_models,
+                                     const std::vector<BenchScenario>& scenarios,
+                                     const std::string& command_timestamp) {
+    std::string target, path_prefix;
+    split_base_url(config.base_url, target, path_prefix);
+    std::cout << "Benchmarking bring-your-own endpoint: " << config.base_url
+              << " (lemond bypassed; VRAM tracking disabled)" << std::endl;
+
+    lemonade::LemonadeClient raw_client(target, 0, "", false);
+
+    json hardware_profile;
+    hardware_profile["endpoint"] = config.base_url;
+    hardware_profile["lemonade_version"] = "";  // not applicable: lemond bypassed
+
+    std::vector<std::tuple<std::string, std::string, std::vector<BenchBackendResult>>> by_model;
+
+    for (const auto& model : unique_models) {
+        const std::string model_timestamp = get_timestamp_iso();
+        BenchBackendResult backend_result;
+        backend_result.recipe = "external";
+        backend_result.backend = "openai";
+        backend_result.ctx_size = config.ctx_sizes.empty() ? 0 : config.ctx_sizes.front();
+
+        std::cout << "\n=== [" << model << "] external:openai ===" << std::endl;
+        for (const auto& scenario : scenarios) {
+            // Only text-gen scenarios are meaningful against a bare OpenAI chat
+            // endpoint; skip embed/imagegen/vision (need capability info we don't
+            // have without lemond).
+            if (scenario.category == "embed" || scenario.category == "imagegen" ||
+                scenario.category == "vision") {
+                std::cout << "  Scenario: " << scenario.name
+                          << " - skipped (not supported in --base-url mode)" << std::endl;
+                continue;
+            }
+            std::cout << "  Scenario: " << scenario.name << " (" << scenario.category << ")" << std::endl;
+
+            int warmup = config.warmup_runs > 0 ? config.warmup_runs : scenario.warmup_runs;
+            int runs = config.measurement_runs > 0 ? config.measurement_runs : scenario.measurement_runs;
+
+            BenchScenarioResult sresult;
+            sresult.scenario_name = scenario.name;
+            sresult.category = scenario.category;
+
+            for (int i = 0; i < warmup; ++i) {
+                std::cout << "    Warmup " << (i + 1) << "/" << warmup << "..." << std::flush;
+                auto strat = make_textgen_strategy(model, scenario);
+                strat.endpoint = raw_endpoint_for(strat.endpoint, path_prefix);
+                run_bench_with_strategy(raw_client, false, false, config.timeout, strat);
+                std::cout << " done" << std::endl;
+            }
+            for (int i = 0; i < runs; ++i) {
+                std::cout << "    Run " << (i + 1) << "/" << runs << "..." << std::flush;
+                auto strat = make_textgen_strategy(model, scenario);
+                strat.endpoint = raw_endpoint_for(strat.endpoint, path_prefix);
+                auto run_result = run_bench_with_strategy(raw_client, false,
+                                                          !config.response_log.empty(),
+                                                          config.timeout, strat);
+                if (!run_result.success) {
+                    sresult.failed_runs++;
+                    std::cout << " FAILED (excluded from stats)" << std::endl;
+                    continue;
+                }
+                std::cout << " TTFT=" << std::fixed << std::setprecision(1) << run_result.ttft_ms
+                          << "ms TPS=" << std::fixed << std::setprecision(1) << run_result.tps << std::endl;
+                sresult.runs.push_back(run_result);
+            }
+            backend_result.scenarios.push_back(sresult);
+        }
+
+        std::vector<BenchBackendResult> all_results;
+        if (!backend_result.scenarios.empty()) all_results.push_back(backend_result);
+        if (all_results.empty()) {
+            std::cerr << "Error: No benchmark results for model '" << model << "'." << std::endl;
+            return 1;
+        }
+        by_model.emplace_back(model, model_timestamp, std::move(all_results));
+    }
+
+    json output;
+    output["timestamp"] = command_timestamp;
+    output["hardware"] = hardware_profile;
+    output["models"] = json::array();
+    for (const auto& [model, ts, results] : by_model) {
+        output["models"].push_back(to_json(results, model, ts, config, json::object()));
+        if (!config.json_output) print_table(results, model, config.measurement_runs >= 10);
+    }
+
+    if (!config.output_file.empty()) {
+        std::ofstream out(config.output_file);
+        if (!out.is_open()) {
+            std::cerr << "Error: Could not write to " << config.output_file << std::endl;
+            return 1;
+        }
+        out << output.dump(2);
+        std::cout << "Results written to " << config.output_file << std::endl;
+    } else if (config.json_output) {
+        std::cout << output.dump(2) << std::endl;
+    }
+    return 0;
+}
+
 int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& config) {
     if (config.models.empty()) {
         std::cerr << "Error: At least one model must be provided." << std::endl;
@@ -934,9 +1079,14 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
         }
     }
 
-    // Preflight: ensure all models are available
-    auto model_info_by_name = preflight_models(client, unique_models, config.auto_pull);
-    if (model_info_by_name.empty()) return 1;
+    // --base-url: bench a bring-your-own OpenAI server directly. Skip preflight
+    // (pull/get_model_info) — the external server owns its own weights.
+    std::map<std::string, json> model_info_by_name;
+    if (config.base_url.empty()) {
+        // Preflight: ensure all models are available
+        model_info_by_name = preflight_models(client, unique_models, config.auto_pull);
+        if (model_info_by_name.empty()) return 1;
+    }
 
     // Load scenarios (shared across models)
     std::vector<BenchScenario> scenarios;
@@ -962,6 +1112,12 @@ int handle_bench_command(lemonade::LemonadeClient& client, const BenchConfig& co
     if (scenarios.empty()) {
         std::cerr << "Error: No scenarios matched the filter." << std::endl;
         return 1;
+    }
+
+    // --base-url: hand off to the lemond-bypassing path (no system-info, no
+    // discovery, no /load, no VRAM). Everything below assumes lemond.
+    if (!config.base_url.empty()) {
+        return handle_bench_raw_endpoint(config, unique_models, scenarios, command_timestamp);
     }
 
     // Fetch system-info and discover backends
@@ -1287,6 +1443,11 @@ CLI::App* register_bench_command(CLI::App& parent,
         ->type_name("ARGS")->multi_option_policy(CLI::MultiOptionPolicy::TakeAll);
     cmd->add_option("--timeout", opts.timeout, "Timeout in seconds for individual requests (default: 300)")
         ->type_name("SECONDS");
+    cmd->add_option("--base-url", opts.base_url,
+        "Benchmark a bring-your-own OpenAI server at this URL directly, bypassing lemond "
+        "(e.g. http://127.0.0.1:8731/v1). Skips model pull, backend discovery, load, and "
+        "VRAM tracking; measures tps/tokens from the OpenAI response.")
+        ->type_name("URL");
     return cmd;
 }
 
@@ -1314,6 +1475,7 @@ BenchConfig build_bench_config(const std::string& output_file,
     if (!cli.sdcpp_args.empty()) config.backend_args["sd-cpp"] = cli.sdcpp_args;
     if (!cli.whispercpp_args.empty()) config.backend_args["whispercpp"] = cli.whispercpp_args;
     config.timeout = cli.timeout * 1000;
+    config.base_url = cli.base_url;
     return config;
 }
 
