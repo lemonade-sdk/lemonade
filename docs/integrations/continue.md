@@ -11,7 +11,7 @@ Before you start, make sure you have the following:
 ### Software Requirements
 
 - **IDE**: [Visual Studio Code (v1.80+)](https://code.visualstudio.com/) or another supported IDE.
-- **Lemonade Server**: Installed and set up using the [Getting Started guide](https://lemonade-server.ai/docs/server/).
+- **Lemonade Server**: Installed and set up using the [Getting Started guide](../guide/README.md).
 - **Lemonade Server Running**: The server should be running at `http://localhost:13305`. If you change the port in Lemonade Server (e.g., to 8020, 8040, etc.), you'll need to update the API Base URL in Continue's configuration to match the same port.
 - **Model Downloaded**: At least one model from the [supported models list](https://lemonade-server.ai/models.html) must be installed locally.
 
@@ -29,7 +29,7 @@ For best results, a code-tuned model with at least 20B parameters is required. T
 ### Configuring Lemonade Server with Continue
 
 1. **Install Models Locally**
-    - Use the Model Manager or [`lemonade` CLI](https://lemonade-server.ai/docs/lemonade-cli/) to download your desired model, for example:
+    - Use the Model Manager or [`lemonade` CLI](../guide/cli.md) to download your desired model, for example:
 
       ```bash
       lemonade pull <model-name>
@@ -124,7 +124,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 
 ### Setup & Configuration
 
-- **Install Lemonade Server**: Follow the [setup guide](https://lemonade-server.ai/docs/server/) to install and configure Lemonade Server before you begin development.
+- **Install Lemonade Server**: Follow the [setup guide](../guide/README.md) to install and configure Lemonade Server before you begin development.
 - **Download Models Locally**: Use `lemonade pull <model-name>` to install models you want to use. Refer to the [supported models list](https://lemonade-server.ai/models.html) for available options.
 - **Pre-load Models**: Start Lemonade Server and load your models before coding sessions. This can easily be done using the Lemon tray icon and `Load`.
 - **Increase Context Size for Agent Mode**: For large code changes with GGUF models, load the model with a higher context size:
@@ -168,7 +168,7 @@ Here, we can see that the agent edited the code in `main.py` to improve the game
 
 ## Resources
 
-- [Lemonade Server Setup Guide](https://lemonade-server.ai/docs/server/)
+- [Lemonade Server Setup Guide](../guide/README.md)
 - [Lemonade Server Supported Models](https://lemonade-server.ai/models.html)
-- [Lemonade Applications](https://lemonade-server.ai/docs/server/apps/)
+- [Lemonade Applications](./README.md)
 - [Continue Documentation](https://docs.continue.dev)

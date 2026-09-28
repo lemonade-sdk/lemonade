@@ -73,7 +73,7 @@ Use the smallest model that exercises the code path. Suites that run on GitHub-h
 | Changes the desktop or web UI | `npm run typecheck` must pass; add a `test/app/app-regression/*.test.cjs` regression test where practical |
 | Fixes a bug | A numbered regression test in whichever suite above owns the surface |
 | Changes a persisted JSON format | A schema-version assertion in the owning suite, so accidental format bumps are caught |
-| Docs only | No tests; `markdown-link-check` must pass |
+| Docs only | No tests; the Lychee link/anchor check must pass |
 
 ---
 

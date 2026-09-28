@@ -40,6 +40,16 @@ int main() {
         auto cli_cfg = parser.get_config();
         check(cli_cfg.port == 9000, "CLIParser captured port 9000");
         check(cli_cfg.host == "0.0.0.0", "CLIParser captured host 0.0.0.0");
+        check(cli_cfg.watchdog_fd == -1, "CLIParser defaults watchdog_fd to -1");
+    }
+
+    {
+        CLIParser parser;
+        const char* argv[] = {"lemond", "--watchdog-fd", "42"};
+        int res = parser.parse(3, const_cast<char**>(argv));
+        check(res == 0 && parser.should_continue(), "CLIParser parses --watchdog-fd successfully");
+        auto cli_cfg = parser.get_config();
+        check(cli_cfg.watchdog_fd == 42, "CLIParser captured watchdog_fd 42");
     }
 
     {

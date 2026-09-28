@@ -134,7 +134,7 @@ npm run watch:renderer         # Webpack watch mode for the renderer only
 
 ## Testing custom Omni Models
 
-The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#register-a-custom-omni-model-from-the-desktop-app)) has both an automated smoke test and a manual checklist.
+The custom Omni Model UI (see [Register a custom Omni Model from the desktop app](../guide/configuration/custom-models.md#build-an-omni-model-in-the-desktop-app)) has both an automated smoke test and a manual checklist.
 
 ### Automated unit test
 
