@@ -959,6 +959,7 @@
     "Qwen3-30B-A3B-Instruct-2507-GGUF": {
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_0.gguf",
         "recipe": "llamacpp",
+        "family": "Qwen3-30B-A3B-Instruct-2507",
         "suggested": true,
         "labels": [
             "chat",
@@ -969,6 +970,7 @@
     "Qwen3-30B-A3B-Instruct-2507-HRX": {
         "checkpoint": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
         "recipe": "llamacpp-hrx",
+        "family": "Qwen3-30B-A3B-Instruct-2507",
         "suggested": true,
         "labels": [
             "chat",
@@ -979,6 +981,7 @@
     "Meta-Llama-3.1-8B-Instruct-HRX": {
         "checkpoint": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
         "recipe": "llamacpp-hrx",
+        "family": "Meta-Llama-3.1-8B-Instruct",
         "suggested": true,
         "labels": [
             "chat"

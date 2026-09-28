@@ -583,9 +583,22 @@ jobs:
           # per-fork replacement means the newest run per fork wins.
           results_dir = Path("bench-history/results")
           leaderboard = {}
-          lemonade_version = None
+          # Track every lemonade version seen (not just the first). A perf shift
+          # can come from lemond itself, so each entry/point carries its own
+          # version and the dashboard gets a {latest, seen[]} summary.
+          lemonade_versions_seen = set()
           forks_config = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())
           experimental_forks = [f["fork_id"] for f in forks_config["forks"] if f.get("experimental", False)]
+          # model_id -> family (default: the model id itself), so different
+          # checkpoints/recipes of the same model collapse onto one showcase row.
+          family_of = {}
+          try:
+            models_reg = json.loads(Path("src/cpp/resources/server_models.json").read_text())
+            for mid, minfo in models_reg.items():
+              if isinstance(minfo, dict):
+                family_of[mid] = minfo.get("family", mid)
+          except Exception as e:
+            print(f"[WARN] could not read server_models.json for family map: {e}")
           for run_file in sorted(results_dir.rglob("run-*.json")):
             if "regression" in run_file.name:
               continue
@@ -595,8 +608,9 @@ jobs:
               continue
             fork_id = data.get("fork_id", "unknown")
             version = data.get("fork_version", "unknown")
-            if lemonade_version is None and data.get("lemonade_version"):
-              lemonade_version = data["lemonade_version"]
+            lemon_ver = data.get("lemonade_version")
+            if lemon_ver:
+              lemonade_versions_seen.add(lemon_ver)
             # The bench writes a top-level "models" array (one entry per model),
             # each with its own model name + results[]. Fall back to the flat
             # top-level shape for any legacy files.
@@ -613,6 +627,7 @@ jobs:
                   key = f"{model}|{sc['name']}"
                   entry = {
                     "model": model, "scenario": sc["name"],
+                    "family": data.get("family") or family_of.get(model, model),
                     "fork_id": fork_id, "fork_label": data.get("fork_label", fork_id),
                     "fork_repo": data.get("fork_repo", ""), "fork_version": version,
                     "backend": br.get("backend"),
@@ -623,7 +638,8 @@ jobs:
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
                     "timestamp": me.get("timestamp", data.get("timestamp")),
-                    # provenance: which CI run produced this number
+                    # provenance: which CI run + lemonade version produced this number
+                    "lemonade_version": lemon_ver,
                     "run_id": data.get("run_id"),
                     "run_url": data.get("run_url"),
                     "commit": data.get("commit"),
@@ -645,6 +661,7 @@ jobs:
               continue
             fid = data.get("fork_id", "unknown")
             ver = data.get("fork_version", "unknown")
+            lemon_ver = data.get("lemonade_version")
             model_entries = data.get("models")
             if not isinstance(model_entries, list):
               model_entries = [data]
@@ -658,6 +675,7 @@ jobs:
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
+                    "lemonade_version": lemon_ver,
                     "tps_mean": round(tps, 2),
                     "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
                     "input_tokens": sc.get("input_tokens"),
@@ -670,6 +688,29 @@ jobs:
                 pts = sorted(history[mdl][scn][fid], key=lambda p: p.get("timestamp") or "")
                 history[mdl][scn][fid] = pts[-30:]
 
+          # Family view: collapse every backend/fork/quant that serves the same
+          # logical model onto one showcase row. family -> scenario -> [entries],
+          # ranked by tps so the dashboard shows them side by side.
+          families = {}
+          for entries in leaderboard.values():
+            for e in entries:
+              fam = e.get("family") or e["model"]
+              families.setdefault(fam, {}).setdefault(e["scenario"], []).append(e)
+          for fam in families:
+            for scn in families[fam]:
+              families[fam][scn].sort(key=lambda x: x["tps_mean"], reverse=True)
+
+          # Order versions numerically, not lexically: string sort mis-ranks
+          # v11.10.0 < v11.9.0 and v2026.40.0 < v2026.9.0. Parse the dotted
+          # numeric components (works for both the old vNN.N.N and the CalVer
+          # vYYYY.NN.N schemes); anything non-numeric sorts last by raw string.
+          def _ver_key(v):
+            core = v.lstrip("v").split("-")[0].split("+")[0]
+            parts = core.split(".")
+            if parts and all(p.isdigit() for p in parts):
+              return (1, [int(p) for p in parts], "")  # fully numeric: rank high
+            return (0, [], v)  # unparseable tag: rank BELOW releases, never "latest"
+          versions_sorted = sorted(lemonade_versions_seen, key=_ver_key)
           server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
           repo   = os.environ.get("GITHUB_REPOSITORY", "")
           out = {
@@ -680,9 +721,14 @@ jobs:
             "repo_url": f"{server}/{repo}" if repo else None,
             "actions_url": f"{server}/{repo}/actions/workflows/benchmark-regression.yml" if repo else None,
             "commit": os.environ.get("GITHUB_SHA"),
-            "lemonade_version": lemonade_version,
+            # Newest lemonade version seen in the data, plus the full set. Each
+            # leaderboard entry / history point also carries its own version.
+            "lemonade_version": versions_sorted[-1] if versions_sorted else None,
+            "lemonade_versions": {"latest": versions_sorted[-1] if versions_sorted else None,
+                                  "seen": versions_sorted},
             "experimental_forks": experimental_forks,
             "by_model_scenario": leaderboard,
+            "families": families,
             "history": history,
           }
           Path("bench-history/leaderboard.json").write_text(json.dumps(out, indent=2))
@@ -690,6 +736,8 @@ jobs:
           Path("ci/results/leaderboard.json").write_text(json.dumps(out, indent=2))
           entries = sum(len(v) for v in leaderboard.values())
           print(f"Leaderboard: {entries} entries across {len(leaderboard)} model/scenario pairs")
+          print(f"Families: {len(families)} ({', '.join(sorted(families)[:8])}{'...' if len(families) > 8 else ''})")
+          print(f"Lemonade versions seen: {versions_sorted or '(none)'}")
           print(f"History: {sum(len(s) for m in history.values() for s in m.values())} series")
           PY
         env:
