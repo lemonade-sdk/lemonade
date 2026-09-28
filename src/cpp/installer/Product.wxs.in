@@ -13,12 +13,12 @@
 
   <!--
     Lemonade Server MSI Installer - WiX 5.0
-    Version: @PROJECT_VERSION@ (auto-populated by CMake)
+    Version: @PROJECT_VERSION@ (auto-populated at configure time)
   -->
 
   <Package Name="Lemonade Server"
            Manufacturer="AMD"
-           Version="@PROJECT_VERSION@"
+           Version="@LEMONADE_MSI_VERSION@"
            UpgradeCode="d4e5f6a7-b8c9-4d5e-a6b7-c8d9e0f1a2b3"
            Language="1033"
            Compressed="yes"

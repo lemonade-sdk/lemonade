@@ -17,7 +17,7 @@ the generator instead. Prose outside the markers is preserved. -->
 | `llamacpp-hrx` | HRX GPU (experimental) | no | yes | hrx |
 | `moonshine` | Moonshine | no | no | cpu |
 | `onnxruntime` | ONNX Runtime | no | no | cpu |
-| `openmoss` | OpenMOSS TTS | yes | no | cuda, rocm, vulkan |
+| `openmoss` | OpenMOSS TTS | yes | no | cuda, vulkan |
 | `ryzenai-llm` | Ryzen AI LLM | no | yes | npu |
 | `sd-cpp` | StableDiffusion.cpp | yes | no | cpu, cuda, metal, rocm, vulkan |
 | `thenoise` | TheNoise ROCm | yes | no | rocm |
@@ -54,14 +54,13 @@ the generator instead. Prose outside the markers is preserved. -->
 | `onnxruntime` | cpu | macos | cpu (arm64) |
 | `openmoss` | cuda | linux, windows | nvidia_gpu |
 | `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `openmoss` | rocm | linux, windows | amd_gpu |
 | `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
 | `sd-cpp` | metal | macos | metal |
 | `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
 | `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `sd-cpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `sd-cpp` | rocm | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | linux | amd_gpu (gfx1150, gfx1151, gfx1152) |
+| `thenoise` | rocm | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
 | `thinksound` | cuda | linux, windows | nvidia_gpu |
 | `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
 | `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |

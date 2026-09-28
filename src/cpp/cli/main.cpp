@@ -10,6 +10,7 @@
 #include <lemon/model_registry.h>
 #include <lemon/version.h>
 #include <lemon_cli/agent_launcher.h>
+#include <lemon_cli/junie_profile.h>
 #include <lemon_cli/opencode_profile.h>
 #include <lemon_cli/pi_profile.h>
 #include <lemon/utils/process_manager.h>
@@ -66,7 +67,8 @@ static const std::vector<std::string> SUPPORTED_AGENTS = {
     "claude",
     "codex",
     "opencode",
-    "pi"
+    "pi",
+    "junie"
 };
 
 static bool prompt_agent_selection(std::string& agent_out) {
@@ -678,6 +680,33 @@ static void sync_agent_config_for_launch(lemonade::LemonadeClient& client,
 
     if (!selected_present) {
         models.push_back({config.model, config.model + " (local)", default_context_window});
+    }
+
+    if (config.agent == "junie") {
+        int context_window = default_context_window;
+        for (const auto& model : models) {
+            if (model.id == config.model) {
+                context_window = model.context_window;
+                break;
+            }
+        }
+
+        const std::string junie_api_key =
+            config.api_key.empty() ? "lemonade" : config.api_key;
+        // Junie's profile baseUrl is the full endpoint, not an API root.
+        const std::string junie_base_url =
+            lemon_tray::build_agent_server_base_url(config.host, config.port) +
+            "/v1/chat/completions";
+        std::string junie_error;
+        if (!lemon_cli::sync_junie_model_file(junie_base_url,
+                                              junie_api_key,
+                                              config.model,
+                                              context_window,
+                                              junie_error)) {
+            std::cerr << "Warning: Failed to sync junie config: " << junie_error << std::endl;
+            std::cerr << "Continuing with launch anyway..." << std::endl;
+        }
+        return;
     }
 
     const lemon_cli::AgentConfigProfile* profile = nullptr;
