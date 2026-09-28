@@ -1,5 +1,6 @@
 #include "lemon/backends/thenoise/thenoise_server.h"
 #include "lemon/backends/thenoise/thenoise.h"
+#include "lemon/backends/thenoise/thenoise_bundle.h"
 #include "lemon/backends/backend_registry.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/backend_manager.h"
@@ -43,6 +44,18 @@ json split_lora_specs(const std::string& specs) {
     }
     return result;
 }
+
+#ifdef _WIN32
+void launch_bundled_python(std::string& exe_path,
+                           std::vector<std::string>& args,
+                           std::vector<std::pair<std::string, std::string>>& env_vars) {
+    const thenoise_bundle::Launch launch = thenoise_bundle::make_launch(
+        exe_path, get_environment_variable_utf8("PATH"));
+    exe_path = launch.executable;
+    args.insert(args.begin(), launch.args.begin(), launch.args.end());
+    env_vars = launch.env_vars;
+}
+#endif
 }  // namespace
 
 InstallParams TheNoiseServer::get_install_params(const std::string& backend, const std::string& version) {
@@ -147,8 +160,11 @@ void TheNoiseServer::load(const std::string& model_name,
         args.push_back(upscaler_dir);
     }
 
-    // The portable thenoise launcher sets up LD_LIBRARY_PATH / CC / ROCm env itself.
     std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef _WIN32
+    launch_bundled_python(exe_path, args, env_vars);
+    LOG(DEBUG, "TheNoise") << "Launching bundled interpreter: " << exe_path << std::endl;
+#endif
 
     ProcessHandle started_handle = utils::ProcessManager::start_process(
         exe_path,
@@ -492,10 +508,20 @@ std::string TheNoiseServer::upscale_via_cli(
     };
 
     std::vector<std::pair<std::string, std::string>> env_vars;
+#ifdef _WIN32
+    launch_bundled_python(exe_path, args, env_vars);
+#endif
     auto proc = ProcessManager::start_process(
         exe_path, args, "", true, false, env_vars);
 
     int exit_code = ProcessManager::wait_for_exit(proc, 300);
+    if (exit_code == -1) {
+        LOG(WARNING, "TheNoise") << "Upscale timed out, killing PID " << proc.pid << std::endl;
+        ProcessManager::kill_process(proc);
+    } else {
+        // Closes the process handle; on POSIX the child is already reaped.
+        ProcessManager::reap_process(proc);
+    }
 
     std::string result;
     if (exit_code == 0 && fs::exists(output_path)) {
