@@ -19,10 +19,13 @@ import hashlib
 import json
 import os
 import platform
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -330,6 +333,261 @@ def install_backend(base_url: str, recipe: str, backend: str) -> None:
         raise RuntimeError(f"Backend install failed ({e.code}): {body}") from e
 
 
+# ---------------------------------------------------------------------------
+# Bring-your-own external OpenAI backends (kind: external_openai)
+#
+# For non-llama.cpp servers (gufo, halogen, vLLM, TRT-LLM, ...). lemond has no
+# recipe to launch or manage these, so the harness starts the server itself via
+# a generic launch_cmd, waits for its OpenAI endpoint, benches it with
+# `lemonade bench --base-url`, then tears it down. Any OpenAI-compatible server
+# onboards as JSON only — no per-backend C++ or lemond change. This is the
+# submission path for community model-specific backends.
+# ---------------------------------------------------------------------------
+
+
+def _endpoint_ready(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return 200 <= r.status < 500
+    except urllib.error.HTTPError:
+        return True  # reachable, just unhappy with the probe — server is alive
+    except Exception:
+        return False
+
+
+def wait_for_endpoint(url: str, timeout_s: int) -> bool:
+    deadline = time.monotonic() + timeout_s
+    last = ""
+    while time.monotonic() < deadline:
+        if _endpoint_ready(url):
+            return True
+        remaining = int(deadline - time.monotonic())
+        msg = f"    waiting for {url} ... {remaining}s left"
+        if msg != last:
+            print(msg)
+            last = msg
+        time.sleep(5)
+    return False
+
+
+def resolve_external_model_id(endpoint: str, fallback: str) -> str:
+    """Read the served model id from GET <endpoint>/models. A BYO server's model
+    id often comes from inside the weights (not the config), so we trust the live
+    /models listing over the declared name, falling back to the declared one."""
+    try:
+        with urllib.request.urlopen(endpoint.rstrip("/") + "/models", timeout=10) as r:
+            data = json.loads(r.read())
+        ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+        if ids:
+            if fallback and fallback in ids:
+                return fallback
+            print(f"    resolved model id from /models: {ids[0]}")
+            return ids[0]
+    except Exception as e:
+        print(f"    [WARN] could not read /models ({e}); using declared model id")
+    return fallback
+
+
+def launch_external_server(fork: dict) -> subprocess.Popen | None:
+    """Optionally pre-provision the model (prepare_cmd), then start the server
+    from launch_cmd and wait for its endpoint. Returns the process handle."""
+    launch_cmd = fork.get("launch_cmd", "")
+    endpoint = fork.get("endpoint", "")
+    if not launch_cmd or not endpoint:
+        print(
+            f"  [ERROR] external_openai fork {fork['fork_id']} needs launch_cmd + endpoint"
+        )
+        return None
+
+    # prepare_cmd: one-time model provisioning (e.g. `hf download ...` into the
+    # cache volume). Runs to completion before the server starts. Idempotent by
+    # contract — a cache hit should be a fast no-op.
+    prepare_cmd = fork.get("prepare_cmd", "")
+    if prepare_cmd:
+        print(f"  Preparing model: {prepare_cmd}")
+        try:
+            subprocess.run(prepare_cmd, shell=True, check=True, timeout=7200)
+        except Exception as e:
+            print(f"  [ERROR] prepare_cmd failed: {e}")
+            return None
+
+    health_url = endpoint.rstrip("/") + fork.get("health_path", "/models")
+    ready_timeout = int(fork.get("ready_timeout_s", 900))
+
+    print(f"  Launching external server: {launch_cmd}")
+    # shell=True so the launch_cmd can use env expansion / redirection like the
+    # rest of the workflow; forks are trusted repo config.
+    proc = subprocess.Popen(launch_cmd, shell=True, start_new_session=not IS_WINDOWS)
+
+    print(f"  Waiting up to {ready_timeout}s for {health_url} ...")
+    if not wait_for_endpoint(health_url, ready_timeout):
+        print(f"  [ERROR] endpoint {health_url} never came up")
+        stop_external_server(proc, fork)
+        return None
+    print(f"  External server ready at {endpoint}")
+    return proc
+
+
+def stop_external_server(proc: subprocess.Popen | None, fork: dict) -> None:
+    """Tear down: explicit shutdown_cmd (e.g. `podman stop <name>`) if given,
+    else signal the launched process group."""
+    shutdown_cmd = fork.get("shutdown_cmd", "")
+    if shutdown_cmd:
+        print(f"  Shutdown: {shutdown_cmd}")
+        try:
+            subprocess.run(shutdown_cmd, shell=True, timeout=180)
+        except Exception as e:
+            print(f"  [WARN] shutdown_cmd failed: {e}")
+    if proc is None or proc.poll() is not None:
+        return
+    try:
+        if IS_WINDOWS:
+            proc.terminate()
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        proc.wait(timeout=60)
+    except Exception:
+        try:
+            if IS_WINDOWS:
+                proc.kill()
+            else:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:
+            pass
+
+
+def run_external_bench(
+    fork: dict,
+    model_id: str,
+    output_file: Path,
+    compare_file: Path | None,
+    lemonade_bin: str,
+) -> dict | None:
+    """Bench a running external OpenAI server via `lemonade bench --base-url`."""
+    endpoint = fork["endpoint"]
+    cmd = [
+        lemonade_bin,
+        "bench",
+        model_id,
+        "--base-url",
+        endpoint,
+        "--scenarios",
+        *SCENARIOS,
+        "--runs",
+        str(MEASUREMENT_RUNS),
+        "--warmup",
+        str(WARMUP_RUNS),
+        "--json",
+        "--output",
+        str(output_file),
+    ]
+    if compare_file and compare_file.exists():
+        cmd += ["--compare", str(compare_file)]
+
+    print(f"    cmd: {' '.join(cmd)}")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+    for line in proc.stdout:
+        print(f"    {line}", end="", flush=True)
+    proc.wait()
+    if proc.returncode != 0:
+        print(f"    [ERROR] lemonade bench --base-url failed (exit {proc.returncode})")
+        return None
+    if not output_file.exists():
+        print(f"    [ERROR] output file not created: {output_file}")
+        return None
+
+    with open(output_file) as f:
+        data = json.load(f)
+    data.update(
+        {
+            "fork_id": fork["fork_id"],
+            "fork_label": fork["label"],
+            "fork_repo": fork["repo"],
+            "fork_version": fork.get("image", fork.get("version", "external")),
+            "fork_backend": fork.get("backend", "openai"),
+            "experimental": fork.get("experimental", False),
+        }
+    )
+    if fork.get("family"):
+        data["family"] = fork["family"]
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    server = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if run_id:
+        data["run_id"] = run_id
+        if repo:
+            data["run_url"] = f"{server}/{repo}/actions/runs/{run_id}"
+    if os.environ.get("GITHUB_SHA"):
+        data["commit"] = os.environ["GITHUB_SHA"]
+    if os.environ.get("LEMONADE_VERSION"):
+        data["lemonade_version"] = os.environ["LEMONADE_VERSION"]
+    with open(output_file, "w") as f:
+        json.dump(data, f, indent=2)
+    return data
+
+
+def run_external_fork(
+    fork: dict,
+    output_dir: Path,
+    timestamp: str,
+    lemonade_bin: str,
+    dry_run: bool,
+) -> list:
+    """Full lifecycle for one external_openai fork: launch → bench each model →
+    tear down. Returns a list of run-summary dicts."""
+    fork_id = fork["fork_id"]
+    summary = []
+    run_models = fork.get("model_filter", [])
+    if not run_models:
+        print(f"  [ERROR] external fork {fork_id} needs model_filter")
+        return [{"fork_id": fork_id, "model": "?", "status": "FAILED"}]
+
+    if dry_run:
+        print(f"  [dry-run] prepare: {fork.get('prepare_cmd', '(none)')}")
+        print(f"  [dry-run] launch:  {fork.get('launch_cmd')}")
+        print(f"  [dry-run] bench {run_models} via {fork.get('endpoint')} --base-url")
+        return []
+
+    proc = launch_external_server(fork)
+    if proc is None:
+        return [
+            {"fork_id": fork_id, "model": m, "status": "FAILED"} for m in run_models
+        ]
+
+    try:
+        # The declared model name may not match what the server actually serves
+        # (BYO servers often derive the id from the weights). Resolve it live.
+        served_id = resolve_external_model_id(fork["endpoint"], run_models[0])
+        for declared in run_models:
+            model_id = served_id if len(run_models) == 1 else declared
+            # Store results under the DECLARED name so history/paths are stable.
+            print(
+                f"\n  Model: {declared} (serving id: {model_id}) via {fork['endpoint']}"
+            )
+            run_file = output_dir / fork_id / declared / f"run-{timestamp}.json"
+            prev = find_previous_result(output_dir, fork_id, declared)
+            result = run_external_bench(fork, model_id, run_file, prev, lemonade_bin)
+            if result is None:
+                summary.append(
+                    {"fork_id": fork_id, "model": declared, "status": "FAILED"}
+                )
+                continue
+            summary.append(
+                {
+                    "fork_id": fork_id,
+                    "model": declared,
+                    "status": "OK",
+                    "result_file": str(run_file),
+                }
+            )
+    finally:
+        stop_external_server(proc, fork)
+    return summary
+
+
 def run_bench(
     fork: dict,
     version: str,
@@ -610,10 +868,13 @@ def main() -> int:
     with open(forks_path) as f:
         forks_config = json.load(f)
 
+    # enabled:false forks are skipped unless explicitly named in --fork-filter
+    # (mirrors the CI matrix, which drops disabled forks; naming one forces it).
     forks = [
         fork
         for fork in forks_config["forks"]
         if fork.get("tracked", True)
+        and (fork.get("enabled", True) or fork["fork_id"] in fork_filter)
         and (not fork_filter or fork["fork_id"] in fork_filter)
     ]
 
@@ -635,6 +896,11 @@ def main() -> int:
     if args.download_only:
         for fork in forks:
             fork_id = fork["fork_id"]
+            if fork.get("kind") == "external_openai":
+                print(
+                    f"[skip download] {fork_id} is external_openai (no binary to fetch)"
+                )
+                continue
             print(f"Downloading binary for {fork_id}...")
             try:
                 tag_prefix = fork.get("version_tag_prefix", "")
@@ -667,6 +933,17 @@ def main() -> int:
         print(f"{'='*60}")
         print(f"Fork: {fork_id}  ({fork['label']})")
         print(f"Repo: {fork['repo']}")
+
+        # External OpenAI servers (containers / custom engines) take the BYO
+        # path: launch the server, bench via --base-url, tear down. No binary,
+        # no lemond routing.
+        if fork.get("kind") == "external_openai":
+            run_summary.extend(
+                run_external_fork(
+                    fork, output_dir, timestamp, lemonade_bin, args.dry_run
+                )
+            )
+            continue
 
         try:
             tag_prefix = fork.get("version_tag_prefix", "")

@@ -59,6 +59,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       forks: ${{ steps.matrix.outputs.forks }}
+      external_forks: ${{ steps.matrix.outputs.external_forks }}
     steps:
       - uses: actions/checkout@v5
 
@@ -71,22 +72,31 @@ jobs:
           import json, os, sys
           from pathlib import Path
           forks = json.loads(Path("src/cpp/resources/benchmark_forks.json").read_text())["forks"]
-          # tracked:true forks; optional per-fork opt-out via {"enabled": false}
-          ids = [f["fork_id"] for f in forks
-                 if f.get("tracked", True) and f.get("enabled", True)]
+          tracked = [f for f in forks if f.get("tracked", True)]
+          # A fork_filter can explicitly opt IN an enabled:false fork (e.g. a new
+          # BYO backend being validated). Otherwise only enabled forks run.
           flt = [s.strip() for s in os.environ.get("FORK_FILTER", "").split(",") if s.strip()]
+          known = {f["fork_id"] for f in tracked}
           if flt:
-            unknown = [s for s in flt if s not in ids]
+            unknown = [s for s in flt if s not in known]
             if unknown:
               print(f"ERROR: fork_filter entries not in benchmark_forks.json: {unknown}")
               sys.exit(1)
-            ids = [i for i in ids if i in flt]
-          if not ids:
+            selected = [f for f in tracked if f["fork_id"] in flt]
+          else:
+            selected = [f for f in tracked if f.get("enabled", True)]
+          # Split by kind: llama.cpp forks run through lemond (bench job); external
+          # OpenAI servers run standalone via podman + --base-url (bench-external).
+          llamacpp = [f["fork_id"] for f in selected if f.get("kind") != "external_openai"]
+          external = [f["fork_id"] for f in selected if f.get("kind") == "external_openai"]
+          if not llamacpp and not external:
             print("ERROR: no forks selected")
             sys.exit(1)
-          print(f"Benching forks: {ids}")
+          print(f"llama.cpp forks: {llamacpp}")
+          print(f"external forks:  {external}")
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"forks={json.dumps(ids)}\n")
+            f.write(f"forks={json.dumps(llamacpp)}\n")
+            f.write(f"external_forks={json.dumps(external)}\n")
           PY
 
   # =========================================================================
@@ -101,6 +111,7 @@ jobs:
   bench:
     name: Bench ${{ matrix.fork_id }}
     needs: [setup]
+    if: needs.setup.outputs.forks != '[]'
     runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
     timeout-minutes: 180
     strategy:
@@ -518,14 +529,139 @@ jobs:
           pkill -9 -f "bench-binaries/${{ matrix.fork_id }}" 2>/dev/null || true
 
   # =========================================================================
+  # Bench external — bring-your-own OpenAI backends (kind: external_openai).
+  # These are NOT llama.cpp and cannot be routed through lemond. The harness
+  # launches the vendor's container via podman, benches it with
+  # `lemonade bench --base-url`, then tears it down. This is the submission
+  # path for community model-specific backends (gufo, halogen, vLLM, ...).
+  # Same runner + max-parallel:1 (shared GPU) + result artifact shape as the
+  # llama.cpp bench job, so the report job aggregates both identically.
+  # =========================================================================
+  bench-external:
+    name: Bench external ${{ matrix.fork_id }}
+    needs: [setup]
+    if: needs.setup.outputs.external_forks != '[]'
+    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        fork_id: ${{ fromJSON(needs.setup.outputs.external_forks) }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+
+      # The lemonade CLI is what actually benches the endpoint (bench --base-url).
+      # Reuse the same latest-release embeddable as the llama.cpp job.
+      - name: Download lemonade embeddable
+        run: |
+          set -euo pipefail
+          RELEASE=$(curl -sf \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/lemonade-sdk/lemonade/releases/latest")
+          VERSION=$(echo "$RELEASE" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          ASSET_URL=$(echo "$RELEASE" | python3 -c "import sys,json; assets=json.load(sys.stdin)['assets']; url=next((a['browser_download_url'] for a in assets if 'embeddable' in a['name'] and 'ubuntu' in a['name'] and 'x64' in a['name']),None); print(url or 'NOT_FOUND')")
+          if [ "$ASSET_URL" = "NOT_FOUND" ]; then echo "ERROR: no ubuntu embeddable asset"; exit 1; fi
+          mkdir -p build
+          curl -sfL "$ASSET_URL" | tar -xz --strip-components=1 -C build/
+          test -f build/lemonade || { echo "ERROR: lemonade CLI missing"; ls -la build/; exit 1; }
+          chmod +x build/lemonade build/lemond 2>/dev/null || true
+          echo "Lemonade $VERSION ready"
+          echo "LEMONADE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # podman is required to launch BYO backend containers. Install if absent;
+      # confirm the GPU device nodes exist (else the container can't reach the
+      # gfx1151 GPU and the bench is meaningless).
+      - name: Ensure podman + GPU devices
+        run: |
+          set -e
+          if ! command -v podman >/dev/null 2>&1; then
+            echo "Installing podman..."
+            sudo apt-get update -y && sudo apt-get install -y podman
+          fi
+          podman --version
+          echo "hf CLI for model provisioning..."
+          python3 -m pip install --quiet --upgrade "huggingface_hub[cli]"
+          echo "--- GPU device nodes (required for ROCm passthrough) ---"
+          ls -l /dev/kfd /dev/dri 2>&1 || { echo "ERROR: /dev/kfd or /dev/dri missing — runner has no gfx1151 GPU passthrough"; exit 1; }
+          echo "--- runner group membership (need render+video for device access) ---"
+          id; getent group render video || true
+
+      - name: Restore benchmark history
+        env:
+          FORK_ID: ${{ matrix.fork_id }}
+        run: |
+          set -e
+          mkdir -p ci/results
+          if git fetch origin "$HISTORY_BRANCH" 2>/dev/null; then
+            mkdir -p .bench-history
+            git archive FETCH_HEAD | tar -x -C .bench-history
+            if [ -d ".bench-history/results/$FORK_ID" ]; then
+              cp -r ".bench-history/results/$FORK_ID" ci/results/
+              echo "Restored $(find "ci/results/$FORK_ID" -name 'run-*.json' | wc -l) prior run(s)"
+            else
+              echo "No history for $FORK_ID yet"
+            fi
+          fi
+
+      - name: Run external backend bench
+        env:
+          FORK_ID: ${{ matrix.fork_id }}
+          HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+          HUGGING_FACE_HUB_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+        run: |
+          set -e
+          # Persistent caches OUTSIDE the workspace (checkout clean:true wipes it):
+          # the container model dir and HF cache must survive between jobs or the
+          # multi-GB checkpoint re-downloads every night.
+          BENCH_ROOT="$(cd "${{ github.workspace }}/.." && pwd)"
+          export GUFO_MODELS_DIR="$BENCH_ROOT/external-models/$FORK_ID"
+          export HF_HOME="$BENCH_ROOT/hf-cache"
+          mkdir -p "$GUFO_MODELS_DIR" "$HF_HOME"
+          export LEMONADE_EXE="$(pwd)/build/lemonade"
+
+          # The driver launches the container (podman), waits for its OpenAI
+          # endpoint, runs `lemonade bench --base-url`, and tears it down.
+          python3 .github/scripts/validate_backend_bench.py \
+            --forks       src/cpp/resources/benchmark_forks.json \
+            --output      ci/results \
+            --fork-filter "$FORK_ID"
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-results-${{ matrix.fork_id }}-${{ github.run_id }}
+          path: ci/results/
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Cleanup containers
+        if: always()
+        run: |
+          podman rm -f "$FORK_ID" 2>/dev/null || true
+          podman ps -a || true
+        env:
+          FORK_ID: ${{ matrix.fork_id }}
+
+  # =========================================================================
   # Report — merges results into the benchmark-data branch, regenerates the
   # leaderboard from full history, files/updates an issue on critical
   # regression.
   # =========================================================================
   report:
     name: Aggregate and report
-    needs: bench
-    if: always() && needs.bench.result != 'skipped'
+    needs: [bench, bench-external]
+    if: always() && (needs.bench.result != 'skipped' || needs.bench-external.result != 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
