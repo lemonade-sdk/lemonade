@@ -3892,6 +3892,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
     nlohmann::json request_json;
     if (!parse_required_json_body(req, res, request_json)) return;
 
+    utils::RequestCancelToken cancel_token;
+    if (req.is_connection_closed) {
+        cancel_token.should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    WrappedServer::RequestCancelScope cancel_scope(cancel_token);
+
     try {
 
         // Normalize client-provided model names (e.g., strip ":latest" suffix)
@@ -4069,6 +4075,12 @@ void Server::handle_chat_completions(const httplib::Request& req, httplib::Respo
 }
 
 void Server::handle_completions(const httplib::Request& req, httplib::Response& res) {
+    utils::RequestCancelToken cancel_token;
+    if (req.is_connection_closed) {
+        cancel_token.should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    WrappedServer::RequestCancelScope cancel_scope(cancel_token);
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
 
@@ -5634,6 +5646,12 @@ void Server::handle_image_upscale(const httplib::Request& req, httplib::Response
 }
 
 void Server::handle_responses(const httplib::Request& req, httplib::Response& res) {
+    utils::RequestCancelToken cancel_token;
+    if (req.is_connection_closed) {
+        cancel_token.should_cancel = [is_closed = req.is_connection_closed]() { return is_closed && is_closed(); };
+    }
+    WrappedServer::RequestCancelScope cancel_scope(cancel_token);
+
     try {
         auto request_json = nlohmann::json::parse(req.body);
         normalize_client_model_name(request_json);
