@@ -480,7 +480,12 @@ static void report_no_usable_backends(const std::string& model,
         }
         std::cerr << "  " << install_command_for(c) << std::endl;
     }
-    if (!suggested) point_at_backends(std::cerr);
+
+    if (!suggested) {
+        point_at_backends(std::cerr);
+    } else {
+        std::cerr << "\nOr rerun the lemonade bench command with the --backend <name> flag to automatically install the backend(s)." << std::endl;
+    }
 }
 
 static bool install_requested_backends(lemonade::LemonadeClient& client, json& sys_info,
