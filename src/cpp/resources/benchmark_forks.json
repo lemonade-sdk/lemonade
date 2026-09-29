@@ -97,21 +97,21 @@
       "kind": "external_openai",
       "repo": "gufo-org/gufo",
       "backend": "gufo",
-      "family": "Qwen3-30B-A3B-Instruct-2507",
+      "family": "Qwen3.8-27B",
       "image": "ghcr.io/gufo-org/toolboxes/gufo-runtime:latest",
-      "prepare_cmd": "mkdir -p \"${GUFO_MODELS_DIR:?set GUFO_MODELS_DIR to a runner-persistent path outside the workspace}\" && HF_HUB_ENABLE_HXFER=1 hf download unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf --local-dir \"$GUFO_MODELS_DIR/Qwen3-30B-A3B-Instruct-2507-GGUF\"",
-      "launch_cmd": "${CONTAINER_ENGINE:-podman} run --rm --name gufo --device /dev/kfd --device /dev/dri ${GPU_GROUP_FLAGS:---group-add keep-groups} --ulimit memlock=-1 -p 8080:8080 -v \"${GUFO_MODELS_DIR:?}:/models:ro\" ghcr.io/gufo-org/toolboxes/gufo-runtime:latest gufo serve --host 0.0.0.0 --port 8080 llm --model /models/Qwen3-30B-A3B-Instruct-2507-GGUF/Qwen3-30B-A3B-Instruct-2507-UD-Q4_K_XL.gguf",
+      "prepare_cmd": "mkdir -p \"${GUFO_MODELS_DIR:?set GUFO_MODELS_DIR to a runner-persistent path outside the workspace}\" && hf download unsloth/Qwen3.8-27B-GGUF Qwen3.8-27B-UD-Q8_K_XL.gguf --local-dir \"$GUFO_MODELS_DIR/Qwen3.8-27B-GGUF\" && hf download z-lab/Qwen3.8-27B-DFlash2-GGUF Qwen3.8-27B-DFlash2-Q4_K_M.gguf --local-dir \"$GUFO_MODELS_DIR/Qwen3.8-27B-DFlash2-GGUF\"",
+      "launch_cmd": "${CONTAINER_ENGINE:-podman} run --rm --name gufo --device /dev/kfd --device /dev/dri ${GPU_GROUP_FLAGS:---group-add keep-groups} --ipc=host --ulimit memlock=-1 -p 8080:8080 -v \"${GUFO_MODELS_DIR:?}:/models:ro\" ghcr.io/gufo-org/toolboxes/gufo-runtime:latest gufo serve --host 0.0.0.0 --port 8080 llm --model /models/Qwen3.8-27B-GGUF/Qwen3.8-27B-UD-Q8_K_XL.gguf --speculative dflash2 --dflash-model /models/Qwen3.8-27B-DFlash2-GGUF/Qwen3.8-27B-DFlash2-Q4_K_M.gguf",
       "shutdown_cmd": "${CONTAINER_ENGINE:-podman} stop -t 10 gufo 2>/dev/null || true",
       "endpoint": "http://127.0.0.1:8080/v1",
       "health_path": "/models",
-      "ready_timeout_s": 900,
-      "model_filter": ["Qwen3-30B-A3B-Instruct-2507-GGUF"],
+      "ready_timeout_s": 1200,
+      "model_filter": ["Qwen3.8-27B"],
       "runner_os": "linux",
       "arch": "gfx1151",
       "experimental": true,
       "tracked": true,
       "enabled": false,
-      "notes": "NON-llama.cpp bring-your-own backend (kind: external_openai). Open-source (MIT) C++/HIP engine for Strix Halo (gfx1151), serves any GGUF over an OpenAI endpoint on :8080. Benched via the generic external path: harness runs prepare_cmd (hf download the GGUF into $GUFO_MODELS_DIR, a runner-persistent dir OUTSIDE the workspace so it isn't wiped between jobs), then launch_cmd (podman), then `lemonade bench --base-url`, then teardown. lemond bypassed => no VRAM tracking. The served model id is read live from GET /v1/models (BYO servers derive it from the GGUF). enabled:false until first bring-up on a gfx1151 Linux runner confirms: (1) non-stream /v1/chat/completions returns usage.completion_tokens, (2) the exact /v1/models id, (3) whether --ipc=host is needed. Pin :latest to an immutable tag (e.g. a sha- tag) once validated. gufo's model floor is ~18GB (27-class Q4); no tiny-model path. Podman rootless needs crun + runner user in render/video groups; on Docker swap keep-groups for --group-add video --group-add render (numeric GIDs if names absent)."
+      "notes": "NON-llama.cpp bring-your-own backend (kind: external_openai). Open-source (MIT) C++/HIP engine for Strix Halo (gfx1151). IMPORTANT: gufo compiles model-SPECIFIC Wave32 HIP kernels and does NOT load arbitrary GGUFs — it serves only a curated roster (Qwen3.8-27B dense, Qwen3.8-Flash-Next, DeepSeek-V4, ...). This entry uses the dense Qwen3.8-27B path with a DFlash2 speculative draft (the README's canonical setup). Needs a 128GB gfx1151 box; will NOT fit 32GB. Benched via the generic external path: prepare_cmd hf-downloads the target + draft GGUF into $GUFO_MODELS_DIR (runner-persistent, outside the workspace), launch_cmd runs the container, then `lemonade bench --base-url`, then teardown. lemond bypassed => no VRAM tracking. Served model id is read live from GET /v1/models (gufo derives it from GGUF metadata, e.g. a 'Qwen3.8-27B' id; the driver resolves it). enabled:false until first bring-up confirms: (1) non-stream /v1/chat/completions returns usage.completion_tokens (gufo may only emit usage on the STREAMING path w/ stream_options.include_usage — if runs show tps=0, that's why); (2) the exact /v1/models id; (3) that --ipc=host + memlock are right. WARNING: gufo's /health and /ready return 200 even during a GPU outage (issue #278) — trust actual token output, not health. Pin :latest to an immutable tag once validated. Podman rootless needs crun + user in render/video; Docker swaps keep-groups for numeric render/video GIDs (handled by the workflow's engine detection)."
     }
   ]
 }
