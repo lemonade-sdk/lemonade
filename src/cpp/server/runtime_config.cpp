@@ -595,6 +595,26 @@ int RuntimeConfig::telemetry_max_queue_capacity() const {
     return get_int_opt(nullptr, {"telemetry", "max_queue_capacity"}, 1000);
 }
 
+bool RuntimeConfig::telemetry_file_enabled() const {
+    return get_bool_opt(nullptr, {"telemetry", "file", "enabled"}, false);
+}
+
+std::string RuntimeConfig::telemetry_file_path() const {
+    return get_string_opt(nullptr, {"telemetry", "file", "path"}, "");
+}
+
+std::string RuntimeConfig::telemetry_file_content() const {
+    return get_string_opt(nullptr, {"telemetry", "file", "content"}, "none");
+}
+
+int RuntimeConfig::telemetry_file_max_size_mb() const {
+    return get_int_opt(nullptr, {"telemetry", "file", "max_size_mb"}, 100);
+}
+
+int RuntimeConfig::telemetry_file_max_days() const {
+    return get_int_opt(nullptr, {"telemetry", "file", "max_days"}, 90);
+}
+
 int RuntimeConfig::telemetry_max_attribute_length() const {
     return get_int_opt(nullptr, {"telemetry", "max_attribute_length"}, 4096);
 }
@@ -965,11 +985,34 @@ void RuntimeConfig::validate(const std::string& key, const json& value) const {
         }
         static const std::unordered_set<std::string> valid_telemetry_keys = {
             "enabled", "hide_inputs", "hide_outputs", "hide_thinking", "trust_incoming_trace_context",
-            "max_queue_capacity", "max_attribute_length", "otlp", "session"
+            "max_queue_capacity", "max_attribute_length", "otlp", "session", "file"
         };
         for (auto& [t_key, t_val] : value.items()) {
             if (valid_telemetry_keys.find(t_key) == valid_telemetry_keys.end()) {
                 throw std::invalid_argument("Unknown config key: 'telemetry." + t_key + "'");
+            }
+        }
+        if (value.contains("file")) {
+            const auto& file = value["file"];
+            if (!file.is_object()) {
+                throw std::invalid_argument("'telemetry.file' must be an object");
+            }
+            for (auto& [f_key, f_val] : file.items()) {
+                if (f_key == "enabled") {
+                    if (!f_val.is_boolean()) throw std::invalid_argument("'telemetry.file.enabled' must be a boolean");
+                } else if (f_key == "path") {
+                    if (!f_val.is_string()) throw std::invalid_argument("'telemetry.file.path' must be a string");
+                } else if (f_key == "content") {
+                    if (f_val != "none" && f_val != "full") {
+                        throw std::invalid_argument("'telemetry.file.content' must be 'none' or 'full'");
+                    }
+                } else if (f_key == "max_size_mb" || f_key == "max_days") {
+                    if (!f_val.is_number_integer() || f_val.get<int>() <= 0) {
+                        throw std::invalid_argument("'telemetry.file." + f_key + "' must be an integer > 0");
+                    }
+                } else {
+                    throw std::invalid_argument("Unknown config key: 'telemetry.file." + f_key + "'");
+                }
             }
         }
         if (value.contains("enabled") && !value["enabled"].is_boolean()) {
@@ -1208,20 +1251,15 @@ void RuntimeConfig::apply_changes(const json& changes, json& applied_diff) {
                 config_["telemetry"] = json::object();
             }
             for (auto& [t_key, t_val] : value.items()) {
-                if (t_key == "otlp" && t_val.is_object()) {
-                    if (!config_["telemetry"].contains("otlp") || !config_["telemetry"]["otlp"].is_object()) {
-                        config_["telemetry"]["otlp"] = json::object();
+                if ((t_key == "otlp" || t_key == "file") && t_val.is_object()) {
+                    auto& section = config_["telemetry"][t_key];
+                    if (!section.is_object()) {
+                        section = json::object();
                     }
-                    for (auto& [otlp_key, otlp_val] : t_val.items()) {
-                        if (!config_["telemetry"]["otlp"].contains(otlp_key) || config_["telemetry"]["otlp"][otlp_key] != otlp_val) {
-                            config_["telemetry"]["otlp"][otlp_key] = otlp_val;
-                            if (!applied_diff.contains("telemetry")) {
-                                applied_diff["telemetry"] = json::object();
-                            }
-                            if (!applied_diff["telemetry"].contains("otlp")) {
-                                applied_diff["telemetry"]["otlp"] = json::object();
-                            }
-                            applied_diff["telemetry"]["otlp"][otlp_key] = otlp_val;
+                    for (auto& [sub_key, sub_val] : t_val.items()) {
+                        if (!section.contains(sub_key) || section[sub_key] != sub_val) {
+                            section[sub_key] = sub_val;
+                            applied_diff["telemetry"][t_key][sub_key] = sub_val;
                         }
                     }
                 } else if (t_key == "session" && t_val.is_object()) {

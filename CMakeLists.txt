@@ -1024,6 +1024,7 @@ set(SOURCES_CORE
     src/cpp/server/route_decision_response.cpp
     src/cpp/server/runtime_config.cpp
     src/cpp/server/telemetry.cpp
+    src/cpp/server/usage_log.cpp
     src/cpp/server/logging_config.cpp
     src/cpp/server/log_stream.cpp
     src/cpp/server/api_docs.cpp
@@ -3052,6 +3053,14 @@ if(BUILD_TESTING AND EXISTS "${_TELEMETRY_HELPERS_TEST_SRC}")
     target_include_directories(test_telemetry_helpers PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server")
     target_link_libraries(test_telemetry_helpers PRIVATE lemonade-server-core)
     add_cpp_ci_test(TelemetryHelpersTest CI ON COMMAND test_telemetry_helpers)
+endif()
+
+set(_USAGE_LOG_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_usage_log.cpp")
+if(BUILD_TESTING AND EXISTS "${_USAGE_LOG_TEST_SRC}")
+    add_executable(test_usage_log test/cpp/test_usage_log.cpp)
+    target_include_directories(test_usage_log PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/server")
+    target_link_libraries(test_usage_log PRIVATE lemonade-server-core)
+    add_cpp_ci_test(UsageLogTest CI ON COMMAND test_usage_log)
 endif()
 
 set(_SUSPEND_INHIBITOR_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_suspend_inhibitor.cpp")

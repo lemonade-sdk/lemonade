@@ -96,6 +96,26 @@ int main() {
     }
     check(threw_unknown_otlp, "rejects unknown telemetry.otlp subkey");
 
+    config.set({{"telemetry", {{"file", {{"enabled", true}, {"content", "full"}, {"max_size_mb", 50}}}}}});
+    check(config.telemetry_file_enabled() && config.telemetry_file_content() == "full" &&
+              config.telemetry_file_max_size_mb() == 50,
+          "accepts telemetry.file settings");
+
+    config.set({{"telemetry", {{"file", {{"content", "none"}}}}}});
+    check(config.telemetry_file_enabled() && config.telemetry_file_max_size_mb() == 50,
+          "telemetry.file sibling keys preserved on partial set");
+
+    for (const json& bad : {json{{"content", "prompts"}}, json{{"max_size_mb", 0}}, json{{"max_days", 0}},
+                            json{{"enabled", "yes"}}, json{{"path", 1}}, json{{"bogus", 1}}}) {
+        bool threw = false;
+        try {
+            config.set({{"telemetry", {{"file", bad}}}});
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        check(threw, ("rejects invalid telemetry.file " + bad.dump()).c_str());
+    }
+
     // 3. Test CLI dotted key config path parsing logic
     std::vector<std::string> cli_args = {
         "telemetry.otlp.endpoint=http://127.0.0.1:5555/v1/traces",

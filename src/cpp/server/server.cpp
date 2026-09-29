@@ -33,6 +33,7 @@
 #include "lemon/prometheus_metrics.h"
 #include "lemon/runtime_config.h"
 #include "telemetry.h"
+#include "usage_log.h"
 #include "lemon/system_info.h"
 #include "lemon/version.h"
 #include <cctype>
@@ -919,6 +920,7 @@ void Server::log_request(const httplib::Request& req) {
 httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Request& req, httplib::Response& res) {
     telemetry::g_request_start_time = std::chrono::steady_clock::now();
     telemetry::g_current_auth_token = "";
+    telemetry::g_client_ip = req.remote_addr;
     if (req.has_header("X-Client-Session-Id")) {
         telemetry::g_current_client_session_id = req.get_header_value("X-Client-Session-Id");
     } else {
@@ -6950,6 +6952,8 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
         }
         system_info["cloud"] = {{"providers", providers}};
     }
+
+    system_info["usage_log"] = usage::status();
 
     res.set_content(system_info.dump(), "application/json");
 }

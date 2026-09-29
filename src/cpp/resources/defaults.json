@@ -96,6 +96,13 @@
   },
   "telemetry": {
     "enabled": false,
+    "file": {
+      "content": "none",
+      "enabled": false,
+      "max_days": 90,
+      "max_size_mb": 100,
+      "path": ""
+    },
     "hide_inputs": false,
     "hide_outputs": false,
     "hide_thinking": false,

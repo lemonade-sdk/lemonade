@@ -134,6 +134,13 @@ When `lemond` starts, effective configuration is resolved by deep-merging settin
   },
   "telemetry": {
     "enabled": false,
+    "file": {
+      "content": "none",
+      "enabled": false,
+      "max_days": 90,
+      "max_size_mb": 100,
+      "path": ""
+    },
     "hide_inputs": false,
     "hide_outputs": false,
     "hide_thinking": false,
@@ -316,6 +323,16 @@ API keys for these providers are **not** stored in `config.json` — they live i
 | `retry_backoff_base_s` | double | 5.0 | Base delay in seconds for exponential backoff retries. Must be `>= 0`. |
 | `send_batch_size` | int | 100 | Target maximum number of spans to group in a single batched OTLP request. Must be `>= 1`. |
 | `batch_timeout_s` | double | 1.0 | Maximum time to wait in seconds before exporting a partially filled batch of spans. Must be `> 0`. |
+
+**telemetry.file** — Local token usage log (see [Telemetry Guide](../telemetry.md#local-usage-log)):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | false | Append one JSON line per LLM request to a local file. Independent of `telemetry.enabled`. |
+| `path` | string | "" | Directory for the files. Empty means `<config dir>/usage/`. |
+| `content` | string | "none" | `"none"` logs counts only. `"full"` also logs prompts and responses. |
+| `max_size_mb` | int | 100 | Total disk cap. Oldest files are deleted first. Must be `> 0`. |
+| `max_days` | int | 90 | Files older than this are deleted. Must be `> 0`. |
 
 #### Telemetry and Tracing Details
 

@@ -1911,6 +1911,13 @@ curl "http://localhost:13305/v1/system-info"
   - `total_bytes` - Total capacity of the model-storage drive
   - `free_bytes` - Free bytes available to the Lemonade Server process on the model-storage drive
 
+- `usage_log` - State of the [local usage log](../guide/telemetry.md#local-usage-log). Only `enabled` is present when it is off.
+  - `enabled` - Whether `telemetry.file.enabled` is set
+  - `path` - Directory the files are written to
+  - `content` - `none` or `full`
+  - `disk_usage_bytes` - Total size of the usage files in `path`
+  - `failed` - `true` if a write failed and the log disabled itself
+
 - `devices` - Hardware devices detected on the system (no software/support information)
   - `cpu` - CPU information (name, cores, threads)
   - `amd_gpu` - Array of AMD GPUs, both integrated and discrete (if present)
