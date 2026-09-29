@@ -45,6 +45,7 @@ inline const BackendDescriptor descriptor = {
           {"gfx90a", {/*os*/ {"linux"}, /*channels*/ {}}},
           {"gfx942", {/*os*/ {"linux"}, /*channels*/ {}}}}},
         {"cpu", {"windows", "linux"}, {{"cpu", {"x86_64", "arm64"}}}, "x86_64 CPU; ARM64 CPU (Linux)"},
+        {"nathanw", {"linux"}, {{"amd_gpu", {"gfx1151"}}}, "AMD Strix Halo (Vulkan performance fork)"},
     },
     /*supported_modes*/ {"chat", "embeddings", "reranking"},
     /*required_checkpoints*/ {"main"},
@@ -68,6 +69,16 @@ inline const BackendDescriptor descriptor = {
         {"vulkan", {BackendTier::Core, BackendFormat::Native}},
         {"rocm", {BackendTier::Core, BackendFormat::Native}},
         {"cpu", {BackendTier::Core, BackendFormat::Native}},
+        {"nathanw", {BackendTier::Experimental, BackendFormat::Container}},
+    },
+    /*containers*/ {
+        {"nathanw", {
+            /*repository*/        "docker.io/kyuz0/amd-strix-halo-toolboxes",
+            /*devices*/           {"/dev/dri"},
+            /*cap_add*/           {},
+            /*ipc_host*/          false,
+            /*memlock_unlimited*/ false,
+        }},
     },
 };
 

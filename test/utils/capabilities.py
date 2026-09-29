@@ -46,6 +46,7 @@ CAPABILITIES = {
                 "metal",
                 "cpu",
                 "system",
+                "nathanw",
             ],
             "supports": {
                 "chat_completions": True,
