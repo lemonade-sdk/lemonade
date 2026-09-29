@@ -187,6 +187,7 @@ jobs:
           codename: 'noble'
 
       - name: Build Debian package
+        id: build_deb
         uses: ./.github/actions/build-debian-package
         with:
           package-type: binary
@@ -196,7 +197,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: lemonade-deb
-          path: lemonade-server_*.deb
+          path: ${{ steps.build_deb.outputs.output-dir }}/*.deb
           retention-days: 7
 
   validate:
