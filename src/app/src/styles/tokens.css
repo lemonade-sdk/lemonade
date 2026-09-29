@@ -101,7 +101,8 @@
 
   /* ---------- Typography ---------- */
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable",
-               "Segoe UI", system-ui, "Inter", "Helvetica Neue", sans-serif;
+               "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC",
+               system-ui, "Inter", "Helvetica Neue", sans-serif;
   --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas,
                "Liberation Mono", monospace;
 

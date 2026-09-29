@@ -8,6 +8,7 @@ import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
 import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
+import { useI18n } from '../i18n';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
 const LogViewer = lazy(() => import(/* webpackChunkName: "chat-logs" */ './LogViewer'));
@@ -882,6 +883,7 @@ const ChatView: React.FC<ChatViewProps> = ({
   onOpenModelDetails,
   onRefresh,
 }) => {
+  const { t } = useI18n();
   const [showLoadedOverview, setShowLoadedOverview] = useState(
     () => modelSelectionEpoch === 0,
   );
@@ -3243,26 +3245,26 @@ ${finalText}`
             ? (!!inputValue.trim() && !openMossDescribeUnavailable && !openMossCloneUnavailable)
             : (!!inputValue.trim() || pendingImages.length > 0 || (canUseAudioInput && pendingAudioFiles.length > 0)));
   const composerPlaceholder = !currentModel
-    ? 'Draft a message. Connect and load a model to send…'
+    ? t('Draft a message. Connect and load a model to send…')
     : currentIsOmniCollection
-      ? `Message ${currentModel} through the Omni collection…`
+        ? t('Message {model} through the Omni collection…', { model: currentModel })
       : currentCapability === 'chat' && supportsChatImageInput && supportsChatAudioInput
-        ? `Message ${currentModel} with text, images, or audio…`
+          ? t('Message {model} with text, images, or audio…', { model: currentModel })
       : currentCapability === 'chat' && supportsChatImageInput
-        ? `Message ${currentModel} with text or images…`
+          ? t('Message {model} with text or images…', { model: currentModel })
       : currentCapability === 'chat' && supportsChatAudioInput
-        ? `Message ${currentModel} with text or audio…`
+          ? t('Message {model} with text or audio…', { model: currentModel })
       : currentCapability === 'image'
-      ? (imageMode === 'edit' ? `Describe the edit for ${currentModel}…` : `Describe an image for ${currentModel}…`)
+        ? (imageMode === 'edit' ? t('Describe the edit for {model}…', { model: currentModel }) : t('Describe an image for {model}…', { model: currentModel }))
       : currentCapability === 'audio'
-        ? `Attach audio or use the mic with ${currentModel}…`
+          ? t('Attach audio or use the mic with {model}…', { model: currentModel })
         : currentCapability === 'audio-generation'
-          ? (isAceStepAudio ? 'Describe the music style, mood, tempo, instruments, and voice…' : 'Describe the sound effect to generate…')
+            ? (isAceStepAudio ? t('Describe the music style, mood, tempo, instruments, and voice…') : t('Describe the sound effect to generate…'))
           : currentCapability === 'model3d'
-            ? (model3dSettings.sourceMode === 'image' ? 'Attach a reference image for 3D reconstruction…' : 'Describe the object to render and reconstruct in 3D…')
+              ? (model3dSettings.sourceMode === 'image' ? t('Attach a reference image for 3D reconstruction…') : t('Describe the object to render and reconstruct in 3D…'))
             : currentCapability === 'tts'
-              ? (isOpenMossCloneMode ? 'Type text to speak, then attach a WAV voice sample…' : `Text to speak with ${currentModel}…`)
-              : `Message ${currentModel}…`;
+                ? (isOpenMossCloneMode ? t('Type text to speak, then attach a WAV voice sample…') : t('Text to speak with {model}…', { model: currentModel }))
+                : t('Message {model}…', { model: currentModel });
 
   useEffect(() => {
     resizeChatComposerInput(inputRef.current);
@@ -3313,8 +3315,11 @@ ${finalText}`
 
   const composerHint = modelPreparation
     ? (modelPreparation.phase === 'loading'
-      ? `Loading ${modelPreparation.modelName} for chat…`
-      : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`)
+      ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
+      : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
+        model: modelPreparation.modelName,
+        progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+      }))
     : supportsChatAudioInput && modeSupportsChatCompletions
     ? (supportsRealtimeAudio
       ? 'Chat + audio mode · mic transcribes into the draft, and audio files are routed through chat completions'
@@ -3337,7 +3342,7 @@ ${finalText}`
                   ? 'OpenMOSS · attach one WAV sample to clone its voice'
                   : 'OpenMOSS · optional voice style instruction via /audio/speech'
               : 'TTS mode · text becomes /audio/speech')
-            : 'Enter to send · Shift+Enter for newline · Paste or drop images';
+            : t('Enter to send · Shift+Enter for newline · Paste or drop images');
 
   const upscalingModels = useMemo(
     () => knownModelInfos
@@ -3401,27 +3406,27 @@ ${finalText}`
       {/* Conversation rail */}
       <aside className={`rail workspace-rail${railExpanded ? '' : ' is-collapsed'}`}>
         <WorkspaceRailHeader
-          title="History"
-          sidebarLabel="conversation"
+          title={t('History')}
+          sidebarLabel={t('conversation')}
           purpose="history"
           collapsed={!railExpanded}
           onToggle={handleRailToggle}
         />
 
         <div className="rail__new-wrap">
-          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label="New chat">
+          <button type="button" className="btn btn--primary btn--medium workspace-action-button workspace-action-button--primary workspace-action-button--medium rail__new" onClick={handleNewChat} aria-label={t('New chat')}>
             <Icon name="compose" size={14} aria-hidden="true" />
-            <span className="workspace-action-button__label">New chat</span>
+            <span className="workspace-action-button__label">{t('New chat')}</span>
           </button>
         </div>
 
-        <WorkspaceList className="rail__list" label="Conversations" wrap onRowActivate={handleSelectConversation}>
+        <WorkspaceList className="rail__list" label={t('Conversations')} wrap onRowActivate={handleSelectConversation}>
           {conversations.map((c, idx) => renderConversationRow(
             c, idx, 'rail', () => handleSelectConversation(c.id),
           ))}
         </WorkspaceList>
         {conversations.length === 0 && (
-          <p className="rail__empty">No conversations yet</p>
+          <p className="rail__empty">{t('No conversations yet')}</p>
         )}
 
       </aside>
@@ -3435,7 +3440,7 @@ ${finalText}`
         id="conversation-history-panel"
         className={`bottom-sheet ${mobileSheetOpen ? 'bottom-sheet--open' : ''}`}
         role={mobileSheetOpen ? 'dialog' : undefined}
-        aria-label="Conversations"
+        aria-label={t('Conversations')}
         aria-modal={mobileSheetOpen ? true : undefined}
         aria-hidden={!mobileSheetOpen}
       >
@@ -3443,13 +3448,13 @@ ${finalText}`
           <div className="bottom-sheet__handle-pill" />
         </div>
         <div className="bottom-sheet__header">
-          <strong>Conversations</strong>
+          <strong>{t('Conversations')}</strong>
           <button
             type="button"
             className="btn btn--quiet btn--toolbar btn--icon-only workspace-action-button workspace-action-button--quiet workspace-action-button--toolbar workspace-action-button--icon-only"
             onClick={closeMobileSheet}
-            aria-label="Close conversation history"
-            title="Close panel"
+            aria-label={t('Close conversation history')}
+            title={t('Close panel')}
           >
             <Icon name="x" size={16} aria-hidden="true" />
           </button>
@@ -3464,12 +3469,12 @@ ${finalText}`
           }}
         >
           <Icon name="compose" size={14} aria-hidden="true" />
-          <span className="workspace-action-button__label">New chat</span>
+          <span className="workspace-action-button__label">{t('New chat')}</span>
         </button>
 
         <WorkspaceList
           className="bottom-sheet__list rail__list"
-          label="Conversations"
+          label={t('Conversations')}
           wrap
           onRowActivate={id => {
             handleSelectConversation(id);
@@ -3490,14 +3495,14 @@ ${finalText}`
         </WorkspaceList>
 
         {conversations.length === 0 && (
-          <p className="rail__empty">No conversations yet</p>
+          <p className="rail__empty">{t('No conversations yet')}</p>
         )}
       </div>
 
       {/* Main pane */}
       <div className="chat__main" ref={threadRef}>
         <WorkspaceMobileMenuButton
-          menuLabel="Open conversation history"
+          menuLabel={t('Open conversation history')}
           panelId="conversation-history-panel"
           expanded={mobileSheetOpen}
           onClick={() => { if (mobileSheetOpen) closeMobileSheet(); else setMobileSheetOpen(true); }}
@@ -3544,7 +3549,7 @@ ${finalText}`
                     </div>
                     {streamingThinking && (
                       <details className="message__thinking" open={streaming.thinkingExpanded}>
-                        <summary>Thinking…</summary>
+                        <summary>{t('Thinking…')}</summary>
                         <div
                           className="message__thinking-content"
                           ref={thinkingContentRef}
@@ -3585,8 +3590,11 @@ ${finalText}`
                     <div className="message__content message__content--pending">
                       <span className="streaming-cursor streaming-cursor--leading" aria-hidden="true" />
                       {modelPreparation.phase === 'loading'
-                        ? `Loading ${modelPreparation.modelName} for chat…`
-                        : `${modelPreparation.phase === 'waiting' ? 'Waiting for' : 'Downloading'} ${modelPreparation.modelName}${Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : ''}…`}
+                        ? t('Loading {model} for chat…', { model: modelPreparation.modelName })
+                        : t(modelPreparation.phase === 'waiting' ? 'Waiting for {model}…' : 'Downloading {model}{progress}…', {
+                          model: modelPreparation.modelName,
+                          progress: Number.isFinite(modelPreparation.percent) ? ` · ${Math.round(modelPreparation.percent!)}%` : '',
+                        })}
                     </div>
                   </div>
                 </article>
@@ -3639,7 +3647,7 @@ ${finalText}`
         <div className="composer__toolbar">
           {(modelPickerOptions.length > 0 || modelPickerOpen) && (
             <div className="composer__model-picker" ref={modelPickerRef}>
-              <span className="composer__model-label">Model</span>
+              <span className="composer__model-label">{t('Model')}</span>
               <button
                 type="button"
                 className="composer__model-button"
@@ -3670,13 +3678,13 @@ ${finalText}`
                 <span className="composer__model-button-caret">▾</span>
               </button>
               {modelPickerOpen && (
-                <div className="composer__model-menu" role="dialog" aria-label="Search models">
+                <div className="composer__model-menu" role="dialog" aria-label={t('Search models')}>
                   <label className="composer__model-search">
                     <Icon name="search" size={14} />
                     <input
                       autoFocus
                       value={modelPickerQuery}
-                      placeholder="Search ready or Lemonade default models…"
+                      placeholder={t('Search ready or Lemonade default models…')}
                       onChange={e => setModelPickerQuery(e.target.value)}
                       // Typing filters, then Down hands off to the list's own
                       // roving-tabindex navigation.
@@ -3692,7 +3700,7 @@ ${finalText}`
                   <WorkspaceList
                     listRef={modelPickerListRef}
                     className="composer__model-results"
-                    label="Models"
+                    label={t('Models')}
                     onRowActivate={name => {
                       const option = modelPickerOptions.find(item => item.name === name);
                       if (option) handleModelPickerSelect(option);
@@ -3750,9 +3758,9 @@ ${finalText}`
                         />
                       );
                     })}
-                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">No matching models</li>}
+                    {modelPickerOptions.length === 0 && <li className="composer__model-empty">{t('No matching models')}</li>}
                   </WorkspaceList>
-                  {modelPickerLoading && <div className="composer__model-loading-bar">Loading {modelPickerLoading}…</div>}
+                  {modelPickerLoading && <div className="composer__model-loading-bar">{t('Loading {model}…', { model: modelPickerLoading })}</div>}
                   {modelPickerError && <div className="composer__model-error">{modelPickerError}</div>}
                 </div>
               )}
@@ -3763,8 +3771,8 @@ ${finalText}`
               type="button"
               className="composer__tools-toggle composer__effective-settings"
               onClick={() => setEffectiveSettingsOpen(true)}
-              title="Effective settings"
-              aria-label="Effective settings"
+              title={t('Effective settings')}
+              aria-label={t('Effective settings')}
             >
               <Icon name="sliders-horizontal" size={13} />
             </button>
@@ -3773,9 +3781,9 @@ ${finalText}`
             className={`composer__tools-toggle ${showInlineLogs ? 'composer__tools-toggle--active' : ''}`}
             onClick={handleToggleInlineLogs}
             aria-pressed={showInlineLogs}
-            title={showInlineLogs ? 'Hide logs' : 'Show logs'}
+            title={showInlineLogs ? t('Hide logs') : t('Show logs')}
           >
-            <Icon name="logs" size={13} /> Logs
+            <Icon name="logs" size={13} /> {t('Logs')}
           </button>
         </div>
         {canShowEffectiveSettings && effectiveSettingsOpen && (
@@ -3980,9 +3988,9 @@ ${finalText}`
           </div>
         )}
         {currentCapability === 'tts' && isOpenMossTts && (
-          <div className="composer__capability-settings composer__openmoss-settings" aria-label="OpenMOSS voice settings">
+          <div className="composer__capability-settings composer__openmoss-settings" aria-label={t('OpenMOSS voice settings')}>
             <label className="composer__image-setting composer__image-setting--mode">
-              <span>Voice mode</span>
+              <span>{t('Voice mode')}</span>
               <select
                 value={openMossSettings.mode}
                 onChange={event => {
@@ -3992,19 +4000,19 @@ ${finalText}`
                 }}
                 disabled={isBusy}
               >
-                <option value="plain">Plain</option>
-                <option value="describe">Describe voice</option>
-                <option value="clone">Clone WAV sample</option>
+                <option value="plain">{t('Plain')}</option>
+                <option value="describe">{t('Describe voice')}</option>
+                <option value="clone">{t('Clone WAV sample')}</option>
               </select>
             </label>
             <label className="composer__openmoss-description">
               <span>
                 {openMossSettings.mode === 'describe'
-                  ? 'Voice description'
+                  ? t('Voice description')
                   : openMossSettings.mode === 'clone'
-                    ? 'Style note'
-                    : 'Voice style'}
-                <small>{openMossSettings.mode === 'clone' ? 'optional' : 'optional instruction'}</small>
+                    ? t('Style note')
+                    : t('Voice style')}
+                <small>{openMossSettings.mode === 'clone' ? t('optional') : t('optional instruction')}</small>
               </span>
               <input
                 type="text"
@@ -4025,17 +4033,17 @@ ${finalText}`
             >
               {openMossSettings.mode === 'describe'
                 ? openMossDescribeUnavailable
-                  ? 'Install MOSS-VoiceGen to enable described voices.'
+                  ? t('Install MOSS-VoiceGen to enable described voices.')
                   : openMossCloneModel
-                    ? `Voice design: ${openMossVoiceDesignModel} → speech: ${openMossCloneModel}`
-                    : `Using ${openMossVoiceDesignModel} directly for described speech.`
+                    ? t('Voice design: {design} → speech: {speech}', { design: openMossVoiceDesignModel, speech: openMossCloneModel })
+                    : t('Using {model} directly for described speech.', { model: openMossVoiceDesignModel })
                 : openMossSettings.mode === 'clone'
                   ? !openMossCloneModel
-                    ? 'Install OpenMOSS-TTS to clone a WAV voice sample.'
+                    ? t('Install OpenMOSS-TTS to clone a WAV voice sample.')
                     : pendingAudioFiles.length > 0
-                      ? `Voice sample ready: ${pendingAudioFiles[0].name}`
-                      : 'Attach one WAV voice sample with the paperclip below.'
-                  : 'The selected OpenMOSS model receives the optional voice style directly.'}
+                      ? t('Voice sample ready: {name}', { name: pendingAudioFiles[0].name })
+                      : t('Attach one WAV voice sample with the paperclip below.')
+                  : t('The selected OpenMOSS model receives the optional voice style directly.')}
             </div>
           </div>
         )}
@@ -4133,7 +4141,7 @@ ${finalText}`
           <div className={`composer__live${liveError || micError ? ' composer__live--error' : ''}`}>
             <div className="composer__live-head">
               <span className={`composer__live-dot${isSpeaking ? ' composer__live-dot--speaking' : ''}`} />
-              <span>{isLiveRecording ? (isLiveConnected ? 'Live microphone' : 'Connecting microphone…') : 'Microphone'}</span>
+              <span>{isLiveRecording ? (isLiveConnected ? t('Live microphone') : t('Connecting microphone…')) : t('Microphone')}</span>
               {isLiveRecording && <span className="composer__live-meter"><span style={{ width: `${Math.round(audioLevel * 100)}%` }} /></span>}
             </div>
             <div className="composer__live-text">
@@ -4154,15 +4162,15 @@ ${finalText}`
                 });
               }}
               disabled={!currentModel || isBusy || (!modeSupportsMcp && (!canAttach || imageAttachmentLimitReached))}
-              title="Add files, photos, or tools"
-              aria-label="Add files, photos, or tools"
+              title={t('Add files, photos, or tools')}
+              aria-label={t('Add files, photos, or tools')}
               aria-haspopup={mcpPickerOpen ? 'dialog' : 'menu'}
               aria-expanded={addMenuOpen}
             >
               <Icon name="plus" size={20} />
             </button>
             {addMenuOpen && !mcpPickerOpen && (
-              <div className="composer__add-menu" role="menu" aria-label="Add to chat">
+              <div className="composer__add-menu" role="menu" aria-label={t('Add to chat')}>
                 <button
                   type="button"
                   className="composer__add-row"
@@ -4175,7 +4183,7 @@ ${finalText}`
                 >
                   <span className="composer__add-icon"><Icon name="paperclip" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Add files</strong>
+                    <strong>{t('Add files')}</strong>
                     <small>{isOpenMossCloneMode
                       ? 'WAV audio file'
                       : currentCapability === 'model3d'
@@ -4196,12 +4204,12 @@ ${finalText}`
                   data-mcp-entry="tools"
                   onClick={openMcpPicker}
                   disabled={!modeSupportsMcp}
-                  aria-label="Tools"
+                  aria-label={t('Tools')}
                   aria-haspopup="dialog"
                 >
                   <span className="composer__add-icon"><Icon name="tools" size={16} /></span>
                   <span className="composer__add-text">
-                    <strong>Tools</strong>
+                    <strong>{t('Tools')}</strong>
                     <small>{useMcp
                       ? `${selectedMcpToolCount} selected · Lemonade and external MCP`
                       : 'Lemonade tools and external MCP servers'}</small>
@@ -4241,13 +4249,13 @@ ${finalText}`
                         onChange={event => persistMcpEnabled(event.target.checked)}
                       />
                       <span>
-                        <strong id="composer-mcp-dialog-title">Tools for this chat</strong>
+                        <strong id="composer-mcp-dialog-title">{t('Tools for this chat')}</strong>
                         <small>{selectedMcpServerIds.length} server{selectedMcpServerIds.length === 1 ? '' : 's'} · {selectedMcpToolCount} tool{selectedMcpToolCount === 1 ? '' : 's'}</small>
                       </span>
                     </label>
-                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>Built-in default</button>
+                    <button type="button" className="btn btn--ghost" onClick={resetMcpSelection}>{t('Built-in default')}</button>
                   </div>
-                  <div className="composer__mcp-tabs" role="tablist" aria-label="Tool providers">
+                  <div className="composer__mcp-tabs" role="tablist" aria-label={t('Tool providers')}>
                     <button
                       type="button"
                       role="tab"
@@ -4255,7 +4263,7 @@ ${finalText}`
                       className={`composer__mcp-tab${mcpPickerTab === 'lemonade' ? ' is-active' : ''}`}
                       onClick={() => setMcpPickerTab('lemonade')}
                     >
-                      Lemonade tools
+                      {t('Lemonade tools')}
                     </button>
                     <button
                       type="button"
@@ -4264,16 +4272,16 @@ ${finalText}`
                       className={`composer__mcp-tab${mcpPickerTab === 'external' ? ' is-active' : ''}`}
                       onClick={() => setMcpPickerTab('external')}
                     >
-                      External MCP servers
+                      {t('External MCP servers')}
                     </button>
                   </div>
                   {mcpPickerLoading ? (
-                    <p className="composer__mcp-empty">Loading MCP tools…</p>
+                    <p className="composer__mcp-empty">{t('Loading MCP tools…')}</p>
                   ) : mcpPickerError ? (
                     <div className="composer__mcp-error" role="alert">{mcpPickerError}</div>
                   ) : visibleMcpOptions.length === 0 ? (
                     <p className="composer__mcp-empty">
-                      {mcpPickerTab === 'external' ? 'No external MCP servers are connected.' : 'No Lemonade tools available.'}
+                      {mcpPickerTab === 'external' ? t('No external MCP servers are connected.') : t('No Lemonade tools available.')}
                     </p>
                   ) : (
                     <div className="composer__mcp-servers">
@@ -4299,7 +4307,7 @@ ${finalText}`
                             {serverSelected && (
                               <div className="composer__mcp-tools">
                                 {server.toolOptions.length === 0 ? (
-                                  <p className="composer__mcp-empty">No tools discovered for this server.</p>
+                                  <p className="composer__mcp-empty">{t('No tools discovered for this server.')}</p>
                                 ) : server.toolOptions.map(tool => {
                                   const toolSelected = selectedMcpToolNameSet === null || selectedMcpToolNameSet.has(tool.runtimeName);
                                   return (
@@ -4325,7 +4333,7 @@ ${finalText}`
                     </div>
                   )}
                   <div className="composer__mcp-footer">
-                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>Select all tools for selected servers</button>
+                    <button type="button" className="btn btn--ghost" onClick={() => persistMcpSelection(selectedMcpServerIds, null)} disabled={selectedMcpToolNames === null}>{t('Select all tools for selected servers')}</button>
                   </div>
                 </div>
               </div>
@@ -4349,7 +4357,7 @@ ${finalText}`
             onPaste={handlePaste}
             disabled={isBusy}
             rows={1}
-            aria-label="Message"
+            aria-label={t('Message')}
           />
           {modeSupportsChatCompletions && (
             <div
@@ -4372,21 +4380,21 @@ ${finalText}`
                   setThinkingMenuOpen(open => !open);
                 }}
                 disabled={isBusy}
-                aria-label={`Reasoning: ${thinkingMode === 'off' ? 'Off' : 'Thinking'}`}
+                aria-label={`${t('Reasoning')}: ${thinkingMode === 'off' ? t('Off') : t('Thinking')}`}
                 aria-haspopup="menu"
                 aria-expanded={thinkingMenuOpen}
               >
-                <span>{thinkingMode === 'off' ? 'Off' : 'Thinking'}</span>
+                <span>{thinkingMode === 'off' ? t('Off') : t('Thinking')}</span>
                 <Icon name="chevron-down" size={12} aria-hidden="true" />
               </button>
               {!thinkingMenuOpen && (
                 <div className="composer__thinking-tooltip" role="tooltip" aria-hidden="true">
-                  <span>Reasoning</span>
+                  <span>{t('Reasoning')}</span>
                   <kbd>Ctrl ⇧ M</kbd>
                 </div>
               )}
               {thinkingMenuOpen && (
-                <div className="composer__thinking-menu" role="menu" aria-label="Reasoning">
+                <div className="composer__thinking-menu" role="menu" aria-label={t('Reasoning')}>
                   {(['normal', 'off'] as const).map(mode => {
                     const selected = thinkingMode === mode;
                     const enabled = mode !== 'off';
@@ -4400,9 +4408,9 @@ ${finalText}`
                         onClick={() => selectThinkingMode(mode)}
                       >
                         <span className="composer__thinking-option-copy">
-                          <span className="composer__thinking-option-label">{enabled ? 'Thinking' : 'Off'}</span>
+                          <span className="composer__thinking-option-label">{enabled ? t('Thinking') : t('Off')}</span>
                           <span className="composer__thinking-option-description">
-                            {enabled ? 'Model thinks before answering' : 'Direct answer'}
+                            {enabled ? t('Model thinks before answering') : t('Direct answer')}
                           </span>
                         </span>
                         {selected && <Icon name="check" size={13} aria-hidden="true" />}
@@ -4418,21 +4426,21 @@ ${finalText}`
               className={`composer__mic${isLiveRecording ? ' composer__mic--recording' : ''}`}
               onClick={isLiveRecording ? handleMicStop : handleMicStart}
               disabled={!currentModel || (!supportsRealtimeAudio && !isLiveRecording) || ((isStreaming || capabilityBusy) && !isLiveRecording)}
-              title={isLiveRecording ? 'Stop live microphone transcription' : supportsRealtimeAudio ? 'Start live microphone transcription' : 'Live microphone needs HTTPS/localhost and a realtime-capable audio model'}
-              aria-label={isLiveRecording ? 'Stop live microphone transcription' : 'Start live microphone transcription'}
+              title={isLiveRecording ? t('Stop live microphone transcription') : supportsRealtimeAudio ? t('Start live microphone transcription') : t('Live microphone needs HTTPS/localhost and a realtime-capable audio model')}
+              aria-label={isLiveRecording ? t('Stop live microphone transcription') : t('Start live microphone transcription')}
               aria-pressed={isLiveRecording}
             >
               <Icon name="mic" size={16} />
             </button>
           )}
           {isStreaming ? (
-            <button className="composer__stop" onClick={handleStop} aria-label="Stop generating" title="Stop"><Icon name="stop" size={16} /></button>
+            <button className="composer__stop" onClick={handleStop} aria-label={t('Stop generating')} title={t('Stop')}><Icon name="stop" size={16} /></button>
           ) : (
             <button
               className="composer__send"
               onClick={() => handleSend()}
               disabled={!canSubmit}
-              aria-label="Send"
+              aria-label={t('Send')}
             ><Icon name="send" size={16} /></button>
           )}
         </div>
@@ -4477,6 +4485,7 @@ const EmptyState: React.FC<EmptyStateProps> = ({
   modelInfos,
   onRefresh,
 }) => {
+  const { t } = useI18n();
   const togglePinnedModel = async (model: LoadedModel) => {
     const api = await getApiClient();
     await api.setModelPinned(model.model_name, model.pinned !== true);
@@ -4487,29 +4496,29 @@ const EmptyState: React.FC<EmptyStateProps> = ({
     <>
       {!(showLoadedOverview && loadedModels.length > 0) && (
       <div className="hero">
-        <h1 className="hero__title">Get to know Lemonade</h1>
+        <h1 className="hero__title">{t('Get to know Lemonade')}</h1>
         <p className="hero__subtitle">
           {loadedModels.length > 0
-            ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
-            : 'Ask a question to learn how Lemonade works and get started with your first model.'}
+            ? t('{count} models ready. Ask a question or explore what Lemonade can do.', { count: loadedModels.length })
+            : t('Ask a question to learn how Lemonade works and get started with your first model.')}
         </p>
 
         <div className="chips" role="list">
           <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
-            How do I use Lemonade?
+            {t('How do I use Lemonade?')}
           </button>
           <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-            How do I add a model?
+            {t('How do I add a model?')}
           </button>
           <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
-            What are Lemonade tools?
+            {t('What are Lemonade tools?')}
           </button>
           <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
             <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-            What can my hardware run?
+            {t('What can my hardware run?')}
           </button>
         </div>
       </div>
@@ -4518,9 +4527,9 @@ const EmptyState: React.FC<EmptyStateProps> = ({
       {showLoadedOverview && loadedModels.length > 0 && (
         <section className="loaded-overview" aria-labelledby="loaded-overview-title">
           <header className="loaded-overview__header">
-            <h2 id="loaded-overview-title" className="loaded-overview__title">Loaded now</h2>
+            <h2 id="loaded-overview-title" className="loaded-overview__title">{t('Loaded now')}</h2>
             <p className="loaded-overview__subtitle">
-              {loadedModels.length} model{loadedModels.length === 1 ? '' : 's'} ready for use
+              {t('{count} models ready for use', { count: loadedModels.length })}
             </p>
           </header>
 
@@ -4745,6 +4754,7 @@ const ToolCallsDisplay: React.FC<{ calls: ToolCallEntry[]; onOptionSelect?: (tex
 /* ── Message bubble ──────────────────────────────────────── */
 
 const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | null; userLabel: string; defaultThinkingOpen?: boolean; onOptionSelect?: (text: string) => void; onRetry?: () => void; onSpeak?: () => void; onEditUser?: (text: string) => void }> = ({ message, activeModel, userLabel, defaultThinkingOpen = false, onOptionSelect, onRetry, onSpeak, onEditUser }) => {
+  const { t } = useI18n();
   const [thinkingOpen, setThinkingOpen] = useState(defaultThinkingOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content || '');
@@ -4785,8 +4795,8 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
                 autoFocus
               />
               <div className="message__edit-actions">
-                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> Save & resend</button>
-                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> Cancel</button>
+                <button type="button" className="message__action" onClick={saveEdit} disabled={!editDraft.trim()}><Icon name="send" size={13} /> {t('Save & resend')}</button>
+                <button type="button" className="message__action" onClick={() => { setEditDraft(message.content || ''); setIsEditing(false); }}><Icon name="x" size={13} /> {t('Cancel')}</button>
               </div>
             </div>
           ) : message.content ? (
@@ -4824,7 +4834,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             open={thinkingOpen}
             onToggle={e => setThinkingOpen((e.target as HTMLDetailsElement).open)}
           >
-            <summary>Reasoning{reasoningSummary(message.stats)}</summary>
+            <summary>{t('Reasoning')}{reasoningSummary(message.stats)}</summary>
             <div className="message__thinking-content">
               <MarkdownMessage content={message.thinking} />
             </div>
@@ -4847,7 +4857,7 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
               download={(message.audioName || `${displayModel?.name || 'lemonade-audio'}.wav`).replace(/[^a-z0-9._-]+/gi, '-')}
               className="message__action message__audio-download"
             >
-              <Icon name="download" size={13} /> Download audio
+              <Icon name="download" size={13} /> {t('Download audio')}
             </a>
           </div>
         )}
@@ -4875,11 +4885,11 @@ const MessageBubble: React.FC<{ message: Message; activeModel: ModelSnapshot | n
             onClick={() => copyTextToClipboard(message.content || message.thinking || '')}
             disabled={!(message.content || message.thinking)}
           >
-            <Icon name="copy" size={13} /> Copy
+            <Icon name="copy" size={13} /> {t('Copy')}
           </button>
           {onSpeak && (
             <button type="button" className="message__action" onClick={onSpeak}>
-              <Icon name="tts" size={13} /> Read aloud
+              <Icon name="tts" size={13} /> {t('Read aloud')}
             </button>
           )}
           {onRetry && (

@@ -55,6 +55,7 @@ import {
   providerEndpointNeedsInsecureOptIn,
   validateProviderEndpoint,
 } from '../features/router/routerConnections';
+import { useI18n } from '../i18n';
 
 /* ── Helpers (local copies to keep component self-contained) ──── */
 
@@ -64,6 +65,7 @@ function mdName(m: ModelInfo | null | undefined): string {
 }
 
 const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   const handleClick = async () => {
@@ -76,7 +78,7 @@ const CopyModelNameButton: React.FC<{ modelName: string }> = ({ modelName }) => 
     }
   };
 
-  const label = copied ? `Copied model name: ${modelName}` : `Copy model name: ${modelName}`;
+  const label = copied ? t('Copied model name: {name}', { name: modelName }) : t('Copy model name: {name}', { name: modelName });
   return (
     <button
       type="button"
@@ -693,6 +695,7 @@ const ReadmeContent: React.FC<{ readme: string; hfRepo: string }> = ({ readme, h
 /* ── README tab ──────────────────────────────────────────────── */
 
 const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const { t } = useI18n();
   const checkpoint = model ? String((model as any).checkpoint || '') : '';
   const checkpoints = model ? ((model as any).checkpoints as Record<string, string> | null ?? null) : null;
   const hfRepo = deriveHFRepo(checkpoint || null, checkpoints);
@@ -729,7 +732,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
   if (loading) {
     return (
       <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
-        <span>Loading README…</span>
+        <span>{t('Loading README…')}</span>
       </div>
     );
   }
@@ -738,7 +741,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('README unavailable for this model.')}</p>
       </div>
     );
   }
@@ -749,6 +752,7 @@ const ModelReadmeTab: React.FC<{ model: ModelInfo | null | undefined; isActive: 
 /* ── HF README tab ────────────────────────────────────────────── */
 
 const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isActive }) => {
+  const { t } = useI18n();
   const readmeUrl = `https://huggingface.co/${hfId}/raw/main/README.md`;
   const [readme, setReadme] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -777,7 +781,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
   if (loading) {
     return (
       <div className="detail-tab-content detail-readme detail-readme--loading" aria-live="polite" aria-busy="true">
-        <span>Loading README…</span>
+        <span>{t('Loading README…')}</span>
       </div>
     );
   }
@@ -785,7 +789,7 @@ const HfReadmeTab: React.FC<{ hfId: string; isActive: boolean }> = ({ hfId, isAc
     return (
       <div className="detail-tab-content detail-readme detail-readme--empty">
         <Icon name="book-open" size={32} aria-hidden="true" />
-        <p>README unavailable for this model.</p>
+        <p>{t('README unavailable for this model.')}</p>
       </div>
     );
   }
@@ -801,6 +805,7 @@ const HfOverviewTab: React.FC<{
   isPulling: boolean;
   isActive: boolean;
 }> = ({ hfModel, hfVariants, onHfPull, isPulling, isActive }) => {
+  const { t } = useI18n();
   const [selectedVariantName, setSelectedVariantName] = useState('');
   const selectedVariant = hfVariants?.variants.find(v => v.name === selectedVariantName)
     ?? hfVariants?.variants[0];
@@ -826,9 +831,9 @@ const HfOverviewTab: React.FC<{
                     icon="download"
                     disabled={isPulling}
                     onClick={() => onHfPull?.(hfModel.id, selectedVariant.name, hfVariants.recipe)}
-                    aria-label={`Download ${selectedVariant.name} from ${hfModel.id}`}
+                    aria-label={t('Download {name} from {repo}', { name: selectedVariant.name, repo: hfModel.id })}
                   >
-                    Download {selectedVariant.name}
+                    {t('Download {name}', { name: selectedVariant.name })}
                   </WorkspaceActionButton>
                 </div>
               )}
@@ -863,21 +868,21 @@ const HfOverviewTab: React.FC<{
                   icon="download"
                   disabled={isPulling}
                   onClick={() => onHfPull?.(hfModel.id, '', hfVariants.recipe)}
-                  aria-label={`Download ${hfModel.id}`}
+                  aria-label={t('Download {name}', { name: hfModel.id })}
                 >
-                  Download model
+                  {t('Download model')}
                 </WorkspaceActionButton>
               </div>
             </div>
           ) : (
             <div className="hf-detail__overview-section">
-              <span className="hf-detail__overview-value hf-detail__overview-value--muted">No downloadable variants found for this repository.</span>
+              <span className="hf-detail__overview-value hf-detail__overview-value--muted">{t('No downloadable variants found for this repository.')}</span>
             </div>
           )}
         </>
       ) : (
         <div className="hf-detail__overview-section">
-          <span className="hf-detail__overview-value hf-detail__overview-value--muted">Loading variant information…</span>
+          <span className="hf-detail__overview-value hf-detail__overview-value--muted">{t('Loading variant information…')}</span>
         </div>
       )}
     </div>
@@ -904,6 +909,7 @@ const HfDetailView: React.FC<{
   onBack?: () => void;
   onClose?: () => void;
 }> = ({ hfModel, provider, hfVariants, onFetchHfVariants, onHfPull, pullingHf, onCancelHfPull, onBack, onClose }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<HfDetailTab>('overview');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -980,7 +986,7 @@ const HfDetailView: React.FC<{
               </div>
               {onCancelHfPull && (
                 <WorkspaceActionButton appearance="secondary" onClick={() => onCancelHfPull(hfModel.id)} aria-label={`Cancel download of ${repoName}`}>
-                  Cancel
+                  {t('Cancel')}
                 </WorkspaceActionButton>
               )}
             </>
@@ -993,7 +999,7 @@ const HfDetailView: React.FC<{
             rel="noopener noreferrer"
             aria-label={`View ${repoName} on ${providerMeta.label} (opens in new tab)`}
           >
-            Open on {providerMeta.label}
+            {t('Open on {provider}', { provider: providerMeta.label })}
           </WorkspaceActionLink>
         </WorkspaceActionGroup>
       )}
@@ -1007,7 +1013,7 @@ const HfDetailView: React.FC<{
       <div
         className="detail-tabs__tablist"
         role="tablist"
-        aria-label="Model details sections"
+        aria-label={t('Model details sections')}
         aria-labelledby="detail-panel-heading"
       >
         {remoteDetailTabs.map((tab, i) => (
@@ -1427,6 +1433,7 @@ const ModelConfigurationTab: React.FC<{
       action can apply them without saving them. */
   loadOptionsRef?: React.MutableRefObject<(() => Record<string, unknown>) | null>;
 }> = ({ model, loadedModel, isActive, serverDefaultCtxSize, isLoadingThis, onReloadModel, onDirtyChange, loadOptionsRef }) => {
+  const { t } = useI18n();
   const name = mdName(model);
   const [notice, setNotice] = useState<string | null>(null);
   const [isReloading, setIsReloading] = useState(false);
@@ -1916,12 +1923,12 @@ const ModelConfigurationTab: React.FC<{
 
   return (
     <div className="detail-tab-content detail-configuration">
-      <section className="detail-configuration__section" aria-label="Load settings">
+      <section className="detail-configuration__section" aria-label={t('Load settings')}>
         <div className="detail-configuration__section-head">
           <div>
-            <h3 className="detail-configuration__section-heading">Load settings</h3>
+            <h3 className="detail-configuration__section-heading">{t('Load settings')}</h3>
             <p className="detail-configuration__section-copy">
-              Settings used when this model loads or reloads.
+              {t('Settings used when this model loads or reloads.')}
             </p>
           </div>
         </div>
@@ -1930,7 +1937,7 @@ const ModelConfigurationTab: React.FC<{
           {supportsContextSize && (
             <div className="detail-configuration__context-card">
               <div className="detail-configuration__control-head">
-                <label htmlFor={ctxSliderId}>Context size</label>
+                <label htmlFor={ctxSliderId}>{t('Context size')}</label>
               </div>
               <label
                 className="detail-configuration__autotune"
@@ -1944,7 +1951,7 @@ const ModelConfigurationTab: React.FC<{
                     setCtxSizeDraft(e.target.checked ? '-1' : String(currentCtxSize));
                   }}
                 />
-                <span>Auto tune context size</span>
+                <span>{t('Auto tune context size')}</span>
                 <Icon name="info" size={14} aria-hidden="true" />
               </label>
               <div className="detail-configuration__context-row">
@@ -1974,14 +1981,14 @@ const ModelConfigurationTab: React.FC<{
                     value={isAutoTuning ? String(currentCtxSize) : ctxSizeDraft}
                     disabled={isAutoTuning}
                     onChange={e => setCtxSizeDraft(e.target.value)}
-                    aria-label="Context size tokens"
+                    aria-label={t('Context size tokens')}
                   />
                   <span className="detail-configuration__context-stepper">
                     <button
                       type="button"
                       onClick={() => stepContextSize(1)}
                       disabled={isAutoTuning || currentCtxSize >= ctxMax}
-                      aria-label={`Increase context size by ${ctxStep} tokens`}
+                      aria-label={t('Increase context size by {count} tokens', { count: ctxStep })}
                     >
                       <Icon name="chevron-up" size={11} aria-hidden="true" />
                     </button>
@@ -1989,7 +1996,7 @@ const ModelConfigurationTab: React.FC<{
                       type="button"
                       onClick={() => stepContextSize(-1)}
                       disabled={isAutoTuning || currentCtxSize <= ctxMin}
-                      aria-label={`Decrease context size by ${ctxStep} tokens`}
+                      aria-label={t('Decrease context size by {count} tokens', { count: ctxStep })}
                     >
                       <Icon name="chevron-down" size={11} aria-hidden="true" />
                     </button>
@@ -2028,18 +2035,18 @@ const ModelConfigurationTab: React.FC<{
               disabled={isReloading || isLoadingThis || !serverOptionsLoaded}
               aria-busy={isReloading}
             >
-              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? 'Reloading\u2026' : 'Reload model'}
+              <Icon name="rotate-ccw" size={13} aria-hidden="true" /> {isReloading ? t('Reloading…') : t('Reload model')}
             </button>
           ) : (
             <span className="detail-configuration__running-state">
-              <Icon name="check" size={13} aria-hidden="true" /> Running with these settings
+              <Icon name="check" size={13} aria-hidden="true" /> {t('Running with these settings')}
             </span>
           ))}
-          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>Save</button>
+          <button type="button" className={`btn ${hasLoadSettingChanges ? 'btn--primary' : 'btn--ghost'} btn--sm`} onClick={() => saveConfig()} disabled={!serverOptionsLoaded}>{t('Save')}</button>
           {hasLoadSettingChanges && (
-            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>Discard changes</button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={discardConfig}>{t('Discard changes')}</button>
           )}
-          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig} disabled={!serverOptionsLoaded}>Reset to defaults</button>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={resetConfig} disabled={!serverOptionsLoaded}>{t('Reset to defaults')}</button>
         </div>
 
         {notice && (
@@ -2076,6 +2083,7 @@ function roleLabel(role: string): string {
 }
 
 const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: boolean }> = ({ model, isActive }) => {
+  const { t } = useI18n();
   const modelId = model ? String(model.id || '') : '';
   const [files, setFiles] = useState<ModelFileInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -2103,7 +2111,7 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
   if (loading) {
     return (
       <div className="detail-tab-content detail-files detail-files--loading" aria-live="polite" aria-busy="true">
-        <span>Loading files…</span>
+        <span>{t('Loading files…')}</span>
       </div>
     );
   }
@@ -2112,7 +2120,7 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
     return (
       <div className="detail-tab-content detail-files detail-files--empty">
         <Icon name="hard-drive" size={32} aria-hidden="true" />
-        <p>Unable to load files for this model.</p>
+        <p>{t('Unable to load files for this model.')}</p>
       </div>
     );
   }
@@ -2121,8 +2129,8 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
     return (
       <div className="detail-tab-content detail-files detail-files--empty">
         <Icon name="hard-drive" size={32} aria-hidden="true" />
-        <p>No files found for this model.</p>
-        <small>Files appear here once the model has been downloaded.</small>
+        <p>{t('No files found for this model.')}</p>
+        <small>{t('Files appear here once the model has been downloaded.')}</small>
       </div>
     );
   }
@@ -2133,10 +2141,10 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
         <caption className="sr-only">Files backing {mdName(model) || modelId}</caption>
         <thead>
           <tr>
-            <th scope="col">File</th>
-            <th scope="col">Role</th>
-            <th scope="col" className="detail-files__col-size">Size</th>
-            <th scope="col">Status</th>
+            <th scope="col">{t('File')}</th>
+                <th scope="col">{t('Role')}</th>
+                <th scope="col" className="detail-files__col-size">{t('Size')}</th>
+                <th scope="col">{t('Status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -2154,12 +2162,12 @@ const ModelFilesTab: React.FC<{ model: ModelInfo | null | undefined; isActive: b
                 {file.exists ? (
                   <span className="detail-files__status detail-files__status--present">
                     <Icon name="check" size={14} aria-hidden="true" />
-                    <span>Downloaded</span>
+                    <span>{t('Downloaded')}</span>
                   </span>
                 ) : (
                   <span className="detail-files__status detail-files__status--missing">
                     <Icon name="download" size={14} aria-hidden="true" />
-                    <span>Not downloaded</span>
+                    <span>{t('Not downloaded')}</span>
                   </span>
                 )}
               </td>
@@ -2540,6 +2548,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   pullingHf,
   onCancelHfPull,
 }) => {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<DetailTab>('config');
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -2607,24 +2616,24 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
 
   if (!model) {
     return (
-      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label="Model detail">
+      <div className="model-detail-panel workspace-detail-panel workspace-detail-panel--empty model-detail-panel--empty" aria-label={t('Model detail')}>
         {onBack && (
           <button
             type="button"
             className="model-detail-panel__back-btn"
             onClick={onBack}
-            aria-label="Back to models list"
+            aria-label={t('Back to models list')}
           >
-            ← Back to models
+            ← {t('Back to models')}
           </button>
         )}
         <div className="model-detail-panel__placeholder">
           <Icon name="model" size={40} aria-hidden="true" />
-          <p>{noModelsAvailable ? 'No models found' : 'No model selected'}</p>
+          <p>{noModelsAvailable ? t('No models found') : t('No model selected')}</p>
           <p className="model-detail-panel__placeholder-sub">
             {noModelsAvailable
-              ? 'No models are available in the registry yet. Pull a model or adjust your filters to get started.'
-              : 'Select a model from the list to view its details.'}
+              ? t('No models are available in the registry yet. Pull a model or adjust your filters to get started.')
+              : t('Select a model from the list to view its details.')}
           </p>
         </div>
       </div>
@@ -2661,11 +2670,11 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       )}
       {isLoaded && (
         <WorkspaceMetadataChip emphasis="high" tone="success">
-          <span className="row__pulse" aria-hidden="true" /> Running
+          <span className="row__pulse" aria-hidden="true" /> {t('Running')}
         </WorkspaceMetadataChip>
       )}
       {isDownloaded && !isLoaded && (
-        <WorkspaceMetadataChip emphasis="high" tone="success">Ready</WorkspaceMetadataChip>
+        <WorkspaceMetadataChip emphasis="high" tone="success">{t('Ready')}</WorkspaceMetadataChip>
       )}
       {sourceRef && (
         <WorkspaceMetadataChip
@@ -2688,7 +2697,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   );
 
   const detailActions = (
-    <WorkspaceActionGroup className="model-detail-panel__actions" label={`Actions for ${name}`}>
+    <WorkspaceActionGroup className="model-detail-panel__actions" label={t('Actions for {name}', { name })}>
       {isPulling ? (
         <>
           <div className="row__progress">
@@ -2698,7 +2707,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             <span className="row__progress-text">{pullPct.toFixed(0)}%</span>
           </div>
           <WorkspaceActionButton appearance="secondary" icon="x" onClick={() => onCancelPull(name)} aria-label={`Cancel download of ${name}`}>
-            Cancel
+            {t('Cancel')}
           </WorkspaceActionButton>
         </>
       ) : isLoaded ? (
@@ -2710,7 +2719,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             disabled={isLoadingThis}
             aria-label={isLoadingThis ? `Working on ${name}…` : `Unload ${name}`}
           >
-            {isLoadingThis ? 'Working…' : 'Unload'}
+            {isLoadingThis ? t('Working…') : t('Unload')}
           </WorkspaceActionButton>
         </>
       ) : (isDownloaded || isRouterCollection) ? (
@@ -2720,9 +2729,9 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
               appearance="quiet"
               icon="sliders-horizontal"
               onClick={() => setActiveTab('settings')}
-              title="Review Router policy and components"
+              title={t('Review Router policy and components')}
             >
-              Router settings
+              {t('Router settings')}
             </WorkspaceActionButton>
             <WorkspaceActionButton
               appearance="primary"
@@ -2731,7 +2740,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
               disabled={isLoadingThis}
               aria-label={isLoadingThis ? `Preparing Router ${name}…` : `Use Router ${name}`}
             >
-              {isLoadingThis ? 'Preparing…' : 'Use Router'}
+              {isLoadingThis ? t('Preparing…') : t('Use Router')}
             </WorkspaceActionButton>
           </>
         ) : (
@@ -2742,16 +2751,16 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
             disabled={isLoadingThis}
             aria-label={isLoadingThis ? `Loading ${name}…` : `Load ${name}`}
           >
-            {isLoadingThis ? 'Loading…' : 'Load'}
+            {isLoadingThis ? t('Loading…') : t('Load')}
           </WorkspaceActionButton>
         )
       ) : (
         <>
           <WorkspaceActionButton appearance="primary" icon="download" onClick={() => loadWithShownConfiguration(onPullAndLoad, model)} aria-label={`Get and load ${name}`}>
-            Get & Load
+            {t('Get & Load')}
           </WorkspaceActionButton>
           <WorkspaceActionButton appearance="secondary" icon="download" onClick={() => onPull(model)} aria-label={`Download ${name}`}>
-            Download
+            {t('Download')}
           </WorkspaceActionButton>
         </>
       )}
@@ -2765,7 +2774,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           aria-label={isPinned ? `Unpin ${name}` : `Pin ${name}`}
           title={isPinned ? 'Unpin model' : 'Pin model'}
         >
-          {isPinned ? 'Pinned' : 'Pin'}
+          {isPinned ? t('Pinned') : t('Pin')}
         </WorkspaceActionButton>
       )}
       {onToggleFavorite && (
@@ -2778,7 +2787,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           aria-label={isFavorite ? `Remove ${name} from favorites` : `Add ${name} to favorites`}
           title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
         >
-          {isFavorite ? 'Favorited' : 'Favorite'}
+          {isFavorite ? t('Favorited') : t('Favorite')}
         </WorkspaceActionButton>
       )}
       {!isPulling && (isCustom || isDownloaded || isLoaded) && (
@@ -2790,7 +2799,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
           aria-label={isCustom ? `Delete custom model definition for ${name}` : `Delete downloaded files for ${name}`}
           title={isCustom ? 'Delete model definition' : 'Delete downloaded files'}
         >
-          Delete
+          {t('Delete')}
         </WorkspaceActionButton>
       )}
     </WorkspaceActionGroup>
@@ -2809,7 +2818,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
   return (
     <WorkspaceDetailPanel
       className="model-detail-panel"
-      ariaLabel={`Model details: ${name}`}
+      ariaLabel={t('Model details: {name}', { name })}
       title={(
         <div className="model-detail-panel__title-line">
           <h2 className="workspace-detail-panel__title model-detail-panel__name" ref={panelHeadingRef} tabIndex={-1} id="detail-panel-heading">
@@ -2822,7 +2831,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       actions={detailActions}
       headerExtras={detailHeaderExtras}
       onBack={onBack}
-      backLabel="Back to models"
+      backLabel={t('Back to models')}
       backClassName="model-detail-panel__back-btn"
       onClose={onClose ? handleDetailClose : undefined}
       closeClassName="model-detail-panel__close-btn"
@@ -2832,7 +2841,7 @@ export const ModelDetailPanel: React.FC<ModelDetailPanelProps> = ({
       <div
         className="detail-tabs__tablist"
         role="tablist"
-        aria-label="Model details sections"
+        aria-label={t('Model details sections')}
         aria-labelledby="detail-panel-heading"
       >
         {detailTabs.map((tab, i) => (

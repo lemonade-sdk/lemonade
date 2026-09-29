@@ -21,6 +21,7 @@ import {
 } from '../features/audio/ttsSettings';
 import { Icon } from './Icon';
 import { WorkspaceActionButton, WorkspaceActionGroup } from './WorkspacePanels';
+import { useI18n } from '../i18n';
 
 export type GlobalSettingsSection = 'chat' | 'memory' | 'updates';
 
@@ -50,6 +51,7 @@ const READ_MODES: Array<{ value: TtsReadMode; title: string; description: string
 ];
 
 const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ section, models, loadedModels, connected }) => {
+  const { t } = useI18n();
   const [draft, setDraft] = useState<GlobalModelSettings>(() => loadGlobalModelSettings());
   const [memoryDraft, setMemoryDraft] = useState<MemoryRuntimeSettings | null>(null);
   const [autoCheckModelUpdates, setAutoCheckModelUpdates] = useState<boolean | null>(null);
@@ -219,27 +221,27 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
       {section === 'chat' && (
         <>
           <section className="global-settings-card">
-            <div className="global-settings-card__head"><div><Icon name="chat" size={18} /><h3>Chat history</h3></div></div>
+            <div className="global-settings-card__head"><div><Icon name="chat" size={18} /><h3>{t('Chat history')}</h3></div></div>
             <label className="global-settings-toggle">
               <input type="checkbox" checked={persistHistory} onChange={event => { setPersistHistory(event.target.checked); setSaved(false); }} />
-              <span><strong>Save chat history in this browser</strong><small>Chat media is never persisted.</small></span>
+              <span><strong>{t('Save chat history in this browser')}</strong><small>{t('Chat media is never persisted.')}</small></span>
             </label>
           </section>
 
           <section className="global-settings-card">
-            <div className="global-settings-card__head"><div><Icon name="brain" size={18} /><h3>Chat behavior</h3></div></div>
+            <div className="global-settings-card__head"><div><Icon name="brain" size={18} /><h3>{t('Chat behavior')}</h3></div></div>
             <label className="global-settings-toggle">
               <input type="checkbox" checked={draft.collapseThinkingByDefault} onChange={event => patchDraft('collapseThinkingByDefault', event.target.checked)} />
-              <span><strong>Collapse thinking by default</strong><small>Reasoning remains available in an expandable section on every assistant message.</small></span>
+              <span><strong>{t('Collapse thinking by default')}</strong><small>{t('Reasoning remains available in an expandable section on every assistant message.')}</small></span>
             </label>
           </section>
 
           <section className="global-settings-card">
-            <div className="global-settings-card__head"><div><Icon name="tts" size={18} /><h3>Chat speech</h3></div></div>
+            <div className="global-settings-card__head"><div><Icon name="tts" size={18} /><h3>{t('Chat speech')}</h3></div></div>
             <label className="global-settings-field">
-              <span>Default TTS model</span>
+              <span>{t('Default TTS model')}</span>
               <select className="select" value={ttsModel || ''} onChange={event => { setTtsModel(event.target.value || null); setSaved(false); }}>
-                <option value="">No default speech model</option>
+                <option value="">{t('No default speech model')}</option>
                 <optgroup label="Kokoro · English">
                   {kokoroModels.length
                     ? kokoroModels.map(model => <option key={modelName(model)} value={modelName(model)}>{modelDisplayName(model)}</option>)
@@ -255,10 +257,10 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
                 </optgroup>}
               </select>
             </label>
-            <div className="global-settings-read-modes" role="radiogroup" aria-label="Global TTS playback mode">
+            <div className="global-settings-read-modes" role="radiogroup" aria-label={t('Global TTS playback mode')}>
               {READ_MODES.map(mode => (
                 <button key={mode.value} type="button" role="radio" aria-checked={ttsReadMode === mode.value} className={ttsReadMode === mode.value ? 'is-active' : ''} onClick={() => { setTtsReadMode(mode.value); setSaved(false); }}>
-                  <strong>{mode.title}</strong><small>{mode.description}</small>
+                  <strong>{t(mode.title)}</strong><small>{t(mode.description)}</small>
                 </button>
               ))}
             </div>
@@ -270,10 +272,10 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
         <>
           <section className="global-settings-card">
             <div className="global-settings-card__head">
-              <div><Icon name="gauge" size={18} /><h3>Memory management</h3></div>
-              <span>{loadedModels.length} loaded</span>
+              <div><Icon name="gauge" size={18} /><h3>{t('Memory management')}</h3></div>
+              <span>{t('{count} loaded', { count: loadedModels.length })}</span>
             </div>
-            <p className="global-settings-card__description">Lemonade owns model residency and memory-pressure eviction.</p>
+            <p className="global-settings-card__description">{t('Lemonade owns model residency and memory-pressure eviction.')}</p>
             <label className="global-settings-toggle">
               <input
                 type="checkbox"
@@ -281,11 +283,11 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
                 disabled={serverControlsDisabled || !memoryDraft}
                 onChange={event => patchMemoryDraft('autoEvict', event.target.checked)}
               />
-              <span><strong>Automatic eviction</strong><small>Let Lemonade manage model residency when VRAM pressure is high.</small></span>
+              <span><strong>{t('Automatic eviction')}</strong><small>{t('Let Lemonade manage model residency when VRAM pressure is high.')}</small></span>
             </label>
             {memoryDraft?.autoEvict && (
               <div className="global-settings-field">
-                <label htmlFor="global-auto-evict-threshold">Eviction threshold</label>
+                <label htmlFor="global-auto-evict-threshold">{t('Eviction threshold')}</label>
                 <div className="detail-configuration__number-control global-settings-number">
                   <input
                     id="global-auto-evict-threshold"
@@ -311,10 +313,10 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
                   />
                   <strong>%</strong>
                   <span className="detail-configuration__context-stepper">
-                    <button type="button" disabled={serverControlsDisabled || memoryDraft.autoEvictThresholdPercent + 5 > 100} onClick={() => stepEvictionThreshold(1)} aria-label="Increase eviction threshold">
+                    <button type="button" disabled={serverControlsDisabled || memoryDraft.autoEvictThresholdPercent + 5 > 100} onClick={() => stepEvictionThreshold(1)} aria-label={t('Increase eviction threshold')}>
                       <Icon name="chevron-up" size={11} aria-hidden="true" />
                     </button>
-                    <button type="button" disabled={serverControlsDisabled || memoryDraft.autoEvictThresholdPercent - 5 <= 0} onClick={() => stepEvictionThreshold(-1)} aria-label="Decrease eviction threshold">
+                    <button type="button" disabled={serverControlsDisabled || memoryDraft.autoEvictThresholdPercent - 5 <= 0} onClick={() => stepEvictionThreshold(-1)} aria-label={t('Decrease eviction threshold')}>
                       <Icon name="chevron-down" size={11} aria-hidden="true" />
                     </button>
                   </span>
@@ -324,9 +326,9 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
           </section>
 
           <section className="global-settings-card">
-            <div className="global-settings-card__head"><div><Icon name="layers" size={18} /><h3>Loading and eviction</h3></div></div>
+            <div className="global-settings-card__head"><div><Icon name="layers" size={18} /><h3>{t('Loading and eviction')}</h3></div></div>
             <div className="global-settings-field">
-              <label htmlFor="global-max-loaded-models">Maximum loaded models per type</label>
+              <label htmlFor="global-max-loaded-models">{t('Maximum loaded models per type')}</label>
               <div className="detail-configuration__number-control">
                 <input
                   id="global-max-loaded-models"
@@ -351,24 +353,24 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
                   }}
                 />
                 <span className="detail-configuration__context-stepper">
-                  <button type="button" disabled={serverControlsDisabled || !memoryDraft} onClick={() => stepMaxLoadedModels(1)} aria-label="Increase maximum loaded models per type">
+                  <button type="button" disabled={serverControlsDisabled || !memoryDraft} onClick={() => stepMaxLoadedModels(1)} aria-label={t('Increase maximum loaded models per type')}>
                     <Icon name="chevron-up" size={11} aria-hidden="true" />
                   </button>
-                  <button type="button" disabled={serverControlsDisabled || !memoryDraft || memoryDraft.maxLoadedModels <= -1} onClick={() => stepMaxLoadedModels(-1)} aria-label="Decrease maximum loaded models per type">
+                  <button type="button" disabled={serverControlsDisabled || !memoryDraft || memoryDraft.maxLoadedModels <= -1} onClick={() => stepMaxLoadedModels(-1)} aria-label={t('Decrease maximum loaded models per type')}>
                     <Icon name="chevron-down" size={11} aria-hidden="true" />
                   </button>
                 </span>
               </div>
-              <small>Use -1 for unlimited. Lemonade applies this limit independently per model type.</small>
+              <small>{t('Use -1 for unlimited. Lemonade applies this limit independently per model type.')}</small>
             </div>
-            <p className="global-settings-card__description">Eviction order is managed by Lemonade. Pinned models are protected from automatic eviction.</p>
+            <p className="global-settings-card__description">{t('Eviction order is managed by Lemonade. Pinned models are protected from automatic eviction.')}</p>
           </section>
         </>
       )}
 
       {section === 'updates' && (
         <section className="global-settings-card">
-          <div className="global-settings-card__head"><div><Icon name="rotate-ccw" size={18} /><h3>Model updates</h3></div></div>
+          <div className="global-settings-card__head"><div><Icon name="rotate-ccw" size={18} /><h3>{t('Model updates')}</h3></div></div>
           <label className="global-settings-toggle">
             <input
               type="checkbox"
@@ -376,22 +378,22 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
               disabled={serverControlsDisabled || autoCheckModelUpdates === null}
               onChange={event => { setAutoCheckModelUpdates(event.target.checked); setSaved(false); }}
             />
-            <span><strong>Check for model updates on server startup</strong><small>Lemonade checks downloaded models for available updates when the server starts.</small></span>
+            <span><strong>{t('Check for model updates on server startup')}</strong><small>{t('Lemonade checks downloaded models for available updates when the server starts.')}</small></span>
           </label>
         </section>
       )}
 
-      {section !== 'chat' && serverLoading && <div className="connect__notice">Loading server settings...</div>}
+      {section !== 'chat' && serverLoading && <div className="connect__notice">{t('Loading server settings...')}</div>}
       {section !== 'chat' && serverError && <div className="connect__error" role="alert">{serverError}</div>}
 
-      <WorkspaceActionGroup label={`${section} settings actions`}>
+      <WorkspaceActionGroup label={t('{section} settings actions', { section: t(section) })}>
         <WorkspaceActionButton
           appearance="primary"
           icon="check"
           onClick={() => { void handleSave(); }}
           disabled={section !== 'chat' && (serverControlsDisabled || serverDraftUnavailable)}
         >
-          {serverSaving ? 'Saving...' : saved ? 'Saved' : 'Save settings'}
+          {serverSaving ? t('Saving...') : saved ? t('Saved') : t('Save settings')}
         </WorkspaceActionButton>
         <WorkspaceActionButton
           appearance="quiet"
@@ -399,7 +401,7 @@ const GlobalModelSettingsPanel: React.FC<GlobalModelSettingsPanelProps> = ({ sec
           onClick={() => { void handleReset(); }}
           disabled={section !== 'chat' && (serverControlsDisabled || serverDraftUnavailable)}
         >
-          {section === 'chat' ? 'Reset defaults' : 'Discard changes'}
+          {section === 'chat' ? t('Reset defaults') : t('Discard changes')}
         </WorkspaceActionButton>
       </WorkspaceActionGroup>
     </div>

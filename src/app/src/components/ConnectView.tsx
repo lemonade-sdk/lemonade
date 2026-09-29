@@ -13,6 +13,7 @@ import {
   WorkspaceResourceList,
   WorkspaceResourceRow,
 } from './WorkspacePanels';
+import { useI18n } from '../i18n';
 
 interface ConnectViewProps {
   status: ConnectionStatus;
@@ -41,6 +42,7 @@ const CLOUD_QUICK_FILL = [
 const emptyDirectorySettings: DirectorySettings = { modelsDir: '', extraModelsDir: '', canPersist: false };
 
 const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSection, onSectionChange, onLocalDataReset, models, loadedModels }) => {
+  const { locale, setLocale, t } = useI18n();
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [host, setHost] = useState(api.baseUrl);
   const [apiKey, setApiKey] = useState(api.apiKey);
@@ -79,7 +81,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       setCloudLoadedOnce(true);
       setCloudError(null);
     } catch (err) {
-      setCloudError(`Cloud providers unavailable: ${friendlyErrorMessage(err)}`);
+      setCloudError(`${t('Cloud providers unavailable')}: ${friendlyErrorMessage(err)}`);
     } finally {
       setCloudLoading(false);
     }
@@ -153,9 +155,9 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       setRememberApiKey(api.canPersistApiKey && saveResult.apiKeyPersisted);
 
       if (apiKey && saveResult.apiKeyPersisted) {
-        setNotice(`Connected to ${normalized}. API key saved in Lemonade app settings.`);
+        setNotice(`${t('Connected to {url}. API key saved in Lemonade app settings.', { url: normalized })}`);
       } else {
-        setNotice(`Connected to ${normalized}.`);
+        setNotice(t('Connected to {url}.', { url: normalized }));
       }
       await loadCloudProviders();
     } catch (err) {
@@ -166,14 +168,14 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   };
 
   const handleClearLocalData = async () => {
-    const ok = window.confirm('Clear Lemonade browser data and connection settings on this device?');
+    const ok = window.confirm(t('Clear Lemonade browser data and connection settings on this device?'));
     if (!ok) return;
 
     clearClientStorage();
 
     for (const store of [localStorage, sessionStorage]) {
       Object.keys(store)
-        .filter(k => k === 'lemonade_base_url' || k === 'lemonade_api_key' || k === 'lemonade_current_view' || k === 'lemonade_theme')
+        .filter(k => k === 'lemonade_base_url' || k === 'lemonade_api_key' || k === 'lemonade_current_view' || k === 'lemonade_theme' || k === 'lemonade_locale')
         .forEach(k => store.removeItem(k));
     }
 
@@ -181,7 +183,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     try {
       await api.clearConnectionSettings();
     } catch (err) {
-      clearSettingsError = `Local browser data was cleared, but Lemonade app settings could not be cleared: ${friendlyErrorMessage(err)}`;
+      clearSettingsError = `${t('Local browser data was cleared, but Lemonade app settings could not be cleared')}: ${friendlyErrorMessage(err)}`;
     }
 
     api.setSessionApiKey('');
@@ -190,7 +192,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setCanPersistApiKey(api.canPersistApiKey);
     setRememberApiKey(false);
     onLocalDataReset();
-    setNotice('Local Lemonade data and global connection settings were cleared.');
+    setNotice(t('Local Lemonade data and global connection settings were cleared.'));
     setError(clearSettingsError);
   };
 
@@ -200,7 +202,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
 
   const handleInstallCloudProvider = async () => {
     if (!providerName.trim() || !providerBaseUrl.trim()) {
-      setCloudError('Provider name and base URL are required.');
+      setCloudError(t('Provider name and base URL are required.'));
       return;
     }
     setCloudBusy(true);
@@ -208,7 +210,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setCloudNotice(null);
     try {
       const result = await api.installCloudProvider(providerName, providerBaseUrl, providerApiKey);
-      setCloudNotice(`Installed ${providerName.trim()} (${Number(result.models_discovered || 0)} models discovered).`);
+      setCloudNotice(t('Installed {provider} ({count} models discovered).', {
+        provider: providerName.trim(),
+        count: Number(result.models_discovered || 0),
+      }));
       setProviderName('');
       setProviderBaseUrl('');
       setProviderApiKey('');
@@ -227,7 +232,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setCloudNotice(null);
     try {
       const result = await api.setCloudProviderAuth(provider, editingApiKey);
-      setCloudNotice(`API key saved for ${provider} (${Number(result.models_discovered || 0)} models discovered).`);
+      setCloudNotice(t('API key saved for {provider} ({count} models discovered).', {
+        provider,
+        count: Number(result.models_discovered || 0),
+      }));
       setEditingProvider(null);
       setEditingApiKey('');
       await loadCloudProviders();
@@ -243,7 +251,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
     setCloudError(null);
     try {
       await api.clearCloudProviderAuth(provider);
-      setCloudNotice(`API key cleared for ${provider}.`);
+      setCloudNotice(t('API key cleared for {provider}.', { provider }));
       await loadCloudProviders();
     } catch (err) {
       setCloudError(friendlyErrorMessage(err));
@@ -253,12 +261,12 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
   };
 
   const handleRemoveProvider = async (provider: string) => {
-    if (!window.confirm(`Remove cloud provider ${provider}?`)) return;
+    if (!window.confirm(t('Remove cloud provider {provider}?', { provider }))) return;
     setCloudBusy(true);
     setCloudError(null);
     try {
       await api.uninstallCloudProvider(provider);
-      setCloudNotice(`Removed ${provider}.`);
+      setCloudNotice(t('Removed {provider}.', { provider }));
       await loadCloudProviders();
     } catch (err) {
       setCloudError(friendlyErrorMessage(err));
@@ -281,8 +289,8 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
       const saved = await api.saveDirectorySettings(directories.modelsDir, directories.extraModelsDir);
       setDirectories(saved);
       setDirectoryNotice(saved.canPersist
-        ? 'Directory settings saved.'
-        : 'This runtime cannot persist directory settings; use the desktop app host bridge or start lemond with --extra-models-dir.');
+        ? t('Directory settings saved.')
+        : t('This runtime cannot persist directory settings; use the desktop app host bridge or start lemond with --extra-models-dir.'));
     } catch (err) {
       setDirectoryError(friendlyErrorMessage(err));
     } finally {
@@ -312,13 +320,13 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         collapsed={railCollapsed}
         onCollapsedChange={setRailCollapsed}
         panelId="connect-settings-panel"
-        railLabel="Connection settings"
-        navigationLabel="Connect sections"
+        railLabel={t('Connection settings')}
+        navigationLabel={t('Connect sections')}
         railClassName="connect__rail"
-        headerTitle="Settings"
-        sidebarLabel="connection settings"
+        headerTitle={t('Settings')}
+        sidebarLabel={t('connection settings')}
         headerIcon="settings"
-        mobileMenuLabel="Open connection settings"
+        mobileMenuLabel={t('Open connection settings')}
         footer={<div className="workspace-rail__footer">
           <div className="workspace-status" data-status={status} aria-live="polite">
             <span className={`connect__status-dot ${
@@ -326,7 +334,7 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
               status === 'connecting' ? 'connect__status-dot--connecting' : ''
             }`} />
             <span>
-              <strong>{status === 'connected' ? 'Server online' : status === 'connecting' ? 'Connecting' : 'Server offline'}</strong>
+              <strong>{status === 'connected' ? t('Server online') : status === 'connecting' ? t('Connecting') : t('Server offline')}</strong>
               <small>{status === 'connected' ? api.baseUrl : host || api.baseUrl}</small>
             </span>
           </div>
@@ -335,8 +343,8 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
 
       <section className="workspace-pane connect__main" aria-labelledby="connect-pane-title">
         <WorkspacePaneHeader
-          title={section.label}
-          subtitle={section.description}
+          title={t(section.label)}
+          subtitle={t(section.description)}
           titleId="connect-pane-title"
         />
 
@@ -345,7 +353,19 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         <section className="connect__section connect__section--server">
           <form className="connect__form" onSubmit={e => { e.preventDefault(); handleConnect(); }}>
             <div className="form-field">
-              <label className="form-field__label" htmlFor="host-input">Server URL</label>
+              <label className="form-field__label" htmlFor="language-select">{t('Language')}</label>
+              <select
+                className="input"
+                id="language-select"
+                value={locale}
+                onChange={event => setLocale(event.target.value as 'en-US' | 'zh-CN')}
+              >
+                <option value="en-US">{t('English')}</option>
+                <option value="zh-CN">{t('Chinese (Simplified)')}</option>
+              </select>
+            </div>
+            <div className="form-field">
+              <label className="form-field__label" htmlFor="host-input">{t('Server URL')}</label>
               <input
                 className="input"
                 id="host-input"
@@ -356,11 +376,11 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
                 placeholder="http://localhost:13305"
                 aria-invalid={Boolean(error)}
               />
-              <span className="form-field__hint">Use a full http:// or https:// URL. Connection errors show the exact endpoint.</span>
+              <span className="form-field__hint">{t('Use a full http:// or https:// URL. Connection errors show the exact endpoint.')}</span>
             </div>
 
             <div className="form-field">
-              <label className="form-field__label" htmlFor="key-input">API Key (optional)</label>
+              <label className="form-field__label" htmlFor="key-input">{t('API Key (optional)')}</label>
               <input
                 className="input"
                 id="key-input"
@@ -377,20 +397,20 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
                     checked={rememberApiKey}
                     onChange={e => setRememberApiKey(e.target.checked)}
                   />
-                  <span>Remember API key</span>
+                  <span>{t('Remember API key')}</span>
                 </label>
               )}
             </div>
 
-            {error && <div className="connect__error">Warning: {error}</div>}
+            {error && <div className="connect__error">{t('Warning')}: {error}</div>}
             {notice && <div className="connect__notice">{notice}</div>}
 
-            <WorkspaceActionGroup className="connect__actions" label="Server connection actions">
+            <WorkspaceActionGroup className="connect__actions" label={t('Server connection actions')}>
               <WorkspaceActionButton type="submit" appearance="primary" icon="plug" disabled={connecting || !host.trim()}>
-                {connecting ? 'Connecting...' : 'Connect'}
+                {connecting ? t('Connecting...') : t('Connect')}
               </WorkspaceActionButton>
               <WorkspaceActionButton appearance="quiet" onClick={() => { void handleClearLocalData(); }}>
-                Clear permitted local data
+                {t('Clear permitted local data')}
               </WorkspaceActionButton>
             </WorkspaceActionGroup>
           </form>
@@ -411,13 +431,13 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
 
         {activeSection === 'help-and-support' && (
         <section className="connect__section connect__section--help">
-          <p className="connect__hint">Quick access to project support, documentation, and community channels.</p>
-          <WorkspaceResourceList label="Help links">
+          <p className="connect__hint">{t('Quick access to project support, documentation, and community channels.')}</p>
+          <WorkspaceResourceList label={t('Help links')}>
             {HELP_LINKS.map(link => (
               <WorkspaceResourceRow
                 key={link.href}
-                title={link.label}
-                description={link.description}
+                title={t(link.label)}
+                description={t(link.description)}
                 leading={<Icon name={link.icon} size={18} />}
                 onClick={() => openExternal(link.href)}
               />
@@ -428,18 +448,18 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
 
         {activeSection === 'model-storage' && (
         <section className="connect__section connect__section--directories">
-          <p className="connect__hint">Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.</p>
+          <p className="connect__hint">{t('Keep the normal Lemonade model cache separate from an external GGUF directory scanned as extra custom models.')}</p>
           <div className="connect__directory-grid">
-            <label className="form-field"><span className="form-field__label">Models directory</span>
+            <label className="form-field"><span className="form-field__label">{t('Models directory')}</span>
               <input className="input" value={directories.modelsDir} onChange={e => handleDirectoryChange('modelsDir', e.target.value)} placeholder="Default Lemonade model cache" />
             </label>
-            <label className="form-field"><span className="form-field__label">External custom models directory</span>
+            <label className="form-field"><span className="form-field__label">{t('External custom models directory')}</span>
               <input className="input" value={directories.extraModelsDir} onChange={e => handleDirectoryChange('extraModelsDir', e.target.value)} placeholder="/path/to/llama.cpp/models" />
             </label>
           </div>
-          <WorkspaceActionGroup className="connect__actions" label="Directory actions">
+          <WorkspaceActionGroup className="connect__actions" label={t('Directory actions')}>
             <WorkspaceActionButton appearance="primary" icon="check" onClick={() => { void handleSaveDirectories(); }} disabled={savingDirectories}>
-              {savingDirectories ? 'Saving...' : 'Save directories'}
+              {savingDirectories ? t('Saving...') : t('Save directories')}
             </WorkspaceActionButton>
           </WorkspaceActionGroup>
           {directoryNotice && <div className="connect__notice">{directoryNotice}</div>}
@@ -451,10 +471,10 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
         {activeSection === 'cloud-providers' && (
         <section className="connect__section connect__section--cloud">
           <div className="connect__section-head">
-            <WorkspaceActionButton appearance="quiet" size="small" icon="rotate-ccw" onClick={() => { void loadCloudProviders(); }} disabled={status !== 'connected' || cloudBusy || cloudLoading}>{cloudLoading ? 'Refreshing...' : 'Refresh'}</WorkspaceActionButton>
+            <WorkspaceActionButton appearance="quiet" size="small" icon="rotate-ccw" onClick={() => { void loadCloudProviders(); }} disabled={status !== 'connected' || cloudBusy || cloudLoading}>{cloudLoading ? t('Refreshing...') : t('Refresh')}</WorkspaceActionButton>
           </div>
-          <p className="connect__hint">Register OpenAI-compatible providers on the connected Lemonade server. Runtime keys can be replaced or cleared without editing files.</p>
-          <WorkspaceActionGroup className="connect__quick-fill" label="Provider templates">
+          <p className="connect__hint">{t('Register OpenAI-compatible providers on the connected Lemonade server. Runtime keys can be replaced or cleared without editing files.')}</p>
+          <WorkspaceActionGroup className="connect__quick-fill" label={t('Provider templates')}>
             {CLOUD_QUICK_FILL.map(item => (
               <WorkspaceActionButton key={item.provider} appearance="secondary" size="small" disabled={cloudBusy} onClick={() => { setProviderName(item.provider); setProviderBaseUrl(item.baseUrl); }}>
                 {item.label}
@@ -462,20 +482,20 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
             ))}
           </WorkspaceActionGroup>
           <div className="connect__provider-form">
-            <label className="sr-only" htmlFor="cloud-provider-name">Provider name</label>
-            <input className="input" id="cloud-provider-name" value={providerName} onChange={e => setProviderName(e.target.value)} placeholder="provider name, e.g. fireworks" />
-            <label className="sr-only" htmlFor="cloud-provider-url">Base URL</label>
+            <label className="sr-only" htmlFor="cloud-provider-name">{t('Provider name')}</label>
+            <input className="input" id="cloud-provider-name" value={providerName} onChange={e => setProviderName(e.target.value)} placeholder={t('provider name, e.g. fireworks')} />
+            <label className="sr-only" htmlFor="cloud-provider-url">{t('Base URL')}</label>
             <input className="input" id="cloud-provider-url" value={providerBaseUrl} onChange={e => setProviderBaseUrl(e.target.value)} placeholder="https://api.example.com/v1" aria-describedby="cloud-provider-url-hint" />
-            <label className="sr-only" htmlFor="cloud-provider-key">Provider API key (optional)</label>
-            <input className="input" id="cloud-provider-key" value={providerApiKey} onChange={e => setProviderApiKey(e.target.value)} type="password" placeholder="API key (optional)" />
-            <WorkspaceActionButton className="connect__add-provider" appearance="primary" icon="plus" onClick={() => { void handleInstallCloudProvider(); }} disabled={status !== 'connected' || cloudBusy}>Add provider</WorkspaceActionButton>
+            <label className="sr-only" htmlFor="cloud-provider-key">{t('Provider API key (optional)')}</label>
+            <input className="input" id="cloud-provider-key" value={providerApiKey} onChange={e => setProviderApiKey(e.target.value)} type="password" placeholder={t('API key (optional)')} />
+            <WorkspaceActionButton className="connect__add-provider" appearance="primary" icon="plus" onClick={() => { void handleInstallCloudProvider(); }} disabled={status !== 'connected' || cloudBusy}>{t('Add provider')}</WorkspaceActionButton>
           </div>
-          <span id="cloud-provider-url-hint" className="sr-only">Full https:// base URL of the OpenAI-compatible provider endpoint.</span>
+          <span id="cloud-provider-url-hint" className="sr-only">{t('Full https:// base URL of the OpenAI-compatible provider endpoint.')}</span>
           {cloudError && <div className="connect__error">{cloudError}</div>}
           {cloudNotice && <div className="connect__notice">{cloudNotice}</div>}
-          <WorkspaceResourceList className="connect__provider-list" label="Cloud providers">
+          <WorkspaceResourceList className="connect__provider-list" label={t('Cloud providers')}>
             {providers.length === 0 ? (
-              <div className="connect__empty">{status === 'connected' ? (cloudLoading && !cloudLoadedOnce ? 'Loading cloud providers...' : 'No cloud providers configured yet.') : 'Connect to a server to manage cloud providers.'}</div>
+              <div className="connect__empty">{status === 'connected' ? (cloudLoading && !cloudLoadedOnce ? t('Loading cloud providers...') : t('No cloud providers configured yet.')) : t('Connect to a server to manage cloud providers.')}</div>
             ) : providers.map(provider => {
               const authed = provider.env_var_set || provider.runtime_key_set;
               return (
@@ -487,15 +507,15 @@ const ConnectView: React.FC<ConnectViewProps> = ({ status, isActive, activeSecti
                   actions={<WorkspaceActionGroup className="connect__provider-actions" label={`Actions for ${provider.name}`}>
                     {editingProvider === provider.name ? (
                       <>
-                        <input className="input" type="password" value={editingApiKey} onChange={e => setEditingApiKey(e.target.value)} placeholder="New API key" aria-label={`New API key for ${editingProvider ?? 'provider'}`} />
-                        <WorkspaceActionButton appearance="primary" size="small" disabled={cloudBusy || !editingApiKey.trim()} onClick={() => { void handleSaveProviderKey(provider.name); }}>Save key</WorkspaceActionButton>
-                        <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { setEditingProvider(null); setEditingApiKey(''); }}>Cancel</WorkspaceActionButton>
+                        <input className="input" type="password" value={editingApiKey} onChange={e => setEditingApiKey(e.target.value)} placeholder={t('New API key')} aria-label={t('New API key for {provider}', { provider: editingProvider ?? t('provider') })} />
+                        <WorkspaceActionButton appearance="primary" size="small" disabled={cloudBusy || !editingApiKey.trim()} onClick={() => { void handleSaveProviderKey(provider.name); }}>{t('Save key')}</WorkspaceActionButton>
+                        <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { setEditingProvider(null); setEditingApiKey(''); }}>{t('Cancel')}</WorkspaceActionButton>
                       </>
                     ) : (
                       <>
-                        {!provider.env_var_set && <WorkspaceActionButton appearance="secondary" size="small" onClick={() => setEditingProvider(provider.name)}>Set key</WorkspaceActionButton>}
-                        {provider.runtime_key_set && !provider.env_var_set && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { void handleClearProviderKey(provider.name); }}>Clear key</WorkspaceActionButton>}
-                        <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => { void handleRemoveProvider(provider.name); }}>Remove</WorkspaceActionButton>
+                        {!provider.env_var_set && <WorkspaceActionButton appearance="secondary" size="small" onClick={() => setEditingProvider(provider.name)}>{t('Set key')}</WorkspaceActionButton>}
+                        {provider.runtime_key_set && !provider.env_var_set && <WorkspaceActionButton appearance="quiet" size="small" onClick={() => { void handleClearProviderKey(provider.name); }}>{t('Clear key')}</WorkspaceActionButton>}
+                        <WorkspaceActionButton appearance="danger" size="small" icon="trash" onClick={() => { void handleRemoveProvider(provider.name); }}>{t('Remove')}</WorkspaceActionButton>
                       </>
                     )}
                   </WorkspaceActionGroup>}

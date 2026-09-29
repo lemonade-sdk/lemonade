@@ -6,6 +6,7 @@ import { useDashboardData } from '../hooks/useDashboardData';
 import { dashboardMemoryTopology } from '../features/dashboard/memoryTopology';
 import { evictionRuntimeSettingsFromConfig } from '../features/modelSettings/globalModelSettings';
 import { WorkspaceActionButton, WorkspaceList, WorkspaceListRow, WorkspacePaneHeader } from './WorkspacePanels';
+import { useI18n } from '../i18n';
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -59,6 +60,21 @@ function typeIcon(type: string): string {
     case '3d':
     case 'model3d': return '3D';
     default: return 'Model';
+  }
+}
+
+function typeLabel(type: string, t: (key: string, values?: Record<string, string | number>) => string): string {
+  switch (type) {
+    case 'llm': return t('LLM');
+    case 'embedding': return t('Embedding');
+    case 'reranking': return t('Reranking');
+    case 'transcription': return t('Transcription');
+    case 'image': return t('Image');
+    case 'audio-generation': return t('Audio generation');
+    case 'tts': return t('TTS');
+    case '3d':
+    case 'model3d': return t('3D');
+    default: return t('Model');
   }
 }
 
@@ -219,6 +235,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
+  const { t } = useI18n();
   const {
     health, stats, sysStats, systemInfo, slots, slotLive,
     lastError, slotsUnsupported, slotStatus, paused, setPaused,
@@ -279,12 +296,12 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         <WorkspacePaneHeader
           className="dashboard-header"
           headingLevel={1}
-          title="Performance"
-          subtitle="Throughput, capacity and resource utilization for this server session."
+          title={t('Performance')}
+          subtitle={t('Throughput, capacity and resource utilization for this server session.')}
           actions={<div className="dashboard-header__actions">
             <div className="dashboard-header__server" data-connected={!!health}>
               <span className="dash2-bar__dot" data-connected={!!health} />
-              <span><strong>{health ? `Lemonade ${health.version}` : 'Disconnected'}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
+              <span><strong>{health ? `Lemonade ${health.version}` : t('Disconnected')}</strong>{health && <small>{elapsed(counters.sessionStart)}</small>}</span>
             </div>
             <WorkspaceActionButton
               size="small"
@@ -292,20 +309,20 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               icon={paused ? 'play' : 'pause'}
               className={`dash2-bar__btn${paused ? ' is-paused' : ''}`}
               onClick={() => setPaused(p => !p)}
-              title={paused ? 'Resume monitor updates' : 'Pause monitor updates'}
-              aria-label={paused ? 'Resume monitor updates' : 'Pause monitor updates'}
+              title={paused ? t('Resume monitor updates') : t('Pause monitor updates')}
+              aria-label={paused ? t('Resume monitor updates') : t('Pause monitor updates')}
               data-dashboard-poll-toggle>
-              {paused ? 'Resume' : 'Pause'}
+              {paused ? t('Resume') : t('Pause')}
             </WorkspaceActionButton>
           </div>}
         />
 
-      {lastError && <div className="dash2-err">Warning: {lastError}</div>}
+      {lastError && <div className="dash2-err">{t('Warning')}: {lastError}</div>}
 
       <div className="dash2-scroll">
         {/* ═══ HERO — Aggregate Throughput ═══ */}
         <div className="dash2-card">
-          <h2 className="dash2-card__h">Aggregate Throughput</h2>
+          <h2 className="dash2-card__h">{t('Aggregate Throughput')}</h2>
 
           {/* Inline metrics — guaranteed visible with explicit colors */}
           <div className="dash2-hero-metrics">
@@ -316,7 +333,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               <span className="dash2-hero-metric__unit">tok/s</span>
               {counters.peakTps > 0 && (
                 <span className="dash2-hero-metric__peak">
-                  peak {counters.peakTps.toFixed(1)}
+                  {t('peak')} {counters.peakTps.toFixed(1)}
                 </span>
               )}
             </div>
@@ -331,19 +348,19 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                 {activeSlotCount}
               </span>
               <span className="dash2-hero-metric__unit">
-                {activeSlotCount === 1 ? 'stream' : 'streams'}
+                {t(activeSlotCount === 1 ? 'stream' : 'streams')}
               </span>
             </div>
             <div className="dash2-hero-metric__totals">
-              <span>{fmtNum(counters.totalTokensGenerated)} total tokens</span>
+              <span>{t('{count} total tokens', { count: fmtNum(counters.totalTokensGenerated) })}</span>
             </div>
           </div>
 
           <SmoothChart
             data={aggChartData}
             series={[
-              { key: 'genTps', color: 'var(--chart-series-1)', name: 'Generation TPS' },
-              { key: 'ppTps', color: 'var(--chart-series-2)', name: 'Prompt Processing' },
+              { key: 'genTps', color: 'var(--chart-series-1)', name: t('Generation TPS') },
+              { key: 'ppTps', color: 'var(--chart-series-2)', name: t('Prompt Processing') },
             ]}
             height={120}
             unit=" tok/s"
@@ -351,11 +368,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           <div className="dash2-chart-legend">
             <span className="dash2-chart-legend__item">
               <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--tps" />
-              Generation TPS
+              {t('Generation TPS')}
             </span>
             <span className="dash2-chart-legend__item">
               <span className="dash2-chart-legend__swatch dash2-chart-legend__swatch--pp" />
-              Prompt Processing
+              {t('Prompt Processing')}
             </span>
           </div>
         </div>
@@ -364,15 +381,15 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         {slots.length > 0 ? (
           <div className="dash2-card">
             <h2 className="dash2-card__h">
-              Parallel Slots
-              <span className="dash2-card__badge">{activeSlotCount} / {slots.length} active</span>
+              {t('Parallel Slots')}
+              <span className="dash2-card__badge">{t('{active} / {total} active', { active: activeSlotCount, total: slots.length })}</span>
             </h2>
             <SmoothChart
               data={slotChartData}
               series={slots.map((s, i) => ({
                 key: `slot${s.id}`,
                 color: SLOT_COLORS[i % SLOT_COLORS.length],
-                name: `Slot ${s.id}`,
+                name: t('Slot {id}', { id: s.id }),
               }))}
               height={160}
               unit=" tok/s"
@@ -391,9 +408,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                 return (
                   <div key={s.id} className={`dash2-slot-legend__item${isActive ? '' : ' dash2-slot-legend__item--idle'}`}>
                     <span className="dash2-slot-legend__dot" style={{ background: color, boxShadow: isActive ? `0 0 6px ${color}` : 'none' }} />
-                    <span className="dash2-slot-legend__label">Slot {s.id}</span>
+                    <span className="dash2-slot-legend__label">{t('Slot {id}', { id: s.id })}</span>
                     <span className={`dash2-slot-legend__tps ${isActive ? 'dash2-slot-legend__tps--active' : 'dash2-slot-legend__tps--idle'}`}>
-                      {tps > 0.05 ? `${tps.toFixed(1)} tok/s` : 'idle'}
+                      {tps > 0.05 ? `${tps.toFixed(1)} tok/s` : t('idle')}
                     </span>
                     <span className="dash2-slot-legend__kv">
                       KV {pct(cu)}
@@ -405,9 +422,9 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
           </div>
         ) : (
           <div className="dash2-card dash2-card--notice">
-            <h2 className="dash2-card__h">Parallel Slots</h2>
+            <h2 className="dash2-card__h">{t('Parallel Slots')}</h2>
             <p className="dash2-card__text">
-              {slotsUnsupported ? 'No compatible slot data for the loaded backend.' : 'No slot data yet.'} {slotStatus}
+              {slotsUnsupported ? t('No compatible slot data for the loaded backend.') : t('No slot data yet.')} {t(slotStatus)}
             </p>
           </div>
         )}
@@ -415,7 +432,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         {/* ═══ Two-column: System Vitals | Last Inference ═══ */}
         <div className="dash2-grid-2col">
           <div className="dash2-card">
-            <h2 className="dash2-card__h">System Vitals</h2>
+            <h2 className="dash2-card__h">{t('System Vitals')}</h2>
             <div className="dash2-gauges">
               <RingGauge label="CPU" value={sysStats?.cpu_percent ?? null}
                 subtitle={pct(sysStats?.cpu_percent ?? null)} />
@@ -428,7 +445,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
                   color="var(--info)"
                   thresholdPercent={memoryTopology.hostTotalGb != null ? evictionThresholdPercent : null}
                   subtitle={[
-                    ramUsedGb == null ? 'Shared memory pool' : `${ramUsedGb.toFixed(1)} GB used · shared pool`,
+                    ramUsedGb == null ? t('Shared memory pool') : t('{value} GB used · shared pool', { value: ramUsedGb.toFixed(1) }),
                     memoryTopology.hostTotalGb == null ? evictionThresholdText : null,
                   ].filter(Boolean).join(' · ')}
                 />
@@ -448,7 +465,7 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
               )}
               {hasNpu && <RingGauge label="NPU" value={sysStats!.npu_percent!}
                 color="var(--chart-series-4)" subtitle={pct(sysStats!.npu_percent)} />}
-              <RingGauge label="KV Cache" value={overallCacheUtil}
+              <RingGauge label={t('KV Cache')} value={overallCacheUtil}
                 color="var(--warn)" subtitle={overallCacheUtil != null ? `${overallCacheUtil.toFixed(0)}%` : '—'} />
             </div>
             <SmoothChart
@@ -464,23 +481,23 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
 
           {stats ? (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Last Inference</h2>
+              <h2 className="dash2-card__h">{t('Last Inference')}</h2>
               <div className="dash2-inf-grid">
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.tokens_per_second > 0 ? stats.tokens_per_second.toFixed(1) : '—'}</span>
-                  <span className="dash2-inf__l">Decode tok/s</span>
+                  <span className="dash2-inf__l">{t('Decode tok/s')}</span>
                 </div>
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.time_to_first_token > 0 ? `${(stats.time_to_first_token * 1000).toFixed(0)}` : '—'}</span>
-                  <span className="dash2-inf__l">TTFT (ms)</span>
+                  <span className="dash2-inf__l">{t('TTFT (ms)')}</span>
                 </div>
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.prompt_tokens || stats.input_tokens}</span>
-                  <span className="dash2-inf__l">Prompt Tokens</span>
+                  <span className="dash2-inf__l">{t('Prompt Tokens')}</span>
                 </div>
                 <div className="dash2-inf">
                   <span className="dash2-inf__v">{stats.output_tokens}</span>
-                  <span className="dash2-inf__l">Completion Tokens</span>
+                  <span className="dash2-inf__l">{t('Completion Tokens')}</span>
                 </div>
               </div>
               <div className="dash2-mt-auto">
@@ -494,8 +511,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             </div>
           ) : (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Last Inference</h2>
-              <div className="dash2-empty">No inference data yet. Send a request to see stats.</div>
+              <h2 className="dash2-card__h">{t('Last Inference')}</h2>
+              <div className="dash2-empty">{t('No inference data yet. Send a request to see stats.')}</div>
             </div>
           )}
         </div>
@@ -504,11 +521,11 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         <div className="dash2-grid-2col">
           <div className="dash2-card">
             <h2 className="dash2-card__h">
-              Loaded Models
+              {t('Loaded Models')}
               {loadedModels.length > 0 && <span className="dash2-card__badge">{loadedModels.length}</span>}
             </h2>
             {loadedModels.length === 0 ? (
-              <div className="dash2-empty">No models loaded</div>
+              <div className="dash2-empty">{t('No models loaded')}</div>
             ) : (
               <WorkspaceList className="dash2-models" label="Loaded models" selectable={false}>
                 {loadedModels.map(m => (
@@ -525,14 +542,14 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
 
           {health?.max_models ? (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Model Capacity</h2>
+              <h2 className="dash2-card__h">{t('Model Capacity')}</h2>
               <div className="dash2-caps">
                 {Object.entries(health.max_models).map(([type, max]) => {
                   const loaded = modelsByType[type]?.length || 0;
                   const pctUsed = max > 0 ? (loaded / max) * 100 : 0;
                   return (
                     <div className="dash2-cap" key={type}>
-                      <span className="dash2-cap__type">{typeIcon(type)} {type}</span>
+                      <span className="dash2-cap__type">{typeIcon(type)} {typeLabel(type, t)}</span>
                       <div className="dash2-cap__track">
                         <div className="dash2-cap__fill" style={{
                           width: `${Math.min(100, pctUsed)}%`,
@@ -547,8 +564,8 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
             </div>
           ) : (
             <div className="dash2-card">
-              <h2 className="dash2-card__h">Model Capacity</h2>
-              <div className="dash2-empty">Connect to a server to see capacity</div>
+              <h2 className="dash2-card__h">{t('Model Capacity')}</h2>
+              <div className="dash2-empty">{t('Connect to a server to see capacity')}</div>
             </div>
           )}
         </div>
@@ -556,23 +573,23 @@ const Dashboard: React.FC<DashboardProps> = ({ isActive }) => {
         {/* ═══ Session Summary (hidden until inference happens) ═══ */}
         {(counters.totalTokensGenerated > 0 || counters.totalPromptTokens > 0 || counters.peakTps > 0) && (
         <div className="dash2-card dash2-card--summary">
-          <h3 className="dash2-card__h">Session Summary</h3>
+          <h3 className="dash2-card__h">{t('Session Summary')}</h3>
           <div className="dash2-summary">
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{fmtNum(counters.totalTokensGenerated)}</span>
-              <span className="dash2-summary__lbl">Tokens generated</span>
+              <span className="dash2-summary__lbl">{t('Tokens generated')}</span>
             </span>
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{fmtNum(counters.totalPromptTokens)}</span>
-              <span className="dash2-summary__lbl">Tokens processed</span>
+              <span className="dash2-summary__lbl">{t('Tokens processed')}</span>
             </span>
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{counters.peakTps > 0 ? counters.peakTps.toFixed(1) : '—'}</span>
-              <span className="dash2-summary__lbl">Peak TPS</span>
+              <span className="dash2-summary__lbl">{t('Peak TPS')}</span>
             </span>
             <span className="dash2-summary__item">
               <span className="dash2-summary__val">{elapsed(counters.sessionStart)}</span>
-              <span className="dash2-summary__lbl">Session time</span>
+              <span className="dash2-summary__lbl">{t('Session time')}</span>
             </span>
           </div>
         </div>
