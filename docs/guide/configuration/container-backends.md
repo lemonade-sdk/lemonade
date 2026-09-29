@@ -8,6 +8,7 @@ Container backends run on Linux with Podman or Docker. Lemonade uses Podman when
 |---------|--------|-------|
 | `ds4:rocm` | DS4 | `docker.io/kyuz0/strix-halo-ds4-toolbox` |
 | `llamacpp:nathanw` | llama.cpp Vulkan performance fork | `docker.io/kyuz0/amd-strix-halo-toolboxes` |
+| `rocmfpx:rocm` | llama.cpp ROCm FPX fork | `docker.io/kyuz0/amd-strix-halo-toolboxes` |
 
 ## Setup
 

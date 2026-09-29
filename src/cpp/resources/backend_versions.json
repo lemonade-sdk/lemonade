@@ -74,6 +74,9 @@
     "cuda": "master-894-017cc8e",
     "metal": "master-894-017cc8e"
   },
+  "rocmfpx": {
+    "rocm": "rocm-10.0-rocmfpx@sha256:ee2ef51d6d9eef8817560babf171828626c7c74dad4594edff02b75bba0eae58"
+  },
   "ds4": {
     "rocm": "rocm-10.0@sha256:127783182e7cb721104b043be69508eafeae837dde1ad20e966e9db34a48f291"
   },

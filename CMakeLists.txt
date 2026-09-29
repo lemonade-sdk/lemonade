@@ -190,6 +190,7 @@ set(LEMON_BACKENDS
     "vllm|vllm"
     "thenoise|thenoise"
     "ds4|ds4"
+    "rocmfpx|rocmfpx"
     "cloud|cloud"
     "thinksound|thinksound"
     "acestep|acestep"
