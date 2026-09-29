@@ -39,9 +39,9 @@ struct OpProviders {
 
 ### 2. Implement the provider lambda in `server.cpp`
 
-Inside `Server::Server()`, locate the `lemon::jobs::OpProviders providers;` block
-(~line 413). Add a lambda that captures `this` (and any other state you need) and
-forwards to the relevant Router/backend path:
+Inside `Server::Server()`, locate the `lemon::jobs::OpProviders providers;` block.
+Add a lambda that captures `this` (and any other state you need) and forwards to
+the relevant Router/backend path:
 
 ```cpp
 providers.my_new_op = [this](const lemon::jobs::json& params,
@@ -127,6 +127,23 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 | `load` | yes | lambda in `server.cpp` | Calls `router_->load_model(...)` |
 | `unload` | yes | lambda in `server.cpp` | Calls `router_->unload_model(...)` |
 | `chat` | yes | lambda in `server.cpp` | Calls `router_->chat_completion(...)` |
+| `image_generations` | yes | lambda in `server.cpp` | Calls `router_->image_generations(...)`; cancellable |
+| `image_edits` | yes | lambda in `server.cpp` | Calls `router_->image_edits(...)`; cancellable |
+| `image_variations` | yes | lambda in `server.cpp` | Calls `router_->image_variations(...)`; cancellable |
+| `audio_speech` | yes | lambda in `server.cpp` | Negotiates `response_format`; base64 media (size-capped) |
+| `audio_generations` | yes | lambda in `server.cpp` | Negotiates `response_format`; base64 media (size-capped) |
+| `model_3d_generations` | yes | lambda in `server.cpp` | Returns base64 GLB (size-capped) |
+
+## Returning binary/media results
+
+Ops that produce media (audio, GLB) buffer the backend bytes, base64-encode them,
+and return them inline in the op output. Because the whole job context is
+persisted to `jobs.json`, that output is capped by `kMaxJobMediaOutputBytes` in
+`server.cpp`; a result above the cap fails the step with `JobError(413, ...)`
+rather than bloating the on-disk job store. Media ops must also select and
+validate `response_format` against the backend's supported formats (reuse
+`select_audio_format` / the backend's `*_supported_formats()`), and their sink
+must stop accepting data once `cancel` is set (see `configure_cancellable_sink`).
 
 ## Constraints from project notes
 

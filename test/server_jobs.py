@@ -1612,7 +1612,7 @@ class JobEngineTests(unittest.TestCase):
         self.assertIsNone(h.get("model_loaded"))
 
     def test_generation_op_registered(self):
-        """All new generation ops are accepted by the job registry."""
+        """All new generation ops are accepted by the job registry and round-trip."""
         ops = [
             "image_generations",
             "image_edits",
@@ -1626,7 +1626,9 @@ class JobEngineTests(unittest.TestCase):
                 f"gen-{op}",
                 [{"id": "s", "op": op, "on_fail": "continue"}],
             )
-            self.assertEqual(job["id"], job["id"])  # creation succeeded
+            self.assertTrue(job.get("id"), f"job creation for {op} returned no id")
+            done = self.poll_status(job["id"], "completed", timeout=60)
+            self.assertEqual(self.step_by_id(done, "s")["op"], op)
 
     def test_generation_op_fails_without_backend(self):
         """Generation ops fail gracefully when no backend supports them."""
@@ -1663,6 +1665,44 @@ class JobEngineTests(unittest.TestCase):
         self.assertEqual(self.step_by_id(done, "tts")["status"], "failed")
         self.assertEqual(self.step_by_id(done, "audio")["status"], "failed")
         self.assertEqual(self.step_by_id(done, "3d")["status"], "failed")
+        self.assertEqual(self.step_by_id(done, "done")["status"], "completed")
+
+    def test_audio_op_rejects_unknown_format(self):
+        """response_format validation runs before the backend, so an unknown
+        format fails the step with a format error even with no backend loaded."""
+        steps = [
+            {
+                "id": "tts",
+                "op": "audio_speech",
+                "params": {
+                    "model": "no-such-model",
+                    "input": "hi",
+                    "response_format": "banana",
+                },
+                "on_fail": "continue",
+            },
+            {
+                "id": "audio",
+                "op": "audio_generations",
+                "params": {
+                    "model": "no-such-model",
+                    "prompt": "hi",
+                    "response_format": "banana",
+                },
+                "on_fail": "continue",
+            },
+            {"id": "done", "op": "system_info"},
+        ]
+        job = self.create_job("gen-bad-format", steps)
+        done = self.poll_status(job["id"], "completed", timeout=60)
+        for sid in ("tts", "audio"):
+            step = self.step_by_id(done, sid)
+            self.assertEqual(step["status"], "failed", f"{sid} should fail")
+            self.assertIn(
+                "banana",
+                step.get("error", ""),
+                f"{sid} error should name the rejected format: {step}",
+            )
         self.assertEqual(self.step_by_id(done, "done")["status"], "completed")
 
 

@@ -715,7 +715,8 @@ json WrappedServer::forward_multipart_request(const std::string& endpoint,
             url,
             fields,
             timeout_seconds,
-            utils::HttpSecurityPolicy::TrustedLoopback);
+            utils::HttpSecurityPolicy::TrustedLoopback,
+            current_request_cancel());
         note_backend_activity();
 
         if (response.status_code == 200) {

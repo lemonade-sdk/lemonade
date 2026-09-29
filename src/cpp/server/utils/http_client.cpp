@@ -534,7 +534,8 @@ HttpResponse HttpClient::post(const std::string& url,
 HttpResponse HttpClient::post_multipart(const std::string& url,
                                          const std::vector<MultipartField>& fields,
                                          long timeout_seconds,
-                                         HttpSecurityPolicy policy) {
+                                         HttpSecurityPolicy policy,
+                                         std::atomic<bool>* cancel_flag) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         throw std::runtime_error("Failed to initialize CURL");
@@ -568,6 +569,12 @@ HttpResponse HttpClient::post_multipart(const std::string& url,
     }
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "lemon.cpp/1.0");
+
+    if (cancel_flag) {
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, cancel_xferinfo_callback);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancel_flag);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    }
 
     CURLcode res = curl_easy_perform(curl);
 

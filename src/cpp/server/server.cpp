@@ -343,6 +343,63 @@ static const json MIME_TYPES = {
 
 static nlohmann::json extract_error_payload(const std::string& buf);
 
+// Media job ops buffer the whole backend result and base64-encode it into the
+// job context, which is persisted verbatim to jobs.json. Cap the raw size so a
+// single large result cannot bloat that file or make every rewrite expensive.
+static constexpr size_t kMaxJobMediaOutputBytes = 8 * 1024 * 1024;
+
+static void configure_cancellable_sink(httplib::DataSink& sink, std::string& buf,
+                                       lemon::jobs::CancelFlag& cancel) {
+    sink.write = [&buf, &cancel](const char* data, size_t len) {
+        if (cancel.load()) return false;
+        buf.append(data, len);
+        return true;
+    };
+    sink.is_writable = [&cancel]() { return !cancel.load(); };
+    sink.done = []() {};
+}
+
+static std::string select_audio_format(const nlohmann::json& request,
+                                       const std::vector<std::string>& supported_formats,
+                                       const std::string& fallback) {
+    std::string response_format = fallback;
+    if (request.contains("response_format") && request["response_format"].is_string()) {
+        response_format = request["response_format"].get<std::string>();
+    } else if (!supported_formats.empty()) {
+        response_format = supported_formats.front();
+    }
+    if (!MIME_TYPES.contains(response_format)) {
+        throw lemon::jobs::JobError(400, "Unsupported audio format requested: '" + response_format + "'");
+    }
+    const bool supported = supported_formats.empty() ||
+        std::find(supported_formats.begin(), supported_formats.end(), response_format) != supported_formats.end();
+    if (!supported) {
+        std::string supported_list;
+        for (const auto& f : supported_formats) {
+            supported_list += (supported_list.empty() ? "" : ", ") + f;
+        }
+        throw lemon::jobs::JobError(400, "response_format '" + response_format +
+            "' is not supported by this model (supported: " + supported_list + ")");
+    }
+    return response_format;
+}
+
+static lemon::jobs::json build_media_op_output(const std::string& buf,
+                                               const std::string& mime_type,
+                                               const std::string& response_format) {
+    if (buf.size() > kMaxJobMediaOutputBytes) {
+        throw lemon::jobs::JobError(413, "generated output (" + std::to_string(buf.size()) +
+            " bytes) exceeds the job media output limit of " +
+            std::to_string(kMaxJobMediaOutputBytes) + " bytes");
+    }
+    lemon::jobs::json out;
+    out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
+    out["mime_type"] = mime_type;
+    out["size"] = buf.size();
+    out["response_format"] = response_format;
+    return out;
+}
+
 Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_dir)
     : config_(config),
       cache_dir_(cache_dir),
@@ -499,9 +556,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             return lemon::jobs::json::parse(response.dump());
         };
         providers.image_generations_op = [this](const lemon::jobs::json& params,
-                                                lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+                                                lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             nlohmann::json request = nlohmann::json::parse(params.dump());
-            nlohmann::json response = router_->image_generations(request);
+            nlohmann::json response = router_->image_generations(request, &cancel);
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             if (response.contains("error")) {
                 std::string msg = "image_generations failed";
                 const auto& err = response["error"];
@@ -514,9 +573,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             return lemon::jobs::json::parse(response.dump());
         };
         providers.image_edits_op = [this](const lemon::jobs::json& params,
-                                          lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+                                          lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             nlohmann::json request = nlohmann::json::parse(params.dump());
-            nlohmann::json response = router_->image_edits(request);
+            nlohmann::json response = router_->image_edits(request, &cancel);
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             if (response.contains("error")) {
                 std::string msg = "image_edits failed";
                 const auto& err = response["error"];
@@ -529,9 +590,11 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
             return lemon::jobs::json::parse(response.dump());
         };
         providers.image_variations_op = [this](const lemon::jobs::json& params,
-                                               lemon::jobs::CancelFlag&) -> lemon::jobs::json {
+                                               lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             nlohmann::json request = nlohmann::json::parse(params.dump());
-            nlohmann::json response = router_->image_variations(request);
+            nlohmann::json response = router_->image_variations(request, &cancel);
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             if (response.contains("error")) {
                 std::string msg = "image_variations failed";
                 const auto& err = response["error"];
@@ -545,16 +608,16 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
         };
         providers.audio_speech_op = [this](const lemon::jobs::json& params,
                                            lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             nlohmann::json request = nlohmann::json::parse(params.dump());
-            std::string response_format = "mp3";
-            if (request.contains("response_format") && request["response_format"].is_string())
-                response_format = request["response_format"].get<std::string>();
+            const std::string model = request.value("model", "");
+            const auto supported_formats = router_->audio_speech_supported_formats(model);
+            const std::string response_format = select_audio_format(request, supported_formats, "mp3");
             std::string buf;
             httplib::DataSink sink;
-            sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
-            sink.is_writable = []() { return true; };
-            sink.done = []() {};
+            configure_cancellable_sink(sink, buf, cancel);
             router_->audio_speech(request, sink);
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             if (buf.empty())
                 throw lemon::jobs::JobError(502, "audio_speech produced no output");
             if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
@@ -566,25 +629,21 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                     msg = err.get<std::string>();
                 throw lemon::jobs::JobError(424, msg);
             }
-            lemon::jobs::json out;
-            out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
-            out["mime_type"] = MIME_TYPES.value(response_format, "application/octet-stream");
-            out["size"] = buf.size();
-            out["response_format"] = response_format;
-            return out;
+            return build_media_op_output(
+                buf, MIME_TYPES.value(response_format, "application/octet-stream"), response_format);
         };
         providers.audio_generations_op = [this](const lemon::jobs::json& params,
                                                 lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             nlohmann::json request = nlohmann::json::parse(params.dump());
-            std::string response_format = "wav";
-            if (request.contains("response_format") && request["response_format"].is_string())
-                response_format = request["response_format"].get<std::string>();
+            const std::string model = request.value("model", "");
+            const auto supported_formats = router_->audio_generation_supported_formats(model);
+            const std::string response_format = select_audio_format(request, supported_formats, "wav");
             std::string buf;
             httplib::DataSink sink;
-            sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
-            sink.is_writable = []() { return true; };
-            sink.done = []() {};
+            configure_cancellable_sink(sink, buf, cancel);
             router_->audio_generations(request, sink);
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             if (buf.empty())
                 throw lemon::jobs::JobError(502, "audio_generations produced no output");
             if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
@@ -596,22 +655,18 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                     msg = err.get<std::string>();
                 throw lemon::jobs::JobError(424, msg);
             }
-            lemon::jobs::json out;
-            out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
-            out["mime_type"] = MIME_TYPES.value(response_format, "application/octet-stream");
-            out["size"] = buf.size();
-            out["response_format"] = response_format;
-            return out;
+            return build_media_op_output(
+                buf, MIME_TYPES.value(response_format, "application/octet-stream"), response_format);
         };
         providers.model_3d_generations_op = [this](const lemon::jobs::json& params,
                                                    lemon::jobs::CancelFlag& cancel) -> lemon::jobs::json {
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             nlohmann::json request = nlohmann::json::parse(params.dump());
             std::string buf;
             httplib::DataSink sink;
-            sink.write = [&buf](const char* data, size_t len) { buf.append(data, len); return true; };
-            sink.is_writable = []() { return true; };
-            sink.done = []() {};
+            configure_cancellable_sink(sink, buf, cancel);
             router_->model_3d_generations(request, sink);
+            if (cancel.load()) throw lemon::jobs::JobError(499, "interrupted");
             if (buf.empty())
                 throw lemon::jobs::JobError(502, "model_3d_generations produced no output");
             if (auto error_payload = extract_error_payload(buf); !error_payload.is_null()) {
@@ -623,12 +678,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config, const std::string& cache_d
                     msg = err.get<std::string>();
                 throw lemon::jobs::JobError(424, msg);
             }
-            lemon::jobs::json out;
-            out["data"] = lemon::utils::JsonUtils::base64_encode(buf);
-            out["mime_type"] = "model/gltf-binary";
-            out["size"] = buf.size();
-            out["response_format"] = "glb";
-            return out;
+            return build_media_op_output(buf, "model/gltf-binary", "glb");
         };
         providers.begin_exclusive = [this, job_states, current_job, state_mutex](
                                         const std::string& job_id,

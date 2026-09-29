@@ -122,7 +122,8 @@ public:
         const std::string& url,
         const std::vector<MultipartField>& fields,
         long timeout_seconds = 300,
-        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly);
+        HttpSecurityPolicy policy = HttpSecurityPolicy::ExternalHttpsOnly,
+        std::atomic<bool>* cancel_flag = nullptr);
 
     // Streaming POST request (calls callback for each chunk as it arrives).
     // on_status fires once, before the first chunk is delivered, so callers can

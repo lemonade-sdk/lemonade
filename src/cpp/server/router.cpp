@@ -51,6 +51,15 @@ private:
     SuspendInhibitor* inhibitor_;
 };
 
+// RAII: binds the caller's cancel flag to the backend request thread so an
+// in-flight HTTP request can be aborted, and clears it on scope exit.
+struct RequestCancelScope {
+    WrappedServer* server = nullptr;
+    ~RequestCancelScope() {
+        if (server) server->set_request_cancel_flag(nullptr);
+    }
+};
+
 } // namespace
 
 Router::Router(RuntimeConfig* config, ModelManager* model_manager, BackendManager* backend_manager)
@@ -1357,12 +1366,7 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
     std::string requested_model = request.value("model", "");
     std::shared_ptr<telemetry::InferenceSpan> span = telemetry::TelemetryTracker::start_span("LLM", "chat.completions", requested_model, request);
 
-    struct RequestCancelScope {
-        WrappedServer* server = nullptr;
-        ~RequestCancelScope() {
-            if (server) server->set_request_cancel_flag(nullptr);
-        }
-    } cancel_scope;
+    RequestCancelScope cancel_scope;
 
     try {
         WrappedServer* active_server = nullptr;
@@ -1834,8 +1838,13 @@ std::vector<std::string> Router::audio_speech_supported_formats(const std::strin
     return tts_server ? tts_server->supported_audio_formats() : std::vector<std::string>{};
 }
 
-json Router::image_generations(const json& request) {
+json Router::image_generations(const json& request, std::atomic<bool>* cancel) {
     return execute_inference(request, [&](WrappedServer* server) {
+        RequestCancelScope cancel_scope;
+        if (cancel) {
+            server->set_request_cancel_flag(cancel);
+            cancel_scope.server = server;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
@@ -1846,8 +1855,13 @@ json Router::image_generations(const json& request) {
     });
 }
 
-json Router::image_edits(const json& request) {
+json Router::image_edits(const json& request, std::atomic<bool>* cancel) {
     return execute_inference(request, [&](WrappedServer* server) {
+        RequestCancelScope cancel_scope;
+        if (cancel) {
+            server->set_request_cancel_flag(cancel);
+            cancel_scope.server = server;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
@@ -1858,8 +1872,13 @@ json Router::image_edits(const json& request) {
     });
 }
 
-json Router::image_variations(const json& request) {
+json Router::image_variations(const json& request, std::atomic<bool>* cancel) {
     return execute_inference(request, [&](WrappedServer* server) {
+        RequestCancelScope cancel_scope;
+        if (cancel) {
+            server->set_request_cancel_flag(cancel);
+            cancel_scope.server = server;
+        }
         auto image_server = dynamic_cast<IImageServer*>(server);
         if (!image_server) {
             return ErrorResponse::from_exception(
