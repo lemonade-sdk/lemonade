@@ -21,6 +21,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/model_types.h"
 #include <cstring>
+#include "lemon/utils/container_manager.h"
 #include "lemon/utils/conversation_fingerprint.h"
 #include "lemon/utils/image_sniff.h"
 #include "lemon/utils/json_utils.h"
@@ -398,6 +399,12 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
 
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
+
+#ifdef __linux__
+    // A lemond that was killed leaves its containers behind, still holding GPU
+    // memory and the names the next load of each model needs.
+    utils::ContainerManager::global().sweep();
+#endif
 
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
@@ -6890,6 +6897,15 @@ void Server::handle_system_info(const httplib::Request& req, httplib::Response& 
     // SystemInfoCache is the single source of truth for hardware + recipes.
     // Recipes are cached until invalidated by install/uninstall.
     nlohmann::json system_info = SystemInfoCache::get_system_info_with_cache();
+
+    // Container setup checks run on every request, so a completed setup step
+    // shows up without a restart.
+    if (system_info.contains("recipes") &&
+        SystemInfo::refresh_container_setup(system_info["recipes"])) {
+        SystemInfoCache::invalidate_recipes();
+        model_manager_->invalidate_models_cache();
+        system_info = SystemInfoCache::get_system_info_with_cache();
+    }
 
     // Enrich with release_url, download_filename, version from BackendManager config
     if (system_info.contains("recipes")) {

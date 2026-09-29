@@ -14,7 +14,6 @@ namespace backends {
 // other LLM backends.
 class Ds4Server : public WrappedServer {
 public:
-    static InstallParams get_install_params(const std::string& backend, const std::string& version);
     Ds4Server(const std::string& log_level, ModelManager* model_manager,
               BackendManager* backend_manager);
 
