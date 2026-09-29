@@ -1656,14 +1656,27 @@ json SystemInfo::build_recipes_info(const json& devices) {
                 devices.push_back({{"device", device},
                                    {"families", std::vector<std::string>(families.begin(), families.end())}});
             }
-            support.push_back({
+            json support_row = {
                 {"backend", row.backend},
                 {"os", std::vector<std::string>(row.supported_os.begin(), row.supported_os.end())},
                 {"devices", devices},
                 {"device_summary", row.device_summary},
-            });
+            };
+            if (const auto* labels = desc->labels_for(row.backend)) {
+                support_row["tier"] = backend_tier_to_string(labels->tier);
+                support_row["format"] = backend_format_to_string(labels->format);
+            }
+            support.push_back(support_row);
         }
         entry["support"] = support;
+        if (entry.contains("backends") && entry["backends"].is_object()) {
+            for (auto& [backend_name, backend_entry] : entry["backends"].items()) {
+                if (const auto* labels = desc->labels_for(backend_name)) {
+                    backend_entry["tier"] = backend_tier_to_string(labels->tier);
+                    backend_entry["format"] = backend_format_to_string(labels->format);
+                }
+            }
+        }
         json options = json::array();
         for (const auto& opt : desc->options) {
             json o = {
@@ -1749,6 +1762,42 @@ std::string SystemInfo::check_recipe_supported(const std::string& recipe) {
     }
     auto result = get_supported_backends(recipe);
     return result.backends.empty() ? result.not_supported_error : "";
+}
+
+std::string SystemInfo::check_experimental_backend_installed(const std::string& recipe) {
+    const auto* desc = lemon::backends::descriptor_for(recipe);
+    if (!desc) {
+        return "";
+    }
+    json system_info = SystemInfoCache::get_system_info_with_cache();
+    if (!system_info.contains("recipes") || !system_info["recipes"].contains(recipe)) {
+        return "";
+    }
+    const json backends = system_info["recipes"][recipe].value("backends", json::object());
+
+    std::string experimental_backend;
+    for (const auto& [name, info] : backends.items()) {
+        const std::string state = info.value("state", "unsupported");
+        if (state == "unsupported") {
+            continue;
+        }
+        const auto* labels = desc->labels_for(name);
+        if (!labels || labels->tier != BackendTier::Experimental) {
+            return "";
+        }
+        if (state == "installed" || state == "update_available" || state == "update_required") {
+            return "";
+        }
+        if (experimental_backend.empty()) {
+            experimental_backend = recipe + ":" + name;
+        }
+    }
+    if (experimental_backend.empty()) {
+        return "";
+    }
+    return "This model runs only on the experimental backend " + experimental_backend +
+           ", which is not installed. Install it with `lemonade backends install " +
+           experimental_backend + "` to use this model.";
 }
 
 std::vector<SystemInfo::RecipeStatus> SystemInfo::get_all_recipe_statuses() {

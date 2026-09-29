@@ -68,6 +68,9 @@ inline const BackendDescriptor descriptor = {
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ true,
+    /*labels*/ {
+        {"rocm", {BackendTier::Experimental, BackendFormat::Native}},
+    },
 };
 
 inline bool publishes_for_os(const std::string& os) {

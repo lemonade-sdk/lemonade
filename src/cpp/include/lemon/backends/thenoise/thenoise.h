@@ -54,6 +54,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"rocm"},
     /*config_extra*/    {{"lora_dir", ""}, {"upscaler_dir", ""}},
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"rocm", {BackendTier::Community, BackendFormat::Python}},
+    },
 };
 
 }  // namespace thenoise

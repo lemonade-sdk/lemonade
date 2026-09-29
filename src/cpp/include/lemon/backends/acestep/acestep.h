@@ -41,6 +41,12 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "rocm", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"cuda", {BackendTier::Community, BackendFormat::Native}},
+        {"vulkan", {BackendTier::Community, BackendFormat::Native}},
+        {"rocm", {BackendTier::Community, BackendFormat::Native}},
+    },
 };
 
 }  // namespace acestep

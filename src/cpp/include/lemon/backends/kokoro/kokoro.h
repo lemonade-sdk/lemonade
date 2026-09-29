@@ -41,6 +41,11 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"metal", {BackendTier::Core, BackendFormat::Native}},
+        {"cpu", {BackendTier::Core, BackendFormat::Native}},
+    },
 };
 
 }  // namespace kokoro

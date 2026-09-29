@@ -38,6 +38,11 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"vulkan", "cuda"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"cuda", {BackendTier::Community, BackendFormat::Native}},
+        {"vulkan", {BackendTier::Community, BackendFormat::Native}},
+    },
 };
 
 }  // namespace openmoss

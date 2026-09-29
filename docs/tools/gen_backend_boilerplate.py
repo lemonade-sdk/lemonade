@@ -384,8 +384,8 @@ def render_overview(recipes: dict) -> str:
 
 def render_support_matrix(recipes: dict) -> str:
     rows = [
-        "| Recipe | Backend | OS | Device families |",
-        "|--------|---------|----|-----------------|",
+        "| Recipe | Backend | Tier | Format | OS | Device families |",
+        "|--------|---------|------|--------|----|-----------------|",
     ]
     for recipe in sorted(recipes):
         info = recipes[recipe]
@@ -395,9 +395,11 @@ def render_support_matrix(recipes: dict) -> str:
                 f = d.get("families") or []
                 fams.append(d["device"] + (f" ({', '.join(f)})" if f else ""))
             rows.append(
-                "| `{r}` | {b} | {o} | {d} |".format(
+                "| `{r}` | {b} | {t} | {f} | {o} | {d} |".format(
                     r=recipe,
                     b=row.get("backend", ""),
+                    t=row.get("tier", "—"),
+                    f=row.get("format", "—"),
                     o=", ".join(sorted(row.get("os", []))),
                     d=md_escape("; ".join(fams)) if fams else "—",
                 )

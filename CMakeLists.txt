@@ -2581,6 +2581,25 @@ if(BUILD_TESTING AND EXISTS "${_BACKEND_MODE_CONTRACT_TEST_SRC}")
     add_cpp_ci_test(BackendModeContractTest CI ON COMMAND test_backend_mode_contract)
 endif()
 
+# Every backend in a descriptor's support rows has a tier and a format. Links
+# only the descriptor registry.
+set(_BACKEND_LABELS_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_backend_labels.cpp")
+if(BUILD_TESTING AND EXISTS "${_BACKEND_LABELS_TEST_SRC}")
+    add_executable(test_backend_labels
+        test/cpp/test_backend_labels.cpp
+        ${LEMON_BACKEND_DESCRIPTOR_SOURCES}
+    )
+    target_include_directories(test_backend_labels PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/cpp/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include
+    )
+    target_link_libraries(test_backend_labels PRIVATE
+        nlohmann_json::nlohmann_json
+        lemonade-httplib
+    )
+    add_cpp_ci_test(BackendLabelsTest CI ON COMMAND test_backend_labels)
+endif()
+
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_hrx_contract.cpp")
     add_executable(test_hrx_contract test/cpp/test_hrx_contract.cpp)
     target_link_libraries(test_hrx_contract PRIVATE lemonade-server-core)

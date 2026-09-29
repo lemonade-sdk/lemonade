@@ -43,6 +43,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"rocm", {BackendTier::Community, BackendFormat::Python}},
+    },
 };
 
 }  // namespace vllm

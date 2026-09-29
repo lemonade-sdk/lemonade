@@ -60,6 +60,15 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"rocm", "vulkan", "cpu"},
     /*bin_variants*/    {"rocm", "vulkan", "cuda", "cpu"},
     /*config_extra*/    {{"prefer_system", true}},
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"system", {BackendTier::Core, BackendFormat::Native}},
+        {"metal", {BackendTier::Core, BackendFormat::Native}},
+        {"cuda", {BackendTier::Core, BackendFormat::Native}},
+        {"vulkan", {BackendTier::Core, BackendFormat::Native}},
+        {"rocm", {BackendTier::Core, BackendFormat::Native}},
+        {"cpu", {BackendTier::Core, BackendFormat::Native}},
+    },
 };
 
 }  // namespace llamacpp

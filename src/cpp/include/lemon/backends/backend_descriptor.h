@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -33,6 +34,43 @@ enum class VersionPolicy {
     Exact,    // installed must match the expected version
     AtLeast   // installed >= expected is acceptable (system-managed packages, e.g. flm)
 };
+
+// Who stands behind a backend.
+enum class BackendTier {
+    Core,          // supported by Lemonade's maintainers for production use
+    Community,     // provided by Lemonade's maintainers, not supported for production use
+    Experimental,  // developed in the community and listed in Lemonade; use at your own risk
+};
+
+// How a backend's server is packaged.
+enum class BackendFormat {
+    Native,     // a compiled executable binary
+    Python,     // Python, packaged with its own interpreter
+    Container,  // an OCI image, run by a pre-installed Podman or Docker
+};
+
+struct BackendLabels {
+    BackendTier tier;
+    BackendFormat format;
+};
+
+inline const char* backend_tier_to_string(BackendTier tier) {
+    switch (tier) {
+        case BackendTier::Core:         return "core";
+        case BackendTier::Community:    return "community";
+        case BackendTier::Experimental: return "experimental";
+    }
+    return "experimental";
+}
+
+inline const char* backend_format_to_string(BackendFormat format) {
+    switch (format) {
+        case BackendFormat::Native:    return "native";
+        case BackendFormat::Python:    return "python";
+        case BackendFormat::Container: return "container";
+    }
+    return "native";
+}
 
 inline const char* slot_policy_to_string(SlotPolicy p) {
     switch (p) {
@@ -118,6 +156,14 @@ struct BackendDescriptor {
     // fully resident (ds4 --ssd-streaming); changes how it is size-filtered (see
     // filter_models_by_backend in model_manager.cpp).
     bool streams_model_from_storage = false;
+
+    // The tier and format of each backend named in `support`.
+    std::map<std::string, BackendLabels> labels;
+
+    const BackendLabels* labels_for(const std::string& backend) const {
+        auto it = labels.find(backend);
+        return it == labels.end() ? nullptr : &it->second;
+    }
 
     // The config.json section name for this backend, falling back to the recipe.
     std::string effective_config_section() const {

@@ -45,6 +45,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {},
     /*config_extra*/    {{"prefer_system", false}},
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"npu", {BackendTier::Core, BackendFormat::Native}},
+    },
 };
 
 }  // namespace fastflowlm
