@@ -142,6 +142,10 @@ namespace lemon::backends {
         return ends_with(filename, ".7z");
     }
 
+    static bool is_zip(const std::string& filename) {
+        return ends_with(filename, ".zip");
+    }
+
     // Greedy glob match where '*' matches any (possibly empty) run of
     // characters. No '?' support — release asset names only need '*'.
     static bool wildcard_match(const std::string& pattern, const std::string& text) {
@@ -582,13 +586,18 @@ namespace lemon::backends {
             // falls through to the single-file path. Non-split backends skip
             // this entirely so their install logs stay quiet.
             std::string base;
+            std::string ext;
             if (is_tarball(filename)) {
                 base = filename.substr(0, filename.size() - 7);  // strip ".tar.gz"
+                ext = ".tar.gz";
+            } else if (is_zip(filename)) {
+                base = filename.substr(0, filename.size() - 4);  // strip ".zip"
+                ext = ".zip";
             }
 
             bool is_split = false;
             std::vector<std::string> part_assets;
-            if (spec.supports_split_archive && is_tarball(filename)) {
+            if (spec.supports_split_archive) {
                 const std::string partcount_url = base_download_url + base + ".partcount";
                 auto resp = utils::HttpClient::get(partcount_url);
                 if (resp.status_code == 200) {
@@ -616,7 +625,7 @@ namespace lemon::backends {
                     const std::string total_padded = two_digit(total_parts);
                     for (int i = 1; i <= total_parts; ++i) {
                         part_assets.push_back(base + ".part" + two_digit(i)
-                                              + "-of-" + total_padded + ".tar.gz");
+                                              + "-of-" + total_padded + ext);
                     }
                     is_split = true;
                 } else if (resp.status_code != 404) {
