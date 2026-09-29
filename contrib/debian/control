@@ -39,6 +39,7 @@ Build-Depends:
  node-webpack-cli,
  nodejs,
  pkgconf,
+ python3,
 Vcs-Browser: https://salsa.debian.org/debian/lemonade
 Vcs-Git: https://salsa.debian.org/debian/lemonade.git
 Homepage: https://lemonade-server.ai/

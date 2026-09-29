@@ -37,6 +37,40 @@ env:
   LEMONADE_DISABLE_SYSTEMD_JOURNAL: "1"
 
 jobs:
+  source-tarball:
+    name: Build Source Tarball
+    if: startsWith(github.ref, 'refs/heads/release-v') || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      release_branch: ${{ steps.get_version.outputs.release_branch }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Get Lemonade version
+        id: get_version
+        uses: ./.github/actions/get-version
+
+      - name: Create source tarball
+        env:
+          LEMONADE_VERSION: ${{ steps.get_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive_root="lemonade-${LEMONADE_VERSION}"
+          python3 tools/source_archive.py --version "$LEMONADE_VERSION"
+          archived_version=$(tar -xOf "lemonade-${LEMONADE_VERSION}.tar.gz" "$archive_root/.version")
+          test "$archived_version" = "$LEMONADE_VERSION"
+
+      - name: Upload source tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-source-tarball
+          path: lemonade-${{ steps.get_version.outputs.version }}.tar.gz
+          retention-days: 30
+
   # ========================================================================
   # BUILD JOBS - Run on rai-160-sdk workers
   # ========================================================================
@@ -82,7 +116,7 @@ jobs:
           # job installs lemonade-server-minimal.msi, so on the PR and
           # merge-queue paths the full installer is pure critical-path latency;
           # build-lemonade-desktop-installer covers it off the critical path.
-          BUILD_FULL_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true }}
+          BUILD_FULL_INSTALLER: ${{ startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v') || inputs.enable_signing == true }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -149,7 +183,7 @@ jobs:
     # BUILD_FULL_INSTALLER above, spelled the same way so the two stay
     # provably complementary.
     if: >-
-      !(startsWith(github.ref, 'refs/tags/v') || inputs.enable_signing == true) &&
+      !(startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v') || inputs.enable_signing == true) &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:distros'))
     runs-on: windows-latest
     steps:
@@ -420,6 +454,8 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory $(pwd)
@@ -471,11 +507,11 @@ jobs:
       - name: Enable Trixie backports
         run: |
           echo "deb http://deb.debian.org/debian trixie-backports main" > /etc/apt/sources.list.d/trixie-backports.list
-      - name: Install git
+      - name: Install bootstrap dependencies
         run: |
           set -e
           apt-get update
-          apt-get install -y git
+          apt-get install -y git python3
       - name: Install from backports
         run: |
           set -e
@@ -633,18 +669,21 @@ jobs:
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
+      - name: Install RPM packaging tools
+        shell: bash
+        run: |
+          set -e
+          dnf install -y git python3 rpm-build
+
       - uses: actions/checkout@v5
         with:
           clean: true
           fetch-depth: 0
 
-      - name: Install RPM packaging tools
-        shell: bash
-        run: |
-          set -e
-          dnf install -y rpm-build
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory "$(pwd)"
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -711,7 +750,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -799,7 +838,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -856,7 +895,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -908,7 +947,7 @@ jobs:
       - name: Install CMake if not available
         uses: ./.github/actions/install-cmake-windows
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -955,7 +994,7 @@ jobs:
           clean: true
           fetch-depth: 0
 
-      - name: Get version from CMakeLists.txt
+      - name: Get Lemonade version
         id: get_version
         uses: ./.github/actions/get-version
 
@@ -1005,6 +1044,7 @@ jobs:
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
@@ -1060,7 +1100,7 @@ jobs:
           - name: stable-diffusion
             script: server_sd.py
             extra_args: ""
-            backends: "cpu rocm vulkan"
+            backends: "cpu vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: audio-gen-thinksound
             script: server_audio_generation.py
@@ -1075,7 +1115,7 @@ jobs:
           - name: audio-gen-openmoss
             script: server_audio_generation.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
           - name: text-to-speech
             script: server_tts.py
@@ -1090,7 +1130,7 @@ jobs:
           - name: tts-openmoss
             script: server_tts_openmoss.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Windows, X64, rocm, vulkan, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1169,17 +1209,17 @@ jobs:
         with:
           matrix-name: ${{ matrix.name }}
 
-      - name: Install and Verify Lemonade Server
-        uses: ./.github/actions/install-lemonade-server-msi
-        with:
-          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
-
       - name: Setup Python and virtual environment
         uses: ./.github/actions/setup-venv
         with:
           venv-name: '.venv'
           python-version: '3.10'
           requirements-file: 'test/requirements.txt'
+
+      - name: Install and Verify Lemonade Server
+        uses: ./.github/actions/install-lemonade-server-msi
+        with:
+          install-path: ${{ env.LEMONADE_INSTALL_PATH }}
 
       - name: Install FLM backend for FLM wrapped-server tests
         if: ${{ runner.os == 'Windows' && contains(matrix.extra_args, '--wrapped-server flm') }}
@@ -1278,6 +1318,7 @@ jobs:
     # these instead of PR pushes. Label a PR `ci:backends` to opt it back in.
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
@@ -1323,7 +1364,7 @@ jobs:
           - name: audio-gen-openmoss
             script: server_audio_generation.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
           - name: whisper
             script: server_whisper.py
@@ -1353,7 +1394,7 @@ jobs:
           - name: tts-openmoss
             script: server_tts_openmoss.py
             extra_args: "--wrapped-server openmoss"
-            backends: "vulkan rocm"
+            backends: "vulkan"
             runner: [Linux, X64, vulkan, rocm, lemon-prod]
     env:
       LEMONADE_CI_MODE: "True"
@@ -1429,6 +1470,7 @@ jobs:
     needs: build-lemonade-deb
     if: >-
       !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
       inputs.enable_signing != true &&
       inputs.disable_macos_signing != true &&
       (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
@@ -1971,12 +2013,16 @@ jobs:
         run: |
           .venv/bin/python -m test.utils.reset_server_state --best-effort --label "ubuntu endpoints"
           .venv/bin/python test/server_endpoints.py --cli-binary lemonade
+          .venv/bin/python test/server_cancellation.py --cli-binary lemonade
           echo "Running WebSocket idle test..."
           .venv/bin/python test/test_websocket_idle.py
           echo "WebSocket idle test PASSED!"
           echo "Running WebSocket auth tests..."
           .venv/bin/python test/server_websocket_auth.py
           echo "WebSocket auth tests PASSED!"
+          echo "Running tray supervisor watchdog test..."
+          .venv/bin/python test/test_tray_supervisor_watchdog.py
+          echo "Tray supervisor watchdog test PASSED!"
 
       - name: Test log rotation
         if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
@@ -2410,6 +2456,7 @@ jobs:
           $VENV_PYTHON test/test_websocket_idle.py
           $VENV_PYTHON test/server_websocket_auth.py
           $VENV_PYTHON test/test_tray_https.py
+          $VENV_PYTHON test/test_tray_supervisor_watchdog.py --lemond-binary "$LEMOND_BINARY"
           $VENV_PYTHON test/server_jobs.py --lemond-binary "$LEMOND_BINARY"
 
       - name: Test router
@@ -2680,6 +2727,43 @@ jobs:
         uses: ./.github/actions/teardown-windows-ci-env
 
   # ========================================================================
+  # REPO-MANAGER JOB - Release checklist, notes, and announcement
+  # ========================================================================
+
+  repo-manager-release:
+    name: Build Release Artifacts
+    needs: source-tarball
+    # A stable tag points at a commit that already had a candidate build, so its artifacts
+    # exist and describe the same commit range; regenerating them would only reword what the
+    # release admin already read. The release job tolerates this job being skipped.
+    if: startsWith(github.ref, 'refs/heads/release-v')
+    runs-on: [self-hosted, stx-halo, Linux, X64, lemon-prod]
+    timeout-minutes: 180
+    # The workflow-level grant is `contents: write` and nothing else. repo-manager reads this
+    # repository's pull requests and issues.
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    # One release's notes, checklist and announcement are one set of files, so successive
+    # builds of the same release queue instead of overwriting each other.
+    concurrency:
+      group: repo-manager-release-${{ needs.source-tarball.outputs.release_branch }}
+      cancel-in-progress: false
+    steps:
+      # Enough to resolve the local action; it does its own clone.
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          sparse-checkout: .github
+
+      - uses: ./.github/actions/repo-manager
+        with:
+          command: release build --branch ${{ needs.source-tarball.outputs.release_branch }} --head ${{ github.sha }}
+          app-client-id: ${{ vars.RELEASE_BRANCH_APP_CLIENT_ID }}
+          app-private-key: ${{ secrets.RELEASE_BRANCH_APP_PRIVATE_KEY }}
+
+  # ========================================================================
   # RELEASE JOB - Add artifacts to GitHub release
   # ========================================================================
 
@@ -2701,19 +2785,51 @@ jobs:
       - test-embeddable-posix
       - test-embeddable-macos
       - test-embeddable-windows
-    if: startsWith(github.ref, 'refs/tags/v')
+      - source-tarball
+      - repo-manager-release
+    # Candidates skip sign-msi-installers, so a plain `needs` would skip this
+    # job too; check the results explicitly instead.
+    if: >-
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/heads/release-v')) &&
+      !contains(needs.*.result, 'failure') &&
+      !contains(needs.*.result, 'cancelled')
     env:
       LEMONADE_VERSION: ${{ needs.build-lemonade-rpm.outputs.version }}
+      # A release branch build is a candidate: published unsigned as a prerelease
+      # under candidate-v<version>, so it never enters the v* namespace that gates
+      # stable publication (PPA upload, tools/version.py, tools/release.py).
+      CANDIDATE: ${{ startsWith(github.ref, 'refs/heads/release-v') }}
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/heads/release-v') && format('candidate-v{0}', needs.build-lemonade-rpm.outputs.version) || github.ref_name }}
     steps:
+      - name: Tag the candidate
+        if: env.CANDIDATE == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          if ! gh api "repos/${GITHUB_REPOSITORY}/git/refs" -f ref="refs/tags/${RELEASE_TAG}" -f sha="${GITHUB_SHA}" >/dev/null; then
+            existing=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq .object.sha)
+            test "$existing" = "$GITHUB_SHA"
+          fi
+
       - name: Checkout for release notes action
         uses: actions/checkout@v5
         with:
           sparse-checkout: .github
 
       - name: Download Signed Lemonade Server Installer (Windows)
+        if: env.CANDIDATE == 'false'
         uses: actions/download-artifact@v7
         with:
           name: Lemonade_Server_MSI_Signed
+          path: .
+
+      - name: Download Unsigned Lemonade Server Installer (Windows)
+        if: env.CANDIDATE == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: Lemonade_Server_MSI
           path: .
 
       - name: Download Lemonade .rpm Packages (x86_64)
@@ -2772,8 +2888,17 @@ jobs:
           name: lemonade-embeddable-macos
           path: .
 
+      - name: Download Lemonade source tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: lemonade-source-tarball
+          path: .
+
       - name: Verify release artifacts
+        env:
+          SOURCE_VERSION: ${{ needs.source-tarball.outputs.version }}
         run: |
+          test "$SOURCE_VERSION" = "$LEMONADE_VERSION"
           echo "Release artifacts:"
           ls -lh lemonade-server-minimal.msi
           ls -lh lemonade.msi
@@ -2786,6 +2911,7 @@ jobs:
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-ubuntu-arm64.tar.gz
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-windows-x64.zip
           ls -lh lemonade-embeddable-${LEMONADE_VERSION}-macos-arm64.tar.gz
+          ls -lh lemonade-${LEMONADE_VERSION}.tar.gz
 
       - name: Generate release notes
         id: release-notes
@@ -2798,7 +2924,9 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.CANDIDATE == 'true' && format('v{0} (release candidate)', env.LEMONADE_VERSION) || github.ref_name }}
+          prerelease: ${{ env.CANDIDATE == 'true' }}
           body_path: ${{ steps.release-notes.outputs.release_notes_file }}
           files: |
             lemonade-server-minimal.msi
@@ -2812,4 +2940,5 @@ jobs:
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-ubuntu-arm64.tar.gz
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-windows-x64.zip
             lemonade-embeddable-${{ env.LEMONADE_VERSION }}-macos-arm64.tar.gz
+            lemonade-${{ env.LEMONADE_VERSION }}.tar.gz
           fail_on_unmatched_files: true

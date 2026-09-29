@@ -223,7 +223,7 @@ CAPABILITIES = {
             },
         },
         "openmoss": {
-            "backends": ["vulkan", "rocm", "cuda"],
+            "backends": ["vulkan", "cuda"],
             # Keep the duplicate backend's flat fallback a superset of its TTS
             # entry because _build_flat_capabilities() intentionally keeps the
             # first modality occurrence for duplicate backend names.
@@ -264,7 +264,7 @@ CAPABILITIES = {
     },
     "tts": {
         "openmoss": {
-            "backends": ["vulkan", "rocm", "cuda"],
+            "backends": ["vulkan", "cuda"],
             "supports": {
                 "tts": True,
                 "voice_cloning": True,

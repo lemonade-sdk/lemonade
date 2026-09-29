@@ -5,7 +5,7 @@ on:
       target:
         required: true
         type: string
-      artifact:
+      package_matrix:
         required: true
         type: string
 
@@ -15,13 +15,15 @@ permissions:
 jobs:
   upload-ppa:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix: ${{ fromJSON(inputs.package_matrix) }}
 
     name: Upload to PPA
     steps:
       - name: Download source package
         uses: actions/download-artifact@v7
         with:
-          name: ${{ inputs.artifact }}
+          name: lemonade-${{ matrix.codename }}-source-package
 
       - name: Install dependencies
         run: |

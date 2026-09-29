@@ -5,7 +5,33 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-project(lemon_cpp VERSION 11.9.0)
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/version.py
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    RESULT_VARIABLE LEMONADE_VERSION_RESULT
+    OUTPUT_VARIABLE LEMONADE_VERSION
+    ERROR_VARIABLE LEMONADE_VERSION_ERROR
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(NOT LEMONADE_VERSION_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to determine Lemonade version: ${LEMONADE_VERSION_ERROR}")
+endif()
+
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" LEMONADE_NUMERIC_VERSION "${LEMONADE_VERSION}")
+if(NOT LEMONADE_NUMERIC_VERSION)
+    set(LEMONADE_NUMERIC_VERSION "0.0.0")
+endif()
+
+project(lemon_cpp VERSION ${LEMONADE_NUMERIC_VERSION})
+set(PROJECT_VERSION "${LEMONADE_VERSION}")
+set(lemon_cpp_VERSION "${LEMONADE_VERSION}")
+
+math(EXPR LEMONADE_MSI_VERSION_YEAR "${PROJECT_VERSION_MAJOR} % 100")
+set(LEMONADE_MSI_VERSION
+    "${LEMONADE_MSI_VERSION_YEAR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
+)
+message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
 
@@ -446,7 +472,7 @@ endif()
 if(NOT USE_SYSTEM_HTTPLIB)
     FetchContent_Declare(httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG fe332fa06bac76a1c6d402c08f414052999347da  # v0.47.0
+        GIT_TAG d66d9a95997d51a8ba9822a611d1267757741535  # v0.51.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
@@ -3268,11 +3294,11 @@ if(BUILD_TESTING AND EXISTS "${_HTTP_CLIENT_TIMEOUT_TEST_SRC}")
     add_cpp_ci_test(HttpClientTimeoutTest CI ON COMMAND test_http_client_timeout)
 endif()
 
-set(_STREAMING_PROXY_CANCEL_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_proxy_cancel.cpp")
-if(BUILD_TESTING AND EXISTS "${_STREAMING_PROXY_CANCEL_TEST_SRC}")
-    add_executable(test_streaming_proxy_cancel test/cpp/test_streaming_proxy_cancel.cpp)
-    target_link_libraries(test_streaming_proxy_cancel PRIVATE lemonade-server-core)
-    add_cpp_ci_test(StreamingProxyCancelTest CI OFF COMMAND test_streaming_proxy_cancel)
+set(_REQUEST_CANCELLATION_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_request_cancellation.cpp")
+if(BUILD_TESTING AND EXISTS "${_REQUEST_CANCELLATION_TEST_SRC}")
+    add_executable(test_request_cancellation test/cpp/test_request_cancellation.cpp)
+    target_link_libraries(test_request_cancellation PRIVATE lemonade-server-core)
+    add_cpp_ci_test(RequestCancellationTest CI ON COMMAND test_request_cancellation)
 endif()
 
 set(_STREAMING_HEARTBEAT_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_heartbeat.cpp")
@@ -3280,6 +3306,13 @@ if(BUILD_TESTING AND EXISTS "${_STREAMING_HEARTBEAT_TEST_SRC}")
     add_executable(test_streaming_heartbeat test/cpp/test_streaming_heartbeat.cpp)
     target_link_libraries(test_streaming_heartbeat PRIVATE lemonade-server-core)
     add_cpp_ci_test(StreamingHeartbeatTest CI ON COMMAND test_streaming_heartbeat)
+endif()
+
+set(_STREAMING_SILENT_STREAM_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_streaming_silent_stream.cpp")
+if(BUILD_TESTING AND EXISTS "${_STREAMING_SILENT_STREAM_TEST_SRC}")
+    add_executable(test_streaming_silent_stream test/cpp/test_streaming_silent_stream.cpp)
+    target_link_libraries(test_streaming_silent_stream PRIVATE lemonade-server-core)
+    add_cpp_ci_test(StreamingSilentStreamTest CI ON COMMAND test_streaming_silent_stream)
 endif()
 
 set(_CLOUD_DISCOVERY_POLICY_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/cpp/test_cloud_discovery_policy.cpp")

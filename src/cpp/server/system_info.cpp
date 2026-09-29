@@ -213,6 +213,31 @@ std::string to_lower_copy(std::string value) {
     return value;
 }
 
+std::string query_amdgpu_marketing_name(const std::string& drm_render_minor) {
+    const fs::path node = fs::path("/dev/dri") / ("renderD" + drm_render_minor);
+    const int fd = open(node.c_str(), O_RDWR | O_CLOEXEC);
+    if (fd < 0) {
+        return "";
+    }
+
+    uint32_t major_version = 0;
+    uint32_t minor_version = 0;
+    amdgpu_device_handle device = nullptr;
+    const int init_result = amdgpu_device_initialize(
+        fd, &major_version, &minor_version, &device);
+    if (init_result != 0 || device == nullptr) {
+        close(fd);
+        return "";
+    }
+
+    const char* marketing_name = amdgpu_get_marketing_name(device);
+    const std::string name = marketing_name ? trim_copy(marketing_name) : "";
+    amdgpu_device_deinitialize(device);
+    close(fd);
+
+    return name;
+}
+
 bool is_dxg_rocm_environment() {
     return fs::exists("/dev/dxg");
 }
@@ -366,13 +391,7 @@ hsa_status_t collect_hsa_agent_info(hsa_agent_t agent, void* data) {
 
     RocmAgentInfo rocm_agent;
     rocm_agent.arch_name = arch;
-    if (!marketing.empty() && marketing != arch) {
-        rocm_agent.display_name = marketing + " (" + arch + ")";
-    } else if (!marketing.empty()) {
-        rocm_agent.display_name = marketing;
-    } else {
-        rocm_agent.display_name = arch;
-    }
+    rocm_agent.display_name = system_info_detail::gpu_display_name(marketing, arch);
 
         uint8_t memory_properties[8] = {0};
     if (context->api->agent_get_info(
@@ -897,7 +916,7 @@ json SystemInfo::get_device_dict() {
         auto amd_igpu = get_amd_igpu_device();
         if (amd_igpu.available) {
             json gpu_json = {
-                {"name", amd_igpu.name},
+                {"name", amd_igpu.display_name.empty() ? amd_igpu.name : amd_igpu.display_name},
                 {"available", amd_igpu.available},
                 {"integrated", true}
             };
@@ -918,7 +937,7 @@ json SystemInfo::get_device_dict() {
         for (const auto& gpu : amd_dgpus) {
             if (gpu.available) {
                 json gpu_json = {
-                    {"name", gpu.name},
+                    {"name", gpu.display_name.empty() ? gpu.name : gpu.display_name},
                     {"available", gpu.available},
                     {"integrated", false}
                 };
@@ -3499,6 +3518,9 @@ std::vector<GPUInfo> LinuxSystemInfo::detect_amd_gpus(const std::string& gpu_typ
 
         GPUInfo gpu;
         gpu.name = gfx_target_version;
+        gpu.display_name = system_info_detail::gpu_display_name(
+            query_amdgpu_marketing_name(drm_render_minor),
+            system_info_detail::gfx_target_version_to_arch(gfx_target_version));
         gpu.available = true;
 
         // Get VRAM and GTT for GPUs

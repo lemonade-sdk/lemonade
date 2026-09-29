@@ -29,6 +29,10 @@ struct GPUInfo : DeviceInfo {
     int index = -1;  // Physical device index, when available
     std::string uuid;  // NVIDIA only: stable GPU UUID from nvidia-smi (preferred for CUDA_VISIBLE_DEVICES)
     std::string driver_version;
+    // Human-readable name for display. Empty when no better name than `name` is
+    // available; `name` itself stays machine-readable because the ROCm arch lookup
+    // reads it.
+    std::string display_name;
     std::string compute_capability;  // NVIDIA only: "MAJOR.MINOR" from nvidia-smi (e.g. "8.6")
     double vram_gb = 0.0;
     double vram_used_gb = -1.0;  // -1 when per-device usage is unavailable
