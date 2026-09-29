@@ -20,6 +20,7 @@
 #include "recipe_options.h"
 #include "streaming_proxy.h"
 #include "backends/backend_descriptor.h"
+#include "server_process.h"
 
 namespace lemon {
 
@@ -84,7 +85,7 @@ class WrappedServer : public ICompletionServer {
 public:
     WrappedServer(const std::string& server_name, const std::string& log_level,
                   ModelManager* model_manager = nullptr, BackendManager* backend_manager = nullptr)
-        : server_name_(server_name), port_(0), process_handle_({nullptr, 0}), log_level_(log_level),
+        : server_name_(server_name), port_(0), log_level_(log_level),
           model_manager_(model_manager), backend_manager_(backend_manager),
           last_access_time_(std::chrono::steady_clock::now()),
           state_(ModelState::LOADING),
@@ -408,7 +409,7 @@ public:
         std::lock_guard<std::mutex> lock(state_mutex_);
         return ctx_size_auto_;
     }
-    int get_process_id() const { return get_process_handle_snapshot().pid; }
+    int get_process_id() const;
     std::vector<std::string> get_launch_command() const;
     int get_backend_port() const;
 
@@ -592,24 +593,16 @@ protected:
         }}};
     }
 
-    static bool has_process_handle(const ProcessHandle& handle);
-    ProcessHandle get_process_handle_snapshot() const;
-    void set_process_handle(ProcessHandle handle,
-                            const std::string& executable,
-                            const std::vector<std::string>& args);
-    // Publish the complete externally-observable child-process identity under
-    // one process_mutex_ critical section. Used by backends that choose a
-    // transient port before adopting the child (OpenMOSS process swaps).
-    void set_process_state(ProcessHandle handle, int port,
-                           const std::string& executable,
-                           const std::vector<std::string>& args);
-    ProcessHandle consume_process_handle_for_cleanup();
+    // Starts `command` in `process` and blocks until its ready endpoint answers,
+    // then starts the watchdog. Throws, with the server stopped, when it exits,
+    // the load is cancelled or `timeout_seconds` passes first.
+    void start_server(std::unique_ptr<ServerProcess> process, const ServerCommand& command,
+                      long timeout_seconds = 600);
+    // Stops the watchdog and the server. Safe to call when nothing is running.
+    void stop_server();
 
     // Choose an available port
     int choose_port();
-
-    // Wait for server to be ready (can be overridden for custom health checks)
-    virtual bool wait_for_ready(const std::string& endpoint, long timeout_seconds = 600, long poll_interval_ms = 100);
 
     // Configure/start the generic backend watchdog. Non-streaming requests are
     // always monitored so a hung backend becomes a reload+retry delay instead
@@ -632,19 +625,14 @@ protected:
                                    const std::vector<utils::MultipartField>& fields,
                                    long timeout_seconds = 0);
 
-    // Validate that the process is running (platform-agnostic check)
-    bool is_process_running() const;
-
-    std::string get_base_url() const {
-        return "http://127.0.0.1:" + std::to_string(get_backend_port());
-    }
+    std::string get_base_url() const;
 
     json create_watchdog_reset_response() const;
 
     std::string server_name_;
     int port_;
-    ProcessHandle process_handle_;
-    std::vector<std::string> launch_command_;
+    std::string host_ = "127.0.0.1";
+    std::unique_ptr<ServerProcess> process_;
     mutable std::mutex process_mutex_;
     Telemetry telemetry_;
     std::string log_level_;
@@ -694,6 +682,9 @@ private:
     void end_backend_request(BackendRequestKind kind);
     void backend_watchdog_loop();
     bool has_backend_process_exited() const;
+    bool process_running() const;
+    std::unique_ptr<ServerProcess> take_process();
+    bool wait_for_ready(const std::string& endpoint, long timeout_seconds);
 
     mutable std::mutex watchdog_mutex_;
     std::condition_variable watchdog_cv_;

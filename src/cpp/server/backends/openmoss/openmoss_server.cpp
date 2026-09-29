@@ -27,6 +27,14 @@ namespace lemon {
 namespace backends {
 
 namespace {
+
+bool has_handle(const ProcessHandle& handle) {
+#ifdef _WIN32
+    return handle.handle != nullptr;
+#else
+    return handle.pid > 0;
+#endif
+}
 constexpr const char* kVoiceDesignPhrase =
     "Hello there. This is a short sample of the voice you described.";
 
@@ -192,47 +200,45 @@ void OpenMossServer::load(const std::string& model_name,
     start_speech_process();
 }
 
-OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
-    Subprocess proc;
-    proc.port = utils::ProcessManager::find_free_port(8001);
-    if (proc.port <= 0) {
+ServerCommand OpenMossServer::server_command(const std::string& model_path) const {
+    ServerCommand command;
+    command.program = exe_path_;
+    command.port = utils::ProcessManager::find_free_port(8001);
+    if (command.port <= 0) {
         throw std::runtime_error("Failed to find an available port");
     }
 
-    proc.args = {
+    command.args = {
         "--model", model_path,
         "--host", "127.0.0.1",
-        "--port", std::to_string(proc.port),
+        "--port", std::to_string(command.port),
     };
-    proc.args.push_back("--no-webui");
+    command.args.push_back("--no-webui");
+    command.env = env_vars_;
 
-    LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << proc.port << std::endl;
+    LOG(INFO, "openmoss-server") << "Starting " << exe_path_ << " on port " << command.port << std::endl;
+    return command;
+}
+
+OpenMossServer::Subprocess OpenMossServer::spawn(const std::string& model_path) {
+    const ServerCommand command = server_command(model_path);
+    Subprocess proc;
+    proc.port = command.port;
     proc.handle = utils::ProcessManager::start_process(
-        exe_path_, proc.args, "", is_debug(), false, env_vars_);
-    if (!has_process_handle(proc.handle)) {
+        exe_path_, command.args, "", is_debug(), false, env_vars_);
+    if (!has_handle(proc.handle)) {
         throw std::runtime_error("Failed to start openmoss-server process");
     }
     return proc;
 }
 
 void OpenMossServer::stop_speech_process() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "openmoss-server") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 void OpenMossServer::start_speech_process(long timeout_seconds) {
-    Subprocess proc = spawn(model_path_);
-    set_process_state(proc.handle, proc.port, exe_path_, proc.args);
-    LOG(INFO, "openmoss-server") << "Process started with PID: " << proc.handle.pid << std::endl;
-
-    if (!wait_for_ready("/health", timeout_seconds)) {
-        stop_speech_process();
-        throw std::runtime_error("openmoss-server failed to start or become ready");
-    }
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}),
+                 server_command(model_path_), timeout_seconds);
 }
 
 void OpenMossServer::unload() {
@@ -355,7 +361,7 @@ std::string OpenMossServer::render_reference_sample(
         }
         sample = utils::JsonUtils::base64_encode(response_body);
     } catch (...) {
-        if (has_process_handle(designer.handle)) {
+        if (has_handle(designer.handle)) {
             utils::ProcessManager::stop_process(designer.handle);
         }
         throw;
