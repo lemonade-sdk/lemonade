@@ -97,6 +97,10 @@ ContainerProcess::ContainerProcess(ProcessOutput output, std::string recipe, std
       image_(std::move(image)) {}
 
 std::string ContainerProcess::start(const ServerCommand& command) {
+#ifndef __linux__
+    throw std::runtime_error(recipe_ + ":" + backend_ +
+                             " is a container backend, which runs on Linux");
+#endif
     const auto& manager = ContainerManager::global();
     if (auto failure = manager.check_setup()) {
         throw std::runtime_error(recipe_ + ":" + backend_ + " cannot start: " + failure->message +
