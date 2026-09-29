@@ -1493,6 +1493,10 @@ jobs:
             install: "ds4:rocm"
             script: server_llm.py
             extra_args: "--wrapped-server ds4 --backend rocm"
+          - name: llamacpp-nathanw
+            install: "llamacpp:nathanw"
+            script: server_llm.py
+            extra_args: "--wrapped-server llamacpp --backend nathanw"
     env:
       LEMONADE_CI_MODE: "True"
       HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}

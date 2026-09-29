@@ -8,6 +8,7 @@
 #include "lemon/backends/backend_utils.h"
 #include "lemon/gguf_capabilities.h"
 #include "lemon/gguf_reader.h"
+#include "lemon/gguf_shard_utils.h"
 #include "lemon/model_manager.h"
 #include <algorithm>
 #include <cctype>
@@ -99,6 +100,26 @@ static bool is_llamacpp_rocm_backend(const std::string& backend) {
 
 static bool is_llamacpp_cuda_backend(const std::string& backend) {
     return backend == "cuda";
+}
+
+// A split GGUF's shards, which llama-server opens from the first shard's
+// directory; a single-file GGUF alone.
+static std::vector<std::string> gguf_files(const std::string& gguf_path) {
+    std::vector<std::string> files = {gguf_path};
+    const fs::path path(gguf_path);
+    std::string base;
+    int total = 0;
+    if (!is_gguf_shard_filename(path.filename().string(), &base, &total)) {
+        return files;
+    }
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(path.parent_path(), ec)) {
+        if (entry.path() != path &&
+            same_shard_family(entry.path().filename().string(), base, total)) {
+            files.push_back(entry.path().string());
+        }
+    }
+    return files;
 }
 
 static bool is_dflash_draft_checkpoint(std::string checkpoint) {
@@ -294,6 +315,14 @@ void LlamaCppServer::load(const std::string& model_name,
     // Install llama-server if needed (use per-model backend)
     backend_manager_->install_backend(llamacpp::spec()->recipe, llamacpp_backend);
 
+    const ContainerPolicy* container = llamacpp::descriptor.container_for(llamacpp_backend);
+    if (container && model_info.extra<bool>("hf_load", false)) {
+        throw std::runtime_error(
+            "Model '" + model_name + "' has llama-server download its own weights, which llamacpp:" +
+            llamacpp_backend + " cannot do from its container's private network. "
+            "Load it on a llamacpp backend that runs on the host.");
+    }
+
     // Use pre-resolved GGUF path. Skipped for hf_load models because llama-server
     // sources the weights itself via -hf; those models may not have local files.
     std::string gguf_path = model_info.resolved_path();
@@ -311,7 +340,8 @@ void LlamaCppServer::load(const std::string& model_name,
 
     port_ = choose_port();
 
-    std::string executable = BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
+    std::string executable =
+        container ? "" : BackendUtils::get_backend_binary_path(*llamacpp::spec(), llamacpp_backend);
 
     bool supports_embeddings = (model_info.type == ModelType::EMBEDDING);
     bool supports_reranking = (model_info.type == ModelType::RERANKING);
@@ -346,6 +376,9 @@ void LlamaCppServer::load(const std::string& model_name,
     push_reserved(reserved_flags, "--device", std::vector<std::string>{"-dev"});
 
     push_arg(args, reserved_flags, "--port", std::to_string(port_));
+    if (container) {
+        push_arg(args, reserved_flags, "--host", "0.0.0.0");
+    }
     push_arg(args, reserved_flags, "--jinja", std::vector<std::string>{"--no-jinja"});
     push_arg(args, reserved_flags, "--metrics");
 
@@ -404,6 +437,28 @@ void LlamaCppServer::load(const std::string& model_name,
     }
 
     LOG(INFO, "LlamaCpp") << "Starting llama-server..." << std::endl;
+
+    if (container) {
+        ServerCommand command;
+        command.program = llamacpp::descriptor.binary;
+        command.args = std::move(args);
+        command.model_files = gguf_files(gguf_path);
+        command.model_files.push_back(mmproj_path);
+        if (use_draft_checkpoint) {
+            command.model_files.push_back(draft_path);
+        }
+        command.port = port_;
+
+        const bool inherit_output = (log_level_ == "info") || is_debug();
+        start_server(std::make_unique<ContainerProcess>(
+                         ProcessOutput{inherit_output, true}, llamacpp::descriptor.recipe,
+                         llamacpp_backend, model_name, *container,
+                         BackendUtils::get_backend_image(llamacpp::descriptor.recipe,
+                                                         llamacpp_backend)),
+                     command);
+        LOG(DEBUG, "LlamaCpp") << "Model loaded on port " << get_backend_port() << std::endl;
+        return;
+    }
 
     // For ROCm on Linux, set LD_LIBRARY_PATH to include the ROCm library directory
     std::vector<std::pair<std::string, std::string>> env_vars;
