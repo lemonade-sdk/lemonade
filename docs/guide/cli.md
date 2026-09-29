@@ -494,7 +494,7 @@ lemonade load Qwen3-0.6B-GGUF --ctx-size 4096 --save-options
 lemonade load Qwen3-0.6B-GGUF --llamacpp vulkan
 
 # Load a llama.cpp model with custom arguments
-lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --no-mmap"
+lemonade load Qwen3-0.6B-GGUF --llamacpp-args "--flash-attn on --load-mode none"
 
 # Load a model without merging global args (per-model args replace global entirely)
 lemonade load Qwen3-0.6B-GGUF --no-merge-args --llamacpp-args "--flash-attn on"
