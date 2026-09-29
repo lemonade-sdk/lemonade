@@ -1469,6 +1469,89 @@ jobs:
         if: always()
         uses: ./.github/actions/cleanup-processes-linux
 
+  # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
+  # runners, which have the memory for DS4 and Halogen models. Each job starts
+  # on a fresh machine, so it installs a container tool when the image lacks
+  # one and downloads its model every run.
+  test-container-backends:
+    name: Test container backend - ${{ matrix.name }}
+    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
+    needs: build-lemonade-deb
+    if: >-
+      !startsWith(github.ref, 'refs/tags/') &&
+      !startsWith(github.ref, 'refs/heads/release-v') &&
+      inputs.enable_signing != true &&
+      inputs.disable_macos_signing != true &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
+    timeout-minutes: 240
+    strategy:
+      fail-fast: ${{ github.event_name == 'merge_group' }}
+      matrix:
+        include:
+          - name: ds4
+            install: "ds4:rocm"
+            script: server_llm.py
+            extra_args: "--wrapped-server ds4 --backend rocm"
+    env:
+      LEMONADE_CI_MODE: "True"
+      HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+      PYTHONIOENCODING: utf-8
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build-lemonade-deb.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set HF_HOME environment variable
+        run: |
+          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
+
+      - name: Install a container tool
+        run: |
+          set -e
+          if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          if command -v podman >/dev/null 2>&1; then podman --version; else docker --version; fi
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          port: auto
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Install the container backend
+        run: |
+          set -e
+          lemonade backends
+          lemonade backends install ${{ matrix.install }}
+
+      - name: Run tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          .venv/bin/python test/${{ matrix.script }} ${{ matrix.extra_args }} --cli-binary lemonade
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-container-${{ matrix.name }}
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
   test-watchdog-lifecycle-linux:
     name: Test watchdog lifecycle (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -1647,7 +1730,7 @@ jobs:
   # so renaming the job requires a matching branch-protection update.
   backends-gate:
     name: Inference backend tests
-    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-watchdog-lifecycle-linux]
+    needs: [build-lemonade-server-installer, build-lemonade-deb, cpp-unit-tests, test-exe-inference, test-deb-inference, test-container-backends, test-watchdog-lifecycle-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
