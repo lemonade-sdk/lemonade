@@ -37,9 +37,7 @@ CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
 ]
 
-# Raise llama-server log verbosity so the device-selection lines are emitted.
-# At the default level the newer builds print no device info; -lv 4 is the
-# minimum that surfaces "llama_prepare_model_devices: using device ...".
+# Raise llama-server log verbosity to atleast -lv 4 so the device-selection lines are emitted.
 LOAD_VERBOSITY_ARGS = "-lv 4"
 
 # Token that must appear in the llama-server device log when a GPU backend
