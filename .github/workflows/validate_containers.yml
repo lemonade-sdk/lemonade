@@ -1,0 +1,320 @@
+name: Validate Container Backend Images
+
+# Keeps every container backend on the newest build of its tag. Each pin in
+# backend_versions.json is <tag>@<digest>; this workflow moves only the digest,
+# and a maintainer sets the tag by hand. New digests are validated on Devlab
+# Dispatch's Strix Halo Linux runners before the update PR opens.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - '.github/workflows/validate_containers.yml'
+  schedule:
+    # Every Sunday at 18:00 UTC
+    - cron: "0 18 * * 0"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  LEMONADE_CI_MODE: "True"
+  PYTHONIOENCODING: utf-8
+  HF_TOKEN: ${{ secrets.HUGGINGFACE_ACCESS_TOKEN }}
+
+jobs:
+  resolve:
+    name: Resolve image digests
+    runs-on: ubuntu-latest
+    outputs:
+      updates: ${{ steps.resolve.outputs.updates }}
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      count: ${{ steps.resolve.outputs.count }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Find the newest digest of each pinned tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob
+          import json
+          import os
+          import re
+          import urllib.request
+
+          PIN_RE = re.compile(r"^(?P<tag>[^@]+)@(?P<digest>sha256:[0-9a-f]{64})$")
+          RECIPE_RE = re.compile(r'/\*recipe\*/\s*"([^"]+)"')
+          POLICY_RE = re.compile(r'\{"([^"]+)",\s*\{\s*/\*repository\*/\s*"([^"]+)"')
+          ACCEPT = ", ".join([
+              "application/vnd.oci.image.index.v1+json",
+              "application/vnd.docker.distribution.manifest.list.v2+json",
+              "application/vnd.docker.distribution.manifest.v2+json",
+              "application/vnd.oci.image.manifest.v1+json",
+          ])
+
+          # Each container backend's repository, from its descriptor.
+          repositories = {}
+          for header in glob.glob("src/cpp/include/lemon/backends/*/*.h"):
+              text = open(header, encoding="utf-8").read()
+              recipe = RECIPE_RE.search(text)
+              if not recipe:
+                  continue
+              for backend, repository in POLICY_RE.findall(text):
+                  repositories[(recipe.group(1), backend)] = repository
+
+          def newest_digest(repository, tag):
+              registry, name = repository.split("/", 1)
+              if registry == "docker.io":
+                  token_url = (
+                      "https://auth.docker.io/token?service=registry.docker.io"
+                      f"&scope=repository:{name}:pull"
+                  )
+                  manifest_url = f"https://registry-1.docker.io/v2/{name}/manifests/{tag}"
+              elif registry == "ghcr.io":
+                  token_url = f"https://ghcr.io/token?scope=repository:{name}:pull"
+                  manifest_url = f"https://ghcr.io/v2/{name}/manifests/{tag}"
+              else:
+                  raise SystemExit(f"Unsupported registry for {repository}")
+              with urllib.request.urlopen(token_url, timeout=30) as response:
+                  token = json.load(response)["token"]
+              request = urllib.request.Request(
+                  manifest_url,
+                  method="HEAD",
+                  headers={"Authorization": f"Bearer {token}", "Accept": ACCEPT},
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  return response.headers["Docker-Content-Digest"]
+
+          versions = json.load(open("src/cpp/resources/backend_versions.json", encoding="utf-8"))
+          updates = []
+          for (recipe, backend), repository in sorted(repositories.items()):
+              pin = versions.get(recipe, {}).get(backend, "")
+              match = PIN_RE.match(pin)
+              if not match:
+                  raise SystemExit(f"{recipe}:{backend} is not pinned to <tag>@<digest>: {pin!r}")
+              tag, digest = match.group("tag"), match.group("digest")
+              latest = newest_digest(repository, tag)
+              state = "current" if latest == digest else "new digest"
+              print(f"{recipe}:{backend} {repository}:{tag} pinned {digest[:19]} newest {latest[:19]} ({state})")
+              if latest != digest:
+                  updates.append({
+                      "recipe": recipe,
+                      "backend": backend,
+                      "repository": repository,
+                      "tag": tag,
+                      "old": digest,
+                      "new": latest,
+                  })
+
+          # On a pull request nothing changes upstream, so every pin is
+          # validated to exercise the pipeline.
+          validate = updates
+          if os.environ["EVENT_NAME"] == "pull_request":
+              validate = [
+                  {"recipe": r, "backend": b} for (r, b) in sorted(repositories)
+              ]
+          matrix = {"include": [
+              {"name": f"{u['recipe']}-{u['backend']}", "recipe": u["recipe"], "backend": u["backend"]}
+              for u in validate
+          ]}
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"updates={json.dumps(updates)}\n")
+              out.write(f"matrix={json.dumps(matrix)}\n")
+              out.write(f"count={len(validate)}\n")
+          PY
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+
+  build:
+    name: Build Lemonade .deb Package
+    needs: resolve
+    if: >-
+      needs.resolve.outputs.count != '0' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:backends'))
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    container:
+      image: ghcr.io/lemonade-sdk/lemonade/build-environment:ubuntu24.04
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          clean: true
+          fetch-depth: 0
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Pin the new digests
+        env:
+          UPDATES: ${{ needs.resolve.outputs.updates }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+
+          path = "src/cpp/resources/backend_versions.json"
+          versions = json.load(open(path, encoding="utf-8"))
+          for update in json.loads(os.environ["UPDATES"]):
+              versions[update["recipe"]][update["backend"]] = f"{update['tag']}@{update['new']}"
+          with open(path, "w", encoding="utf-8") as out:
+              json.dump(versions, out, indent=2)
+              out.write("\n")
+          PY
+          git diff src/cpp/resources/backend_versions.json
+
+      - name: Prepare Debian build
+        id: get_version
+        uses: ./.github/actions/prepare-debian-build
+        with:
+          release: '24.04'
+          codename: 'noble'
+
+      - name: Build Debian package
+        uses: ./.github/actions/build-debian-package
+        with:
+          package-type: binary
+          deb-version: ${{ steps.get_version.outputs.version }}
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v7
+        with:
+          name: lemonade-deb
+          path: lemonade-server_*.deb
+          retention-days: 7
+
+  validate:
+    name: Validate ${{ matrix.name }}
+    needs: [resolve, build]
+    runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      LEMONADE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set HF_HOME environment variable
+        run: |
+          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          mkdir -p "$HF_HOME"
+          echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
+
+      - name: Install a container tool
+        run: |
+          set -e
+          if ! command -v podman >/dev/null 2>&1 && ! command -v docker >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y podman
+          fi
+          if command -v podman >/dev/null 2>&1; then podman --version; else docker --version; fi
+
+      - name: Install Lemonade (.deb)
+        uses: ./.github/actions/install-lemonade-deb
+        with:
+          version: ${{ env.LEMONADE_VERSION }}
+          port: auto
+
+      - name: Setup Python and virtual environment
+        uses: ./.github/actions/setup-venv
+        with:
+          venv-name: '.venv'
+          python-version: '3.10'
+          requirements-file: 'test/requirements.txt'
+
+      - name: Install the container backend
+        run: |
+          set -e
+          lemonade backends install ${{ matrix.recipe }}:${{ matrix.backend }}
+
+      - name: Run tests
+        env:
+          HF_HOME: ${{ env.HF_HOME }}
+        run: |
+          set -e
+          .venv/bin/python test/server_llm.py --wrapped-server ${{ matrix.recipe }} \
+            --backend ${{ matrix.backend }} --cli-binary lemonade
+
+      - name: Capture and upload server logs
+        if: always()
+        uses: ./.github/actions/capture-server-logs
+        with:
+          artifact-name: server-logs-${{ matrix.name }}
+
+      - name: Cleanup
+        if: always()
+        uses: ./.github/actions/cleanup-processes-linux
+
+  create-pr:
+    name: Create update PR
+    needs: [resolve, validate]
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      needs.validate.result == 'success'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATES: ${{ needs.resolve.outputs.updates }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+
+          updates = json.loads(os.environ["UPDATES"])
+          path = "src/cpp/resources/backend_versions.json"
+          versions = json.load(open(path, encoding="utf-8"))
+          rows = []
+          for update in updates:
+              versions[update["recipe"]][update["backend"]] = f"{update['tag']}@{update['new']}"
+              rows.append(
+                  f"| `{update['recipe']}:{update['backend']}` | `{update['repository']}:{update['tag']}` "
+                  f"| `{update['old'][:19]}` | `{update['new'][:19]}` |"
+              )
+          with open(path, "w", encoding="utf-8") as out:
+              json.dump(versions, out, indent=2)
+              out.write("\n")
+          with open("pr_body.md", "w", encoding="utf-8") as out:
+              out.write("| Backend | Image | Old digest | New digest |\n|---|---|---|---|\n")
+              out.write("\n".join(rows) + "\n\n")
+              out.write("Each new digest passed its backend's `server_llm.py` suite on Devlab Dispatch.\n")
+          PY
+
+          BRANCH="auto/container-pins-$(sha256sum src/cpp/resources/backend_versions.json | cut -c1-12)"
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists for branch $BRANCH. Skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add src/cpp/resources/backend_versions.json
+          git commit -m "Update container backend images to the newest digest of each tag"
+          git push origin "$BRANCH"
+
+          gh pr create \
+            --title "Update container backend image digests" \
+            --body-file pr_body.md \
+            --base main \
+            --head "$BRANCH"
