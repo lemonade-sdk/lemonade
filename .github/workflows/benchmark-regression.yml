@@ -578,22 +578,49 @@ jobs:
         with:
           python-version: '3.11'
 
-      # podman is required to launch BYO backend containers. Install if absent;
-      # confirm the GPU device nodes exist (else the container can't reach the
-      # gfx1151 GPU and the bench is meaningless).
-      - name: Ensure podman + GPU devices
+      # Detect the container engine already on the runner (docker or podman) —
+      # we do NOT install one (runners typically lack passwordless sudo). Then
+      # resolve the correct GPU-access group flags for that engine and expose
+      # both as env vars the fork's launch_cmd interpolates. This keeps the
+      # fork config engine-agnostic.
+      - name: Detect container engine + GPU access
         run: |
           set -e
-          if ! command -v podman >/dev/null 2>&1; then
-            echo "Installing podman..."
-            sudo apt-get update -y && sudo apt-get install -y podman
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            ENGINE=docker
+          elif command -v podman >/dev/null 2>&1; then
+            ENGINE=podman
+          else
+            echo "ERROR: no usable container engine (docker or podman) on this runner."
+            echo "Install one on the runner host, or add the runner user to the docker group."
+            exit 1
           fi
-          podman --version
-          echo "hf CLI for model provisioning..."
-          python3 -m pip install --quiet --upgrade "huggingface_hub[cli]"
+          echo "Container engine: $ENGINE"
+          "$ENGINE" --version
+
           echo "--- GPU device nodes (required for ROCm passthrough) ---"
           ls -l /dev/kfd /dev/dri 2>&1 || { echo "ERROR: /dev/kfd or /dev/dri missing — runner has no gfx1151 GPU passthrough"; exit 1; }
-          echo "--- runner group membership (need render+video for device access) ---"
+
+          # Podman rootless preserves the host's real GIDs with keep-groups.
+          # Docker resolves group *names* against the container's /etc/group, so
+          # pass the host's NUMERIC render/video GIDs (robust even when the image
+          # lacks those group names).
+          if [ "$ENGINE" = "podman" ]; then
+            GPU_GROUPS="--group-add keep-groups"
+          else
+            RGID=$(getent group render | cut -d: -f3 || true)
+            VGID=$(getent group video  | cut -d: -f3 || true)
+            GPU_GROUPS=""
+            [ -n "$RGID" ] && GPU_GROUPS="$GPU_GROUPS --group-add $RGID"
+            [ -n "$VGID" ] && GPU_GROUPS="$GPU_GROUPS --group-add $VGID"
+          fi
+          echo "GPU group flags: $GPU_GROUPS"
+          echo "CONTAINER_ENGINE=$ENGINE" >> "$GITHUB_ENV"
+          echo "GPU_GROUP_FLAGS=$GPU_GROUPS" >> "$GITHUB_ENV"
+
+          echo "--- hf CLI for model provisioning (best-effort) ---"
+          python3 -m pip install --quiet --upgrade "huggingface_hub[cli]" || pip install --quiet --upgrade "huggingface_hub[cli]" || echo "WARN: hf CLI install failed; prepare_cmd may need it"
+          echo "--- runner identity + GPU groups ---"
           id; getent group render video || true
 
       - name: Restore benchmark history
@@ -648,8 +675,9 @@ jobs:
       - name: Cleanup containers
         if: always()
         run: |
-          podman rm -f "$FORK_ID" 2>/dev/null || true
-          podman ps -a || true
+          ENGINE="${CONTAINER_ENGINE:-docker}"
+          "$ENGINE" rm -f "$FORK_ID" 2>/dev/null || true
+          "$ENGINE" ps -a || true
         env:
           FORK_ID: ${{ matrix.fork_id }}
 
