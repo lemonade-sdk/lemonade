@@ -170,6 +170,9 @@ fs::path container_version_file(const std::string& recipe, const std::string& ba
 
 void install_container_backend(const std::string& recipe, const std::string& backend,
                                bool force, DownloadProgressCallback progress_cb) {
+    if (get_current_os() != "linux") {
+        throw std::runtime_error(recipe + ":" + backend + " is a container backend, which runs on Linux");
+    }
     const auto& manager = utils::ContainerManager::global();
     if (auto failure = manager.check_setup()) {
         throw std::runtime_error("Cannot install " + recipe + ":" + backend + ": " +
