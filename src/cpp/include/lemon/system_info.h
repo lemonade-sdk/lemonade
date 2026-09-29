@@ -99,6 +99,11 @@ public:
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
 
+    // Why the models of `recipe` stay hidden, or "" when they show. A recipe
+    // whose only backends on this host are experimental keeps its models hidden
+    // until one of those backends is installed.
+    static std::string check_experimental_backend_installed(const std::string& recipe);
+
     // Get all recipes with their backend state info
     // Returns a vector of {recipe_name, backends}
     struct BackendStatus {

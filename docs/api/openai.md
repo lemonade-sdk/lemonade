@@ -963,7 +963,7 @@ When `lemond` is configured with cloud providers, cloud-routed models appear her
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Defaults to `false`. |
+| `show_all` | No | If set to `true`, returns all models from the catalog including those not yet downloaded. Models of a recipe whose only backends on this system are experimental appear once one of those backends is installed. Defaults to `false`. |
 
 ### Example request
 

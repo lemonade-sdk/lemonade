@@ -63,6 +63,8 @@ struct BackendStatus {
     std::string version;
     std::string message;
     std::string action;
+    std::string tier;    // "core", "community" or "experimental"
+    std::string format;  // "native", "python" or "container"
 };
 
 // Recipe status structure
@@ -161,6 +163,9 @@ private:
     bool is_ssl_ = false;
     std::string normalize_host(const std::string& host) const;
     std::string get_base_url() const;
+    // Prints the experimental-backend disclaimer when `recipe:backend` is
+    // experimental and not installed yet.
+    void print_experimental_disclaimer(const std::string& recipe, const std::string& backend);
 };
 
 } // namespace lemonade

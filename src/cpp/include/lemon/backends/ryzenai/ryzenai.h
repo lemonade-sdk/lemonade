@@ -40,6 +40,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {},
     /*bin_variants*/    {"server"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"npu", {BackendTier::Core, BackendFormat::Native}},
+    },
 };
 
 }  // namespace ryzenai

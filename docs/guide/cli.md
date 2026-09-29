@@ -627,6 +627,8 @@ lemonade backends uninstall SPEC
 **Notes:**
 - Supported backends depend on your system and the recipe
 - Use `lemonade backends --all` to list all available recipes and backends
+- Each backend lists its tier and format. The tier is `core` (supported by Lemonade's maintainers for production use), `community` (provided by the maintainers, not supported for production use) or `experimental` (developed in the community and listed in Lemonade, used at your own risk). The format is `native` (a compiled executable), `python` (Python packaged with its own interpreter) or `container` (an OCI image run by a pre-installed Podman or Docker)
+- Installing an experimental backend prints a disclaimer. The models of a recipe whose only backends are experimental stay hidden from `lemonade list` until one of those backends is installed
 
 **Examples:**
 

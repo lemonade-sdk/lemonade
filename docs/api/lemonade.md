@@ -1823,25 +1823,33 @@ curl "http://localhost:13305/v1/system-info"
           "state": "installed",
           "message": "",
           "action": "",
-          "version": "b7869"
+          "version": "b7869",
+          "tier": "core",
+          "format": "native"
         },
         "rocm": {
           "devices": ["amd_gpu"],
           "state": "installable",
           "message": "Backend is supported but not installed.",
-          "action": "lemonade backends install llamacpp:rocm"
+          "action": "lemonade backends install llamacpp:rocm",
+          "tier": "core",
+          "format": "native"
         },
         "metal": {
           "devices": [],
           "state": "unsupported",
           "message": "Requires macOS",
-          "action": ""
+          "action": "",
+          "tier": "core",
+          "format": "native"
         },
         "cpu": {
           "devices": ["cpu"],
           "state": "update_required",
           "message": "Backend update is required before use.",
-          "action": "lemonade backends install llamacpp:cpu"
+          "action": "lemonade backends install llamacpp:cpu",
+          "tier": "core",
+          "format": "native"
         }
       }
     },
@@ -1927,6 +1935,8 @@ curl "http://localhost:13305/v1/system-info"
         - `message` - Human-readable status text for GUI and CLI users. Required for `unsupported`, `installable`, and `update_required`; empty for `installed`.
         - `action` - Actionable user instruction string. For install/update cases this is typically an exact CLI command; for other states it may be empty or another actionable value (for example, a URL).
         - `version` - Installed or configured backend version (when available)
+        - `tier` - Who stands behind the backend: `core` (supported by Lemonade's maintainers for production use), `community` (provided by the maintainers, not supported for production use) or `experimental` (developed in the community and listed in Lemonade, used at your own risk)
+        - `format` - How the backend is packaged: `native` (a compiled executable), `python` (Python packaged with its own interpreter) or `container` (an OCI image run by a pre-installed Podman or Docker)
 - `cloud` - Cloud OpenAI-compatible providers configured on this server (omitted when no providers are installed). Contains:
   - `providers` - Array, one entry per installed provider:
     - `name` - Provider name used as the model-name prefix (e.g. `fireworks`).

@@ -41,6 +41,10 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"cpu"},
     /*bin_variants*/    {"cpu"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"cpu", {BackendTier::Core, BackendFormat::Python}},
+    },
 };
 
 }  // namespace moonshine

@@ -50,6 +50,14 @@ inline const BackendDescriptor descriptor = {
     /*arg_variants*/    {"cpu", "npu"},
     /*bin_variants*/    {"cpu", "npu"},
     /*config_extra*/    nlohmann::json::object(),
+    /*streams_model_from_storage*/ false,
+    /*labels*/ {
+        {"npu", {BackendTier::Core, BackendFormat::Native}},
+        {"metal", {BackendTier::Core, BackendFormat::Native}},
+        {"vulkan", {BackendTier::Core, BackendFormat::Native}},
+        {"rocm", {BackendTier::Core, BackendFormat::Native}},
+        {"cpu", {BackendTier::Core, BackendFormat::Native}},
+    },
 };
 
 }  // namespace whispercpp

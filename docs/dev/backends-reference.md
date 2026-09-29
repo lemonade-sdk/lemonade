@@ -29,50 +29,52 @@ the generator instead. Prose outside the markers is preserved. -->
 
 ## Support matrix
 
+Each backend has a tier and a format. The tier is `core` (supported by Lemonade's maintainers for production use), `community` (provided by the maintainers, not supported for production use) or `experimental` (developed in the community and listed in Lemonade, used at your own risk). The format is `native` (a compiled executable), `python` (Python packaged with its own interpreter) or `container` (an OCI image run by a pre-installed Podman or Docker).
+
 <!-- BEGIN GENERATED: backends-matrix -->
-| Recipe | Backend | OS | Device families |
-|--------|---------|----|-----------------|
-| `acestep` | cuda | linux, windows | nvidia_gpu |
-| `acestep` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `acestep` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `ds4` | rocm | linux | amd_gpu (gfx1151) |
-| `flm` | npu | linux, windows | amd_npu (XDNA2) |
-| `kokoro` | metal | macos | metal |
-| `kokoro` | cpu | linux, windows | cpu (x86_64) |
-| `llamacpp` | system | linux | cpu (arm64, x86_64) |
-| `llamacpp` | metal | macos | metal |
-| `llamacpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
-| `llamacpp` | vulkan | linux, windows | amd_gpu; cpu (arm64, x86_64) |
-| `llamacpp` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
-| `llamacpp` | cpu | linux, windows | cpu (arm64, x86_64) |
-| `llamacpp-hrx` | hrx | linux | amd_gpu (gfx1100, gfx1151) |
-| `moonshine` | cpu | windows | cpu (x86_64) |
-| `moonshine` | cpu | linux | cpu (arm64, x86_64) |
-| `moonshine` | cpu | macos | cpu (arm64) |
-| `onnxruntime` | cpu | windows | cpu (x86_64) |
-| `onnxruntime` | cpu | linux | cpu (arm64, x86_64) |
-| `onnxruntime` | cpu | macos | cpu (arm64) |
-| `openmoss` | cuda | linux, windows | nvidia_gpu |
-| `openmoss` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `ryzenai-llm` | npu | windows | amd_npu (XDNA2) |
-| `sd-cpp` | metal | macos | metal |
-| `sd-cpp` | cuda | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
-| `sd-cpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `sd-cpp` | rocm | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `sd-cpp` | cpu | linux, windows | cpu (x86_64) |
-| `thenoise` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `thinksound` | cuda | linux, windows | nvidia_gpu |
-| `thinksound` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `thinksound` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `trellis` | cuda | linux, windows | nvidia_gpu |
-| `trellis` | vulkan | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
-| `trellis` | rocm | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
-| `vllm` | rocm | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
-| `whispercpp` | npu | windows | amd_npu (XDNA2) |
-| `whispercpp` | metal | macos | metal |
-| `whispercpp` | vulkan | linux, windows | amd_gpu; cpu (x86_64) |
-| `whispercpp` | rocm | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
-| `whispercpp` | cpu | linux, windows | cpu (x86_64) |
+| Recipe | Backend | Tier | Format | OS | Device families |
+|--------|---------|------|--------|----|-----------------|
+| `acestep` | cuda | community | native | linux, windows | nvidia_gpu |
+| `acestep` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `acestep` | rocm | community | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `ds4` | rocm | experimental | native | linux | amd_gpu (gfx1151) |
+| `flm` | npu | core | native | linux, windows | amd_npu (XDNA2) |
+| `kokoro` | metal | core | native | macos | metal |
+| `kokoro` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `llamacpp` | system | core | native | linux | cpu (arm64, x86_64) |
+| `llamacpp` | metal | core | native | macos | metal |
+| `llamacpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `llamacpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (arm64, x86_64) |
+| `llamacpp` | rocm | core | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X, gfx908, gfx90a, gfx942, gfx950) |
+| `llamacpp` | cpu | core | native | linux, windows | cpu (arm64, x86_64) |
+| `llamacpp-hrx` | hrx | community | native | linux | amd_gpu (gfx1100, gfx1151) |
+| `moonshine` | cpu | core | python | windows | cpu (x86_64) |
+| `moonshine` | cpu | core | python | linux | cpu (arm64, x86_64) |
+| `moonshine` | cpu | core | python | macos | cpu (arm64) |
+| `onnxruntime` | cpu | community | native | windows | cpu (x86_64) |
+| `onnxruntime` | cpu | community | native | linux | cpu (arm64, x86_64) |
+| `onnxruntime` | cpu | community | native | macos | cpu (arm64) |
+| `openmoss` | cuda | community | native | linux, windows | nvidia_gpu |
+| `openmoss` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `ryzenai-llm` | npu | core | native | windows | amd_npu (XDNA2) |
+| `sd-cpp` | metal | core | native | macos | metal |
+| `sd-cpp` | cuda | core | native | linux, windows | nvidia_gpu (sm_100, sm_120, sm_121, sm_75, sm_80, sm_86, sm_89, sm_90) |
+| `sd-cpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `sd-cpp` | rocm | core | native | linux | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `sd-cpp` | cpu | core | native | linux, windows | cpu (x86_64) |
+| `thenoise` | rocm | community | python | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `thinksound` | cuda | community | native | linux, windows | nvidia_gpu |
+| `thinksound` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `thinksound` | rocm | community | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `trellis` | cuda | community | native | linux, windows | nvidia_gpu |
+| `trellis` | vulkan | community | native | linux, windows | amd_gpu; cpu (x86_64); nvidia_gpu |
+| `trellis` | rocm | community | native | linux, windows | amd_gpu (gfx103X, gfx110X, gfx1150, gfx1151, gfx1152, gfx120X) |
+| `vllm` | rocm | community | python | linux | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `whispercpp` | npu | core | native | windows | amd_npu (XDNA2) |
+| `whispercpp` | metal | core | native | macos | metal |
+| `whispercpp` | vulkan | core | native | linux, windows | amd_gpu; cpu (x86_64) |
+| `whispercpp` | rocm | core | native | linux, windows | amd_gpu (gfx110X, gfx1150, gfx1151, gfx120X) |
+| `whispercpp` | cpu | core | native | linux, windows | cpu (x86_64) |
 <!-- END GENERATED: backends-matrix -->
 
 > **Note:** The `llamacpp` `rocm` row lists `linux, windows` for the family as a
