@@ -586,13 +586,32 @@ jobs:
       - name: Detect container engine + GPU access
         run: |
           set -e
+          # Diagnostics first so a misconfigured runner tells us WHY, not just
+          # "no engine". The usual culprit on self-hosted runners is: docker is
+          # installed but the runner user isn't in the docker group, so
+          # `docker info` fails with a socket permission error.
+          echo "--- container engine diagnostics ---"
+          echo "whoami: $(whoami)   groups: $(id -nG)"
+          echo "docker binary: $(command -v docker || echo '(not found)')"
+          echo "podman binary: $(command -v podman || echo '(not found)')"
+          ls -l /var/run/docker.sock 2>&1 || true
+          if command -v docker >/dev/null 2>&1; then
+            echo "--- 'docker info' result ---"
+            docker info 2>&1 | head -n 20 || true
+          fi
+
           if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
             ENGINE=docker
           elif command -v podman >/dev/null 2>&1; then
             ENGINE=podman
+          elif command -v docker >/dev/null 2>&1; then
+            echo "ERROR: docker is installed but not usable by $(whoami)."
+            echo "Most likely the runner user is not in the 'docker' group. On the runner host:"
+            echo "  sudo usermod -aG docker $(whoami) && sudo systemctl restart actions.runner.*"
+            echo "(or ensure the docker daemon is running)."
+            exit 1
           else
-            echo "ERROR: no usable container engine (docker or podman) on this runner."
-            echo "Install one on the runner host, or add the runner user to the docker group."
+            echo "ERROR: no container engine (docker or podman) found on this runner."
             exit 1
           fi
           echo "Container engine: $ENGINE"
