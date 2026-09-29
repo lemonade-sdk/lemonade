@@ -1057,32 +1057,65 @@ jobs:
           body_lines.append("")
           body_lines.append("## Validation Results")
           body_lines.append("")
-          body_lines.append("| Model | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
-          body_lines.append("|-------|--------|----------|--------------|---------------|---------------------|-------------------|")
+          body_lines.append("| Model | Backend | Result | Response | input_tokens | output_tokens | time_to_first_token | tokens_per_second |")
+          body_lines.append("|-------|---------|--------|----------|--------------|---------------|---------------------|-------------------|")
 
-          for backend in ["vulkan", "rocm-stable", "rocm-nightly"]:
-              # Labels match the artifact names produced by the validate job
+          # Labels match the artifact names produced by the validate job.
+          backend_labels = ["vulkan", "rocm-stable", "rocm-nightly"]
+          backend_display = {
+              "vulkan": "vulkan",
+              "rocm-stable": "rocm stable",
+              "rocm-nightly": "rocm nightly",
+          }
+
+          model_order = []
+          per_model = {}
+          available_backends = []
+          for backend in backend_labels:
               results_file = f"llamacpp_validation_{backend}.json"
               if not os.path.isfile(results_file):
-                  body_lines.append(f"| _{backend}: no results_ | | | | | | |")
                   continue
+              available_backends.append(backend)
               with open(results_file, "r") as f:
                   results = json.load(f)
               for r in results:
-                  status = "PASS" if r["pass"] else "FAIL"
-                  # Truncate response for table readability
-                  resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
-                  ttft = r.get("time_to_first_token", "N/A")
-                  if isinstance(ttft, float):
-                      ttft = f"{ttft:.3f}s"
-                  tps = r.get("tokens_per_second", "N/A")
-                  if isinstance(tps, float):
-                      tps = f"{tps:.1f}"
-                  body_lines.append(
-                      f"| {r['model']} ({backend}) | {status} | {resp} | "
-                      f"{r.get('input_tokens', 'N/A')} | {r.get('output_tokens', 'N/A')} | "
-                      f"{ttft} | {tps} |"
-                  )
+                  model = r["model"]
+                  if model not in per_model:
+                      per_model[model] = {}
+                      model_order.append(model)
+                  per_model[model][backend] = r
+
+          def format_metrics(r):
+              status = "PASS" if r["pass"] else "FAIL"
+              # Truncate response for table readability
+              resp = str(r.get("response", ""))[:80].replace("|", "\\|").replace("\n", " ")
+              ttft = r.get("time_to_first_token", "N/A")
+              if isinstance(ttft, float):
+                  ttft = f"{ttft:.3f}s"
+              tps = r.get("tokens_per_second", "N/A")
+              if isinstance(tps, float):
+                  tps = f"{tps:.1f}"
+              return (
+                  f"{status} | {resp} | {r.get('input_tokens', 'N/A')} | "
+                  f"{r.get('output_tokens', 'N/A')} | {ttft} | {tps}"
+              )
+
+          if not model_order:
+              body_lines.append("| _no validation results_ | | | | | | | |")
+          for model in model_order:
+              first = True
+              for backend in available_backends:
+                  r = per_model[model].get(backend)
+                  model_cell = model if first else ""
+                  first = False
+                  if r is None:
+                      body_lines.append(
+                          f"| {model_cell} | {backend_display[backend]} | | | | | | |"
+                      )
+                  else:
+                      body_lines.append(
+                          f"| {model_cell} | {backend_display[backend]} | {format_metrics(r)} |"
+                      )
 
           body_lines.append("")
           body_lines.append("---")

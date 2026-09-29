@@ -21,6 +21,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -35,6 +36,50 @@ TIMEOUT_INFERENCE = 1800  # 30 minutes; large models may need 60+ GB download
 CHAT_PROMPT = [
     {"role": "user", "content": "What is 2+2? Reply in one sentence."},
 ]
+
+# Raise llama-server log verbosity so the device-selection lines are emitted.
+# At the default level the newer builds print no device info; -lv 4 is the
+# minimum that surfaces "llama_prepare_model_devices: using device ...".
+LOAD_VERBOSITY_ARGS = "-lv 4"
+
+# Token that must appear in the llama-server device log when a GPU backend
+# actually runs on the GPU. Absence signals a silent CPU fallback.
+GPU_DEVICE_TOKENS = {
+    "vulkan": "Vulkan",
+    "rocm": "ROCm",
+    "cuda": "CUDA",
+    "metal": "Metal",
+}
+
+
+def gpu_offload_confirmed(log_chunk, gpu_token):
+    """Return True if the llama-server log shows work placed on the GPU.
+
+    Accepts either the device-selection line (newer builds, needs -lv 4) or the
+    layer-offload line (older/ROCm-fork builds) so a single string change in one
+    of the three pinned binaries does not silently disable the check.
+    """
+    if f"using device {gpu_token}" in log_chunk:
+        return True
+    for line in log_chunk.splitlines():
+        match = re.search(r"offloaded\s+(\d+)/(\d+)\s+layers to GPU", line)
+        if match and int(match.group(1)) > 0:
+            return True
+    return False
+
+
+def read_new_log_text(log_path, offset):
+    """Read a live log file from a byte offset; return (text, new_offset)."""
+    if not log_path or not os.path.isfile(log_path):
+        return "", offset
+    try:
+        with open(log_path, "r", encoding="utf-8", errors="replace") as log_file:
+            log_file.seek(offset)
+            chunk = log_file.read()
+            return chunk, log_file.tell()
+    except OSError as exc:
+        print(f"  Warning: could not read server log for GPU check: {exc}", flush=True)
+        return "", offset
 
 
 def collect_server_logs(output_dir):
@@ -172,7 +217,11 @@ def test_model(base_url, model_name, backend, max_tokens=50):
             "POST",
             f"{base_url}/load",
             timeout=TIMEOUT_INFERENCE,
-            json={"model_name": model_name, "llamacpp_backend": backend},
+            json={
+                "model_name": model_name,
+                "llamacpp_backend": backend,
+                "llamacpp_args": LOAD_VERBOSITY_ARGS,
+            },
         )
         if load_resp.status_code != 200:
             return (
@@ -341,6 +390,16 @@ def main():
 
     results = []
     all_passed = True
+    gpu_token = GPU_DEVICE_TOKENS.get(args.backend)
+    stderr_log_path = (
+        os.path.join(args.logs_dir, "lemond.stderr.log") if args.logs_dir else None
+    )
+    log_offset = 0
+    if gpu_token and not stderr_log_path:
+        print(
+            "Warning: --logs-dir not set; skipping GPU-fallback assertion",
+            flush=True,
+        )
     try:
         for model in hot_models:
             model_name = model["id"]
@@ -348,6 +407,15 @@ def main():
             success, response_text, stats = test_model(
                 base_url, model_name, args.backend
             )
+            if gpu_token and stderr_log_path:
+                log_chunk, log_offset = read_new_log_text(stderr_log_path, log_offset)
+                if success and not gpu_offload_confirmed(log_chunk, gpu_token):
+                    success = False
+                    response_text = (
+                        f"GPU assertion failed: backend '{args.backend}' did not "
+                        f"report GPU placement ('{gpu_token}') in the llama-server "
+                        f"log — silent CPU fallback?"
+                    )
             result = {
                 "model": model_name,
                 "pass": success,
