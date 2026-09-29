@@ -143,30 +143,23 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     LOG(INFO, "DS4") << "Starting ds4-server (" << executable << ") for " << gguf_path
                      << " on port " << port_ << std::endl;
 
-    bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
-    set_process_handle(
-        ProcessManager::start_process(executable, args, "", inherit_output, true, env_vars),
-        executable, args);
-
+    ServerCommand command;
+    command.program = executable;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
     // ds4-server binds its port only after the model is fully loaded, so first
     // reachability means ready. There is no /health endpoint; /v1/models is the
     // cheapest always-on route and doubles as the watchdog probe.
-    if (!wait_for_ready("/v1/models", HttpClient::get_default_timeout())) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("ds4-server failed to start within timeout");
-    }
+    command.ready_endpoint = "/v1/models";
+
+    const bool inherit_output = (log_level_ == "info") || (log_level_ == "debug");
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command,
+                 HttpClient::get_default_timeout());
 }
 
 void Ds4Server::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "DS4") << "Stopping ds4-server" << std::endl;
-        ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 json Ds4Server::chat_completion(const json& request) {

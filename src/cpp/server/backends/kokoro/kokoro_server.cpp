@@ -125,35 +125,17 @@ void KokoroServer::load(const std::string& model_name, const ModelInfo& model_in
         "--port", std::to_string(port_)
     };
 
-    ProcessHandle started_handle = utils::ProcessManager::start_process(
-        exe_path,
-        args,
-        "",     // working_dir (empty = current)
-        is_debug(),  // inherit_output
-        false,
-        env_vars
-    );
-    set_process_handle(started_handle, exe_path, args);
-
-    if (!has_process_handle(started_handle)) {
-        throw std::runtime_error("Failed to start koko process");
-    }
-
-    LOG(INFO, "KokoroServer") << "Process started with PID: " << started_handle.pid << std::endl;
-
-    if (!wait_for_ready("/")) {
-        unload();
-        throw std::runtime_error("koko failed to start or become ready");
-    }
+    ServerCommand command;
+    command.program = exe_path;
+    command.args = std::move(args);
+    command.env = std::move(env_vars);
+    command.port = port_;
+    command.ready_endpoint = "/";
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{is_debug(), false}), command);
 }
 
 void KokoroServer::unload() {
-    stop_backend_watchdog();
-    const ProcessHandle handle = consume_process_handle_for_cleanup();
-    if (has_process_handle(handle)) {
-        LOG(INFO, "KokoroServer") << "Stopping server (PID: " << handle.pid << ")" << std::endl;
-        utils::ProcessManager::stop_process(handle);
-    }
+    stop_server();
 }
 
 // ICompletionServer implementation (not supported - return errors)

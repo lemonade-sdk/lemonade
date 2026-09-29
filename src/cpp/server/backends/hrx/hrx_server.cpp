@@ -126,26 +126,15 @@ void HrxServer::load(const std::string& model_name,
     const std::vector<std::pair<std::string, std::string>> environment =
         hrx::build_server_environment();
 
+    ServerCommand command;
+    command.program = executable;
+    command.args = argv;
+    command.env = environment;
+    command.port = backend_port;
+
     const bool info_logging_enabled = log_level_ == "info";
     const bool inherit_output = info_logging_enabled || is_debug();
-    set_process_handle(
-        utils::ProcessManager::start_process(
-            executable,
-            argv,
-            "",
-            inherit_output,
-            true,
-            environment),
-        executable,
-        argv);
-
-    if (!wait_for_ready("/health")) {
-        const ProcessHandle handle = consume_process_handle_for_cleanup();
-        if (has_process_handle(handle)) {
-            utils::ProcessManager::stop_process(handle);
-        }
-        throw std::runtime_error("HRX llama-server failed to start");
-    }
+    start_server(std::make_unique<NativeProcess>(ProcessOutput{inherit_output, true}), command);
 
     LOG(DEBUG, "HRX") << "Model loaded on port "
                        << get_backend_port() << std::endl;
