@@ -494,6 +494,10 @@ void StreamingProxy::forward_byte_stream(
     sink.done();
 }
 
+void StreamingProxy::accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry) {
+    extract_telemetry_from_chunk(chunk, telemetry);
+}
+
 StreamingProxy::TelemetryData StreamingProxy::extract_telemetry(const nlohmann::json& payload) {
     TelemetryData telemetry;
     extract_telemetry_from_chunk(payload, telemetry);

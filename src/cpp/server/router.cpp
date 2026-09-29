@@ -1822,6 +1822,10 @@ json Router::chat_completion(const json& request, std::atomic<bool>* cancel) {
                     } else if (usage.contains("output_tokens")) {
                         usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
                     }
+                    auto details = usage.value("prompt_tokens_details", json::object());
+                    if (details.is_object() && details.contains("cached_tokens") && details["cached_tokens"].is_number()) {
+                        usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
+                    }
                 }
                 if (response.contains("timings")) {
                     auto timings = response["timings"];
@@ -1947,6 +1951,10 @@ json Router::completion(const json& request) {
                         usage_payload["completion_tokens"] = usage["completion_tokens"].get<int>();
                     } else if (usage.contains("output_tokens")) {
                         usage_payload["completion_tokens"] = usage["output_tokens"].get<int>();
+                    }
+                    auto details = usage.value("prompt_tokens_details", json::object());
+                    if (details.is_object() && details.contains("cached_tokens") && details["cached_tokens"].is_number()) {
+                        usage_payload["cached_tokens"] = details["cached_tokens"].get<int>();
                     }
                 }
 

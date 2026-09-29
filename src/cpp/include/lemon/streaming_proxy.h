@@ -83,6 +83,9 @@ public:
     // cached-token details) and llama.cpp timings.
     static TelemetryData extract_telemetry(const nlohmann::json& payload);
 
+    // Fold one SSE chunk into a running stream's telemetry (usage, timings, output chunk count).
+    static void accumulate_telemetry(const nlohmann::json& chunk, TelemetryData& telemetry);
+
     static void accumulate_responses_delta(const nlohmann::json& parsed, std::string& accumulated_text);
 
 private:
