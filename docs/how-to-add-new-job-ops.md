@@ -127,6 +127,25 @@ std::function<json(const json& params, const json& context, CancelFlag& cancel)>
 | `load` | yes | lambda in `services/job_ops.cpp` | Calls `router->load_model(...)` |
 | `unload` | yes | lambda in `services/job_ops.cpp` | Calls `router->unload_model(...)` |
 | `chat` | yes | lambda in `services/job_ops.cpp` | Calls `router->chat_completion(...)` |
+| `image_generations` | yes | lambda in `services/job_ops.cpp` | Calls `router->image_generations(...)`; cancellable |
+| `image_edits` | yes | lambda in `services/job_ops.cpp` | Calls `router->image_edits(...)`; cancellable |
+| `image_variations` | yes | lambda in `services/job_ops.cpp` | Calls `router->image_variations(...)`; cancellable |
+| `audio_speech` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped) |
+| `audio_generations` | yes | lambda in `services/job_ops.cpp` | Negotiates `response_format`; base64 media (size-capped) |
+| `model_3d_generations` | yes | lambda in `services/job_ops.cpp` | Returns base64 GLB (size-capped) |
+
+## Returning binary/media results
+
+Ops that produce media (audio, GLB) buffer the backend bytes, base64-encode them,
+and return them inline in the op output. Because the whole job context is
+persisted to `jobs.json`, that output is capped by `kMaxJobMediaOutputBytes` in
+`services/job_ops.cpp`; a result above the cap fails the step with `JobError(413, ...)`
+rather than bloating the on-disk job store. Media ops must also select and
+validate `response_format` against the backend's supported formats (reuse
+`negotiate_speech_format` / `negotiate_audio_generation_format` from
+`lemon/server/audio_formats.h`) and write the negotiated format back into the
+request so the backend encodes what the output's `mime_type` promises, and their sink
+must stop accepting data once `cancel` is set (see `configure_cancellable_sink`).
 
 ## Constraints from project notes
 
