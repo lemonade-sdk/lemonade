@@ -760,6 +760,7 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
         admin_api_key_ = api_key_;
     }
 
+    nexus_manager_ = std::make_unique<NexusManager>(config_dir, config_->port());
     setup_http_servers();
 
     // Initialize WebSocket server for realtime API and log streaming
@@ -1114,6 +1115,7 @@ httplib::Server::HandlerResponse Server::authenticate_request(const httplib::Req
 
 
 void Server::setup_routes(httplib::Server &web_server) {
+    nexus_manager_->register_routes(web_server);
     // Add pre-routing handler to log ALL incoming requests (except health checks)
     web_server.set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->log_request(req);
@@ -2319,6 +2321,7 @@ bool Server::startup_failed() const {
 }
 
 void Server::stop() {
+    if (nexus_manager_) nexus_manager_->stop();
     if (running_) {
         LOG(INFO, "Server") << "Stopping HTTP server..." << std::endl;
         udp_beacon_.stopBroadcasting();

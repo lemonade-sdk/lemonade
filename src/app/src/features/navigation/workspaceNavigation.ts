@@ -52,6 +52,7 @@ export const WORKSPACE_NAVIGATION = {
   ] as const, 'Monitor'),
   connect: defineWorkspace('connect', [
     defineSection('server', 'Endpoint and authentication', 'plug'),
+    defineSection('devices-and-mesh', 'Your network, linked devices and invites', 'router'),
     defineSection('chat', 'History, reasoning, and speech', 'chat'),
     defineSection('memory', 'Budget, Loading and eviction', 'gauge'),
     defineSection('model-storage', 'Cache and custom directories', 'hard-drive'),
