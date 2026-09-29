@@ -216,7 +216,7 @@ Files are named `usage-YYYY-MM-DD.jsonl` (UTC) and roll over at midnight or at 1
 | `tokens_reported` | `false` when the backend returned no counts. Token fields are then `null`, not `0`. |
 | `tokens_estimated` | `true` when the client disconnected mid-stream; `output_tokens` is the number of chunks relayed before the disconnect. |
 | `host` | The machine running Lemonade, even for remote clients. |
-| `session_id`, `client_ip` | Filled when available. Session IDs come from the headers described in [Session Tracking](#session-tracking-client-identification). |
+| `session_id`, `client_ip` | Filled when available. Session IDs come from the headers described in [Session Tracking](#session-tracking--client-identification). |
 
 Records are written by a background thread, so a slow disk never delays a request. If writing falls behind, records are dropped and a `{"dropped": N}` line is written once it catches up. If a write fails (disk full, directory removed), the log disables itself and logs one warning.
 
