@@ -147,8 +147,8 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
   </thead>
   <tbody>
     <tr>
-      <td rowspan="11"><strong>Text generation</strong></td>
-      <td rowspan="6"><code>llamacpp</code></td>
+      <td rowspan="12"><strong>Text generation</strong></td>
+      <td rowspan="7"><code>llamacpp</code></td>
       <td><code>system</code></td>
       <td><code>x86_64</code>/ARM64 CPU, GPU</td>
       <td>Linux</td>
@@ -177,6 +177,11 @@ Lemonade supports multiple inference engines for LLM, speech, TTS, and image gen
       <td><code>cpu</code></td>
       <td><code>x86_64</code> CPU; ARM64 CPU (Linux)</td>
       <td>Windows, Linux</td>
+    </tr>
+    <tr>
+      <td><code>nathanw</code></td>
+      <td>AMD Strix Halo (Vulkan performance fork)</td>
+      <td>Linux</td>
     </tr>
     <tr>
       <td rowspan="1"><code>llamacpp-hrx</code> (experimental)</td>
