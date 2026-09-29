@@ -32,7 +32,7 @@ Lemonade follows [Ramalama](https://github.com/containers/ramalama)'s container 
   - Peonist's [ghcr.io account](https://github.com/orgs/peonist-ai/packages) for Halogen.
 - **Models.** Downloaded by Lemonade and mounted read-only. Mounts and privileges are Lemonade's to set.
 - **Packaging.**
-  - Source builds and the embedded SDK tarball will natively support the container backends.
+  - The PPA, the GitHub release .deb, source builds and the embedded SDK tarball will natively support the container backends.
 
 ## New Backend Descriptor Labels
 
@@ -259,6 +259,7 @@ podman run \
 A container backend loads only when `lemond` can reach Podman or Docker, and that tool can open the GPU's device nodes. This section specifies, for each install type, what starts the containers, what the installer sets up, and what the setup assistant checks. The install types are:
 
 - [`lemond` Started by the User](#lemond-started-by-the-user)
+- [PPA and .deb](#ppa-and-deb)
 
 Container backends are hidden on Windows and macOS.
 
@@ -321,6 +322,76 @@ When the container tool is Docker, the checks are:
 | Check | Fails when | `action` |
 | --- | --- | --- |
 | Docker reachable | The Docker daemon refuses the user's account | 1. `sudo usermod -aG docker $USER`<br>2. Log out and back in |
+
+### PPA and .deb
+
+The PPA (`ppa:lemonade-team/stable`), the GitHub release .debs for Ubuntu 24.04 and Debian 13, and the Debian archive all build from `contrib/debian`. They run `lemond` as `lemond.service`, a system service under the `lemonade` account.
+
+What the user does:
+
+- **With Podman:** installs Podman. The package does everything else.
+- **With Docker:**
+  1. Runs `sudo usermod -aG docker lemonade`.
+  2. Runs `sudo systemctl restart lemond`.
+
+What the package does:
+
+1. Ships `lemonade-podman.socket` and `lemonade-podman.service` (see [`lemonade-podman.service`](#lemonade-podmanservice)), which `CMakeLists.txt` installs to `/usr/lib/systemd/system` next to `lemond.service`.
+2. `lemonade-server.postinst` adds `lemonade` to `video` and `render` with `usermod`.
+3. `dh_installsystemd` enables and starts `lemonade-podman.socket`, as it does `lemond.service`.
+4. `debian/control` declares `Suggests: podman`.
+
+Containers are started by:
+
+| Container tool | Containers started by |
+| --- | --- |
+| Podman | `lemonade-podman.service`, through `/run/lemonade-podman.sock` |
+| Docker | The Docker daemon, through `/var/run/docker.sock` |
+
+When the container tool is Podman, the checks are:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| Podman installed | `podman` is not on `PATH` | The install command for the host's `ID` |
+| Podman reachable | `/run/lemonade-podman.sock` does not answer | `sudo systemctl enable --now lemonade-podman.socket` |
+| Device nodes accessible | `lemonade` is not in both `video` and `render` | 1. `sudo usermod -aG video,render lemonade`<br>2. `sudo systemctl restart lemond` |
+
+When the container tool is Docker, the checks are:
+
+| Check | Fails when | `action` |
+| --- | --- | --- |
+| Docker reachable | The Docker daemon refuses `lemonade` | 1. `sudo usermod -aG docker lemonade`<br>2. `sudo systemctl restart lemond` |
+
+#### `lemonade-podman.service`
+
+`lemond.service` runs as `lemonade` with `RestrictNamespaces=yes` and `NoNewPrivileges=yes`. Rootless Podman creates user namespaces and runs the setuid `newuidmap` helper, which those two settings block, so Podman runs in a separate, socket-activated service:
+
+```ini
+# lemonade-podman.socket
+[Socket]
+ListenStream=/run/lemonade-podman.sock
+SocketUser=lemonade
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target
+
+# lemonade-podman.service
+[Unit]
+ConditionPathExists=/usr/bin/podman
+
+[Service]
+User=lemonade
+RuntimeDirectory=lemonade-podman
+Environment=XDG_RUNTIME_DIR=%t/lemonade-podman
+ExecStartPre=+/bin/sh -c 'grep -q "^lemonade:" /etc/subuid || usermod --add-subuids 200000-265535 --add-subgids 200000-265535 lemonade'
+ExecStart=/usr/bin/podman system service --time=60
+```
+
+- `lemond.service` adds `Environment=CONTAINER_HOST=unix:///run/lemonade-podman.sock`. `ContainerManager` sees `CONTAINER_HOST` and runs every `podman` command with `--remote`, so the containers start from `lemonade-podman.service`.
+- `lemonade-podman.service` starts on the first connection and exits after 60 seconds idle.
+- systemd evaluates `ConditionPathExists=/usr/bin/podman` at each start, so Podman installed after Lemonade works without restarting either service.
+- `ExecStartPre` runs as root (the `+` prefix) and gives `lemonade` the `subuid` and `subgid` range `200000-265535` on the first start. `sysusers.d` cannot allocate subordinate ranges, and a service start is the first point at which every package that ships this unit has created the `lemonade` account.
 
 ### SELinux Check
 
