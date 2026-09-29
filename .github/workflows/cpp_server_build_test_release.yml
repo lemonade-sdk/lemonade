@@ -1472,7 +1472,8 @@ jobs:
   # Container backends run on Devlab Dispatch's ephemeral Strix Halo Linux
   # runners, which have the memory for DS4 and Halogen models. Each job starts
   # on a fresh machine, so it installs a container tool when the image lacks
-  # one and downloads its model every run.
+  # one, and downloads its models into the workspace volume before the tests,
+  # whose per-request timeouts are shorter than a cold download.
   test-container-backends:
     name: Test container backend - ${{ matrix.name }}
     runs-on: [self-hosted, Linux, devlab-dispatch, strix-halo]
@@ -1503,7 +1504,7 @@ jobs:
 
       - name: Set HF_HOME environment variable
         run: |
-          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          HF_HOME="$RUNNER_TEMP/huggingface"
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
@@ -1534,6 +1535,23 @@ jobs:
           set -e
           lemonade backends
           lemonade backends install ${{ matrix.install }}
+
+      - name: Download the test models
+        env:
+          EXTRA_ARGS: ${{ matrix.extra_args }}
+        run: |
+          set -e
+          wrapped_server=$(sed -E 's/.*--wrapped-server ([^ ]+).*/\1/' <<<"$EXTRA_ARGS")
+          models=$(cd test && python3 -c "
+          import sys
+          from utils.capabilities import CAPABILITIES
+          from utils.test_models import MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY
+          models = set(CAPABILITIES['llm'][sys.argv[1]]['test_models'].values())
+          print(' '.join(sorted(models | {MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY})))
+          " "$wrapped_server")
+          for model in $models; do
+            lemonade pull "$model"
+          done
 
       - name: Run tests
         env:
