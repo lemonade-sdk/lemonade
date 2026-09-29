@@ -407,6 +407,18 @@ def run_bench(
     with open(output_file) as f:
         data = json.load(f)
 
+    annotate_tg_pp(data)
+    for br in backend_results(data, model):
+        for sc in br.get("scenarios", []):
+            print(
+                f"    [{model} / {sc.get('name')}] "
+                f"TG (decode) = {sc.get('tg_tps', 'n/a')} tok/s  |  "
+                f"PP (prefill) = {sc.get('pp_tps', 'n/a')} tok/s  "
+                f"(TTFT {round(sc.get('ttft_ms', {}).get('mean', 0), 1)} ms, "
+                f"in={sc.get('input_tokens')} out={sc.get('output_tokens')})",
+                flush=True,
+            )
+
     data.update(
         {
             "fork_id": fork["fork_id"],
@@ -467,6 +479,28 @@ def backend_results(data: dict, model: str | None = None) -> list[dict]:
                 out.extend(me.get("results", []))
         return out
     return data.get("results", [])
+
+
+def annotate_tg_pp(data: dict) -> None:
+    """Label each scenario's throughput explicitly as TG and PP, in place.
+
+    TG (token generation) = decode throughput; this is bench's `tps` field.
+    PP (prompt processing) = prefill throughput, derived as
+    prompt_tokens / prefill_seconds. bench does not emit a prefill rate, but it
+    records `input_tokens` and `ttft_ms` (for llama.cpp forks ttft comes from
+    llama.cpp's own prompt_ms timing), so PP = input_tokens / (ttft_ms/1000) is
+    a faithful prefill rate. Written back into the run file so the numbers are
+    unambiguous in the results, not just the logs.
+    """
+    for br in backend_results(data):
+        for sc in br.get("scenarios", []):
+            tg = sc.get("tps", {}).get("mean")
+            if tg is not None:
+                sc["tg_tps"] = round(tg, 2)
+            in_tok = sc.get("input_tokens")
+            ttft_ms = sc.get("ttft_ms", {}).get("mean", 0)
+            if in_tok and ttft_ms and ttft_ms > 0:
+                sc["pp_tps"] = round(in_tok * 1000.0 / ttft_ms, 2)
 
 
 def check_regression(
@@ -547,6 +581,8 @@ def update_leaderboard(
                 "backend": br.get("backend"),
                 "tps_mean": round(tps_mean, 2),
                 "tps_p95": round(sc["tps"].get("p95", 0), 2),
+                "tg_tps": sc.get("tg_tps", round(tps_mean, 2)),
+                "pp_tps": sc.get("pp_tps"),
                 "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
                 "vram_peak_gb": sc.get("vram_peak_gb"),
                 "timestamp": result.get("timestamp"),

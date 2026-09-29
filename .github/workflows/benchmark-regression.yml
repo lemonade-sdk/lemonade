@@ -610,6 +610,15 @@ jobs:
                   tps = sc.get("tps", {}).get("mean")
                   if tps is None:
                     continue
+                  # TG = token generation (decode) throughput = tps.
+                  # PP = prompt processing (prefill) throughput. Prefer the
+                  # driver-annotated pp_tps; recompute from input_tokens/ttft for
+                  # any legacy run file that predates the annotation.
+                  ttft_ms = sc.get("ttft_ms", {}).get("mean", 0)
+                  in_tok = sc.get("input_tokens")
+                  pp_tps = sc.get("pp_tps")
+                  if pp_tps is None and in_tok and ttft_ms and ttft_ms > 0:
+                    pp_tps = round(in_tok * 1000.0 / ttft_ms, 2)
                   key = f"{model}|{sc['name']}"
                   entry = {
                     "model": model, "scenario": sc["name"],
@@ -619,6 +628,8 @@ jobs:
                     "ctx_size": br.get("ctx_size"),
                     "tps_mean": round(tps, 2),
                     "tps_p95": round(sc.get("tps", {}).get("p95", 0), 2),
+                    "tg_tps": sc.get("tg_tps", round(tps, 2)),
+                    "pp_tps": pp_tps,
                     "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
                     "input_tokens": sc.get("input_tokens"),
                     "vram_peak_gb": sc.get("vram_peak_gb"),
@@ -655,10 +666,17 @@ jobs:
                   tps = sc.get("tps", {}).get("mean")
                   if tps is None:
                     continue
+                  ttft_ms = sc.get("ttft_ms", {}).get("mean", 0)
+                  in_tok = sc.get("input_tokens")
+                  pp_tps = sc.get("pp_tps")
+                  if pp_tps is None and in_tok and ttft_ms and ttft_ms > 0:
+                    pp_tps = round(in_tok * 1000.0 / ttft_ms, 2)
                   h = history.setdefault(mdl, {}).setdefault(sc["name"], {}).setdefault(fid, [])
                   h.append({
                     "version": ver, "timestamp": me.get("timestamp", data.get("timestamp")),
                     "tps_mean": round(tps, 2),
+                    "tg_tps": sc.get("tg_tps", round(tps, 2)),
+                    "pp_tps": pp_tps,
                     "ttft_ms_mean": round(sc.get("ttft_ms", {}).get("mean", 0), 2),
                     "input_tokens": sc.get("input_tokens"),
                     "run_id": data.get("run_id"), "run_url": data.get("run_url"),
