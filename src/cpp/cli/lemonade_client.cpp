@@ -1371,7 +1371,12 @@ int LemonadeClient::list_recipes(bool show_all) const {
                     } else {
                         info_col = "-";
                     }
+                    // A multi-step action continues under the Action column.
                     std::string action_col = backend.action.empty() ? "-" : backend.action;
+                    for (size_t pos = action_col.find('\n'); pos != std::string::npos;
+                         pos = action_col.find('\n', pos + 1)) {
+                        action_col.insert(pos + 1, std::string(120, ' '));
+                    }
                     if (show_all || status_str != "unsupported") {
                         std::cout << std::left << std::setw(20) << recipe_col
                                 << std::setw(12) << backend.name

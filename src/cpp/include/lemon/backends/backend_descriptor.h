@@ -54,6 +54,16 @@ struct BackendLabels {
     BackendFormat format;
 };
 
+// A container backend's image repository, and the device nodes and Linux
+// permissions its container gets.
+struct ContainerPolicy {
+    std::string repository;             // only docker.io/kyuz0/* and ghcr.io/peonist-ai/*
+    std::vector<std::string> devices;   // device nodes the container can open, e.g. "/dev/dri"
+    std::vector<std::string> cap_add;   // capabilities given back after --cap-drop=all
+    bool ipc_host = false;              // share the host's IPC namespace
+    bool memlock_unlimited = false;     // remove the limit on locked memory
+};
+
 inline const char* backend_tier_to_string(BackendTier tier) {
     switch (tier) {
         case BackendTier::Core:         return "core";
@@ -163,6 +173,14 @@ struct BackendDescriptor {
     const BackendLabels* labels_for(const std::string& backend) const {
         auto it = labels.find(backend);
         return it == labels.end() ? nullptr : &it->second;
+    }
+
+    // The backends in `support` that run from an OCI image, keyed by backend name.
+    std::map<std::string, ContainerPolicy> containers;
+
+    const ContainerPolicy* container_for(const std::string& backend) const {
+        auto it = containers.find(backend);
+        return it == containers.end() ? nullptr : &it->second;
     }
 
     // The config.json section name for this backend, falling back to the recipe.

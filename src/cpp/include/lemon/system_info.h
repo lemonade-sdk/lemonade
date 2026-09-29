@@ -99,6 +99,12 @@ public:
     // Returns empty string if supported, or a reason string if not supported
     static std::string check_recipe_supported(const std::string& recipe);
 
+    // Reruns the setup checks of every container backend in `recipes` (the
+    // /system-info recipes object), marking the ones that fail action_required.
+    // Returns true when a backend cached as action_required now passes, so the
+    // caller rebuilds its cached state.
+    static bool refresh_container_setup(nlohmann::json& recipes);
+
     // Why the models of `recipe` stay hidden, or "" when they show. A recipe
     // whose only backends on this host are experimental keeps its models hidden
     // until one of those backends is installed.

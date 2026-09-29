@@ -14,13 +14,6 @@ namespace ds4 {
 // and proxying, rebinding the host exposes the backend, swapping the model
 // desynchronises the router, and the backend-selection flags would run the
 // child on a different device than the one Lemonade is tracking.
-// True if ds4-rocm publishes a build for `os`. SystemInfo::backend_supports_arch
-// validates the device constraints and arch gates but not the support row's
-// supported_os, and the direct backend-install endpoint does not go through
-// model filtering, so an unsupported OS would otherwise resolve an asset that
-// does not exist.
-inline bool publishes_for_os(const std::string& os);
-
 inline const std::set<std::string>& reserved_custom_arg_flags() {
     static const std::set<std::string> flags = {
         "-m", "--model",
@@ -33,9 +26,7 @@ inline const std::set<std::string>& reserved_custom_arg_flags() {
 
 // The ds4 backend descriptor (plain data). DS4 (DwarfStar) is antirez's
 // self-contained DeepSeek V4 inference engine with an OpenAI-compatible HTTP
-// server (ds4-server). Upstream publishes no binaries, releases or tags, so
-// builds come from lemonade-sdk/ds4-rocm, which compiles a pinned upstream
-// commit and bundles the ROCm runtime alongside it.
+// server (ds4-server). It runs from Donato Capitella's Strix Halo DS4 image.
 inline const BackendDescriptor descriptor = {
     /*recipe*/          "ds4",
     /*display_name*/    "DwarfStar4 (experimental)",
@@ -69,18 +60,18 @@ inline const BackendDescriptor descriptor = {
     /*config_extra*/    nlohmann::json::object(),
     /*streams_model_from_storage*/ true,
     /*labels*/ {
-        {"rocm", {BackendTier::Experimental, BackendFormat::Native}},
+        {"rocm", {BackendTier::Experimental, BackendFormat::Container}},
+    },
+    /*containers*/ {
+        {"rocm", {
+            /*repository*/        "docker.io/kyuz0/strix-halo-ds4-toolbox",
+            /*devices*/           {"/dev/dri", "/dev/kfd"},
+            /*cap_add*/           {"SYS_PTRACE"},
+            /*ipc_host*/          true,
+            /*memlock_unlimited*/ false,
+        }},
     },
 };
-
-inline bool publishes_for_os(const std::string& os) {
-    for (const auto& row : descriptor.support) {
-        if (row.backend == "rocm") {
-            return row.supported_os.count(os) > 0;
-        }
-    }
-    return false;
-}
 
 }  // namespace ds4
 }  // namespace backends

@@ -2831,13 +2831,132 @@
     "DeepSeek-V4-Flash-IQ2XXS-DS4": {
         "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-0731.gguf",
         "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 80.8,
+        "min_resident_gb": 16.0,
+        "recipe_options": {
+            "ctx_size": 262144
+        }
+    },
+    "DeepSeek-V4-Flash-Hybrid-Q2Q4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix-fixed-0731.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 97.0,
+        "min_resident_gb": 16.0,
+        "recipe_options": {
+            "ds4_args": "--prefill-chunk 2048"
+        }
+    },
+    "DeepSeek-V4-Flash-Q4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Q4KExperts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-imatrix-0731.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 153.3,
+        "min_resident_gb": 16.0,
+        "recipe_options": {
+            "ds4_args": "--dist-prefill-chunk 512 --dist-prefill-window 2"
+        }
+    },
+    "DeepSeek-V4-Flash-MXFP4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out-chat-v2-mxfp4-0731.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 156.0,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-IQ2XXS-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8.gguf",
+        "recipe": "ds4",
         "suggested": true,
         "labels": [
             "chat",
             "reasoning",
-            "tool-calling"
+            "vision"
         ],
         "size": 81.0,
+        "min_resident_gb": 16.0,
+        "recipe_options": {
+            "ctx_size": 262144
+        }
+    },
+    "DeepSeek-V4-Flash-Vision-Hybrid-Q2Q4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-Layers37-42Q4KExperts-OtherExpertLayersIQ2XXSGateUp-Q2KDown-AProjQ8-SExpQ8-OutQ8.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 91.0,
+        "min_resident_gb": 16.0
+    },
+    "DeepSeek-V4-Flash-Vision-MXFP4-DS4": {
+        "checkpoint": "antirez/deepseek-v4-gguf:DeepSeek-V4-Flash-Vision-Exp-MXFP4Experts-F16HC-F16Compressor-F16Indexer-Q8Attn-Q8Shared-Q8Out.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning",
+            "vision"
+        ],
+        "size": 145.0,
+        "min_resident_gb": 16.0
+    },
+    "GLM-5.3-Flash-Q2-DS4": {
+        "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q2.gguf",
+        "recipe": "ds4",
+        "suggested": true,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 96.5,
+        "min_resident_gb": 16.0,
+        "recipe_options": {
+            "ctx_size": 262144
+        }
+    },
+    "GLM-5.3-Flash-Q4_K-DS4": {
+        "checkpoint": "antirez/glm-5.3-flash-gguf:GLM-5.3-Flash-Q4_K.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 191.0,
+        "min_resident_gb": 16.0,
+        "recipe_options": {
+            "ctx_size": 4096
+        }
+    },
+    "DeepSeek-V4.1-Flash-Q2-DS4": {
+        "checkpoint": "antirez/deepseek-v4.1-flash-gguf:DeepSeek-V4.1-Flash-Q2.gguf",
+        "recipe": "ds4",
+        "suggested": false,
+        "labels": [
+            "chat",
+            "reasoning"
+        ],
+        "size": 365.71,
         "min_resident_gb": 16.0
     }
 }
