@@ -15753,17 +15753,31 @@ button.workspace-metadata-chip:hover {
 /* Compact at-rest Favorite indicator for model rows. */
 .model-list-panel__row-title {
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   width: 100%;
   min-width: 0;
 }
 
 .model-list-panel__row-title-text {
-  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-list-panel__update-badge {
+  flex: 0 0 auto;
+  padding: 1px var(--space-1);
+  border: 1px solid color-mix(in srgb, var(--status-warning) 35%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--warning-soft);
+  color: var(--status-warning);
+  font-size: 10px;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
 }
 
 /* Fixed at the title row's right edge so model-name length never moves it. */

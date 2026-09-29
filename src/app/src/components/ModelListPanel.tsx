@@ -599,6 +599,8 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
     const displayName = listModelDisplayName(model);
     const recipe = String((model as any).recipe || '');
     const primaryCapability = identityFromModelInfo(model);
+    const modelUpdateAvailable = model.update_available === true
+      && (status === 'downloaded' || status === 'running');
     // A collection routes to backends rather than being one, so it has no
     // engine to name on the meta line.
     const neutralCollectionGuide = isCollectionRecipe(recipe);
@@ -644,6 +646,11 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         title={(
           <span className="model-list-panel__row-title">
             <span className="model-list-panel__row-title-text">{displayName}</span>
+            {modelUpdateAvailable && (
+              <span className="model-list-panel__update-badge" title="A newer model version is available">
+                Update
+              </span>
+            )}
             {favorited && (
               <Icon
                 name="star"
@@ -667,7 +674,7 @@ export const ModelListPanel: React.FC<ModelListPanelProps> = ({
         dataAttributes={{ 'data-model-id': mId }}
         className={pinned ? 'workspace-list-row--pinned' : undefined}
         ariaKeyShortcuts={onToggleFavorite ? 'F' : undefined}
-        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${favorited ? ', favorite' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
+        ariaLabel={`${displayName}${pinned ? ', pinned' : ''}${favorited ? ', favorite' : ''}${status === 'running' ? ', running' : status === 'downloading' ? ', downloading' : ''}${modelUpdateAvailable ? ', model update available' : ''}${displayedBackend ? `, ${displayedBackend}` : ''}${readinessLabel ? `, ${readinessLabel}` : ''}`}
         onClick={() => onSelectModel(mId)}
         onKeyDown={onToggleFavorite ? e => handleItemKeyDown(e, mId) : undefined}
         action={onToggleFavorite ? {

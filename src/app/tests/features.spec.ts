@@ -1118,6 +1118,44 @@ test.describe('Lemonade UI — Feature Parity', () => {
     expect(loadRequestBody?.ctx_size).toBe(-1);
   });
 
+  test('13d — Models with an available registry update expose a per-model update action', async ({ page }) => {
+    let pullRequestBody: Record<string, unknown> | null = null;
+    await page.route('**/api/v1/health**', route => route.fulfill({
+      json: { status: 'ok', version: 'test', all_models_loaded: [] },
+    }));
+    await page.route(/\/api\/v1\/models(?:\?.*)?$/, route => route.fulfill({
+      json: {
+        data: [{
+          id: 'update-ready-model',
+          name: 'update-ready-model',
+          display_name: 'Update Ready Model',
+          labels: ['chat'],
+          recipe: 'llamacpp',
+          downloaded: true,
+          update_available: true,
+          registry_source: 'huggingface',
+          checkpoint: 'owner/update-ready-model',
+        }],
+      },
+    }));
+    await page.route('**/api/v1/pull', async route => {
+      pullRequestBody = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ json: { status: 'success' } });
+    });
+
+    await page.goto('/');
+    await page.locator('.titlebar__nav').getByText('Models').click();
+    const row = page.locator('.model-list-panel__list .workspace-list-row')
+      .filter({ hasText: 'Update Ready Model' });
+    await expect(row.locator('.model-list-panel__update-badge')).toHaveText('Update');
+    await row.click();
+    await expect(page.getByText('Update available', { exact: true })).toBeVisible();
+    const updateButton = page.getByRole('button', { name: 'Update update-ready-model from the model registry' });
+    await expect(updateButton).toBeVisible();
+    await updateButton.click();
+    await expect.poll(() => pullRequestBody?.model_name).toBe('update-ready-model');
+  });
+
   test('13c — External models show a local-file notice instead of calling the delete API', async ({ page }) => {
     let deleteRequested = false;
     await page.route('**/api/v1/health**', route => route.fulfill({

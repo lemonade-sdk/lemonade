@@ -119,9 +119,9 @@ assert.doesNotMatch(component + manager + panels, /metaTone=/,
   'metaTone is derived, never passed');
 
 assert.match(component, /aria-label=|ariaLabel=\{`\$\{displayName\}[\s\S]*\$\{readinessLabel \? `, \$\{readinessLabel\}` : ''\}`\}/);
-assert.match(component, /icon: 'pin'/, 'the row action is the pin');
-assert.match(component, /ariaKeyShortcuts=\{onTogglePin \? 'P' : undefined\}/,
-  'the keyboard pin shortcut must survive the row rewrite');
+assert.match(component, /icon: 'star'/, 'the row action is the favorite toggle');
+assert.match(component, /ariaKeyShortcuts=\{onToggleFavorite \? 'F' : undefined\}/,
+  'the keyboard favorite shortcut must survive the row rewrite');
 
 assert.doesNotMatch(component, /model-list-item__(footer|body|status|backend|pin|caps)/,
   'the per-tab catalog row markup is retired in favour of the shared row');
@@ -219,8 +219,8 @@ assert.match(panels, /showAnchor = Boolean\(anchor && !action\?\.latched\)/,
   'a latched action replaces the anchor rather than crowding it');
 assert.match(panels, /latched\?: boolean;/,
   'the row action declares whether it holds the slot or waits for hover');
-assert.match(component, /latched: pinned,/,
-  'a pinned model shows its pin in place of its engine');
+assert.match(component, /active: favorited,/,
+  'a favorited model keeps its favorite action visibly active');
 assert.match(styles, /\.workspace-list-row__status::before\s*\{[^}]*width:\s*7px;[^}]*height:\s*7px;/s);
 assert.match(styles, /\.workspace-list-row--selected[^{]*\{[^}]*--workspace-list-row-bg:[^;]+;\s*border-color:\s*color-mix\(in srgb, var\(--accent-fg\) 30%/s,
   'selection is one treatment shared by every list');
