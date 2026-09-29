@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdio>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
 
@@ -88,7 +89,10 @@ int main() {
 
     expect_rejected("llamacpp", "vulkan_bin", 1, "'llamacpp.vulkan_bin' must be a string");
     expect_rejected("llamacpp", "vulkan_args", 1, "'llamacpp.vulkan_args' must be a string");
-    expect_rejected("llamacpp", "vulkan_bin", "/nonexistent/lemonade/llama-server",
+    const std::string missing_bin =
+        (std::filesystem::temp_directory_path() / "lemonade-does-not-exist" / "llama-server")
+            .string();
+    expect_rejected("llamacpp", "vulkan_bin", missing_bin,
                     "'llamacpp.vulkan_bin' path does not exist");
 
     return failures == 0 ? 0 : 1;
