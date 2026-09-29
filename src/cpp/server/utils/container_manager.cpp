@@ -59,10 +59,22 @@ const char* tool_name(ContainerTool tool) {
 }
 
 #ifndef _WIN32
+// The group's ID, or nullopt when the host defines no such group. getgrnam_r,
+// since setup checks run on concurrent request threads.
+std::optional<gid_t> lookup_group(const std::string& group) {
+    struct group entry = {};
+    struct group* found = nullptr;
+    std::vector<char> buffer(16384);
+    if (::getgrnam_r(group.c_str(), &entry, buffer.data(), buffer.size(), &found) != 0 || !found) {
+        return std::nullopt;
+    }
+    return found->gr_gid;
+}
+
 bool process_in_group(const std::string& group) {
-    const struct group* entry = ::getgrnam(group.c_str());
-    if (!entry) return true;
-    const gid_t gid = entry->gr_gid;
+    const std::optional<gid_t> found = lookup_group(group);
+    if (!found) return true;
+    const gid_t gid = *found;
     if (::getgid() == gid || ::getegid() == gid) return true;
     const int count = ::getgroups(0, nullptr);
     if (count <= 0) return false;
@@ -72,8 +84,8 @@ bool process_in_group(const std::string& group) {
 }
 
 std::string host_group_id(const std::string& group) {
-    const struct group* entry = ::getgrnam(group.c_str());
-    return entry ? std::to_string(static_cast<unsigned long>(entry->gr_gid)) : "";
+    const std::optional<gid_t> found = lookup_group(group);
+    return found ? std::to_string(static_cast<unsigned long>(*found)) : "";
 }
 
 bool docker_socket_accepts_connection() {

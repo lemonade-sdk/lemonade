@@ -400,12 +400,6 @@ Server::Server(std::shared_ptr<RuntimeConfig> config,
     backend_manager_ = std::make_unique<BackendManager>();
     BackendManager::set_global(backend_manager_.get());
 
-#ifdef __linux__
-    // A lemond that was killed leaves its containers behind, still holding GPU
-    // memory and the names the next load of each model needs.
-    utils::ContainerManager::global().sweep();
-#endif
-
     router_ = std::make_unique<Router>(config_.get(),
                                        model_manager_.get(),
                                        backend_manager_.get());
@@ -2006,6 +2000,14 @@ void Server::run() {
             return;
         }
     }
+
+#ifdef __linux__
+    // A lemond that was killed leaves its containers behind, still holding GPU
+    // memory and the names the next load of each model needs. This runs only
+    // once the port is ours, so a second lemond that is about to exit leaves
+    // the running one's containers alone.
+    utils::ContainerManager::global().sweep();
+#endif
 
     // Operators binding beyond loopback should secure the server with an API
     // key, since every endpoint is reachable from other machines once the host
