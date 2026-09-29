@@ -450,6 +450,12 @@ The following options are available depending on the recipe being used:
 | `--ctx-size SIZE` | Context size for the model | auto |
 | `--rocmfpx-args ARGS` | Custom arguments to pass to the ROCm FPX llama-server | `""` |
 
+#### Halogen Flash (experimental) (`halogen` recipe)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--ctx-size SIZE` | Context size for the model | auto |
+
 #### ThinkSound (`thinksound` recipe)
 
 | Option | Description | Default |
