@@ -428,12 +428,19 @@ jobs:
             build/resources/
           retention-days: 7
 
-  build-linux-arm64:
-    name: Build (Linux ARM64)
+  build-linux:
+    name: Build (Linux ${{ matrix.arch }})
     needs: [get-latest-releases, verify-release-assets]
     # Label a PR `ci:upgrades` to opt it back in.
     if: (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:upgrades')) && always() && !failure() && !cancelled()
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+          - arch: x64
+            runner: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
         with:
@@ -537,7 +544,7 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: llamacpp-build-linux-arm64
+          name: llamacpp-build-linux-${{ matrix.arch }}
           path: |
             build/lemond
             build/resources/
@@ -1008,13 +1015,21 @@ jobs:
         uses: ./.github/actions/cleanup-processes-windows
 
   # ========================================================================
-  # Validate CUDA on the ARM64 self-hosted runner (DGX Spark)
+  # Validate CUDA on the Linux self-hosted runners (DGX Spark ARM64, RTX 5070 x64)
   # ========================================================================
-  validate-linux-arm64:
-    name: Validate cuda (Linux ARM64)
-    needs: [get-latest-releases, build-linux-arm64]
-    if: always() && needs.build-linux-arm64.result == 'success'
-    runs-on: [self-hosted, Linux, ARM64, cuda, lemon-prod]
+  validate-linux:
+    name: Validate cuda (Linux ${{ matrix.arch }})
+    needs: [get-latest-releases, build-linux]
+    if: always() && needs.build-linux.result == 'success'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: ["self-hosted", "Linux", "ARM64", "cuda", "lemon-prod", "sjlab-dgx-spark-01"]
+          - arch: x64
+            runner: ["self-hosted", "Linux", "X64", "cuda", "lemon-prod", "sjlab-rtx-5070-fractal-01"]
     steps:
       - name: Capture CUDA runner configuration
         shell: bash
@@ -1046,7 +1061,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cuda-runner-config
+          name: cuda-runner-config-${{ matrix.arch }}
           path: ${{ runner.temp }}/cuda-runner-config/
           retention-days: 30
           if-no-files-found: warn
@@ -1061,7 +1076,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v7
         with:
-          name: llamacpp-build-linux-arm64
+          name: llamacpp-build-linux-${{ matrix.arch }}
           path: build
 
       - name: Verify binaries
@@ -1145,7 +1160,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: validation-results-cuda
+          name: validation-results-cuda-${{ matrix.arch }}
           path: llamacpp_validation_cuda.json
           retention-days: 30
 
@@ -1153,7 +1168,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: server-logs-cuda
+          name: server-logs-cuda-${{ matrix.arch }}
           path: server-logs-cuda/
           retention-days: 30
           if-no-files-found: ignore
@@ -1167,7 +1182,7 @@ jobs:
   # ========================================================================
   create-pr:
     name: Create update PR
-    needs: [get-latest-releases, verify-release-assets, validate, validate-linux-arm64]
+    needs: [get-latest-releases, verify-release-assets, validate, validate-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1175,7 +1190,7 @@ jobs:
     if: >-
       (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
       needs.validate.result == 'success' &&
-      needs.validate-linux-arm64.result == 'success' &&
+      needs.validate-linux.result == 'success' &&
       needs.verify-release-assets.result == 'success'
     steps:
       - uses: actions/checkout@v5
@@ -1405,7 +1420,7 @@ jobs:
   # to run on ordinary pull request pushes.
   validation-gate:
     name: llama.cpp validation
-    needs: [build, validate, build-linux-arm64, validate-linux-arm64]
+    needs: [build, validate, build-linux, validate-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:

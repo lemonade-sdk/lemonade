@@ -39,7 +39,7 @@ These describe *what a runner can do*. A workflow should request only the capabi
 |-------|---------|-----------------------------------|
 | `vulkan` | Runner can execute Vulkan GPU workloads | llama.cpp Vulkan backend, whisper.cpp Vulkan backend |
 | `rocm` | Runner can execute ROCm GPU workloads | llama.cpp ROCm backend, stable-diffusion.cpp ROCm backend |
-| `cuda` | Runner can execute CUDA GPU workloads | llama.cpp CUDA backend (`validate_llamacpp.yml`, `validate-linux-arm64` job) |
+| `cuda` | Runner can execute CUDA GPU workloads | llama.cpp CUDA backend (`validate_llamacpp.yml`, `validate-linux` job) |
 | `xdna2` | Runner has a Ryzen AI 300/400 series NPU | `ryzenai` backend, `flm` (FastFlowLM) backend |
 
 A job that exercises more than one backend should request all the labels it needs (e.g., `[Windows, X64, vulkan, rocm, lemon-prod]` for a test that runs both Vulkan and ROCm cases). GitHub Actions requires the runner to carry *every* label in the `runs-on` list.
@@ -48,7 +48,7 @@ CPU-only jobs should target GitHub-hosted runners when possible.
 
 ### Architecture label
 
-GitHub registers every self-hosted runner with an architecture label (`X64`, `ARM64`, or `ARM`) alongside its OS label (`Linux`, `Windows`, `macOS`). **Every self-hosted `runs-on` list must include one of these architecture labels.** The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is `[self-hosted, Linux, ARM64, cuda, lemon-prod]`), so a job that only asks for `[self-hosted, Linux, lemon-prod]` can be scheduled onto either and fail with a binary or package built for the other architecture.
+GitHub registers every self-hosted runner with an architecture label (`X64`, `ARM64`, or `ARM`) alongside its OS label (`Linux`, `Windows`, `macOS`). **Every self-hosted `runs-on` list must include one of these architecture labels.** The pool contains both x86_64 and ARM64 machines (e.g. the DGX Spark is `[self-hosted, Linux, ARM64, cuda, lemon-prod, sjlab-dgx-spark-01]`), so a job that only asks for `[self-hosted, Linux, lemon-prod]` can be scheduled onto either and fail with a binary or package built for the other architecture.
 
 ### Hardware labels
 
@@ -70,7 +70,8 @@ Capability and hardware labels must be present on each runner for the workflow t
 |----------|-----------------|
 | Ryzen AI 300-series laptop (NPU + Vulkan iGPU + ROCm iGPU) | `lemon-prod`, `xdna2`, `vulkan`, `rocm` |
 | Strix Halo | `lemon-prod`, `xdna2`, `rocm`, `stx-halo` |
-| DGX Spark (ARM64 + CUDA) | `lemon-prod`, `cuda` |
+| DGX Spark (ARM64 + CUDA) | `lemon-prod`, `cuda`, `sjlab-dgx-spark-01` |
+| Linux x64 RTX 5070 (CUDA) | `lemon-prod`, `cuda`, `sjlab-rtx-5070-fractal-01` |
 
 ## New Runner Setup
 
