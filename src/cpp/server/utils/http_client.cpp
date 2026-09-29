@@ -498,6 +498,15 @@ bool apply_http_security_policy(
                set_proto(CURLOPT_REDIR_PROTOCOLS_STR, CURLOPT_REDIR_PROTOCOLS, redirect_protocols, redir_mask);
     };
 
+    // Schannel (the Windows TLS backend) checks certificate revocation by
+    // default and hard-fails when no CRL/OCSP endpoint is reachable, which is
+    // the common case for internal/private CAs. Best-effort still checks
+    // revocation when the info is available; it only stops treating an
+    // absent CRL/OCSP responder as fatal.
+    if (!set(CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_REVOKE_BEST_EFFORT))) {
+        return false;
+    }
+
     switch (policy) {
         case HttpSecurityPolicy::TrustedLoopback:
             // Managed loopback backends are plain HTTP and must never redirect.
