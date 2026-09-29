@@ -34,6 +34,7 @@ set(LEMONADE_MSI_VERSION
 message(STATUS "Lemonade version: ${PROJECT_VERSION}")
 
 include(CTest)
+option(LEMONADE_WITH_NEXUS "Build the Nexus client SDK" ON)
 
 # Aggregate build target for the C++ tests selected by packaging CI.
 # Platform-specific tests add themselves only inside their existing if() block.
@@ -997,6 +998,7 @@ include_directories(
 # ============================================================
 set(SOURCES_CORE
     src/cpp/server/server.cpp
+    src/cpp/server/nexus_manager.cpp
     src/cpp/server/collection_orchestrator.cpp
     src/cpp/server/jobs/job_ops.cpp
     src/cpp/server/jobs/job_manager.cpp
@@ -3448,4 +3450,17 @@ if(BUILD_TESTING AND EXISTS "${_MODEL_SYNC_TEST_SRC}")
 
     include(CTest)
     add_cpp_ci_test(ModelSyncAndAutoUpdateTest CI ON COMMAND test_model_sync_and_auto_update)
+endif()
+
+include(src/LemonadeNexusSDK/lemonade.cmake)
+
+if(BUILD_TESTING)
+    add_executable(test_nexus_manager test/cpp/test_nexus_manager.cpp)
+    target_link_libraries(test_nexus_manager PRIVATE lemonade-server-core)
+    add_cpp_ci_test(NexusManagerTest CI ON COMMAND test_nexus_manager)
+    if(LEMONADE_WITH_NEXUS)
+        add_custom_command(TARGET test_nexus_manager POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_nexus_runtime}" "$<TARGET_FILE_DIR:test_nexus_manager>/"
+            VERBATIM)
+    endif()
 endif()

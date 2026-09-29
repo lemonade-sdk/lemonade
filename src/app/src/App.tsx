@@ -106,6 +106,7 @@ const BackendManager = backendManagerView.View;
 const AppsView = appsWorkspaceView.View;
 const MonitorView = monitorWorkspaceView.View;
 const ConnectView = connectWorkspaceView.View;
+const NexusShortcut = React.lazy(() => import(/* webpackChunkName: "nexus-shortcut" */ './components/NexusShortcut'));
 const DownloadManager = downloadManagerView.View;
 
 type View = 'chat' | 'models' | 'backends' | 'apps' | 'dashboard' | 'connect';
@@ -998,6 +999,7 @@ const App: React.FC = () => {
         </nav>
 
         <div className="titlebar__right" data-tauri-drag-region>
+          {isDesktop && <Suspense fallback={null}><NexusShortcut onOpen={() => navigateToRoute({ view: 'connect', section: 'devices-and-mesh' })} /></Suspense>}
           <div
             ref={utilityMenuRef}
             className={`titlebar__utilities${utilityMenuOpen ? ' is-open' : ''}`}

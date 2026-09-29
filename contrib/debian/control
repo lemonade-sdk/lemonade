@@ -4,6 +4,8 @@ Maintainer: Mario Limonciello <superm1@debian.org>
 Section: utils
 Testsuite: autopkgtest-pkg-python
 Build-Depends:
+ cargo (>= 1.85),
+ rustc (>= 1.85),
  cmake,
  debhelper-compat (= 13),
  dh-cmake,
@@ -18,6 +20,8 @@ Build-Depends:
  libjs-katex,
  libmbedtls-dev,
  libssl-dev,
+ libsodium-dev,
+ libspdlog-dev,
  libsystemd-dev,
  libwebsockets-dev,
  libzstd-dev,

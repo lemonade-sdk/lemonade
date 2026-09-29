@@ -20,6 +20,7 @@
 #include <vector>
 #include <httplib.h>
 #include "runtime_config.h"
+#include "nexus_manager.h"
 #include "router.h"
 #include "routing_policy.h"
 #include "alias_manager.h"
@@ -79,6 +80,7 @@ public:
     void handle_config_defaults_get(const httplib::Request& req, httplib::Response& res);
 
 private:
+    std::unique_ptr<NexusManager> nexus_manager_;
     std::string resolve_host_to_ip(int ai_family, const std::string& host);
     void setup_routes(httplib::Server &web_server);
     void setup_static_files(httplib::Server &web_server);
