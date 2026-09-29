@@ -4,9 +4,11 @@
 #include "lemon/backends/backend_ops.h"
 #include "lemon/backends/backend_utils.h"
 #include "lemon/model_manager.h"
+#include "lemon/system_info.h"
 #include "lemon/utils/custom_args.h"
 #include "lemon/utils/http_client.h"
 #include <lemon/utils/aixlog.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <set>
 
@@ -15,6 +17,30 @@ using namespace lemon::utils;
 
 namespace lemon {
 namespace backends {
+
+namespace {
+
+// ds4-server sizes its expert cache from the whole device arena, which on an
+// APU is the GTT window. That leaves a long prompt's prefill too little: its
+// next expert span pushes free memory under ds4's own 16 GiB reserve, the arena
+// refuses it and the request fails with "rocm prefill failed". Half the arena
+// leaves the prefill its room.
+constexpr double kExpertCacheFraction = 0.5;
+
+// The larger of the integrated GPU's carve-out and its GTT window, in GiB, or
+// 0 when there is no integrated AMD GPU.
+double igpu_pool_gb() {
+    try {
+        const GPUInfo igpu = create_system_info()->get_amd_igpu_device();
+        if (igpu.available) {
+            return (std::max)(igpu.vram_gb, igpu.virtual_gb);
+        }
+    } catch (...) {
+    }
+    return 0.0;
+}
+
+}  // namespace
 
 Ds4Server::Ds4Server(const std::string& log_level, ModelManager* model_manager,
                      BackendManager* backend_manager)
@@ -73,6 +99,16 @@ void Ds4Server::load(const std::string& model_name, const ModelInfo& model_info,
     // (e.g. --ssd-streaming-cache-experts) still wins since ds4-server parses
     // left-to-right.
     args.push_back("--ssd-streaming");
+
+    // A long prompt's default 4096-token prefill graph faults the GPU in a
+    // quantize kernel and takes the server with it; chunked, it completes.
+    args.push_back("--prefill-chunk");
+    args.push_back("2048");
+    const int expert_cache_gb = static_cast<int>(igpu_pool_gb() * kExpertCacheFraction);
+    if (expert_cache_gb > 0) {
+        args.push_back("--ssd-streaming-cache-experts");
+        args.push_back(std::to_string(expert_cache_gb) + "GB");
+    }
 
     if (!ds4_args.empty()) {
         const std::string validation_error =
