@@ -4,6 +4,7 @@
 
 #include "lemon/backends/backend_descriptor_registry.h"
 #include "lemon/backends/backend_utils.h"
+#include "lemon/backends/halogen/halogen_server.h"
 #include "lemon/utils/container_manager.h"
 
 #include <cstdio>
@@ -239,6 +240,13 @@ void test_helpers() {
               !lemon::backends::parse_container_pin("b0001"));
 }
 
+void test_halogen_kernel_check() {
+    check("Halogen accepts Linux 7.0", lemon::backends::halogen::kernel_supported("7.0.0-31-generic"));
+    check("Halogen accepts a later kernel", lemon::backends::halogen::kernel_supported("7.2.1"));
+    check("Halogen refuses Linux 6.x", !lemon::backends::halogen::kernel_supported("6.17.0-5-generic"));
+    check("an unreadable kernel version passes", lemon::backends::halogen::kernel_supported(""));
+}
+
 void test_descriptors_and_pins() {
     std::ifstream in(BACKEND_VERSIONS_JSON_PATH);
     const nlohmann::json versions = nlohmann::json::parse(in);
@@ -270,6 +278,7 @@ int main() {
     test_tool_choice_and_setup();
     test_install_commands();
     test_helpers();
+    test_halogen_kernel_check();
     test_descriptors_and_pins();
 
     if (failures == 0) {
