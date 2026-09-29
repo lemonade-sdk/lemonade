@@ -215,7 +215,7 @@ jobs:
 
       - name: Set HF_HOME environment variable
         run: |
-          HF_HOME="$HOME/.cache/lemonade-ci/huggingface"
+          HF_HOME="$RUNNER_TEMP/huggingface"
           mkdir -p "$HF_HOME"
           echo "HF_HOME=$HF_HOME" >> $GITHUB_ENV
 
@@ -245,6 +245,21 @@ jobs:
         run: |
           set -e
           lemonade backends install ${{ matrix.recipe }}:${{ matrix.backend }}
+
+      # The suites' request timeouts are shorter than a cold download.
+      - name: Download the test models
+        run: |
+          set -e
+          models=$(cd test && python3 -c "
+          import sys
+          from utils.capabilities import CAPABILITIES
+          from utils.test_models import MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY
+          models = set(CAPABILITIES['llm'][sys.argv[1]]['test_models'].values())
+          print(' '.join(sorted(models | {MULTI_MODEL_SECONDARY, MULTI_MODEL_TERTIARY})))
+          " "${{ matrix.recipe }}")
+          for model in $models; do
+            lemonade pull "$model"
+          done
 
       - name: Run tests
         env:
