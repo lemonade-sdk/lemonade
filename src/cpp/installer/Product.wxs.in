@@ -154,6 +154,11 @@
 
     <!-- Executable files -->
     <ComponentGroup Id="ExecutableComponents" Directory="BinDir">
+      <?if @LEMONADE_WITH_NEXUS@ = ON ?>
+      <Component Id="NexusSDKComponent" Guid="*">
+        <File Id="NexusSDK.dll" Source="$(var.BuildDir)\Release\lemonade_nexus_sdk.dll" KeyPath="yes" />
+      </Component>
+      <?endif?>
       <Component Id="LemonadeApp" Guid="c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f">
         <File Id="LemonadeServer.exe" Source="$(var.BuildDir)\Release\LemonadeServer.exe" KeyPath="yes" />
       </Component>

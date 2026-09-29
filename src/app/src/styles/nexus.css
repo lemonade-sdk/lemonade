@@ -1,0 +1,48 @@
+.nexus-panel { width: min(100%, 900px); display: grid; gap: 24px; }
+.nexus-panel__overview { padding: 24px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; }
+.nexus-panel__identity { display: flex; align-items: center; gap: 16px; }
+.nexus-panel__identity h2 { margin: 0 0 4px; font-size: 20px; }
+.nexus-panel__identity p { margin: 0; color: var(--text-secondary); }
+.nexus-panel__signal { display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid var(--border); border-radius: 50%; color: var(--text-tertiary); }
+.nexus-panel__signal.is-online { color: var(--success); border-color: var(--success); }
+.nexus-panel__intro { max-width: 60ch; color: var(--text-secondary); line-height: 1.6; margin: 20px 0; }
+.nexus-panel__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 20px 0; border-block: 1px solid var(--border); }
+.nexus-panel dt { font-size: 12px; color: var(--text-tertiary); margin-bottom: 6px; }
+.nexus-panel dd { margin: 0; overflow-wrap: anywhere; }
+.nexus-panel__details { margin-bottom: 20px; }
+.nexus-panel__details summary { cursor: pointer; color: var(--text-secondary); }
+.nexus-panel__details dl { display: grid; gap: 8px; }
+.nexus-panel__name { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; margin: 20px 0; }
+.nexus-panel__name label { grid-column: 1 / -1; }
+.nexus-panel__members-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.nexus-panel__members-heading h3 { font-size: 16px; }
+.nexus-panel__empty { padding: 24px 0; color: var(--text-secondary); }
+.nexus-panel__device-list { margin: 0; padding: 0; list-style: none; }
+.nexus-panel__device-list li { display: flex; align-items: center; gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.nexus-panel__device { display: grid; gap: 6px; flex: 1; min-width: 150px; overflow-wrap: anywhere; }
+.nexus-panel__device > span { color: var(--text-tertiary); font-size: 12px; }
+.nexus-panel__self { font-size: 11px; color: var(--text-tertiary); font-weight: 400; margin-left: 12px; }
+.nexus-panel__remote-key { margin-top: 24px; max-width: 420px; display: grid; gap: 8px; }
+.nexus-panel__notice { color: var(--text-secondary); }
+.nexus-dialog__backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: var(--surface-overlay); }
+.nexus-dialog { width: min(100%, 460px); max-height: 85vh; overflow: auto; padding: 24px; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,.35); }
+.nexus-dialog__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.nexus-dialog__heading h2 { font-size: 20px; margin: 0; }
+.nexus-dialog form { display: grid; gap: 16px; margin-top: 16px; }
+.nexus-dialog p { color: var(--text-secondary); line-height: 1.6; }
+.nexus-dialog__code { font-size: clamp(32px, 7vw, 48px); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .08em; color: var(--text-primary); padding: 16px 0; white-space: nowrap; }
+.nexus-dialog__code-input { font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: .12em; }
+.nexus-shortcut { display: inline-flex; align-items: center; gap: 7px; padding: 7px 10px; background: transparent; color: var(--text-secondary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font: inherit; font-size: 12px; }
+.nexus-shortcut__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary); }
+.nexus-shortcut__dot.is-online { background: var(--success); }
+.nexus-toast { position: fixed; top: 64px; right: 24px; z-index: 900; max-width: min(420px, calc(100vw - 48px)); display: flex; align-items: center; gap: 12px; padding: 16px; color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px; }
+@media (max-width: 600px) { .nexus-panel__overview, .nexus-dialog { padding: 16px; } .nexus-panel__device-list li > .workspace-action-group { width: 100%; } .nexus-shortcut__label { display: none; } }
+
+.nexus-passkey-backdrop { z-index: 2100; }
+
+.nexus-dialog__code-input.is-token { font-size: 14px; letter-spacing: normal; font-family: monospace; }
+
+.nexus-server-select { max-width: 180px; min-width: 110px; font: inherit; font-size: 12px; color: var(--text-primary); background: var(--surface-1); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+@media (max-width: 700px) { .nexus-server-select { max-width: 120px; min-width: 80px; } }
+
+.nexus-server-select { appearance: auto; }

@@ -5,6 +5,7 @@
 pub mod beacon;
 pub mod commands;
 pub mod events;
+pub mod nexus_passkey;
 pub mod settings;
 pub mod tray_launcher;
 pub mod webview_shim;
@@ -88,6 +89,7 @@ pub fn run() {
     }
 
     builder
+        .manage(nexus_passkey::PasskeyState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -162,6 +164,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            nexus_passkey::nexus_passkey,
+            nexus_passkey::nexus_passkey_pin,
+            nexus_passkey::nexus_passkey_cancel,
             commands::minimize_window,
             commands::maximize_window,
             commands::close_window,
