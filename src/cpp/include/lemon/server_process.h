@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 
+#include "lemon/backends/backend_descriptor.h"
 #include "lemon/utils/process_manager.h"
 
 namespace lemon {
@@ -12,6 +13,7 @@ struct ServerCommand {
     std::string program;
     std::vector<std::string> args;
     std::vector<std::pair<std::string, std::string>> env;
+    std::vector<std::string> model_files;
     int port = 0;
     // Polled until it answers before the load completes, then polled by the
     // backend watchdog for as long as the server runs.
@@ -62,6 +64,30 @@ public:
 
 private:
     std::string working_dir_;
+};
+
+// A backend server that runs in a container from a pinned image, through a
+// `podman run` or `docker run` client that is a child of lemond. handle() is
+// that client: when lemond dies it gets SIGTERM and forwards it to the
+// container.
+class ContainerProcess : public ServerProcess {
+public:
+    // `image` is <repository>@<digest>; `model` names the container.
+    ContainerProcess(ProcessOutput output, std::string recipe, std::string backend,
+                     std::string model, ContainerPolicy policy, std::string image);
+
+    std::string start(const ServerCommand& command) override;
+    // Stops the container by name first: the client forwards SIGTERM into the
+    // container, but SIGKILL would end only the client.
+    void stop() override;
+
+private:
+    std::string recipe_;
+    std::string backend_;
+    std::string model_;
+    ContainerPolicy policy_;
+    std::string image_;
+    std::string name_;
 };
 
 }  // namespace lemon
